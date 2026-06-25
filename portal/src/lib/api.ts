@@ -285,6 +285,7 @@ export const BUDGET_API_URL = BUDGET_API
 export const EPMS_URL = (import.meta.env.VITE_EPMS_URL as string | undefined) || 'http://localhost:5173'
 export const OA_URL   = (import.meta.env.VITE_OA_URL   as string | undefined) || 'http://localhost:5175'
 export const VMS_URL  = (import.meta.env.VITE_VMS_URL  as string | undefined) || 'http://localhost:5176'
+export const FINANCE_URL = (import.meta.env.VITE_FINANCE_URL as string | undefined) || 'http://localhost:5177'
 
 // Encode a portal session for handoff to EPMS/OA via URL hash
 export function encodeSession(token: string, refreshToken: string, user: object): string {

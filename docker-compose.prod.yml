@@ -253,6 +253,7 @@ services:
         VITE_EPMS_URL: ${EPMS_URL}
         VITE_OA_URL: ${OA_URL}
         VITE_VMS_URL: ${VMS_URL}
+        VITE_FINANCE_URL: ${FINANCE_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_OA_API_URL: ${OA_API_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}

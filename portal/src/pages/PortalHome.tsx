@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck, LogOut, ChevronDown, User, KeyRound, Menu,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud,
+  Briefcase, CreditCard, Activity, Cloud, Landmark,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, encodeSession } from '@/lib/api'
+import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, encodeSession } from '@/lib/api'
 import { globalSignOut } from '@/lib/signOut'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
@@ -482,6 +482,7 @@ export default function PortalHome() {
   const epmsHref = session ? `${EPMS_URL}/dashboard#__session=${session}` : EPMS_URL
   const oaHref   = session ? `${OA_URL}/pa#__session=${session}`           : OA_URL
   const vmsHref  = session ? `${VMS_URL}/#__session=${session}`            : VMS_URL
+  const financeHref = session ? `${FINANCE_URL}/finance/ap#__session=${session}` : FINANCE_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -573,6 +574,15 @@ export default function PortalHome() {
       description: 'Visitor appointments, badge printing, on-site tracking',
       href: vmsHref,
       // No health check yet — vms-api healthcheck wiring lands in W7.
+      healthy: undefined,
+      loading: false,
+    },
+    {
+      icon: <Landmark className="h-5 w-5 text-primary-600" />,
+      iconBg: 'bg-primary-50',
+      label: 'Finance',
+      description: 'AP/AR, general ledger, payments, bank rec, budgets, tax',
+      href: financeHref,
       healthy: undefined,
       loading: false,
     },
