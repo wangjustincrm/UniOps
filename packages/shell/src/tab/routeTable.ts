@@ -29,6 +29,9 @@ export function deriveTabMeta(routes: RouteDef[], pathname: string): TabMeta | n
   if (!res || !res.def.tab) return null
   const { def, params } = res
   const spec = def.tab
+  // Destructuring `def` from `res` drops the narrowing of the `!res.def.tab`
+  // guard above; re-assert it so `spec` is `TabSpec`, not `TabSpec | undefined`.
+  if (!spec) return null
   const key =
     spec.keyStrategy === 'param' && spec.paramName
       ? `${def.path}:${params[spec.paramName] ?? ''}`
