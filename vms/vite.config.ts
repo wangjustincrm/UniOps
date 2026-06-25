@@ -3,26 +3,18 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
-// Shared workspace package. Resolve it directly to its TS source so Vite
-// transpiles it as app source (its bare imports — react, zustand, clsx… —
-// then resolve from this app's node_modules). Works on host and in the
-// Docker dev container, where ../packages/shell is mounted at /packages/shell.
-const shellEntry = path.resolve(__dirname, '../packages/shell/src/index.ts')
-
+// @uniops/shell is consumed as a workspace package (file: dep). On the host the
+// monorepo root node_modules resolves its transitive deps; in the Docker dev
+// container the command installs it with `--install-links` so it lands as a real
+// dir under /app/node_modules and its bare imports (zustand, clsx…) resolve from
+// the app's own node_modules. No Vite alias needed in either environment.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-      '@uniops/shell': shellEntry,
-    },
+    alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
     port: 5176,
-    // Allow serving the shared package source that lives outside this app's root.
-    fs: {
-      allow: [path.resolve(__dirname, '..')],
-    },
     watch: {
       usePolling: true,
     },
