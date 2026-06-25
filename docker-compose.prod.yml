@@ -1,0 +1,93 @@
+# UniOps — production compose for the APPLICATION SERVER.
+#
+# Topology: one application server runs all frontends (and, added next, all
+# backends). PostgreSQL + Redis live on the DB server; file-api lives on the
+# File server — both reached over the internal network via the URLs in .env.
+#
+# Build host (with registry access):
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml push
+# Application server:
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# All values come from a local `.env` (copy from .env.prod.example). Image tags
+# are pinned via ${TAG} (use a git SHA in CI for instant rollback).
+
+x-web-common: &web-common
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "wget", "-qO-", "http://localhost/"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+
+services:
+  epms-web:
+    <<: *web-common
+    image: ${REGISTRY}/uniops-epms-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: epms/Dockerfile
+      args:
+        VITE_API_URL: ${EPMS_VITE_API_URL}
+        VITE_FILE_SERVER_URL: ${FILE_SERVER_URL}
+        VITE_OA_URL: ${OA_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
+    ports:
+      - "5173:80"
+
+  portal-web:
+    <<: *web-common
+    image: ${REGISTRY}/uniops-portal-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: portal/Dockerfile
+      args:
+        VITE_EPMS_URL: ${EPMS_URL}
+        VITE_OA_URL: ${OA_URL}
+        VITE_VMS_URL: ${VMS_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_OA_API_URL: ${OA_API_URL}
+        VITE_VMS_API_URL: ${VMS_API_URL}
+        VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
+    ports:
+      - "5174:80"
+
+  oa-web:
+    <<: *web-common
+    image: ${REGISTRY}/uniops-oa-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: oa/Dockerfile
+      args:
+        VITE_API_URL: ${OA_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_EPMS_URL: ${EPMS_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+    ports:
+      - "5175:80"
+
+  vms-web:
+    <<: *web-common
+    image: ${REGISTRY}/uniops-vms-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: vms/Dockerfile
+      args:
+        VITE_API_URL: ${VMS_API_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+    ports:
+      - "5176:80"
+
+# NOTE (next step): backend API services (epms-api, approval-api, mdm-api,
+# finance-api, expense-api, budget-api, identity-api, vms-api) get added here
+# from their existing Dockerfiles. file-api is NOT here — it runs on the File
+# server. An edge reverse-proxy (single entrypoint by hostname) can replace the
+# per-app published ports above once backends join.

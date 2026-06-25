@@ -84,6 +84,55 @@ npm run build
 
 ---
 
+## Docker Deployment — Frontends (recommended)
+
+> Topology: **one application server** runs all frontends and backends.
+> PostgreSQL + Redis are on the **DB server**; `file-api` is on the **File
+> server**. Frontends are built as multi-stage images (Vite build → `nginx:alpine`
+> static) and released via a registry. This replaces the bare `npm run build`
+> above — no Node/build toolchain is needed on the app server.
+
+### Why build from the repo root
+
+The frontends share the `@uniops/shell` workspace package (`packages/shell`).
+Each frontend `Dockerfile` therefore builds with the **repo root** as context so
+the package resolves cleanly — no per-server `npm install`, no `--install-links`
+gymnastics. Build args inject the browser-facing `VITE_*` URLs (Vite inlines them
+at build time).
+
+### Release workflow (registry: build once, pull on the app server)
+
+```bash
+# 1. On a build host (CI or a dev machine) with registry access:
+cp .env.prod.example .env        # fill REGISTRY, TAG (use the git SHA), and all *_URL values
+export TAG=$(git rev-parse --short HEAD)
+
+docker compose -f docker-compose.prod.yml build      # builds epms/oa/portal/vms web images
+docker compose -f docker-compose.prod.yml push       # pushes ${REGISTRY}/uniops-*-web:${TAG}
+
+# 2. On the application server (same .env, same TAG):
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+
+# Rollback = set TAG to a previous git SHA and re-run pull + up -d.
+```
+
+Each web image runs nginx on port 80; the compose publishes them on
+`5173`(EPMS) / `5174`(Portal) / `5175`(OA) / `5176`(VMS). Put an edge reverse
+proxy (by hostname) in front once the backend services join this compose.
+
+### Local build sanity check (no registry needed)
+
+```bash
+docker build -f vms/Dockerfile -t uniops-vms-web:local .   # context = repo root
+docker run --rm -p 8099:80 uniops-vms-web:local            # open http://localhost:8099
+```
+
+> Backend API services (which already have Dockerfiles) get added to
+> `docker-compose.prod.yml` next; `file-api` stays on the File server.
+
+---
+
 ## Shared Requirements (All App Servers)
 
 All backend services must share these values in their `.env`:
