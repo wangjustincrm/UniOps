@@ -185,3 +185,44 @@ describe('tab store — persistence', () => {
     expect(restored?.closable).toBe(false)
   })
 })
+
+describe('tab store — replaceTab', () => {
+  const dashR: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
+  const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
+  function freshR() { localStorage.clear(); return createTabStore({ storageKey: 'test:replace', initialTabs: [dashR] }) }
+
+  it('replaces a tab in place, keeping position and activating the target', () => {
+    const s = freshR()
+    s.getState().openTab(pg('/new'))
+    s.getState().replaceTab('/new', pg('/visit/1'))
+    const st = s.getState()
+    expect(st.tabs.map(t => t.key)).toEqual(['/dashboard', '/visit/1'])
+    expect(st.activeKey).toBe('/visit/1')
+    expect(st.alive).toContain('/visit/1')
+    expect(st.alive).not.toContain('/new')
+  })
+
+  it('drops the old tab and focuses the destination when it is already open', () => {
+    const s = freshR()
+    s.getState().openTab(pg('/visit/1'))
+    s.getState().openTab(pg('/new'))
+    s.getState().replaceTab('/new', pg('/visit/1'))
+    const st = s.getState()
+    expect(st.tabs.map(t => t.key)).toEqual(['/dashboard', '/visit/1'])
+    expect(st.activeKey).toBe('/visit/1')
+  })
+
+  it('falls back to opening the target when the old tab is pinned', () => {
+    const s = freshR()
+    s.getState().replaceTab('/dashboard', pg('/visit/1'))
+    const st = s.getState()
+    expect(st.tabs.map(t => t.key)).toEqual(['/dashboard', '/visit/1'])
+    expect(st.activeKey).toBe('/visit/1')
+  })
+
+  it('falls back to opening the target when the old tab is missing', () => {
+    const s = freshR()
+    s.getState().replaceTab('/nope', pg('/visit/1'))
+    expect(s.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/visit/1'])
+  })
+})

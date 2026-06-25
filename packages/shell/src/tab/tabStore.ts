@@ -16,6 +16,14 @@ export interface TabStoreState {
   setActive: (key: string) => void
   updateTitle: (key: string, title: string) => void
   setDirty: (key: string, dirty: boolean) => void
+  /**
+   * Replace the tab `oldKey` with `meta`, keeping its position and activating
+   * `meta`. For "submit" pages (create/edit) so submitting navigates in place
+   * instead of spawning a second tab. Falls back to opening `meta` when `oldKey`
+   * is pinned or missing; if `meta` is already open elsewhere, the old tab is
+   * dropped and the existing one focused.
+   */
+  replaceTab: (oldKey: string, meta: TabMeta) => void
 }
 
 export interface TabStoreOptions {
@@ -140,6 +148,30 @@ export function createTabStore(opts: TabStoreOptions) {
 
     setDirty: (key, dirty) =>
       set((s) => ({ tabs: s.tabs.map((t) => (t.key === key ? { ...t, dirty } : t)) })),
+
+    replaceTab: (oldKey, meta) => {
+      const old = get().tabs.find((t) => t.key === oldKey)
+      // Can't replace a pinned or missing tab — just open/focus the target.
+      if (!old || old.pinned) {
+        get().openTab(meta)
+        return
+      }
+      set((s) => {
+        const destExists = s.tabs.some((t) => t.key === meta.key) && meta.key !== oldKey
+        const nextTabs = destExists
+          ? s.tabs.filter((t) => t.key !== oldKey) // destination already open → drop old, focus it
+          : s.tabs.map((t) => (t.key === oldKey ? meta : t)) // replace in place
+        return {
+          tabs: nextTabs,
+          activeKey: meta.key,
+          alive: [
+            ...s.alive.filter((k) => k !== oldKey),
+            ...(s.alive.includes(meta.key) ? [] : [meta.key]),
+          ],
+          lru: touchLru(s.lru.filter((k) => k !== oldKey), meta.key),
+        }
+      })
+    },
       }),
       {
         name: opts.storageKey,
