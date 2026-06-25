@@ -443,13 +443,16 @@ services:
     volumes:
       - ./oa:/app
       - oa_node_modules:/app/node_modules
+      # Shared workspace package (see vms-frontend) — mount so the container can
+      # resolve @uniops/shell; --install-links copies it into /app/node_modules.
+      - ./packages/shell:/packages/shell
     environment:
       VITE_API_URL: http://localhost:8006
       VITE_PORTAL_URL: http://localhost:5174
       VITE_EPMS_URL: http://localhost:5173
       VITE_EPMS_API_URL: http://localhost:8000
       VITE_BUDGET_API_URL: http://localhost:8007
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5175"
+    command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5175"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5175"]
       interval: 15s

@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import {
   Upload, FileText, CheckCircle2, AlertTriangle, ArrowRight,
@@ -996,7 +997,7 @@ function Step3PaForm({
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function PaDirectCreatePage() {
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(oaRoutes)
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [file, setFile] = useState<File | null>(null)
   const [fields, setFields] = useState<ParsedInvoiceFields | null>(null)
@@ -1040,7 +1041,7 @@ export default function PaDirectCreatePage() {
 
       {step === 3 && file && fields && (
         <>
-          <Step3PaForm file={file} fields={fields} vendorId={vendorId} vendorName={vendorName} onCreated={id => navigate(`/pa/${id}`)} />
+          <Step3PaForm file={file} fields={fields} vendorId={vendorId} vendorName={vendorName} onCreated={id => replaceTab(`/pa/${id}`)} />
           <button onClick={() => setStep(2)}
             className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 self-start">
             <ArrowLeft className="h-3.5 w-3.5" />Back to review

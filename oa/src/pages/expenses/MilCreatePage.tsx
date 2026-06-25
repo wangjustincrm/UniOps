@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
 import { formatAmount } from '@/lib/utils'
@@ -60,7 +61,7 @@ function emptyTrip(n: number, rate: string, accountId: string | null, code: stri
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function MilCreatePage() {
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(oaRoutes)
 
   const { data: policy } = useQuery<Policy>({
     queryKey: ['expense-policy'],
@@ -108,7 +109,7 @@ export default function MilCreatePage() {
 
   const createMutation = useMutation({
     mutationFn: (body: object) => api.post('/api/v1/expenses', body),
-    onSuccess: (data: any) => navigate(`/expenses/${data.id}`),
+    onSuccess: (data: any) => replaceTab(`/expenses/${data.id}`),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -154,7 +155,7 @@ export default function MilCreatePage() {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => navigate(-1)}
+            onClick={() => replaceTab('/expenses')}
             className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
           >
             Cancel

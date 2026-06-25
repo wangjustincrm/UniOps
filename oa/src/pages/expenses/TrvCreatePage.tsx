@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronRight, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
 import { cn, formatAmount } from '@/lib/utils'
@@ -260,7 +261,7 @@ function CategorySection({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function TrvCreatePage() {
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(oaRoutes)
   const [fromDate, setFromDate] = useState(today())
   const [toDate, setToDate] = useState(today())
   const [destination, setDestination] = useState('')
@@ -336,7 +337,7 @@ export default function TrvCreatePage() {
       }
       return claim
     },
-    onSuccess: (data: any) => navigate(`/expenses/${data.id}`),
+    onSuccess: (data: any) => replaceTab(`/expenses/${data.id}`),
     onError: (e: any) => setError(e.message || 'Failed to create TRV claim'),
   })
 

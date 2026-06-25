@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
+import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
+import type { TabMeta } from '@uniops/shell'
+import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import {
   CreditCard, Receipt, FileText, ArrowLeft, Menu,
@@ -289,6 +292,10 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
 
 // ── AppLayout ─────────────────────────────────────────────────────────────────
 
+const OA_INITIAL_TABS: TabMeta[] = [
+  { key: '/tasks', title: 'Task Inbox', kind: 'page', path: '/tasks', icon: 'CheckSquare', pinned: true, closable: false },
+]
+
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -310,31 +317,33 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
-      {/* Mobile overlay */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/50 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
+    <TabStoreProvider options={{ storageKey: 'uniops:oa:tabs', initialTabs: OA_INITIAL_TABS }}>
+      <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
+        {/* Mobile overlay */}
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-20 bg-black/50 md:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        <Sidebar
+          mobileOpen={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed(v => !v)}
         />
-      )}
 
-      <Sidebar
-        mobileOpen={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed(v => !v)}
-      />
-
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="mx-auto max-w-[1440px]">
-            <Outlet />
-          </div>
-        </main>
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
+          <TabRouterSync routes={oaRoutes} />
+          <TabBar />
+          <main className="relative flex-1 overflow-hidden">
+            <TabHost routes={oaRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
+          </main>
+        </div>
       </div>
-    </div>
+    </TabStoreProvider>
   )
 }

@@ -1,5 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { api, epmsApi, budgetApi } from '@/lib/api'
@@ -18,7 +20,7 @@ interface BudgetL1 { id: string; code: string; name: string; accounts: BudgetL2[
 
 export default function PaDirectEditPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(oaRoutes)
   const { user } = useOaAuth()
   const deptId = user?.department_id ?? null
 
@@ -106,7 +108,7 @@ export default function PaDirectEditPage() {
         cost_center_id: selectedCostCenterId || null,
         notes: notes || null,
       })
-      navigate(`/pa/${id}`)
+      replaceTab(`/pa/${id}`)
     } catch (err: any) {
       setError(err.message || 'Failed to save changes')
     } finally { setSaving(false) }

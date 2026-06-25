@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -55,7 +57,7 @@ function DynamicField({
 
 export default function CfmCreatePage() {
   const { formCode } = useParams<{ formCode: string }>()
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(oaRoutes)
 
   const { data: forms, isLoading } = useQuery<CustomForm[]>({
     queryKey: ['custom-forms-active'],
@@ -74,7 +76,7 @@ export default function CfmCreatePage() {
 
   const mutation = useMutation({
     mutationFn: (body: object) => api.post('/api/v1/expenses', body),
-    onSuccess: (data: any) => navigate(`/expenses/${data.id}`),
+    onSuccess: (data: any) => replaceTab(`/expenses/${data.id}`),
     onError: (e: any) => setError(e.message || 'Failed to create claim'),
   })
 
