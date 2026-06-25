@@ -1,13 +1,16 @@
 import { useState } from 'react'
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Routes, Route } from 'react-router-dom'
+import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
+import type { TabMeta } from '@uniops/shell'
 import { Sidebar } from './Sidebar'
 import { Header, ForcedChangePasswordModal } from './Header'
 import { useAuthStore } from '@/stores/auth.store'
 import { useIdleTimeout } from '@/hooks/useIdleTimeout'
+import { epmsRoutes } from '@/app/routes'
 
 // True when this app is rendered inside an iframe (e.g. Portal's budget shell).
-// In that case we hide EPMS's own Sidebar/Header so Portal's chrome is the only
-// visible navigation. Detected once at module load; survives internal navigation.
+// In that case we hide EPMS's own Sidebar/Header AND the tab bar so Portal's
+// chrome is the only navigation. Detected once at module load.
 function detectIframeEmbed(): boolean {
   try {
     return typeof window !== 'undefined' && window.self !== window.top
@@ -18,6 +21,10 @@ function detectIframeEmbed(): boolean {
 }
 
 const IS_EMBEDDED = detectIframeEmbed()
+
+const EPMS_INITIAL_TABS: TabMeta[] = [
+  { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', icon: 'LayoutDashboard', pinned: true, closable: false },
+]
 
 export function AppLayout() {
   useIdleTimeout()
@@ -33,12 +40,17 @@ export function AppLayout() {
   if (!isAuthenticated) return <Navigate to="/login" replace />
   if (!isMfaValid) return <Navigate to="/mfa" replace />
 
+  // Embedded (iframe): single page, no chrome, no tabs — Portal owns navigation.
   if (isEmbedded) {
     return (
       <div className="flex h-screen flex-col overflow-hidden bg-[#FAFBFC]">
         <main id="main-content" className="flex-1 overflow-y-auto p-6" tabIndex={-1}>
           <div className="mx-auto max-w-[1440px]">
-            <Outlet />
+            <Routes>
+              {epmsRoutes.map((r) => (
+                <Route key={r.path} path={r.path} element={r.element} />
+              ))}
+            </Routes>
           </div>
         </main>
         {mustChangePassword && (
@@ -48,35 +60,34 @@ export function AppLayout() {
     )
   }
 
+  // Normal: full chrome + keep-alive multi-tab workspace.
   return (
-    <div className="flex h-screen overflow-hidden bg-[#FAFBFC] relative">
-      {/* Mobile overlay backdrop */}
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-neutral-900/50 backdrop-blur-sm md:hidden animate-[fadeIn_0.15s_ease-out]"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+    <TabStoreProvider options={{ storageKey: 'uniops:epms:tabs', initialTabs: EPMS_INITIAL_TABS }}>
+      <div className="flex h-screen overflow-hidden bg-[#FAFBFC] relative">
+        {/* Mobile overlay backdrop */}
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-20 bg-neutral-900/50 backdrop-blur-sm md:hidden animate-[fadeIn_0.15s_ease-out]"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden="true"
+          />
+        )}
 
-      <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
+        <Sidebar mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header onMobileMenuToggle={() => setMobileOpen((v) => !v)} />
-        <main
-          id="main-content"
-          className="flex-1 overflow-y-auto p-6"
-          tabIndex={-1}
-        >
-          <div className="mx-auto max-w-[1440px]">
-            <Outlet />
-          </div>
-        </main>
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Header onMobileMenuToggle={() => setMobileOpen((v) => !v)} />
+          <TabRouterSync routes={epmsRoutes} />
+          <TabBar />
+          <main id="main-content" className="relative flex-1 overflow-hidden" tabIndex={-1}>
+            <TabHost routes={epmsRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
+          </main>
+        </div>
+
+        {mustChangePassword && (
+          <ForcedChangePasswordModal onDone={clearMustChangePassword} />
+        )}
       </div>
-
-      {mustChangePassword && (
-        <ForcedChangePasswordModal onDone={clearMustChangePassword} />
-      )}
-    </div>
+    </TabStoreProvider>
   )
 }

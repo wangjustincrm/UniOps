@@ -10,6 +10,11 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Serve @uniops/shell as live source (not a pre-bundled dep) so shared-package
+  // edits are picked up without a stale optimize cache. See vms/vite.config.ts.
+  optimizeDeps: {
+    exclude: ['@uniops/shell'],
+  },
   server: {
     watch: {
       usePolling: true,
