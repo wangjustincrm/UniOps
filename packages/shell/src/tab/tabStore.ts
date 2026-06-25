@@ -20,6 +20,10 @@ export interface TabStoreState {
 
 export interface TabStoreOptions {
   storageKey: string
+  /**
+   * Maximum number of open tabs before LRU eviction kicks in. Only counts
+   * and evicts tabs with `kind: 'page'` — iframe tabs are exempt from the cap.
+   */
   cap?: number
   initialTabs?: TabMeta[]
 }
@@ -44,6 +48,8 @@ export function createTabStore(opts: TabStoreOptions) {
       const cap = opts.cap ?? 15
       const { tabs } = get()
       if (tabs.some((t) => t.key === meta.key)) {
+        // Re-opening an existing tab focuses it; it intentionally does NOT
+        // overwrite existing metadata (use updateTitle to change a title).
         get().setActive(meta.key)
         return
       }
@@ -139,12 +145,23 @@ export function createTabStore(opts: TabStoreOptions) {
         name: opts.storageKey,
         storage: createJSONStorage(() => localStorage),
         partialize: (s) => ({ tabs: s.tabs, activeKey: s.activeKey }),
+        version: 1,
         merge: (persisted, current) => {
           const p = (persisted ?? {}) as Partial<TabStoreState>
           let tabs = p.tabs ?? current.tabs
-          // Guarantee pinned initial tabs exist and sit first.
+          // Guarantee pinned initial tabs exist, sit first, and carry their
+          // canonical identity flags — even if a persisted tab with the same
+          // key has stale flags (e.g. pinned:false) from before it was
+          // configured as a pinned initial tab.
           for (const pin of initial) {
-            if (!tabs.some((t) => t.key === pin.key)) tabs = [pin, ...tabs]
+            const idx = tabs.findIndex((t) => t.key === pin.key)
+            if (idx === -1) {
+              tabs = [pin, ...tabs]
+            } else {
+              const existing = tabs[idx]
+              const repaired = { ...existing, pinned: pin.pinned, closable: pin.closable, icon: pin.icon, title: pin.title }
+              tabs = [...tabs.slice(0, idx), repaired, ...tabs.slice(idx + 1)]
+            }
           }
           const activeKey =
             p.activeKey && tabs.some((t) => t.key === p.activeKey)

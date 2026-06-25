@@ -168,4 +168,20 @@ describe('tab store — persistence', () => {
     const b = createTabStore({ storageKey: 'persist:nopin', initialTabs: [dash3] })
     expect(b.getState().tabs.some(t => t.key === '/dashboard')).toBe(true)
   })
+
+  it('repairs stale pinned-tab flags on restore (pinned cannot be closed)', () => {
+    // Persisted storage has a /dashboard entry with stale, non-pinned flags —
+    // simulating data persisted before it was configured as a pinned initial tab.
+    localStorage.setItem('persist:stalepin', JSON.stringify({
+      state: {
+        tabs: [{ key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: false, closable: true }],
+        activeKey: '/dashboard',
+      },
+      version: 0,
+    }))
+    const b = createTabStore({ storageKey: 'persist:stalepin', initialTabs: [dash3] })
+    const restored = b.getState().tabs.find(t => t.key === '/dashboard')
+    expect(restored?.pinned).toBe(true)
+    expect(restored?.closable).toBe(false)
+  })
 })

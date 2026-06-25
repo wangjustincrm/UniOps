@@ -10,6 +10,9 @@ export interface ResolvedRoute {
 export function resolveRoute(routes: RouteDef[], pathname: string): ResolvedRoute | null {
   const matches = matchRoutes(routes.map((r) => ({ path: r.path })), pathname)
   if (!matches || matches.length === 0) return null
+  // The last match is the leaf match; routes are currently flat so this is
+  // equivalent to the only match, but written this way to tolerate future
+  // nested routes (where the leaf would be the most specific match).
   const matched = matches[matches.length - 1]
   const def = routes.find((r) => r.path === matched.route.path)
   if (!def) return null
