@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
   CalendarCheck, ListChecks, UserCheck, Plus, ArrowLeft, Menu, ScanLine,
   ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
@@ -9,6 +9,9 @@ import { useMyVmsTasks } from '@/services/api'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
+import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
+import type { TabMeta } from '@uniops/shell'
+import { vmsRoutes } from '@/app/routes'
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
@@ -297,6 +300,10 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
 
 // ── AppLayout ─────────────────────────────────────────────────────────────────
 
+const VMS_INITIAL_TABS: TabMeta[] = [
+  { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', icon: 'LayoutDashboard', pinned: true, closable: false },
+]
+
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -318,30 +325,32 @@ export default function AppLayout() {
   }
 
   return (
-    <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
-      {mobileOpen && (
-        <div
-          className="fixed inset-0 z-20 bg-black/50 md:hidden"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden="true"
+    <TabStoreProvider options={{ storageKey: 'uniops:vms:tabs', initialTabs: VMS_INITIAL_TABS }}>
+      <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-20 bg-black/50 md:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+
+        <Sidebar
+          mobileOpen={mobileOpen}
+          onClose={() => setMobileOpen(false)}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed(v => !v)}
         />
-      )}
 
-      <Sidebar
-        mobileOpen={mobileOpen}
-        onClose={() => setMobileOpen(false)}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed(v => !v)}
-      />
-
-      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="mx-auto max-w-[1440px]">
-            <Outlet />
-          </div>
-        </main>
+        <div className="flex flex-1 flex-col overflow-hidden min-w-0">
+          <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
+          <TabRouterSync routes={vmsRoutes} />
+          <TabBar />
+          <main className="relative flex-1 overflow-hidden">
+            <TabHost routes={vmsRoutes} />
+          </main>
+        </div>
       </div>
-    </div>
+    </TabStoreProvider>
   )
 }
