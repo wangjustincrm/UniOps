@@ -305,7 +305,7 @@ services:
       start_period: 10s
 
   finance-web:
-    <<: *web-common
+    <<: *api-common
     image: ${REGISTRY}/uniops-finance-web:${TAG:-latest}
     build:
       context: .
@@ -321,6 +321,12 @@ services:
         VITE_OA_URL: ${OA_URL}
         VITE_VMS_URL: ${VMS_URL}
     ports: ["5177:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 # Edge reverse-proxy (single hostname entrypoint) can be added in front of the
 # published ports above once domains/TLS are decided.
