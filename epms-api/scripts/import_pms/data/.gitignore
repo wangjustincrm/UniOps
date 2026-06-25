@@ -1,0 +1,3 @@
+# Staged SharePoint extracts (JSON + downloaded attachment files) — never commit.
+*
+!.gitignore

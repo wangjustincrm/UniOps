@@ -1,0 +1,40 @@
+# file-api/docker-compose.prod.yml — UniOps File 服务器 (crm-pms-file / 10.10.50.66)
+#
+# 生产部署 (非 dev): 镜像内代码、无 --reload、无源码挂载。
+# 文件落在容器外的数据盘 /data/file-storage (1.9TB LVM 卷)。
+#
+# 用法 (在 File 服务器上):
+#   1. 把 file-api 目录传到服务器, 例如 /opt/uniops/file-api
+#   2. cp .env.prod.example .env.prod  &&  nano .env.prod   # 填 DB 密码 + 共享 JWT 密钥
+#   3. docker compose -f docker-compose.prod.yml up -d --build
+#   4. curl http://localhost:8005/health
+#
+# 前置: /data/file-storage 已建好; DB 服务器 10.10.50.20 的 pg_hba/ufw 已放行本机 IP。
+
+name: uniops-file
+
+services:
+  file-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: uniops-file-api:prod
+    container_name: uniops_file_api
+    restart: unless-stopped
+    ports:
+      - "8005:8005"
+    env_file:
+      - .env.prod                       # DATABASE_URL + JWT_SECRET_KEY (不进 git)
+    environment:
+      STORAGE_ROOT: /file-storage
+      SERVICE_NAME: file-server
+      PORT: "8005"
+    volumes:
+      - /data/file-storage:/file-storage  # 宿主机数据盘 → 容器存储根
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8005
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/files/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

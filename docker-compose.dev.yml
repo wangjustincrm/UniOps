@@ -1,0 +1,461 @@
+# UniOps — Local Development Stack
+# DEV ONLY: not used in production (production uses distributed servers)
+# Usage: docker compose -f docker-compose.dev.yml up
+#
+# Production deployment: see DEPLOYMENT.md
+
+name: uniops-dev
+
+x-python-base: &python-base
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment:
+    DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+    JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+    JWT_ALGORITHM: HS256
+    POSTGRES_HOST: 10.10.50.20
+    POSTGRES_PORT: "5432"
+    POSTGRES_USER: epms
+    POSTGRES_PASSWORD: ${DB_PASSWORD}
+    POSTGRES_DB: epms
+
+services:
+  # ── Infrastructure ───────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: uniops_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: epms
+      POSTGRES_PASSWORD: epms_dev
+      POSTGRES_DB: epms
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U epms -d epms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: uniops_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Backend Services ─────────────────────────────────────────────────────────
+
+  epms-api:
+    <<: *python-base
+    build:
+      context: ./epms-api
+      dockerfile: Dockerfile
+    container_name: uniops_epms_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./epms-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      DEBUG: "true"
+      ENVIRONMENT: development
+      APP_NAME: EPMS API
+      APP_VERSION: 0.1.0
+      API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176"]'
+      ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      FILE_SERVER_URL: http://10.10.50.66:8005/files/v1
+      BUDGET_API_URL: http://budget-api:8007
+      FINANCE_API_URL: http://finance-api:8004
+      IDENTITY_API_URL: http://identity-api:8009
+      MDM_API_URL: http://mdm-api:8002
+      MDM_API_TIMEOUT_SECONDS: "30"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  approval-api:
+    <<: *python-base
+    build:
+      context: ./approval-api
+      dockerfile: Dockerfile
+    container_name: uniops_approval_api
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./approval-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      SERVICE_NAME: approval-engine
+      PORT: "8003"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  mdm-api:
+    <<: *python-base
+    build:
+      context: ./mdm-api
+      dockerfile: Dockerfile
+    container_name: uniops_mdm_api
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./mdm-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      SERVICE_NAME: mdm-stub
+      PORT: "8002"
+      ERP_BASE_URL: http://10.10.95.66
+      ERP_TIMEOUT_SECONDS: "60"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  identity-api:
+    <<: *python-base
+    build:
+      context: ./identity-api
+      dockerfile: Dockerfile
+    container_name: uniops_identity_api
+    ports:
+      - "8009:8009"
+    volumes:
+      - ./identity-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      SERVICE_NAME: identity-api
+      PORT: "8009"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8009 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8009/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  finance-api:
+    <<: *python-base
+    build:
+      context: ./finance-api
+      dockerfile: Dockerfile
+    container_name: uniops_finance_api
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./finance-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      SERVICE_NAME: finance-core
+      PORT: "8004"
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      BUDGET_API_URL: http://budget-api:8007
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  file-api:
+    <<: *python-base
+    build:
+      context: ./file-api
+      dockerfile: Dockerfile
+    container_name: uniops_file_api
+    profiles: ["disabled"]   # 已迁到 File 服务器 10.10.50.66,本地不再启动
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./file-api:/app
+      - ./file-storage:/file-storage
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      SERVICE_NAME: file-server
+      PORT: "8005"
+      STORAGE_ROOT: /file-storage
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  expense-api:
+    <<: *python-base
+    build:
+      context: ./expense-api
+      dockerfile: Dockerfile
+    container_name: uniops_expense_api
+    ports:
+      - "8006:8006"
+    volumes:
+      - ./expense-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      REDIS_HOST: redis
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      SERVICE_NAME: expense-api
+      PORT: "8006"
+      DEBUG: "true"
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      FILE_SERVER_URL: http://10.10.50.66:8005/files/v1
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      BUDGET_API_URL: http://budget-api:8007
+      FINANCE_API_URL: http://finance-api:8004
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8006 --reload
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  budget-api:
+    <<: *python-base
+    build:
+      context: ./budget-api
+      dockerfile: Dockerfile
+    container_name: uniops_budget_api
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./budget-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      APP_NAME: Budget API
+      APP_VERSION: 0.1.0
+      DEBUG: "true"
+      ENVIRONMENT: development
+      API_V1_PREFIX: /api/v1
+      APPROVAL_API_URL: http://approval-api:8003/approval/v1
+      EPMS_API_URL: http://epms-api:8000
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8007/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  vms-api:
+    <<: *python-base
+    build:
+      context: ./vms-api
+      dockerfile: Dockerfile
+    container_name: uniops_vms_api
+    ports:
+      - "8008:8008"     # 8007 is taken by budget-api — VMS uses 8008
+    volumes:
+      - ./vms-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      POSTGRES_HOST: 10.10.50.20
+      # config.py builds DATABASE_URL from POSTGRES_* (the DATABASE_URL env var is
+      # ignored — it's a computed @property). Without this the password defaults to
+      # `epms_dev` and the prod DB rejects it with InvalidPasswordError. Matches
+      # budget/finance/mdm which set the same.
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      APP_NAME: VMS API
+      APP_VERSION: 0.1.0
+      DEBUG: "true"
+      ENVIRONMENT: development
+      API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176"]'
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      FILE_SERVER_URL: http://10.10.50.66:8005/files/v1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      epms-api:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8008 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8008/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Frontend Applications ─────────────────────────────────────────────────────
+
+  epms-frontend:
+    image: node:20-alpine
+    container_name: uniops_epms_frontend
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./epms:/app
+      - epms_node_modules:/app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:8000/api/v1
+      VITE_FILE_SERVER_URL: http://localhost:8005
+      VITE_OA_URL: http://localhost:5175
+      VITE_PORTAL_URL: http://localhost:5174
+      VITE_BUDGET_API_URL: http://localhost:8007
+      VITE_MDM_API_URL: http://localhost:8002
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5173"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  portal-frontend:
+    image: node:20-alpine
+    container_name: uniops_portal_frontend
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./portal:/app
+      - portal_node_modules:/app/node_modules
+    environment:
+      VITE_EPMS_URL: http://localhost:5173
+      VITE_OA_URL: http://localhost:5175
+      VITE_VMS_URL: http://localhost:5176
+      VITE_EPMS_API_URL: http://localhost:8000
+      VITE_OA_API_URL: http://localhost:8006
+      VITE_VMS_API_URL: http://localhost:8008
+      VITE_BUDGET_API_URL: http://localhost:8007
+      VITE_MDM_API_URL: http://localhost:8002
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5174"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5174"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  vms-frontend:
+    image: node:20-alpine
+    container_name: uniops_vms_frontend
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "5176:5176"
+    volumes:
+      - ./vms:/app
+      - vms_node_modules:/app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:8008
+      VITE_EPMS_API_URL: http://localhost:8000
+      VITE_PORTAL_URL: http://localhost:5174
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5176"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5176"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  oa-frontend:
+    image: node:20-alpine
+    container_name: uniops_oa_frontend
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "5175:5175"
+    volumes:
+      - ./oa:/app
+      - oa_node_modules:/app/node_modules
+    environment:
+      VITE_API_URL: http://localhost:8006
+      VITE_PORTAL_URL: http://localhost:5174
+      VITE_EPMS_URL: http://localhost:5173
+      VITE_EPMS_API_URL: http://localhost:8000
+      VITE_BUDGET_API_URL: http://localhost:8007
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5175"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5175"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+
+volumes:
+  postgres_data:
+  redis_data:
+  epms_node_modules:
+  portal_node_modules:
+  oa_node_modules:
+  vms_node_modules:

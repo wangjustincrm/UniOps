@@ -1,0 +1,132 @@
+"""ORM models for Company Config and Temp Assignments."""
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, UUIDPrimaryKey
+
+
+class CompanyConfig(Base):
+    """Singleton row holding all company / workflow configuration."""
+
+    __tablename__ = "company_config"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # ── Basic info ──────────────────────────────────────────────────────────
+    name: Mapped[str] = mapped_column(String(255), nullable=False, default="EPMS")
+    tagline: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="Enterprise Procurement Management"
+    )
+    logo_data_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logo_file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    delivery_address: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # ── Per-module taglines ─────────────────────────────────────────────────
+    # `tagline` above is the Portal tagline. This map holds the OTHER modules:
+    # {"epms": "...", "oa": "...", "vms": "..."}. Adding a future module = a new
+    # key here (no migration). Blank/missing → caller falls back to `tagline`.
+    module_taglines: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
+
+    # ── Currency ────────────────────────────────────────────────────────────
+    default_currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CAD")
+    enabled_currencies: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=lambda: ["CAD", "USD", "EUR", "CNY"]
+    )
+    custom_currencies: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    # ── 3-way match tolerance (Phase a A2, FIN-AP-001) ──────────────────────
+    # |variance_pct| <= tolerance → auto-matched (variance still recorded);
+    # above → exception for review. 0 = zero tolerance (historical behaviour).
+    invoice_match_tolerance_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=Decimal("0"), server_default="0"
+    )
+
+    # ── Security ────────────────────────────────────────────────────────────
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    password_expiry_days: Mapped[int | None] = mapped_column(Integer, nullable=True, default=90)
+
+    # ── SMTP (internal task notifications) — overrides .env when set ────────
+    # Used for: approval emails, task reminders, MFA OTP. Configured in
+    # Portal → Admin → Notification Settings (moved out of Security 2026-05-28).
+    smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    smtp_use_tls: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    smtp_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ── PO SMTP (vendor-facing PO emails) ───────────────────────────────────
+    # Optional second SMTP profile used ONLY when sending a Purchase Order
+    # email to an external vendor (POST /po/{id}/place-order). When any field
+    # is NULL the sender falls back to the internal smtp_* above. Configured
+    # in EPMS → Admin → Email Settings.
+    po_smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    po_smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    po_smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    po_smtp_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    po_smtp_use_tls: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    po_smtp_from: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ── Email / PDF templates ───────────────────────────────────────────────
+    po_email_subject: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="Purchase Order {po_number} from {company_name}"
+    )
+    po_email_body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    pdf_templates: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    # ── Workflow & SLA config (all stored as JSONB objects) ─────────────────
+    workflow_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    dept_gm_opm_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    dept_supervisor_enabled: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    service_gr_sla: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    gr_notification_sla: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    prepayment_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    budget_admin_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    collection_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    role_management: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    workflow_defs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    role_permissions: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    custom_roles: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    email_templates: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    notification_settings: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+    # ── Vendor settings ─────────────────────────────────────────────────────
+    vendor_categories: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=lambda: [
+            "Raw Materials", "IT", "Services", "Office Supplies", "Maintenance", "Logistics"
+        ]
+    )
+
+    # ── Audit ───────────────────────────────────────────────────────────────
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class TempAssignment(UUIDPrimaryKey, Base):
+    """Temporary role delegation (e.g. acting GM while GM is on leave)."""
+
+    __tablename__ = "temp_assignments"
+
+    delegate_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role_key: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

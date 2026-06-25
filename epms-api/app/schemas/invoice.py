@@ -1,0 +1,143 @@
+"""Pydantic schemas for Invoice."""
+import uuid
+from datetime import date, datetime
+from decimal import Decimal
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class InvoiceLineItem(BaseModel):
+    id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    description: str = Field(min_length=1, max_length=500)
+    quantity: Decimal = Field(default=Decimal("1"), ge=0)
+    unit: str | None = Field(default=None, max_length=50)
+    unit_price: Decimal = Field(default=Decimal("0"), ge=0)
+    line_total: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class InvoiceCreate(BaseModel):
+    vendor_id: uuid.UUID
+    vendor_invoice_number: str = Field(min_length=1, max_length=100)
+    amount: Decimal = Field(gt=0)
+    tax_amount: Decimal = Field(default=Decimal("0"), ge=0)
+    currency: str = Field(default="CAD", max_length=10)
+    invoice_date: date
+    due_date: date
+    line_items: list[InvoiceLineItem] = Field(default_factory=list)
+    file_name: str | None = Field(default=None, max_length=255)
+    file_size: str | None = Field(default=None, max_length=50)
+    notes: str | None = None
+    # Optional pre-link to a PO at upload time
+    po_id: uuid.UUID | None = None
+
+
+class InvoiceUpdate(BaseModel):
+    vendor_invoice_number: str | None = Field(default=None, min_length=1, max_length=100)
+    amount: Decimal | None = Field(default=None, gt=0)
+    tax_amount: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, max_length=10)
+    invoice_date: date | None = None
+    due_date: date | None = None
+    notes: str | None = None
+    line_items: list[InvoiceLineItem] | None = None
+    # Explicit GR selection for re-match; omit field entirely to keep existing GRs
+    gr_ids: list[uuid.UUID] | None = None
+
+
+class AllocationInput(BaseModel):
+    invoice_line_id: uuid.UUID
+    po_id: uuid.UUID
+    po_line_id: uuid.UUID | None = None
+    allocated_amount: Decimal = Field(ge=0)   # pre-tax
+    allocated_tax: Decimal = Field(default=Decimal("0"), ge=0)
+    note: str | None = None
+
+
+class AllocationResponse(BaseModel):
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    invoice_line_id: uuid.UUID
+    po_id: uuid.UUID
+    po_line_id: uuid.UUID | None
+    allocated_amount: Decimal
+    allocated_tax: Decimal
+    allocated_total: Decimal
+    variance: Decimal | None
+    variance_pct: Decimal | None
+    note: str | None
+    # Display helpers resolved at read time (not stored on the allocation row).
+    po_number: str | None = None
+    po_line_description: str | None = None
+    model_config = {"from_attributes": True}
+
+
+class InvoiceMatchRequest(BaseModel):
+    # New multi-PO path: when provided, takes priority.
+    allocations: list[AllocationInput] | None = None
+    # Legacy single-PO path (existing tests / PATCH re-match / pre-rework UI).
+    po_id: uuid.UUID | None = None
+    gr_id: uuid.UUID | None = None
+    gr_ids: list[uuid.UUID] | None = None
+    po_line_ids: list[uuid.UUID] | None = None
+
+
+class InvoiceExceptionRequest(BaseModel):
+    resolution: str = Field(min_length=1, max_length=30)  # accepted | credit_note_requested
+    note: str | None = None
+
+
+class InvoiceResponse(BaseModel):
+    id: uuid.UUID
+    internal_ref: str
+    vendor_invoice_number: str
+    vendor_id: uuid.UUID
+    vendor_name: str
+    amount: Decimal
+    tax_amount: Decimal
+    total_amount: Decimal
+    currency: str
+    invoice_date: date
+    due_date: date
+    status: str
+    line_items: list[InvoiceLineItem] = Field(default_factory=list)
+    file_name: str | None
+    file_size: str | None
+    notes: str | None
+    uploaded_by: uuid.UUID
+    uploaded_by_name: str | None
+    po_id: uuid.UUID | None
+    po_number: str | None
+    gr_id: uuid.UUID | None
+    gr_number: str | None
+    gr_ids: list | None = None
+    matched_at: datetime | None
+    matched_by: uuid.UUID | None
+    matched_by_name: str | None
+    po_total: Decimal | None
+    gr_value: Decimal | None
+    variance: Decimal | None
+    variance_pct: Decimal | None
+    matched_po_line_ids: list | None = None
+    matched_reference_total: Decimal | None = None
+    exception_reason: str | None
+    exception_resolved_at: datetime | None
+    exception_resolved_by: uuid.UUID | None
+    exception_resolved_by_name: str | None
+    exception_resolution: str | None
+    created_at: datetime
+    updated_at: datetime
+    uploaded_at: datetime | None = None
+    allocations: list[AllocationResponse] = Field(default_factory=list)
+
+    @model_validator(mode='after')
+    def _set_uploaded_at(self) -> 'InvoiceResponse':
+        if self.uploaded_at is None:
+            self.uploaded_at = self.created_at
+        return self
+
+    model_config = {"from_attributes": True}
+
+
+class InvoiceListResponse(BaseModel):
+    items: list[InvoiceResponse]
+    total: int

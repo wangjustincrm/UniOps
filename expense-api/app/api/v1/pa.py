@@ -1,0 +1,353 @@
+"""Payment Application endpoints — OA module."""
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
+from app.crud import pa as pa_crud
+from app.schemas.pa import PaActionRequest, PaDirectCreate, PaDirectUpdate, PaListResponse, PaResponse, PaymentRecord
+from app.services.approval_client import delegate_action
+from app.services import finance_client, finance_sync
+
+from pydantic import BaseModel
+
+router = APIRouter(prefix="/pa", tags=["payment-applications"])
+
+
+class ApprovalEventOut(BaseModel):
+    id: uuid.UUID
+    step_idx: int
+    action: str
+    actor_id: uuid.UUID
+    actor_role: str
+    comment: str | None
+    created_at: str   # ISO string
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("", response_model=PaListResponse)
+async def list_pas(
+    db: SessionDep,
+    user: CurrentUserDep,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    po_id: uuid.UUID | None = None,
+    page: int = 1,
+    page_size: Annotated[int, Query(le=100)] = 20,
+):
+    """OA PA list — role-based visibility (PRD §B).
+
+    Everyone related to a Direct PA must see it: the Requester (creator) and any
+    Approver who participates in its workflow — mirrors the expense-claim list
+    contract. The old rule filtered on created_by only, so an approver's list
+    went empty the moment they acted. system_admin / ap_clerk see all.
+    """
+    from sqlalchemy import func, or_, select as sa_select
+    from app.api.v1.expenses import _CAN_PAY, _get_workflow_defs
+    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
+    from app.models.pa import PaymentApplication as PA
+
+    role = user.get("role", "")
+    user_id = uuid.UUID(user["sub"])
+
+    # Unrestricted: system_admin (config) and ap_clerk (processes all PA payments, so
+    # must see every PA regardless of creator or status — incl. paid).
+    if role in ("system_admin", "ap_clerk"):
+        items, total = await pa_crud.list_pas(
+            db, status=status_filter, po_id=po_id,
+            created_by=None, page=page, page_size=page_size,
+        )
+        return PaListResponse(
+            items=[PaResponse.model_validate(p) for p in items],
+            total=total,
+        )
+
+    # Visible to (a) the creator (Requester) for any status, plus (b) everyone who
+    # participates in the PA-DIR approval workflow — any user whose role is a step in
+    # workflow_defs["pa_dir"], for all non-draft PAs (not just while it sits at their
+    # step), and (c) anyone who personally acted on it (covers role-assignment
+    # approvers like Finance BP and any workflow drift) via shared approval_events.
+    conditions = [PA.created_by == user_id]
+
+    wf = await _get_workflow_defs(db)
+    pa_dir_roles = {s.get("role") for s in (wf.get("pa_dir") or [])}
+    if role in pa_dir_roles:
+        conditions.append(PA.status != "draft")
+
+    # Pay roles also see approved PAs (payment stage) even when not an approver step.
+    if role in _CAN_PAY:
+        conditions.append(PA.status == "approved")
+
+    acted_doc_ids = sa_select(AEM.document_id).where(AEM.actor_id == user_id)
+    conditions.append(PA.id.in_(acted_doc_ids))
+
+    q = sa_select(PA).where(PA.pa_type == "PA-DIR").where(or_(*conditions))
+    if status_filter:
+        q = q.where(PA.status == status_filter)
+    if po_id:
+        q = q.where(PA.po_id == po_id)
+
+    total = (await db.execute(
+        sa_select(func.count()).select_from(q.subquery())
+    )).scalar_one()
+    items = list((await db.execute(
+        q.order_by(PA.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all())
+
+    return PaListResponse(
+        items=[PaResponse.model_validate(p) for p in items],
+        total=total,
+    )
+
+
+@router.get("/by-po/{po_id}", response_model=PaListResponse)
+async def list_pas_by_po(po_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+    """Read PAs linked to a specific PO — called by EPMS DocumentChainTree."""
+    items = await pa_crud.get_by_po_id(db, po_id)
+    return PaListResponse(
+        items=[PaResponse.model_validate(p) for p in items],
+        total=len(items),
+    )
+
+
+@router.post("/direct", response_model=PaResponse, status_code=status.HTTP_201_CREATED)
+async def create_direct_pa(
+    body: PaDirectCreate,
+    db: SessionDep,
+    user: CurrentUserDep,
+    token: BearerTokenDep,
+):
+    """Create a PA-DIR (direct payment) linked to a reviewed expense invoice.
+    Always requires Finance Manager approval (no dept_manager step).
+    """
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    from app.models.invoice import ExpenseInvoice
+    from app.models.pa import PaymentApplication
+
+    # Validate invoice
+    inv = await db.get(ExpenseInvoice, body.invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv.status != "reviewed":
+        raise HTTPException(status_code=409, detail="Invoice must be reviewed (all OCR fields confirmed) before creating a PA")
+    if inv.status == "used":
+        raise HTTPException(status_code=409, detail="Invoice already linked to a PA")
+
+    # Generate PA number
+    from sqlalchemy import func, select
+    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    prefix = f"PA-{today}-"
+    count = (await db.execute(
+        select(func.count()).where(PaymentApplication.pa_number.like(f"{prefix}%"))
+    )).scalar_one()
+    pa_number = f"{prefix}{count + 1:04d}"
+
+    title = body.title or f"Direct Payment — {inv.vendor_name or 'Vendor'} {inv.invoice_number or ''}"
+    user_id = uuid.UUID(user["sub"])
+
+    pa = PaymentApplication(
+        pa_number=pa_number,
+        title=title.strip(),
+        po_id=None,
+        po_number=None,
+        vendor_id=body.vendor_id or inv.vendor_id or uuid.UUID('00000000-0000-0000-0000-000000000000'),
+        vendor_name=body.vendor_name,
+        invoice_ids=[str(body.invoice_id)],
+        gr_ids=[],
+        pa_type="PA-DIR",
+        subtotal=body.payment_amount,
+        tax_amount=Decimal("0"),
+        shipping_amount=Decimal("0"),
+        other_charges=Decimal("0"),
+        payment_amount=body.payment_amount,
+        currency=body.currency,
+        status="draft",
+        notes=body.notes,
+        budget_account_code=body.budget_account_code,
+        cost_center_id=body.cost_center_id,
+        approval_step_idx=0,
+        created_by=user_id,
+    )
+    db.add(pa)
+    await db.flush()
+
+    # Mark invoice as used
+    inv.status = "used"
+    inv.pa_id = pa.id
+    inv.pa_number = pa_number
+
+    await db.flush()
+    await db.refresh(pa)
+    await finance_sync.sync_ap_invoice(db, inv, token)
+    return PaResponse.model_validate(pa)
+
+
+@router.patch("/{pa_id}", response_model=PaResponse)
+async def patch_direct_pa(
+    pa_id: uuid.UUID,
+    body: PaDirectUpdate,
+    db: SessionDep,
+    user: CurrentUserDep,
+):
+    """Edit a Draft/Returned PA-DIR — owner (or system_admin) only, Payment-Details fields."""
+    pa = await pa_crud.get_by_id(db, pa_id)
+    if not pa:
+        raise HTTPException(status_code=404, detail="PA not found")
+    if pa.pa_type != "PA-DIR" or pa.status not in ("draft", "returned"):
+        raise HTTPException(status_code=409, detail="Only draft or returned direct PAs can be edited")
+    user_id = uuid.UUID(user["sub"])
+    if pa.created_by != user_id and user.get("role") != "system_admin":
+        raise HTTPException(status_code=403, detail="Only the owner can edit this PA")
+
+    changes = body.model_dump(exclude_unset=True)
+    if "title" in changes:
+        title = (changes["title"] or "").strip()
+        if title:
+            changes["title"] = title
+        else:
+            changes.pop("title")  # ignore blank title — keep existing
+
+    await pa_crud.update_direct_pa(db, pa, changes)
+    return PaResponse.model_validate(pa)
+
+
+@router.get("/{pa_id}", response_model=PaResponse)
+async def get_pa(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+    pa = await pa_crud.get_by_id(db, pa_id)
+    if not pa:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PA not found")
+    return PaResponse.model_validate(pa)
+
+
+class PaPermissions(BaseModel):
+    is_owner: bool
+    can_approve: bool      # may approve / return / reject the current pending step
+    can_pay: bool          # may record payment (status = approved)
+
+
+@router.get("/{pa_id}/permissions", response_model=PaPermissions)
+async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
+    """Whether the current user may act on this PA — resolved server-side against the
+    shared tasks table + role_management (same contract as the expense-claim endpoint),
+    since approval roles (Finance BP, etc.) are assignments, not JWT role claims."""
+    from app.api.v1.expenses import (
+        _CAN_PAY,
+        _can_act_on_claim,
+        _get_company_config,
+        _user_holds_role,
+    )
+
+    pa = await pa_crud.get_by_id(db, pa_id)
+    if not pa:
+        raise HTTPException(status_code=404, detail="PA not found")
+
+    user_id = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+    is_admin = role == "system_admin"
+    is_owner = pa.created_by == user_id
+
+    can_approve = False
+    if pa.status in ("submitted", "in_review") and not is_owner:
+        # _can_act_on_claim only reads .id — works for any document with open tasks.
+        can_approve = is_admin or await _can_act_on_claim(db, pa, user_id)
+
+    can_pay = False
+    if pa.status == "approved":
+        cfg = await _get_company_config(db)
+        rm = (cfg.role_management or {}) if cfg else {}
+        can_pay = (
+            is_admin
+            or role in _CAN_PAY
+            or _user_holds_role(rm, user_id, "finance_bp")
+            or _user_holds_role(rm, user_id, "finance_manager")
+        )
+
+    return PaPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)
+
+
+@router.get("/{pa_id}/history", response_model=list[ApprovalEventOut])
+async def get_pa_history(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+    """Return approval events for this PA from the shared approval_events table."""
+    from sqlalchemy import select
+    from app.models.approval_event_mirror import ApprovalEventMirror
+
+    result = await db.execute(
+        select(ApprovalEventMirror)
+        .where(ApprovalEventMirror.document_id == pa_id)
+        .order_by(ApprovalEventMirror.created_at.asc())
+    )
+    events = result.scalars().all()
+    return [
+        ApprovalEventOut(
+            id=e.id,
+            step_idx=e.step_idx,
+            action=e.action,
+            actor_id=e.actor_id,
+            actor_role=e.actor_role,
+            comment=e.comment,
+            created_at=e.created_at.isoformat(),
+        )
+        for e in events
+    ]
+
+
+@router.post("/{pa_id}/action", response_model=PaResponse)
+async def pa_action(
+    pa_id: uuid.UUID,
+    body: PaActionRequest,
+    db: SessionDep,
+    _: CurrentUserDep,
+    token: BearerTokenDep,
+):
+    pa = await pa_crud.get_by_id(db, pa_id)
+    if not pa:
+        raise HTTPException(status_code=404, detail="PA not found")
+    # PA-DIR (no linked PO) uses its own configurable workflow; PA-PO uses "pa".
+    action_key = "pa_dir" if pa.po_id is None else "pa"
+    # NOTE: "process" (payment) is intentionally NOT in PaActionRequest's
+    # Literal — OA's only payment entry is POST /pa/{id}/pay, which forwards
+    # to finance-api's unified executor (Phase 0-B1.5).
+    try:
+        await delegate_action(action_key, str(pa_id), body.action, body.comment, token)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    await db.refresh(pa)
+    return PaResponse.model_validate(pa)
+
+
+@router.post("/{pa_id}/pay", response_model=PaResponse)
+async def record_payment(
+    pa_id: uuid.UUID,
+    body: PaymentRecord,
+    db: SessionDep,
+    _: CurrentUserDep,
+    token: BearerTokenDep,
+):
+    pa = await pa_crud.get_by_id(db, pa_id)
+    if not pa:
+        raise HTTPException(status_code=404, detail="PA not found")
+    # Phase 0-B1.5: forward to finance-api's unified payment executor — it
+    # owns can_pay (incl. role_management assignments), the status flip,
+    # payment_records (bank reference finally persisted) and the posting event.
+    try:
+        await finance_client.execute_payment(
+            doc_kind="pa_dir" if pa.po_id is None else "pa",
+            doc_id=pa_id, bearer_token=token,
+            bank_account_id=body.bank_account_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    await db.refresh(pa)
+    return PaResponse.model_validate(pa)

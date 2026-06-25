@@ -1,0 +1,192 @@
+# UniOps — Production Deployment Guide
+
+> **This guide covers production deployment only.**
+> For local development, see [README.md](README.md) and use `docker compose -f docker-compose.dev.yml up`.
+
+---
+
+## Server Layout (Phase 1 — Current)
+
+| Server | Role | Services |
+|--------|------|---------|
+| **DB Server** | Database only | PostgreSQL 15 (:5432, internal network only), Redis 7 (:6379, internal) |
+| **App Server 1** | Core backend | epms-api (:8000), approval-api (:8003), mdm-api (:8002), finance-api (:8004) |
+| **File Server** | File storage | file-api (:8005) + `/var/uniops/file-storage/` disk mount |
+| **Web Server** | Frontend + proxy | Nginx reverse proxy, EPMS frontend (:5173 → built static files) |
+
+## Server Layout (Phase 2 — OA Module)
+
+| Server | Role | Services |
+|--------|------|---------|
+| **DB Server** | *(same as Phase 1)* | PostgreSQL, Redis |
+| **App Server 1** | *(same as Phase 1)* | epms-api, approval-api, mdm-api, finance-api |
+| **App Server 2** | OA backend | expense-api (:8006) |
+| **File Server** | *(same as Phase 1)* | file-api (:8005) |
+| **Web Server** | Frontend + proxy | Nginx, EPMS (:5173), OA (:5175), Portal (:5174) |
+
+---
+
+## Per-Service Setup
+
+Run these steps on the appropriate server for each service.
+
+### Prerequisites
+
+```bash
+# Install Python 3.12
+sudo apt install python3.12 python3.12-venv
+
+# Install Node.js 20 (web server only, for frontend build)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
+sudo apt install nodejs
+```
+
+### Backend Service Setup (App Server)
+
+```bash
+# 1. Clone / pull the repo
+git pull origin main
+
+# 2. Create virtual environment
+cd /opt/uniops/{service-name}
+python3.12 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Configure environment
+cp .env.example .env
+nano .env  # fill in production values (DB host, JWT secret, etc.)
+
+# 5. Run migrations
+alembic upgrade head
+# ⚠️ Ordering: finance-api's alembic MUST run before deploying new versions of
+# approval-api / expense-api — they INSERT into posting_events/posting_lines,
+# which are created by finance-api migration 0002_posting_events.
+
+# 6. Start service (use systemd in production — see below)
+uvicorn app.main:app --host 0.0.0.0 --port {PORT}
+```
+
+### Frontend Build (Web Server)
+
+```bash
+cd /opt/uniops/epms
+cp .env.example .env
+# Set VITE_API_URL to the internal app server address
+nano .env
+
+npm install
+npm run build
+# Output: dist/ — serve via Nginx
+```
+
+---
+
+## Shared Requirements (All App Servers)
+
+All backend services must share these values in their `.env`:
+
+```bash
+# Same secret across ALL services (shared JWT authentication)
+JWT_SECRET_KEY=<same-strong-secret-on-all-servers>
+JWT_ALGORITHM=HS256
+
+# Internal network addresses (not public-facing)
+DATABASE_URL=postgresql+asyncpg://epms:{password}@{db-server-internal-ip}:5432/epms
+```
+
+Additional per-service URLs (use internal network IPs/hostnames):
+
+| Service | Needs access to |
+|---------|----------------|
+| `epms-api` | PostgreSQL, Redis, `approval-api`, `file-api` |
+| `approval-api` | PostgreSQL |
+| `expense-api` | PostgreSQL, `approval-api`, `file-api`, `epms-api` |
+| `file-api` | PostgreSQL |
+| `mdm-api` | PostgreSQL |
+| `finance-api` | PostgreSQL, `epms-api` |
+
+---
+
+## Nginx Configuration (Web Server)
+
+```nginx
+# /etc/nginx/sites-available/uniops
+
+server {
+    listen 80;
+    server_name uniops.canadaroyalmilk.com;
+
+    # EPMS Frontend (built static files)
+    location / {
+        root /opt/uniops/epms/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # EPMS API proxy
+    location /api/ {
+        proxy_pass http://{app-server-1-internal-ip}:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # File Server proxy
+    location /files/ {
+        proxy_pass http://{file-server-internal-ip}:8005;
+    }
+}
+```
+
+---
+
+## Systemd Service (per backend service)
+
+Create `/etc/systemd/system/uniops-epms-api.service`:
+
+```ini
+[Unit]
+Description=UniOps EPMS API
+After=network.target
+
+[Service]
+User=uniops
+WorkingDirectory=/opt/uniops/epms-api
+EnvironmentFile=/opt/uniops/epms-api/.env
+ExecStart=/opt/uniops/epms-api/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl enable uniops-epms-api
+sudo systemctl start uniops-epms-api
+sudo systemctl status uniops-epms-api
+```
+
+Repeat for each backend service with the appropriate port and directory.
+
+---
+
+## Health Check (Remote)
+
+```bash
+# Check all services on production app server
+EPMS_HOST={app-server-ip} ./check-health.sh
+```
+
+---
+
+## Security Notes
+
+- PostgreSQL and Redis must only be accessible on the **internal network** (no public port exposure)
+- `JWT_SECRET_KEY` must be the same strong secret on all servers — generate with:
+  ```bash
+  python -c "import secrets; print(secrets.token_hex(32))"
+  ```
+- `DEBUG=false` in all production `.env` files (disables Swagger docs)
+- File storage directory (`/var/uniops/file-storage`) should be on a separate disk with regular backups

@@ -1,0 +1,772 @@
+"""Phase B — transform staged JSON and load into the EPMS database.
+
+Dependency order: masters/resolvers → PR → PO → Invoice → PA → back-fill PR.po_id.
+
+Safety model:
+  * dry_run=True  (default): build & resolve everything in memory, run ONLY
+    read-only SELECTs against the DB, never INSERT/commit. Reports what *would*
+    happen. Safe to point at production.
+  * dry_run=False (requires explicit --commit): add rows in batches inside a
+    single transaction and commit once at the end (atomic, idempotent).
+"""
+from __future__ import annotations
+
+import secrets
+import uuid
+from collections import defaultdict
+from dataclasses import dataclass, field
+from decimal import Decimal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm.attributes import flag_modified
+
+import app.models  # noqa: F401 — register all ORM models
+from app.core.config import settings
+from app.core.security import hash_password
+from app.models.cost_center import CostCenter
+from app.models.department import Department
+from app.models.invoice import Invoice
+from app.models.pa import PaLineItem, PaymentApplication
+from app.models.po import PoLineItem, PurchaseOrder
+from app.models.pr import PrLineItem, PurchaseRequest
+from app.models.user import User
+from app.models.vendor import Vendor
+
+from . import mappings as M
+from .extract import load_staging
+from .transform import clip, nz, to_date, to_decimal, to_dt
+
+SYSTEM_USER_EMAIL = "migration@epms.local"
+UNKNOWN_VENDOR_CODE = "PMS-UNKNOWN"
+
+
+@dataclass
+class Report:
+    inserted: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    updated: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    skipped_existing: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    skipped_conflict: dict[str, int] = field(default_factory=lambda: defaultdict(int))
+    pr_missing_number: int = 0
+    pa_orphan_no_po: int = 0
+    invoices_no_vendor: int = 0
+    created_vendors: int = 0
+    temp_users_created: int = 0
+    applier_fallback: int = 0
+    unmatched_vendors: set = field(default_factory=set)
+    unmapped_cost_centers: set = field(default_factory=set)
+    unmatched_appliers: set = field(default_factory=set)
+    xwalk_emails_missing: set = field(default_factory=set)
+
+    def to_dict(self, dry_run: bool, sample: int = 30) -> dict:
+        """JSON-serializable summary for the admin API / run history."""
+        def _s(x):
+            xs = sorted(str(i) for i in x)
+            return {"count": len(xs), "sample": xs[:sample]}
+        return {
+            "dry_run": dry_run,
+            "inserted": dict(self.inserted),
+            "updated": dict(self.updated),
+            "skipped_existing": dict(self.skipped_existing),
+            "skipped_conflict": dict(self.skipped_conflict),
+            "pr_missing_number": self.pr_missing_number,
+            "pa_orphan_no_po": self.pa_orphan_no_po,
+            "invoices_no_vendor": self.invoices_no_vendor,
+            "created_vendors": self.created_vendors,
+            "temp_users_created": self.temp_users_created,
+            "applier_fallback": self.applier_fallback,
+            "unmatched_vendors": _s(self.unmatched_vendors),
+            "unmapped_cost_centers": _s(self.unmapped_cost_centers),
+            "unmatched_appliers": _s(self.unmatched_appliers),
+            "xwalk_emails_missing": _s(self.xwalk_emails_missing),
+        }
+
+    def show(self, dry_run: bool) -> None:
+        head = "DRY-RUN (no changes written)" if dry_run else "COMMITTED"
+        print(f"\n===== Load report [{head}] =====")
+        print("  Inserted:")
+        for k in ("vendors", "pr", "pr_items", "po", "po_items", "invoices", "pa", "pa_items"):
+            print(f"    {k:12} {self.inserted.get(k, 0)}")
+        if any(self.updated.values()):
+            print("  Updated (incremental):")
+            for k in ("pr", "po", "pa", "invoices"):
+                print(f"    {k:12} {self.updated.get(k, 0)}")
+        if any(self.skipped_conflict.values()):
+            print("  Skipped (locally edited in EPMS):")
+            for k in ("pr", "po", "pa", "invoices"):
+                print(f"    {k:12} {self.skipped_conflict.get(k, 0)}")
+        print("  Skipped (already in EPMS, idempotent):")
+        for k in ("pr", "po", "pa", "invoices"):
+            print(f"    {k:12} {self.skipped_existing.get(k, 0)}")
+        print(f"  PR rows without a PR No (skipped):     {self.pr_missing_number}")
+        print(f"  PA rows with unresolved PO (skipped):  {self.pa_orphan_no_po}")
+        print(f"  Invoices with no resolvable vendor:    {self.invoices_no_vendor}")
+        print(f"  Auto-created vendors (missing POID):   {self.created_vendors}")
+        print(f"  Temporary user accounts created:       {self.temp_users_created}")
+        print(f"  Docs routed to system user (blank Applier): {self.applier_fallback}")
+        _sample("Unmatched vendor names", self.unmatched_vendors)
+        _sample("Unmapped cost-center identifiers", self.unmapped_cost_centers)
+        _sample("Unmatched appliers", self.unmatched_appliers)
+        _sample("Crosswalk emails missing in EPMS", self.xwalk_emails_missing)
+
+
+def _sample(label: str, s: set, n: int = 15) -> None:
+    if not s:
+        return
+    items = sorted(str(x) for x in s)
+    extra = f" (+{len(items) - n} more)" if len(items) > n else ""
+    print(f"  {label} [{len(items)}]: {', '.join(items[:n])}{extra}")
+
+
+class _Adder:
+    """Batches db.add + flush in real runs; a no-op in dry-run."""
+
+    def __init__(self, db: AsyncSession, dry_run: bool, batch_size: int = 500):
+        self.db, self.dry_run, self.batch_size = db, dry_run, batch_size
+        self._n = 0
+
+    async def add(self, obj) -> None:
+        if self.dry_run:
+            return
+        self.db.add(obj)
+        self._n += 1
+        if self._n % self.batch_size == 0:
+            await self.db.flush()
+
+    async def add_now(self, obj) -> None:
+        """Add + flush immediately — for parent rows (vendors/users) that later
+        rows FK-reference, so they always exist before dependents are flushed."""
+        if self.dry_run:
+            return
+        self.db.add(obj)
+        await self.db.flush()
+
+    async def flush(self) -> None:
+        if not self.dry_run:
+            await self.db.flush()
+
+
+# ── Resolver context ────────────────────────────────────────────────────────────
+
+class Resolvers:
+    def __init__(self, db: AsyncSession, adder: _Adder, report: Report):
+        self.db, self.adder, self.report = db, adder, report
+        self.vendor_by_code: dict[str, tuple[uuid.UUID, str]] = {}
+        self.vl_by_code: dict[str, dict] = {}  # POID-candidate code → vendorlist row
+        self.vendor_codes: set[str] = set()
+        self.user_by_email: dict[str, uuid.UUID] = {}
+        self.user_by_fullname: dict[str, uuid.UUID] = {}
+        self.cc_by_code: dict[str, tuple[uuid.UUID, str, str]] = {}
+        self.system_user_id: uuid.UUID | None = None
+        self.unknown_vendor: tuple[uuid.UUID, str] | None = None
+
+    async def load(self) -> None:
+        for vid, code, name in (await self.db.execute(
+            select(Vendor.id, Vendor.code, Vendor.name)
+        )).all():
+            self.vendor_by_code[code] = (vid, name)
+            self.vendor_codes.add(code)
+        # vendorlist (POID → details) — used to enrich a vendor we must create
+        for v in load_staging("vendorlist.json"):
+            poid = v.get("POID")
+            if poid is None:
+                continue
+            for cand in M.poid_code_candidates(poid):
+                self.vl_by_code.setdefault(cand, v)
+        for uid, email, full_name in (await self.db.execute(
+            select(User.id, User.email, User.full_name)
+        )).all():
+            self.user_by_email[email.strip().lower()] = uid
+            if full_name and full_name.strip():
+                self.user_by_fullname.setdefault(full_name.strip().lower(), uid)
+        dept_name = {
+            did: dname
+            for did, dname in (await self.db.execute(select(Department.id, Department.name))).all()
+        }
+        for cid, code, name, did in (await self.db.execute(
+            select(CostCenter.id, CostCenter.code, CostCenter.name, CostCenter.department_id)
+        )).all():
+            self.cc_by_code[code] = (cid, name, dept_name.get(did, ""))
+
+        # Report crosswalk emails that don't exist in EPMS yet.
+        for email in set(M.USER_XWALK.values()):
+            if email.strip().lower() not in self.user_by_email:
+                self.report.xwalk_emails_missing.add(email)
+
+        self.system_user_id = await self._ensure_system_user()
+        self.unknown_vendor = await self._ensure_unknown_vendor()
+
+    async def _ensure_system_user(self) -> uuid.UUID:
+        existing = self.user_by_email.get(SYSTEM_USER_EMAIL)
+        if existing:
+            return existing
+        uid = uuid.uuid4()
+        u = User(
+            id=uid, email=SYSTEM_USER_EMAIL,
+            hashed_password=hash_password(secrets.token_urlsafe(24)),
+            full_name="PMS Migration", role="system_admin",
+            is_active=True, must_change_password=True,
+        )
+        await self.adder.add_now(u)
+        self.user_by_email[SYSTEM_USER_EMAIL] = uid
+        return uid
+
+    async def _ensure_unknown_vendor(self) -> tuple[uuid.UUID, str]:
+        for vid, code, name in (await self.db.execute(
+            select(Vendor.id, Vendor.code, Vendor.name).where(Vendor.code == UNKNOWN_VENDOR_CODE)
+        )).all():
+            return (vid, name)
+        vid = uuid.uuid4()
+        v = Vendor(
+            id=vid, code=UNKNOWN_VENDOR_CODE, name="PMS Unknown Vendor",
+            category="general", contact_name="N/A",
+            contact_email="noreply@canadaroyalmilk.ca", payment_terms="net30",
+        )
+        await self.adder.add_now(v)
+        self.vendor_codes.add(UNKNOWN_VENDOR_CODE)
+        return (vid, "PMS Unknown Vendor")
+
+    # ── resolution helpers ──
+    async def user_for(self, applier: str | None) -> uuid.UUID:
+        # 1) explicit crosswalk (user.txt + aliases)
+        email = M.resolve_user_email(applier)
+        if email:
+            uid = self.user_by_email.get(email.strip().lower())
+            if uid:
+                return uid
+        if not applier or not applier.strip():
+            self.report.applier_fallback += 1
+            return self.system_user_id  # type: ignore[return-value]
+        name = applier.strip()
+        # 2a) match by EPMS user full_name (accounts added with full_name = applier)
+        uid = self.user_by_fullname.get(name.lower())
+        if uid:
+            return uid
+        # 2b) match by <name>@canadaroyalmilk.com (existing EPMS account)
+        if " " not in name:
+            uid = self.user_by_email.get(f"{name}@canadaroyalmilk.com".lower())
+            if uid:
+                return uid
+        # 3) auto-create a temporary account so authorship is preserved per person.
+        #    Use the crosswalk email when known, else a slug of the name.
+        import re
+        slug = re.sub(r"[^a-z0-9]", "", name.lower()) or "user"
+        addr = (email or f"{slug}@canadaroyalmilk.com").strip().lower()
+        uid = self.user_by_email.get(addr)
+        if uid:
+            return uid
+        uid = uuid.uuid4()
+        u = User(
+            id=uid, email=clip(addr, 255),
+            hashed_password=hash_password(secrets.token_urlsafe(24)),
+            full_name=clip(name, 255), role="requester",
+            is_active=False, must_change_password=True,
+        )
+        await self.adder.add_now(u)
+        self.user_by_email[addr] = uid
+        self.report.temp_users_created += 1
+        self.report.unmatched_appliers.add(f"{name} -> {addr} (temp)")
+        return uid
+
+    def cost_center_for(self, dept: str | None, cc: str | None):
+        """Return (cc_id|None, cc_name, dept_name)."""
+        code = M.resolve_cc_code(dept, cc)
+        if code and code in self.cc_by_code:
+            cid, cname, dname = self.cc_by_code[code]
+            return cid, cname, dname
+        if (dept or cc):
+            self.report.unmapped_cost_centers.add(f"{(dept or '').strip()}{(cc or '').strip()}")
+        return None, clip(cc, 255), clip(dept, 255)
+
+    async def resolve_vendor(self, po_number: str | None):
+        """Resolve a vendor strictly by the POID embedded in the PO number (rule B
+        — no name matching). Returns (id, name) or None when there is no POID.
+        When the POID isn't an EPMS vendor yet, create one (code=POID, enriched
+        from the legacy vendorlist)."""
+        tok = M.poid_from_po_number(po_number)
+        if not tok:
+            return None
+        cands = M.poid_code_candidates(tok)
+        for cand in cands:
+            if cand in self.vendor_by_code:
+                return self.vendor_by_code[cand]
+        # not in EPMS → create from vendorlist
+        vlrow = next((self.vl_by_code[c] for c in cands if c in self.vl_by_code), {})
+        code = tok  # the PO-number token is already the canonical vendor code
+        name = clip(vlrow.get("Title") or f"PMS Vendor {code}", 255)
+        vid = uuid.uuid4()
+        v = Vendor(
+            id=vid, code=code, name=name, category="general",
+            contact_name=clip(vlrow.get("Contractor") or "N/A", 255),
+            contact_email=clip(vlrow.get("EmailAddress") or "noreply@canadaroyalmilk.ca", 255),
+            phone=clip(vlrow.get("Phone"), 50),
+            address=vlrow.get("Address"),
+            payment_terms=M.payment_terms_from_days(vlrow.get("NetTerm_x0028_Days_x0029_")),
+        )
+        await self.adder.add_now(v)
+        self.vendor_by_code[code] = (vid, name)
+        self.vendor_codes.add(code)
+        self.report.created_vendors += 1
+        self.report.inserted["vendors"] += 1
+        return (vid, name)
+
+
+# ── helpers ─────────────────────────────────────────────────────────────────────
+
+def _group_items(rows: list[dict], key: str = "Title") -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        out[str(r.get(key) or "").strip()].append(r)
+    return out
+
+
+async def _existing_numbers(db: AsyncSession, col) -> set[str]:
+    return {row[0] for row in (await db.execute(select(col))).all()}
+
+
+async def _existing_map(db: AsyncSession, model, number_col) -> dict[str, tuple]:
+    """{number: (id, updated_at)} for upsert + conflict detection."""
+    rows = (await db.execute(select(number_col, model.id, model.updated_at))).all()
+    return {r[0]: (r[1], r[2]) for r in rows}
+
+
+def _is_local_edit(updated_at, modified) -> bool:
+    """True if the EPMS row was edited after the SharePoint change we're applying
+    (so an incremental sync should not clobber it)."""
+    return bool(updated_at and modified and updated_at > modified)
+
+
+def _stamp(obj, modified) -> None:
+    """Set updated_at = SharePoint Modified and FORCE it into the UPDATE's SET
+    clause. Without flag_modified, re-assigning the same value is a no-op and the
+    column's onupdate=now() would override it — corrupting the sync watermark."""
+    if modified:
+        obj.updated_at = modified
+        flag_modified(obj, "updated_at")
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
+async def run_load(
+    only: set[str] | None = None,
+    dry_run: bool = True,
+    batch_size: int = 500,
+    db_url: str | None = None,
+    mode: str = "insert",
+) -> Report:
+    """mode='insert' → new docs only (existing skipped). mode='upsert' →
+    incremental: existing docs get header-level updates (unless locally edited),
+    new docs are inserted in full."""
+    upsert = mode == "upsert"
+    url = db_url or settings.DATABASE_URL
+    host = url.split("@")[-1].split("/")[0]
+    print(f"Target EPMS DB: {host}  [{mode}]  ({'DRY-RUN' if dry_run else 'WILL COMMIT'})\n")
+
+    engine = create_async_engine(url, echo=False)
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    report = Report()
+
+    # staged data
+    pr_rows = load_staging("pr.json") + load_staging("pr_backup.json")
+    po_rows = load_staging("po.json") + load_staging("po_backup.json")
+    pa_rows = load_staging("pa.json") + load_staging("pa_backup.json")
+    pr_items = _group_items(load_staging("pr_item.json"))
+    po_items = _group_items(load_staging("po_item.json"))
+    pa_items = _group_items(load_staging("pa_item.json"))
+    invoice_rows = load_staging("invoice.json")
+
+    # cross-reference id maps (SharePoint id → new UUID)
+    prno_to_id: dict[str, uuid.UUID] = {}
+    pritem_to_lineid: dict[str, uuid.UUID] = {}
+    pono_to_id: dict[str, uuid.UUID] = {}
+    pono_to_vendor: dict[str, tuple[uuid.UUID, str]] = {}
+    poitem_to_lineid: dict[str, uuid.UUID] = {}
+    poitem_to_pono: dict[str, str] = {}
+    invid_to_id: dict[int, uuid.UUID] = {}
+    # PR linkage by its PONo (for PO.pr_id / PO.type derivation)
+    pono_to_pr: dict[str, dict] = {}
+
+    try:
+        async with sf() as db:
+            adder = _Adder(db, dry_run, batch_size)
+            res = Resolvers(db, adder, report)
+            await res.load()
+
+            run_all = not only
+            pr_map = await _existing_map(db, PurchaseRequest, PurchaseRequest.number)
+            po_map = await _existing_map(db, PurchaseOrder, PurchaseOrder.number)
+            pa_map = await _existing_map(db, PaymentApplication, PaymentApplication.pa_number)
+            existing_pr, existing_po, existing_pa = set(pr_map), set(po_map), set(pa_map)
+            existing_inv = await _existing_numbers(db, Invoice.internal_ref)
+
+            # ── PR ──────────────────────────────────────────────────────────────
+            if run_all or "pr" in only:
+                seen: set[str] = set()
+                for r in pr_rows:
+                    number = clip(r.get("PR_x0020_No"), 30)
+                    if not number:
+                        report.pr_missing_number += 1
+                        continue
+                    if number in M.PR_SKIP:   # business-flagged junk records
+                        continue
+                    if number in seen:
+                        continue
+                    seen.add(number)
+                    pono = (r.get("PONo") or "").strip() or None
+                    if number in existing_pr:
+                        if upsert:
+                            await _upsert_pr(db, dry_run, report, pr_map[number], r, res)
+                        else:
+                            report.skipped_existing["pr"] += 1
+                        continue
+                    vend = await res.resolve_vendor(pono)
+                    cc_id, cc_name, dept_name = res.cost_center_for(r.get("Department"), r.get("CostCenter"))
+                    created_by = await res.user_for(r.get("Applier"))
+                    created_at = to_dt(r.get("Created"))
+                    pid = uuid.uuid4()
+                    pr = PurchaseRequest(
+                        id=pid, number=number,
+                        title=clip(nz(r.get("Title"), number), 255),
+                        type=M.PR_TYPE_MAP.get((r.get("PRType") or "").strip(), M.PR_TYPE_DEFAULT),
+                        status=M.map_pr_status(r.get("Status"), has_po=bool(pono)),
+                        currency=M.normalize_currency(r.get("Currency")),
+                        amount=to_decimal(r.get("TotalPrice")),
+                        vendor_id=vend[0] if vend else None,
+                        vendor_name=clip(r.get("Vendor"), 255),
+                        cost_center_id=cc_id, cost_center_name=cc_name, department_name=dept_name,
+                        budget_code=clip(r.get("GLCode"), 100),
+                        project_code=clip(r.get("ProjectNo"), 100),
+                        po_number=clip(pono, 30),
+                        created_by=created_by,
+                        created_at=created_at, updated_at=to_dt(r.get("Modified")) or created_at,
+                    )
+                    await adder.add(pr)
+                    report.inserted["pr"] += 1
+                    prno_to_id[number] = pid
+                    if pono:
+                        pono_to_pr.setdefault(pono, {
+                            "pr_id": pid, "pr_number": number,
+                            "type": pr.type, "created_by": created_by,
+                        })
+                    for idx, it in enumerate(pr_items.get(number, [])):
+                        lid = uuid.uuid4()
+                        li = PrLineItem(
+                            id=lid, pr_id=pid,
+                            description=clip(nz(it.get("Description"), "(no description)"), 500),
+                            material_id=clip(it.get("CRMPartNo"), 50),
+                            supplier_item_id=clip(it.get("PartNo"), 100),
+                            qty=to_decimal(it.get("Qty")),
+                            unit=clip(nz(it.get("UOM"), "EA"), 30),
+                            unit_price=to_decimal(it.get("UnitPrice")),
+                            line_total=to_decimal(it.get("Total_x0020_Price")),
+                            sort_order=idx,
+                        )
+                        await adder.add(li)
+                        report.inserted["pr_items"] += 1
+                        pritem_to_lineid[str(it.get("ID"))] = lid
+                await adder.flush()
+
+            # ── PO ──────────────────────────────────────────────────────────────
+            if run_all or "po" in only:
+                seen = set()
+                for r in po_rows:
+                    number = clip(r.get("Title"), 40)
+                    if not number or number in seen:
+                        continue
+                    seen.add(number)
+                    if number in existing_po:
+                        if upsert:
+                            await _upsert_po(db, dry_run, report, po_map[number], r, res)
+                        else:
+                            report.skipped_existing["po"] += 1
+                        continue
+                    vid, vname = (await res.resolve_vendor(number)) or res.unknown_vendor
+                    pr_link = pono_to_pr.get(number)
+                    lines = po_items.get(number, [])
+                    subtotal = sum((to_decimal(it.get("TotalPrice")) for it in lines), Decimal("0"))
+                    created_at = to_dt(r.get("Created"))
+                    oid = uuid.uuid4()
+                    po = PurchaseOrder(
+                        id=oid, number=number,
+                        title=clip(pr_link["pr_number"] if pr_link else number, 255),
+                        type=pr_link["type"] if pr_link else M.PR_TYPE_DEFAULT,
+                        status=M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus")),
+                        currency=M.normalize_currency(r.get("Currency")),
+                        subtotal=subtotal,
+                        tax_rate=Decimal("0"), tax_amount=Decimal("0"),
+                        total=to_decimal(r.get("TotalPrice"), default=subtotal),
+                        vendor_id=vid, vendor_name=clip(vname, 255),
+                        is_prepaid=bool(r.get("PayFirst")),
+                        notes=_po_notes(r),
+                        pr_id=pr_link["pr_id"] if pr_link else None,
+                        pr_number=clip(pr_link["pr_number"], 30) if pr_link else None,
+                        created_by=pr_link["created_by"] if pr_link else res.system_user_id,
+                        created_at=created_at, updated_at=to_dt(r.get("Modified")) or created_at,
+                    )
+                    await adder.add(po)
+                    report.inserted["po"] += 1
+                    pono_to_id[number] = oid
+                    pono_to_vendor[number] = (vid, vname)
+                    for idx, it in enumerate(lines):
+                        lid = uuid.uuid4()
+                        li = PoLineItem(
+                            id=lid, po_id=oid,
+                            pr_line_id=pritem_to_lineid.get(str(it.get("PRITEMID"))),
+                            description=clip(nz(it.get("Description"), "(no description)"), 500),
+                            supplier_item_id=clip(it.get("PartNo"), 100),
+                            qty=to_decimal(it.get("QTY")),
+                            unit=clip(nz(it.get("UOM"), "EA"), 30),
+                            unit_price=to_decimal(it.get("UnitPrice")),
+                            line_total=to_decimal(it.get("TotalPrice")),
+                            received_qty=to_decimal(it.get("ReceivedQTY")),
+                            sort_order=idx,
+                        )
+                        await adder.add(li)
+                        report.inserted["po_items"] += 1
+                        sp_id = str(it.get("ID"))
+                        poitem_to_lineid[sp_id] = lid
+                        poitem_to_pono[sp_id] = number
+                await adder.flush()
+
+            # ── Invoices ──────────────────────────────────────────────────────────
+            if run_all or "invoice" in only:
+                # aggregate amount + po linkage from PO items (preferred) then PA items
+                inv_amount: dict[int, Decimal] = defaultdict(Decimal)
+                inv_pono: dict[int, str] = {}
+                for it in load_staging("po_item.json"):
+                    iid = it.get("InvoiceID")
+                    if iid:
+                        inv_amount[int(iid)] += to_decimal(it.get("TotalPrice"))
+                        inv_pono.setdefault(int(iid), str(it.get("Title") or "").strip())
+                # invoice → "paid?" via the PA that references it
+                pa_status_by_no = {
+                    str(r.get("Title") or "").strip(): (r.get("Status") or "")
+                    for r in pa_rows
+                }
+                inv_paid: dict[int, bool] = {}
+                for it in load_staging("pa_item.json"):
+                    iid = it.get("InvoiceID")
+                    if not iid:
+                        continue
+                    iid = int(iid)
+                    if iid not in inv_amount:  # PA-item-only invoice → use its amount/po
+                        inv_amount[iid] += to_decimal(it.get("TotalPrice"))
+                        po_no = poitem_to_pono.get(str(it.get("POITEMID")))
+                        if po_no:
+                            inv_pono.setdefault(iid, po_no)
+                    st = pa_status_by_no.get(str(it.get("Title") or "").strip(), "")
+                    if "PAID" in st.upper():
+                        inv_paid[iid] = True
+
+                for r in invoice_rows:
+                    iid = int(r.get("ID"))
+                    internal_ref = clip(f"INV-{iid}", 30)
+                    if internal_ref in existing_inv:
+                        report.skipped_existing["invoices"] += 1
+                        invid_to_id[iid] = None  # mark as present but unknown uuid
+                        continue
+                    po_no = inv_pono.get(iid)
+                    po_id = pono_to_id.get(po_no) if po_no else None
+                    vend = pono_to_vendor.get(po_no) if po_no else None
+                    if not vend:
+                        vend = res.unknown_vendor
+                        report.invoices_no_vendor += 1
+                    inv_date = to_date(r.get("IssueDate")) or (to_dt(r.get("Created")) or None)
+                    if hasattr(inv_date, "date"):
+                        inv_date = inv_date.date()
+                    if inv_date is None:
+                        inv_date = to_date(r.get("Created"))
+                    amount = inv_amount.get(iid, Decimal("0"))
+                    iuid = uuid.uuid4()
+                    inv = Invoice(
+                        id=iuid, internal_ref=internal_ref,
+                        vendor_invoice_number=clip(nz(r.get("Title"), str(iid)), 100),
+                        vendor_id=vend[0], vendor_name=clip(vend[1], 255),
+                        amount=amount, tax_amount=Decimal("0"), total_amount=amount,
+                        invoice_date=inv_date, due_date=inv_date,
+                        status="paid" if inv_paid.get(iid) else "matched",
+                        line_items=[],
+                        uploaded_by=res.system_user_id,
+                        po_id=po_id, po_number=clip(po_no, 40) if po_no else None,
+                        created_at=to_dt(r.get("Created")),
+                        updated_at=to_dt(r.get("Modified")) or to_dt(r.get("Created")),
+                    )
+                    await adder.add(inv)
+                    report.inserted["invoices"] += 1
+                    invid_to_id[iid] = iuid
+                await adder.flush()
+
+            # ── PA ──────────────────────────────────────────────────────────────
+            if run_all or "pa" in only:
+                seen = set()
+                for r in pa_rows:
+                    number = clip(r.get("Title"), 30)
+                    if not number or number in seen:
+                        continue
+                    seen.add(number)
+                    if number in existing_pa:
+                        if upsert:
+                            await _upsert_pa(db, dry_run, report, pa_map[number], r, res)
+                        else:
+                            report.skipped_existing["pa"] += 1
+                        continue
+                    po_no = (r.get("PONO") or "").strip() or None
+                    po_id = pono_to_id.get(po_no) if po_no else None
+                    if not po_id:
+                        report.pa_orphan_no_po += 1
+                        continue  # po_id is NOT NULL — cannot import without a PO
+                    vend = pono_to_vendor.get(po_no) or (await res.resolve_vendor(po_no)) or res.unknown_vendor
+                    lines = pa_items.get(number, [])
+                    subtotal = to_decimal(
+                        r.get("ItemsTotal"),
+                        default=sum((to_decimal(it.get("TotalPrice")) for it in lines), Decimal("0")),
+                    )
+                    tax = to_decimal(r.get("Tax"))
+                    shipping = to_decimal(r.get("FreightFee"))
+                    other = to_decimal(r.get("OtherFee"))
+                    payment = to_decimal(r.get("TotalPrice"), default=subtotal + tax + shipping + other)
+                    invoice_ids = []
+                    for it in lines:
+                        iid = it.get("InvoiceID")
+                        if iid and invid_to_id.get(int(iid)):
+                            uid = invid_to_id[int(iid)]
+                            if str(uid) not in invoice_ids:
+                                invoice_ids.append(str(uid))
+                    created_at = to_dt(r.get("Created"))
+                    auid = uuid.uuid4()
+                    pa = PaymentApplication(
+                        id=auid, pa_number=number,
+                        title=clip(f"Payment for {po_no}", 255),
+                        po_id=po_id, po_number=clip(po_no, 40),
+                        vendor_id=vend[0], vendor_name=clip(vend[1], 255),
+                        invoice_ids=invoice_ids, gr_ids=[], pa_type="regular",
+                        subtotal=subtotal, tax_amount=tax, shipping_amount=shipping,
+                        other_charges=other, payment_amount=payment,
+                        currency=M.normalize_currency(r.get("Currency")),
+                        status=M.map_pa_status(r.get("Status"), r.get("Status0")),
+                        created_by=await res.user_for(r.get("Applier")),
+                        created_at=created_at, updated_at=to_dt(r.get("Modified")) or created_at,
+                    )
+                    await adder.add(pa)
+                    report.inserted["pa"] += 1
+                    for idx, it in enumerate(lines):
+                        li = PaLineItem(
+                            id=uuid.uuid4(), pa_id=auid,
+                            po_line_id=poitem_to_lineid.get(str(it.get("POITEMID"))),
+                            description=clip(nz(it.get("Description"), "(no description)"), 500),
+                            qty=to_decimal(it.get("QTY")),
+                            unit=clip(nz(it.get("UOM"), "EA"), 30),
+                            unit_price=to_decimal(it.get("UnitPrice")),
+                            line_total=to_decimal(it.get("TotalPrice")),
+                            sort_order=idx,
+                        )
+                        await adder.add(li)
+                        report.inserted["pa_items"] += 1
+                await adder.flush()
+
+            # ── back-fill PR.po_id now that PO UUIDs are known ───────────────────
+            # PR.po_number is already set; attach the FK for PRs whose PONo
+            # resolved to an imported PO. Objects are in the identity map post-flush.
+            if not dry_run and (run_all or "pr" in only):
+                for r in pr_rows:
+                    number = clip(r.get("PR_x0020_No"), 30)
+                    pono = (r.get("PONo") or "").strip() or None
+                    if number in prno_to_id and pono in pono_to_id:
+                        obj = await db.get(PurchaseRequest, prno_to_id[number])
+                        if obj is not None:
+                            obj.po_id = pono_to_id[pono]
+                            # keep updated_at == SP Modified so incremental sync
+                            # doesn't mistake this back-fill for a local edit
+                            _stamp(obj, to_dt(r.get("Modified")))
+
+            if dry_run:
+                await db.rollback()
+            else:
+                await db.commit()
+    finally:
+        await engine.dispose()
+
+    report.show(dry_run)
+    return report
+
+
+async def _upsert_pr(db, dry_run, report, existing, r, res) -> None:
+    obj_id, updated_at = existing
+    modified = to_dt(r.get("Modified"))
+    if _is_local_edit(updated_at, modified):
+        report.skipped_conflict["pr"] += 1
+        return
+    report.updated["pr"] += 1
+    if dry_run:
+        return
+    obj = await db.get(PurchaseRequest, obj_id)
+    if obj is None:
+        return
+    pono = (r.get("PONo") or "").strip() or None
+    vend = await res.resolve_vendor(pono)
+    cc_id, cc_name, dept_name = res.cost_center_for(r.get("Department"), r.get("CostCenter"))
+    obj.status = M.map_pr_status(r.get("Status"), has_po=bool(pono))
+    obj.currency = M.normalize_currency(r.get("Currency"))
+    obj.amount = to_decimal(r.get("TotalPrice"))
+    if vend:
+        obj.vendor_id, obj.vendor_name = vend[0], clip(vend[1], 255)
+    if cc_id:
+        obj.cost_center_id, obj.cost_center_name, obj.department_name = cc_id, cc_name, dept_name
+    obj.budget_code = clip(r.get("GLCode"), 100)
+    obj.project_code = clip(r.get("ProjectNo"), 100)
+    obj.po_number = clip(pono, 30)
+    _stamp(obj, modified)
+
+
+async def _upsert_po(db, dry_run, report, existing, r, res) -> None:
+    obj_id, updated_at = existing
+    modified = to_dt(r.get("Modified"))
+    if _is_local_edit(updated_at, modified):
+        report.skipped_conflict["po"] += 1
+        return
+    report.updated["po"] += 1
+    if dry_run:
+        return
+    obj = await db.get(PurchaseOrder, obj_id)
+    if obj is None:
+        return
+    obj.status = M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"))
+    obj.currency = M.normalize_currency(r.get("Currency"))
+    obj.total = to_decimal(r.get("TotalPrice"), default=obj.total)
+    obj.is_prepaid = bool(r.get("PayFirst"))
+    obj.notes = _po_notes(r)
+    _stamp(obj, modified)
+
+
+async def _upsert_pa(db, dry_run, report, existing, r, res) -> None:
+    obj_id, updated_at = existing
+    modified = to_dt(r.get("Modified"))
+    if _is_local_edit(updated_at, modified):
+        report.skipped_conflict["pa"] += 1
+        return
+    report.updated["pa"] += 1
+    if dry_run:
+        return
+    obj = await db.get(PaymentApplication, obj_id)
+    if obj is None:
+        return
+    subtotal = to_decimal(r.get("ItemsTotal"), default=obj.subtotal)
+    tax = to_decimal(r.get("Tax"))
+    shipping = to_decimal(r.get("FreightFee"))
+    other = to_decimal(r.get("OtherFee"))
+    obj.status = M.map_pa_status(r.get("Status"), r.get("Status0"))
+    obj.currency = M.normalize_currency(r.get("Currency"))
+    obj.subtotal, obj.tax_amount, obj.shipping_amount, obj.other_charges = subtotal, tax, shipping, other
+    obj.payment_amount = to_decimal(r.get("TotalPrice"), default=subtotal + tax + shipping + other)
+    _stamp(obj, modified)
+
+
+def _po_notes(r: dict) -> str | None:
+    bits = []
+    freight = to_decimal(r.get("Freight"))
+    if freight:
+        bits.append(f"Freight: {freight}")
+    if r.get("Comment"):
+        bits.append(str(r["Comment"]))
+    note = " | ".join(bits)
+    return note or None

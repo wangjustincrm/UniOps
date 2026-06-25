@@ -1,0 +1,324 @@
+﻿MDM_MES接口文档
+ 
+1、接口说明
+主机地址：
+http://10.10.95.66
+请求类型
+类型描述POSTpost请求POST_JSONpost请求，提交json数据 
+返回值code
+code描述200操作成功40000操作失败40004查询失败 
+ 
+2、接口详情
+2.1、物料主数据信息表接口
+简要描述： 
+物料主数据信息表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/material/getMaterialInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2019-07-29 16:54:22","contract":"104"}   返回示例
+{
+    "code": 200,
+    "message": "getmaterialDataList ok",
+    "data": [
+        {
+            "prime_COMMODITY": "R01",
+            "commodity_NAME_S": "2段",
+            "last_ACTIVITY_DATE": "2019-08-13 07:51:32",
+            "unit_MEAS_NAME": "单位档案名称",
+            "commodity_NAME_R": "婴幼儿",
+            "second_COMMODITY": "S02",
+            "part_PRODUCT_FAMILY": "H02",
+            "part_PRODUCT_CODE": "34",
+            "packcartoncount": "70",
+            "accounting_GROUP": "A-10",
+            "create_DATE": "启用日期",
+            "dim_QUALITY": "400g*12",
+            "unit_MEAS": "件",
+            "weight_NET": "0.0048",
+            "code_NAME": "产成品-奶粉",
+            "part_STATUS": "B",
+            "family_NAME": "普装盒装",
+            "volume": "0.030012",
+            "description": "飞帆SC2段较大婴儿配方奶粉400g盒装",
+            "weight_GROSS": "0.005935",
+            "part_FL": "A-10",
+            "fchno": "169",
+            "packtraycount": "12",
+            "exp": "18",
+            "itemMESType": "A-10",
+     "itemType": "10",
+            "part_NO": "100010023043",
+            "rowversion": "2019-08-13 07:51:32"
+        }
+}
+2.2、库存组织信息表接口
+简要描述： 
+库存组织信息表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/inventory/getInventoryInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2014-10-28 08:20:27"}  返回示例
+{
+    "code": 200,
+    "message": "getInventoryInfo ok",
+    "data": [
+        {
+            "invtoyOrgitionName": "龙江成品仓",
+            "invtoyOrgitionCode": "LJA",
+            "rowversion": "2018-01-30 11:10:46",
+            "factorycode": "101",
+            "warehousename": "龙江成品仓",
+            "warehousecode": "LJA"
+        },
+        {
+            "invtoyOrgitionName": "天津爱本仓",
+            "invtoyOrgitionCode": "TAA",
+            "rowversion": "2015-11-27 18:05:29",
+            "factorycode": "107",
+            "warehousename": "天津爱本仓",
+            "warehousecode": "TAA"
+         }
+}
+ 
+ 
+2.3、工厂主数据表接口
+简要描述： 
+工厂主数据表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/factory/getFactoryInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+{
+    "code": 200,
+    "message": "getFactoryInfo ok",
+    "data": [
+        {
+            "rowversion": "2018-03-06 14:37:44",
+            "factorycode": "100",
+            "factoryname": "北京公司"
+        },
+        {
+            "rowversion": "2018-03-06 14:37:44",
+            "factorycode": "101",
+            "factoryname": "克东公司"
+        }
+}
+2.4、生产线数据表接口
+简要描述： 
+生产线数据表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/productLine/getProductLineInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+   {
+    "code": 200,
+    "message": "getProductLineInfo ok",
+    "data": [
+        {
+            "linename": "龙江巴杀线",
+            "linecode": "LJS07",
+            "rowversion": "2018-05-29 17:28:03",
+            "factorycode": "106"
+        },
+        {
+            "linename": "镇赉巴杀线",
+            "linecode": "ZLS04",
+            "rowversion": "2018-05-31 13:49:05",
+            "factorycode": "103"
+        }
+}
+2.5、供应商数据表接口
+简要描述： 
+供应商数据表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/supplier/getSupplierInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+{
+    "code": 200,
+    "message": "getSupplierInfo ok",
+    "data": [
+        {
+            "supplieraddress": "北京市石景山区八大处高科技园区西井路3号3号楼9035房间",
+            "suppliercode": "IT01052",
+            "suppliertel": "010-59231558",
+            "supplierfax": "010-59231532",
+            "suppliername": "北京雨花石云计算科技股份有限公司",
+            "suppliertype": "YL",
+            "rowversion": "2018-07-06 17:49:31"
+        },
+        {
+            "supplieraddress": "北京市朝阳区霄云路32号食品科技大厦823室",
+            "suppliercode": "S201178",
+            "suppliertel": "010-84511918",
+            "supplierfax": "010-84511928",
+            "suppliername": "中食肽研（北京）科技有限公司",
+            "suppliertype": "YL",
+            "rowversion": "2018-08-01 15:46:45"
+        }
+}
+2.6、组织结构主数据表接口
+简要描述： 
+组织结构主数据表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/orgs/getOrgsInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+{
+    "code": 200,
+    "message": "getOrgsInfo ok",
+    "data": [
+        {
+            "departmentName": null,
+            "departmentCode": null,
+            "rowversion": "2019-05-16 15:37:22",
+            "factorycode": "0001",
+            "factoryname": "飞鹤(建成集团)"
+        },
+        {
+            "departmentName": null,
+            "departmentCode": null,
+            "rowversion": "2019-07-22 18:03:52",
+            "factorycode": "0002",
+            "factoryname": "钻石婴儿配方奶粉控股有限公司（开曼）"
+        }
+}
+2.7、MDM基本单位信息表接口
+简要描述： 
+MDM基本单位信息表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/unit/getUnitInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+{
+    "code": 200,
+    "message": "getUnitInfo ok",
+    "data": [
+        {
+            "unit_DESC": "千克",
+            "unit_CODE": "KGM",
+            "rowversion": "2019-08-02 09:30:53"
+        },
+        {
+            "unit_DESC": "克",
+            "unit_CODE": "GRM",
+            "rowversion": "2019-08-02 09:30:53"
+        }
+}
+2.8、MDM基本单位转换关系信息表接口
+简要描述： 
+MDM基本单位转换关系信息表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/unitTranf/getUnitTranfInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+{
+    "code": 200,
+    "message": "getUnitTranfInfo ok",
+    "data": [
+        {
+            "unit_CODE": "KGM",
+            "unit_RATE": "1.00000000",
+            "unit_TYPE": "KGM",
+            "rowversion": "2019-08-13 07:58:36"
+        },
+        {
+            "unit_CODE": "GRM",
+            "unit_RATE": "0.00100000",
+            "unit_TYPE": "KGM",
+            "rowversion": "2019-08-13 07:58:36"
+        }
+}
+2.9、人员基本信息表接口
+简要描述： 
+人员主数据信息表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/person/getPersonInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  
+  返回示例
+{
+    "code": 200,
+    "data": [
+        {
+            "companycode": "10024",
+            "companyname": "Canada Royal Milk ULC",
+            "departmentcode": "0104",
+            "departmentname": "Production",
+            "isvalid": "1",
+            "modifiedtime": "2026-05-13 02:12:26",
+            "personcode": "100100",
+            "personname": "Ayan Asim",
+            "pk_psndoc": "0001A1100000004BQ381",
+            "rn": 1,
+            "rowversion": "20260513021226"
+        }
+    ],
+    "message": "success"
+}
+
+2.10、厂商基本信息
+简要描述： 
+厂商信息表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/vendor/getVendorInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+{
+    "code": 200,
+    "data": [
+        {
+            "modifiedtime": "2020-08-31 14:47:44",
+            "rn": 92,
+            "rowversion": "20200831144744",
+            "vendoraddress": "Huanghe Road 66, Donghai Economic & Technology Development Zone, Lianyungang, Jiangsu",
+            "vendorcode": "CRM027",
+            "vendorname": "JiangSu Debang Duoling healthy technology co., LTD"
+        }
+    ],
+    "message": "success"
+}
+
+2.11、品牌信息
+简要描述： 
+品牌信息表
+请求URL： 
+http://10.10.95.66/firmusData/touch_mdm_mes/brand/getBrandInfo
+请求方式：
+      POST_JSON 
+  请求示例
+{"ts":"2018-02-29 16:54:22"}  返回示例
+{
+    "code": 200,
+    "data": [
+        {
+            "code": "000187",
+            "modifiedtime": "2020-01-03 11:21:11",
+            "name": "UDC",
+            "pk_brand": "1001A11000000005E0T9",
+            "rn": 84,
+            "rowversion": "20200103112111"
+        }
+    ],
+    "message": "success"
+}

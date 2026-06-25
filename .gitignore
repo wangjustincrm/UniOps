@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+*.log
+
+# Env files
+.env
+.env.local
+.env.*.local
+*.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Database / volumes
+*.db
+*.sqlite
+file-storage/
+postgres-data/
+
+# OS / temp
+~$*
+*.tmp
+Thumbs.db
+
+# Screenshots / generated artifacts kept ignored unless explicitly added
+screenshots/
+design_handoff_ui_audit/
+
+# Misc
+*.doc
+*.docx
+.gstack/
+
+# Test virtualenvs (machine-specific)
+.venv_test/
+**/.venv_test/
+
+# Agent scratch / recovery (not project source)
+.superpowers/
+
+# Sensitive data / backups — DO NOT COMMIT (financial data, server setup)
+BankStatement/
+*.xlsx
+budget-api/budget_ledger_backup_*.csv
+budget-api/opening_retag_*.csv
+info.txt
+ServerStartup.txt
+db-server-setup.sh
