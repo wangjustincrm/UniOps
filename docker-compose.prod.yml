@@ -1,0 +1,308 @@
+# UniOps — production compose for the APPLICATION SERVER.
+#
+# One application server runs ALL frontends + ALL backends below. External:
+#   • DB server   (${DB_HOST})    — PostgreSQL + Redis
+#   • File server                 — file-api (NOT in this compose)
+# Backends reach each other by service name on this compose's network; they reach
+# Postgres/Redis/file-api over the internal network via the .env values.
+#
+# Build host (registry access):
+#   cp .env.prod.example .env && export TAG=$(git rev-parse --short HEAD)
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml push
+# Application server (same .env + TAG):
+#   docker compose -f docker-compose.prod.yml pull
+#   ./migrate-prod.sh                         # ordered alembic — finance-api FIRST
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Rollback = set TAG to a previous git SHA, pull, up -d. (Re-run migrate only if
+# the new release added migrations.)
+
+# Shared DB / auth env. NOTE: Compose does NOT deep-merge an anchor's
+# `environment:` with a service's own — so each service merges this map with the
+# YAML `<<` key *inside* its `environment:` block, then adds its extras.
+x-db-env: &db-env
+  DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@${DB_HOST}:5432/epms
+  POSTGRES_HOST: ${DB_HOST}
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: epms
+  POSTGRES_PASSWORD: ${DB_PASSWORD}   # required: budget/finance/mdm/vms-api compute DATABASE_URL from POSTGRES_* and ignore the env DATABASE_URL
+  POSTGRES_DB: epms
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+  JWT_ALGORITHM: HS256
+
+x-api-common: &api-common
+  restart: unless-stopped
+
+services:
+  # ── Backend APIs (file-api lives on the File server, not here) ────────────────
+
+  epms-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-epms-api:${TAG:-latest}
+    build: { context: ./epms-api }
+    environment:
+      <<: *db-env
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      DEBUG: "false"
+      ENVIRONMENT: production
+      APP_NAME: EPMS API
+      APP_VERSION: 0.1.0
+      API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
+      BUDGET_API_URL: http://budget-api:8007
+      FINANCE_API_URL: http://finance-api:8004
+      IDENTITY_API_URL: http://identity-api:8009
+      MDM_API_URL: http://mdm-api:8002
+      MDM_API_TIMEOUT_SECONDS: "30"
+    ports: ["8000:8000"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  approval-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-approval-api:${TAG:-latest}
+    build: { context: ./approval-api }
+    environment:
+      <<: *db-env
+      SERVICE_NAME: approval-engine
+      PORT: "8003"
+    ports: ["8003:8003"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8003
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8003/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  mdm-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-mdm-api:${TAG:-latest}
+    build: { context: ./mdm-api }
+    environment:
+      <<: *db-env
+      SERVICE_NAME: mdm-stub
+      PORT: "8002"
+      ERP_BASE_URL: ${ERP_BASE_URL}
+      ERP_TIMEOUT_SECONDS: "60"
+    ports: ["8002:8002"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8002
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  identity-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-identity-api:${TAG:-latest}
+    build: { context: ./identity-api }
+    environment:
+      <<: *db-env
+      ACCESS_TOKEN_EXPIRE_MINUTES: "480"
+      REFRESH_TOKEN_EXPIRE_DAYS: "7"
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: "6379"
+      SERVICE_NAME: identity-api
+      PORT: "8009"
+    ports: ["8009:8009"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8009
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8009/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  finance-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-finance-api:${TAG:-latest}
+    build: { context: ./finance-api }
+    environment:
+      <<: *db-env
+      SERVICE_NAME: finance-core
+      PORT: "8004"
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      BUDGET_API_URL: http://budget-api:8007
+    ports: ["8004:8004"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8004
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  expense-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-expense-api:${TAG:-latest}
+    build: { context: ./expense-api }
+    environment:
+      <<: *db-env
+      REDIS_HOST: ${REDIS_HOST}
+      SERVICE_NAME: expense-api
+      PORT: "8006"
+      DEBUG: "false"
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      BUDGET_API_URL: http://budget-api:8007
+      FINANCE_API_URL: http://finance-api:8004
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports: ["8006:8006"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8006
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8006/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  budget-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-budget-api:${TAG:-latest}
+    build: { context: ./budget-api }
+    environment:
+      <<: *db-env
+      APP_NAME: Budget API
+      APP_VERSION: 0.1.0
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      APPROVAL_API_URL: http://approval-api:8003/approval/v1
+      EPMS_API_URL: http://epms-api:8000
+    ports: ["8007:8007"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8007
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8007/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  vms-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-vms-api:${TAG:-latest}
+    build: { context: ./vms-api }
+    environment:
+      <<: *db-env
+      APP_NAME: VMS API
+      APP_VERSION: 0.1.0
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
+    ports: ["8008:8008"]
+    depends_on:
+      epms-api:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8008
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8008/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Frontends (multi-stage build → nginx static) ──────────────────────────────
+
+  epms-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-epms-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: epms/Dockerfile
+      args:
+        VITE_API_URL: ${EPMS_VITE_API_URL}
+        VITE_FILE_SERVER_URL: ${FILE_SERVER_URL}
+        VITE_OA_URL: ${OA_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
+    ports: ["5173:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  portal-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-portal-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: portal/Dockerfile
+      args:
+        VITE_EPMS_URL: ${EPMS_URL}
+        VITE_OA_URL: ${OA_URL}
+        VITE_VMS_URL: ${VMS_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_OA_API_URL: ${OA_API_URL}
+        VITE_VMS_API_URL: ${VMS_API_URL}
+        VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
+    ports: ["5174:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  oa-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-oa-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: oa/Dockerfile
+      args:
+        VITE_API_URL: ${OA_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_EPMS_URL: ${EPMS_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+    ports: ["5175:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  vms-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-vms-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: vms/Dockerfile
+      args:
+        VITE_API_URL: ${VMS_API_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+    ports: ["5176:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# Edge reverse-proxy (single hostname entrypoint) can be added in front of the
+# published ports above once domains/TLS are decided.

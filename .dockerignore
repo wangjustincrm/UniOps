@@ -1,0 +1,16 @@
+# Keep the Docker build context small. Frontend images are built from the repo
+# root (so the @uniops/shell workspace package is available); exclude installed
+# deps, build output, VCS and editor noise — everything is reinstalled/rebuilt
+# inside the image.
+**/node_modules
+**/dist
+**/.vite
+**/__pycache__
+**/.venv
+.git
+.gitignore
+*.log
+**/*.local
+.superpowers
+.gstack
+screenshots

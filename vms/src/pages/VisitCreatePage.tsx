@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { vmsRoutes } from '@/app/routes'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { VisitorSearch } from '@/components/VisitorSearch'
 import { HostSearch } from '@/components/HostSearch'
@@ -156,7 +157,8 @@ function InlineNewVisitorForm({
 // ── Main page ───────────────────────────────────────────────────────────────-
 
 export default function VisitCreatePage() {
-  const navigate = useNavigate()
+  // Submit/cancel replace THIS tab in place (no second tab, no re-submittable form).
+  const replaceTab = useReplaceTab(vmsRoutes)
 
   const [visitor, setVisitor] = useState<Visitor | null>(null)
   const [additionalVisitors, setAdditionalVisitors] = useState<Visitor[]>([])
@@ -197,7 +199,7 @@ export default function VisitCreatePage() {
         notes: notes.trim() || null,
         ppe_requested: ppeRequest,
       },
-      { onSuccess: (visit) => navigate(`/${visit.id}`) },
+      { onSuccess: (visit) => replaceTab(`/${visit.id}`) },
     )
   }
 
@@ -302,7 +304,7 @@ export default function VisitCreatePage() {
         <div className="flex justify-end gap-2 pt-2">
           <button
             type="button"
-            onClick={() => navigate('/')}
+            onClick={() => replaceTab('/')}
             className="rounded-md border border-neutral-300 px-4 py-2 text-sm"
           >
             Cancel

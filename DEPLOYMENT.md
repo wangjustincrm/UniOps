@@ -84,6 +84,65 @@ npm run build
 
 ---
 
+## Docker Deployment — Application Server (recommended)
+
+> Topology: **one application server** runs all frontends **and all backends**
+> (`docker-compose.prod.yml`). PostgreSQL + Redis are on the **DB server**;
+> `file-api` is on the **File server** — both reached over the internal network
+> via `.env`. Frontends are multi-stage images (Vite build → `nginx:alpine`);
+> backends use their existing Dockerfiles. Released via a registry — no Node or
+> Python build toolchain is needed on the app server itself.
+
+### Why build from the repo root
+
+The frontends share the `@uniops/shell` workspace package (`packages/shell`).
+Each frontend `Dockerfile` therefore builds with the **repo root** as context so
+the package resolves cleanly — no per-server `npm install`, no `--install-links`
+gymnastics. Build args inject the browser-facing `VITE_*` URLs (Vite inlines them
+at build time).
+
+### Release workflow (registry: build once, pull on the app server)
+
+```bash
+# 1. On a build host (CI or a dev machine) with registry access:
+cp .env.prod.example .env        # fill REGISTRY, TAG (use the git SHA), and all *_URL values
+export TAG=$(git rev-parse --short HEAD)
+
+docker compose -f docker-compose.prod.yml build      # builds epms/oa/portal/vms web images
+docker compose -f docker-compose.prod.yml push       # pushes ${REGISTRY}/uniops-*-web:${TAG}
+
+# 2. On the application server (same .env, same TAG):
+docker compose -f docker-compose.prod.yml pull
+./migrate-prod.sh                                    # ordered alembic — finance-api FIRST
+docker compose -f docker-compose.prod.yml up -d
+
+# Rollback = set TAG to a previous git SHA and re-run pull + up -d
+# (re-run migrate only if the new release added migrations).
+```
+
+**Migrations** run via `migrate-prod.sh`, which applies `alembic upgrade head`
+per service in a safe order — **finance-api first** (it creates
+`posting_events`/`posting_lines` that expense-api writes into). `approval-api`
+has no migrations of its own. Containers run uvicorn only (no auto-migrate), so
+this step is explicit and ordered.
+
+Published ports: backends on `8000/8002/8003/8004/8006/8007/8008/8009`, web on
+`5173`(EPMS)/`5174`(Portal)/`5175`(OA)/`5176`(VMS). Add an edge reverse proxy
+(single hostname, TLS) in front of these once domains are decided.
+
+> ⚠️ The `POSTGRES_PASSWORD` env is **required** on budget/finance/mdm/vms-api —
+> they compute `DATABASE_URL` from `POSTGRES_*` and ignore the env `DATABASE_URL`.
+> The shared `x-db-env` anchor sets it for every service.
+
+### Local build sanity check (no registry needed)
+
+```bash
+docker build -f vms/Dockerfile -t uniops-vms-web:local .   # context = repo root
+docker run --rm -p 8099:80 uniops-vms-web:local            # open http://localhost:8099
+```
+
+---
+
 ## Shared Requirements (All App Servers)
 
 All backend services must share these values in their `.env`:

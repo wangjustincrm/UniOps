@@ -414,11 +414,18 @@ services:
     volumes:
       - ./vms:/app
       - vms_node_modules:/app/node_modules
+      # Shared workspace package lives outside ./vms — mount it so the container
+      # can resolve `@uniops/shell` (file: dep + Vite alias both point here).
+      # `/packages/shell` matches `../packages/shell` resolved from /app.
+      - ./packages/shell:/packages/shell
     environment:
       VITE_API_URL: http://localhost:8008
       VITE_EPMS_API_URL: http://localhost:8000
       VITE_PORTAL_URL: http://localhost:5174
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5176"
+    # --install-links copies the file:../packages/shell dep into /app/node_modules
+    # as a real package (not a symlink to /packages/shell), so its transitive deps
+    # resolve from /app/node_modules inside the container.
+    command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5176"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5176"]
       interval: 15s
