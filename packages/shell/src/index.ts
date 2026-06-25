@@ -9,3 +9,6 @@ export { TabRouterSync } from './tab/TabRouterSync'
 export { useTabDirty } from './tab/useTabDirty'
 export { useReplaceTab } from './tab/useReplaceTab'
 export { RouteRenderer } from './tab/RouteRenderer'
+
+// Shared UI primitives (generic; domain wrappers like StatusBadge stay in apps).
+export * from './ui'
