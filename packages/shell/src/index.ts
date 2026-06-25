@@ -1,2 +1,10 @@
-// Public exports — populated by later tasks.
-export {}
+export type { TabMeta, TabKind, TabSpec, RouteDef } from './tab/types'
+export { resolveRoute, deriveTabMeta } from './tab/routeTable'
+export { createTabStore } from './tab/tabStore'
+export type { TabStoreState, TabStoreOptions } from './tab/tabStore'
+export { TabStoreProvider, useTabStore, useTabStoreApi } from './tab/TabStoreContext'
+export { TabHost } from './tab/TabHost'
+export { TabBar } from './tab/TabBar'
+export { TabRouterSync } from './tab/TabRouterSync'
+export { useTabDirty } from './tab/useTabDirty'
+export { RouteRenderer } from './tab/RouteRenderer'
