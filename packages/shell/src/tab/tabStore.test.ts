@@ -130,3 +130,42 @@ describe('tab store — eviction (cap)', () => {
     expect(keys).toContain('/dashboard')
   })
 })
+
+describe('tab store — persistence', () => {
+  const dash3: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
+  const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
+
+  it('persists open tabs + activeKey to localStorage', () => {
+    localStorage.clear()
+    const a = createTabStore({ storageKey: 'persist:tabs', initialTabs: [dash3] })
+    a.getState().openTab(pg('/all'))
+    a.getState().openTab(pg('/active'))
+    a.getState().setActive('/all')
+
+    // New store instance with the same storageKey rehydrates prior tabs.
+    const b = createTabStore({ storageKey: 'persist:tabs', initialTabs: [dash3] })
+    const s = b.getState()
+    expect(s.tabs.map(t => t.key)).toEqual(['/dashboard', '/all', '/active'])
+    expect(s.activeKey).toBe('/all')
+  })
+
+  it('on restore, only the active tab is alive (others lazy-mount)', () => {
+    localStorage.clear()
+    const a = createTabStore({ storageKey: 'persist:alive', initialTabs: [dash3] })
+    a.getState().openTab(pg('/all'))
+    a.getState().openTab(pg('/active'))
+    a.getState().setActive('/active')
+
+    const b = createTabStore({ storageKey: 'persist:alive', initialTabs: [dash3] })
+    expect(b.getState().alive).toEqual(['/active'])
+  })
+
+  it('re-injects the pinned tab if storage somehow lacks it', () => {
+    localStorage.setItem('persist:nopin', JSON.stringify({
+      state: { tabs: [{ key: '/all', title: 'All', kind: 'page', path: '/all', closable: true }], activeKey: '/all' },
+      version: 0,
+    }))
+    const b = createTabStore({ storageKey: 'persist:nopin', initialTabs: [dash3] })
+    expect(b.getState().tabs.some(t => t.key === '/dashboard')).toBe(true)
+  })
+})

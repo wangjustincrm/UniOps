@@ -1,4 +1,5 @@
 import { createStore } from 'zustand/vanilla'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import type { TabMeta } from './types'
 
 export interface TabStoreState {
@@ -31,7 +32,9 @@ export function createTabStore(opts: TabStoreOptions) {
   const initial = opts.initialTabs ?? []
   const firstKey = initial[0]?.key ?? ''
 
-  return createStore<TabStoreState>((set, get) => ({
+  return createStore<TabStoreState>()(
+    persist(
+      (set, get) => ({
     tabs: initial,
     activeKey: firstKey,
     alive: firstKey ? [firstKey] : [],
@@ -131,5 +134,25 @@ export function createTabStore(opts: TabStoreOptions) {
 
     setDirty: (key, dirty) =>
       set((s) => ({ tabs: s.tabs.map((t) => (t.key === key ? { ...t, dirty } : t)) })),
-  }))
+      }),
+      {
+        name: opts.storageKey,
+        storage: createJSONStorage(() => localStorage),
+        partialize: (s) => ({ tabs: s.tabs, activeKey: s.activeKey }),
+        merge: (persisted, current) => {
+          const p = (persisted ?? {}) as Partial<TabStoreState>
+          let tabs = p.tabs ?? current.tabs
+          // Guarantee pinned initial tabs exist and sit first.
+          for (const pin of initial) {
+            if (!tabs.some((t) => t.key === pin.key)) tabs = [pin, ...tabs]
+          }
+          const activeKey =
+            p.activeKey && tabs.some((t) => t.key === p.activeKey)
+              ? p.activeKey
+              : tabs[0]?.key ?? ''
+          return { ...current, tabs, activeKey, alive: activeKey ? [activeKey] : [], lru: activeKey ? [activeKey] : [] }
+        },
+      },
+    ),
+  )
 }
