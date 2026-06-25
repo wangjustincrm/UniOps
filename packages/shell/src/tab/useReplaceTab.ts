@@ -16,12 +16,16 @@ import type { RouteDef } from './types'
 export function useReplaceTab(routes: RouteDef[]) {
   const api = useTabStoreApi()
   const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
 
   return useCallback(
     (toPath: string) => {
-      const toMeta = deriveTabMeta(routes, toPath)
-      const fromMeta = deriveTabMeta(routes, pathname)
+      // Split a possible query off the destination so matching uses the pathname.
+      const qIdx = toPath.indexOf('?')
+      const toPathname = qIdx === -1 ? toPath : toPath.slice(0, qIdx)
+      const toSearch = qIdx === -1 ? '' : toPath.slice(qIdx)
+      const toMeta = deriveTabMeta(routes, toPathname, toSearch)
+      const fromMeta = deriveTabMeta(routes, pathname, search)
       if (toMeta && fromMeta) {
         api.getState().replaceTab(fromMeta.key, toMeta)
       } else if (toMeta) {

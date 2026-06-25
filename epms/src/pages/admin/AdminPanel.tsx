@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { authService } from '@/services/auth'
@@ -2972,15 +2971,9 @@ function MovedToPortal({
 }
 
 export default function AdminPanel() {
-  const [searchParams, setSearchParams] = useSearchParams()
-  const sectionParam = searchParams.get('section') as Section | null
-  const activeSection: Section = (sectionParam && NAV.some((n) => n.id === sectionParam))
-    ? sectionParam
-    : 'company'
-
-  const setActiveSection = (id: Section) => {
-    setSearchParams({ section: id }, { replace: true })
-  }
+  // Internal sub-nav via component state — kept out of the URL so it works under
+  // the tab shell's keep-alive (which pins each tab to its own location).
+  const [activeSection, setActiveSection] = useState<Section>('company')
 
   const current = NAV.find((n) => n.id === activeSection)!
 

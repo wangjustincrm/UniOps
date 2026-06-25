@@ -258,3 +258,15 @@ describe('tab store — user switch', () => {
     expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/all'])
   })
 })
+
+describe('tab store — setTabPath', () => {
+  const dashP: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
+  const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
+  it('updates a tab path in place (e.g. query change)', () => {
+    localStorage.clear()
+    const s = createTabStore({ storageKey: 'tp:test', initialTabs: [dashP] })
+    s.getState().openTab(pg('/admin'))
+    s.getState().setTabPath('/admin', '/admin?section=role')
+    expect(s.getState().tabs.find(t => t.key === '/admin')?.path).toBe('/admin?section=role')
+  })
+})

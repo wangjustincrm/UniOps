@@ -15,6 +15,9 @@ export interface TabStoreState {
   closeAll: () => void
   setActive: (key: string) => void
   updateTitle: (key: string, title: string) => void
+  /** Update a tab's `path` (e.g. when its query string changes) without
+   *  re-opening it — keeps the active tab's pinned location in sync with the URL. */
+  setTabPath: (key: string, path: string) => void
   setDirty: (key: string, dirty: boolean) => void
   /**
    * Replace the tab `oldKey` with `meta`, keeping its position and activating
@@ -152,6 +155,9 @@ export function createTabStore(opts: TabStoreOptions) {
 
     updateTitle: (key, title) =>
       set((s) => ({ tabs: s.tabs.map((t) => (t.key === key ? { ...t, title } : t)) })),
+
+    setTabPath: (key, path) =>
+      set((s) => ({ tabs: s.tabs.map((t) => (t.key === key && t.path !== path ? { ...t, path } : t)) })),
 
     setDirty: (key, dirty) =>
       set((s) => ({ tabs: s.tabs.map((t) => (t.key === key ? { ...t, dirty } : t)) })),

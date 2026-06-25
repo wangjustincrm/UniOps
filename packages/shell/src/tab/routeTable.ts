@@ -23,8 +23,13 @@ export function resolveRoute(routes: RouteDef[], pathname: string): ResolvedRout
   return { def, params }
 }
 
-/** Compute the TabMeta for a pathname, or null if the route is not tabbable. */
-export function deriveTabMeta(routes: RouteDef[], pathname: string): TabMeta | null {
+/**
+ * Compute the TabMeta for a pathname, or null if the route is not tabbable.
+ * `search` (e.g. `?settleFrom=x`) is matched on the pathname only but carried
+ * into `path`, so pages can read query params under keep-alive. The tab KEY
+ * ignores the query, so query changes don't fork a new tab.
+ */
+export function deriveTabMeta(routes: RouteDef[], pathname: string, search = ''): TabMeta | null {
   const res = resolveRoute(routes, pathname)
   if (!res || !res.def.tab) return null
   const { def, params } = res
@@ -41,7 +46,7 @@ export function deriveTabMeta(routes: RouteDef[], pathname: string): TabMeta | n
     key,
     title,
     kind: 'page',
-    path: pathname,
+    path: pathname + search,
     icon: spec.icon,
     pinned: spec.pinned ?? false,
     closable: spec.pinned ? false : spec.closable ?? true,

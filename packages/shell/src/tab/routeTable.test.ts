@@ -51,3 +51,16 @@ describe('deriveTabMeta', () => {
     expect(deriveTabMeta(routes, '/visit/123')?.path).toBe('/visit/123')
   })
 })
+
+describe('deriveTabMeta — query string', () => {
+  it('carries search into path but keeps it out of the key', () => {
+    const m = deriveTabMeta(routes, '/all', '?filter=open')
+    expect(m?.path).toBe('/all?filter=open')
+    expect(m?.key).toBe('/all') // key ignores query → no extra tab
+  })
+  it('matches the route on pathname only (search does not break matching)', () => {
+    const m = deriveTabMeta(routes, '/visit/42', '?ref=x')
+    expect(m?.key).toBe('/visit/:visitId:42')
+    expect(m?.path).toBe('/visit/42?ref=x')
+  })
+})
