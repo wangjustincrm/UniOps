@@ -347,7 +347,7 @@ export default function AppLayout() {
           <TabRouterSync routes={vmsRoutes} />
           <TabBar />
           <main className="relative flex-1 overflow-hidden">
-            <TabHost routes={vmsRoutes} />
+            <TabHost routes={vmsRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
           </main>
         </div>
       </div>

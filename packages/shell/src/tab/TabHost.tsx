@@ -2,7 +2,17 @@ import { useTabStore } from './TabStoreContext'
 import { RouteRenderer } from './RouteRenderer'
 import type { RouteDef } from './types'
 
-export function TabHost({ routes }: { routes: RouteDef[] }) {
+interface TabHostProps {
+  routes: RouteDef[]
+  /**
+   * Class applied to the content wrapper around each page tab — use it to give
+   * pages their shared container (e.g. `mx-auto max-w-[1440px] p-6`). Iframe
+   * tabs are always full-bleed and ignore this.
+   */
+  pageClassName?: string
+}
+
+export function TabHost({ routes, pageClassName }: TabHostProps) {
   const tabs = useTabStore((s) => s.tabs)
   const activeKey = useTabStore((s) => s.activeKey)
   const alive = useTabStore((s) => s.alive)
@@ -24,7 +34,9 @@ export function TabHost({ routes }: { routes: RouteDef[] }) {
               // which pins this tab to its own path independent of the browser URL
               // without nesting a Router — this preserves all app-level React context
               // (QueryClientProvider, zustand stores, etc.) inside the tab.
-              <RouteRenderer routes={routes} path={t.path!} />
+              <div className={pageClassName}>
+                <RouteRenderer routes={routes} path={t.path!} />
+              </div>
             )}
           </div>
         ))}

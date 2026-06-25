@@ -13,6 +13,11 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  // Serve @uniops/shell as live source instead of a pre-bundled dep, so edits to
+  // the shared package are picked up without a stale optimize cache.
+  optimizeDeps: {
+    exclude: ['@uniops/shell'],
+  },
   server: {
     port: 5176,
     watch: {
