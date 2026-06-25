@@ -8,5 +8,9 @@ export default defineConfig({
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
+  // Serve @uniops/shell as live source (not a pre-bundled dep). See vms/vite.config.ts.
+  optimizeDeps: {
+    exclude: ['@uniops/shell'],
+  },
   server: { port: 5174, watch: { usePolling: true } },
 })
