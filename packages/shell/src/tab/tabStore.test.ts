@@ -92,3 +92,41 @@ describe('tab store', () => {
     expect(store.getState().tabs.find(t => t.key === '/new')?.dirty).toBe(false)
   })
 })
+
+describe('tab store — eviction (cap)', () => {
+  const dash2: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
+  const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
+
+  function freshCapped(cap: number) {
+    localStorage.clear()
+    return createTabStore({ storageKey: 'test:cap', cap, initialTabs: [dash2] })
+  }
+
+  it('evicts the least-recently-used non-pinned tab when over cap', () => {
+    const store = freshCapped(3) // cap counts page tabs incl. pinned
+    store.getState().openTab(pg('/a'))
+    store.getState().openTab(pg('/b'))     // tabs: dash,a,b (=3, at cap)
+    store.getState().setActive('/a')        // lru: dash,b,a  → b is now LRU non-pinned
+    store.getState().openTab(pg('/c'))      // over cap → evict b
+    expect(store.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/a', '/c'])
+  })
+
+  it('never evicts pinned tabs', () => {
+    const store = freshCapped(2)
+    store.getState().openTab(pg('/a')) // dash,a (cap 2)
+    store.getState().openTab(pg('/b')) // over cap → evict a (not dash)
+    expect(store.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/b'])
+  })
+
+  it('skips dirty tabs when choosing an eviction victim', () => {
+    const store = freshCapped(3)
+    store.getState().openTab(pg('/a'))
+    store.getState().openTab(pg('/b'))
+    store.getState().setDirty('/a', true) // a is oldest non-pinned but dirty
+    store.getState().setActive('/b')
+    store.getState().openTab(pg('/c'))     // should evict b-area LRU, skipping dirty /a
+    const keys = store.getState().tabs.map(t => t.key)
+    expect(keys).toContain('/a')           // dirty preserved
+    expect(keys).toContain('/dashboard')
+  })
+})

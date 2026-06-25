@@ -38,17 +38,35 @@ export function createTabStore(opts: TabStoreOptions) {
     lru: firstKey ? [firstKey] : [],
 
     openTab: (meta) => {
+      const cap = opts.cap ?? 15
       const { tabs } = get()
       if (tabs.some((t) => t.key === meta.key)) {
         get().setActive(meta.key)
         return
       }
-      set((s) => ({
-        tabs: [...s.tabs, meta],
-        activeKey: meta.key,
-        alive: s.alive.includes(meta.key) ? s.alive : [...s.alive, meta.key],
-        lru: touchLru(s.lru, meta.key),
-      }))
+      set((s) => {
+        let nextTabs = [...s.tabs, meta]
+        let nextAlive = s.alive.includes(meta.key) ? s.alive : [...s.alive, meta.key]
+        const nextLru = touchLru(s.lru, meta.key)
+
+        // Evict LRU non-pinned, non-dirty, non-incoming tabs until within cap.
+        while (nextTabs.filter((t) => t.kind === 'page').length > cap) {
+          const victimKey = nextLru.find((k) => {
+            const t = nextTabs.find((x) => x.key === k)
+            return t && !t.pinned && !t.dirty && t.key !== meta.key
+          })
+          if (!victimKey) break // nothing safe to evict
+          nextTabs = nextTabs.filter((t) => t.key !== victimKey)
+          nextAlive = nextAlive.filter((k) => k !== victimKey)
+        }
+
+        return {
+          tabs: nextTabs,
+          activeKey: meta.key,
+          alive: nextAlive,
+          lru: nextLru.filter((k) => nextTabs.some((t) => t.key === k)),
+        }
+      })
     },
 
     setActive: (key) => {
