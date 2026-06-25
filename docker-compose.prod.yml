@@ -304,5 +304,23 @@ services:
       retries: 3
       start_period: 10s
 
+  finance-web:
+    <<: *web-common
+    image: ${REGISTRY}/uniops-finance-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: finance/Dockerfile
+      args:
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_FINANCE_API_URL: ${FINANCE_API_URL}
+        VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_OA_API_URL: ${OA_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
+        VITE_EPMS_URL: ${EPMS_URL}
+        VITE_OA_URL: ${OA_URL}
+        VITE_VMS_URL: ${VMS_URL}
+    ports: ["5177:80"]
+
 # Edge reverse-proxy (single hostname entrypoint) can be added in front of the
 # published ports above once domains/TLS are decided.
