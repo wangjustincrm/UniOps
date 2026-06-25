@@ -17,7 +17,7 @@ const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'h
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
-function getStoredSession(): { token: string | null; user: { full_name?: string; role?: string } | null } {
+function getStoredSession(): { token: string | null; user: { id?: string; full_name?: string; role?: string } | null } {
   try {
     for (const key of ['vms-auth', 'portal-auth']) {
       const raw = localStorage.getItem(key)
@@ -307,7 +307,7 @@ const VMS_INITIAL_TABS: TabMeta[] = [
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const { token } = getStoredSession()
+  const { token, user } = getStoredSession()
 
   useEffect(() => {
     if (!token) {
@@ -325,7 +325,7 @@ export default function AppLayout() {
   }
 
   return (
-    <TabStoreProvider options={{ storageKey: 'uniops:vms:tabs', initialTabs: VMS_INITIAL_TABS }}>
+    <TabStoreProvider options={{ storageKey: 'uniops:vms:tabs', initialTabs: VMS_INITIAL_TABS, userId: user?.id }}>
       <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
         {mobileOpen && (
           <div

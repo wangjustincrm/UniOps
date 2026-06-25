@@ -226,3 +226,35 @@ describe('tab store — replaceTab', () => {
     expect(s.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/visit/1'])
   })
 })
+
+describe('tab store — user switch', () => {
+  const dashU: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
+  const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
+
+  it('discards the previous user\'s tabs on a user switch (userId mismatch)', () => {
+    localStorage.clear()
+    const a = createTabStore({ storageKey: 'u:switch', initialTabs: [dashU], userId: 'user-1' })
+    a.getState().openTab(pg('/all'))
+    a.getState().openTab(pg('/active'))
+    // user-2 logs in against the same storageKey
+    const b = createTabStore({ storageKey: 'u:switch', initialTabs: [dashU], userId: 'user-2' })
+    expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard'])
+    expect(b.getState().activeKey).toBe('/dashboard')
+  })
+
+  it('restores tabs for the same user', () => {
+    localStorage.clear()
+    const a = createTabStore({ storageKey: 'u:same', initialTabs: [dashU], userId: 'user-1' })
+    a.getState().openTab(pg('/all'))
+    const b = createTabStore({ storageKey: 'u:same', initialTabs: [dashU], userId: 'user-1' })
+    expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/all'])
+  })
+
+  it('keeps restoring when userId is not provided (check disabled)', () => {
+    localStorage.clear()
+    const a = createTabStore({ storageKey: 'u:none', initialTabs: [dashU] })
+    a.getState().openTab(pg('/all'))
+    const b = createTabStore({ storageKey: 'u:none', initialTabs: [dashU] })
+    expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/all'])
+  })
+})

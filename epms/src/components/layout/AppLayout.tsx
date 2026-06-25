@@ -32,6 +32,7 @@ export function AppLayout() {
   const mfaVerifiedAt   = useAuthStore((s) => s.mfaVerifiedAt)
   const mustChangePassword = useAuthStore((s) => s.mustChangePassword)
   const clearMustChangePassword = useAuthStore((s) => s.clearMustChangePassword)
+  const userId = useAuthStore((s) => s.user?.id)
   const isMfaValid = mfaVerifiedAt !== null && Date.now() - mfaVerifiedAt < 8 * 60 * 60 * 1000
   const [mobileOpen, setMobileOpen] = useState(false)
 
@@ -62,7 +63,7 @@ export function AppLayout() {
 
   // Normal: full chrome + keep-alive multi-tab workspace.
   return (
-    <TabStoreProvider options={{ storageKey: 'uniops:epms:tabs', initialTabs: EPMS_INITIAL_TABS }}>
+    <TabStoreProvider options={{ storageKey: 'uniops:epms:tabs', initialTabs: EPMS_INITIAL_TABS, userId }}>
       <div className="flex h-screen overflow-hidden bg-[#FAFBFC] relative">
         {/* Mobile overlay backdrop */}
         {mobileOpen && (

@@ -34,6 +34,13 @@ export interface TabStoreOptions {
    */
   cap?: number
   initialTabs?: TabMeta[]
+  /**
+   * Identity of the current user. Persisted alongside the tabs; on rehydrate, if
+   * it differs from the stored value the persisted tabs are discarded and the
+   * store starts fresh (initialTabs only). This closes the previous user's tabs
+   * after a user switch. Omit to disable the check (tabs always restore).
+   */
+  userId?: string
 }
 
 function touchLru(lru: string[], key: string): string[] {
@@ -176,10 +183,15 @@ export function createTabStore(opts: TabStoreOptions) {
       {
         name: opts.storageKey,
         storage: createJSONStorage(() => localStorage),
-        partialize: (s) => ({ tabs: s.tabs, activeKey: s.activeKey }),
+        partialize: (s) => ({ tabs: s.tabs, activeKey: s.activeKey, userId: opts.userId }),
         version: 1,
         merge: (persisted, current) => {
-          const p = (persisted ?? {}) as Partial<TabStoreState>
+          const p = (persisted ?? {}) as Partial<TabStoreState> & { userId?: string }
+          // User switched (persisted tabs belong to a different user) → discard
+          // them and start fresh with just the initial (pinned) tabs.
+          if (opts.userId !== undefined && p.userId !== opts.userId) {
+            return current
+          }
           let tabs = p.tabs ?? current.tabs
           // Guarantee pinned initial tabs exist, sit first, and carry their
           // canonical identity flags — even if a persisted tab with the same
