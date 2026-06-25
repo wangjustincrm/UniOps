@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,7 +15,7 @@ import { useGrs } from '@/hooks/useGrs'
 import type { ApiPo } from '@/services/po'
 
 export default function PaCreatePage() {
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const createPa = useCreatePa()
@@ -309,7 +311,7 @@ export default function PaCreatePage() {
         await paService.action(newPa.id, { action: 'submit' })
       }
       await queryClient.invalidateQueries({ queryKey: ['pas'] })
-      navigate('/pa')
+      replaceTab('/pa')
     } catch {
       // error handled by mutation
     }
@@ -319,7 +321,7 @@ export default function PaCreatePage() {
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/pa')} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
+        <button onClick={() => replaceTab('/pa')} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
@@ -883,7 +885,7 @@ export default function PaCreatePage() {
 
           {/* Actions */}
           <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => navigate('/pa')}>Cancel</Button>
+            <Button variant="secondary" onClick={() => replaceTab('/pa')}>Cancel</Button>
             <Button onClick={handleSubmit} disabled={!selectedPo} className="gap-2">
               <CreditCard className="h-4 w-4" />
               {isReconcileOnly ? 'Reconcile Prepayment' : 'Submit Payment Application'}

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -50,7 +52,7 @@ function defaultLine(): PrLineItem {
 const currentFiscalYear = new Date().getUTCFullYear()
 
 export default function PrCreatePage() {
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const { user } = useAuthStore()
   const { data: config } = useConfig()
   const { data: budgetData } = useBudgetOverview()
@@ -281,7 +283,7 @@ export default function PrCreatePage() {
       })
       await Promise.all(attachments.map((f) => prAttachmentService.upload(newPr.id, f)))
       await prService.action(newPr.id, { action: 'submit' })
-      navigate(`/pr/${newPr.id}`)
+      replaceTab(`/pr/${newPr.id}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -327,7 +329,7 @@ export default function PrCreatePage() {
           })),
       })
       await Promise.all(attachments.map((f) => prAttachmentService.upload(newPr.id, f)))
-      navigate(`/pr/${newPr.id}`)
+      replaceTab(`/pr/${newPr.id}`)
     } finally {
       setIsSubmitting(false)
     }

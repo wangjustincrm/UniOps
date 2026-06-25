@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams, Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, X, Calendar, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,7 +36,7 @@ const currentFiscalYear = new Date().getUTCFullYear()
 
 export default function PrEditPage() {
   const { id } = useParams()
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const { data: config } = useConfig()
   const { data: pr, isLoading } = usePr(id ?? '')
   const { data: budgetData } = useBudgetOverview()
@@ -198,7 +200,7 @@ export default function PrEditPage() {
     setIsSubmitting(true)
     try {
       await updatePr.mutateAsync({ id, body: buildPayload() })
-      navigate(`/pr/${id}`)
+      replaceTab(`/pr/${id}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -223,7 +225,7 @@ export default function PrEditPage() {
     try {
       await updatePr.mutateAsync({ id, body: buildPayload() })
       await prAction.mutateAsync({ action: 'submit' })
-      navigate(`/pr/${id}`)
+      replaceTab(`/pr/${id}`)
     } finally {
       setIsSubmitting(false)
     }

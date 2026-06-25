@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, AlertTriangle, CheckCircle2, Package, Paperclip, X, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
@@ -55,7 +57,7 @@ interface FormGrLineItem {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function GrCreatePage() {
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const [searchParams] = useSearchParams()
   const createGr = useCreateGr()
   const { data: posData } = usePos()
@@ -193,7 +195,7 @@ export default function GrCreatePage() {
         notes: notes.trim() || undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
       })
-      navigate(`/gr/${newGr.id}`)
+      replaceTab(`/gr/${newGr.id}`)
     } catch {
       // error already in mutation state
     }

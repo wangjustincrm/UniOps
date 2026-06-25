@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -12,7 +14,7 @@ import { useGrs } from '@/hooks/useGrs'
 
 export default function PaEditPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const queryClient = useQueryClient()
   const { data: pa, isLoading } = usePa(id ?? '')
   const updatePa = useUpdatePa()
@@ -154,9 +156,9 @@ export default function PaEditPage() {
       if (andSubmit) {
         await paService.action(pa.id, { action: 'submit' })
         await queryClient.invalidateQueries({ queryKey: ['pas'] })
-        navigate('/pa')
+        replaceTab('/pa')
       } else {
-        navigate(`/pa/${pa.id}`)
+        replaceTab(`/pa/${pa.id}`)
       }
     } catch {
       // error handled by mutation
@@ -175,7 +177,7 @@ export default function PaEditPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-neutral-500">This PA cannot be edited.</p>
-        <Button variant="secondary" className="mt-4" onClick={() => navigate(`/pa/${id}`)}>Back</Button>
+        <Button variant="secondary" className="mt-4" onClick={() => replaceTab(`/pa/${id}`)}>Back</Button>
       </div>
     )
   }
@@ -184,7 +186,7 @@ export default function PaEditPage() {
     <div className="flex flex-col gap-6 p-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(`/pa/${id}`)} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
+        <button onClick={() => replaceTab(`/pa/${id}`)} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
@@ -598,7 +600,7 @@ export default function PaEditPage() {
 
           {/* Actions */}
           <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={() => navigate(`/pa/${id}`)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => replaceTab(`/pa/${id}`)}>Cancel</Button>
             <Button variant="secondary" onClick={() => handleSave(false)} disabled={updatePa.isPending}>
               Save Draft
             </Button>

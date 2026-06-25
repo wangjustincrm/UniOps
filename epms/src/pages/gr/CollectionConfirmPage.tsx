@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
@@ -27,7 +29,7 @@ interface CollectionLine {
 
 export default function CollectionConfirmPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const { data: gr, isLoading } = useGr(id ?? '')
   const grAction = useGrAction(id ?? '')
   const { user } = useAuthStore()
@@ -102,7 +104,7 @@ export default function CollectionConfirmPage() {
     if (!collectionDate || hasErrors) return
     grAction.mutate(
       { action: 'collect', collected_by: user?.name, collection_notes: generalNotes.trim() || undefined },
-      { onSuccess: () => navigate(`/gr/${id}`) }
+      { onSuccess: () => replaceTab(`/gr/${id}`) }
     )
   }
 

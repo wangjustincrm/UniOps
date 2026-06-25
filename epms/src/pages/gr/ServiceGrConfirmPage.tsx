@@ -1,5 +1,7 @@
 import { useState, useRef } from 'react'
-import { useParams, Link, useNavigate } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
@@ -25,7 +27,7 @@ function fmtSize(bytes: number): string {
 
 export default function ServiceGrConfirmPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const { data: gr, isLoading } = useGr(id ?? '')
   const grAction = useGrAction(id ?? '')
   const { user } = useAuthStore()
@@ -110,7 +112,7 @@ export default function ServiceGrConfirmPage() {
     const apiAction = qualityRating === 'rejected' ? 'reject' : 'confirm'
     grAction.mutate(
       { action: apiAction, collected_by: user?.name, collection_notes: combinedNotes },
-      { onSuccess: () => navigate(`/gr/${id}`) }
+      { onSuccess: () => replaceTab(`/gr/${id}`) }
     )
   }
 

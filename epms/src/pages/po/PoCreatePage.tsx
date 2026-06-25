@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
+import { useReplaceTab } from '@uniops/shell'
+import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Upload, X, Calendar, Search, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,7 +42,7 @@ function defaultLine(): PrLineItem {
 }
 
 export default function PoCreatePage() {
-  const navigate = useNavigate()
+  const replaceTab = useReplaceTab(epmsRoutes)
   const [searchParams] = useSearchParams()
   const prId = searchParams.get('prId')
 
@@ -179,7 +181,7 @@ export default function PoCreatePage() {
       if (status === 'submitted') {
         await poService.action(newPo.id, { action: 'submit' })
       }
-      navigate(`/po/${newPo.id}`)
+      replaceTab(`/po/${newPo.id}`)
     } finally {
       setIsSubmitting(false)
     }
