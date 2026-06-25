@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Paperclip, Download, AlertTriangle } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api, epmsApi } from '@/lib/api'
 
@@ -118,6 +118,72 @@ function LinesTable({ rows, currency }: {
   )
 }
 
+// ── Attachments ───────────────────────────────────────────────────────────────
+
+interface InvoiceAttachment {
+  id: string; file_name: string; file_size_bytes: number
+  mime_type: string | null; invoice_source: string
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** Lists the files stored for an OA invoice in invoice_attachments (file-api). */
+function InvoiceAttachments({ invoiceId, fallbackName }: { invoiceId: string; fallbackName?: string | null }) {
+  const { data: attachments = [], isLoading } = useQuery<InvoiceAttachment[]>({
+    queryKey: ['invoice-attachments', 'oa', invoiceId],
+    queryFn: () => api.get<InvoiceAttachment[]>(`/api/v1/invoice-attachments?invoice_id=${invoiceId}&invoice_source=oa`),
+    enabled: !!invoiceId,
+  })
+
+  const download = async (att: InvoiceAttachment) => {
+    const blob = await api.getBlob(`/api/v1/invoice-attachments/${att.id}/file`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = att.file_name; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-neutral-100 bg-neutral-50">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Attachments {attachments.length > 0 && `(${attachments.length})`}
+        </h3>
+      </div>
+      <div className="p-4">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-neutral-400" /></div>
+        ) : attachments.length === 0 ? (
+          <div className="flex items-center gap-2 text-xs text-neutral-400">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            No attachment stored{fallbackName ? ` for ${fallbackName}` : ''}.
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {attachments.map(att => (
+              <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 px-4 py-3">
+                <Paperclip className="h-4 w-4 text-neutral-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-neutral-800 truncate">{att.file_name}</p>
+                  <p className="text-xs text-neutral-400">{formatSize(att.file_size_bytes)}</p>
+                </div>
+                <button type="button" onClick={() => download(att)}
+                  className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-800 shrink-0">
+                  <Download className="h-3.5 w-3.5" />Download
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── OA detail view ────────────────────────────────────────────────────────────
 
 function OaDetailView({ id }: { id: string }) {
@@ -171,6 +237,9 @@ function OaDetailView({ id }: { id: string }) {
         </div>
         <LinesTable rows={lines} currency={inv.currency} />
       </div>
+
+      {/* Attachments */}
+      <InvoiceAttachments invoiceId={id} fallbackName={inv.file_name} />
     </>
   )
 }
