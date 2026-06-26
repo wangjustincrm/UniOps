@@ -12,9 +12,7 @@
  * role lists — see `permission` below and useRolePermissions().
  */
 import {
-  Home, ShoppingCart, Wallet, UserCheck, Settings, Database,
-  BarChart2, CalendarRange, Layers, SlidersHorizontal, BookOpenCheck,
-  Landmark, Banknote, ReceiptText, Scale, Percent, FileText, CreditCard,
+  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark,
 } from 'lucide-react'
 import type { RolePermissionMatrix } from '@/hooks/useRolePermissions'
 
@@ -53,24 +51,6 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'OA',          icon: Wallet,       href: 'oa' },
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
       { label: 'Finance',     icon: Landmark,     href: 'finance' },
-    ],
-  },
-  {
-    title: 'FINANCE',
-    items: [
-      { label: 'Budget Dashboard',     icon: BarChart2,         href: 'portal:/budget/dashboard',        permission: 'view_budget_dashboard' },
-      { label: 'Budget Plans',         icon: CalendarRange,     href: 'portal:/budget/plans',            permission: 'view_budget_plans' },
-      { label: 'Account Catalog',      icon: Layers,            href: 'portal:/budget/catalog',          permission: 'view_finance' },
-      { label: 'Factor Library',       icon: Layers,            href: 'portal:/budget/factors',          permission: 'view_finance' },
-      { label: 'Budget Config',        icon: SlidersHorizontal, href: 'portal:/budget/config',           permission: 'view_finance' },
-      { label: 'Chart of Accounts',    icon: BookOpenCheck,     href: 'portal:/finance/coa',             permission: 'view_finance' },
-      { label: 'Bank & Cards',         icon: CreditCard,        href: 'portal:/finance/bank-settings',   permission: 'view_finance' },
-      { label: 'Bank Reconciliation',  icon: Landmark,          href: 'portal:/finance/bank',            permission: 'view_finance' },
-      { label: 'Payment Batches',      icon: Banknote,          href: 'portal:/finance/payment-batches', permission: 'view_finance' },
-      { label: 'Accounts Payable',     icon: FileText,          href: 'portal:/finance/ap',              permission: 'view_finance' },
-      { label: 'Accounts Receivable',  icon: ReceiptText,       href: 'portal:/finance/ar',              permission: 'view_finance' },
-      { label: 'General Ledger',       icon: Scale,             href: 'portal:/finance/gl',              permission: 'view_finance' },
-      { label: 'Tax Settings',         icon: Percent,           href: 'portal:/finance/tax',             permission: 'view_finance' },
     ],
   },
   {
