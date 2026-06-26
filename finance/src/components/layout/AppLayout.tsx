@@ -9,6 +9,7 @@ import {
 import { cn } from '@/lib/utils'
 import { globalSignOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
+import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { useAuthStore } from '@/store/auth'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
@@ -16,36 +17,38 @@ import { financeRoutes } from '@/app/routes'
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
-interface NavItem { label: string; href: string; icon: LucideIcon }
+// `permission` gates visibility via the EPMS Access Control Matrix (same keys the
+// old Portal navConfig used). Items hide for users whose role lacks the toggle.
+interface NavItem { label: string; href: string; icon: LucideIcon; permission?: string }
 interface NavSection { title: string; items: NavItem[] }
 
 const NAV: NavSection[] = [
   {
     title: 'Finance',
     items: [
-      { label: 'Accounts Payable', href: '/finance/ap', icon: CreditCard },
-      { label: 'Accounts Receivable', href: '/finance/ar', icon: Receipt },
-      { label: 'General Ledger', href: '/finance/gl', icon: BookOpen },
-      { label: 'Payment Batches', href: '/finance/payment-batches', icon: Banknote },
-      { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark },
+      { label: 'Accounts Payable', href: '/finance/ap', icon: CreditCard, permission: 'view_finance' },
+      { label: 'Accounts Receivable', href: '/finance/ar', icon: Receipt, permission: 'view_finance' },
+      { label: 'General Ledger', href: '/finance/gl', icon: BookOpen, permission: 'view_finance' },
+      { label: 'Payment Batches', href: '/finance/payment-batches', icon: Banknote, permission: 'view_finance' },
+      { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark, permission: 'view_finance' },
     ],
   },
   {
     title: 'Budget',
     items: [
-      { label: 'Budget Dashboard', href: '/budget/dashboard', icon: LayoutDashboard },
-      { label: 'Budget Plans', href: '/budget/plans', icon: ClipboardList },
-      { label: 'Account Catalog', href: '/budget/catalog', icon: FolderTree },
-      { label: 'Factor Library', href: '/budget/factors', icon: FlaskConical },
-      { label: 'Budget Config', href: '/budget/config', icon: SlidersHorizontal },
+      { label: 'Budget Dashboard', href: '/budget/dashboard', icon: LayoutDashboard, permission: 'view_budget_dashboard' },
+      { label: 'Budget Plans', href: '/budget/plans', icon: ClipboardList, permission: 'view_budget_plans' },
+      { label: 'Account Catalog', href: '/budget/catalog', icon: FolderTree, permission: 'view_finance' },
+      { label: 'Factor Library', href: '/budget/factors', icon: FlaskConical, permission: 'view_finance' },
+      { label: 'Budget Config', href: '/budget/config', icon: SlidersHorizontal, permission: 'view_finance' },
     ],
   },
   {
     title: 'Settings',
     items: [
-      { label: 'Chart of Accounts', href: '/finance/coa', icon: FolderTree },
-      { label: 'Tax Settings', href: '/finance/tax', icon: Percent },
-      { label: 'Bank Settings', href: '/finance/bank-settings', icon: Settings },
+      { label: 'Chart of Accounts', href: '/finance/coa', icon: FolderTree, permission: 'view_finance' },
+      { label: 'Tax Settings', href: '/finance/tax', icon: Percent, permission: 'view_finance' },
+      { label: 'Bank Settings', href: '/finance/bank-settings', icon: Settings, permission: 'view_finance' },
     ],
   },
 ]
@@ -65,6 +68,15 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
   const brandTagline = branding?.tagline || 'Finance'
   const brandLogo = branding?.logo_data_url || null
   const initials = brandName.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'FI'
+
+  // Gate items by the Access Control Matrix (EPMS → Admin → Access Control Matrix).
+  const { data: matrix } = useRolePermissions()
+  const userRole = useAuthStore((s) => s.user?.role ?? null)
+  const isVisible = (item: NavItem): boolean => {
+    if (userRole === 'system_admin') return true
+    if (item.permission) return userRole !== null && !!matrix?.[userRole]?.[item.permission]
+    return true
+  }
 
   const navLinkCls = (active: boolean) => cn(
     'flex items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors min-h-[44px]',
@@ -105,13 +117,16 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4">
-        {NAV.map((section) => (
+        {NAV.map((section) => {
+          const items = section.items.filter(isVisible)
+          if (items.length === 0) return null
+          return (
           <div key={section.title} className="mb-4">
             {!collapsed && (
               <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">{section.title}</p>
             )}
             {collapsed && <div className="my-2 border-t border-white/10" />}
-            {section.items.map(({ label, href, icon: Icon }) => (
+            {items.map(({ label, href, icon: Icon }) => (
               <NavLink
                 key={href}
                 to={href}
@@ -124,7 +139,8 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
               </NavLink>
             ))}
           </div>
-        ))}
+          )
+        })}
       </nav>
 
       {!collapsed && (
