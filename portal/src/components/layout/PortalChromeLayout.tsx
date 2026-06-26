@@ -14,7 +14,7 @@ import {
   ArrowLeft, Menu, ChevronDown, LogOut,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { EPMS_URL, OA_URL, VMS_URL, encodeSession } from '@/lib/api'
+import { EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, encodeSession } from '@/lib/api'
 import { globalSignOut } from '@/lib/signOut'
 import { cn } from '@/lib/utils'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
@@ -58,6 +58,9 @@ export function PortalChromeLayout({
   const vmsHref = session
     ? `${VMS_URL}/#__session=${session}`
     : VMS_URL
+  const financeHref = session
+    ? `${FINANCE_URL}/finance/ap#__session=${session}`
+    : FINANCE_URL
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#F5F6FA]">
@@ -74,6 +77,7 @@ export function PortalChromeLayout({
         epmsHref={epmsHref}
         oaHref={oaHref}
         vmsHref={vmsHref}
+        financeHref={financeHref}
         session={session}
         userRole={auth.user?.role ?? null}
         matrix={matrix}

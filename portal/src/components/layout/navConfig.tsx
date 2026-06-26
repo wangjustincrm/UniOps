@@ -52,6 +52,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'Procurement', icon: ShoppingCart, href: 'epms' },
       { label: 'OA',          icon: Wallet,       href: 'oa' },
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
+      { label: 'Finance',     icon: Landmark,     href: 'finance' },
     ],
   },
   {
@@ -100,6 +101,7 @@ export interface HrefContext {
   epmsHref: string
   oaHref: string
   vmsHref: string
+  financeHref: string
   /** base64 session for epms:/… sub-route handoff. */
   session: string
   epmsUrl: string
@@ -110,6 +112,7 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   if (key === 'epms') return ctx.epmsHref
   if (key === 'oa')   return ctx.oaHref
   if (key === 'vms')  return ctx.vmsHref
+  if (key === 'finance') return ctx.financeHref
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {

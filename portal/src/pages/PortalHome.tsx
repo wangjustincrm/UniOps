@@ -602,7 +602,7 @@ export default function PortalHome() {
       {/* ── Sidebar ─────────────────────────────── */}
       <PortalSidebar
         activeKey="portal:/"
-        epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} session={session}
+        epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} session={session}
         userRole={auth.user?.role ?? null} matrix={matrix}
         mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)}
         collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)}
@@ -636,7 +636,7 @@ export default function PortalHome() {
                 </div>
 
                 {/* Module cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 max-w-5xl">
                   {MODULES.map((m) => (
                     <ModuleCard
                       key={m.label}
