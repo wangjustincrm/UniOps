@@ -1,0 +1,34 @@
+# UniOps edge reverse proxy (Caddy) — single 443 entry, subdomains under
+# canadaroyalmilk.com, TLS terminated with the company wildcard cert.
+#
+# Place the wildcard cert (covering *.canadaroyalmilk.com) on the app server:
+#   ./certs/fullchain.pem   (server cert + intermediate chain)
+#   ./certs/privkey.pem     (private key)
+# The `edge` service in docker-compose.prod.yml mounts ./certs read-only.
+#
+# All sites use the provided cert (no ACME / Let's Encrypt). Caddy listens on 80
+# and 443; 80 redirects to 443. Internal + external browsers use the same domain
+# (split-DNS or firewall hairpin → 10.10.50.65:443).
+
+(wildcard) {
+	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+}
+
+# ── Frontends (nginx :80 in each web image) ───────────────────────────────────
+portal.canadaroyalmilk.com   { import wildcard; reverse_proxy portal-web:80 }
+epms.canadaroyalmilk.com     { import wildcard; reverse_proxy epms-web:80 }
+oa.canadaroyalmilk.com       { import wildcard; reverse_proxy oa-web:80 }
+vms.canadaroyalmilk.com      { import wildcard; reverse_proxy vms-web:80 }
+finance.canadaroyalmilk.com  { import wildcard; reverse_proxy finance-web:80 }
+
+# ── Browser-facing APIs ───────────────────────────────────────────────────────
+# (approval-api + identity-api are server-to-server only → no public subdomain.)
+epms-api.canadaroyalmilk.com     { import wildcard; reverse_proxy epms-api:8000 }
+oa-api.canadaroyalmilk.com       { import wildcard; reverse_proxy expense-api:8006 }
+vms-api.canadaroyalmilk.com      { import wildcard; reverse_proxy vms-api:8008 }
+finance-api.canadaroyalmilk.com  { import wildcard; reverse_proxy finance-api:8004 }
+budget-api.canadaroyalmilk.com   { import wildcard; reverse_proxy budget-api:8007 }
+mdm-api.canadaroyalmilk.com      { import wildcard; reverse_proxy mdm-api:8002 }
+
+# ── File server (file-api lives on the File server, not in this compose) ──────
+files.canadaroyalmilk.com        { import wildcard; reverse_proxy 10.10.50.66:8005 }

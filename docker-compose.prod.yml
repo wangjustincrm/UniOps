@@ -329,8 +329,25 @@ services:
       retries: 3
       start_period: 10s
 
-# Access model: every service publishes its port on the app server (10.10.50.65).
-# Internal users reach modules/APIs directly at http://10.10.50.65:<port>. The
-# firewall's Server Mapping exposes ONLY the Portal port (5174) to the public IP
-# (DNS main domain → public IP → 10.10.50.65:5174, TLS terminated at the firewall).
-# No reverse proxy in compose — the baked VITE_* URLs all point at 10.10.50.65.
+  # ── Edge reverse proxy (single 443 entry, subdomains, company wildcard cert) ──
+  # Terminates TLS with ./certs/{fullchain,privkey}.pem and routes
+  # <module>.canadaroyalmilk.com / <api>-api.canadaroyalmilk.com to the containers
+  # (see Caddyfile). Both internal and external browsers use the same domains
+  # (split-DNS or firewall hairpin → 10.10.50.65:443). The web/api services keep
+  # their published ports for direct on-box debugging, but public traffic enters
+  # only through this proxy (firewall maps public 443 → 10.10.50.65:443).
+  edge:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

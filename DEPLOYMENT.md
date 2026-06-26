@@ -101,51 +101,57 @@ the package resolves cleanly — no per-server `npm install`, no `--install-link
 gymnastics. Build args inject the browser-facing `VITE_*` URLs (Vite inlines them
 at build time).
 
-### Topology: GHCR registry + IP:port (single public entry = Portal)
+### Topology: GHCR registry + subdomains behind a single Caddy 443 edge
 
 - **Images:** GitHub Container Registry — `ghcr.io/wangjustincrm/uniops-*:<tag>`.
-- **Addressing:** every service publishes its port on the app server
-  **`10.10.50.65`**. The browser reaches modules + APIs directly at
-  `http://10.10.50.65:<port>` (baked into the bundles at build time):
+- **Single entry:** the **Caddy `edge`** service on the app server (`10.10.50.65`)
+  listens on **443**, terminates TLS with the company wildcard cert
+  (`./certs/{fullchain,privkey}.pem`, covers `*.canadaroyalmilk.com`), and routes
+  subdomains to the containers (see `Caddyfile`):
 
-  | Module  | Web port | API (browser)        |
-  |---------|----------|----------------------|
-  | Portal  | 5174     | —                    |
-  | EPMS    | 5173     | epms-api `8000`      |
-  | OA      | 5175     | expense-api `8006`   |
-  | VMS     | 5176     | vms-api `8008`       |
-  | Finance | 5177     | finance-api `8004`   |
-  | (shared)| —        | budget `8007`, mdm `8002` |
+  | Subdomain (`.canadaroyalmilk.com`) | → container        |
+  |------------------------------------|--------------------|
+  | `portal`/`epms`/`oa`/`vms`/`finance` | the web images   |
+  | `epms-api`                         | epms-api `8000`    |
+  | `oa-api`                           | expense-api `8006` |
+  | `vms-api`                          | vms-api `8008`     |
+  | `finance-api`                      | finance-api `8004` |
+  | `budget-api`                       | budget-api `8007`  |
+  | `mdm-api`                          | mdm-api `8002`     |
+  | `files`                            | File server `10.10.50.66:8005` |
 
-  `approval-api` (`8003`) and `identity-api` (`8009`) are server-to-server only.
-  `file-api` (`8005`) lives on the File server (`10.10.50.66`).
-- **Public exposure:** the firewall's **Server Mapping** forwards the public IP to
-  **`10.10.50.65:5174` only** (DNS main domain → public IP → Portal). Portal is
-  HTTPS at the firewall edge; everything internal is plain HTTP. The other ports
-  are reachable on the internal LAN only — never mapped publicly.
-
-> Mixed-content caveat: because the baked URLs are `http://10.10.50.65:*`, full
-> module use requires the browser to be on the internal LAN (or VPN). External
-> users reaching Portal over HTTPS can log in, but cross-module jumps / API calls
-> target `10.10.50.65` and won't load from outside. This matches "only Portal is
-> exposed"; if remote users ever need full function, front the APIs at the firewall
-> too (or switch the baked URLs to HTTPS names).
+  `approval-api`/`identity-api` are server-to-server only (no subdomain). The
+  browser-facing `*_URL` are baked into the bundles at **build time** as
+  `https://<sub>.canadaroyalmilk.com`, so both internal and external users use the
+  same HTTPS domains.
+- **Public exposure:** the firewall **Server Mapping** forwards **only**
+  public `66.102.68.69:443` → `10.10.50.65:443` (the edge). No other port is
+  exposed. The web/api services still publish their ports for on-box debugging but
+  public traffic enters only through Caddy.
 
 ### Prerequisites
 
 - A **GitHub Personal Access Token** with `write:packages` (build host) /
   `read:packages` (app server).
-- Firewall **Server Mapping**: public IP → `10.10.50.65:5174`; DNS main domain →
-  that public IP. (Optionally terminate TLS at the firewall for Portal.)
+- **TLS cert** for `*.canadaroyalmilk.com` placed at `./certs/fullchain.pem` +
+  `./certs/privkey.pem` on the app server (see `certs/README.md`).
+- **Firewall Server Mapping:** public `66.102.68.69:443` → `10.10.50.65:443`
+  (TCP). Enable NAT **hairpin/loopback** so internal users hitting the public IP
+  reach the edge too (or use split-DNS — see DNS below).
+- **DNS** A records (→ `66.102.68.69`): `portal`, `epms`, `oa`, `vms`, `finance`,
+  `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`, `files`
+  — each `.canadaroyalmilk.com`. (Use specific records, **not** a wildcard on the
+  company apex.) Internal: rely on firewall hairpin, or add the same names in the
+  internal DNS pointing at `10.10.50.65` (split-DNS).
 - App server `10.10.50.65` can reach the **DB server** (`${DB_HOST}:5432` + Redis
-  `:6379`) and **File server** (`${FILE_SERVER_INTERNAL_URL}`) over the internal
-  network — add `10.10.50.65` to **pg_hba.conf + ufw** on the DB server.
+  `:6379`) and **File server** (`10.10.50.66:8005`) — add `10.10.50.65` to
+  **pg_hba.conf + ufw** on the DB server.
 
 ### 1. Build + push (build host — your dev machine or CI)
 
 ```bash
 cp .env.prod.example .env        # fill REGISTRY=ghcr.io/wangjustincrm, DB_PASSWORD,
-                                 # JWT_SECRET_KEY; *_URL already point at 10.10.50.65
+                                 # JWT_SECRET_KEY; *_URL already use the HTTPS subdomains
 echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
 export TAG=$(git rev-parse --short HEAD)
 
@@ -162,19 +168,21 @@ docker compose -f docker-compose.prod.yml push       # pushes ghcr.io/wangjustin
 ### 2. Deploy (application server 10.10.50.65)
 
 ```bash
-git pull origin main             # gets docker-compose.prod.yml, migrate-prod.sh
+git pull origin main             # gets docker-compose.prod.yml, Caddyfile, migrate-prod.sh
 cp .env.prod.example .env        # same values as the build host (same TAG!)
+mkdir -p certs                   # then copy fullchain.pem + privkey.pem into ./certs
 echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
 
 docker compose -f docker-compose.prod.yml pull
 ./migrate-prod.sh                # ordered alembic — finance-api FIRST
 docker compose -f docker-compose.prod.yml up -d
 
-docker compose -f docker-compose.prod.yml ps         # all healthy?
+docker compose -f docker-compose.prod.yml ps                 # all healthy?
+docker compose -f docker-compose.prod.yml logs --tail=30 edge   # Caddy loaded the cert + sites?
 ```
 
-Internal: open `http://10.10.50.65:5174` → log in → tiles jump to the other
-modules. External: `https://<main-domain>` (firewall → Portal).
+Open `https://portal.canadaroyalmilk.com` (internal + external) → log in → tiles
+deep-link to the other modules over their HTTPS subdomains.
 
 **Rollback:** set `TAG` to a previous git short SHA in `.env`, then
 `docker compose -f docker-compose.prod.yml pull && up -d` (re-run `migrate-prod.sh`

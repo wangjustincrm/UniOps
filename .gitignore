@@ -67,3 +67,7 @@ budget-api/opening_retag_*.csv
 info.txt
 ServerStartup.txt
 db-server-setup.sh
+
+# TLS certs (app server only)
+/certs/*
+!/certs/README.md
