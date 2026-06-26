@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import { useTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -83,6 +84,20 @@ export default function AccountsPayablePage() {
     return session ? `${base}${path}#__session=${session}` : `${base}${path}`
   }
 
+  // Open the source-system invoice detail as an iframe tab inside Finance (the
+  // embedded EPMS/OA page hides its own chrome), instead of a full-page jump.
+  const tabApi = useTabStoreApi()
+  const openInvoiceTab = (inv: ApInvoice) => {
+    tabApi.getState().openTab({
+      key: `ext:invoice:${inv.source}:${inv.source_invoice_id}`,
+      title: inv.vendor_invoice_number ?? inv.ap_invoice_number,
+      kind: 'iframe',
+      src: detailHref(inv),
+      icon: 'FileText',
+      closable: true,
+    })
+  }
+
   if (!user) return <Navigate to="/login" replace />
 
   return (
@@ -144,8 +159,8 @@ export default function AccountsPayablePage() {
                     const open = inv.status === 'posted' || inv.status === 'partially_paid'
                     return (
                       <tr key={inv.id}
-                          onClick={() => { window.location.href = detailHref(inv) }}
-                          title="Open invoice detail in source system"
+                          onClick={() => openInvoiceTab(inv)}
+                          title="Open invoice detail in a tab"
                           className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                         <td className="px-3 py-2 font-mono text-xs text-[#085E5E] underline-offset-2 hover:underline">{inv.ap_invoice_number}</td>
                         <td className="px-3 py-2 text-xs uppercase text-neutral-500">{inv.source}</td>

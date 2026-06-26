@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, Routes, Route } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
@@ -296,6 +296,18 @@ const OA_INITIAL_TABS: TabMeta[] = [
   { key: '/tasks', title: 'Task Inbox', kind: 'page', path: '/tasks', icon: 'CheckSquare', pinned: true, closable: false },
 ]
 
+// True when OA is rendered inside an iframe (e.g. a Finance drill-down tab). In
+// that case we hide OA's own Sidebar/Header/tabs and render just the single
+// matched page, so the host app's chrome is the only navigation (mirrors EPMS).
+function detectIframeEmbed(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.self !== window.top
+  } catch {
+    return true
+  }
+}
+const IS_EMBEDDED = detectIframeEmbed()
+
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -312,6 +324,21 @@ export default function AppLayout() {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-neutral-500">
         Redirecting to portal for authentication…
+      </div>
+    )
+  }
+
+  // Embedded (iframe): single page, no chrome/tabs — the host owns navigation.
+  if (IS_EMBEDDED) {
+    return (
+      <div className="h-screen overflow-y-auto bg-[#FAFBFC]">
+        <div className="mx-auto max-w-[1440px] p-4 md:p-6">
+          <Routes>
+            {oaRoutes.map((r) => (
+              <Route key={r.path} path={r.path} element={r.element} />
+            ))}
+          </Routes>
+        </div>
       </div>
     )
   }
