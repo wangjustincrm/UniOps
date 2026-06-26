@@ -487,7 +487,9 @@ export default function PortalHome() {
   const epmsHref = session ? `${EPMS_URL}/dashboard#__session=${session}` : EPMS_URL
   const oaHref   = session ? `${OA_URL}/pa#__session=${session}`           : OA_URL
   const vmsHref  = session ? `${VMS_URL}/#__session=${session}`            : VMS_URL
-  const financeHref = session ? `${FINANCE_URL}/finance/ap#__session=${session}` : FINANCE_URL
+  // Land on Finance root; the Finance app redirects to the first page the user
+  // can access (don't deep-link to /finance/ap which needs view_finance).
+  const financeHref = session ? `${FINANCE_URL}/#__session=${session}` : FINANCE_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)

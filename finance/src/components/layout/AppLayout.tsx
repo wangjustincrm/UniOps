@@ -260,7 +260,7 @@ export default function AppLayout() {
   const initialTabs: TabMeta[] = homeMeta ? [{ ...homeMeta, pinned: true, closable: false }] : []
 
   return (
-    <TabStoreProvider options={{ storageKey: 'uniops:finance:tabs', initialTabs, userId }}>
+    <TabStoreProvider options={{ storageKey: 'uniops:finance:tabs:v2', initialTabs, userId }}>
       <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
         {mobileOpen && (
           <div className="fixed inset-0 z-20 bg-black/50 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />
