@@ -50,6 +50,14 @@ async def send_email(
         part["Content-Type"] = f'{content_type}; name="{filename}"'
         msg.attach(part)
 
+    # aiosmtplib distinguishes two TLS modes that the single "Use TLS/STARTTLS"
+    # toggle conflates:
+    #   use_tls   → handshake immediately on connect (implicit TLS / SMTPS, port 465)
+    #   start_tls → connect plaintext, then upgrade via STARTTLS (submission, port 587)
+    # Forcing use_tls on a 587 STARTTLS server yields [SSL: WRONG_VERSION_NUMBER].
+    implicit_tls = bool(use_tls) and port == 465
+    start_tls = bool(use_tls) and port != 465
+
     try:
         await aiosmtplib.send(
             msg,
@@ -57,7 +65,8 @@ async def send_email(
             port=port,
             username=user or None,
             password=password or None,
-            use_tls=use_tls,
+            use_tls=implicit_tls,
+            start_tls=start_tls,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to send email to %s: %s", to, exc)
