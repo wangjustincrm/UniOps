@@ -101,34 +101,72 @@ the package resolves cleanly — no per-server `npm install`, no `--install-link
 gymnastics. Build args inject the browser-facing `VITE_*` URLs (Vite inlines them
 at build time).
 
-### Release workflow (registry: build once, pull on the app server)
+### Topology: GHCR registry + subdomain-per-module behind Caddy
+
+- **Images:** GitHub Container Registry — `ghcr.io/wangjustincrm/uniops-*:<tag>`.
+- **Domains:** one subdomain per module behind a **Caddy** edge proxy (automatic
+  HTTPS). Frontends: `portal./epms./oa./vms./finance.<DOMAIN>`. Browser-facing
+  APIs: `epms-api./oa-api./vms-api./finance-api./budget-api./mdm-api.<DOMAIN>`
+  (`approval-api`/`identity-api` are server-to-server only — no subdomain).
+- The `*_URL` values are baked into the static bundles at **build time**, so they
+  must be the final public URLs before you build.
+
+### Prerequisites
+
+- A **GitHub Personal Access Token** with `write:packages` (build host) /
+  `read:packages` (app server).
+- **DNS A records** for each subdomain above → the app server's public IP, and
+  ports **80 + 443** reachable (Caddy needs them for Let's Encrypt).
+  *Internal domain (no public DNS):* in `Caddyfile`, give each site `tls internal`
+  (Caddy local CA) or your own certs instead of automatic HTTPS.
+- App server can reach the **DB server** (`${DB_HOST}:5432` + Redis `:6379`) and
+  **File server** (`${FILE_SERVER_INTERNAL_URL}`) over the internal network
+  (firewall: add the app server IP to pg_hba + ufw on the DB server).
+
+### 1. Build + push (build host — your dev machine or CI)
 
 ```bash
-# 1. On a build host (CI or a dev machine) with registry access:
-cp .env.prod.example .env        # fill REGISTRY, TAG (use the git SHA), and all *_URL values
+cp .env.prod.example .env        # fill DOMAIN, REGISTRY=ghcr.io/wangjustincrm,
+                                 # DB_PASSWORD, JWT_SECRET_KEY, and every *_URL
+echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
 export TAG=$(git rev-parse --short HEAD)
 
-docker compose -f docker-compose.prod.yml build      # builds epms/oa/portal/vms web images
-docker compose -f docker-compose.prod.yml push       # pushes ${REGISTRY}/uniops-*-web:${TAG}
-
-# 2. On the application server (same .env, same TAG):
-docker compose -f docker-compose.prod.yml pull
-./migrate-prod.sh                                    # ordered alembic — finance-api FIRST
-docker compose -f docker-compose.prod.yml up -d
-
-# Rollback = set TAG to a previous git SHA and re-run pull + up -d
-# (re-run migrate only if the new release added migrations).
+docker compose -f docker-compose.prod.yml build      # builds all web + api images
+docker compose -f docker-compose.prod.yml push       # pushes ghcr.io/wangjustincrm/uniops-*:${TAG}
 ```
 
-**Migrations** run via `migrate-prod.sh`, which applies `alembic upgrade head`
-per service in a safe order — **finance-api first** (it creates
-`posting_events`/`posting_lines` that expense-api writes into). `approval-api`
-has no migrations of its own. Containers run uvicorn only (no auto-migrate), so
-this step is explicit and ordered.
+> First push: GHCR packages default to **private**. Either keep them private (the
+> app server logs in to pull) or mark each package Public in GitHub → Packages.
 
-Published ports: backends on `8000/8002/8003/8004/8006/8007/8008/8009`, web on
-`5173`(EPMS)/`5174`(Portal)/`5175`(OA)/`5176`(VMS). Add an edge reverse proxy
-(single hostname, TLS) in front of these once domains are decided.
+### 2. Deploy (application server)
+
+```bash
+git pull origin main             # gets docker-compose.prod.yml, Caddyfile, migrate-prod.sh
+cp .env.prod.example .env        # same values as the build host (same TAG!)
+echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
+
+docker compose -f docker-compose.prod.yml pull
+./migrate-prod.sh                # ordered alembic — finance-api FIRST
+docker compose -f docker-compose.prod.yml up -d
+
+docker compose -f docker-compose.prod.yml ps         # all healthy?
+docker compose -f docker-compose.prod.yml logs -f edge   # watch Caddy obtain certs
+```
+
+Open `https://portal.<DOMAIN>` → log in → tiles deep-link to the other modules.
+
+**Rollback:** set `TAG` to a previous git short SHA in `.env`, then
+`docker compose -f docker-compose.prod.yml pull && up -d` (re-run `migrate-prod.sh`
+only if the new release added migrations — migrations are forward-only).
+
+**Migrations** run via `migrate-prod.sh`: `alembic upgrade head` per service in a
+safe order — **finance-api first** (it creates `posting_events`/`posting_lines`
+that expense-api writes into). `approval-api` has no migrations. Containers run
+uvicorn only (no auto-migrate), so this step is explicit and ordered.
+
+The web/api services keep host-published ports (`5173-5177`, `8000-8009`) for
+direct `IP:port` access during bring-up; once Caddy + DNS work, you can delete
+those `ports:` so traffic only enters through Caddy (80/443).
 
 > ⚠️ The `POSTGRES_PASSWORD` env is **required** on budget/finance/mdm/vms-api —
 > they compute `DATABASE_URL` from `POSTGRES_*` and ignore the env `DATABASE_URL`.
