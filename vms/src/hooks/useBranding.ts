@@ -12,7 +12,7 @@ export interface PublicBranding {
 export function useBranding() {
   return useQuery<PublicBranding>({
     queryKey: ['public-branding', 'vms'],
-    queryFn: () => epmsApi.get<PublicBranding>('/config/public/branding?module=vms'),
+    queryFn: () => epmsApi.get<PublicBranding>('/api/v1/config/public/branding?module=vms'),
     staleTime: 5 * 60_000,
     retry: 1,
   })
