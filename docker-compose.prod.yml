@@ -333,9 +333,9 @@ services:
   # Terminates TLS with ./certs/{fullchain,privkey}.pem and routes
   # <module>.canadaroyalmilk.com / <api>-api.canadaroyalmilk.com to the containers
   # (see Caddyfile). Both internal and external browsers use the same domains
-  # (split-DNS or firewall hairpin → 10.10.50.65:443). The web/api services keep
+  # (split-DNS or firewall hairpin → 10.10.250.30:443). The web/api services keep
   # their published ports for direct on-box debugging, but public traffic enters
-  # only through this proxy (firewall maps public 443 → 10.10.50.65:443).
+  # only through this proxy (firewall maps public 443 → 10.10.250.30:443).
   edge:
     image: caddy:2-alpine
     restart: unless-stopped
