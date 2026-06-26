@@ -13,6 +13,7 @@
     "@uniops/shell": "file:../packages/shell",
     "@anthropic-ai/sdk": "^0.92.0",
     "@tanstack/react-query": "^5.100.6",
+    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.14.0",
     "pdfjs-dist": "^5.7.284",
