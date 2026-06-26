@@ -329,24 +329,8 @@ services:
       retries: 3
       start_period: 10s
 
-  # ── Edge reverse proxy (subdomain routing + automatic HTTPS) ────────────────
-  # Routes per-module subdomains to the web/api containers and terminates TLS.
-  # The web/api services keep their published ports for direct IP:port access
-  # during bring-up; once DNS/TLS is up you can remove those `ports:` and reach
-  # everything only through Caddy.
-  edge:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    environment:
-      DOMAIN: ${DOMAIN}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
-volumes:
-  caddy_data:
-  caddy_config:
+# Access model: every service publishes its port on the app server (10.10.50.65).
+# Internal users reach modules/APIs directly at http://10.10.50.65:<port>. The
+# firewall's Server Mapping exposes ONLY the Portal port (5174) to the public IP
+# (DNS main domain → public IP → 10.10.50.65:5174, TLS terminated at the firewall).
+# No reverse proxy in compose — the baked VITE_* URLs all point at 10.10.50.65.

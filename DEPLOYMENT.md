@@ -101,33 +101,51 @@ the package resolves cleanly — no per-server `npm install`, no `--install-link
 gymnastics. Build args inject the browser-facing `VITE_*` URLs (Vite inlines them
 at build time).
 
-### Topology: GHCR registry + subdomain-per-module behind Caddy
+### Topology: GHCR registry + IP:port (single public entry = Portal)
 
 - **Images:** GitHub Container Registry — `ghcr.io/wangjustincrm/uniops-*:<tag>`.
-- **Domains:** one subdomain per module behind a **Caddy** edge proxy (automatic
-  HTTPS). Frontends: `portal./epms./oa./vms./finance.<DOMAIN>`. Browser-facing
-  APIs: `epms-api./oa-api./vms-api./finance-api./budget-api./mdm-api.<DOMAIN>`
-  (`approval-api`/`identity-api` are server-to-server only — no subdomain).
-- The `*_URL` values are baked into the static bundles at **build time**, so they
-  must be the final public URLs before you build.
+- **Addressing:** every service publishes its port on the app server
+  **`10.10.50.65`**. The browser reaches modules + APIs directly at
+  `http://10.10.50.65:<port>` (baked into the bundles at build time):
+
+  | Module  | Web port | API (browser)        |
+  |---------|----------|----------------------|
+  | Portal  | 5174     | —                    |
+  | EPMS    | 5173     | epms-api `8000`      |
+  | OA      | 5175     | expense-api `8006`   |
+  | VMS     | 5176     | vms-api `8008`       |
+  | Finance | 5177     | finance-api `8004`   |
+  | (shared)| —        | budget `8007`, mdm `8002` |
+
+  `approval-api` (`8003`) and `identity-api` (`8009`) are server-to-server only.
+  `file-api` (`8005`) lives on the File server (`10.10.50.66`).
+- **Public exposure:** the firewall's **Server Mapping** forwards the public IP to
+  **`10.10.50.65:5174` only** (DNS main domain → public IP → Portal). Portal is
+  HTTPS at the firewall edge; everything internal is plain HTTP. The other ports
+  are reachable on the internal LAN only — never mapped publicly.
+
+> Mixed-content caveat: because the baked URLs are `http://10.10.50.65:*`, full
+> module use requires the browser to be on the internal LAN (or VPN). External
+> users reaching Portal over HTTPS can log in, but cross-module jumps / API calls
+> target `10.10.50.65` and won't load from outside. This matches "only Portal is
+> exposed"; if remote users ever need full function, front the APIs at the firewall
+> too (or switch the baked URLs to HTTPS names).
 
 ### Prerequisites
 
 - A **GitHub Personal Access Token** with `write:packages` (build host) /
   `read:packages` (app server).
-- **DNS A records** for each subdomain above → the app server's public IP, and
-  ports **80 + 443** reachable (Caddy needs them for Let's Encrypt).
-  *Internal domain (no public DNS):* in `Caddyfile`, give each site `tls internal`
-  (Caddy local CA) or your own certs instead of automatic HTTPS.
-- App server can reach the **DB server** (`${DB_HOST}:5432` + Redis `:6379`) and
-  **File server** (`${FILE_SERVER_INTERNAL_URL}`) over the internal network
-  (firewall: add the app server IP to pg_hba + ufw on the DB server).
+- Firewall **Server Mapping**: public IP → `10.10.50.65:5174`; DNS main domain →
+  that public IP. (Optionally terminate TLS at the firewall for Portal.)
+- App server `10.10.50.65` can reach the **DB server** (`${DB_HOST}:5432` + Redis
+  `:6379`) and **File server** (`${FILE_SERVER_INTERNAL_URL}`) over the internal
+  network — add `10.10.50.65` to **pg_hba.conf + ufw** on the DB server.
 
 ### 1. Build + push (build host — your dev machine or CI)
 
 ```bash
-cp .env.prod.example .env        # fill DOMAIN, REGISTRY=ghcr.io/wangjustincrm,
-                                 # DB_PASSWORD, JWT_SECRET_KEY, and every *_URL
+cp .env.prod.example .env        # fill REGISTRY=ghcr.io/wangjustincrm, DB_PASSWORD,
+                                 # JWT_SECRET_KEY; *_URL already point at 10.10.50.65
 echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
 export TAG=$(git rev-parse --short HEAD)
 
@@ -135,13 +153,16 @@ docker compose -f docker-compose.prod.yml build      # builds all web + api imag
 docker compose -f docker-compose.prod.yml push       # pushes ghcr.io/wangjustincrm/uniops-*:${TAG}
 ```
 
-> First push: GHCR packages default to **private**. Either keep them private (the
-> app server logs in to pull) or mark each package Public in GitHub → Packages.
+> If parallel builds hit PyPI read-timeouts, build serially:
+> `for s in $(docker compose -f docker-compose.prod.yml config --services); do docker compose -f docker-compose.prod.yml build "$s" || docker compose -f docker-compose.prod.yml build "$s"; done`
+>
+> First push: GHCR packages default to **private**. Keep them private (the app
+> server logs in to pull) or mark each Public in GitHub → Packages.
 
-### 2. Deploy (application server)
+### 2. Deploy (application server 10.10.50.65)
 
 ```bash
-git pull origin main             # gets docker-compose.prod.yml, Caddyfile, migrate-prod.sh
+git pull origin main             # gets docker-compose.prod.yml, migrate-prod.sh
 cp .env.prod.example .env        # same values as the build host (same TAG!)
 echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
 
@@ -150,10 +171,10 @@ docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 
 docker compose -f docker-compose.prod.yml ps         # all healthy?
-docker compose -f docker-compose.prod.yml logs -f edge   # watch Caddy obtain certs
 ```
 
-Open `https://portal.<DOMAIN>` → log in → tiles deep-link to the other modules.
+Internal: open `http://10.10.50.65:5174` → log in → tiles jump to the other
+modules. External: `https://<main-domain>` (firewall → Portal).
 
 **Rollback:** set `TAG` to a previous git short SHA in `.env`, then
 `docker compose -f docker-compose.prod.yml pull && up -d` (re-run `migrate-prod.sh`
@@ -163,10 +184,6 @@ only if the new release added migrations — migrations are forward-only).
 safe order — **finance-api first** (it creates `posting_events`/`posting_lines`
 that expense-api writes into). `approval-api` has no migrations. Containers run
 uvicorn only (no auto-migrate), so this step is explicit and ordered.
-
-The web/api services keep host-published ports (`5173-5177`, `8000-8009`) for
-direct `IP:port` access during bring-up; once Caddy + DNS work, you can delete
-those `ports:` so traffic only enters through Caddy (80/443).
 
 > ⚠️ The `POSTGRES_PASSWORD` env is **required** on budget/finance/mdm/vms-api —
 > they compute `DATABASE_URL` from `POSTGRES_*` and ignore the env `DATABASE_URL`.
