@@ -145,6 +145,7 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'epms', label: 'EPMS' },
   { key: 'oa', label: 'OA' },
   { key: 'vms', label: 'VMS' },
+  { key: 'finance', label: 'Finance' },
 ]
 
 function CompanySettings() {

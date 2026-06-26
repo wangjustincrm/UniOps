@@ -58,7 +58,9 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
   mobileOpen: boolean; onClose: () => void; collapsed: boolean; onToggleCollapse: () => void
 }) {
   const location = useLocation()
-  const { data: branding } = useBranding('portal')
+  // Company logo (shared) + the Finance module tagline, both from Company
+  // Settings (Portal Admin → Company Settings → Finance tagline).
+  const { data: branding } = useBranding('finance')
   const brandName = branding?.name || 'UniOps'
   const brandTagline = branding?.tagline || 'Finance'
   const brandLogo = branding?.logo_data_url || null
