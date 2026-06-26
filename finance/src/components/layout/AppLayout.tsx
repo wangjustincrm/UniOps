@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   CreditCard, Receipt, BookOpen, Banknote, Landmark, LayoutDashboard,
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
@@ -11,7 +11,7 @@ import { globalSignOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { useAuthStore } from '@/store/auth'
-import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
+import { TabStoreProvider, TabBar, TabHost, TabRouterSync, deriveTabMeta } from '@uniops/shell'
 import type { TabMeta } from '@uniops/shell'
 import { financeRoutes } from '@/app/routes'
 
@@ -53,9 +53,14 @@ const NAV: NavSection[] = [
   },
 ]
 
-const FINANCE_INITIAL_TABS: TabMeta[] = [
-  { key: '/finance/ap', title: 'Accounts Payable', kind: 'page', path: '/finance/ap', icon: 'CreditCard', pinned: true, closable: false },
-]
+type RoleMatrix = Record<string, Record<string, boolean>> | undefined
+
+/** Visible when the role is system_admin or holds the item's permission. */
+function isNavItemVisible(item: NavItem, userRole: string | null, matrix: RoleMatrix): boolean {
+  if (userRole === 'system_admin') return true
+  if (item.permission) return userRole !== null && !!matrix?.[userRole]?.[item.permission]
+  return true
+}
 
 function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
   mobileOpen: boolean; onClose: () => void; collapsed: boolean; onToggleCollapse: () => void
@@ -72,11 +77,7 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
   // Gate items by the Access Control Matrix (EPMS → Admin → Access Control Matrix).
   const { data: matrix } = useRolePermissions()
   const userRole = useAuthStore((s) => s.user?.role ?? null)
-  const isVisible = (item: NavItem): boolean => {
-    if (userRole === 'system_admin') return true
-    if (item.permission) return userRole !== null && !!matrix?.[userRole]?.[item.permission]
-    return true
-  }
+  const isVisible = (item: NavItem) => isNavItemVisible(item, userRole, matrix)
 
   const navLinkCls = (active: boolean) => cn(
     'flex items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors min-h-[44px]',
@@ -210,6 +211,10 @@ export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const userId = useAuthStore((s) => s.user?.id)
+  const userRole = useAuthStore((s) => s.user?.role ?? null)
+  const { data: matrix, isLoading: permsLoading } = useRolePermissions()
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -217,6 +222,17 @@ export default function AppLayout() {
       window.location.href = `${PORTAL_URL}?returnUrl=${returnUrl}`
     }
   }, [isAuthenticated])
+
+  // First nav item the user can access — landing page + pinned home tab. Avoids
+  // landing on a page (e.g. Accounts Payable) the user has no permission for.
+  const firstVisible = NAV.flatMap((s) => s.items).find((i) => isNavItemVisible(i, userRole, matrix))
+  const homePath = firstVisible?.href
+
+  useEffect(() => {
+    if (isAuthenticated && !permsLoading && homePath && pathname === '/') {
+      navigate(homePath, { replace: true })
+    }
+  }, [isAuthenticated, permsLoading, homePath, pathname, navigate])
 
   if (!isAuthenticated) {
     return (
@@ -226,8 +242,25 @@ export default function AppLayout() {
     )
   }
 
+  // Wait for the permission matrix before building the (permission-derived) shell.
+  if (permsLoading) {
+    return <div className="flex h-screen items-center justify-center text-sm text-neutral-500">Loading…</div>
+  }
+
+  if (!homePath) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 text-sm text-neutral-500">
+        <p>You don't have access to the Finance module.</p>
+        <a href={PORTAL_URL} className="font-medium text-primary-600 hover:underline">Back to UniOps Portal</a>
+      </div>
+    )
+  }
+
+  const homeMeta = deriveTabMeta(financeRoutes, homePath)
+  const initialTabs: TabMeta[] = homeMeta ? [{ ...homeMeta, pinned: true, closable: false }] : []
+
   return (
-    <TabStoreProvider options={{ storageKey: 'uniops:finance:tabs', initialTabs: FINANCE_INITIAL_TABS, userId }}>
+    <TabStoreProvider options={{ storageKey: 'uniops:finance:tabs', initialTabs, userId }}>
       <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
         {mobileOpen && (
           <div className="fixed inset-0 z-20 bg-black/50 md:hidden" onClick={() => setMobileOpen(false)} aria-hidden="true" />

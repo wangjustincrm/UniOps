@@ -11,6 +11,7 @@ import { globalSignOut } from '@/lib/signOut'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
+import { FINANCE_ACCESS_PERMS } from '@/components/layout/navConfig'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -471,6 +472,10 @@ export default function PortalHome() {
   const auth = useAuthStore()
   const session = buildSession(auth)
   const { data: matrix } = useRolePermissions()
+  const role = auth.user?.role ?? null
+  const hasFinanceAccess =
+    role === 'system_admin' ||
+    (role !== null && FINANCE_ACCESS_PERMS.some((p) => !!matrix?.[role]?.[p]))
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -577,7 +582,7 @@ export default function PortalHome() {
       healthy: undefined,
       loading: false,
     },
-    {
+    ...(hasFinanceAccess ? [{
       icon: <Landmark className="h-5 w-5 text-primary-600" />,
       iconBg: 'bg-primary-50',
       label: 'Finance',
@@ -585,7 +590,7 @@ export default function PortalHome() {
       href: financeHref,
       healthy: undefined,
       loading: false,
-    },
+    }] : []),
   ]
 
   return (

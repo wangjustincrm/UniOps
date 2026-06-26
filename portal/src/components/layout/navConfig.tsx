@@ -29,9 +29,15 @@ export interface NavItemDef {
   href: string
   /** Access Control Matrix permission key. Visible when matrix[role][key] is true. */
   permission?: string
+  /** Visible when the role has ANY of these matrix permissions (e.g. a module
+   *  whose pages span several permission keys). */
+  anyPermission?: string[]
   /** Visible only to system_admin (used for portal-admin pages without a matrix key). */
   adminOnly?: boolean
 }
+
+/** Permissions that grant access to the Finance module (finance + budget pages). */
+export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'view_budget_plans']
 
 export interface NavSectionDef {
   title?: string
@@ -50,7 +56,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'Procurement', icon: ShoppingCart, href: 'epms' },
       { label: 'OA',          icon: Wallet,       href: 'oa' },
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
-      { label: 'Finance',     icon: Landmark,     href: 'finance' },
+      { label: 'Finance',     icon: Landmark,     href: 'finance', anyPermission: FINANCE_ACCESS_PERMS },
     ],
   },
   {
@@ -71,6 +77,9 @@ export function isNavItemVisible(
   // system_admin sees everything.
   if (userRole === 'system_admin') return true
   if (item.adminOnly) return false
+  if (item.anyPermission) {
+    return userRole !== null && item.anyPermission.some((p) => !!matrix?.[userRole]?.[p])
+  }
   if (item.permission) {
     return userRole !== null && !!matrix?.[userRole]?.[item.permission]
   }
