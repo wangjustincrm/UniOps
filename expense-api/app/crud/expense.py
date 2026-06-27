@@ -40,10 +40,23 @@ def _compute_totals_exp(line_items: list) -> tuple[Decimal, Decimal, Decimal]:
     return Decimal(total), Decimal(tax), Decimal(net)
 
 
-def _compute_totals_mil(trip_items: list) -> tuple[Decimal, Decimal, Decimal]:
-    total = sum(ti.amount for ti in trip_items)
-    total_km = sum(ti.distance_km * (2 if ti.is_round_trip else 1) for ti in trip_items)
-    return Decimal(total), Decimal(0), Decimal(total), Decimal(total_km)
+def _compute_totals_mil(trip_items: list) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    """Server is the single source of truth for the round-trip multiplier.
+
+    `distance_km` is stored one-way; round trips double both the km and the
+    amount. Deriving the per-trip amount here (instead of trusting the
+    client-sent `amount`) keeps total_km and total_amount consistent even if a
+    stale/buggy client sends the one-way amount with is_round_trip=True.
+    """
+    cent = Decimal("0.01")
+    total = Decimal("0")
+    total_km = Decimal("0")
+    for ti in trip_items:
+        factor = 2 if ti.is_round_trip else 1
+        ti.amount = (ti.distance_km * ti.rate_per_km * factor).quantize(cent)
+        total += ti.amount
+        total_km += ti.distance_km * factor
+    return total, Decimal("0"), total, total_km
 
 
 # ── CRUD ───────────────────────────────────────────────────────────────────────
