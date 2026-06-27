@@ -362,6 +362,100 @@ async def notify_host_approval_resolved(
     return await _send_email(cfg=smtp_cfg, to=host.email, subject=subject, body=body)
 
 
+# ── Scheduler emails (reminders / overdue alerts) ───────────────────────────-
+
+def _fmt_dt(value) -> str:
+    """Render a datetime/date for email bodies; empty string when None."""
+    return value.isoformat() if value is not None else "—"
+
+
+async def notify_host_visit_reminder(
+    db: AsyncSession, *, visit: Visit, visitor: Visitor, host: User | None,
+) -> bool:
+    """Day-before reminder to the Host (PRD VMS-PR-012).
+
+    Fired by the scheduler the calendar day before `visit_date`. Returns True
+    if delivery was attempted (caller persists `visit.reminder_sent_at`).
+    """
+    if not host or not host.email:
+        return False
+    name = f"{visitor.first_name} {visitor.last_name}"
+    subject = f"VMS — Reminder: visit tomorrow — {name} ({visitor.company_name})"
+    body = (
+        f"This is a reminder that you are hosting a visitor tomorrow.\n\n"
+        f"Visitor:        {name}\n"
+        f"Company:        {visitor.company_name}\n"
+        f"Visit date:     {_fmt_dt(visit.visit_date)}\n"
+        f"Planned arrival:{_fmt_dt(visit.planned_arrival)}\n"
+        f"Access area:    {visit.access_area.value.replace('_', ' ')}\n"
+        f"Visit ID:       {visit.id}\n\n"
+        f"Print the visitor badge from VMS when the guest arrives.\n"
+    )
+    smtp_cfg = await _load_smtp_config(db)
+    return await _send_email(cfg=smtp_cfg, to=host.email, subject=subject, body=body)
+
+
+async def notify_host_overdue(
+    db: AsyncSession, *, visit: Visit, visitor: Visitor, host: User | None,
+) -> bool:
+    """1-hour-overdue reminder to the Host (PRD VMS-CO-010).
+
+    The visitor is still checked in past their planned departure. Returns True
+    if delivery was attempted (caller persists `visit.overdue_reminder_sent_at`).
+    """
+    if not host or not host.email:
+        return False
+    name = f"{visitor.first_name} {visitor.last_name}"
+    subject = f"VMS — Visitor overdue: {name} still on-site"
+    body = (
+        f"A visitor you are hosting is still checked in past their planned "
+        f"departure time.\n\n"
+        f"Visitor:          {name}\n"
+        f"Company:          {visitor.company_name}\n"
+        f"Planned departure:{_fmt_dt(visit.planned_departure)}\n"
+        f"Checked in at:    {_fmt_dt(visit.actual_arrival)}\n"
+        f"Access area:      {visit.access_area.value.replace('_', ' ')}\n"
+        f"Visit ID:         {visit.id}\n\n"
+        f"Please check the visitor out in VMS once they have left.\n"
+    )
+    smtp_cfg = await _load_smtp_config(db)
+    return await _send_email(cfg=smtp_cfg, to=host.email, subject=subject, body=body)
+
+
+async def notify_manager_overdue_escalation(
+    db: AsyncSession,
+    *,
+    visit: Visit,
+    visitor: Visitor,
+    host: User | None,
+    manager: User,
+) -> bool:
+    """4-hour-overdue escalation to the Host's Department Manager (VMS-CO-011).
+
+    Returns True if delivery was attempted (caller persists
+    `visit.overdue_escalated_at`).
+    """
+    if not manager or not manager.email:
+        return False
+    name = f"{visitor.first_name} {visitor.last_name}"
+    subject = f"VMS — Escalation: visitor {name} overdue 4h+"
+    body = (
+        f"A visitor has been on-site more than four hours past their planned "
+        f"departure and has not been checked out.\n\n"
+        f"Visitor:          {name}\n"
+        f"Company:          {visitor.company_name}\n"
+        f"Host:             {host.full_name if host else '—'}\n"
+        f"Planned departure:{_fmt_dt(visit.planned_departure)}\n"
+        f"Checked in at:    {_fmt_dt(visit.actual_arrival)}\n"
+        f"Access area:      {visit.access_area.value.replace('_', ' ')}\n"
+        f"Visit ID:         {visit.id}\n\n"
+        f"Please follow up with the Host to confirm the visitor has left and "
+        f"check them out in VMS.\n"
+    )
+    smtp_cfg = await _load_smtp_config(db)
+    return await _send_email(cfg=smtp_cfg, to=manager.email, subject=subject, body=body)
+
+
 async def maybe_dispatch_visit_notifications(
     db: AsyncSession,
     *,

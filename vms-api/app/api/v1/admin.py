@@ -412,6 +412,38 @@ async def set_badge_config(
     return payload
 
 
+# ── Manual scheduler trigger (ops) ──────────────────────────────────────────-
+
+@router.post("/run-scheduled-jobs")
+async def run_scheduled_jobs(
+    request: Request,
+    db: SessionDep,
+    user: AdminDep,
+):
+    """Force one run of the time-based jobs (no-show / reminders / overdue
+    escalation) instead of waiting for the next scheduler tick. Returns the
+    same count summary the background loop logs. Idempotent — re-running is
+    safe (one-shot flags + status transitions guard against double sends)."""
+    from app.services import scheduled_jobs
+
+    summary = await scheduled_jobs.run_all(db)
+    await db.commit()
+
+    meta = await load_request_meta(db, user, request)
+    await audit_crud.log_event(
+        db,
+        user_id=meta.user_id,
+        user_name=meta.user_name,
+        action_type="admin.run_scheduled_jobs",
+        entity_type="vms_config",
+        entity_id=(await _load_config(db)).id,
+        ip_address=meta.ip_address,
+        user_agent=meta.user_agent,
+        new_value=summary,
+    )
+    return summary
+
+
 # ── Cross-system data-maintenance admin (browse/edit/cascade-delete) ────────-
 # Registered after the static routes above so `/admin/{entity}` does not
 # shadow `/admin/quality-managers`, `/admin/health-questions`, etc.

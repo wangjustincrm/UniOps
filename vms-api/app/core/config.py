@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     APPROVAL_ENGINE_URL: str = "http://localhost:8003/approval/v1"
     FILE_SERVER_URL: str = "http://localhost:8005/files/v1"
 
+    # ── Background scheduler (reminders / no-show / overdue alerts) ──────────
+    # In-process asyncio loop started in the FastAPI lifespan. Runs the
+    # time-based jobs (VMS-PR-012 / -019, VMS-CO-010 / -011). A Postgres
+    # advisory lock guards each tick so multi-worker / multi-container
+    # deployments don't double-fire. Disable in tests / one-off CLI runs.
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_INTERVAL_SECONDS: int = 900  # 15 min — fine for ~1h granularity
+
 
 @lru_cache
 def get_settings() -> Settings:

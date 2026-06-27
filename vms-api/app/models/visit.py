@@ -161,3 +161,19 @@ class Visit(UUIDPrimaryKey, TimestampMixin, Base):
     ppe_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # ── Scheduled-job idempotency flags (PRD VMS-PR-012 / VMS-CO-010 / -011) ─
+    # One-shot timestamp flags set by the background scheduler (app.services.
+    # scheduler) so a reminder / escalation fires at most once per visit even
+    # though the tick re-runs every few minutes. Same pattern as
+    # host_notified_at / ppe_notified_at above. No-show (VMS-PR-019) needs no
+    # flag — it's a status transition (confirmed → no_show), naturally one-shot.
+    reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # day-before reminder to Host (VMS-PR-012)
+    overdue_reminder_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # 1h-overdue reminder to Host (VMS-CO-010)
+    overdue_escalated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )  # 4h-overdue escalation to dept manager (VMS-CO-011)

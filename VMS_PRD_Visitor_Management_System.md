@@ -13,9 +13,9 @@ AIGC:
 
 ---
 
-**Document Version**: V2.5  
-**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation: port → 8008, schema flattened to `public.vms_*`, approval-api cfm-style integration, VMS-local quality_manager, Portal Module + Task Inbox integration) / June 2026 (V2.4 — Multi-visitor visits, phone optional, Host defaults to current user, badge print loops per visitor, CFIA report one row per visitor) / June 2026 (V2.5 — Host-opt-in per-visitor PPE requests, per-visitor training/PPE compliance with 12-month TTL + HR/Janitor confirmation tasks, in-VMS approval actions + Task Inbox, VMS-local SMTP settings, training/PPE notifications deferred to post-approval)  
-**Document Status**: Revised — V2.5 captures compliance + notification workflow changes from operator UAT (Justin / Reception / HR / Janitor) during S2-E rollout  
+**Document Version**: V2.6  
+**Creation Date**: April 2026 (First Draft) / May 2026 (V2.0 — UniOps Integration) / May 2026 (V2.1 — Role Model Refactoring) / May 2026 (V2.2 — Approval Workflow Customization + Notification Contacts) / May 2026 (V2.3 — Integration Reconciliation: port → 8008, schema flattened to `public.vms_*`, approval-api cfm-style integration, VMS-local quality_manager, Portal Module + Task Inbox integration) / June 2026 (V2.4 — Multi-visitor visits, phone optional, Host defaults to current user, badge print loops per visitor, CFIA report one row per visitor) / June 2026 (V2.5 — Host-opt-in per-visitor PPE requests, per-visitor training/PPE compliance with 12-month TTL + HR/Janitor confirmation tasks, in-VMS approval actions + Task Inbox, VMS-local SMTP settings, training/PPE notifications deferred to post-approval) / June 2026 (V2.6 — Doc reconciliation to as-built: compliance is post-entry not a print gate, reports ship as streamed CSV, background scheduler implemented for reminders/no-show/overdue)  
+**Document Status**: Revised — V2.6 reconciles the spec with the as-built implementation (compliance gate, report format) and documents the newly-implemented background scheduler  
 **Scope**: Canada Royal Milk ULC factory and office areas  
 **Integration Platform**: UniOps Enterprise Operations Platform (Monorepo)  
 
@@ -228,10 +228,12 @@ The Host can print badges in two scenarios:
 | Requirement ID | Description | Priority |
 |----------------|-------------|----------|
 | VMS-CI-020 | Each Visitor carries `safety_training_confirmed_at` / `_by` and `ppe_issued_at` / `_by` timestamps. A record is "fresh" if confirmed within the last 12 months (window lives in code, not schema) | P0 |
-| VMS-CI-021 | For a GMP / Lab visit, the badge cannot print until **every** visitor on the appointment (primary + companions) has a fresh training record AND a fresh PPE record. The print endpoint returns 422 naming the visitor + missing gate | P0 |
-| VMS-CI-022 | After approval, the system opens a confirmation Task for each stale gate: a **training task** assigned to the HR Training Contact and a **PPE task** assigned to the Janitor PPE Contact. Tasks appear in the unified Portal Task Inbox and the VMS Task Inbox, deep-linking to the visitor's compliance page | P0 |
+| VMS-CI-021 | For a GMP / Lab visit, badge printing is **not blocked** on compliance freshness — see the V2.6 implementation note below. The visitor must check in (= first badge print) and physically enter the site **before** receiving PPE / training; gating the badge would create a chicken-and-egg deadlock. Instead, on the first print (= check-in) the system opens a confirmation Task for each stale gate so HR / Janitor close it on-site (see VMS-CI-022). Freshness is surfaced (not enforced) on the visitor compliance page (VMS-CI-024) | P0 |
+| VMS-CI-022 | On the first badge print (= check-in) of a GMP / Lab / all-zones visit, the system opens a confirmation Task for each stale gate: a **training task** assigned to the HR Training Contact and a **PPE task** assigned to the Janitor PPE Contact. Tasks appear in the unified Portal Task Inbox and the VMS Task Inbox, deep-linking to the visitor's compliance page. Idempotent: at most one open task per (visitor, gate). The HR training heads-up email also fires here | P0 |
 | VMS-CI-023 | Only the configured contact (HR for training, Janitor for PPE) — or a system_admin — can confirm the respective gate. Confirmation stamps the visitor's timestamp, completes the open task(s), and is audit-logged | P0 |
 | VMS-CI-024 | The visitor compliance page (and the VisitDetail compliance banner) show each gate's freshness + last-confirmed date; stale gates link to the confirm action | P1 |
+
+> **V2.6 implementation note — compliance is post-entry, not a print gate**: V2.5 originally specified a hard 422 block on badge printing until every visitor's training + PPE records were fresh (the original VMS-CI-021). Operator UAT showed this deadlocks the real flow: a visitor cannot be issued PPE or briefed on training *before* they have a badge and are physically on-site, so blocking the badge blocks the very step that makes the record fresh. The implemented behavior instead lets the badge print unconditionally and, at check-in, **opens HR / Janitor confirmation tasks** for any stale gate (idempotent — one open task per visitor + gate) plus the HR training heads-up email. Compliance freshness remains fully visible on the visitor compliance page and the VisitDetail banner (VMS-CI-024) so an auditor can see who still owes a confirmation, but it is not an entry gate. The 12-month freshness math, the per-visitor timestamps, and the confirm-by-configured-contact authorization (VMS-CI-023) are unchanged.
 
 ---
 
@@ -336,6 +338,17 @@ Upon scanning, the system identifies the visit ID, records departure time, and u
 | VMS-CO-011 | 4 hours overdue or past business hours: system escalates notification to Department Manager | P2 |
 | VMS-CO-012 | On-site visitor dashboard: Host and Manager can view all currently on-site visitors and their stay duration | P1 |
 
+> **V2.6 implementation note — background scheduler (now implemented)**: The time-based notifications are driven by an in-process scheduler in `vms-api` (`app/services/scheduler.py` → `app/services/scheduled_jobs.py`). It is a single asyncio task started in the FastAPI lifespan that runs every `SCHEDULER_INTERVAL_SECONDS` (default **900s / 15 min**) and executes, in order:
+>
+> | Job | Requirement | Rule | Idempotency |
+> |---|---|---|---|
+> | `mark_no_shows` | VMS-PR-019 | `confirmed` visit, never arrived, `planned_arrival + 2h < now` → `no_show` (audit-logged under a system actor) | status transition |
+> | `send_day_before_reminders` | VMS-PR-012 | `confirmed` visit whose `visit_date` is tomorrow (plant-local tz) → email Host | `vms_visits.reminder_sent_at` |
+> | `send_overdue_reminders` | VMS-CO-009/-010 | `checked_in` visit, `planned_departure + 1h < now` → email Host | `vms_visits.overdue_reminder_sent_at` |
+> | `escalate_overdue` | VMS-CO-011 | `checked_in` visit, `planned_departure + 4h < now` → email the Host's dept_manager | `vms_visits.overdue_escalated_at` |
+>
+> Design notes: (1) **"Overdue" (VMS-CO-009) is a derived state**, not a stored status — there is no `overdue` value in `VisitStatus`; the dashboard already counts it (`count_overdue`) and these jobs layer the reminder/escalation on top. (2) Each reminder/escalation flag is set **only when delivery is attempted**, so a transient SMTP outage retries next tick rather than silently dropping the notice (no-show needs no flag). (3) **Multi-replica safety**: every tick takes a Postgres session-level advisory lock (`pg_try_advisory_lock`), so scaling vms-api to N workers never double-fires. (4) VMS-CO-011's "past business hours" branch is implemented as the concrete **4h** threshold. (5) Ops can force a run via `POST /api/v1/admin/run-scheduled-jobs` (system_admin) instead of waiting for the tick. (6) Disable entirely with `SCHEDULER_ENABLED=false` (used in tests / one-off CLI). Emails reuse the VMS-local-or-shared SMTP resolution (VMS-PR-024).
+
 ##### (4) Manual / Batch Check-Out
 
 | Requirement ID | Description | Priority |
@@ -377,8 +390,10 @@ The system must provide a complete audit trail — recording all user operations
 |----------------|-------------|----------|
 | VMS-AU-009 | Pre-built report templates: CFIA Visit Log Report (CFIA-format production area visitor records — **emits one row per (visit, visitor)** so multi-visitor visits expand to N rows and the regulator headcount matches the actual on-site presence, V2.4), GMP Area Access Summary (clean zone visitor count, frequency, health decl compliance rate — counts visits / appointments, not individual visitors), Contractor Access Report, Monthly Visitor Statistics (by type, area, department) | P0 |
 | VMS-AU-010 | One-click report generation with time range and filter selection | P0 |
-| VMS-AU-011 | Report formats: PDF (formal archive) and Excel (data analysis) | P0 |
+| VMS-AU-011 | Report formats: **CSV (interim, implemented)** — opens directly in Excel and streams at plant scale. PDF (formal archive) and native `.xlsx` are deferred until CFIA hands over the final mandated layout; adding `openpyxl`/a PDF engine now would be a dependency for a "looks like .xlsx" cosmetic with no compliance gain. See the V2.6 note below | P0 |
 | VMS-AU-012 | Scheduled auto-generation and email delivery to designated personnel (e.g., monthly compliance report) | P2 |
+
+> **V2.6 implementation note — reports ship as streamed CSV**: Both pre-built reports (CFIA Visit Log, GMP Area Summary) are served as streamed `text/csv` via `StreamingResponse`, never materializing the whole report in memory. CSV was chosen over `.xlsx`/PDF as the interim format because Excel opens it natively and the regulator has not yet handed over a final mandated layout — a binary writer would be churn for no compliance value until that layout is fixed. The route + filter contract (date range, one-row-per-(visit, visitor) for CFIA) is final; only the serialization format is interim. VMS-AU-012 (scheduled monthly auto-email) remains P2 / not yet implemented.
 
 ##### (4) Data Integrity
 
@@ -1592,3 +1607,7 @@ The existing Portal Admin "Workflow Defs" page (which today edits `workflow_defs
 *  ④ **VMS-local SMTP** (VMS-PR-024): Admin "Email Settings" tab — VMS uses its own SMTP creds (with a Send-test action) instead of the shared EPMS config when set. `vms_config.smtp_settings JSONB`, password masked on read.*
 *  ⑤ **Notification deferral**: training/PPE emails + HR/Janitor confirmation tasks fire only **after** the visit is approved (not at create), since every compliance area routes through approval. Avoids pinging contacts for visits that may be rejected.*
 *  ⑥ **quality_manager step fix**: the seeded `vms_visit` workflow now actually includes the `quality_manager` step (was missing → QM approval never fired); engine auto-skips it for non-GMP areas; the assigned QM gets visit visibility so the task deep-link resolves.*
+*V2.6 (June 2026) reconciliation of the spec with the as-built implementation + scheduler delivery:*
+*  ① **Compliance is post-entry, not a print gate** (supersedes V2.5 ② / original VMS-CI-021): badge printing is NOT blocked by training/PPE freshness. A 422 block deadlocks the flow (you can't gear up a visitor who has no badge and isn't on-site). The badge prints unconditionally; at check-in the system opens idempotent HR/Janitor confirmation tasks for stale gates + the HR heads-up email. Freshness is surfaced (VMS-CI-024), not enforced. Per-visitor timestamps, 12-month TTL, and confirm-authorization (VMS-CI-023) unchanged.*
+*  ② **Reports ship as streamed CSV** (VMS-AU-011): CFIA Visit Log + GMP Area Summary stream as `text/csv` via `StreamingResponse`. `.xlsx`/PDF deferred until CFIA fixes the mandated layout — Excel opens CSV natively, so a binary writer is churn for no compliance gain. Route/filter contract is final; only serialization is interim.*
+*  ③ **Background scheduler implemented** (VMS-PR-012/-019, VMS-CO-009/-010/-011): in-process asyncio loop in vms-api (`app/services/scheduler.py` + `scheduled_jobs.py`), 15-min default tick, Postgres advisory lock for multi-replica safety. Jobs: auto no-show (2h), day-before reminder, 1h-overdue host reminder, 4h-overdue dept_manager escalation. One-shot timestamp flags added to `vms_visits` (`reminder_sent_at`, `overdue_reminder_sent_at`, `overdue_escalated_at`; migration 0013). Manual run via `POST /api/v1/admin/run-scheduled-jobs`; toggle with `SCHEDULER_ENABLED`. VMS-AU-012 (scheduled report auto-email) remains P2 / not yet implemented.*

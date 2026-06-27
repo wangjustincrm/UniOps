@@ -25,8 +25,13 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
+    # Background scheduler — reminders / no-show / overdue alerts
+    # (PRD VMS-PR-012/-019, VMS-CO-010/-011). No-op when SCHEDULER_ENABLED=false.
+    from app.services import scheduler
+    scheduler_task = scheduler.start(app)
     yield
-    logger.info("Shutting down — closing engine")
+    logger.info("Shutting down — stopping scheduler + closing engine")
+    await scheduler.stop(scheduler_task)
     await engine.dispose()
 
 
