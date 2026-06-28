@@ -125,7 +125,7 @@ at build time).
   `https://<sub>.canadaroyalmilk.com`, so both internal and external users use the
   same HTTPS domains.
 - **Public exposure:** the firewall **Server Mapping** forwards **only**
-  public `66.102.68.69:443` → `10.10.250.30:443` (the edge). No other port is
+  public `45.78.113.218:443` → `10.10.250.30:443` (the edge). No other port is
   exposed. The web/api services still publish their ports for on-box debugging but
   public traffic enters only through Caddy.
 
@@ -135,10 +135,10 @@ at build time).
   `read:packages` (app server).
 - **TLS cert** for `*.canadaroyalmilk.com` placed at `./certs/fullchain.pem` +
   `./certs/privkey.pem` on the app server (see `certs/README.md`).
-- **Firewall Server Mapping:** public `66.102.68.69:443` → `10.10.250.30:443`
+- **Firewall Server Mapping:** public `45.78.113.218:443` → `10.10.250.30:443`
   (TCP). Enable NAT **hairpin/loopback** so internal users hitting the public IP
   reach the edge too (or use split-DNS — see DNS below).
-- **DNS** A records (→ `66.102.68.69`): `portal`, `epms`, `oa`, `vms`, `finance`,
+- **DNS** A records (→ `45.78.113.218`): `portal`, `epms`, `oa`, `vms`, `finance`,
   `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`, `files`
   — each `.canadaroyalmilk.com`. (Use specific records, **not** a wildcard on the
   company apex.) Internal: rely on firewall hairpin, or add the same names in the
