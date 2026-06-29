@@ -383,6 +383,27 @@ async def _routing_user_id(db: AsyncSession, doc_type: str, doc: Any) -> uuid.UU
     return doc.created_by
 
 
+async def _cc_label_for_plan(db: AsyncSession, doc: Any, fallback: str | None) -> str | None:
+    """Resolve a human cost-center label ("CODE — Name") for a budget plan task.
+
+    The BudgetPlan mirror only carries cost_center_id, so its `cc_label` property
+    can only render "CC <uuid>". The cost_centers table (shared DB, owned by
+    epms-api) holds code/name; look it up so the Task Inbox shows the name instead
+    of a raw UUID. Falls back to whatever the mirror produced if the lookup misses.
+    """
+    cc_id = getattr(doc, "cost_center_id", None)
+    if cc_id is None:
+        return fallback
+    row = (await db.execute(
+        text("SELECT code, name FROM cost_centers WHERE id = CAST(:id AS uuid)"),
+        {"id": str(cc_id)},
+    )).first()
+    if row is None:
+        return fallback
+    code, name = row
+    return f"{code} — {name}" if name else (code or fallback)
+
+
 async def _create_approve_task(
     db: AsyncSession,
     doc_type: str,
@@ -427,6 +448,8 @@ async def _create_approve_task(
     doc_number = getattr(doc, meta["number_attr"])
     amount = getattr(doc, meta["amount_attr"], None) if meta.get("amount_attr") else None
     vendor = getattr(doc, meta["vendor_attr"], None) if meta.get("vendor_attr") else None
+    if doc_type == "budget_plan":
+        vendor = await _cc_label_for_plan(db, doc, vendor)
 
     description = f"Step {step + 1}/{len(workflow)}: {wf['label']} review required."
     # OBG-002: enrich the over-budget pre-approval task with the requester's
@@ -461,6 +484,8 @@ async def _create_revise_task(db: AsyncSession, doc_type: str, doc: Any, meta: d
     doc_number = getattr(doc, meta["number_attr"])
     amount = getattr(doc, meta["amount_attr"], None) if meta.get("amount_attr") else None
     vendor = getattr(doc, meta["vendor_attr"], None) if meta.get("vendor_attr") else None
+    if doc_type == "budget_plan":
+        vendor = await _cc_label_for_plan(db, doc, vendor)
     db.add(Task(
         type=meta["task_revise"],
         priority="normal",
