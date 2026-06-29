@@ -18,6 +18,8 @@ export type TaskType =
   | 'link_invoice'
   | 'create_pa'
   | 'create_prepayment_pa'
+  | 'approve_budget_plan'
+  | 'revise_budget_plan'
 
 export interface ApiTask {
   id: string

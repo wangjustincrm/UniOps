@@ -21,6 +21,7 @@ import {
   useRevisePlan, usePlanVersions, useImportPlan,
 } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
+import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
 import { budgetService, type ApiAccountPlanRow, type PlanImportResult } from '@/services/budget'
 import type { DocumentStatus } from '@/types'
@@ -58,6 +59,13 @@ export default function BudgetPlanEditPage() {
   const versionsCcId  = planGrid?.plan.cost_center_id ?? null
   const versionsYear  = planGrid?.plan.fiscal_year ?? null
   const { data: allVersions } = usePlanVersions(versionsCcId, versionsYear)
+  // Approval gating mirrors PoDetailPage: show Approve/Return/Reject only when
+  // the current user holds an active approve_budget_plan task for THIS plan.
+  // The approval step (e.g. finance_manager) is a Role Management assignment,
+  // NOT a JWT role, so user.role can't be trusted here — the engine's task
+  // routing is the single source of truth (and keeps the button in sync with
+  // the inbox). See feedback: approval roles are assignments.
+  const { data: myTasks } = useTasks({ is_completed: false })
   const planAction = usePlanAction()
   const copyPrev = useCopyPlanFromPrev()
   const reviseMut = useRevisePlan()
@@ -137,6 +145,15 @@ export default function BudgetPlanEditPage() {
   const { plan, grand_total } = planGrid
   const isEditableStatus = plan.status === 'draft' || plan.status === 'returned'
   const editable = canEdit && isEditableStatus
+
+  // Approve/Return/Reject visibility: an active approve_budget_plan task for this
+  // plan means the engine routed the current step to this user (regardless of how
+  // their approver role was assigned). system_admin holds every task too.
+  const canApprove =
+    (plan.status === 'submitted' || plan.status === 'in_review') &&
+    (myTasks?.items ?? []).some(
+      (t) => t.document_id === plan.id && t.type === 'approve_budget_plan',
+    )
 
   // An existing non-terminal sibling version means a revision is already in
   // progress — block "Revise Plan" and surface a "Open Draft v{n}" affordance
@@ -290,7 +307,7 @@ export default function BudgetPlanEditPage() {
                 <Send className="h-3.5 w-3.5" /> Submit
               </Button>
             )}
-            {canEdit && (plan.status === 'submitted' || plan.status === 'in_review') && (
+            {canApprove && (
               <>
                 <Button size="sm" onClick={() => handleAction('approve')} disabled={planAction.isPending}>
                   <CheckCircle2 className="h-3.5 w-3.5" /> Approve
