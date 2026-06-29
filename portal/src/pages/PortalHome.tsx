@@ -50,6 +50,11 @@ interface UnifiedTask {
   module: 'EPMS' | 'EXPENSE' | 'VMS'
   title: string
   docNumber: string
+  /** Identity used to merge the same task echoed across feeds. Defaults to
+   *  docNumber, but doc types with non-unique numbers (e.g. budget plans, whose
+   *  number is the synthetic "BP-FY2026" shared by every cost center) must key on
+   *  the document id instead so distinct rows don't collapse into one. */
+  dedupKey: string
   amount: number | null
   currency: string
   urgent: boolean
@@ -100,8 +105,8 @@ function buildSession(auth: ReturnType<typeof useAuthStore.getState>): string {
 
 const DOC_PATH: Record<string, string> = {
   pr: '/pr', po: '/po', pa: '/pa', gr: '/gr', invoice: '/invoices',
-  // Budget plan approval tasks deep-link into the EPMS plan editor (/budget/plans/:id).
-  budget_plan: '/budget/plans',
+  // budget_plan is handled separately — it deep-links into the Finance module
+  // (see the budget_plan branch in the task mapper), not EPMS.
   // VMS doc types deep-link into the VMS frontend, not EPMS.
   // VMS_DEEPLINK below picks the right per-doc-type path.
   vms_visit: '/',
@@ -501,6 +506,7 @@ export default function PortalHome() {
       module: 'EXPENSE',
       title: `${CLAIM_TYPE_LABEL[t.claim_type] ?? t.claim_type} — ${STATUS_LABEL[t.status] ?? t.status}`,
       docNumber: t.claim_number,
+      dedupKey: t.claim_number,
       amount: t.net_amount,
       currency: t.currency,
       urgent: false,
@@ -521,14 +527,27 @@ export default function PortalHome() {
         // OA-owned doc surfaced via approval-api → deep-link into OA, not EPMS.
         module = 'EXPENSE'; base = OA_URL
         path = `${oaPath}/${t.document_id}`
+      } else if (t.document_type.toLowerCase() === 'budget_plan') {
+        // Budget is owned by the Finance module — deep-link into Finance (which
+        // wraps the EPMS plan editor in Portal chrome), not bare EPMS.
+        base = FINANCE_URL
+        path = `/budget/plans/${t.document_id}`
       } else {
         path = `${DOC_PATH[t.document_type] ?? '/dashboard'}/${t.document_id}`
       }
+      // Budget plans all share the synthetic number "BP-FY<year>", so dedup must
+      // key on the plan id (document_id) — otherwise every cost center's plan
+      // collapses into a single row. Other doc types keep numbering by docNumber
+      // so an OA claim and its EPMS echo still merge.
+      const dedupKey = t.document_type.toLowerCase() === 'budget_plan'
+        ? `budget_plan:${t.document_id}`
+        : t.document_number
       return {
         id: `epms-${t.id}`,
         module,
         title: t.title,
         docNumber: t.document_number,
+        dedupKey,
         amount: t.amount,
         currency: 'CAD',
         urgent: t.priority === 'urgent',
@@ -538,11 +557,11 @@ export default function PortalHome() {
     })
 
     // Dedup: the same expense claim can appear in both feeds (OA my-actions +
-    // approval-api via EPMS). Keep the first occurrence by document number.
+    // approval-api via EPMS). Keep the first occurrence by dedup key.
     const seen = new Set<string>()
     return [...oaRows, ...epmsRows]
       .filter((t) => {
-        const key = t.docNumber || t.id
+        const key = t.dedupKey || t.id
         if (seen.has(key)) return false
         seen.add(key)
         return true
