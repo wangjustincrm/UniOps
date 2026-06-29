@@ -333,7 +333,7 @@ services:
   # Terminates TLS with ./certs/{fullchain,privkey}.pem and routes
   # <module>.canadaroyalmilk.com / <api>-api.canadaroyalmilk.com to the containers
   # (see Caddyfile). Used with the DOMAIN image set (TAG=<sha>, https URLs baked).
-  # For the LAN image set (TAG=<sha>-lan, http://10.10.250.30:<port> baked), DON'T
+  # For the LAN image set (TAG=<sha>-lan, http://10.10.50.65:<port> baked), DON'T
   # start this — browsers hit the published ports directly. The profile keeps it
   # out of a plain `up -d`; run `--profile edge up -d` only for domain mode.
   edge:

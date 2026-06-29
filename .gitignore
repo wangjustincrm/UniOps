@@ -71,3 +71,6 @@ db-server-setup.sh
 # TLS certs (app server only)
 /certs/*
 !/certs/README.md
+
+# dropped-in cert material (has private key)
+canadaroyalmilk_com_SSL/

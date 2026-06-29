@@ -104,7 +104,7 @@ at build time).
 ### Topology: GHCR registry + subdomains behind a single Caddy 443 edge
 
 - **Images:** GitHub Container Registry — `ghcr.io/wangjustincrm/uniops-*:<tag>`.
-- **Single entry:** the **Caddy `edge`** service on the app server (`10.10.250.30`)
+- **Single entry:** the **Caddy `edge`** service on the app server (`10.10.50.65`)
   listens on **443**, terminates TLS with the company wildcard cert
   (`./certs/{fullchain,privkey}.pem`, covers `*.canadaroyalmilk.com`), and routes
   subdomains to the containers (see `Caddyfile`):
@@ -125,7 +125,7 @@ at build time).
   `https://<sub>.canadaroyalmilk.com`, so both internal and external users use the
   same HTTPS domains.
 - **Public exposure:** the firewall **Server Mapping** forwards **only**
-  public `45.78.113.218:443` → `10.10.250.30:443` (the edge). No other port is
+  public `45.78.113.218:443` → `10.10.50.65:443` (the edge). No other port is
   exposed. The web/api services still publish their ports for on-box debugging but
   public traffic enters only through Caddy.
 
@@ -135,16 +135,16 @@ at build time).
   `read:packages` (app server).
 - **TLS cert** for `*.canadaroyalmilk.com` placed at `./certs/fullchain.pem` +
   `./certs/privkey.pem` on the app server (see `certs/README.md`).
-- **Firewall Server Mapping:** public `45.78.113.218:443` → `10.10.250.30:443`
+- **Firewall Server Mapping:** public `45.78.113.218:443` → `10.10.50.65:443`
   (TCP). Enable NAT **hairpin/loopback** so internal users hitting the public IP
   reach the edge too (or use split-DNS — see DNS below).
 - **DNS** A records (→ `45.78.113.218`): `portal`, `epms`, `oa`, `vms`, `finance`,
   `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`, `files`
   — each `.canadaroyalmilk.com`. (Use specific records, **not** a wildcard on the
   company apex.) Internal: rely on firewall hairpin, or add the same names in the
-  internal DNS pointing at `10.10.250.30` (split-DNS).
-- App server `10.10.250.30` can reach the **DB server** (`${DB_HOST}:5432` + Redis
-  `:6379`) and **File server** (`10.10.50.66:8005`) — add `10.10.250.30` to
+  internal DNS pointing at `10.10.50.65` (split-DNS).
+- App server `10.10.50.65` can reach the **DB server** (`${DB_HOST}:5432` + Redis
+  `:6379`) and **File server** (`10.10.50.66:8005`) — add `10.10.50.65` to
   **pg_hba.conf + ufw** on the DB server.
 
 ### 1. Build + push (build host — your dev machine or CI)
@@ -169,7 +169,7 @@ docker compose -f docker-compose.prod.yml push       # pushes ghcr.io/wangjustin
 
 | Set | Tag | Baked URLs | Deploy with |
 |-----|-----|------------|-------------|
-| **LAN** (current) | `…-lan` (e.g. `90303d8-lan`) | `http://10.10.250.30:<port>` | plain `up -d` (no edge) |
+| **LAN** (current) | `…-lan` (e.g. `90303d8-lan`) | `http://10.10.50.65:<port>` | plain `up -d` (no edge) |
 | **Domain** (deferred external) | `…` (e.g. `90303d8`) | `https://*.canadaroyalmilk.com` | `--profile edge up -d` + certs |
 
 Backend images are identical across sets (no baked URLs; `ALLOWED_ORIGINS` is a
@@ -190,8 +190,8 @@ docker compose -f docker-compose.prod.yml up -d          # NO --profile edge
 docker compose -f docker-compose.prod.yml ps             # all healthy?
 ```
 
-Internal browser → `http://10.10.250.30:5174` (Portal) → log in → tiles jump to
-the other modules at `http://10.10.250.30:<port>`.
+Internal browser → `http://10.10.50.65:5174` (Portal) → log in → tiles jump to
+the other modules at `http://10.10.50.65:<port>`.
 
 ### 2b. Deploy — Domain mode (external, when ready)
 
