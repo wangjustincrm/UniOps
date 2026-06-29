@@ -4,8 +4,9 @@ Phase 0-B4 moves AUTH code ownership here; table ownership migration is a
 later cleanup. Columns are a verbatim copy of epms-api's model.
 """
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +26,7 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     teams_account: Mapped[str | None] = mapped_column(String(255), nullable=True)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notification_channel: Mapped[str] = mapped_column(String(20), nullable=False, default="email_only")
     erp_person_code: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     erp_imported: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

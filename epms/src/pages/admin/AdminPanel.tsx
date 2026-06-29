@@ -1014,6 +1014,10 @@ function PdfTemplates() {
 interface UserFormData { full_name: string; email: string; role: UserRole; department_id: string; is_active: boolean; teams_account: string }
 const BLANK_USER: UserFormData = { full_name: '', email: '', role: 'requester', department_id: '', is_active: true, teams_account: '' }
 
+// Standard initial password assigned to every new / imported account. Users are
+// forced to change it on first login (must_change_password is set server-side).
+const INITIAL_PASSWORD = 'Feihe12#$'
+
 function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData; onSave: (d: UserFormData) => void; onCancel: () => void; title: string }) {
   const { data: deptData } = useDepartments()
   const activeDepts = (deptData?.items ?? []).filter((d) => d.is_active)
@@ -1286,7 +1290,7 @@ function UserManagement() {
         role: row.role as ApiUserRole,
         department_id: dept?.id ?? undefined,
         is_active: csvIsActive(row.is_active),
-        password: 'Welcome1!',
+        password: INITIAL_PASSWORD,
         teams_account: row.teams_account || null,
       })
     }
@@ -1353,7 +1357,7 @@ function UserManagement() {
       {importDone !== null && (
         <div className="flex items-center gap-2 rounded-lg border border-success-200 bg-success-50 px-4 py-2.5 text-sm text-success-700">
           <Check className="h-4 w-4 shrink-0" />
-          {importDone} user{importDone !== 1 ? 's' : ''} imported successfully. All accounts set to temporary password "Welcome1!" — users must change on first login.
+          {importDone} user{importDone !== 1 ? 's' : ''} imported successfully. All accounts set to temporary password "{INITIAL_PASSWORD}" — users must change on first login.
         </div>
       )}
 
@@ -1367,7 +1371,7 @@ function UserManagement() {
         />
       )}
 
-      {mode === 'add' && <UserForm title="Add New User" initial={BLANK_USER} onSave={(d) => { createUser.mutate({ full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, password: 'Welcome1!', teams_account: d.teams_account || null }); setMode('none') }} onCancel={() => setMode('none')} />}
+      {mode === 'add' && <UserForm title="Add New User" initial={BLANK_USER} onSave={(d) => { createUser.mutate({ full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, password: INITIAL_PASSWORD, teams_account: d.teams_account || null }); setMode('none') }} onCancel={() => setMode('none')} />}
       {editingUser && <UserForm title={`Edit — ${editingUser.full_name}`}
         initial={{ full_name: editingUser.full_name, email: editingUser.email, role: editingUser.role as UserRole, department_id: editingUser.department_id ?? '', is_active: editingUser.is_active, teams_account: editingUser.teams_account ?? '' }}
         onSave={(d) => { updateUserMutation.mutate({ id: (mode as { edit: string }).edit, body: { full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, teams_account: d.teams_account || null } }); setMode('none') }} onCancel={() => setMode('none')} />}
@@ -1414,7 +1418,7 @@ function UserManagement() {
                           <button onClick={() => setDeleteConfirm(null)} className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100"><X className="h-3.5 w-3.5" /></button>
                         </div>
                       ) : (
-                        <><button type="button" onClick={() => { setResetTarget(user.id); setTempPwd(''); setShowTempPwd(false); setResetDone(null) }} className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-warning-50 hover:text-warning-600" title="Reset password"><KeyRound className="h-3.5 w-3.5" /></button>
+                        <><button type="button" onClick={() => { setResetTarget(user.id); setTempPwd(INITIAL_PASSWORD); setShowTempPwd(false); setResetDone(null) }} className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-warning-50 hover:text-warning-600" title="Reset password"><KeyRound className="h-3.5 w-3.5" /></button>
                           <button type="button" onClick={() => { setMode({ edit: user.id }); setDeleteConfirm(null); setResetTarget(null) }} className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-primary-50 hover:text-primary-600"><Pencil className="h-3.5 w-3.5" /></button>
                           <button type="button" onClick={() => { setDeleteConfirm(user.id); setMode('none'); setResetTarget(null) }}
                             className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-danger-50 hover:text-danger-500"

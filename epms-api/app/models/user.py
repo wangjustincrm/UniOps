@@ -1,7 +1,8 @@
 """User ORM model."""
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, String
+from sqlalchemy import Boolean, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -34,6 +35,12 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
 
     # Force password change on next login (set for new/reset accounts)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # When the password was last set/changed. Used for password-expiry
+    # enforcement against company_config.password_expiry_days.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Notification delivery preference: email_only | teams_only | both | none
     notification_channel: Mapped[str] = mapped_column(String(20), nullable=False, default="email_only")

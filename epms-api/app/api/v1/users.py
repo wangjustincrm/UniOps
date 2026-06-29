@@ -1,14 +1,15 @@
 """User management endpoints (system_admin only)."""
 import csv
 import io
-import secrets
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import Response
 from sqlalchemy import func, or_, select
 
+from app.core.config import INITIAL_PASSWORD
 from app.core.deps import CurrentUserPayload, SessionDep, require_roles
 from app.core.security import hash_password
 from app.crud import department as dept_crud
@@ -241,13 +242,14 @@ async def import_users(
                 if password:
                     existing.hashed_password = hash_password(password)
                     existing.must_change_password = True
+                    existing.password_changed_at = datetime.now(timezone.utc)
                 await db.flush()
                 updated += 1
             else:
                 if not full_name:
                     errors.append(f"Row {i} ({email}): full_name required for new users")
                     continue
-                auto_pwd = password or secrets.token_urlsafe(12)
+                auto_pwd = password or INITIAL_PASSWORD
                 body = UserCreate(
                     email=email,
                     full_name=full_name,
@@ -337,6 +339,7 @@ async def update_user(user_id: uuid.UUID, body: UserUpdate, db: SessionDep, _: A
     if body.password is not None:
         user.hashed_password = hash_password(body.password)
         user.must_change_password = True
+        user.password_changed_at = datetime.now(timezone.utc)
     if body.teams_account is not None:
         user.teams_account = body.teams_account or None
     if body.notification_channel is not None:
@@ -409,7 +412,7 @@ async def import_users_from_erp(
                 errors.append(ErpImportError(erp_person_code=item.erp_person_code, reason="already imported"))
                 continue
 
-            temp_pw = secrets.token_urlsafe(12)
+            temp_pw = INITIAL_PASSWORD
             user = User(
                 email=item.email.strip().lower(),
                 hashed_password=hash_password(temp_pw),
@@ -420,6 +423,7 @@ async def import_users_from_erp(
                 must_change_password=True,
                 erp_person_code=item.erp_person_code,
                 erp_imported=True,
+                password_changed_at=datetime.now(timezone.utc),
             )
             db.add(user)
             try:

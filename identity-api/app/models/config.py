@@ -15,6 +15,9 @@ class CompanyConfig(UUIDPrimaryKey, Base):
     __tablename__ = "company_config"
 
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Password-expiry policy (days). NULL ⇒ passwords never expire. Read-only
+    # here; epms owns the column. Login compares password age against this.
+    password_expiry_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     smtp_host: Mapped[str | None] = mapped_column(String(255), nullable=True)
     smtp_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     smtp_user: Mapped[str | None] = mapped_column(String(255), nullable=True)

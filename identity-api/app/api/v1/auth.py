@@ -8,6 +8,7 @@ Additions over the epms original:
 """
 import logging
 import uuid
+from datetime import datetime, timezone
 from typing import Union
 
 from fastapi import APIRouter, HTTPException, status
@@ -58,6 +59,18 @@ async def _get_config(db) -> CompanyConfig | None:
     return (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
 
 
+def _password_expired(user, cfg: CompanyConfig | None) -> bool:
+    """True when the account's password is older than the configured expiry
+    window. NULL expiry policy or unknown change date ⇒ never expired."""
+    days = cfg.password_expiry_days if cfg else None
+    if not days or user.password_changed_at is None:
+        return False
+    changed = user.password_changed_at
+    if changed.tzinfo is None:
+        changed = changed.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - changed).days >= days
+
+
 def _smtp_kwargs(cfg: CompanyConfig | None) -> dict:
     if cfg is None:
         return {}
@@ -98,6 +111,15 @@ async def login(body: LoginRequest, db: SessionDep, redis: RedisDep):
         )
 
     cfg = await _get_config(db)
+
+    # Password-expiry enforcement (Admin → Security → Password Expiry). When the
+    # password is past its expiry window, flag the account so the frontend forces
+    # a change after sign-in (surfaced via /auth/me → must_change_password).
+    if not user.must_change_password and _password_expired(user, cfg):
+        user.must_change_password = True
+        _audit(db, "password_expired", actor_id=user.id, actor_email=user.email)
+        await db.flush()
+
     needs_mfa = user.mfa_enabled or (cfg.mfa_enabled if cfg else True)
 
     if needs_mfa:
@@ -285,5 +307,6 @@ async def change_password(body: ChangePasswordRequest, payload: CurrentUserPaylo
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
     user.hashed_password = hash_password(body.new_password)
     user.must_change_password = False
+    user.password_changed_at = datetime.now(timezone.utc)
     _audit(db, "password_changed", actor_id=user.id, actor_email=user.email)
     await db.flush()

@@ -1,5 +1,6 @@
 """CRUD operations for the User model."""
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +28,7 @@ async def create(db: AsyncSession, payload: RegisterRequest) -> User:
         full_name=payload.full_name,
         role=payload.role,
         department_id=payload.department_id,
+        password_changed_at=datetime.now(timezone.utc),
     )
     db.add(user)
     await db.flush()   # populate id without committing — session.py commits on exit
@@ -47,6 +49,7 @@ async def create_admin(db: AsyncSession, payload: UserCreate) -> User:
         notification_channel=payload.notification_channel,
         must_change_password=payload.must_change_password,
         erp_person_code=payload.erp_person_code,
+        password_changed_at=datetime.now(timezone.utc),
     )
     db.add(user)
     await db.flush()

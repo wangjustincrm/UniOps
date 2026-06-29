@@ -107,3 +107,9 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+# Standard initial password assigned to every new / imported account. Users are
+# forced to change it on first login (must_change_password=True). Kept in sync
+# with the frontend INITIAL_PASSWORD constant in epms AdminPanel.
+INITIAL_PASSWORD = "Feihe12#$"
