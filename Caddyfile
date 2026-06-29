@@ -15,20 +15,55 @@
 }
 
 # ── Frontends (nginx :80 in each web image) ───────────────────────────────────
-portal.canadaroyalmilk.com   { import wildcard; reverse_proxy portal-web:80 }
-epms.canadaroyalmilk.com     { import wildcard; reverse_proxy epms-web:80 }
-oa.canadaroyalmilk.com       { import wildcard; reverse_proxy oa-web:80 }
-vms.canadaroyalmilk.com      { import wildcard; reverse_proxy vms-web:80 }
-finance.canadaroyalmilk.com  { import wildcard; reverse_proxy finance-web:80 }
+portal.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy portal-web:80
+}
+epms.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy epms-web:80
+}
+oa.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy oa-web:80
+}
+vms.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy vms-web:80
+}
+finance.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy finance-web:80
+}
 
-# ── Browser-facing APIs ───────────────────────────────────────────────────────
-# (approval-api + identity-api are server-to-server only → no public subdomain.)
-epms-api.canadaroyalmilk.com     { import wildcard; reverse_proxy epms-api:8000 }
-oa-api.canadaroyalmilk.com       { import wildcard; reverse_proxy expense-api:8006 }
-vms-api.canadaroyalmilk.com      { import wildcard; reverse_proxy vms-api:8008 }
-finance-api.canadaroyalmilk.com  { import wildcard; reverse_proxy finance-api:8004 }
-budget-api.canadaroyalmilk.com   { import wildcard; reverse_proxy budget-api:8007 }
-mdm-api.canadaroyalmilk.com      { import wildcard; reverse_proxy mdm-api:8002 }
+# ── Browser-facing APIs (approval/identity are server-to-server, no subdomain) ─
+epms-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy epms-api:8000
+}
+oa-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy expense-api:8006
+}
+vms-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy vms-api:8008
+}
+finance-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy finance-api:8004
+}
+budget-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy budget-api:8007
+}
+mdm-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy mdm-api:8002
+}
 
 # ── File server (file-api lives on the File server, not in this compose) ──────
-files.canadaroyalmilk.com        { import wildcard; reverse_proxy 10.10.50.66:8005 }
+files.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy 10.10.50.66:8005
+}
