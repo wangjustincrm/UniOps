@@ -5,6 +5,7 @@ import { FileText, Search, X, Paperclip } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { Pagination } from '@/components/ui/Pagination'
+import { StatusBadge } from '@/components/ui/badge'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,21 +27,6 @@ interface UnifiedInvoice {
 }
 
 interface InvoiceList { items: UnifiedInvoice[]; total: number }
-
-// ── Badges ────────────────────────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-  // EPMS statuses
-  unmatched: 'bg-yellow-50 text-yellow-700',
-  matched:   'bg-green-50 text-green-700',
-  exception: 'bg-red-50 text-red-700',
-  approved:  'bg-green-50 text-green-700',
-  paid:      'bg-neutral-100 text-neutral-500',
-  // OA statuses
-  uploaded:  'bg-neutral-100 text-neutral-600',
-  reviewed:  'bg-blue-50 text-blue-700',
-  used:      'bg-green-50 text-green-700',
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -129,10 +115,7 @@ export default function InvoicesPage() {
                     {formatAmount(inv.total_amount, inv.currency)}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium',
-                      STATUS_COLORS[inv.status] ?? 'bg-neutral-100 text-neutral-600')}>
-                      {inv.status}
-                    </span>
+                    <StatusBadge status={inv.status} />
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-500">
                     {inv.po_number || inv.pa_number || '—'}

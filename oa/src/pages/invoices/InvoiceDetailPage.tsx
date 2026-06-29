@@ -1,8 +1,9 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Paperclip, Download, AlertTriangle } from 'lucide-react'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { formatAmount, formatDate } from '@/lib/utils'
 import { api, epmsApi } from '@/lib/api'
+import { StatusBadge } from '@/components/ui/badge'
 
 // ── OA invoice (expense_invoices) ────────────────────────────────────────────
 
@@ -36,27 +37,6 @@ interface EpmsInvoice {
   line_items: EpmsLine[]
 }
 
-// ── Status badge ──────────────────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-  unmatched: 'bg-yellow-50 text-yellow-700',
-  matched:   'bg-green-50 text-green-700',
-  exception: 'bg-red-50 text-red-700',
-  approved:  'bg-green-50 text-green-700',
-  paid:      'bg-neutral-100 text-neutral-500',
-  uploaded:  'bg-neutral-100 text-neutral-600',
-  reviewed:  'bg-blue-50 text-blue-700',
-  used:      'bg-green-50 text-green-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span className={cn('inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium',
-      STATUS_COLORS[status] ?? 'bg-neutral-100 text-neutral-600')}>
-      {status}
-    </span>
-  )
-}
 
 // ── Line items table ──────────────────────────────────────────────────────────
 

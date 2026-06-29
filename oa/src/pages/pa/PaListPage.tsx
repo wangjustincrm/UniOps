@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { Pagination } from '@/components/ui/Pagination'
+import { StatusBadge } from '@/components/ui/badge'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,28 +21,6 @@ interface Pa {
 }
 
 interface PaList { items: Pa[]; total: number }
-
-// ── Status badge ──────────────────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-  draft:     'bg-neutral-100 text-neutral-600',
-  submitted: 'bg-yellow-50 text-yellow-700',
-  in_review: 'bg-blue-50 text-blue-700',
-  approved:  'bg-green-50 text-green-700',
-  processed: 'bg-neutral-100 text-neutral-500',
-  returned:  'bg-orange-50 text-orange-700',
-  cancelled: 'bg-red-50 text-red-700',
-  paid:      'bg-emerald-50 text-emerald-700',
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const label = status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', STATUS_COLORS[status] ?? 'bg-neutral-100 text-neutral-600')}>
-      {label}
-    </span>
-  )
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 

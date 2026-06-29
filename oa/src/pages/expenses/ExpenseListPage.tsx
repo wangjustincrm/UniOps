@@ -5,6 +5,7 @@ import { Plus, ChevronDown, Receipt, Car, Plane, FileText } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { Pagination } from '@/components/ui/Pagination'
+import { StatusBadge } from '@/components/ui/badge'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -30,16 +31,6 @@ interface CustomFormSummary { code: string; name: string; is_active: boolean }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<string, string> = {
-  draft:     'bg-neutral-100 text-neutral-600',
-  submitted: 'bg-yellow-50 text-yellow-700',
-  in_review: 'bg-blue-50 text-blue-700',
-  approved:  'bg-green-50 text-green-700',
-  paid:      'bg-emerald-50 text-emerald-700',
-  returned:  'bg-orange-50 text-orange-700',
-  rejected:  'bg-red-50 text-red-700',
-}
-
 const TYPE_CONFIG: Record<string, { label: string; class: string }> = {
   EXP: { label: 'EXP',     class: 'bg-primary-50 text-primary-700' },
   MIL: { label: 'MIL',     class: 'bg-amber-50 text-amber-700' },
@@ -55,14 +46,6 @@ function TypeBadge({ type }: { type: string }) {
   )
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const label = status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  return (
-    <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', STATUS_COLORS[status] ?? 'bg-neutral-100 text-neutral-600')}>
-      {label}
-    </span>
-  )
-}
 
 // ── Filter tabs ───────────────────────────────────────────────────────────────
 

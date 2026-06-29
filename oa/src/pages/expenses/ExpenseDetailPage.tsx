@@ -5,6 +5,7 @@ import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Pa
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
+import { StatusBadge } from '@/components/ui/badge'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -90,16 +91,6 @@ interface ApprovalStep {
 }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-  draft:     'bg-neutral-100 text-neutral-600',
-  submitted: 'bg-yellow-50 text-yellow-700 border border-yellow-200',
-  in_review: 'bg-blue-50 text-blue-700 border border-blue-200',
-  approved:  'bg-green-50 text-green-700 border border-green-200',
-  paid:      'bg-emerald-50 text-emerald-700 border border-emerald-200',
-  returned:  'bg-orange-50 text-orange-700 border border-orange-200',
-  rejected:  'bg-red-50 text-red-700 border border-red-200',
-}
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
   submit:  <CheckCircle className="h-4 w-4 text-blue-500" />,
@@ -409,7 +400,6 @@ export default function ExpenseDetailPage() {
   }
   const typeLabel = TYPE_LABELS[claim.claim_type]
     ?? (claim.claim_type.startsWith('CFM') ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
-  const statusLabel = claim.status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
   const requiresAttachment = ['EXP', 'TRV'].includes(claim.claim_type)
@@ -435,9 +425,7 @@ export default function ExpenseDetailPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-neutral-900">{claim.claim_number}</h1>
-              <span className={cn('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', STATUS_COLORS[claim.status])}>
-                {statusLabel}
-              </span>
+              <StatusBadge status={claim.status} />
               {claim.is_over_budget && (
                 <span className="flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs text-amber-700">
                   <AlertTriangle className="h-3 w-3" />
@@ -655,11 +643,8 @@ export default function ExpenseDetailPage() {
                     <p className="mt-0.5 text-xs text-neutral-600 italic">"{evt.comment}"</p>
                   )}
                 </div>
-                <span className={cn(
-                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                  STATUS_COLORS[evt.to_status] ?? 'bg-neutral-100 text-neutral-500',
-                )}>
-                  {evt.to_status.replace(/_/g, ' ')}
+                <span className="shrink-0">
+                  <StatusBadge status={evt.to_status} />
                 </span>
               </div>
             ))}
