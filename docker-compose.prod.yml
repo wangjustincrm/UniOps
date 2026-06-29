@@ -329,15 +329,16 @@ services:
       retries: 3
       start_period: 10s
 
-  # ── Edge reverse proxy (single 443 entry, subdomains, company wildcard cert) ──
+  # ── Edge reverse proxy — DOMAIN mode only (opt-in via `--profile edge`) ───────
   # Terminates TLS with ./certs/{fullchain,privkey}.pem and routes
   # <module>.canadaroyalmilk.com / <api>-api.canadaroyalmilk.com to the containers
-  # (see Caddyfile). Both internal and external browsers use the same domains
-  # (split-DNS or firewall hairpin → 10.10.250.30:443). The web/api services keep
-  # their published ports for direct on-box debugging, but public traffic enters
-  # only through this proxy (firewall maps public 443 → 10.10.250.30:443).
+  # (see Caddyfile). Used with the DOMAIN image set (TAG=<sha>, https URLs baked).
+  # For the LAN image set (TAG=<sha>-lan, http://10.10.250.30:<port> baked), DON'T
+  # start this — browsers hit the published ports directly. The profile keeps it
+  # out of a plain `up -d`; run `--profile edge up -d` only for domain mode.
   edge:
     image: caddy:2-alpine
+    profiles: ["edge"]
     restart: unless-stopped
     ports:
       - "80:80"

@@ -165,24 +165,51 @@ docker compose -f docker-compose.prod.yml push       # pushes ghcr.io/wangjustin
 > First push: GHCR packages default to **private**. Keep them private (the app
 > server logs in to pull) or mark each Public in GitHub → Packages.
 
-### 2. Deploy (application server 10.10.250.30)
+### Two image sets (same code, different baked URLs)
+
+| Set | Tag | Baked URLs | Deploy with |
+|-----|-----|------------|-------------|
+| **LAN** (current) | `…-lan` (e.g. `90303d8-lan`) | `http://10.10.250.30:<port>` | plain `up -d` (no edge) |
+| **Domain** (deferred external) | `…` (e.g. `90303d8`) | `https://*.canadaroyalmilk.com` | `--profile edge up -d` + certs |
+
+Backend images are identical across sets (no baked URLs; `ALLOWED_ORIGINS` is a
+runtime env). Only the 5 web images differ. The Caddy `edge` is gated behind the
+`edge` compose profile, so a plain `up -d` runs LAN mode without it.
+
+### 2a. Deploy — LAN mode (internal IP, no domain/TLS) — CURRENT
 
 ```bash
-git pull origin main             # gets docker-compose.prod.yml, Caddyfile, migrate-prod.sh
-cp .env.prod.example .env        # same values as the build host (same TAG!)
-mkdir -p certs                   # then copy fullchain.pem + privkey.pem into ./certs
+git pull origin main
+cp .env.lan.example .env         # TAG=90303d8-lan, DB_PASSWORD, JWT_SECRET_KEY
 echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
 
 docker compose -f docker-compose.prod.yml pull
 ./migrate-prod.sh                # ordered alembic — finance-api FIRST
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d          # NO --profile edge
 
-docker compose -f docker-compose.prod.yml ps                 # all healthy?
-docker compose -f docker-compose.prod.yml logs --tail=30 edge   # Caddy loaded the cert + sites?
+docker compose -f docker-compose.prod.yml ps             # all healthy?
 ```
 
-Open `https://portal.canadaroyalmilk.com` (internal + external) → log in → tiles
-deep-link to the other modules over their HTTPS subdomains.
+Internal browser → `http://10.10.250.30:5174` (Portal) → log in → tiles jump to
+the other modules at `http://10.10.250.30:<port>`.
+
+### 2b. Deploy — Domain mode (external, when ready)
+
+```bash
+git pull origin main
+cp .env.prod.example .env        # TAG=90303d8 (the https set), DB_PASSWORD, JWT_SECRET_KEY
+mkdir -p certs                   # copy fullchain.pem + privkey.pem into ./certs
+echo "<GHCR_PAT>" | docker login ghcr.io -u wangjustincrm --password-stdin
+
+docker compose -f docker-compose.prod.yml pull
+./migrate-prod.sh
+docker compose -f docker-compose.prod.yml --profile edge up -d   # WITH Caddy
+
+docker compose -f docker-compose.prod.yml logs --tail=30 edge    # cert + sites loaded?
+```
+
+Then add the firewall mapping + DNS (see Prerequisites) and open
+`https://portal.canadaroyalmilk.com`.
 
 **Rollback:** set `TAG` to a previous git short SHA in `.env`, then
 `docker compose -f docker-compose.prod.yml pull && up -d` (re-run `migrate-prod.sh`
