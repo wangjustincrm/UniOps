@@ -5,6 +5,7 @@ import { PrPipeline } from '@/components/dashboard/PrPipeline'
 import { Card } from '@/components/ui/card'
 import { useDashboard } from '@/hooks/useDashboard'
 import { useTasks } from '@/hooks/useTasks'
+import { financeHandoffHref } from '@/lib/api'
 import type { PrPipelineItem } from '@/components/dashboard/PrPipeline'
 import type { DocumentStatus, TaskItem } from '@/types'
 import type { ApiTask } from '@/services/tasks'
@@ -59,7 +60,12 @@ function mapTasks(tasks: ApiTask[]): TaskItem[] {
     dueDate: t.due_date,
     amount: t.amount,
     vendor: t.vendor,
-    href: t.type === 'create_pa'
+    // Budget Plans live in the Finance module — open them there via a full-page
+    // handoff (absolute URL), not an in-app EPMS route. The shared TaskCard
+    // detects the absolute URL and jumps instead of using react-router.
+    href: t.document_type.toLowerCase() === 'budget_plan'
+      ? financeHandoffHref(`/budget/plans/${t.document_id}`)
+      : t.type === 'create_pa'
       ? `/pa/create?poId=${t.document_id}`
       : t.type === 'create_prepayment_pa'
       ? `/pa/new?poId=${t.document_id}`

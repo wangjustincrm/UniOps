@@ -21,6 +21,29 @@ export const MDM_BASE = (import.meta.env.VITE_MDM_API_URL as string | undefined)
 export const FINANCE_BASE = (import.meta.env.VITE_FINANCE_API_URL as string | undefined) || 'http://localhost:8004'
 
 /**
+ * Finance module FRONTEND origin. Budget pages are owned by the Finance module
+ * (Portal-wrapped); the EPMS /budget* routes still exist but are only used as
+ * the iframe target inside Finance's EpmsEmbed. Cross-app jumps (e.g. opening a
+ * Budget Plan approval task from the Task Inbox) must land in Finance, not in
+ * EPMS's bare budget page — see financeHandoffHref().
+ */
+export const FINANCE_URL = (import.meta.env.VITE_FINANCE_URL as string | undefined) || 'http://localhost:5177'
+
+/**
+ * Build a full-page URL into the Finance frontend with session handoff, mirroring
+ * the `#__session=<base64json>` mechanism Portal uses to launch EPMS (consumed by
+ * finance/src/main.tsx). When the user isn't authenticated yet we just return the
+ * bare URL and let Finance redirect to its own login.
+ */
+export function financeHandoffHref(path: string): string {
+  const { token, refreshToken, user } = useAuthStore.getState()
+  const base = `${FINANCE_URL}${path}`
+  if (!token || !user) return base
+  const session = btoa(JSON.stringify({ token, refreshToken: refreshToken ?? '', user }))
+  return `${base}#__session=${session}`
+}
+
+/**
  * Expense/OA microservice base URL (expense-api :8006) — unified invoice storage
  * + attachments. Browser-reachable absolute URL: the dev `/oa-api` Vite proxy is
  * dead inside the dockerized frontend (proxies to container-localhost:8006).

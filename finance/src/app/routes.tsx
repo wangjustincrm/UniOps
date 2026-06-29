@@ -10,6 +10,7 @@ import BankSettingsPage from '@/pages/finance/BankSettingsPage'
 import BudgetConfigPage from '@/pages/budget/BudgetConfigPage'
 import BudgetDashboardPage from '@/pages/budget/BudgetDashboardPage'
 import BudgetPlansPage from '@/pages/budget/BudgetPlansPage'
+import BudgetPlanDetailPage from '@/pages/budget/BudgetPlanDetailPage'
 import BudgetCatalogPage from '@/pages/budget/BudgetCatalogPage'
 import FactorLibraryPage from '@/pages/budget/FactorLibraryPage'
 
@@ -22,6 +23,7 @@ export const financeRoutes: RouteDef[] = [
 
   { path: '/budget/dashboard', element: <BudgetDashboardPage />, tab: { title: 'Budget Dashboard', icon: 'LayoutDashboard', keyStrategy: 'static' } },
   { path: '/budget/plans', element: <BudgetPlansPage />, tab: { title: 'Budget Plans', icon: 'ClipboardList', keyStrategy: 'static' } },
+  { path: '/budget/plans/:id', element: <BudgetPlanDetailPage />, tab: { title: 'Budget Plan', icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' } },
   { path: '/budget/catalog', element: <BudgetCatalogPage />, tab: { title: 'Account Catalog', icon: 'FolderTree', keyStrategy: 'static' } },
   { path: '/budget/factors', element: <FactorLibraryPage />, tab: { title: 'Factor Library', icon: 'FlaskConical', keyStrategy: 'static' } },
   { path: '/budget/config', element: <BudgetConfigPage />, tab: { title: 'Budget Config', icon: 'SlidersHorizontal', keyStrategy: 'static' } },

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Clock, ArrowRight, Check, Inbox } from 'lucide-react'
 import { cn, formatCAD, formatDate } from '@/lib/utils'
+import { financeHandoffHref } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { useTasks, useCompleteTask } from '@/hooks/useTasks'
 import type { TaskType } from '@/types'
@@ -26,6 +27,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   settle_prepayment: 'Settle Prepayment',
   link_invoice: 'Link Invoice to PO',
   create_pa: 'Create Payment Application',
+  approve_budget_plan: 'Approve Budget Plan',
+  revise_budget_plan: 'Revise Budget Plan',
 }
 
 const ALL_TASK_TYPES: TaskType[] = [
@@ -69,7 +72,6 @@ const EMPTY_MESSAGES: Record<TabValue, { heading: string; sub: string }> = {
 
 const HREF_MAP: Record<string, string> = {
   pr: '/pr', po: '/po', gr: '/gr', invoice: '/invoices', pa: '/pa',
-  budget_plan: '/budget/plans',
 }
 
 interface FullTaskCardProps {
@@ -81,9 +83,23 @@ function FullTaskCard({ task, onComplete }: FullTaskCardProps) {
   const navigate = useNavigate()
   const isUrgent = task.priority === 'urgent'
   const isDone = task.is_completed
-  const href = task.type === 'create_pa'
-    ? `/pa/create?poId=${task.document_id}`
-    : `${HREF_MAP[task.document_type.toLowerCase()] ?? '/'}/${task.document_id}`
+
+  // Budget Plans are owned by the Finance module. The plan pages physically live
+  // in EPMS but are surfaced through Finance (Portal chrome) via EpmsEmbed, so a
+  // budget_plan task must open in Finance — a full-page handoff — rather than an
+  // in-app navigate that would strand the user on EPMS's bare budget page.
+  const isBudgetPlan = task.document_type.toLowerCase() === 'budget_plan'
+
+  const goToTask = () => {
+    if (isBudgetPlan) {
+      window.location.assign(financeHandoffHref(`/budget/plans/${task.document_id}`))
+      return
+    }
+    const href = task.type === 'create_pa'
+      ? `/pa/create?poId=${task.document_id}`
+      : `${HREF_MAP[task.document_type.toLowerCase()] ?? '/'}/${task.document_id}`
+    navigate(href)
+  }
 
   return (
     <div
@@ -169,7 +185,7 @@ function FullTaskCard({ task, onComplete }: FullTaskCardProps) {
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => navigate(href)}
+            onClick={goToTask}
             aria-label="Go to task"
           >
             <ArrowRight className="h-4 w-4" />

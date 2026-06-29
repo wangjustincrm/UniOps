@@ -18,6 +18,8 @@ const TASK_TYPE_LABELS: Record<string, string> = {
   link_invoice: 'Link Invoice to PO',
   create_pa: 'Create Payment Application',
   create_prepayment_pa: 'Create Prepayment PA',
+  approve_budget_plan: 'Approve Budget Plan',
+  revise_budget_plan: 'Revise Budget Plan',
 }
 
 interface TaskCardProps {
@@ -27,6 +29,16 @@ interface TaskCardProps {
 function TaskCard({ task }: TaskCardProps) {
   const navigate = useNavigate()
   const isUrgent = task.priority === 'urgent'
+
+  // Absolute URLs (e.g. a Budget Plan task handing off to the Finance module)
+  // can't go through react-router — jump the whole page instead.
+  const goToTask = () => {
+    if (/^https?:\/\//.test(task.href)) {
+      window.location.assign(task.href)
+    } else {
+      navigate(task.href)
+    }
+  }
 
   return (
     <div
@@ -64,7 +76,7 @@ function TaskCard({ task }: TaskCardProps) {
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={() => navigate(task.href)}
+          onClick={goToTask}
           aria-label="Go to task"
           className="shrink-0"
         >
