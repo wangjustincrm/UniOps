@@ -89,7 +89,7 @@ function LinesTable({ rows, currency }: {
         )}
         <tr className="border-t border-neutral-100 bg-neutral-50">
           <td colSpan={totalTax > 0 ? 4 : 3} className="px-4 py-2 text-xs font-semibold text-neutral-700 text-right">Total</td>
-          <td className="px-4 py-2 text-right font-mono text-sm font-bold text-[#085E5E]">
+          <td className="px-4 py-2 text-right font-mono text-sm font-bold text-primary-700">
             {formatAmount(subtotal + totalTax, currency)}
           </td>
         </tr>
@@ -173,7 +173,7 @@ function OaDetailView({ id }: { id: string }) {
   })
 
   if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-400" /></div>
-  if (error || !inv) return <div className="py-12 text-center text-sm text-red-500">Invoice not found</div>
+  if (error || !inv) return <div className="py-12 text-center text-sm text-danger-500">Invoice not found</div>
 
   const lines = (inv.lines ?? []).map(l => ({
     description: l.description, quantity: l.quantity, unit_price: l.unit_price,
@@ -188,7 +188,7 @@ function OaDetailView({ id }: { id: string }) {
         <div className="flex items-start justify-between gap-4 mb-5">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-50 text-amber-700">OA</span>
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-warning-50 text-warning-700">OA</span>
               <h1 className="text-xl font-bold text-neutral-900 font-mono">
                 {inv.invoice_number ?? '—'}
               </h1>
@@ -233,7 +233,7 @@ function EpmsDetailView({ id }: { id: string }) {
   })
 
   if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-400" /></div>
-  if (error || !inv) return <div className="py-12 text-center text-sm text-red-500">Invoice not found</div>
+  if (error || !inv) return <div className="py-12 text-center text-sm text-danger-500">Invoice not found</div>
 
   const lines = (inv.line_items ?? []).map(l => ({
     description: l.description, quantity: l.quantity,
@@ -295,7 +295,7 @@ export default function InvoiceDetailPage() {
       {isOa  && id && <OaDetailView  id={id} />}
       {isEpms && id && <EpmsDetailView id={id} />}
       {!isOa && !isEpms && (
-        <div className="py-12 text-center text-sm text-red-500">Unknown invoice source: {source}</div>
+        <div className="py-12 text-center text-sm text-danger-500">Unknown invoice source: {source}</div>
       )}
     </div>
   )

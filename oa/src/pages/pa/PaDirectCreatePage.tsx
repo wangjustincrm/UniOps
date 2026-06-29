@@ -146,7 +146,7 @@ function StepBar({ step }: { step: 1 | 2 | 3 }) {
             <div className="flex items-center gap-2 shrink-0">
               <div className={cn(
                 'flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold transition-colors',
-                done ? 'bg-primary-600 text-white' : active ? 'bg-[#085E5E] text-white' : 'bg-neutral-100 text-neutral-400',
+                done ? 'bg-primary-600 text-white' : active ? 'bg-primary-700 text-white' : 'bg-neutral-100 text-neutral-400',
               )}>
                 {done ? <CheckCircle2 className="h-4 w-4" /> : n}
               </div>
@@ -212,16 +212,16 @@ function Step1Upload({
       </div>
 
       {dupError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-danger-500 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800">{dupError.message}</p>
-              <p className="mt-1 text-xs text-red-600 font-mono">
+              <p className="text-sm font-medium text-danger-800">{dupError.message}</p>
+              <p className="mt-1 text-xs text-danger-600 font-mono">
                 {dupError.duplicate.pa_number || dupError.duplicate.document_ref}
               </p>
             </div>
-            <button onClick={() => setDupError(null)} className="text-red-400 hover:text-red-600">
+            <button onClick={() => setDupError(null)} className="text-danger-400 hover:text-danger-600">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -265,7 +265,7 @@ function Step1Upload({
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
@@ -403,7 +403,7 @@ function Step2Review({
             AI extracted <span className="font-medium text-primary-700">{extracted}/{total}</span> fields from <span className="font-medium">{file.name}</span>
           </p>
           {extracted === total && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+            <span className="inline-flex items-center gap-1 rounded-full bg-success-100 px-2 py-0.5 text-[11px] font-semibold text-success-700">
               <CheckCircle2 className="h-3 w-3" /> High confidence
             </span>
           )}
@@ -411,14 +411,14 @@ function Step2Review({
       </div>
 
       {duplicate && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4">
           <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <AlertTriangle className="h-5 w-5 text-danger-500 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="text-sm font-medium text-red-800">
+              <p className="text-sm font-medium text-danger-800">
                 This invoice has already been uploaded.
               </p>
-              <p className="mt-1 text-xs text-red-600">
+              <p className="mt-1 text-xs text-danger-600">
                 Invoice <span className="font-mono">{invoiceNumber}</span> from this vendor is already
                 recorded{duplicate.source === 'epms' ? ' in EPMS' : ''}
                 {(duplicate.pa_number || duplicate.document_ref)
@@ -436,7 +436,7 @@ function Step2Review({
         {(['data', 'preview'] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)}
             className={cn('px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors',
-              activeTab === tab ? 'border-[#085E5E] text-[#085E5E]' : 'border-transparent text-neutral-500')}>
+              activeTab === tab ? 'border-primary-700 text-primary-700' : 'border-transparent text-neutral-500')}>
             {tab === 'data' ? 'Extracted Data' : 'Preview'}
           </button>
         ))}
@@ -464,13 +464,13 @@ function Step2Review({
               <React.Fragment key={key}>
                 <div className={cn(
                   'rounded-lg border p-3',
-                  !wasExtracted ? 'border-amber-200 bg-amber-50/40' : 'border-neutral-200 bg-white',
+                  !wasExtracted ? 'border-warning-200 bg-warning-50/40' : 'border-neutral-200 bg-white',
                 )}>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-medium text-neutral-600">{label}</label>
                     {wasExtracted
-                      ? <span className="text-[10px] font-semibold text-green-700 bg-green-100 rounded px-1.5 py-0.5">AI extracted ✓</span>
-                      : <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 flex items-center gap-1"><Pencil className="h-2.5 w-2.5" />Enter manually</span>
+                      ? <span className="text-[10px] font-semibold text-success-700 bg-success-100 rounded px-1.5 py-0.5">AI extracted ✓</span>
+                      : <span className="text-[10px] font-semibold text-warning-700 bg-warning-100 rounded px-1.5 py-0.5 flex items-center gap-1"><Pencil className="h-2.5 w-2.5" />Enter manually</span>
                     }
                   </div>
                   <input
@@ -480,7 +480,7 @@ function Step2Review({
                     onChange={e => setFields(p => ({ ...p, [key]: e.target.value }))}
                     className={cn(
                       'w-full rounded border px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary-400',
-                      !wasExtracted ? 'border-amber-300 bg-amber-50' : 'border-neutral-200',
+                      !wasExtracted ? 'border-warning-300 bg-warning-50' : 'border-neutral-200',
                     )}
                     placeholder={`Enter ${label.toLowerCase()}`}
                   />
@@ -504,13 +504,13 @@ function Step2Review({
                 {key === 'vendorName' && (
                   <div className={cn(
                     'rounded-lg border p-3',
-                    selectedVendor ? 'border-green-200 bg-green-50/40' : 'border-red-200 bg-red-50/40',
+                    selectedVendor ? 'border-success-200 bg-success-50/40' : 'border-danger-200 bg-danger-50/40',
                   )}>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-medium text-neutral-600">Matched Vendor (DB)</label>
                       {selectedVendor
-                        ? <span className="text-[10px] font-semibold text-green-700 bg-green-100 rounded px-1.5 py-0.5">Matched ✓</span>
-                        : <span className="text-[10px] font-semibold text-red-700 bg-red-100 rounded px-1.5 py-0.5">⚠ No match — select manually</span>
+                        ? <span className="text-[10px] font-semibold text-success-700 bg-success-100 rounded px-1.5 py-0.5">Matched ✓</span>
+                        : <span className="text-[10px] font-semibold text-danger-700 bg-danger-100 rounded px-1.5 py-0.5">⚠ No match — select manually</span>
                       }
                     </div>
                     {selectedVendor ? (
@@ -532,7 +532,7 @@ function Step2Review({
                           value={vendorQuery}
                           onFocus={() => setVendorSearchOpen(true)}
                           onChange={e => { setVendorQuery(e.target.value); setVendorSearchOpen(true) }}
-                          className="w-full rounded border border-red-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary-400"
+                          className="w-full rounded border border-danger-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:border-primary-400"
                         />
                         {vendorSearchOpen && (
                           <>
@@ -564,13 +564,13 @@ function Step2Review({
           {/* Line Items */}
           <div className={cn(
             'rounded-lg border p-3',
-            initial.lineItems != null ? 'border-neutral-200 bg-white' : 'border-amber-200 bg-amber-50/40',
+            initial.lineItems != null ? 'border-neutral-200 bg-white' : 'border-warning-200 bg-warning-50/40',
           )}>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs font-medium text-neutral-600">Line Items</label>
               {initial.lineItems != null
-                ? <span className="text-[10px] font-semibold text-green-700 bg-green-100 rounded px-1.5 py-0.5">AI extracted ✓</span>
-                : <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 flex items-center gap-1"><Pencil className="h-2.5 w-2.5" />Enter manually</span>
+                ? <span className="text-[10px] font-semibold text-success-700 bg-success-100 rounded px-1.5 py-0.5">AI extracted ✓</span>
+                : <span className="text-[10px] font-semibold text-warning-700 bg-warning-100 rounded px-1.5 py-0.5 flex items-center gap-1"><Pencil className="h-2.5 w-2.5" />Enter manually</span>
               }
             </div>
 
@@ -649,12 +649,12 @@ function Step2Review({
           </div>
 
           {!selectedVendorId && (
-            <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2 border border-red-200">
+            <p className="text-xs text-danger-700 bg-danger-50 rounded-lg px-3 py-2 border border-danger-200">
               ⚠ Please select a matched vendor from the database before continuing.
             </p>
           )}
           {selectedVendorId && !FIELD_META.filter(f => ['vendorName','vendorInvoiceNumber','amount'].includes(f.key)).every(f => fields[f.key]?.trim()) && (
-            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 border border-amber-200">
+            <p className="text-xs text-warning-700 bg-warning-50 rounded-lg px-3 py-2 border border-warning-200">
               Vendor Name, Invoice Number, and Subtotal are required.
             </p>
           )}
@@ -662,7 +662,7 @@ function Step2Review({
           <button
             onClick={handleConfirm}
             disabled={!allFilled}
-            className="flex items-center justify-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors mt-1"
+            className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors mt-1"
           >
             <ArrowRight className="h-4 w-4" />
             Continue to Payment
@@ -974,19 +974,19 @@ function Step3PaForm({
         )}
       </div>
 
-      <div className="flex items-start gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
-        <AlertTriangle className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-        <p className="text-blue-700">Direct payments always require <strong>Finance Manager</strong> approval.</p>
+      <div className="flex items-start gap-3 rounded-lg border border-info-200 bg-info-50 px-4 py-3 text-sm">
+        <AlertTriangle className="h-4 w-4 text-info-500 shrink-0 mt-0.5" />
+        <p className="text-info-700">Direct payments always require <strong>Finance Manager</strong> approval.</p>
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
 
       <button type="submit" disabled={saving || !vendorName}
-        className="flex items-center justify-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors">
+        className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
         {saving ? 'Creating…' : 'Create Payment Application'}
       </button>

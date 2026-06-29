@@ -105,7 +105,7 @@ export default function CfmCreatePage() {
   )
 
   if (!form) return (
-    <div className="py-16 text-center text-sm text-red-500">
+    <div className="py-16 text-center text-sm text-danger-500">
       Custom form "{formCode}" not found or is inactive.
     </div>
   )
@@ -125,7 +125,7 @@ export default function CfmCreatePage() {
           <div key={field.name}>
             <label className="mb-1 block text-xs font-medium text-neutral-600">
               {field.label}
-              {field.required && <span className="ml-1 text-red-400">*</span>}
+              {field.required && <span className="ml-1 text-danger-400">*</span>}
             </label>
             <DynamicField
               field={field}
@@ -147,13 +147,13 @@ export default function CfmCreatePage() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
 
       <button type="submit" disabled={mutation.isPending}
-        className="flex items-center justify-center gap-2 rounded-lg bg-[#085E5E] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors self-start">
+        className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors self-start">
         {mutation.isPending ? 'Saving…' : 'Save Draft'}
       </button>
     </form>

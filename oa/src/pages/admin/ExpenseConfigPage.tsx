@@ -157,19 +157,19 @@ export default function ExpenseConfigPage() {
       </section>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
 
       <div className="flex items-center gap-3">
         <button type="submit" disabled={mutation.isPending}
-          className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors">
+          className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
           {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           Save Configuration
         </button>
         {saved && (
-          <span className="flex items-center gap-1.5 text-sm text-green-600">
+          <span className="flex items-center gap-1.5 text-sm text-success-600">
             <Check className="h-4 w-4" /> Saved
           </span>
         )}

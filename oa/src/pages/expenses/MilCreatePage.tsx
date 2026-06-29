@@ -163,7 +163,7 @@ export default function MilCreatePage() {
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] transition-colors disabled:opacity-50"
+            className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors disabled:opacity-50"
           >
             {createMutation.isPending ? 'Saving…' : 'Save as Draft'}
           </button>
@@ -195,7 +195,7 @@ export default function MilCreatePage() {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-neutral-600">Vehicle Description <span className="text-red-500">*</span></label>
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Vehicle Description <span className="text-danger-500">*</span></label>
             <input
               type="text"
               value={vehicleDesc}
@@ -221,7 +221,7 @@ export default function MilCreatePage() {
 
       {/* Over-km warning */}
       {isOverMaxKm && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
             Total distance ({totalKm.toFixed(1)} km) exceeds the {maxKm.toLocaleString()} km policy limit.
@@ -320,7 +320,7 @@ export default function MilCreatePage() {
                       <button
                         type="button"
                         onClick={() => setTrips((prev) => prev.filter((_, i) => i !== idx).map((t, i) => ({ ...t, trip_number: i + 1 })))}
-                        className="rounded p-1 text-neutral-300 hover:text-red-400 transition-colors"
+                        className="rounded p-1 text-neutral-300 hover:text-danger-400 transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -357,7 +357,7 @@ export default function MilCreatePage() {
 
       {/* Error */}
       {createMutation.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
           {(createMutation.error as Error).message}
         </div>
       )}

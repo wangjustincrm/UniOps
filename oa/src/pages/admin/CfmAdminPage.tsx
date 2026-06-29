@@ -56,7 +56,7 @@ function FieldEditor({ field, onChange, onRemove }: {
           {field.label || 'New field'}
         </span>
         <button type="button" onClick={e => { e.stopPropagation(); onRemove() }}
-          className="text-neutral-300 hover:text-red-500 transition-colors">
+          className="text-neutral-300 hover:text-danger-500 transition-colors">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </button>
@@ -132,12 +132,12 @@ function FormEditor({ form, onChange, onRemove }: {
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => onChange({ ...form, is_active: !form.is_active })}
             className={cn('flex items-center gap-1 text-xs font-medium',
-              form.is_active ? 'text-green-600' : 'text-neutral-400')}>
+              form.is_active ? 'text-success-600' : 'text-neutral-400')}>
             {form.is_active ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
             {form.is_active ? 'Active' : 'Inactive'}
           </button>
           <button type="button" onClick={onRemove}
-            className="text-neutral-300 hover:text-red-500 transition-colors">
+            className="text-neutral-300 hover:text-danger-500 transition-colors">
             <Trash2 className="h-4 w-4" />
           </button>
         </div>
@@ -271,7 +271,7 @@ export default function CfmAdminPage() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
@@ -279,11 +279,11 @@ export default function CfmAdminPage() {
       <div className="flex items-center gap-3 border-t border-neutral-100 pt-4">
         <button onClick={() => { setError(''); mutation.mutate() }}
           disabled={mutation.isPending}
-          className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors">
+          className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
           {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
           Save Forms
         </button>
-        {saved && <span className="flex items-center gap-1.5 text-sm text-green-600"><Check className="h-4 w-4" /> Saved</span>}
+        {saved && <span className="flex items-center gap-1.5 text-sm text-success-600"><Check className="h-4 w-4" /> Saved</span>}
       </div>
     </div>
   )

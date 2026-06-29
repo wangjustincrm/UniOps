@@ -84,13 +84,13 @@ export default function PaDirectEditPage() {
   if (isLoading) return (
     <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-400" /></div>
   )
-  if (!pa) return <div className="py-16 text-center text-sm text-red-500">Payment application not found</div>
+  if (!pa) return <div className="py-16 text-center text-sm text-danger-500">Payment application not found</div>
   if (!['draft', 'returned'].includes(pa.status)) return (
     <div className="flex flex-col gap-4 max-w-2xl">
       <a href={`/pa/${id}`} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700">
         <ArrowLeft className="h-4 w-4" />Back to PA
       </a>
-      <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+      <p className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-700">
         This payment application is {pa.status} and can no longer be edited.
       </p>
     </div>
@@ -184,13 +184,13 @@ export default function PaDirectEditPage() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
 
       <button type="submit" disabled={saving || !title.trim()}
-        className="flex items-center justify-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors">
+        className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
         {saving ? 'Saving…' : 'Save Changes'}
       </button>

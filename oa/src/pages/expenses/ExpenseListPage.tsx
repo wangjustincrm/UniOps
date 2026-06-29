@@ -33,8 +33,8 @@ interface CustomFormSummary { code: string; name: string; is_active: boolean }
 
 const TYPE_CONFIG: Record<string, { label: string; class: string }> = {
   EXP: { label: 'EXP',     class: 'bg-primary-50 text-primary-700' },
-  MIL: { label: 'MIL',     class: 'bg-amber-50 text-amber-700' },
-  TRV: { label: 'TRV',     class: 'bg-blue-50 text-blue-700' },
+  MIL: { label: 'MIL',     class: 'bg-warning-50 text-warning-700' },
+  TRV: { label: 'TRV',     class: 'bg-info-50 text-info-700' },
 }
 
 function TypeBadge({ type }: { type: string }) {
@@ -91,7 +91,7 @@ export default function ExpenseListPage() {
         <div className="relative">
           <button
             onClick={() => setNewMenuOpen((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors"
           >
             <Plus className="h-4 w-4" />
             New Claim
@@ -112,14 +112,14 @@ export default function ExpenseListPage() {
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/mil') }}
                   className="flex w-full items-center gap-3 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
                 >
-                  <Car className="h-4 w-4 text-amber-600" />
+                  <Car className="h-4 w-4 text-warning-600" />
                   <span>Mileage Claim (MIL)</span>
                 </button>
                 <button
                   onClick={() => { setNewMenuOpen(false); navigate('/expenses/new/trv') }}
                   className="flex w-full items-center gap-3 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
                 >
-                  <Plane className="h-4 w-4 text-blue-600" />
+                  <Plane className="h-4 w-4 text-info-600" />
                   <span>Travel Expense (TRV)</span>
                 </button>
                 {(customForms?.length ?? 0) > 0 && (
@@ -152,7 +152,7 @@ export default function ExpenseListPage() {
             className={cn(
               'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
               activeStatus === s
-                ? 'border-[#085E5E] text-[#085E5E]'
+                ? 'border-primary-700 text-primary-700'
                 : 'border-transparent text-neutral-500 hover:text-neutral-700',
             )}
           >
@@ -200,7 +200,7 @@ export default function ExpenseListPage() {
                     <div className="flex items-center gap-1.5">
                       <StatusBadge status={c.status} />
                       {c.is_over_budget && (
-                        <span className="text-[10px] font-medium text-amber-600 bg-amber-50 rounded px-1 py-0.5">Over Budget</span>
+                        <span className="text-[10px] font-medium text-warning-600 bg-warning-50 rounded px-1 py-0.5">Over Budget</span>
                       )}
                     </div>
                   </td>

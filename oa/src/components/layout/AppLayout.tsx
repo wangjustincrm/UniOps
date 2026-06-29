@@ -88,7 +88,7 @@ function Sidebar({
 
   return (
     <aside className={cn(
-      'flex h-screen flex-col bg-[#085E5E] transition-all duration-200 shrink-0',
+      'flex h-screen flex-col bg-primary-700 transition-all duration-200 shrink-0',
       collapsed ? 'w-16' : 'w-60',
       'max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-2xl max-md:w-60',
       mobileOpen ? 'max-md:translate-x-0 max-md:opacity-100' : 'max-md:-translate-x-full max-md:opacity-0',
@@ -250,7 +250,7 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
           onClick={() => setMenuOpen(v => !v)}
           className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
         >
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#085E5E]/10 text-xs font-semibold text-[#085E5E] ring-2 ring-[#085E5E]/30">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary-700/10 text-xs font-semibold text-primary-700 ring-2 ring-primary-700/30">
             {initials}
           </div>
           <span className="hidden sm:block font-medium">{fullName}</span>
@@ -277,7 +277,7 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
             <div className="mt-1 border-t border-neutral-100">
               <button
                 onClick={() => { setMenuOpen(false); signOut() }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                className="flex w-full items-center gap-2 px-3 py-2 text-sm text-danger-600 hover:bg-danger-50 transition-colors"
               >
                 <LogOut className="h-4 w-4" />
                 Sign Out

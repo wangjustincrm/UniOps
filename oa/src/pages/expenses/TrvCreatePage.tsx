@@ -68,7 +68,7 @@ function emptyLine(n: number, category: string): TrvLineItem {
 function OverLimitBadge({ amount, limit }: { amount: number; limit: number }) {
   if (!limit || amount <= limit) return null
   return (
-    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-700">
+    <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold bg-warning-100 text-warning-700">
       <AlertTriangle className="h-2.5 w-2.5" />
       Over limit (${limit.toFixed(2)})
     </span>
@@ -129,13 +129,13 @@ function CategorySection({
               <div key={li.line_number}
                 className={cn(
                   'rounded-lg border p-3 flex flex-col gap-2',
-                  isOver ? 'border-amber-300 bg-amber-50/40' : 'border-neutral-200',
+                  isOver ? 'border-warning-300 bg-warning-50/40' : 'border-neutral-200',
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
                   {isOver && <OverLimitBadge amount={net} limit={limit!} />}
                   <button type="button" onClick={() => onRemove(li.line_number)}
-                    className="ml-auto text-neutral-300 hover:text-red-500 transition-colors">
+                    className="ml-auto text-neutral-300 hover:text-danger-500 transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -192,7 +192,7 @@ function CategorySection({
                       }}
                       className={cn(
                         'mt-0.5 w-full rounded border px-2 py-1.5 text-sm text-right focus:outline-none focus:border-primary-400',
-                        isOver ? 'border-amber-300 bg-amber-50' : 'border-neutral-200',
+                        isOver ? 'border-warning-300 bg-warning-50' : 'border-neutral-200',
                       )}
                     />
                   </div>
@@ -227,7 +227,7 @@ function CategorySection({
                       <Paperclip className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
                       <span className="flex-1 truncate text-neutral-700">{li._file.name}</span>
                       <button type="button" onClick={() => onUpdate(li.line_number, { _file: null })}
-                        className="text-neutral-300 hover:text-red-500 transition-colors" title="Remove attachment">
+                        className="text-neutral-300 hover:text-danger-500 transition-colors" title="Remove attachment">
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -385,9 +385,9 @@ export default function TrvCreatePage() {
 
       {/* Over-limit warning banner */}
       {hasOverLimit && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-          <div className="text-sm text-amber-800">
+        <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-500 shrink-0 mt-0.5" />
+          <div className="text-sm text-warning-800">
             <strong>Meal limit exceeded.</strong>{' '}
             Highlighted rows exceed the policy per-meal allowance and will require Finance Manager approval.
           </div>
@@ -470,13 +470,13 @@ export default function TrvCreatePage() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
 
       <button type="submit" disabled={mutation.isPending}
-        className="flex items-center justify-center gap-2 rounded-lg bg-[#085E5E] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors self-start">
+        className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors self-start">
         {mutation.isPending ? 'Saving…' : 'Save Draft'}
       </button>
     </form>

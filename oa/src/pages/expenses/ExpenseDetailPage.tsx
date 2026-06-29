@@ -93,11 +93,11 @@ interface ApprovalStep {
 // ── Badges ────────────────────────────────────────────────────────────────────
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
-  submit:  <CheckCircle className="h-4 w-4 text-blue-500" />,
-  approve: <CheckCircle className="h-4 w-4 text-green-500" />,
-  reject:  <XCircle className="h-4 w-4 text-red-500" />,
-  return:  <RotateCcw className="h-4 w-4 text-orange-500" />,
-  pay:     <Banknote className="h-4 w-4 text-emerald-500" />,
+  submit:  <CheckCircle className="h-4 w-4 text-info-500" />,
+  approve: <CheckCircle className="h-4 w-4 text-success-500" />,
+  reject:  <XCircle className="h-4 w-4 text-danger-500" />,
+  return:  <RotateCcw className="h-4 w-4 text-warning-500" />,
+  pay:     <Banknote className="h-4 w-4 text-success-500" />,
 }
 
 // ── Action modal ──────────────────────────────────────────────────────────────
@@ -112,11 +112,11 @@ function ActionModal({
 }) {
   const [comment, setComment] = useState('')
   const labels: Record<string, { title: string; color: string }> = {
-    submit:  { title: 'Submit for Approval', color: 'bg-[#085E5E] text-white' },
-    approve: { title: 'Approve Claim', color: 'bg-green-600 text-white' },
-    reject:  { title: 'Reject Claim', color: 'bg-red-600 text-white' },
-    return:  { title: 'Return for Revision', color: 'bg-orange-500 text-white' },
-    pay:     { title: 'Record Payment', color: 'bg-emerald-600 text-white' },
+    submit:  { title: 'Submit for Approval', color: 'bg-primary-700 text-white' },
+    approve: { title: 'Approve Claim', color: 'bg-success-600 text-white' },
+    reject:  { title: 'Reject Claim', color: 'bg-danger-600 text-white' },
+    return:  { title: 'Return for Revision', color: 'bg-warning-500 text-white' },
+    pay:     { title: 'Record Payment', color: 'bg-success-600 text-white' },
   }
   const cfg = labels[action] ?? { title: action, color: 'bg-neutral-800 text-white' }
 
@@ -228,7 +228,7 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
       </div>
 
       {uploadError && (
-        <div className="mx-5 mt-3 flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="mx-5 mt-3 flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{uploadError}
         </div>
       )}
@@ -257,7 +257,7 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
                 )}
                 {canUpload && (
                   <button onClick={() => deleteMutation.mutate(att.id)}
-                    className="text-neutral-300 hover:text-red-500 transition-colors">
+                    className="text-neutral-300 hover:text-danger-500 transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
@@ -284,10 +284,10 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
 
   const stateIcon = (state: ApprovalStep['state']) => {
     switch (state) {
-      case 'approved': return <CheckCircle className="h-5 w-5 text-green-500" />
-      case 'current':  return <Clock className="h-5 w-5 text-[#085E5E]" />
-      case 'returned': return <RotateCcw className="h-5 w-5 text-orange-500" />
-      case 'rejected': return <XCircle className="h-5 w-5 text-red-500" />
+      case 'approved': return <CheckCircle className="h-5 w-5 text-success-500" />
+      case 'current':  return <Clock className="h-5 w-5 text-primary-700" />
+      case 'returned': return <RotateCcw className="h-5 w-5 text-warning-500" />
+      case 'rejected': return <XCircle className="h-5 w-5 text-danger-500" />
       default:         return <Circle className="h-5 w-5 text-neutral-300" />
     }
   }
@@ -296,11 +296,11 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
     returned: 'Returned', rejected: 'Rejected',
   }
   const stateBadge: Record<ApprovalStep['state'], string> = {
-    approved: 'bg-green-50 text-green-700',
-    current:  'bg-[#085E5E]/10 text-[#085E5E]',
+    approved: 'bg-success-50 text-success-700',
+    current:  'bg-primary-700/10 text-primary-700',
     waiting:  'bg-neutral-100 text-neutral-500',
-    returned: 'bg-orange-50 text-orange-700',
-    rejected: 'bg-red-50 text-red-700',
+    returned: 'bg-warning-50 text-warning-700',
+    rejected: 'bg-danger-50 text-danger-700',
   }
 
   return (
@@ -392,7 +392,7 @@ export default function ExpenseDetailPage() {
     return <div className="flex items-center justify-center py-24 text-sm text-neutral-400">Loading…</div>
   }
   if (!claim) {
-    return <div className="py-24 text-center text-sm text-red-500">Expense claim not found</div>
+    return <div className="py-24 text-center text-sm text-danger-500">Expense claim not found</div>
   }
 
   const TYPE_LABELS: Record<string, string> = {
@@ -427,7 +427,7 @@ export default function ExpenseDetailPage() {
               <h1 className="text-2xl font-bold text-neutral-900">{claim.claim_number}</h1>
               <StatusBadge status={claim.status} />
               {claim.is_over_budget && (
-                <span className="flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2 py-0.5 text-xs text-amber-700">
+                <span className="flex items-center gap-1 rounded-full bg-warning-50 border border-warning-200 px-2 py-0.5 text-xs text-warning-700">
                   <AlertTriangle className="h-3 w-3" />
                   Over Budget
                 </span>
@@ -445,7 +445,7 @@ export default function ExpenseDetailPage() {
                 onClick={() => setActiveAction('submit')}
                 disabled={missingAttachment}
                 title={missingAttachment ? 'Attach at least one receipt before submitting' : undefined}
-                className="rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Submit
               </button>
@@ -462,19 +462,19 @@ export default function ExpenseDetailPage() {
               <>
                 <button
                   onClick={() => setActiveAction('return')}
-                  className="rounded-lg border border-orange-200 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50"
+                  className="rounded-lg border border-warning-200 px-4 py-2 text-sm font-medium text-warning-700 hover:bg-warning-50"
                 >
                   Return
                 </button>
                 <button
                   onClick={() => setActiveAction('reject')}
-                  className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                  className="rounded-lg border border-danger-200 px-4 py-2 text-sm font-medium text-danger-600 hover:bg-danger-50"
                 >
                   Reject
                 </button>
                 <button
                   onClick={() => setActiveAction('approve')}
-                  className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+                  className="rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
                 >
                   Approve
                 </button>
@@ -483,7 +483,7 @@ export default function ExpenseDetailPage() {
             {claim.status === 'approved' && canPay && (
               <button
                 onClick={() => setActiveAction('pay')}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                className="rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
               >
                 Mark as Processed
               </button>
@@ -616,7 +616,7 @@ export default function ExpenseDetailPage() {
 
       {/* Attachment requirement hint */}
       {missingAttachment && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="flex items-start gap-3 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>At least one receipt attachment is required before this claim can be submitted.</span>
         </div>
@@ -676,7 +676,7 @@ export default function ExpenseDetailPage() {
 
       {/* Action error */}
       {actionMutation.isError && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
           {(actionMutation.error as Error).message}
         </div>
       )}

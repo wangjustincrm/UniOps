@@ -56,7 +56,7 @@ export default function PaListPage() {
         <div className="flex items-center gap-2">
           <a
             href="/pa/new/direct"
-            className="inline-flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors"
           >
             <Plus className="h-4 w-4" />
             Direct PA
@@ -73,7 +73,7 @@ export default function PaListPage() {
             className={cn(
               'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
               status === s
-                ? 'border-[#085E5E] text-[#085E5E]'
+                ? 'border-primary-700 text-primary-700'
                 : 'border-transparent text-neutral-500 hover:text-neutral-700',
             )}
           >
@@ -87,7 +87,7 @@ export default function PaListPage() {
         {isLoading ? (
           <div className="flex items-center justify-center py-16 text-sm text-neutral-400">Loading…</div>
         ) : error ? (
-          <div className="flex items-center justify-center py-16 text-sm text-red-500">
+          <div className="flex items-center justify-center py-16 text-sm text-danger-500">
             Failed to load payment applications
           </div>
         ) : !items.length ? (

@@ -51,7 +51,7 @@ export default function ProcessPaymentModal({
               ))}
             </select>
             {!isLoading && options.length === 0 && (
-              <p className="text-xs text-amber-600">No active {currency} accounts. Add one under Finance → Bank &amp; Cards.</p>
+              <p className="text-xs text-warning-600">No active {currency} accounts. Add one under Finance → Bank &amp; Cards.</p>
             )}
           </div>
           <div className="flex justify-end gap-2">

@@ -76,7 +76,7 @@ export default function InvoicesPage() {
           <div className="py-12 text-center text-sm text-neutral-400">Loading…</div>
         ) : error ? (
           <div className="flex flex-col items-center justify-center py-14 text-center">
-            <p className="font-medium text-red-600">Failed to load invoices</p>
+            <p className="font-medium text-danger-600">Failed to load invoices</p>
             <p className="mt-1 text-sm text-neutral-400">{(error as Error).message}</p>
           </div>
         ) : !data?.items.length ? (

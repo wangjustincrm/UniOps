@@ -56,7 +56,7 @@ export function ReceiptScanButton({
         className={cn(
           'inline-flex items-center gap-1 rounded border px-1.5 py-1 text-[10px] font-medium transition-colors',
           err
-            ? 'border-red-200 text-red-500 hover:bg-red-50'
+            ? 'border-danger-200 text-danger-500 hover:bg-danger-50'
             : 'border-neutral-200 text-neutral-500 hover:text-primary-700 hover:border-primary-300',
           loading && 'opacity-60',
           className,

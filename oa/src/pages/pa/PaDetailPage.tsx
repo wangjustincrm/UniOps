@@ -124,7 +124,7 @@ function ActionArea({
             </a>
           )}
           <button onClick={() => onAction('submit')} disabled={acting}
-            className="flex items-center gap-2 rounded-lg bg-[#085E5E] px-4 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors">
+            className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
             {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             {status === 'returned' ? 'Resubmit for Approval' : 'Submit for Approval'}
           </button>
@@ -134,7 +134,7 @@ function ActionArea({
           </button>
         </div>
         {status === 'returned' && (
-          <p className="text-xs text-orange-600 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+          <p className="text-xs text-warning-600 bg-warning-50 border border-warning-200 rounded-lg px-3 py-2">
             This PA was returned for revision. Check the History tab for comments before resubmitting.
           </p>
         )}
@@ -149,15 +149,15 @@ function ActionArea({
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <button onClick={() => onOpenModal('approve')} disabled={acting}
-              className="flex items-center gap-2 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50 transition-colors">
               <CheckCircle2 className="h-4 w-4" />Approve
             </button>
             <button onClick={() => onOpenModal('return')} disabled={acting}
-              className="flex items-center gap-2 rounded-lg border border-orange-200 bg-white px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-50 disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 rounded-lg border border-warning-200 bg-white px-4 py-2 text-sm font-medium text-warning-700 hover:bg-warning-50 disabled:opacity-50 transition-colors">
               <RotateCcw className="h-4 w-4" />Return
             </button>
             <button onClick={() => onOpenModal('reject')} disabled={acting}
-              className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors">
+              className="flex items-center gap-2 rounded-lg border border-danger-200 bg-white px-4 py-2 text-sm font-medium text-danger-600 hover:bg-danger-50 disabled:opacity-50 transition-colors">
               <XCircle className="h-4 w-4" />Reject
             </button>
           </div>
@@ -169,7 +169,7 @@ function ActionArea({
       return (
         <div className="flex flex-col gap-3">
           <button onClick={() => onAction('recall')} disabled={acting}
-            className="flex items-center gap-2 self-start rounded-lg border border-orange-200 bg-orange-50 px-4 py-2 text-sm font-medium text-orange-700 hover:bg-orange-100 disabled:opacity-50 transition-colors">
+            className="flex items-center gap-2 self-start rounded-lg border border-warning-200 bg-warning-50 px-4 py-2 text-sm font-medium text-warning-700 hover:bg-warning-100 disabled:opacity-50 transition-colors">
             {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
             Recall to Draft
           </button>
@@ -187,7 +187,7 @@ function ActionArea({
     return (
       <div className="flex flex-col gap-3">
         <button onClick={() => onOpenModal('pay')} disabled={acting}
-          className="flex items-center gap-2 self-start rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+          className="flex items-center gap-2 self-start rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50 transition-colors">
           <CreditCard className="h-4 w-4" />Mark as Processed
         </button>
         {error && <ErrorBanner message={error} />}
@@ -211,9 +211,9 @@ function ActionModal({
 }) {
   const [comment, setComment] = useState('')
   const labels: Record<string, { title: string; color: string }> = {
-    approve: { title: 'Approve Payment', color: 'bg-green-600 text-white' },
-    return:  { title: 'Return for Revision', color: 'bg-orange-500 text-white' },
-    reject:  { title: 'Reject Payment', color: 'bg-red-600 text-white' },
+    approve: { title: 'Approve Payment', color: 'bg-success-600 text-white' },
+    return:  { title: 'Return for Revision', color: 'bg-warning-500 text-white' },
+    reject:  { title: 'Reject Payment', color: 'bg-danger-600 text-white' },
   }
   const cfg = labels[action] ?? { title: action, color: 'bg-neutral-800 text-white' }
   const commentRequired = action === 'return' || action === 'reject'
@@ -261,7 +261,7 @@ function ActionModal({
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+    <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
       <AlertTriangle className="h-4 w-4 shrink-0" />{message}
     </div>
   )
@@ -280,7 +280,7 @@ function TabBar({ active, onChange }: { active: Tab; onChange: (t: Tab) => void 
           className={cn(
             'px-5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
             active === tab
-              ? 'border-[#085E5E] text-[#085E5E]'
+              ? 'border-primary-700 text-primary-700'
               : 'border-transparent text-neutral-500 hover:text-neutral-700',
           )}>
           {tab}
@@ -384,7 +384,7 @@ function InvoiceCard({ invoiceId, currency }: { invoiceId: string; currency: str
             )}
             <tr className="bg-neutral-50 border-t border-neutral-100">
               <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-neutral-700 text-right">Total</td>
-              <td className="px-4 py-2 text-right font-mono text-sm font-bold text-[#085E5E]">
+              <td className="px-4 py-2 text-right font-mono text-sm font-bold text-primary-700">
                 {formatAmount(inv.total_amount, cur)}
               </td>
             </tr>
@@ -472,7 +472,7 @@ function DetailsTab({ pa }: { pa: Pa }) {
           )}
           <div className="flex justify-between font-semibold border-t border-neutral-100 pt-2 mt-1 text-neutral-900">
             <span>Total Payment</span>
-            <span className="font-mono text-[#085E5E]">{formatAmount(pa.payment_amount, pa.currency)}</span>
+            <span className="font-mono text-primary-700">{formatAmount(pa.payment_amount, pa.currency)}</span>
           </div>
         </div>
       </div>
@@ -561,7 +561,7 @@ function AttachmentsTab({ pa, perms }: { pa: Pa; perms: PaPermissions | undefine
         <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-neutral-300 px-4 py-3">
           <p className="text-sm text-neutral-500">Add supporting documents (agreements, acceptance docs, etc.)</p>
           <button type="button" disabled={busy || !invoiceId} onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50 transition-colors">
+            className="flex items-center gap-1.5 rounded-lg bg-primary-700 px-3 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}Upload
           </button>
           <input ref={fileInputRef} type="file" multiple className="hidden"
@@ -570,7 +570,7 @@ function AttachmentsTab({ pa, perms }: { pa: Pa; perms: PaPermissions | undefine
       )}
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />{error}
         </div>
       )}
@@ -598,7 +598,7 @@ function AttachmentsTab({ pa, perms }: { pa: Pa; perms: PaPermissions | undefine
             </button>
             {isOwner && (
               <button type="button" disabled={busy} onClick={() => remove(att.id)}
-                className="flex items-center gap-1 text-xs font-medium text-red-500 hover:text-red-700 disabled:opacity-50 shrink-0">
+                className="flex items-center gap-1 text-xs font-medium text-danger-500 hover:text-danger-700 disabled:opacity-50 shrink-0">
                 <XCircle className="h-3.5 w-3.5" />Delete
               </button>
             )}
@@ -612,13 +612,13 @@ function AttachmentsTab({ pa, perms }: { pa: Pa; perms: PaPermissions | undefine
 // ── History tab ───────────────────────────────────────────────────────────────
 
 const ACTION_COLORS: Record<string, string> = {
-  submit:   'bg-blue-100 text-blue-700',
-  approve:  'bg-green-100 text-green-700',
-  return:   'bg-orange-100 text-orange-700',
-  reject:   'bg-red-100 text-red-700',
-  cancel:   'bg-red-100 text-red-500',
-  recall:   'bg-amber-100 text-amber-700',
-  process:  'bg-emerald-100 text-emerald-700',
+  submit:   'bg-info-100 text-info-700',
+  approve:  'bg-success-100 text-success-700',
+  return:   'bg-warning-100 text-warning-700',
+  reject:   'bg-danger-100 text-danger-700',
+  cancel:   'bg-danger-100 text-danger-500',
+  recall:   'bg-warning-100 text-warning-700',
+  process:  'bg-success-100 text-success-700',
 }
 
 function HistoryTab({ paId }: { paId: string }) {
@@ -778,7 +778,7 @@ export default function PaDetailPage() {
   )
 
   if (error || !pa) return (
-    <div className="py-16 text-center text-sm text-red-500">Payment application not found</div>
+    <div className="py-16 text-center text-sm text-danger-500">Payment application not found</div>
   )
 
   return (

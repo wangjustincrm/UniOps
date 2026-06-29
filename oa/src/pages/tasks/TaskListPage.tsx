@@ -60,34 +60,34 @@ const TASK_META: Record<string, {
   revise_expense: {
     label: 'Revise Expense',
     icon: <RotateCcw className="h-4 w-4" />,
-    border: 'border-amber-200',
-    bg: 'bg-amber-50',
-    badge: 'bg-amber-100 text-amber-700',
-    text: 'text-amber-700',
+    border: 'border-warning-200',
+    bg: 'bg-warning-50',
+    badge: 'bg-warning-100 text-warning-700',
+    text: 'text-warning-700',
   },
   revise_pa: {
     label: 'Revise Payment',
     icon: <RotateCcw className="h-4 w-4" />,
-    border: 'border-amber-200',
-    bg: 'bg-amber-50',
-    badge: 'bg-amber-100 text-amber-700',
-    text: 'text-amber-700',
+    border: 'border-warning-200',
+    bg: 'bg-warning-50',
+    badge: 'bg-warning-100 text-warning-700',
+    text: 'text-warning-700',
   },
   pay_expense: {
     label: 'Record Payment',
     icon: <Banknote className="h-4 w-4" />,
-    border: 'border-indigo-200',
-    bg: 'bg-indigo-50',
-    badge: 'bg-indigo-100 text-indigo-700',
-    text: 'text-indigo-700',
+    border: 'border-info-200',
+    bg: 'bg-info-50',
+    badge: 'bg-info-100 text-info-700',
+    text: 'text-info-700',
   },
   pay_pa: {
     label: 'Record Payment',
     icon: <Banknote className="h-4 w-4" />,
-    border: 'border-indigo-200',
-    bg: 'bg-indigo-50',
-    badge: 'bg-indigo-100 text-indigo-700',
-    text: 'text-indigo-700',
+    border: 'border-info-200',
+    bg: 'bg-info-50',
+    badge: 'bg-info-100 text-info-700',
+    text: 'text-info-700',
   },
   submitted_expense: {
     label: 'In Review',
@@ -190,7 +190,7 @@ function TaskCard({ task }: { task: OaTaskItem }) {
             <span className={cn(
               'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
               task.status === 'returned'
-                ? 'bg-amber-100 text-amber-700'
+                ? 'bg-warning-100 text-warning-700'
                 : task.status === 'approved'
                 ? 'bg-success-100 text-success-700'
                 : 'bg-neutral-100 text-neutral-600',
@@ -288,22 +288,22 @@ export default function TaskListPage() {
           <p className="text-xs text-primary-500 mt-0.5">pending approval</p>
         </div>
 
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+        <div className="rounded-xl border border-warning-200 bg-warning-50 px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <AlertTriangle className="h-4 w-4 text-amber-600" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">Revise</p>
+            <AlertTriangle className="h-4 w-4 text-warning-600" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-warning-600">Revise</p>
           </div>
-          <p className="text-2xl font-bold text-amber-700">{reviseCount}</p>
-          <p className="text-xs text-amber-500 mt-0.5">returned to you</p>
+          <p className="text-2xl font-bold text-warning-700">{reviseCount}</p>
+          <p className="text-xs text-warning-500 mt-0.5">returned to you</p>
         </div>
 
-        <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+        <div className="rounded-xl border border-info-200 bg-info-50 px-4 py-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <Banknote className="h-4 w-4 text-indigo-600" />
-            <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Pay</p>
+            <Banknote className="h-4 w-4 text-info-600" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-info-600">Pay</p>
           </div>
-          <p className="text-2xl font-bold text-indigo-700">{payCount}</p>
-          <p className="text-xs text-indigo-500 mt-0.5">awaiting payment</p>
+          <p className="text-2xl font-bold text-info-700">{payCount}</p>
+          <p className="text-xs text-info-500 mt-0.5">awaiting payment</p>
         </div>
       </div>
 
