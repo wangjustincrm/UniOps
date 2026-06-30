@@ -1,9 +1,11 @@
 import { useState, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck, LogOut, ChevronDown, User, KeyRound, Menu,
   ArrowRight, CheckCircle2, AlertCircle,
   Briefcase, CreditCard, Activity, Cloud, Landmark,
+  X, Eye, EyeOff,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, encodeSession } from '@/lib/api'
@@ -149,17 +151,155 @@ const STATUS_LABEL: Record<string, string> = {
   pending_approval: 'Pending Visit Approval',  // shared by VMS
 }
 
+// ── Change Password modal ───────────────────────────────────────────────────
+// Self-contained so the Portal can change passwords in place. Hits the same
+// EPMS-API endpoint the EPMS header uses (`${EPMS_API}/api/v1/auth/change-password`)
+// with the stored bearer token — no cross-app navigation.
+
+function PwdField({
+  label, value, onChange, show, onToggle, error, placeholder, autoFocus = false,
+}: {
+  label: string; value: string; onChange: (v: string) => void
+  show: boolean; onToggle: () => void; error?: string; placeholder: string; autoFocus?: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-neutral-700">{label} <span className="text-red-500">*</span></label>
+      <div className="relative">
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={cn(
+            'h-10 w-full rounded-lg border bg-white px-3 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-colors',
+            error ? 'border-red-500' : 'border-neutral-300',
+          )}
+          placeholder={placeholder}
+          autoFocus={autoFocus}
+        />
+        <button type="button" onClick={onToggle}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const { user } = useAuthStore()
+  const [currentPwd, setCurrentPwd] = useState('')
+  const [newPwd, setNewPwd] = useState('')
+  const [confirmPwd, setConfirmPwd] = useState('')
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew, setShowNew] = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [submitting, setSubmitting] = useState(false)
+  const [success, setSuccess] = useState(false)
+
+  const clearErr = (key: string) => setErrors((p) => ({ ...p, [key]: '' }))
+
+  const validate = (): boolean => {
+    const e: Record<string, string> = {}
+    if (!currentPwd) e.currentPwd = 'Required'
+    if (!newPwd) e.newPwd = 'Required'
+    else if (newPwd.length < 8) e.newPwd = 'Must be at least 8 characters'
+    else if (newPwd === currentPwd) e.newPwd = 'New password must differ from current password'
+    if (!confirmPwd) e.confirmPwd = 'Required'
+    else if (confirmPwd !== newPwd) e.confirmPwd = 'Passwords do not match'
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
+
+  const handleSubmit = async () => {
+    if (!validate()) return
+    setSubmitting(true)
+    try {
+      await epmsApi.post('/auth/change-password', { current_password: currentPwd, new_password: newPwd })
+      setSuccess(true)
+      setTimeout(onClose, 1500)
+    } catch (err) {
+      setErrors((e) => ({ ...e, currentPwd: err instanceof Error ? err.message : 'Current password is incorrect' }))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary-50">
+              <KeyRound className="h-5 w-5 text-primary-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-900">Change Password</h2>
+              {user && <p className="text-xs text-neutral-500">{user.full_name} · {user.email}</p>}
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 flex flex-col gap-4">
+          {success ? (
+            <div className="flex flex-col items-center gap-3 py-6 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-50">
+                <CheckCircle2 className="h-6 w-6 text-green-600" />
+              </div>
+              <p className="text-sm font-medium text-neutral-900">Password changed successfully</p>
+            </div>
+          ) : (
+            <>
+              <PwdField label="Current Password" value={currentPwd}
+                onChange={(v) => { setCurrentPwd(v); clearErr('currentPwd') }}
+                show={showCurrent} onToggle={() => setShowCurrent((v) => !v)}
+                error={errors.currentPwd} placeholder="Enter current password" autoFocus />
+              <PwdField label="New Password" value={newPwd}
+                onChange={(v) => { setNewPwd(v); clearErr('newPwd') }}
+                show={showNew} onToggle={() => setShowNew((v) => !v)}
+                error={errors.newPwd} placeholder="Min. 8 characters" />
+              <PwdField label="Confirm New Password" value={confirmPwd}
+                onChange={(v) => { setConfirmPwd(v); clearErr('confirmPwd') }}
+                show={showConfirm} onToggle={() => setShowConfirm((v) => !v)}
+                error={errors.confirmPwd} placeholder="Re-enter new password" />
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={onClose}
+                  className="rounded-lg px-3 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-100">
+                  Cancel
+                </button>
+                <button onClick={handleSubmit} disabled={submitting}
+                  className="flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-50">
+                  <KeyRound className="h-3.5 w-3.5" />
+                  {submitting ? 'Saving…' : 'Change Password'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 // ── Top header ────────────────────────────────────────────────────────────────
 
 function TopHeader({ epmsHref, onMobileMenuToggle }: { epmsHref: string; onMobileMenuToggle: () => void }) {
   const { user } = useAuthStore()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showChangePwd, setShowChangePwd] = useState(false)
   const initials = user?.full_name?.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase() ?? 'U'
   const roleLabel = user?.role?.replace(/_/g, ' ') ?? ''
   const [base, hash] = epmsHref.split('#')
   const profileHref = `${base}/profile${hash ? '#' + hash : ''}`
 
   return (
+    <>
     <header className="flex h-[60px] shrink-0 items-center gap-4 border-b border-neutral-200 bg-white px-4 md:px-6">
       {/* Mobile hamburger */}
       <button
@@ -208,15 +348,14 @@ function TopHeader({ epmsHref, onMobileMenuToggle }: { epmsHref: string; onMobil
                 <User className="h-4 w-4" />
                 Profile
               </a>
-              {/* Change Password → EPMS */}
-              <a
-                href={profileHref}
-                onClick={() => setMenuOpen(false)}
+              {/* Change Password — opens in place, no cross-app navigation */}
+              <button
+                onClick={() => { setShowChangePwd(true); setMenuOpen(false) }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
               >
                 <KeyRound className="h-4 w-4" />
                 Change Password
-              </a>
+              </button>
               {/* Sign Out */}
               <div className="mt-1 border-t border-neutral-100">
                 <button
@@ -232,6 +371,8 @@ function TopHeader({ epmsHref, onMobileMenuToggle }: { epmsHref: string; onMobil
         )}
       </div>
     </header>
+    {showChangePwd && <ChangePasswordModal onClose={() => setShowChangePwd(false)} />}
+    </>
   )
 }
 
