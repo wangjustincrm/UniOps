@@ -95,6 +95,7 @@ services:
       <<: *db-env
       SERVICE_NAME: mdm-stub
       PORT: "8002"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       ERP_BASE_URL: ${ERP_BASE_URL}
       ERP_TIMEOUT_SECONDS: "60"
     ports: ["8002:8002"]
@@ -135,6 +136,7 @@ services:
       <<: *db-env
       SERVICE_NAME: finance-core
       PORT: "8004"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
     ports: ["8004:8004"]
@@ -155,6 +157,7 @@ services:
       REDIS_HOST: ${REDIS_HOST}
       SERVICE_NAME: expense-api
       PORT: "8006"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       DEBUG: "false"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
@@ -179,6 +182,7 @@ services:
       <<: *db-env
       APP_NAME: Budget API
       APP_VERSION: 0.1.0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       DEBUG: "false"
       ENVIRONMENT: production
       API_V1_PREFIX: /api/v1
