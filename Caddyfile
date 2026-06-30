@@ -10,6 +10,15 @@
 # and 443; 80 redirects to 443. Internal + external browsers use the same domain
 # (split-DNS or firewall hairpin → 10.10.50.65:443).
 
+# Global options: disable HTTP/3. The firewall maps only TCP 443 (not UDP 443),
+# so advertising h3 makes browsers retry API calls over UDP/443 → "Failed to
+# fetch". Serve over h1/h2 (TCP) only; no alt-svc h3 advertised.
+{
+	servers {
+		protocols h1 h2
+	}
+}
+
 (wildcard) {
 	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
 }
