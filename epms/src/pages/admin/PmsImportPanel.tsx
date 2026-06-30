@@ -82,6 +82,8 @@ export function PmsImportPanel() {
   const [runs, setRuns] = useState<PmsRun[]>([])
   const [dryRun, setDryRun] = useState(true)
   const [expanded, setExpanded] = useState<string | null>(null)
+  // /runs strips the heavy `report` payload; fetch the full run on expand.
+  const [details, setDetails] = useState<Record<string, PmsRun>>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -209,7 +211,16 @@ export function PmsImportPanel() {
           {runs.map((run) => (
             <div key={run.id}>
               <button
-                onClick={() => setExpanded(expanded === run.id ? null : run.id)}
+                onClick={async () => {
+                  const next = expanded === run.id ? null : run.id
+                  setExpanded(next)
+                  if (next && !details[run.id]) {
+                    try {
+                      const full = await svc.getRun(run.id)
+                      setDetails((d) => ({ ...d, [run.id]: full }))
+                    } catch { /* fall back to the summary row */ }
+                  }
+                }}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-neutral-50 text-sm">
                 <StatusBadge s={run.status} />
                 <span className="font-medium w-28">{run.phase === 'full' ? 'Full import' : 'Incremental'}</span>
@@ -218,12 +229,17 @@ export function PmsImportPanel() {
                 <span className="text-xs text-neutral-400">{run.triggered_by}</span>
                 <ChevronDown className={cn('h-4 w-4 text-neutral-400 transition-transform', expanded === run.id && 'rotate-180')} />
               </button>
-              {expanded === run.id && (
-                <div className="px-4 pb-3">
-                  {run.error && <div className="text-sm text-red-700 mb-1">{run.error}</div>}
-                  {run.report ? <ReportView r={run.report} /> : <div className="text-xs text-neutral-400">No report.</div>}
-                </div>
-              )}
+              {expanded === run.id && (() => {
+                const full = details[run.id] ?? run
+                return (
+                  <div className="px-4 pb-3">
+                    {full.error && <div className="text-sm text-red-700 mb-1">{full.error}</div>}
+                    {full.report
+                      ? <ReportView r={full.report} />
+                      : <div className="text-xs text-neutral-400">{details[run.id] ? 'No report.' : 'Loading…'}</div>}
+                  </div>
+                )
+              })()}
             </div>
           ))}
         </div>
