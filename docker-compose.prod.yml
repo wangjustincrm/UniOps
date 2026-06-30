@@ -61,6 +61,13 @@ services:
       IDENTITY_API_URL: http://identity-api:8009
       MDM_API_URL: http://mdm-api:8002
       MDM_API_TIMEOUT_SECONDS: "30"
+      # Legacy PMS (SharePoint) import — enables the admin "PMS Data Import" page.
+      # Secrets come from the (gitignored) .env on the app server; tenant/site
+      # fall back to config.py defaults when unset.
+      SP_USER: ${SP_USER}
+      SP_PASSWORD: ${SP_PASSWORD}
+      SP_TENANT: ${SP_TENANT:-canadaroyalmilk.ca}
+      SP_SITE: ${SP_SITE:-https://canadaroyalmilk.sharepoint.com/sites/pr2}
     ports: ["8000:8000"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     healthcheck:
