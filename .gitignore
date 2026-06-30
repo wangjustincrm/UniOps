@@ -74,3 +74,8 @@ db-server-setup.sh
 
 # dropped-in cert material (has private key)
 canadaroyalmilk_com_SSL/
+
+# acme.sh state (LE account/cert material)
+.acme-state/
+.acme-out/
+acme-state/
