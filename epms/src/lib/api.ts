@@ -35,11 +35,21 @@ export const FINANCE_URL = (import.meta.env.VITE_FINANCE_URL as string | undefin
  * finance/src/main.tsx). When the user isn't authenticated yet we just return the
  * bare URL and let Finance redirect to its own login.
  */
+// btoa() only handles Latin1; user data (e.g. Chinese full_name) is UTF-8, which
+// makes btoa throw "characters outside of the Latin1 range". Encode the JSON as
+// UTF-8 bytes before base64. Decoders mirror this (see finance/src/main.tsx).
+function encodeUtf8Base64(str: string): string {
+  const bytes = new TextEncoder().encode(str)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin)
+}
+
 export function financeHandoffHref(path: string): string {
   const { token, refreshToken, user } = useAuthStore.getState()
   const base = `${FINANCE_URL}${path}`
   if (!token || !user) return base
-  const session = btoa(JSON.stringify({ token, refreshToken: refreshToken ?? '', user }))
+  const session = encodeUtf8Base64(JSON.stringify({ token, refreshToken: refreshToken ?? '', user }))
   return `${base}#__session=${session}`
 }
 

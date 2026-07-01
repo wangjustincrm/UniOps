@@ -8,12 +8,19 @@ import { useVmsAuth } from './store/auth'
 // Portal redirects to `${VMS_URL}/#__session=<base64>` after login. We pluck
 // the session out of the hash, hydrate Zustand + localStorage, then strip the
 // hash so it never lingers in the address bar.
+// Mirror of the portal/finance encoder: base64 → UTF-8 bytes → string. atob()
+// alone mangles non-Latin1 characters (e.g. Chinese full_name).
+function decodeUtf8Base64(b64: string): string {
+  const bin = atob(b64)
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
+  return new TextDecoder().decode(bytes)
+}
 ;(function bootstrapFromPortal() {
   const hash = window.location.hash
   const match = hash.match(/__session=([^&]+)/)
   if (!match) return
   try {
-    const { token, refreshToken, user } = JSON.parse(atob(match[1]))
+    const { token, refreshToken, user } = JSON.parse(decodeUtf8Base64(match[1]))
     if (!token || !user) return
 
     const vmsUser = {
