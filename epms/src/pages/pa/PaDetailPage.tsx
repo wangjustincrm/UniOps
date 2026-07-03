@@ -11,10 +11,9 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
-import { usePa, usePaAction, usePaEvents, useConfirmSettlement } from '@/hooks/usePas'
+import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
 import { usePo } from '@/hooks/usePos'
 import { useInvoices } from '@/hooks/useInvoices'
-import { useConfig } from '@/hooks/useConfig'
 import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePaAttachments, useDeletePaAttachment } from '@/hooks/usePaAttachments'
@@ -223,7 +222,7 @@ export default function PaDetailPage() {
   const { data: attachments = [] } = usePaAttachments(id ?? '')
   const deleteAttachment = useDeletePaAttachment(id ?? '')
 
-  const { data: config } = useConfig()
+  const { data: workflowSteps } = usePaWorkflowSteps(id ?? '')
   // Must stay above the early returns below — calling it later would make the
   // hook count differ between the loading and loaded renders (Rules of Hooks).
   const { data: myTasks } = useTasks({ is_completed: false })
@@ -245,7 +244,7 @@ export default function PaDetailPage() {
     )
   }
 
-  const wfNodes = config?.workflow_defs?.pa ?? []
+  const wfNodes = workflowSteps ?? []
   const stepIdx = pa.approval_step_idx ?? 0
 
   // Approval gating is driven solely by the approval engine's task routing — no

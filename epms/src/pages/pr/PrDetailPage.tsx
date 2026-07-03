@@ -9,7 +9,7 @@ import { formatAmount, formatDate, cn } from '@/lib/utils'
 import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
-import { usePr, usePrAction, usePrEvents } from '@/hooks/usePrs'
+import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/usePrs'
 import type { ApiEvent } from '@/services/pr'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
@@ -185,6 +185,7 @@ export default function PrDetailPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const { data: config } = useConfig()
+  const { data: workflowSteps } = usePrWorkflowSteps(id ?? '')
   const [activeTab, setActiveTab] = useState<Tab>('Details')
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -205,7 +206,7 @@ export default function PrDetailPage() {
   const { data: prFactors = [] } = useFactors(factorsAccountId)
 
   const stepIdx = pr ? (pr.approval_step_idx ?? 0) : 0
-  const currentNode = pr && (config?.workflow_defs?.pr ?? [])[stepIdx]
+  const currentNode = pr && (workflowSteps ?? [])[stepIdx]
 
   // Task-based approval check: the approval engine assigns tasks to specific users.
   // Checking whether the current user has an active approve_pr task for THIS PR
@@ -262,7 +263,7 @@ export default function PrDetailPage() {
   }
 
   const approvalSteps = buildWorkflowSteps(
-    config?.workflow_defs?.pr ?? [],
+    workflowSteps ?? [],
     pr.status,
     pr.approval_step_idx ?? 0,
     events ?? [],

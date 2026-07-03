@@ -18,7 +18,7 @@ import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig } from '@/hooks/useConfig'
 import { downloadPdf } from '@/lib/pdf-utils'
-import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder } from '@/hooks/usePos'
+import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps } from '@/hooks/usePos'
 import { useGrs } from '@/hooks/useGrs'
 import { useTasks } from '@/hooks/useTasks'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
@@ -498,6 +498,7 @@ export default function PoDetailPage() {
   const poAction = usePoAction(id ?? '')
   const { user } = useAuthStore()
   const { data: config } = useConfig()
+  const { data: workflowSteps } = usePoWorkflowSteps(id ?? '')
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<Tab>('Details')
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
@@ -590,7 +591,7 @@ export default function PoDetailPage() {
     )
   }
 
-  const approvalSteps = buildWorkflowSteps(config?.workflow_defs?.po ?? [], po.status, po.approval_step_idx ?? 0, events ?? [], po.created_by_name)
+  const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [], po.created_by_name)
   const hasMaterial = po.type === 1 || po.type === 3
 
   return (

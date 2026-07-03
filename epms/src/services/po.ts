@@ -1,5 +1,6 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiEvent } from './pr'
+import type { WorkflowNodeDef } from '@/types'
 
 export type PoStatus =
   | 'draft'
@@ -151,4 +152,7 @@ export const poService = {
 
   placeOrder: (id: string, body: PlaceOrderBody) =>
     api.post<ApiPo>(`/po/${id}/place-order`, body),
+
+  workflowSteps: (id: string) =>
+    api.get<WorkflowNodeDef[]>(`/po/${id}/workflow-steps`),
 }

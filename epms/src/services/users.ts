@@ -46,6 +46,7 @@ export interface UpdateUserBody {
   is_active?: boolean
   password?: string
   teams_account?: string | null
+  supervisor_id?: string | null
 }
 
 export interface UserFilters {

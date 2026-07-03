@@ -44,6 +44,14 @@ export function usePoEvents(id: string) {
   })
 }
 
+export function usePoWorkflowSteps(id: string) {
+  return useQuery({
+    queryKey: ['po', id, 'workflow-steps'],
+    queryFn: () => poService.workflowSteps(id),
+    enabled: !!id,
+  })
+}
+
 export function useCreatePo() {
   const queryClient = useQueryClient()
 

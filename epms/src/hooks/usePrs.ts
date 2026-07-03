@@ -33,6 +33,14 @@ export function usePrEvents(id: string) {
   })
 }
 
+export function usePrWorkflowSteps(id: string) {
+  return useQuery({
+    queryKey: ['pr', id, 'workflow-steps'],
+    queryFn: () => prService.workflowSteps(id),
+    enabled: !!id,
+  })
+}
+
 export function useCreatePr() {
   const queryClient = useQueryClient()
 

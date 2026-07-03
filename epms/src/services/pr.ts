@@ -1,4 +1,5 @@
 import { api, fetchAllPages } from '@/lib/api'
+import type { WorkflowNodeDef } from '@/types'
 
 export type PrStatus =
   | 'draft'
@@ -143,4 +144,7 @@ export const prService = {
 
   events: (id: string) =>
     api.get<ApiEvent[]>(`/pr/${id}/events`),
+
+  workflowSteps: (id: string) =>
+    api.get<WorkflowNodeDef[]>(`/pr/${id}/workflow-steps`),
 }

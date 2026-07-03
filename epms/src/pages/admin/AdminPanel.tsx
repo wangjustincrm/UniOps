@@ -39,7 +39,7 @@ import { CURRENCIES } from '@/types'
 type Section =
   | 'company' | 'security' | 'currency' | 'email_templates' | 'pdf_templates'
   | 'users' | 'vendor_settings'
-  | 'workflows' | 'dept_mapping' | 'service_gr_sla' | 'gr_notification_sla'
+  | 'workflows' | 'dept_mapping' | 'dept_director_mapping' | 'service_gr_sla' | 'gr_notification_sla'
   | 'prepayment' | 'budget' | 'collection' | 'role_management'
   | 'custom_roles' | 'access_matrix' | 'notifications' | 'pms_import'
 
@@ -54,8 +54,9 @@ const NAV: NavEntry[] = [
   { id: 'users',               label: 'User Management',        icon: Users },
   { id: 'vendor_settings',    label: 'Vendor Settings',        icon: Building2 },
   { id: 'workflows',           label: 'Approval Workflows',     icon: Workflow },
-  { id: 'dept_mapping',        label: 'Dept → GM/OPM Mapping',  icon: Building2 },
-  { id: 'service_gr_sla',      label: 'Service GR SLA',         icon: Clock },
+  { id: 'dept_mapping',          label: 'Dept → GM/OPM Mapping',  icon: Building2 },
+  { id: 'dept_director_mapping', label: 'Department Directors',   icon: Building2 },
+  { id: 'service_gr_sla',        label: 'Service GR SLA',         icon: Clock },
   { id: 'gr_notification_sla', label: 'GR Notification SLA',    icon: Bell },
   { id: 'prepayment',          label: 'Prepayment Config',      icon: CreditCard },
   { id: 'budget',              label: 'Budget Config',          icon: PiggyBank },
@@ -1011,8 +1012,8 @@ function PdfTemplates() {
 
 // ─── User form ────────────────────────────────────────────────────────────────
 
-interface UserFormData { full_name: string; email: string; role: UserRole; department_id: string; is_active: boolean; teams_account: string }
-const BLANK_USER: UserFormData = { full_name: '', email: '', role: 'requester', department_id: '', is_active: true, teams_account: '' }
+interface UserFormData { full_name: string; email: string; role: UserRole; department_id: string; is_active: boolean; teams_account: string; supervisor_id: string }
+const BLANK_USER: UserFormData = { full_name: '', email: '', role: 'requester', department_id: '', is_active: true, teams_account: '', supervisor_id: '' }
 
 // Standard initial password assigned to every new / imported account. Users are
 // forced to change it on first login (must_change_password is set server-side).
@@ -1021,6 +1022,8 @@ const INITIAL_PASSWORD = 'Feihe12#$'
 function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData; onSave: (d: UserFormData) => void; onCancel: () => void; title: string }) {
   const { data: deptData } = useDepartments()
   const activeDepts = (deptData?.items ?? []).filter((d) => d.is_active)
+  const { data: usersData } = useUsers()
+  const activeUsers = (usersData?.items ?? []).filter((u) => u.is_active)
   const [form, setForm] = useState<UserFormData>(initial)
   const [errors, setErrors] = useState<Partial<Record<keyof UserFormData, string>>>({})
   const set = (k: keyof UserFormData, v: string | boolean) => setForm((f) => ({ ...f, [k]: v }))
@@ -1073,6 +1076,13 @@ function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData;
         <div className="flex flex-col gap-1 sm:col-span-2">
           <label className="text-xs font-medium text-neutral-700">Teams Account <span className="text-neutral-400 font-normal">(UPN / email for Teams approval)</span></label>
           <input type="email" className={fldCls()} value={form.teams_account} onChange={(e) => set('teams_account', e.target.value)} placeholder="user@company.onmicrosoft.com" />
+        </div>
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <label className="text-xs font-medium text-neutral-700">Supervisor <span className="text-neutral-400 font-normal">(optional — required when dept supervisor step is enabled)</span></label>
+          <select className={fldCls()} value={form.supervisor_id} onChange={(e) => set('supervisor_id', e.target.value)}>
+            <option value="">— No supervisor —</option>
+            {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
+          </select>
         </div>
       </div>
       <div className="mt-4 flex justify-end gap-2">
@@ -1373,8 +1383,8 @@ function UserManagement() {
 
       {mode === 'add' && <UserForm title="Add New User" initial={BLANK_USER} onSave={(d) => { createUser.mutate({ full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, password: INITIAL_PASSWORD, teams_account: d.teams_account || null }); setMode('none') }} onCancel={() => setMode('none')} />}
       {editingUser && <UserForm title={`Edit — ${editingUser.full_name}`}
-        initial={{ full_name: editingUser.full_name, email: editingUser.email, role: editingUser.role as UserRole, department_id: editingUser.department_id ?? '', is_active: editingUser.is_active, teams_account: editingUser.teams_account ?? '' }}
-        onSave={(d) => { updateUserMutation.mutate({ id: (mode as { edit: string }).edit, body: { full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, teams_account: d.teams_account || null } }); setMode('none') }} onCancel={() => setMode('none')} />}
+        initial={{ full_name: editingUser.full_name, email: editingUser.email, role: editingUser.role as UserRole, department_id: editingUser.department_id ?? '', is_active: editingUser.is_active, teams_account: editingUser.teams_account ?? '', supervisor_id: '' }}
+        onSave={(d) => { updateUserMutation.mutate({ id: (mode as { edit: string }).edit, body: { full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, teams_account: d.teams_account || null, supervisor_id: d.supervisor_id || null } }); setMode('none') }} onCancel={() => setMode('none')} />}
 
       <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
         <div className="overflow-x-auto">
@@ -1743,7 +1753,7 @@ function ApprovalWorkflows() {
       {/* Supervisor step per department */}
       <section className="flex flex-col gap-3">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Supervisor Step — Per Department</h3>
-        <p className="text-sm text-neutral-500">When enabled for a department, PR submissions route through the Dept. Supervisor before the Dept. Manager.</p>
+        <p className="text-sm text-neutral-500">Requires each requester in this department to have a Supervisor assigned; those without one route straight to the Manager.</p>
         <div className="rounded-xl border border-neutral-200 overflow-hidden">
           <table className="w-full text-sm">
             <thead><tr className="bg-neutral-50 border-b border-neutral-200">
@@ -1855,6 +1865,65 @@ function DeptGmOpmMapping() {
             )}
           </div>
         ))}
+      </div>
+
+      <SaveBar saved={saved} onSave={handleSave} />
+    </div>
+  )
+}
+
+// ─── Department Directors Mapping ────────────────────────────────────────────
+
+function DeptDirectorMapping() {
+  const { data: config } = useConfig()
+  const updateConfig = useUpdateConfig()
+  const { data: deptData } = useDepartments()
+  const departments = deptData?.items ?? []
+  const { data: usersData } = useUsers()
+  const activeUsers = (usersData?.items ?? []).filter((u) => u.is_active)
+  const [mapping, setMapping] = useState<Record<string, string>>({})
+  const [saved, setSaved] = useState(false)
+
+  const selCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+
+  useEffect(() => { if (config?.dept_director_mapping) setMapping({ ...config.dept_director_mapping }) }, [config?.dept_director_mapping])
+
+  const handleSave = () => {
+    updateConfig.mutate({ dept_director_mapping: mapping })
+    setSaved(true); setTimeout(() => setSaved(false), 2500)
+  }
+
+  return (
+    <div className="flex flex-col gap-6 max-w-2xl">
+      <p className="text-sm text-neutral-500">
+        Directors approve after the Department Manager. Leave blank to skip the Director step for that department.
+      </p>
+
+      <div className="rounded-xl border border-neutral-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="bg-neutral-50 border-b border-neutral-200">
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Department</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Director</th>
+          </tr></thead>
+          <tbody>
+            {departments.filter((d) => d.is_active).map((dept, i) => (
+              <tr key={dept.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-xs font-semibold text-neutral-600">{dept.code}</span>
+                    <span className="text-sm text-neutral-900">{dept.name}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <select className={selCls} value={mapping[dept.id] ?? ''} onChange={(e) => setMapping((p) => ({ ...p, [dept.id]: e.target.value || '' }))}>
+                    <option value="">— No director (skip step) —</option>
+                    {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <SaveBar saved={saved} onSave={handleSave} />
@@ -2990,8 +3059,9 @@ export default function AdminPanel() {
       case 'pdf_templates':       return <PdfTemplates />
       case 'users':               return <MovedToPortal section="User Management" />
       case 'workflows':           return <MovedToPortal section="Approval Workflows" />
-      case 'dept_mapping':        return <DeptGmOpmMapping />
-      case 'service_gr_sla':      return <ServiceGrSla />
+      case 'dept_mapping':          return <DeptGmOpmMapping />
+      case 'dept_director_mapping': return <DeptDirectorMapping />
+      case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />
       case 'vendor_settings':     return <VendorSettingsSection />
       case 'prepayment':          return <PrepaymentConfigSection />

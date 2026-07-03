@@ -34,6 +34,14 @@ export function usePaEvents(id: string) {
   })
 }
 
+export function usePaWorkflowSteps(id: string) {
+  return useQuery({
+    queryKey: ['pa', id, 'workflow-steps'],
+    queryFn: () => paService.workflowSteps(id),
+    enabled: !!id,
+  })
+}
+
 export function useCreatePa() {
   const queryClient = useQueryClient()
 
