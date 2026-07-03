@@ -178,23 +178,46 @@ async def _get_workflow(db: AsyncSession, doc_type: str) -> list[dict]:
     )
 
 
+async def build_effective_workflow(
+    db: AsyncSession, doc_type: str, doc: Any, cfg: CompanyConfig | None,
+) -> list[dict]:
+    """The ordered step list actually walked for THIS document: base workflow_defs
+    plus any runtime-injected over-budget steps. Optional supervisor/director nodes
+    stay in the list (skip is decided per-step at execution/render time)."""
+    workflow = await _get_workflow(db, doc_type)
+    if doc_type == "pr" and getattr(doc, "over_budget", False):
+        bac = (cfg.budget_admin_config if cfg else None) or {}
+        mode = bac.get("over_budget_mode", "fm_gm_opm")
+        if mode != "hard_block":
+            prepend = [{"id": "ob_finance_manager", "role": "finance_manager",
+                        "label": "Over-Budget — Finance Manager"}]
+            if mode == "fm_gm_opm":
+                prepend.append({"id": "ob_gm_or_opm", "role": "gm_or_opm",
+                                "label": "Over-Budget — GM / OPM"})
+            workflow = prepend + workflow
+    return workflow
+
+
 # Default workflows shipped as PRD §3.3 seed values.
 # These are only used as final fallback when CompanyConfig.workflow_defs is missing/empty.
 # AE-2 seeds these into the DB on startup so this fallback is rarely reached.
 _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
     "pr": [
+        {"id": "supervisor",   "role": "supervisor",   "label": "Supervisor"},
         {"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"},
-        {"id": "gm_or_opm",   "role": "gm_or_opm",   "label": "GM / OPM"},
+        {"id": "director",     "role": "director",     "label": "Director"},
+        {"id": "gm_or_opm",    "role": "gm_or_opm",    "label": "GM / OPM"},
     ],
     "po": [
         {"id": "proc_mgr",  "role": "procurement_manager", "label": "Procurement Manager"},
         {"id": "gm_or_opm", "role": "gm_or_opm",           "label": "GM / OPM"},
     ],
     "pa": [
-        {"id": "dept_manager",  "role": "dept_manager",   "label": "Department Manager"},
-        {"id": "gm_or_opm",     "role": "gm_or_opm",      "label": "GM / OPM"},
-        {"id": "finance_bp",    "role": "finance_bp",      "label": "Finance BP"},
-        {"id": "finance_mgr",   "role": "finance_manager", "label": "Finance Manager"},
+        {"id": "dept_manager", "role": "dept_manager",   "label": "Department Manager"},
+        {"id": "director",     "role": "director",       "label": "Director"},
+        {"id": "gm_or_opm",    "role": "gm_or_opm",      "label": "GM / OPM"},
+        {"id": "finance_bp",   "role": "finance_bp",     "label": "Finance BP"},
+        {"id": "finance_mgr",  "role": "finance_manager", "label": "Finance Manager"},
     ],
     "pa_dir": [
         {"id": "finance_bp",  "role": "finance_bp",      "label": "Finance BP"},
@@ -717,7 +740,6 @@ async def execute_action(
     act = action.lower()
     now = datetime.now(timezone.utc)
     step = doc.approval_step_idx
-    workflow = await _get_workflow(db, doc_type)
     cfg = await _get_config(db)
     rm = cfg.role_management if cfg else {}
     dept_gm_opm = cfg.dept_gm_opm_mapping if cfg else {}
@@ -727,23 +749,14 @@ async def execute_action(
     # _routing_user_id. For PR and other doc types this is just doc.created_by.
     routing_uid = await _routing_user_id(db, doc_type, doc)
 
-    # Over-budget pre-approval injection (PR only). Applies on every action so
-    # that submit, approve, return, etc. all walk the same step list.
-    # Mode is read from CompanyConfig.budget_admin_config.over_budget_mode
-    # (single source of truth — see PRD §3.2.6 OBG-001~008).
+    # Build the effective workflow for this document: base workflow_defs plus any
+    # runtime-injected over-budget steps (PR only). Optional supervisor/director
+    # nodes stay in the list; skip is decided per-step at execution/render time.
+    workflow = await build_effective_workflow(db, doc_type, doc, cfg)
     over_budget_mode = ""
     if doc_type == "pr" and getattr(doc, "over_budget", False):
-        bac = (cfg.budget_admin_config if cfg else None) or {}
-        over_budget_mode = bac.get("over_budget_mode", "fm_gm_opm")
-        if over_budget_mode != "hard_block":
-            prepend: list[dict] = [
-                {"id": "ob_finance_manager", "role": "finance_manager",
-                 "label": "Over-Budget — Finance Manager"},
-            ]
-            if over_budget_mode == "fm_gm_opm":
-                prepend.append({"id": "ob_gm_or_opm", "role": "gm_or_opm",
-                                "label": "Over-Budget — GM / OPM"})
-            workflow = prepend + workflow
+        over_budget_mode = ((cfg.budget_admin_config if cfg else None) or {}).get(
+            "over_budget_mode", "fm_gm_opm")
 
     doc_number = getattr(doc, meta["number_attr"])
     recorded_role = actor_role

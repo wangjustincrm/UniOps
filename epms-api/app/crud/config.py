@@ -229,17 +229,21 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
 
 _DEFAULT_WORKFLOW_DEFS = {
     "pr": [
-        {"id": "pr-step-0", "label": "Department Manager",  "role": "dept_manager"},
-        {"id": "pr-step-1", "label": "GM / OPM Approval",   "role": "gm"},
-        {"id": "pr-step-2", "label": "Finance Manager",     "role": "finance_manager"},
+        {"id": "supervisor",   "role": "supervisor",   "label": "Supervisor"},
+        {"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"},
+        {"id": "director",     "role": "director",     "label": "Director"},
+        {"id": "gm_or_opm",    "role": "gm_or_opm",    "label": "GM / OPM"},
     ],
     "po": [
         {"id": "po-step-0", "label": "Procurement Manager", "role": "procurement_manager"},
         {"id": "po-step-1", "label": "Finance Manager",     "role": "finance_manager"},
     ],
     "pa": [
-        {"id": "pa-step-0", "label": "Finance BP Review",          "role": "finance_bp"},
-        {"id": "pa-step-1", "label": "Finance Manager Approval",   "role": "finance_manager"},
+        {"id": "dept_manager", "role": "dept_manager",   "label": "Department Manager"},
+        {"id": "director",     "role": "director",       "label": "Director"},
+        {"id": "gm_or_opm",    "role": "gm_or_opm",      "label": "GM / OPM"},
+        {"id": "finance_bp",   "role": "finance_bp",     "label": "Finance BP"},
+        {"id": "finance_mgr",  "role": "finance_manager", "label": "Finance Manager"},
     ],
 }
 
