@@ -2,11 +2,13 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
-from app.crud.engine import _DOC_META, execute_action
+from app.crud.engine import _DOC_META, _resolve_meta, build_effective_workflow, execute_action
 from app.db.base import get_db
+from app.models.config import CompanyConfig
 from app.schemas.action import ActionRequest, ActionResult
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -52,3 +54,34 @@ async def run_action(
         raise HTTPException(status_code=422, detail=str(e))
 
     return result
+
+
+@router.get("/{doc_type}/{doc_id}/workflow-steps")
+async def workflow_steps(
+    doc_type: str,
+    doc_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: CurrentUser = ...,
+) -> list[dict]:
+    """Return the effective ordered workflow steps for a specific document.
+
+    Steps include any runtime-injected over-budget pre-approval nodes (PR only)
+    plus the base workflow_defs steps. Optional supervisor/director nodes are
+    included (skip is decided at execution/render time, not here).
+    """
+    try:
+        meta = _resolve_meta(doc_type)
+    except KeyError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown doc_type '{doc_type}'. Valid types: {sorted(_STATIC_DOC_TYPES)} (plus cfm_<code>)",
+        )
+
+    doc = (await db.execute(
+        select(meta["model"]).where(meta["model"].id == doc_id)
+    )).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status_code=404, detail=f"{doc_type.upper()} not found")
+
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    return await build_effective_workflow(db, doc_type, doc, cfg)
