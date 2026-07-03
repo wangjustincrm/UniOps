@@ -306,6 +306,8 @@ async def _actor_can_approve(
     dept_gm_opm: dict,
     finance_bp_ids: set[uuid.UUID],
     doc: Any | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
 ) -> bool:
     """Return True if the actor is authorized to approve the current workflow step.
 
@@ -330,6 +332,10 @@ async def _actor_can_approve(
         # Resolve via creator's department — same logic as task assignment
         _, resolved_user_id = await _resolve_gm_or_opm(db, creator_id, rm, dept_gm_opm)
         return resolved_user_id is not None and actor_id == resolved_user_id
+    if step_role == "director":
+        return director_uid is not None and actor_id == director_uid
+    if step_role == "supervisor":
+        return supervisor_uid is not None and actor_id == supervisor_uid
     # Named role: check role_management map
     uid_str = rm.get(f"{step_role}_user_id")
     if uid_str:
@@ -478,6 +484,8 @@ async def _create_approve_task(
     rm: dict,
     dept_gm_opm: dict,
     routing_uid: uuid.UUID,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
 ) -> None:
     wf = workflow[step]
     role = wf["role"]
@@ -504,6 +512,10 @@ async def _create_approve_task(
         # GM vs OPM is decided by the requester's department, resolved from the
         # originating PR's creator (routing_uid), not the PO/PA creator.
         assigned_role, assigned_user_id = await _resolve_gm_or_opm(db, routing_uid, rm, dept_gm_opm)
+    elif role == "director":
+        assigned_user_id = director_uid
+    elif role == "supervisor":
+        assigned_user_id = supervisor_uid
     elif role == "quality_manager" and doc_type == "vms_visit":
         # VMS-local: vms-api pre-selected the QM and stored on the visit.
         # See S2_ARCHITECTURE_REVIEW.md F2.
@@ -718,6 +730,24 @@ _POST_APPROVE: dict[str, Any] = {
 }
 
 
+# ── Conditional per-document step skipping ────────────────────────────────────
+
+def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
+                      dept_has_director, dept_has_supervisor):
+    if role == "quality_manager" and doc_type == "vms_visit":
+        if getattr(doc, "quality_approver_id", None) is None:
+            return True, "Auto-skipped (access area does not require Quality Manager review)"
+    if role == "director" and director_uid is None:
+        reason = ("Auto-skipped ⚠ configured Director is inactive/missing"
+                  if dept_has_director else "Auto-skipped (department has no Director)")
+        return True, reason
+    if role == "supervisor" and supervisor_uid is None:
+        reason = ("Auto-skipped ⚠ configured Supervisor is inactive/missing"
+                  if dept_has_supervisor else "Auto-skipped (no Supervisor assigned)")
+        return True, reason
+    return False, ""
+
+
 # ── Main execution entry point ────────────────────────────────────────────────
 
 async def execute_action(
@@ -749,6 +779,16 @@ async def execute_action(
     # _routing_user_id. For PR and other doc types this is just doc.created_by.
     routing_uid = await _routing_user_id(db, doc_type, doc)
 
+    dept_director = cfg.dept_director_mapping if cfg else {}
+    dept_supervisor = cfg.dept_supervisor_enabled if cfg else {}
+    director_uid = await _resolve_director(db, routing_uid, dept_director)
+    supervisor_uid = await _resolve_supervisor(db, routing_uid, dept_supervisor)
+    # dept-level "configured?" flags — distinguish opt-out vs misconfig in skip reasons
+    _routing_dept = (await db.execute(
+        select(User.department_id).where(User.id == routing_uid))).scalar_one_or_none()
+    dept_has_director = bool(_routing_dept) and str(_routing_dept) in (dept_director or {})
+    dept_has_supervisor = bool(_routing_dept) and bool((dept_supervisor or {}).get(str(_routing_dept)))
+
     # Build the effective workflow for this document: base workflow_defs plus any
     # runtime-injected over-budget steps (PR only). Optional supervisor/director
     # nodes stay in the list; skip is decided per-step at execution/render time.
@@ -775,8 +815,28 @@ async def execute_action(
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
-        doc.approval_step_idx = 0
-        await _create_approve_task(db, doc_type, doc, step=0, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_uid=routing_uid)
+        start = 0
+        while start < len(workflow):
+            role = workflow[start]["role"]
+            skip, reason = _should_skip_step(role, doc_type, doc, director_uid,
+                                             supervisor_uid, dept_has_director, dept_has_supervisor)
+            if not skip:
+                break
+            db.add(ApprovalEvent(
+                document_type=doc_type, document_id=doc.id, document_number=doc_number,
+                step_idx=start, action="approve", actor_id=actor_id,
+                actor_role=role, comment=reason,
+            ))
+            auto_skipped.append(start)
+            start += 1
+        doc.approval_step_idx = start
+        if start < len(workflow):
+            await _create_approve_task(db, doc_type, doc, step=start, workflow=workflow,
+                                       meta=meta, rm=rm, dept_gm_opm=dept_gm_opm,
+                                       routing_uid=routing_uid, director_uid=director_uid,
+                                       supervisor_uid=supervisor_uid)
+        else:
+            _set_status(meta, doc, "approved")
 
     elif act == "approve":
         if _status_of(meta, doc) not in meta["valid_approve"]:
@@ -788,7 +848,7 @@ async def execute_action(
         authorized = await _actor_can_approve(
             db, current_step_role, actor_id, actor_role,
             routing_uid, rm, dept_gm_opm, finance_bp_ids_auth,
-            doc=doc,
+            doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
         )
         if not authorized:
             raise ValueError(
@@ -816,26 +876,21 @@ async def execute_action(
                 # QM assignment is per-visit, not via role_map.
                 qm_id = getattr(doc, "quality_approver_id", None)
                 return qm_id is not None and actor_id == qm_id
+            if role == "director":
+                return director_uid is not None and actor_id == director_uid
+            if role == "supervisor":
+                return supervisor_uid is not None and actor_id == supervisor_uid
             assigned = role_map.get(role)
             return assigned is not None and assigned == actor_id
-
-        def _should_skip_step(role: str) -> tuple[bool, str]:
-            """Return (skip, reason). Skip applies when the step is irrelevant
-            for this particular document — currently only the VMS Quality
-            Manager step on a visit that doesn't require QM review (no
-            `quality_approver_id` populated by vms-api → access area is not
-            GMP / Laboratory / All)."""
-            if role == "quality_manager" and doc_type == "vms_visit":
-                if getattr(doc, "quality_approver_id", None) is None:
-                    return True, "Auto-skipped (access area does not require Quality Manager review)"
-            return False, ""
 
         next_step = step + 1
         while next_step < len(workflow):
             next_role = workflow[next_step]["role"]
             # Conditional skip (per-document) — fires before the same-approver
             # check so non-GMP visits don't even check who holds the QM role.
-            cond_skip, reason = _should_skip_step(next_role)
+            cond_skip, reason = _should_skip_step(
+                next_role, doc_type, doc, director_uid, supervisor_uid,
+                dept_has_director, dept_has_supervisor)
             if cond_skip:
                 db.add(ApprovalEvent(
                     document_type=doc_type, document_id=doc.id, document_number=doc_number,
@@ -862,7 +917,7 @@ async def execute_action(
         if next_step < len(workflow):
             doc.approval_step_idx = next_step
             _set_status(meta, doc, "in_review")
-            await _create_approve_task(db, doc_type, doc, step=next_step, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_uid=routing_uid)
+            await _create_approve_task(db, doc_type, doc, step=next_step, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_uid=routing_uid, director_uid=director_uid, supervisor_uid=supervisor_uid)
         else:
             _set_status(meta, doc, "approved")
             if hasattr(doc, "approved_at"):
