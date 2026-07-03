@@ -159,6 +159,7 @@ class PrResponse(BaseModel):
     po_id: uuid.UUID | None
     po_number: str | None
     created_by: uuid.UUID
+    created_by_name: str | None = None
     created_at: datetime
     updated_at: datetime
     line_items: list[PrLineItemResponse]

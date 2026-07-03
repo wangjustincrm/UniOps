@@ -67,6 +67,7 @@ export interface ApiPa {
   line_items: ApiPaLineItem[]
   notes?: string
   approval_step_idx: number
+  created_by_name?: string | null
   created_at: string
   updated_at: string
 }

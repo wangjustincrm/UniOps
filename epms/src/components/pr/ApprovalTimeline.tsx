@@ -60,7 +60,7 @@ export function ApprovalTimeline({ steps, onSendReminder }: ApprovalTimelineProp
                       step.status === 'skipped' && 'text-neutral-400 line-through'
                     )}
                   >
-                    {step.actorName ?? step.role}
+                    {step.actorName ? `${step.role} — ${step.actorName}` : step.role}
                   </p>
 
                   {step.status === 'completed' && step.completedAt && (

@@ -52,6 +52,7 @@ export interface ApiPo {
   pr_requester_id?: string | null
   approval_step_idx: number
   line_items: ApiPoLineItem[]
+  created_by_name?: string | null
   created_at: string
   updated_at: string
 }

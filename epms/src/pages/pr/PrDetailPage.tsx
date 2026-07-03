@@ -10,6 +10,7 @@ import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { usePr, usePrAction, usePrEvents } from '@/hooks/usePrs'
+import type { ApiEvent } from '@/services/pr'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
 import { usePrAttachments, useDeleteAttachment } from '@/hooks/usePrAttachments'
@@ -31,10 +32,24 @@ function buildWorkflowSteps(
   nodes: WorkflowNodeDef[],
   status: string,
   stepIdx: number,
+  events: ApiEvent[] = [],
+  createdByName?: string | null,
 ): ApprovalStep[] {
+  // Index approve events by step_idx so each workflow node shows who acted.
+  const approveEventByStep = events
+    .filter((e) => e.action === 'approve')
+    .reduce<Record<number, ApiEvent>>((acc, e) => {
+      if (!(e.step_idx in acc)) acc[e.step_idx] = e
+      return acc
+    }, {})
+  const submitEvent = events.find((e) => e.action === 'submit')
+
   const created: ApprovalStep = {
     id: 'created',
     role: 'Requester',
+    // Prefer the document's creator (always set, incl. imported data); fall back
+    // to the submit event's actor for records created before created_by tracking.
+    actorName: createdByName ?? submitEvent?.actor_name ?? undefined,
     status: 'completed',
     action: 'Created',
     channel: 'Web',
@@ -50,7 +65,7 @@ function buildWorkflowSteps(
     } else {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
     }
-    return { id: node.id, role: node.label, status: s }
+    return { id: node.id, role: node.label, actorName: approveEventByStep[i]?.actor_name ?? undefined, status: s }
   })
   return [created, ...approvalNodes]
 }
@@ -250,6 +265,8 @@ export default function PrDetailPage() {
     config?.workflow_defs?.pr ?? [],
     pr.status,
     pr.approval_step_idx ?? 0,
+    events ?? [],
+    pr.created_by_name,
   )
   const hasMaterial = pr.type === 1 || pr.type === 3
   const hasSupplierItemId = pr.line_items.some((item) => item.supplier_item_id)

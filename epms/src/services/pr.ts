@@ -50,6 +50,7 @@ export interface ApiPr {
   line_items: ApiPrLineItem[]
   po_id?: string
   po_number?: string
+  created_by_name?: string | null
   created_at: string
   updated_at: string
 }

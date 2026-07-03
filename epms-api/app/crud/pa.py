@@ -105,8 +105,17 @@ async def get_all(
 
 
 async def get_by_id(db: AsyncSession, pa_id: uuid.UUID) -> PaymentApplication | None:
-    result = await db.execute(select(PaymentApplication).where(PaymentApplication.id == pa_id))
-    return result.scalar_one_or_none()
+    result = await db.execute(
+        select(PaymentApplication, User.full_name)
+        .outerjoin(User, User.id == PaymentApplication.created_by)
+        .where(PaymentApplication.id == pa_id)
+    )
+    row = result.first()
+    if row is None:
+        return None
+    pa, creator_name = row
+    pa.created_by_name = creator_name  # transient attr consumed by PaResponse
+    return pa
 
 
 # ── Create ─────────────────────────────────────────────────────────────────────

@@ -117,8 +117,17 @@ async def get_all(
 
 
 async def get_by_id(db: AsyncSession, pr_id: uuid.UUID) -> PurchaseRequest | None:
-    result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))
-    return result.scalar_one_or_none()
+    result = await db.execute(
+        select(PurchaseRequest, User.full_name)
+        .outerjoin(User, User.id == PurchaseRequest.created_by)
+        .where(PurchaseRequest.id == pr_id)
+    )
+    row = result.first()
+    if row is None:
+        return None
+    pr, creator_name = row
+    pr.created_by_name = creator_name  # transient attr consumed by PrResponse
+    return pr
 
 
 # ── Create ─────────────────────────────────────────────────────────────────────

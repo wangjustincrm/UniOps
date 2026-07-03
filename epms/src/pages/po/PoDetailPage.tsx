@@ -22,6 +22,7 @@ import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder } from
 import { useGrs } from '@/hooks/useGrs'
 import { useTasks } from '@/hooks/useTasks'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
+import type { ApiEvent } from '@/services/pr'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
 
@@ -65,10 +66,22 @@ const GR_STATUS_DOC: Record<GrStatus, DocumentStatus> = {
 
 // ─── Approval Timeline ─────────────────────────────────────────────────────────
 
-function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: number): ApprovalStep[] {
+function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: number, events: ApiEvent[] = [], createdByName?: string | null): ApprovalStep[] {
+  // Index approve events by step_idx so each workflow node shows who acted.
+  const approveEventByStep = events
+    .filter((e) => e.action === 'approve')
+    .reduce<Record<number, ApiEvent>>((acc, e) => {
+      if (!(e.step_idx in acc)) acc[e.step_idx] = e
+      return acc
+    }, {})
+  const submitEvent = events.find((e) => e.action === 'submit')
+
   const created: ApprovalStep = {
     id: 'created',
     role: 'Procurement Officer',
+    // Prefer the document's creator (always set, incl. imported data); fall back
+    // to the submit event's actor for records created before created_by tracking.
+    actorName: createdByName ?? submitEvent?.actor_name ?? undefined,
     status: 'completed',
     action: 'Created',
     channel: 'Web',
@@ -84,7 +97,7 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
     } else {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
     }
-    return { id: node.id, role: node.label, status: s }
+    return { id: node.id, role: node.label, actorName: approveEventByStep[i]?.actor_name ?? undefined, status: s }
   })
   return [created, ...approvalNodes]
 }
@@ -577,7 +590,7 @@ export default function PoDetailPage() {
     )
   }
 
-  const approvalSteps = buildWorkflowSteps(config?.workflow_defs?.po ?? [], po.status, po.approval_step_idx ?? 0)
+  const approvalSteps = buildWorkflowSteps(config?.workflow_defs?.po ?? [], po.status, po.approval_step_idx ?? 0, events ?? [], po.created_by_name)
   const hasMaterial = po.type === 1 || po.type === 3
 
   return (

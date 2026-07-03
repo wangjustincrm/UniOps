@@ -131,6 +131,7 @@ class PoResponse(BaseModel):
     pr_id: uuid.UUID | None
     pr_number: str | None
     created_by: uuid.UUID
+    created_by_name: str | None = None
     created_at: datetime
     updated_at: datetime
     line_items: list[PoLineItemResponse]

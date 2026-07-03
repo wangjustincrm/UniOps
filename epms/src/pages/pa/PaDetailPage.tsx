@@ -68,8 +68,7 @@ function TimelineStep({
         <div className="w-px flex-1 bg-neutral-200 mt-1" />
       </div>
       <div className="pb-5">
-        <p className="text-sm font-semibold text-neutral-800">{label}</p>
-        {actor && <p className="text-xs text-neutral-500 mt-0.5">{actor}</p>}
+        <p className="text-sm font-semibold text-neutral-800">{actor ? `${label} — ${actor}` : label}</p>
         {date && <p className="text-xs text-neutral-400 mt-0.5">{formatDateTime(date)}</p>}
         {isAutoApproved && (
           <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
@@ -284,11 +283,14 @@ export default function PaDetailPage() {
       if (!(e.step_idx in acc)) acc[e.step_idx] = e
       return acc
     }, {})
+  const submitEvent = (events ?? []).find((e) => e.action === 'submit')
 
   const steps = [
     {
       label: 'PA Created & Submitted',
-      actor: undefined as string | undefined,
+      // Prefer the document's creator (always set, incl. imported data); fall back
+      // to the submit event's actor for records created before created_by tracking.
+      actor: pa.created_by_name ?? submitEvent?.actor_name ?? undefined,
       date: pa.created_at,
       status: 'done' as const,
       note: undefined as string | undefined,
