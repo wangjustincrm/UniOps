@@ -13,6 +13,8 @@ class CompanyConfig(Base):
     workflow_defs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     role_management: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     dept_gm_opm_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    dept_director_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    dept_supervisor_enabled: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     # Over-budget pre-approval mode (over_budget_mode) lives here — read by the
     # engine's over-budget injection block (crud/engine.py). Physical column is
     # owned by epms-api (company_config.budget_admin_config, jsonb NOT NULL).
