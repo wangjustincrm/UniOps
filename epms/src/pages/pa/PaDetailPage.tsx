@@ -6,7 +6,7 @@ import { financeApi } from '@/lib/api'
 import {
   ArrowLeft, CheckCircle2, Clock, AlertTriangle, ChevronDown,
   CreditCard, FileText, ExternalLink, Landmark, Paperclip, X,
-  RotateCcw, XCircle, Pencil, MessageSquare,
+  RotateCcw, XCircle, Pencil, MessageSquare, SkipForward,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -45,7 +45,7 @@ function TimelineStep({
   label, actor, date, status, note,
 }: {
   label: string; actor?: string; date?: string;
-  status: 'done' | 'active' | 'pending';
+  status: 'done' | 'active' | 'pending' | 'skipped';
   note?: string;
 }) {
   const isAutoApproved = note?.includes('Auto-approved')
@@ -57,21 +57,29 @@ function TimelineStep({
           'bg-success-400':  status === 'done' && isAutoApproved,
           'bg-primary-600 ring-4 ring-primary-100': status === 'active',
           'bg-neutral-200':  status === 'pending',
+          'border-2 border-dashed border-neutral-300 bg-white': status === 'skipped',
         })}>
           {status === 'done'
             ? <CheckCircle2 className="h-4 w-4 text-white" />
             : status === 'active'
               ? <Clock className="h-3.5 w-3.5 text-white animate-pulse" />
-              : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
+              : status === 'skipped'
+                ? <SkipForward className="h-3.5 w-3.5 text-neutral-300" />
+                : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
         </div>
         <div className="w-px flex-1 bg-neutral-200 mt-1" />
       </div>
       <div className="pb-5">
-        <p className="text-sm font-semibold text-neutral-800">{actor ? `${label} — ${actor}` : label}</p>
+        <p className={cn('text-sm font-semibold text-neutral-800', status === 'skipped' && 'line-through text-neutral-400')}>{actor ? `${label} — ${actor}` : label}</p>
         {date && <p className="text-xs text-neutral-400 mt-0.5">{formatDateTime(date)}</p>}
         {isAutoApproved && (
           <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
             Auto-approved
+          </span>
+        )}
+        {status === 'skipped' && (
+          <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+            Auto-skipped
           </span>
         )}
         {note && !isAutoApproved && <p className="text-xs text-neutral-500 mt-1 italic">"{note}"</p>}
@@ -298,12 +306,13 @@ export default function PaDetailPage() {
       const isDone = ['approved', 'processed'].includes(pa.status) || i < stepIdx
       const isActive = !isDone && i === stepIdx && ['submitted', 'in_review'].includes(pa.status)
       const evt = approveEventByStep[i]
+      const isAutoSkipped = evt?.comment?.startsWith('Auto-skipped') ?? false
       return {
         label: node.label,
-        actor: evt?.actor_name ?? undefined,
-        date: evt?.created_at ?? undefined,
+        actor: isAutoSkipped ? undefined : evt?.actor_name ?? undefined,
+        date: isAutoSkipped ? undefined : evt?.created_at ?? undefined,
         note: evt?.comment?.includes('Auto-approved') ? 'Auto-approved (same approver)' : undefined,
-        status: isDone ? 'done' as const : isActive ? 'active' as const : 'pending' as const,
+        status: isAutoSkipped ? 'skipped' as const : isDone ? 'done' as const : isActive ? 'active' as const : 'pending' as const,
       }
     }),
     {

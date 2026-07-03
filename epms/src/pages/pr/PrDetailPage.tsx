@@ -65,7 +65,11 @@ function buildWorkflowSteps(
     } else {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
     }
-    return { id: node.id, role: node.label, actorName: approveEventByStep[i]?.actor_name ?? undefined, status: s }
+    const evt = approveEventByStep[i]
+    if (evt?.comment?.startsWith('Auto-skipped')) {
+      s = 'skipped'
+    }
+    return { id: node.id, role: node.label, actorName: evt?.comment?.startsWith('Auto-skipped') ? undefined : evt?.actor_name ?? undefined, status: s }
   })
   return [created, ...approvalNodes]
 }

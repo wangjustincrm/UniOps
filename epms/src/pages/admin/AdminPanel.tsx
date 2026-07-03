@@ -1383,7 +1383,7 @@ function UserManagement() {
 
       {mode === 'add' && <UserForm title="Add New User" initial={BLANK_USER} onSave={(d) => { createUser.mutate({ full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, password: INITIAL_PASSWORD, teams_account: d.teams_account || null }); setMode('none') }} onCancel={() => setMode('none')} />}
       {editingUser && <UserForm title={`Edit — ${editingUser.full_name}`}
-        initial={{ full_name: editingUser.full_name, email: editingUser.email, role: editingUser.role as UserRole, department_id: editingUser.department_id ?? '', is_active: editingUser.is_active, teams_account: editingUser.teams_account ?? '', supervisor_id: '' }}
+        initial={{ full_name: editingUser.full_name, email: editingUser.email, role: editingUser.role as UserRole, department_id: editingUser.department_id ?? '', is_active: editingUser.is_active, teams_account: editingUser.teams_account ?? '', supervisor_id: editingUser.supervisor_id ?? '' }}
         onSave={(d) => { updateUserMutation.mutate({ id: (mode as { edit: string }).edit, body: { full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, teams_account: d.teams_account || null, supervisor_id: d.supervisor_id || null } }); setMode('none') }} onCancel={() => setMode('none')} />}
 
       <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">

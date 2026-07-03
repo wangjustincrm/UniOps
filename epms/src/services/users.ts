@@ -26,6 +26,7 @@ export interface ApiUser {
   is_active: boolean
   mfa_enabled: boolean
   teams_account: string | null
+  supervisor_id?: string | null
 }
 
 export interface CreateUserBody {
