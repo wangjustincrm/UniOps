@@ -213,6 +213,8 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     "requester":            _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
     "dept_admin":           _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
     "dept_manager":         _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BUDGET_VIEW),
+    "supervisor":           _P(view_pr=True),
+    "director":             _P(view_pr=True, view_pa=True),
     "gm":                   _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
     "opm":                  _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
     "procurement_officer":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, **_VIEW_ALL),

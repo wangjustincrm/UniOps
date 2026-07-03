@@ -205,3 +205,117 @@ async def test_pl005_scope_cannot_be_bypassed_via_query_params(test_engine):
         assert resp.status_code == 200
         creators = [p["created_by"] for p in resp.json()["items"]]
         assert uid_a not in creators, "PL-005: mine=false bypassed server scope"
+
+
+@pytest.mark.asyncio
+async def test_director_sees_mapped_dept_prs(test_engine):
+    """Director sees PRs from departments mapped to them, not from unmapped departments."""
+    from app.crud import config as config_crud
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    # Seed CompanyConfig with view_pr enabled for director
+    async with factory() as db:
+        cfg = await config_crud.get_or_create(db)
+        await db.commit()
+
+    # Create two departments: dept_d (mapped to director) and dept_other (not mapped)
+    dept_d = await _make_dept(test_engine)
+    dept_other = await _make_dept(test_engine)
+
+    # Create a director user (base role "director")
+    uid_dir, tok_dir = await _make_user(test_engine, "director")
+
+    # Map dept_d to director in CompanyConfig.dept_director_mapping
+    async with factory() as db:
+        cfg = await config_crud.get_or_create(db)
+        cfg.dept_director_mapping = {dept_d: uid_dir}
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(cfg, "dept_director_mapping")
+        await db.commit()
+
+    # Create a requester in dept_d and one in dept_other
+    uid_req_d, tok_req_d = await _make_user(test_engine, "requester", department_id=dept_d)
+    uid_req_other, tok_req_other = await _make_user(test_engine, "requester", department_id=dept_other)
+
+    # Requester in mapped dept creates a PR
+    async with _authed_client(tok_req_d) as c:
+        r = await c.post("/api/v1/pr", json=_PR_BASE)
+        assert r.status_code == 201, r.text
+        pr_id_in_dept = r.json()["id"]
+
+    # Requester in unmapped dept creates a PR
+    async with _authed_client(tok_req_other) as c:
+        r = await c.post("/api/v1/pr", json=_PR_BASE)
+        assert r.status_code == 201, r.text
+        pr_id_other_dept = r.json()["id"]
+
+    # Director can open the PR from their mapped department
+    async with _authed_client(tok_dir) as c:
+        resp = await c.get(f"/api/v1/pr/{pr_id_in_dept}")
+        assert resp.status_code == 200, (
+            f"Director could not open PR from mapped dept (status={resp.status_code})"
+        )
+
+    # Director cannot open the PR from the unmapped department
+    async with _authed_client(tok_dir) as c:
+        resp = await c.get(f"/api/v1/pr/{pr_id_other_dept}")
+        assert resp.status_code == 404, (
+            f"Director saw PR from unmapped dept (status={resp.status_code})"
+        )
+
+
+@pytest.mark.asyncio
+async def test_supervisor_sees_only_direct_reports_prs(test_engine):
+    """Supervisor sees PRs created by their direct reports, not by unrelated users."""
+    from app.crud import config as config_crud
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    # Seed CompanyConfig with view_pr enabled for supervisor
+    async with factory() as db:
+        await config_crud.get_or_create(db)
+        await db.commit()
+
+    # Create supervisor user (base role "supervisor")
+    uid_sup, tok_sup = await _make_user(test_engine, "supervisor")
+
+    # Create a direct report: a requester whose supervisor_id = uid_sup
+    uid_report, tok_report = await _make_user(test_engine, "requester")
+    async with factory() as db:
+        from app.models.user import User as UserModel
+        from sqlalchemy import select as sa_select
+        user_obj = (await db.execute(sa_select(UserModel).where(UserModel.id == uuid.UUID(uid_report)))).scalar_one()
+        user_obj.supervisor_id = uuid.UUID(uid_sup)
+        await db.commit()
+
+    # Create an unrelated requester (no supervisor link to uid_sup)
+    uid_unrelated, tok_unrelated = await _make_user(test_engine, "requester")
+
+    # Direct report creates a PR
+    async with _authed_client(tok_report) as c:
+        r = await c.post("/api/v1/pr", json=_PR_BASE)
+        assert r.status_code == 201, r.text
+        pr_id_report = r.json()["id"]
+
+    # Unrelated requester creates a PR
+    async with _authed_client(tok_unrelated) as c:
+        r = await c.post("/api/v1/pr", json=_PR_BASE)
+        assert r.status_code == 201, r.text
+        pr_id_unrelated = r.json()["id"]
+
+    # Supervisor can open the direct report's PR
+    async with _authed_client(tok_sup) as c:
+        resp = await c.get(f"/api/v1/pr/{pr_id_report}")
+        assert resp.status_code == 200, (
+            f"Supervisor could not open direct report's PR (status={resp.status_code})"
+        )
+
+    # Supervisor cannot open an unrelated user's PR
+    async with _authed_client(tok_sup) as c:
+        resp = await c.get(f"/api/v1/pr/{pr_id_unrelated}")
+        assert resp.status_code == 404, (
+            f"Supervisor saw unrelated user's PR (status={resp.status_code})"
+        )

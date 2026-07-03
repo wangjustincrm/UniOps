@@ -66,7 +66,7 @@ def _task_chain_po_ids(user_id: uuid.UUID) -> Select:
 
 # Roles whose scope is restricted to their department / own documents.
 # Every role NOT in this set gets unrestricted visibility.
-_RESTRICTED_ROLES = {"requester", "dept_manager", "department_admin", "gm", "opm"}
+_RESTRICTED_ROLES = {"requester", "dept_manager", "department_admin", "gm", "opm", "supervisor", "director"}
 
 
 async def _user_dept_id(db: AsyncSession, user_id: uuid.UUID) -> uuid.UUID | None:
@@ -89,6 +89,14 @@ async def _mapped_dept_ids(db: AsyncSession, role: str) -> list[uuid.UUID]:
         for dept_id, mapped_role in cfg.dept_gm_opm_mapping.items()
         if mapped_role == role
     ]
+
+
+async def _director_dept_ids(db: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
+    """Return department IDs for which this user is the mapped director."""
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    if not cfg or not cfg.dept_director_mapping:
+        return []
+    return [uuid.UUID(d) for d, u in cfg.dept_director_mapping.items() if u == str(user_id)]
 
 
 async def _effective_role_codes(
@@ -120,6 +128,13 @@ async def _effective_role_codes(
             codes.add(special_role)
     if uid_str in rm.get("finance_bp_user_ids", []):
         codes.add("finance_bp")
+    if uid_str in (cfg.dept_director_mapping or {}).values():
+        codes.add("director")
+    is_supervisor = (await db.execute(
+        select(User.id).where(User.supervisor_id == user_id).limit(1)
+    )).scalar_one_or_none()
+    if is_supervisor is not None:
+        codes.add("supervisor")
     return codes
 
 
@@ -223,6 +238,21 @@ async def visible_pr_subquery(
                 PurchaseRequest.id.in_(task_pr),
             )
         )
+
+    if role == "director":
+        dept_ids = await _director_dept_ids(db, user_id)
+        if not dept_ids:
+            return select(PurchaseRequest.id).where(False)
+        cc_subq = select(CostCenter.id).where(CostCenter.department_id.in_(dept_ids))
+        creator_subq = select(User.id).where(User.department_id.in_(dept_ids))
+        return select(PurchaseRequest.id).where(
+            or_(PurchaseRequest.cost_center_id.in_(cc_subq),
+                PurchaseRequest.created_by.in_(creator_subq))
+        )
+
+    if role == "supervisor":
+        reports = select(User.id).where(User.supervisor_id == user_id)
+        return select(PurchaseRequest.id).where(PurchaseRequest.created_by.in_(reports))
 
     return None  # unrestricted
 
