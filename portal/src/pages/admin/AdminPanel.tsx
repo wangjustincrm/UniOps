@@ -53,6 +53,7 @@ interface ApiDepartment { id: string; name: string; code: string; is_active: boo
 interface ApiUser {
   id: string; email: string; full_name: string; role: string
   department_id: string | null; department_name: string | null
+  supervisor_id: string | null
   is_active: boolean; mfa_enabled: boolean; teams_account: string | null
   erp_person_code: string | null; erp_imported: boolean
 }
@@ -471,6 +472,11 @@ function UserManagement() {
     queryKey: ['portal-departments'],
     queryFn: () => mdmApi.get('/departments'),
   })
+  // Candidate list for the Supervisor picker (active users, single page covers headcount).
+  const { data: directory } = useQuery<{ items: { id: string; full_name: string; department_name: string | null }[] }>({
+    queryKey: ['portal-user-directory'],
+    queryFn: () => epmsApi.get('/users/directory?page_size=100'),
+  })
 
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -484,24 +490,24 @@ function UserManagement() {
   // ── Edit modal ──
   const [showErpImport, setShowErpImport] = useState(false)
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; user?: ApiUser } | null>(null)
-  const [form, setForm] = useState({ email: '', full_name: '', role: 'requester', department_id: '', password: '', is_active: true, teams_account: '', erp_person_code: '' })
+  const [form, setForm] = useState({ email: '', full_name: '', role: 'requester', department_id: '', supervisor_id: '', password: '', is_active: true, teams_account: '', erp_person_code: '' })
   const [showPwd, setShowPwd] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const openCreate = () => {
-    setForm({ email: '', full_name: '', role: 'requester', department_id: '', password: '', is_active: true, teams_account: '', erp_person_code: '' })
+    setForm({ email: '', full_name: '', role: 'requester', department_id: '', supervisor_id: '', password: '', is_active: true, teams_account: '', erp_person_code: '' })
     setShowPwd(false); setError(''); setModal({ mode: 'create' })
   }
   const openEdit = (u: ApiUser) => {
-    setForm({ email: u.email, full_name: u.full_name, role: u.role, department_id: u.department_id ?? '', password: '', is_active: u.is_active, teams_account: u.teams_account ?? '', erp_person_code: u.erp_person_code ?? '' })
+    setForm({ email: u.email, full_name: u.full_name, role: u.role, department_id: u.department_id ?? '', supervisor_id: u.supervisor_id ?? '', password: '', is_active: u.is_active, teams_account: u.teams_account ?? '', erp_person_code: u.erp_person_code ?? '' })
     setShowPwd(false); setError(''); setModal({ mode: 'edit', user: u })
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSaving(true)
     try {
-      const body: any = { email: form.email, full_name: form.full_name, role: form.role, department_id: form.department_id || null, is_active: form.is_active, teams_account: form.teams_account || null }
+      const body: any = { email: form.email, full_name: form.full_name, role: form.role, department_id: form.department_id || null, supervisor_id: form.supervisor_id || null, is_active: form.is_active, teams_account: form.teams_account || null }
       if (modal?.mode === 'create') { body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.post('/users', body) }
       else { if (form.password) body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.patch(`/users/${modal?.user?.id}`, body) }
       qc.invalidateQueries({ queryKey: ['portal-users'] })
@@ -743,6 +749,15 @@ function UserManagement() {
                     className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
                     <option value="">— None —</option>
                     {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Supervisor">
+                  <select value={form.supervisor_id} onChange={(e) => setForm((p) => ({ ...p, supervisor_id: e.target.value }))}
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+                    <option value="">— None —</option>
+                    {directory?.items.filter((u) => u.id !== modal.user?.id).map((u) => (
+                      <option key={u.id} value={u.id}>{u.full_name}{u.department_name ? ` (${u.department_name})` : ''}</option>
+                    ))}
                   </select>
                 </Field>
                 <Field label={modal.mode === 'create' ? 'Password *' : 'New Password (leave blank to keep)'}>
