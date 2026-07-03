@@ -27,11 +27,13 @@ from app.core.security import hash_password
 from app.models.cost_center import CostCenter
 from app.models.department import Department
 from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pa import PaLineItem, PaymentApplication
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PrLineItem, PurchaseRequest
 from app.models.user import User
 from app.models.vendor import Vendor
+from app.schemas.invoice import InvoiceLineItem
 
 from . import mappings as M
 from .extract import load_staging
@@ -353,6 +355,8 @@ async def run_load(
     batch_size: int = 500,
     db_url: str | None = None,
     mode: str = "insert",
+    reconstruct: bool = True,
+    dedup_invoices: bool = True,
 ) -> Report:
     """mode='insert' → new docs only (existing skipped). mode='upsert' →
     incremental: existing docs get header-level updates (unless locally edited),
@@ -491,6 +495,7 @@ async def run_load(
                         title=clip(pr_link["pr_number"] if pr_link else number, 255),
                         type=pr_link["type"] if pr_link else M.PR_TYPE_DEFAULT,
                         status=M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus")),
+                        approval_step_idx=M.po_approval_step_idx(r.get("Status")),
                         currency=M.normalize_currency(r.get("Currency")),
                         subtotal=subtotal,
                         tax_rate=Decimal("0"), tax_amount=Decimal("0"),
@@ -558,42 +563,96 @@ async def run_load(
                     if "PAID" in st.upper():
                         inv_paid[iid] = True
 
+                # Group SharePoint INVOICE rows by (vendor, Invoice No). The legacy
+                # PMS enters one row PER PO, so a single invoice spanning several POs
+                # appears as duplicate Invoice Nos — a violation of our Invoice-No
+                # uniqueness rule. Collapse each group into ONE invoice; when it
+                # covers >1 PO, model the split with line-level invoice_po_allocations
+                # (the detail page renders "Purchase Orders (N)" from them).
+                inv_groups: dict[tuple, dict] = {}
                 for r in invoice_rows:
                     iid = int(r.get("ID"))
-                    internal_ref = clip(f"INV-{iid}", 30)
-                    if internal_ref in existing_inv:
-                        report.skipped_existing["invoices"] += 1
-                        invid_to_id[iid] = None  # mark as present but unknown uuid
-                        continue
+                    invoice_no = clip(nz(r.get("Title"), str(iid)), 100)
                     po_no = inv_pono.get(iid)
                     po_id = pono_to_id.get(po_no) if po_no else None
-                    vend = pono_to_vendor.get(po_no) if po_no else None
-                    if not vend:
-                        vend = res.unknown_vendor
-                        report.invoices_no_vendor += 1
-                    inv_date = to_date(r.get("IssueDate")) or (to_dt(r.get("Created")) or None)
+                    vend = (pono_to_vendor.get(po_no) if po_no else None) or res.unknown_vendor
+                    g = inv_groups.setdefault((vend[0], invoice_no), {
+                        "iids": [], "vendor": vend, "invoice_no": invoice_no,
+                        "po_amounts": {}, "po_order": [], "no_po_amount": Decimal("0"),
+                        "rep": r, "rep_iid": iid, "paid_all": True,
+                    })
+                    g["iids"].append(iid)
+                    if iid < g["rep_iid"]:
+                        g["rep_iid"], g["rep"] = iid, r
+                    amt = inv_amount.get(iid, Decimal("0"))
+                    if po_id is not None:
+                        if po_id not in g["po_amounts"]:
+                            g["po_order"].append((po_id, po_no))
+                        # max (not sum) so accidental same-PO duplicate rows don't double-count
+                        g["po_amounts"][po_id] = max(g["po_amounts"].get(po_id, Decimal("0")), amt)
+                    else:
+                        g["no_po_amount"] = max(g["no_po_amount"], amt)
+                    if not inv_paid.get(iid):
+                        g["paid_all"] = False
+
+                for (_vendor_id, _no), g in inv_groups.items():
+                    rep, rep_iid = g["rep"], g["rep_iid"]
+                    internal_ref = clip(f"INV-{rep_iid}", 30)
+                    if internal_ref in existing_inv:
+                        report.skipped_existing["invoices"] += 1
+                        for iid in g["iids"]:
+                            invid_to_id[iid] = None  # present but unknown uuid
+                        continue
+                    vend = g["vendor"]
+                    distinct_pos = g["po_order"]
+                    amount = sum(g["po_amounts"].values(), Decimal("0")) + g["no_po_amount"]
+                    inv_date = to_date(rep.get("IssueDate")) or (to_dt(rep.get("Created")) or None)
                     if hasattr(inv_date, "date"):
                         inv_date = inv_date.date()
                     if inv_date is None:
-                        inv_date = to_date(r.get("Created"))
-                    amount = inv_amount.get(iid, Decimal("0"))
+                        inv_date = to_date(rep.get("Created"))
+                    primary_id, primary_no = distinct_pos[0] if distinct_pos else (None, None)
                     iuid = uuid.uuid4()
+
+                    # Multi-PO → one synthetic invoice line + allocation per PO.
+                    line_items: list = []
+                    alloc_rows: list[InvoicePoAllocation] = []
+                    if len(distinct_pos) > 1:
+                        for pid, pno in distinct_pos:
+                            amt = g["po_amounts"][pid]
+                            line = InvoiceLineItem(
+                                id=uuid.uuid4(), description=clip(f"PO {pno}", 500),
+                                quantity=Decimal("1"), unit_price=amt, line_total=amt,
+                            )
+                            line_items.append(line.model_dump(mode="json"))
+                            alloc_rows.append(InvoicePoAllocation(
+                                invoice_id=iuid, invoice_line_id=line.id,
+                                po_id=pid, po_line_id=None,
+                                allocated_amount=amt, allocated_tax=Decimal("0"),
+                                allocated_total=amt,
+                            ))
+
+                    if vend is res.unknown_vendor:
+                        report.invoices_no_vendor += 1
                     inv = Invoice(
                         id=iuid, internal_ref=internal_ref,
-                        vendor_invoice_number=clip(nz(r.get("Title"), str(iid)), 100),
+                        vendor_invoice_number=g["invoice_no"],
                         vendor_id=vend[0], vendor_name=clip(vend[1], 255),
                         amount=amount, tax_amount=Decimal("0"), total_amount=amount,
                         invoice_date=inv_date, due_date=inv_date,
-                        status="paid" if inv_paid.get(iid) else "matched",
-                        line_items=[],
+                        status="paid" if g["paid_all"] else "matched",
+                        line_items=line_items,
                         uploaded_by=res.system_user_id,
-                        po_id=po_id, po_number=clip(po_no, 40) if po_no else None,
-                        created_at=to_dt(r.get("Created")),
-                        updated_at=to_dt(r.get("Modified")) or to_dt(r.get("Created")),
+                        po_id=primary_id, po_number=clip(primary_no, 40) if primary_no else None,
+                        created_at=to_dt(rep.get("Created")),
+                        updated_at=to_dt(rep.get("Modified")) or to_dt(rep.get("Created")),
                     )
                     await adder.add(inv)
+                    for a in alloc_rows:
+                        await adder.add(a)
                     report.inserted["invoices"] += 1
-                    invid_to_id[iid] = iuid
+                    for iid in g["iids"]:
+                        invid_to_id[iid] = iuid  # all source rows point to the merged invoice
                 await adder.flush()
 
             # ── PA ──────────────────────────────────────────────────────────────
@@ -644,6 +703,7 @@ async def run_load(
                         other_charges=other, payment_amount=payment,
                         currency=M.normalize_currency(r.get("Currency")),
                         status=M.map_pa_status(r.get("Status"), r.get("Status0")),
+                        approval_step_idx=M.pa_approval_step_idx(r.get("Status")),
                         created_by=await res.user_for(r.get("Applier")),
                         created_at=created_at, updated_at=to_dt(r.get("Modified")) or created_at,
                     )
@@ -678,6 +738,39 @@ async def run_load(
                             # keep updated_at == SP Modified so incremental sync
                             # doesn't mistake this back-fill for a local edit
                             _stamp(obj, to_dt(r.get("Modified")))
+
+            # ── reconstruct approval_events for imported docs ────────────────────
+            # Runs alongside the import (same transaction): every PR/PO/PA that
+            # lacks an audit trail gets one rebuilt from creator + workflow. See
+            # reconstruct.py. HoldBy (AP clerk) is read from the PA source rows.
+            if reconstruct:
+                from .reconstruct import reconstruct_events
+                # Map pa_number → AP-clerk HoldBy. A real name wins over blank/"None"
+                # (the backup list has no HoldBy, and the main list stores literal
+                # "None" for unheld PAs) so a later blank row can't clobber a real one.
+                pa_holdby: dict[str, str | None] = {}
+                for r in pa_rows:
+                    t = clip(r.get("Title"), 30)
+                    if not t:
+                        continue
+                    hb = (r.get("HoldBy") or "").strip()
+                    if hb and hb.lower() != "none":
+                        pa_holdby[t] = hb
+                    else:
+                        pa_holdby.setdefault(t, None)
+                await reconstruct_events(
+                    db, adder, res, dry_run=dry_run, pa_holdby=pa_holdby, only=only,
+                )
+
+            # ── dedup invoices + their attachments ───────────────────────────────
+            # Self-healing pass (same transaction): collapses any invoices that
+            # share a (vendor, No) into one with multi-PO allocations, and removes
+            # duplicate attachment rows. Harmless on a clean DB (finds nothing).
+            # See scripts/dedup_invoices.py.
+            if dedup_invoices and (run_all or "invoice" in only):
+                from scripts.dedup_invoices import dedup_invoices_pass, print_dedup_stats
+                dedup_stats = await dedup_invoices_pass(db)
+                print_dedup_stats(dedup_stats, dry_run)
 
             if dry_run:
                 await db.rollback()
@@ -731,6 +824,7 @@ async def _upsert_po(db, dry_run, report, existing, r, res) -> None:
     if obj is None:
         return
     obj.status = M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"))
+    obj.approval_step_idx = M.po_approval_step_idx(r.get("Status"))
     obj.currency = M.normalize_currency(r.get("Currency"))
     obj.total = to_decimal(r.get("TotalPrice"), default=obj.total)
     obj.is_prepaid = bool(r.get("PayFirst"))
@@ -755,6 +849,7 @@ async def _upsert_pa(db, dry_run, report, existing, r, res) -> None:
     shipping = to_decimal(r.get("FreightFee"))
     other = to_decimal(r.get("OtherFee"))
     obj.status = M.map_pa_status(r.get("Status"), r.get("Status0"))
+    obj.approval_step_idx = M.pa_approval_step_idx(r.get("Status"))
     obj.currency = M.normalize_currency(r.get("Currency"))
     obj.subtotal, obj.tax_amount, obj.shipping_amount, obj.other_charges = subtotal, tax, shipping, other
     obj.payment_amount = to_decimal(r.get("TotalPrice"), default=subtotal + tax + shipping + other)

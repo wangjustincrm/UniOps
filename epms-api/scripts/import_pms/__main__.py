@@ -44,9 +44,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="load: insert=new only; upsert=incremental header update + new")
     p.add_argument("--no-attachments", action="store_true",
                    help="extract: skip downloading invoice attachment files")
+    p.add_argument("--no-reconstruct-events", action="store_true",
+                   help="load: skip rebuilding approval_events for imported docs")
+    p.add_argument("--no-dedup-invoices", action="store_true",
+                   help="load: skip the invoice + attachment dedup pass")
     p.add_argument("--batch-size", type=int, default=500)
     p.add_argument("--env", help="load DB config from .env.<env> instead of .env")
     p.add_argument("--db-url", help="explicit async DB URL (overrides --env/.env)")
+    p.add_argument("--allow-production", action="store_true",
+                   help="required to target the production DB (10.10.50.20)")
     args = p.parse_args(argv)
 
     if not args.extract and not args.load:
@@ -61,6 +67,15 @@ def main(argv: list[str] | None = None) -> int:
         if not db_url and args.env:
             from app.core.config import Settings
             db_url = Settings(_env_file=f".env.{args.env}").DATABASE_URL  # type: ignore[call-arg]
+
+        # Guard: never touch the shared production DB unless explicitly allowed.
+        effective_url = db_url or _default_url()
+        if "10.10.50.20" in effective_url and not args.allow_production:
+            p.error(
+                "refusing to target production DB (10.10.50.20). Pass "
+                "--allow-production if that is truly intended, or run inside the "
+                "epms-api container / pass --db-url for the local DB."
+            )
 
         dry_run = not args.commit
         if not dry_run and not args.yes:
@@ -79,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
             batch_size=args.batch_size,
             db_url=db_url,
             mode=args.mode,
+            reconstruct=not args.no_reconstruct_events,
+            dedup_invoices=not args.no_dedup_invoices,
         ))
         # Invoice attachments → file server + invoice_attachments table.
         if not args.only or "invoice" in (_csv(args.only) or set()):
@@ -95,9 +112,13 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _default_host() -> str:
+def _default_url() -> str:
     from app.core.config import settings
-    return settings.DATABASE_URL.split("@")[-1].split("/")[0]
+    return settings.DATABASE_URL
+
+
+def _default_host() -> str:
+    return _default_url().split("@")[-1].split("/")[0]
 
 
 if __name__ == "__main__":

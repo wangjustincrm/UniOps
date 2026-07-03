@@ -25,6 +25,9 @@ PA_FIELDS = [
     "ID", "Title", "Supplier", "PONO", "Currency", "TotalPrice", "ItemsTotal",
     "Tax", "FreightFee", "OtherFee", "Status", "Status0", "Applier",
     "Department", "DueDate", "InvoiceIssueDate", "Comment", "Created", "Modified",
+    # HoldBy: single-line-of-text naming the AP clerk who handled the PA in the
+    # legacy PMS. Used to reconstruct the ap_clerk approval event (see reconstruct.py).
+    "HoldBy",
 ]
 # Line-item lists (each holds the full history — no Backup variant)
 PR_ITEM_FIELDS = [
@@ -253,25 +256,53 @@ def map_pr_status(status: str | None, has_po: bool = False) -> str:
     return "approved" if not s else "submitted"
 
 
-# EPMS PO statuses: draft|submitted|in_review|approved|returned|rejected|issued|closed|cancelled
+# EPMS PO statuses: draft|submitted|in_review|approved|returned|rejected|issued|
+#                    partially_received|fully_received|closed|cancelled
 def map_po_status(status: str | None, final: str | None, receive: str | None = None) -> str:
-    """Combine SharePoint approval status (GM APPROVED…), final status (Status0),
-    and receive status. GM APPROVED + 'PLACING ORDER' → 'approved' (waiting to be
-    placed); GM APPROVED + delivering/received → 'issued' (order placed)."""
+    """Map SharePoint PO approval status (`Status`), final status (`Status0`) and
+    receive status (`ReceiveStatus`) → EPMS status. Precedence matters:
+      * REJECTED → cancelled — checked FIRST because rejected PMS POs carry
+        Status0='CLOSED', which would otherwise mis-map them to 'closed'.
+      * Status0 CANCELED → cancelled (also catches POs cancelled mid-approval).
+      * Status0 COMPLETED/CLOSED → closed (business-completed; user decision:
+        takes priority over receive status).
+      * Approval still running (…APPROVING) → in_review.
+      * GM APPROVED → refine by delivery: PLACING ORDER→approved (awaiting the
+        purchasing office to place it), RECEIVED→fully_received, else→issued.
+    """
+    s = (status or "").strip().upper()
     f = (final or "").strip().upper()
+    r = (receive or "").strip().upper()
+    if "REJECT" in s:
+        return "cancelled"
     if f in ("CANCELED", "CANCELLED"):
         return "cancelled"
-    if f in ("COMPLETED", "CLOSED"):
+    if f in ("COMPLETED", "CLOSED", "CLOSE"):
         return "closed"
-    s = (status or "").strip().upper()
-    if "REJECT" in s:
-        return "rejected"
     if "APPROVING" in s:
         return "in_review"
     if "APPROVED" in s:
-        r = (receive or "").strip().upper()
-        return "approved" if "PLACING ORDER" in r else "issued"
+        if "PLACING ORDER" in r:
+            return "approved"
+        if "RECEIVED" in r:        # note: "NO RECEIVE" lacks the trailing D
+            return "fully_received"
+        return "issued"           # DELIVERING / DELIVERYING / NO RECEIVE / blank
     return "submitted"
+
+
+def po_approval_step_idx(status: str | None) -> int:
+    """Which PO workflow step (0-based) the approval sits at, for the Approval
+    Timeline. PO workflow = [Procurement Manager(0), GM/OPM(1)].
+      SC MANAGER APPROVING → step 0 current (0 done)
+      GM/OPM APPROVING     → step 1 current (Procurement Manager done)
+      GM APPROVED          → both steps done (2)
+    """
+    s = (status or "").strip().upper()
+    if "APPROVED" in s:
+        return 2
+    if "GM APPROVING" in s or "OPM APPROVING" in s:
+        return 1
+    return 0
 
 
 # EPMS PA statuses: draft|submitted|in_review|approved|processed|cancelled
@@ -289,6 +320,28 @@ def map_pa_status(status: str | None, final: str | None) -> str:
     if "APPROVING" in s or "REVIEW" in s:
         return "in_review"
     return "submitted"
+
+
+def pa_approval_step_idx(status: str | None) -> int:
+    """Which PA workflow step (0-based) the approval sits at, for the Approval
+    Timeline. PA workflow = [Department Manager(0), GM/OPM(1), Finance Director of
+    Oversea Dept / finance_bp(2), AP Review / ap_clerk(3), Finance Manager(4)].
+    5 = all five approvals done (WAITING PAYMENT → awaiting Payment Processed; PAID
+    → fully processed)."""
+    s = (status or "").strip().upper()
+    if "PAID" in s or "WAITING PAYMENT" in s:
+        return 5
+    if "DEP MANAGER APPROVING" in s:
+        return 0
+    if "GM APPROVING" in s or "OPM APPROVING" in s:
+        return 1
+    if "BP APPROVING" in s:
+        return 2
+    if "AP REVIEW" in s:
+        return 3
+    if "FN MANAGER APPROVING" in s:
+        return 4
+    return 0
 
 
 def normalize_currency(cur: str | None) -> str:

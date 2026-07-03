@@ -40,16 +40,20 @@ class SharePointClient:
         tenant: str | None = None,
         site: str | None = None,
     ) -> None:
-        self.user = user or os.environ.get("SP_USER", "")
-        self.password = password or os.environ.get("SP_PASSWORD", "")
-        self.tenant = tenant or os.environ.get("SP_TENANT", _DEFAULT_TENANT)
-        self.site = (site or os.environ.get("SP_SITE", _DEFAULT_SITE)).rstrip("/")
+        # Precedence: explicit arg → process env → app Settings (which reads .env).
+        # The last fallback lets `python -m scripts.import_pms --extract` work from
+        # the epms-api dir using SP_* in .env, without exporting them to the shell.
+        from app.core.config import settings
+        self.user = user or os.environ.get("SP_USER") or settings.SP_USER
+        self.password = password or os.environ.get("SP_PASSWORD") or settings.SP_PASSWORD
+        self.tenant = tenant or os.environ.get("SP_TENANT") or settings.SP_TENANT or _DEFAULT_TENANT
+        self.site = (site or os.environ.get("SP_SITE") or settings.SP_SITE or _DEFAULT_SITE).rstrip("/")
         # Resource = scheme://host (no path)
         self.resource = self.site.split("/sites/")[0]
         if not self.user or not self.password:
             raise SharePointError(
-                "SharePoint credentials missing — set SP_USER and SP_PASSWORD "
-                "in the environment."
+                "SharePoint credentials missing — set SP_USER and SP_PASSWORD in the "
+                "environment or in epms-api/.env (run from the epms-api directory)."
             )
         self._token: str | None = None
 
