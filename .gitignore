@@ -37,6 +37,7 @@ build/
 *.sqlite
 file-storage/
 postgres-data/
+*.dump
 
 # OS / temp
 ~$*

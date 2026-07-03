@@ -12,10 +12,10 @@ x-python-base: &python-base
     postgres:
       condition: service_healthy
   environment:
-    DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+    DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
     JWT_SECRET_KEY: ${JWT_SECRET_KEY}
     JWT_ALGORITHM: HS256
-    POSTGRES_HOST: 10.10.50.20
+    POSTGRES_HOST: postgres
     POSTGRES_PORT: "5432"
     POSTGRES_USER: epms
     POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -30,7 +30,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: epms
-      POSTGRES_PASSWORD: epms_dev
+      # Single source of truth: same var the backend services authenticate with
+      # (${DB_PASSWORD} in .env). Keeps the local DB role password aligned with
+      # every DATABASE_URL/POSTGRES_PASSWORD below.
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: epms
     ports:
       - "5432:5432"
@@ -69,8 +72,8 @@ services:
     volumes:
       - ./epms-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: "0"
@@ -85,7 +88,7 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: "480"
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      FILE_SERVER_URL: http://10.10.50.66:8005/files/v1
+      FILE_SERVER_URL: http://file-api:8005/files/v1
       BUDGET_API_URL: http://budget-api:8007
       FINANCE_API_URL: http://finance-api:8004
       IDENTITY_API_URL: http://identity-api:8009
@@ -115,8 +118,8 @@ services:
     volumes:
       - ./approval-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       SERVICE_NAME: approval-engine
@@ -140,8 +143,8 @@ services:
     volumes:
       - ./mdm-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -168,7 +171,7 @@ services:
     volumes:
       - ./identity-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: "480"
@@ -199,8 +202,8 @@ services:
     volumes:
       - ./finance-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -222,15 +225,14 @@ services:
       context: ./file-api
       dockerfile: Dockerfile
     container_name: uniops_file_api
-    profiles: ["disabled"]   # 已迁到 File 服务器 10.10.50.66,本地不再启动
     ports:
       - "8005:8005"
     volumes:
       - ./file-api:/app
       - ./file-storage:/file-storage
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       SERVICE_NAME: file-server
@@ -238,7 +240,8 @@ services:
       STORAGE_ROOT: /file-storage
     command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      # Router is mounted under /files/v1 (app/main.py) — health lives there, not at /health.
+      test: ["CMD", "curl", "-f", "http://localhost:8005/files/v1/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -255,8 +258,8 @@ services:
     volumes:
       - ./expense-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       REDIS_HOST: redis
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
@@ -264,7 +267,7 @@ services:
       PORT: "8006"
       DEBUG: "true"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      FILE_SERVER_URL: http://10.10.50.66:8005/files/v1
+      FILE_SERVER_URL: http://file-api:8005/files/v1
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
       FINANCE_API_URL: http://finance-api:8004
@@ -288,8 +291,8 @@ services:
     volumes:
       - ./budget-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -319,8 +322,8 @@ services:
     volumes:
       - ./vms-api:/app
     environment:
-      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@10.10.50.20:5432/epms
-      POSTGRES_HOST: 10.10.50.20
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
       # config.py builds DATABASE_URL from POSTGRES_* (the DATABASE_URL env var is
       # ignored — it's a computed @property). Without this the password defaults to
       # `epms_dev` and the prod DB rejects it with InvalidPasswordError. Matches
@@ -336,7 +339,7 @@ services:
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
-      FILE_SERVER_URL: http://10.10.50.66:8005/files/v1
+      FILE_SERVER_URL: http://file-api:8005/files/v1
     depends_on:
       postgres:
         condition: service_healthy
