@@ -80,3 +80,6 @@ canadaroyalmilk_com_SSL/
 .acme-state/
 .acme-out/
 acme-state/
+
+# git worktrees (isolated workspaces)
+.worktrees/
