@@ -22,8 +22,47 @@ from sqlalchemy.sql import Select
 from app.models.cost_center import CostCenter
 from app.models.pr import PurchaseRequest
 from app.models.po import PurchaseOrder
+from app.models.pa import PaymentApplication
+from app.models.task import Task
 from app.models.user import User
 from app.models.config import CompanyConfig
+
+
+def _open_task_doc_ids(user_id: uuid.UUID, doc_type: str) -> Select:
+    """Doc ids the user has an OPEN (uncompleted) task assigned for. OR-ing this
+    into the visibility scope keeps task assignment and document visibility
+    consistent: if you are asked to approve a document, you can open it — even
+    when approval routing lands outside your normal department/cost-center scope
+    (e.g. a PR whose creator has no department, escalated to a fallback approver)."""
+    return select(Task.document_id).where(
+        Task.assigned_user_id == user_id,
+        Task.document_type == doc_type,
+        Task.is_completed.is_(False),
+    )
+
+
+def _task_chain_pr_ids(user_id: uuid.UUID) -> Select:
+    """PR ids reachable from any of the user's open tasks, walking UP the chain so
+    document-chain navigation never 404s: a PR task → the PR; a PO task → its
+    parent PR; a PA task → PA→PO→parent PR. (You can see a PO you must approve, so
+    you can open the PR it came from.)"""
+    po_from_pa = select(PaymentApplication.po_id).where(
+        PaymentApplication.id.in_(_open_task_doc_ids(user_id, "pa")))
+    return _open_task_doc_ids(user_id, "pr").union(
+        select(PurchaseOrder.pr_id).where(
+            PurchaseOrder.id.in_(_open_task_doc_ids(user_id, "po")),
+            PurchaseOrder.pr_id.isnot(None)),
+        select(PurchaseOrder.pr_id).where(
+            PurchaseOrder.id.in_(po_from_pa), PurchaseOrder.pr_id.isnot(None)),
+    )
+
+
+def _task_chain_po_ids(user_id: uuid.UUID) -> Select:
+    """PO ids reachable from the user's open tasks: a PO task → the PO; a PA task
+    → its parent PO."""
+    po_from_pa = select(PaymentApplication.po_id).where(
+        PaymentApplication.id.in_(_open_task_doc_ids(user_id, "pa")))
+    return _open_task_doc_ids(user_id, "po").union(po_from_pa)
 
 # Roles whose scope is restricted to their department / own documents.
 # Every role NOT in this set gets unrestricted visibility.
@@ -141,13 +180,18 @@ async def visible_pr_subquery(
     if await _has_unrestricted_special_role(db, role, user_id):
         return None  # unrestricted
 
+    task_pr = _task_chain_pr_ids(user_id)
+
     if role == "requester":
-        return select(PurchaseRequest.id).where(PurchaseRequest.created_by == user_id)
+        return select(PurchaseRequest.id).where(
+            or_(PurchaseRequest.created_by == user_id, PurchaseRequest.id.in_(task_pr))
+        )
 
     if role in ("dept_manager", "department_admin"):
         dept_id = await _user_dept_id(db, user_id)
         if not dept_id:
-            return select(PurchaseRequest.id).where(False)  # empty result
+            # No department → still see anything explicitly assigned to them.
+            return select(PurchaseRequest.id).where(PurchaseRequest.id.in_(task_pr))
         # A PR is visible to a dept_manager if EITHER:
         #   (a) it is charged to one of their department's cost centers (budget
         #       oversight), OR
@@ -164,15 +208,21 @@ async def visible_pr_subquery(
             or_(
                 PurchaseRequest.cost_center_id.in_(cc_subq),
                 PurchaseRequest.created_by.in_(creator_subq),
+                PurchaseRequest.id.in_(task_pr),
             )
         )
 
     if role in ("gm", "opm"):
         dept_ids = await _mapped_dept_ids(db, role)
         if not dept_ids:
-            return select(PurchaseRequest.id).where(False)
+            return select(PurchaseRequest.id).where(PurchaseRequest.id.in_(task_pr))
         cc_subq = select(CostCenter.id).where(CostCenter.department_id.in_(dept_ids))
-        return select(PurchaseRequest.id).where(PurchaseRequest.cost_center_id.in_(cc_subq))
+        return select(PurchaseRequest.id).where(
+            or_(
+                PurchaseRequest.cost_center_id.in_(cc_subq),
+                PurchaseRequest.id.in_(task_pr),
+            )
+        )
 
     return None  # unrestricted
 
@@ -189,18 +239,22 @@ async def visible_po_subquery(
     if pr_subq is None:
         return None  # unrestricted
 
+    task_po = _task_chain_po_ids(user_id)
+
     if role == "requester":
-        # POs linked to requester's PRs, OR POs created directly by the requester
-        from sqlalchemy import or_
+        # POs linked to requester's PRs, POs they created, or POs assigned to them.
         return select(PurchaseOrder.id).where(
             or_(
                 PurchaseOrder.pr_id.in_(pr_subq),
                 PurchaseOrder.created_by == user_id,
+                PurchaseOrder.id.in_(task_po),
             )
         )
 
-    # dept_manager / gm / opm: only POs linked to their PRs
-    return select(PurchaseOrder.id).where(PurchaseOrder.pr_id.in_(pr_subq))
+    # dept_manager / gm / opm: POs linked to their PRs, plus any assigned to them.
+    return select(PurchaseOrder.id).where(
+        or_(PurchaseOrder.pr_id.in_(pr_subq), PurchaseOrder.id.in_(task_po))
+    )
 
 
 async def is_pr_visible(db: AsyncSession, pr_id: uuid.UUID, scope: dict) -> bool:
@@ -254,6 +308,17 @@ async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
         return True
     # Requester direct creation: PA created_by themselves is always visible to them.
     if scope["role"] == "requester" and pa.created_by == scope["user_id"]:
+        return True
+    # Assigned an open approval task for this PA → always visible (task↔visibility).
+    has_task = (await db.execute(
+        select(Task.id).where(
+            Task.assigned_user_id == scope["user_id"],
+            Task.document_type == "pa",
+            Task.document_id == pa.id,
+            Task.is_completed.is_(False),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if has_task is not None:
         return True
     if pa.po_id is None:
         return False
