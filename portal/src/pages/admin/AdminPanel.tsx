@@ -473,7 +473,7 @@ function UserManagement() {
     queryFn: () => mdmApi.get('/departments'),
   })
   // Candidate list for the Supervisor picker (active users, single page covers headcount).
-  const { data: directory } = useQuery<{ items: { id: string; full_name: string; department_name: string | null }[] }>({
+  const { data: directory } = useQuery<{ items: { id: string; full_name: string; department_id: string | null; department_name: string | null }[] }>({
     queryKey: ['portal-user-directory'],
     queryFn: () => epmsApi.get('/users/directory?page_size=100'),
   })
@@ -745,7 +745,7 @@ function UserManagement() {
                   </select>
                 </Field>
                 <Field label="Department">
-                  <select value={form.department_id} onChange={(e) => setForm((p) => ({ ...p, department_id: e.target.value }))}
+                  <select value={form.department_id} onChange={(e) => setForm((p) => ({ ...p, department_id: e.target.value, supervisor_id: '' }))}
                     className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
                     <option value="">— None —</option>
                     {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
@@ -753,11 +753,12 @@ function UserManagement() {
                 </Field>
                 <Field label="Supervisor">
                   <select value={form.supervisor_id} onChange={(e) => setForm((p) => ({ ...p, supervisor_id: e.target.value }))}
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
-                    <option value="">— None —</option>
-                    {directory?.items.filter((u) => u.id !== modal.user?.id).map((u) => (
-                      <option key={u.id} value={u.id}>{u.full_name}{u.department_name ? ` (${u.department_name})` : ''}</option>
-                    ))}
+                    disabled={!form.department_id}
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 disabled:bg-neutral-50 disabled:text-neutral-400">
+                    <option value="">{form.department_id ? '— None —' : '— Select a department first —'}</option>
+                    {directory?.items
+                      .filter((u) => u.id !== modal.user?.id && !!form.department_id && u.department_id === form.department_id)
+                      .map((u) => <option key={u.id} value={u.id}>{u.full_name}</option>)}
                   </select>
                 </Field>
                 <Field label={modal.mode === 'create' ? 'Password *' : 'New Password (leave blank to keep)'}>
