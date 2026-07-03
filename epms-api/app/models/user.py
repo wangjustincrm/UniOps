@@ -24,6 +24,11 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), nullable=True, index=True
     )
 
+    # Direct supervisor for optional supervisor-approval workflow step
+    supervisor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     # MFA (TOTP)

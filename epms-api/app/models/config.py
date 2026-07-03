@@ -84,6 +84,7 @@ class CompanyConfig(Base):
     # ── Workflow & SLA config (all stored as JSONB objects) ─────────────────
     workflow_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     dept_gm_opm_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    dept_director_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     dept_supervisor_enabled: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     service_gr_sla: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     gr_notification_sla: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
