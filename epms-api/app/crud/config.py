@@ -260,6 +260,7 @@ def _build_default() -> CompanyConfig:
         workflow_config=_DEFAULT_WORKFLOW_CONFIG,
         dept_gm_opm_mapping={},
         dept_supervisor_enabled={},
+        dept_director_mapping={},
         service_gr_sla=_DEFAULT_SERVICE_GR_SLA,
         gr_notification_sla=_DEFAULT_GR_NOTIFICATION_SLA,
         prepayment_config=_DEFAULT_PREPAYMENT_CONFIG,
@@ -306,7 +307,7 @@ async def get_or_create(db: AsyncSession) -> CompanyConfig:
 
 _JSONB_FIELDS = frozenset({
     "enabled_currencies", "custom_currencies", "pdf_templates", "workflow_config",
-    "dept_gm_opm_mapping", "dept_supervisor_enabled", "service_gr_sla",
+    "dept_gm_opm_mapping", "dept_supervisor_enabled", "dept_director_mapping", "service_gr_sla",
     "gr_notification_sla", "prepayment_config", "budget_admin_config",
     "collection_config", "role_management", "workflow_defs", "role_permissions",
     "custom_roles", "email_templates", "notification_settings", "vendor_categories",

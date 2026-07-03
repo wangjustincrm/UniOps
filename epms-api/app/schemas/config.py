@@ -193,6 +193,7 @@ class ConfigUpdate(BaseModel):
     workflow_config: dict[str, Any] | None = None
     dept_gm_opm_mapping: dict[str, str] | None = None
     dept_supervisor_enabled: dict[str, bool] | None = None
+    dept_director_mapping: dict[str, str] | None = None
     service_gr_sla: dict[str, Any] | None = None
     gr_notification_sla: dict[str, Any] | None = None
     prepayment_config: dict[str, Any] | None = None
@@ -247,6 +248,7 @@ class ConfigResponse(BaseModel):
     workflow_config: dict[str, Any]
     dept_gm_opm_mapping: dict[str, Any]
     dept_supervisor_enabled: dict[str, Any]
+    dept_director_mapping: dict[str, Any]
     service_gr_sla: dict[str, Any]
     gr_notification_sla: dict[str, Any]
     prepayment_config: dict[str, Any]
