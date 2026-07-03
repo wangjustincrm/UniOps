@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
 from app.core.access_scope import build_scope
+from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services import finance_client
 from app.crud import pa as pa_crud
@@ -377,3 +378,13 @@ async def pa_approval_events(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserPay
     if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
         raise HTTPException(status_code=404, detail="PA not found")
     return await pa_crud.get_approval_events(db, pa_id)
+
+
+@router.get("/{pa_id}/workflow-steps")
+async def pa_workflow_steps(pa_id: uuid.UUID, user: CurrentUserPayload, token: BearerToken):
+    try:
+        return await approval_client.get_workflow_steps("pa", str(pa_id), token)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))

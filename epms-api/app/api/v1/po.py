@@ -8,6 +8,7 @@ from sqlalchemy import select
 
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
 from app.core.access_scope import build_scope
+from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.crud import po as po_crud
 from app.crud import vendor as vendor_crud
@@ -311,3 +312,13 @@ async def po_approval_events(po_id: uuid.UUID, db: SessionDep, _: CurrentUserPay
     if po is None:
         raise HTTPException(status_code=404, detail="PO not found")
     return await po_crud.get_approval_events(db, po_id)
+
+
+@router.get("/{po_id}/workflow-steps")
+async def po_workflow_steps(po_id: uuid.UUID, user: CurrentUserPayload, token: BearerToken):
+    try:
+        return await approval_client.get_workflow_steps("po", str(po_id), token)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))

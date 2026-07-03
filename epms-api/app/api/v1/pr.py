@@ -10,6 +10,7 @@ from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_r
 from app.crud import pr as pr_crud
 from app.models.task import Task
 from app.schemas.pr import ApprovalEventResponse, PrActionRequest, PrCreate, PrListResponse, PrResponse, PrUpdate
+from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services.notification import fire_and_forget_notify
 
@@ -191,3 +192,13 @@ async def pr_approval_events(pr_id: uuid.UUID, db: SessionDep, _: CurrentUserPay
     if pr is None:
         raise HTTPException(status_code=404, detail="PR not found")
     return await pr_crud.get_approval_events(db, pr_id)
+
+
+@router.get("/{pr_id}/workflow-steps")
+async def pr_workflow_steps(pr_id: uuid.UUID, user: CurrentUserPayload, token: BearerToken):
+    try:
+        return await approval_client.get_workflow_steps("pr", str(pr_id), token)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
