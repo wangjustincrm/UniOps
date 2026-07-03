@@ -1875,6 +1875,61 @@ function DeptGmOpmMapping() {
 
 // ─── Department Directors Mapping ────────────────────────────────────────────
 
+// Type-ahead user picker (combobox): input filters the list; click to select.
+function UserCombo({ value, users, onChange, placeholder = 'Search user…', emptyLabel = '— None —' }: {
+  value: string
+  users: { id: string; full_name: string; department_name?: string | null }[]
+  onChange: (id: string) => void
+  placeholder?: string
+  emptyLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+  const selected = users.find((u) => u.id === value)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const q = query.trim().toLowerCase()
+  const filtered = q ? users.filter((u) => u.full_name.toLowerCase().includes(q)) : users
+
+  return (
+    <div ref={ref} className="relative">
+      <input
+        value={open ? query : (selected?.full_name ?? '')}
+        onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true) }}
+        onFocus={() => { setQuery(''); setOpen(true) }}
+        placeholder={placeholder}
+        className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+      />
+      {selected && !open && (
+        <button type="button" onClick={() => onChange('')}
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600" aria-label="Clear">
+          <X className="h-4 w-4" />
+        </button>
+      )}
+      {open && (
+        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+          <button type="button" onClick={() => { onChange(''); setOpen(false) }}
+            className="block w-full px-3 py-2 text-left text-sm text-neutral-500 hover:bg-neutral-50">{emptyLabel}</button>
+          {filtered.length === 0 && <div className="px-3 py-2 text-sm text-neutral-400">No match</div>}
+          {filtered.map((u) => (
+            <button type="button" key={u.id} onClick={() => { onChange(u.id); setOpen(false) }}
+              className={cn('block w-full px-3 py-2 text-left text-sm hover:bg-neutral-50', u.id === value && 'bg-primary-50 text-primary-700')}>
+              {u.full_name}{u.department_name ? <span className="text-neutral-400"> ({u.department_name})</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function DeptDirectorMapping() {
   const { data: config } = useConfig()
   const updateConfig = useUpdateConfig()
@@ -1884,8 +1939,6 @@ function DeptDirectorMapping() {
   const activeUsers = (usersData?.items ?? []).filter((u) => u.is_active)
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
-
-  const selCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
   useEffect(() => { if (config?.dept_director_mapping) setMapping({ ...config.dept_director_mapping }) }, [config?.dept_director_mapping])
 
@@ -1916,10 +1969,13 @@ function DeptDirectorMapping() {
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <select className={selCls} value={mapping[dept.id] ?? ''} onChange={(e) => setMapping((p) => ({ ...p, [dept.id]: e.target.value || '' }))}>
-                    <option value="">— No director (skip step) —</option>
-                    {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-                  </select>
+                  <UserCombo
+                    value={mapping[dept.id] ?? ''}
+                    users={activeUsers}
+                    onChange={(id) => setMapping((p) => ({ ...p, [dept.id]: id }))}
+                    placeholder="Search director…"
+                    emptyLabel="— No director (skip step) —"
+                  />
                 </td>
               </tr>
             ))}
