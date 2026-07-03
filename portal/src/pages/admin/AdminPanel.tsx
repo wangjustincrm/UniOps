@@ -1020,7 +1020,9 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
 }
 
 const WORKFLOW_ROLES = [
+  { value: 'supervisor',          label: 'Supervisor (dept-scoped, per requester)' },
   { value: 'dept_manager',        label: 'Department Manager' },
+  { value: 'director',            label: 'Director (dept-scoped, optional)' },
   { value: 'gm_or_opm',          label: 'GM / OPM (auto-resolved)' },
   { value: 'gm',                  label: 'GM' },
   { value: 'opm',                 label: 'OPM' },
