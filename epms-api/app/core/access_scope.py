@@ -112,24 +112,29 @@ async def _effective_role_codes(
     """
     codes: set[str] = {base_role} if base_role else set()
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    if not cfg or not cfg.role_management:
-        return codes
-    rm: dict = cfg.role_management
     uid_str = str(user_id)
-    single_role_fields = {
-        "gm":                  rm.get("gm_user_id"),
-        "opm":                 rm.get("opm_user_id"),
-        "finance_manager":     rm.get("finance_manager_user_id"),
-        "procurement_manager": rm.get("procurement_manager_user_id"),
-        "vendor_manager":      rm.get("vendor_manager_user_id"),
-    }
-    for special_role, assigned_uid in single_role_fields.items():
-        if assigned_uid == uid_str:
-            codes.add(special_role)
-    if uid_str in rm.get("finance_bp_user_ids", []):
-        codes.add("finance_bp")
-    if uid_str in (cfg.dept_director_mapping or {}).values():
-        codes.add("director")
+
+    # role_management-based special roles (gm, opm, finance_manager, etc.)
+    if cfg and cfg.role_management:
+        rm: dict = cfg.role_management
+        single_role_fields = {
+            "gm":                  rm.get("gm_user_id"),
+            "opm":                 rm.get("opm_user_id"),
+            "finance_manager":     rm.get("finance_manager_user_id"),
+            "procurement_manager": rm.get("procurement_manager_user_id"),
+            "vendor_manager":      rm.get("vendor_manager_user_id"),
+        }
+        for special_role, assigned_uid in single_role_fields.items():
+            if assigned_uid == uid_str:
+                codes.add(special_role)
+        if uid_str in rm.get("finance_bp_user_ids", []):
+            codes.add("finance_bp")
+
+    # director/supervisor derivation runs whenever cfg exists, regardless of
+    # whether role_management is populated.
+    if cfg is not None:
+        if uid_str in (cfg.dept_director_mapping or {}).values():
+            codes.add("director")
     is_supervisor = (await db.execute(
         select(User.id).where(User.supervisor_id == user_id).limit(1)
     )).scalar_one_or_none()

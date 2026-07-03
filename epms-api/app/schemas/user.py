@@ -22,6 +22,7 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8)
     role: str = "requester"
     department_id: uuid.UUID | None = None
+    supervisor_id: uuid.UUID | None = None
     is_active: bool = True
     teams_account: str | None = None
     notification_channel: str = "email_only"
@@ -37,6 +38,7 @@ class UserUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=255)
     role: str | None = None
     department_id: uuid.UUID | None = None
+    supervisor_id: uuid.UUID | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8)
     teams_account: str | None = None
@@ -55,6 +57,7 @@ class UserAdminResponse(BaseModel):
     role: str
     department_id: uuid.UUID | None
     department_name: str | None = None
+    supervisor_id: uuid.UUID | None = None
     is_active: bool
     mfa_enabled: bool
     teams_account: str | None = None

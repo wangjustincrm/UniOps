@@ -44,6 +44,7 @@ async def create_admin(db: AsyncSession, payload: UserCreate) -> User:
         full_name=payload.full_name,
         role=payload.role,
         department_id=payload.department_id,
+        supervisor_id=payload.supervisor_id,
         is_active=payload.is_active,
         teams_account=payload.teams_account,
         notification_channel=payload.notification_channel,

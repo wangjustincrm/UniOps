@@ -318,6 +318,11 @@ async def update_user(user_id: uuid.UUID, body: UserUpdate, db: SessionDep, _: A
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found")
         user.department_id = body.department_id
 
+    # supervisor_id: omitting leaves unchanged; sending null explicitly clears it.
+    # Uses model_fields_set to distinguish "omitted" from "sent as null".
+    if "supervisor_id" in body.model_fields_set:
+        user.supervisor_id = body.supervisor_id
+
     # ERP Code is freely editable for any user; only uniqueness is enforced.
     if body.erp_person_code is not None:
         new_code = body.erp_person_code.strip()
