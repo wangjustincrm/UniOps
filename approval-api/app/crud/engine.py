@@ -346,6 +346,47 @@ async def _resolve_gm_or_opm(
     return resolved_role, (uuid.UUID(uid_str) if uid_str else None)
 
 
+async def _active_user_id(db: AsyncSession, user_id: uuid.UUID | None) -> uuid.UUID | None:
+    """Return user_id iff it references an existing, active user; else None."""
+    if user_id is None:
+        return None
+    row = (await db.execute(
+        select(User.id).where(User.id == user_id, User.is_active.is_(True))
+    )).scalar_one_or_none()
+    return row
+
+
+async def _resolve_director(
+    db: AsyncSession, routing_uid: uuid.UUID, dept_director_mapping: dict,
+) -> uuid.UUID | None:
+    """Director for the requester's department, or None (unmapped / inactive)."""
+    dept_id = (await db.execute(
+        select(User.department_id).where(User.id == routing_uid)
+    )).scalar_one_or_none()
+    if not dept_id:
+        return None
+    uid_str = dept_director_mapping.get(str(dept_id))
+    if not uid_str:
+        return None
+    return await _active_user_id(db, uuid.UUID(uid_str))
+
+
+async def _resolve_supervisor(
+    db: AsyncSession, routing_uid: uuid.UUID, dept_supervisor_enabled: dict,
+) -> uuid.UUID | None:
+    """The requester's assigned supervisor, iff their department has the
+    supervisor level enabled and the assignee is active; else None."""
+    row = (await db.execute(
+        select(User.department_id, User.supervisor_id).where(User.id == routing_uid)
+    )).first()
+    if row is None:
+        return None
+    dept_id, supervisor_id = row
+    if not dept_id or not dept_supervisor_enabled.get(str(dept_id)):
+        return None
+    return await _active_user_id(db, supervisor_id)
+
+
 async def _routing_user_id(db: AsyncSession, doc_type: str, doc: Any) -> uuid.UUID:
     """Return the user whose department drives department-based approval routing
     (the `dept_manager` and `gm_or_opm` steps).
