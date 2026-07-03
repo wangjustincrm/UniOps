@@ -39,7 +39,7 @@ import { CURRENCIES } from '@/types'
 type Section =
   | 'company' | 'security' | 'currency' | 'email_templates' | 'pdf_templates'
   | 'users' | 'vendor_settings'
-  | 'workflows' | 'dept_mapping' | 'dept_director_mapping' | 'service_gr_sla' | 'gr_notification_sla'
+  | 'workflows' | 'dept_mapping' | 'dept_director_mapping' | 'dept_supervisor' | 'service_gr_sla' | 'gr_notification_sla'
   | 'prepayment' | 'budget' | 'collection' | 'role_management'
   | 'custom_roles' | 'access_matrix' | 'notifications' | 'pms_import'
 
@@ -56,6 +56,7 @@ const NAV: NavEntry[] = [
   { id: 'workflows',           label: 'Approval Workflows',     icon: Workflow },
   { id: 'dept_mapping',          label: 'Dept → GM/OPM Mapping',  icon: Building2 },
   { id: 'dept_director_mapping', label: 'Department Directors',   icon: Building2 },
+  { id: 'dept_supervisor',       label: 'Department Supervisors', icon: Building2 },
   { id: 'service_gr_sla',        label: 'Service GR SLA',         icon: Clock },
   { id: 'gr_notification_sla', label: 'GR Notification SLA',    icon: Bell },
   { id: 'prepayment',          label: 'Prepayment Config',      icon: CreditCard },
@@ -1931,6 +1932,64 @@ function DeptDirectorMapping() {
   )
 }
 
+// ─── Department Supervisors (Supervisor Step per department) ──────────────────
+
+function DeptSupervisorToggle() {
+  const { data: config } = useConfig()
+  const updateConfig = useUpdateConfig()
+  const { data: deptData } = useDepartments()
+  const departments = deptData?.items ?? []
+  const [enabled, setEnabled] = useState<Record<string, boolean>>({})
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => { if (config?.dept_supervisor_enabled) setEnabled({ ...config.dept_supervisor_enabled }) }, [config?.dept_supervisor_enabled])
+
+  const handleSave = () => {
+    updateConfig.mutate({ dept_supervisor_enabled: enabled })
+    setSaved(true); setTimeout(() => setSaved(false), 2500)
+  }
+
+  return (
+    <div className="flex flex-col gap-6 max-w-2xl">
+      <p className="text-sm text-neutral-500">
+        When enabled for a department, PRs route through the assigned Supervisor before the Department Manager.
+        Requires each requester in that department to have a Supervisor set on their user record; requesters
+        without one route straight to the Manager.
+      </p>
+
+      <div className="rounded-xl border border-neutral-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="bg-neutral-50 border-b border-neutral-200">
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Department</th>
+            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-32">Supervisor Step</th>
+          </tr></thead>
+          <tbody>
+            {departments.filter((d) => d.is_active).map((dept, i) => (
+              <tr key={dept.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-xs font-semibold text-neutral-600">{dept.code}</span>
+                    <span className="text-sm text-neutral-900">{dept.name}</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <button type="button" role="switch" aria-checked={!!enabled[dept.id]}
+                    onClick={() => setEnabled((p) => ({ ...p, [dept.id]: !p[dept.id] }))}
+                    className={cn('relative h-6 w-11 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2', enabled[dept.id] ? 'bg-primary-600' : 'bg-neutral-300')}>
+                    <span className={cn('absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform', enabled[dept.id] ? 'translate-x-5' : 'translate-x-0')} />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <SaveBar saved={saved} onSave={handleSave} />
+    </div>
+  )
+}
+
 // ─── Service GR SLA ───────────────────────────────────────────────────────────
 
 const DEFAULT_SERVICE_GR_SLA: ServiceGrSlaConfig = { reminder_days: 1, manager_escalation_days: 3, gm_opm_escalation_days: 5, fm_alert_days: 7 }
@@ -3061,6 +3120,7 @@ export default function AdminPanel() {
       case 'workflows':           return <MovedToPortal section="Approval Workflows" />
       case 'dept_mapping':          return <DeptGmOpmMapping />
       case 'dept_director_mapping': return <DeptDirectorMapping />
+      case 'dept_supervisor':       return <DeptSupervisorToggle />
       case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />
       case 'vendor_settings':     return <VendorSettingsSection />
