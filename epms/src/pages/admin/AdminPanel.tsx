@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { authService } from '@/services/auth'
@@ -1885,21 +1885,49 @@ function UserCombo({ value, users, onChange, placeholder = 'Search user…', emp
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({})
   const selected = users.find((u) => u.id === value)
+
+  const reposition = () => {
+    const el = wrapRef.current
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - r.bottom
+    const openUp = spaceBelow < 240 && r.top > spaceBelow
+    setMenuStyle({
+      position: 'fixed',
+      left: r.left,
+      width: r.width,
+      ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+    })
+  }
 
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    reposition()
+    const onScroll = () => reposition()
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (wrapRef.current?.contains(t) || menuRef.current?.contains(t)) return
+      setOpen(false)
+    }
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    document.addEventListener('mousedown', onDown)
+    return () => {
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+      document.removeEventListener('mousedown', onDown)
+    }
   }, [open])
 
   const q = query.trim().toLowerCase()
   const filtered = q ? users.filter((u) => u.full_name.toLowerCase().includes(q)) : users
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={wrapRef} className="relative">
       <input
         value={open ? query : (selected?.full_name ?? '')}
         onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true) }}
@@ -1913,8 +1941,8 @@ function UserCombo({ value, users, onChange, placeholder = 'Search user…', emp
           <X className="h-4 w-4" />
         </button>
       )}
-      {open && (
-        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+      {open && createPortal(
+        <div ref={menuRef} style={menuStyle} className="z-50 max-h-56 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
           <button type="button" onClick={() => { onChange(''); setOpen(false) }}
             className="block w-full px-3 py-2 text-left text-sm text-neutral-500 hover:bg-neutral-50">{emptyLabel}</button>
           {filtered.length === 0 && <div className="px-3 py-2 text-sm text-neutral-400">No match</div>}
@@ -1924,7 +1952,8 @@ function UserCombo({ value, users, onChange, placeholder = 'Search user…', emp
               {u.full_name}{u.department_name ? <span className="text-neutral-400"> ({u.department_name})</span> : null}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
