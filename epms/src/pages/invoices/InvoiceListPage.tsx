@@ -1400,12 +1400,13 @@ export default function InvoiceListPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         {[
           { label: 'Total Invoices',  value: allData?.total ?? 0,                                   color: 'text-neutral-900' },
           { label: 'Unmatched',       value: unmatchedCount,                                        color: unmatchedCount > 0 ? 'text-warning-600' : 'text-neutral-900' },
           { label: 'Exceptions',      value: exceptionCount,                                        color: exceptionCount > 0 ? 'text-danger-600'  : 'text-neutral-900' },
           { label: 'Matched / Ready', value: invoices.filter((i) => i.status === 'matched').length, color: 'text-success-600' },
+          { label: 'Paid',            value: invoices.filter((i) => i.status === 'paid').length,    color: 'text-primary-600' },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-neutral-200 bg-white p-4">
             <p className="text-xs text-neutral-400">{s.label}</p>
