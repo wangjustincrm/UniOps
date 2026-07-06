@@ -86,6 +86,12 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
         </div>
       </label>
 
+      {enabled && visitors.length === 0 && (
+        <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+          Add at least one visitor above to specify PPE sizes.
+        </p>
+      )}
+
       {enabled && value && visitors.map((v) => {
         const item = items.find((it) => it.visitor_id === v.id)
         if (!item) return null
@@ -181,7 +187,7 @@ export function PpeRequestForm({ visitors, value, onChange }: Props) {
         )
       })}
 
-      {enabled && value && (
+      {enabled && value && visitors.length > 0 && (
         <Field label="Notes (optional — applies to the whole group)">
           <textarea
             value={value.notes ?? ''}

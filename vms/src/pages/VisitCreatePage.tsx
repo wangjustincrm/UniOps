@@ -269,7 +269,7 @@ export default function VisitCreatePage() {
             <p className="mt-2 flex items-start gap-1.5 text-xs text-amber-700">
               <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               GMP / Lab access requires a health declaration and Quality Manager approval before
-              the badge can print. (Both flows come online in Sprint 2.)
+              the badge can print.
             </p>
           )}
         </Section>
