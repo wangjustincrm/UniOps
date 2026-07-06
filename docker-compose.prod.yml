@@ -70,6 +70,10 @@ services:
       SP_SITE: ${SP_SITE:-https://canadaroyalmilk.sharepoint.com/sites/pr2}
     ports: ["8000:8000"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # PMS import staging + durable state (sync watermark, run history). Without
+    # this a redeploy recreates the container and wipes both.
+    volumes:
+      - pms_import_data:/app/scripts/import_pms/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health').status==200 else 1)"]
       interval: 30s
@@ -364,3 +368,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  pms_import_data:

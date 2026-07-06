@@ -1,8 +1,13 @@
 """Background runner for the legacy-PMS → EPMS import, driven by the admin page.
 
 Manually triggered only (no scheduler). The import takes minutes, so each run is
-executed in an asyncio background task; callers poll status. Run history is kept
-in memory (last N runs) — sufficient for an admin tool and avoids a schema change.
+executed in an asyncio background task; callers poll status. Run history is
+persisted to a small JSON file (via scripts.import_pms.state) so it survives
+container restarts/redeploys — previously it lived only in process memory and
+vanished on every restart, showing "No runs yet" even after a successful import.
+
+Assumes a single API worker (prod runs uvicorn without --workers); the in-memory
+list mirrors the file and is the source of truth for the running worker.
 """
 from __future__ import annotations
 
@@ -10,7 +15,7 @@ import asyncio
 import logging
 import os
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime, timezone
 
 from app.core.config import settings
@@ -43,16 +48,56 @@ class SyncRun:
         return d
 
 
-_runs: list[SyncRun] = []
+_runs: list[SyncRun] | None = None  # lazily loaded from disk on first access
 _current: SyncRun | None = None
 
 
+def _known_fields() -> set[str]:
+    return {f.name for f in fields(SyncRun)}
+
+
+def _load_runs() -> list[SyncRun]:
+    """Read persisted history, skipping schema-incompatible legacy rows and
+    marking any run left as 'running' (process died mid-import) as an error."""
+    from scripts.import_pms import state
+    known = _known_fields()
+    out: list[SyncRun] = []
+    for d in state.load_runs():
+        if not isinstance(d, dict):
+            continue
+        d = {k: v for k, v in d.items() if k in known}
+        try:
+            run = SyncRun(**d)
+        except TypeError:
+            continue
+        if run.status == "running":
+            run.status = "error"
+            run.step = "interrupted"
+            run.error = run.error or "Interrupted — the service restarted during this run."
+            if run.finished_at is None:
+                run.finished_at = datetime.now(timezone.utc).isoformat()
+        out.append(run)
+    return out
+
+
+def _ensure_loaded() -> list[SyncRun]:
+    global _runs
+    if _runs is None:
+        _runs = _load_runs()
+    return _runs
+
+
+def _persist() -> None:
+    from scripts.import_pms import state
+    state.save_runs([asdict(r) for r in _ensure_loaded()])
+
+
 def list_runs() -> list[dict]:
-    return [r.summary() for r in _runs]
+    return [r.summary() for r in _ensure_loaded()]
 
 
 def get_run(run_id: str) -> dict | None:
-    for r in _runs:
+    for r in _ensure_loaded():
         if r.id == run_id:
             return asdict(r)
     return None
@@ -70,10 +115,12 @@ def start_run(phase: str, dry_run: bool, triggered_by: str) -> dict:
     if phase not in ("full", "incremental"):
         raise ValueError("phase must be 'full' or 'incremental'")
 
+    runs = _ensure_loaded()
     run = SyncRun(id=uuid.uuid4().hex, phase=phase, dry_run=dry_run, triggered_by=triggered_by)
     _current = run
-    _runs.insert(0, run)
-    del _runs[_MAX_HISTORY:]
+    runs.insert(0, run)
+    del runs[_MAX_HISTORY:]
+    _persist()
     asyncio.create_task(_execute(run))
     return run.summary()
 
@@ -105,10 +152,12 @@ async def _execute(run: SyncRun) -> None:
             load_mode = "insert"
 
         run.step = f"extracting from SharePoint ({run.phase})"
+        _persist()
         logger.info("PMS import %s: extracting (since=%s)", run.id, since)
         await asyncio.to_thread(extract, None, since)  # sync httpx → off the event loop
 
         run.step = "loading into EPMS" + (" (dry-run)" if run.dry_run else "")
+        _persist()
         logger.info("PMS import %s: loading (mode=%s dry_run=%s)", run.id, load_mode, run.dry_run)
         report = await run_load(dry_run=run.dry_run, mode=load_mode)
         run.report = report.to_dict(run.dry_run)
@@ -116,6 +165,7 @@ async def _execute(run: SyncRun) -> None:
         # Invoice attachments (uploads to the file server on a committed run).
         from scripts.import_pms.attachments import sync_invoice_attachments
         run.step = "syncing invoice attachments"
+        _persist()
         att = await sync_invoice_attachments(dry_run=run.dry_run)
         run.report["attachments"] = att.to_dict()
 
@@ -134,5 +184,6 @@ async def _execute(run: SyncRun) -> None:
         logger.exception("PMS import %s failed", run.id)
     finally:
         run.finished_at = datetime.now(timezone.utc).isoformat()
+        _persist()
         if _current is run:
             _current = None
