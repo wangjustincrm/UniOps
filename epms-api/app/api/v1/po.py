@@ -33,6 +33,9 @@ async def list_pos(
     status: str | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
     pr_id: uuid.UUID | None = Query(default=None),
+    pr_type: int | None = Query(default=None),
+    department_id: uuid.UUID | None = Query(default=None),
+    is_prepaid: bool | None = Query(default=None),
     mine: bool = False,
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -47,6 +50,7 @@ async def list_pos(
 
     items, total = await po_crud.get_all(
         db, status=status, vendor_id=vendor_id, pr_id=pr_id,
+        pr_type=pr_type, department_id=department_id, is_prepaid=is_prepaid,
         created_by=created_by, search=search,
         po_ids_subq=po_subq,
         page=page, page_size=page_size,

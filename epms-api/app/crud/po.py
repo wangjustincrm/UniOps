@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
+from app.models.cost_center import CostCenter
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -65,6 +66,9 @@ async def get_all(
     status: str | None = None,
     vendor_id: uuid.UUID | None = None,
     pr_id: uuid.UUID | None = None,
+    pr_type: int | None = None,
+    department_id: uuid.UUID | None = None,
+    is_prepaid: bool | None = None,
     created_by: uuid.UUID | None = None,
     search: str | None = None,
     po_ids_subq=None,
@@ -80,6 +84,17 @@ async def get_all(
         q = q.where(PurchaseOrder.vendor_id == vendor_id)
     if pr_id:
         q = q.where(PurchaseOrder.pr_id == pr_id)
+    if pr_type:
+        q = q.where(PurchaseOrder.type == pr_type)
+    if is_prepaid is not None:
+        q = q.where(PurchaseOrder.is_prepaid == is_prepaid)
+    if department_id:
+        # PO has no cost center of its own — resolve department via the linked PR.
+        q = q.where(PurchaseOrder.pr_id.in_(
+            select(PurchaseRequest.id).where(PurchaseRequest.cost_center_id.in_(
+                select(CostCenter.id).where(CostCenter.department_id == department_id)
+            ))
+        ))
     if created_by:
         q = q.where(PurchaseOrder.created_by == created_by)
     if search:

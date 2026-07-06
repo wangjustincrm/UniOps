@@ -8,6 +8,7 @@ import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate, cn } from '@/lib/utils'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePos } from '@/hooks/usePos'
+import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
 import type { DocumentStatus } from '@/types'
 import type { PoStatus } from '@/services/po'
@@ -41,14 +42,23 @@ export default function PoListPage() {
   const { user } = useAuthStore()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [deptFilter, setDeptFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [prepaidFilter, setPrepaidFilter] = useState('all')
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
+  const { data: deptData } = useDepartments()
+  const departments = (deptData?.items ?? []).filter((d) => d.is_active)
+
   const { data, isLoading } = usePos({
     search: search || undefined,
     status: statusFilter !== 'all' ? (statusFilter as PoStatus) : undefined,
+    department_id: deptFilter !== 'all' ? deptFilter : undefined,
+    pr_type: typeFilter !== 'all' ? Number(typeFilter) : undefined,
+    is_prepaid: prepaidFilter === 'all' ? undefined : prepaidFilter === 'yes',
     page,
     page_size: pageSize,
   })
@@ -112,6 +122,35 @@ export default function PoListPage() {
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
+          </select>
+          <select
+            value={deptFilter}
+            onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            <option value="all">All Departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            <option value="all">All Types</option>
+            {Object.entries(TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <select
+            value={prepaidFilter}
+            onChange={(e) => { setPrepaidFilter(e.target.value); setPage(1) }}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            <option value="all">All (Prepaid)</option>
+            <option value="yes">Prepaid</option>
+            <option value="no">Not Prepaid</option>
           </select>
           <span className="text-sm text-neutral-400">{isLoading ? 'Loading…' : `${total} result${total !== 1 ? 's' : ''}`}</span>
         </div>

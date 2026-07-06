@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { usePas } from '@/hooks/usePas'
+import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
 import type { PaStatus, ApiPa } from '@/services/pa'
 
@@ -62,13 +63,18 @@ export default function PaListPage() {
   const navigate = useNavigate()
 
   const [statusFilter, setStatusFilter] = useState('all')
+  const [deptFilter, setDeptFilter] = useState('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
+  const { data: deptData } = useDepartments()
+  const departments = (deptData?.items ?? []).filter((d) => d.is_active)
+
   const { data, isPending, isFetching } = usePas({
     search: search || undefined,
     status: statusFilter !== 'all' ? (statusFilter as PaStatus) : undefined,
+    department_id: deptFilter !== 'all' ? deptFilter : undefined,
     page,
     page_size: pageSize,
   })
@@ -110,6 +116,16 @@ export default function PaListPage() {
             >
               {STATUS_FILTER_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <select
+              value={deptFilter}
+              onChange={(e) => { setDeptFilter(e.target.value); setPage(1) }}
+              className="h-9 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+            >
+              <option value="all">All Departments</option>
+              {departments.map((d) => (
+                <option key={d.id} value={d.id}>{d.name}</option>
               ))}
             </select>
             <span className="text-sm text-neutral-400">

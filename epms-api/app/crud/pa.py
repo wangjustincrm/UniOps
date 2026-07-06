@@ -8,8 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
+from app.models.cost_center import CostCenter
 from app.models.invoice import Invoice
 from app.models.pa import PaLineItem, PaymentApplication
+from app.models.po import PurchaseOrder
+from app.models.pr import PurchaseRequest
 from app.models.pa_attachment import PaAttachment
 from app.models.task import Task
 from app.models.user import User
@@ -70,6 +73,7 @@ async def get_all(
     status: str | None = None,
     po_id: uuid.UUID | None = None,
     vendor_id: uuid.UUID | None = None,
+    department_id: uuid.UUID | None = None,
     created_by: uuid.UUID | None = None,
     po_ids_subq=None,
     page: int = 1,
@@ -96,6 +100,15 @@ async def get_all(
         q = q.where(PaymentApplication.po_id == po_id)
     if vendor_id:
         q = q.where(PaymentApplication.vendor_id == vendor_id)
+    if department_id:
+        # PA has no cost center — resolve department via PA → PO → PR → cost center.
+        q = q.where(PaymentApplication.po_id.in_(
+            select(PurchaseOrder.id).where(PurchaseOrder.pr_id.in_(
+                select(PurchaseRequest.id).where(PurchaseRequest.cost_center_id.in_(
+                    select(CostCenter.id).where(CostCenter.department_id == department_id)
+                ))
+            ))
+        ))
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(

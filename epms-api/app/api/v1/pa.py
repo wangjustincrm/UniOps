@@ -37,6 +37,7 @@ async def list_pas(
     status: str | None = Query(default=None),
     po_id: uuid.UUID | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
+    department_id: uuid.UUID | None = Query(default=None),
     mine: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
@@ -50,6 +51,7 @@ async def list_pas(
     )
     items, total = await pa_crud.get_all(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
+        department_id=department_id,
         created_by=created_by,
         po_ids_subq=scope["po_subq"],
         page=page, page_size=page_size,

@@ -126,6 +126,7 @@ export interface PaActionBody {
 export interface PaFilters {
   status?: PaStatus
   pa_type?: PaType
+  department_id?: string
   vendor_id?: string
   po_id?: string
   search?: string

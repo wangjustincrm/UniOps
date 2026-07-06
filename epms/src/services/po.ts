@@ -116,6 +116,9 @@ export interface PlaceOrderBody {
 export interface PoFilters {
   status?: PoStatus
   type?: number
+  pr_type?: number
+  department_id?: string
+  is_prepaid?: boolean
   vendor_id?: string
   pr_id?: string
   search?: string
