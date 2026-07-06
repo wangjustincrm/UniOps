@@ -59,6 +59,7 @@ async def get_all(
     status: str | None = None,
     vendor_id: uuid.UUID | None = None,
     po_id: uuid.UUID | None = None,
+    search: str | None = None,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
     page: int = 1,
@@ -88,6 +89,14 @@ async def get_all(
             InvoicePoAllocation.po_id == po_id
         )
         q = q.where(or_(Invoice.po_id == po_id, Invoice.id.in_(alloc_by_po)))
+    if search and search.strip():
+        term = f"%{search.strip()}%"
+        q = q.where(or_(
+            Invoice.internal_ref.ilike(term),
+            Invoice.vendor_name.ilike(term),
+            Invoice.vendor_invoice_number.ilike(term),
+            Invoice.po_number.ilike(term),
+        ))
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(

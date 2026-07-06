@@ -103,6 +103,7 @@ async def list_invoices(
     status: str | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
     po_id: uuid.UUID | None = Query(default=None),
+    search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
 ):
@@ -112,7 +113,7 @@ async def list_invoices(
         return InvoiceListResponse(items=[], total=0)
     own_uploads = scope["user_id"] if scope["role"] == "requester" else None
     items, total = await invoice_crud.get_all(
-        db, status=status, vendor_id=vendor_id, po_id=po_id,
+        db, status=status, vendor_id=vendor_id, po_id=po_id, search=search,
         po_ids_subq=scope["po_subq"],
         own_uploads_user_id=own_uploads,
         page=page, page_size=page_size,
