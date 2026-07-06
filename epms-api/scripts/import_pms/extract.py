@@ -64,8 +64,15 @@ def extract(only: set[str] | None = None, since: str | None = None,
             skip_attachments: bool = False) -> None:
     """Pull SharePoint lists into data/*.json.
 
-    ``since`` (ISO UTC) → incremental: only rows Modified at/after it. vendorlist
-    is always pulled in full (it has no Modified-based change tracking need)."""
+    ``since`` (ISO UTC) → incremental: only rows Modified at/after it.
+
+    ``ALWAYS_FULL`` lists ignore ``since`` and are always pulled whole:
+      * vendorlist — a master with no Modified-based change tracking need.
+      * po_item / pa_item — the ONLY place the invoice↔PO link lives
+        (``InvoiceID`` on the line row). An incremental invoice usually points
+        at a PO that did NOT change, so its line rows would be missing under a
+        Modified filter and the invoice would resolve to no PO / no vendor
+        ("PMS Unknown Vendor"). Full-pulling them keeps the linkage complete."""
     DATA_DIR.mkdir(exist_ok=True)
     sp = SharePointClient()
 
@@ -73,12 +80,12 @@ def extract(only: set[str] | None = None, since: str | None = None,
     print(f"Connected to {sp.site} as {sp.user}  [{mode}]\n")
     overview = {o["title"]: o["count"] for o in sp.list_overview()}
 
+    ALWAYS_FULL = {"vendorlist.json", "po_item.json", "pa_item.json"}
     summary: dict[str, int] = {}
     for list_title, (filename, fields) in EXTRACT_SPEC.items():
         if only and filename.split(".")[0] not in only:
             continue
-        # vendorlist is a master — always full-pull (and has no Modified filter need)
-        list_since = None if filename == "vendorlist.json" else since
+        list_since = None if filename in ALWAYS_FULL else since
         expected = overview.get(list_title, "?")
         print(f"  Fetching {list_title!r} (server count {expected}) ...", flush=True)
         items = sp.get_list_items(list_title, select=fields, since=list_since)

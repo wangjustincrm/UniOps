@@ -539,6 +539,10 @@ async def run_load(
                 inv_amount: dict[int, Decimal] = defaultdict(Decimal)
                 inv_pono: dict[int, str] = {}
                 for it in load_staging("po_item.json"):
+                    # poitem_to_pono is otherwise only filled for POs inserted this
+                    # run; seed it for every staged PO item so the pa_item linkage
+                    # path (below) resolves invoices tied to already-imported POs.
+                    poitem_to_pono.setdefault(str(it.get("ID")), str(it.get("Title") or "").strip())
                     iid = it.get("InvoiceID")
                     if iid:
                         inv_amount[int(iid)] += to_decimal(it.get("TotalPrice"))
@@ -562,6 +566,25 @@ async def run_load(
                     st = pa_status_by_no.get(str(it.get("Title") or "").strip(), "")
                     if "PAID" in st.upper():
                         inv_paid[iid] = True
+
+                # Incremental: an invoice usually points at a PO that did NOT
+                # change this run, so that PO isn't in pono_to_id / pono_to_vendor
+                # (those only hold POs loaded in THIS batch). Seed both maps from
+                # the DB for every referenced PO number that's missing, so the
+                # invoice inherits its existing PO's vendor + po_id instead of
+                # falling back to "PMS Unknown Vendor". (No-op on a full run, where
+                # every PO is already in the batch maps.)
+                referenced_ponos = {pn for pn in inv_pono.values() if pn}
+                missing_ponos = {pn for pn in referenced_ponos if pn not in pono_to_id}
+                if missing_ponos:
+                    db_pos = (await db.execute(
+                        select(PurchaseOrder.number, PurchaseOrder.id,
+                               PurchaseOrder.vendor_id, PurchaseOrder.vendor_name)
+                        .where(PurchaseOrder.number.in_(missing_ponos))
+                    )).all()
+                    for num, pid, vid, vname in db_pos:
+                        pono_to_id.setdefault(num, pid)
+                        pono_to_vendor.setdefault(num, (vid, vname))
 
                 # Group SharePoint INVOICE rows by (vendor, Invoice No). The legacy
                 # PMS enters one row PER PO, so a single invoice spanning several POs
