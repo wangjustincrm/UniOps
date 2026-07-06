@@ -109,7 +109,19 @@ async def get_all(
         q = q.where(PurchaseRequest.created_by == created_by)
     if search:
         term = f"%{search}%"
-        q = q.where(PurchaseRequest.title.ilike(term) | PurchaseRequest.number.ilike(term))
+        # Match the fields the UI advertises: PR#, title, vendor name, budget code.
+        # Vendor name is matched two ways: the denormalized snapshot column
+        # (covers imported/legacy PRs that carry a free-text vendor_name with no
+        # vendor_id FK) AND a subquery on the live Vendor.name (covers renamed
+        # vendors, keeps parity with the displayed name resolved via vendor_id).
+        vendor_ids = select(Vendor.id).where(Vendor.name.ilike(term))
+        q = q.where(
+            PurchaseRequest.title.ilike(term)
+            | PurchaseRequest.number.ilike(term)
+            | PurchaseRequest.budget_code.ilike(term)
+            | PurchaseRequest.vendor_name.ilike(term)
+            | PurchaseRequest.vendor_id.in_(vendor_ids)
+        )
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(q.order_by(PurchaseRequest.created_at.desc()).offset(offset).limit(page_size))).scalars().all())
