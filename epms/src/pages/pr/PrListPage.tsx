@@ -8,6 +8,7 @@ import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate } from '@/lib/utils'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePrs } from '@/hooks/usePrs'
+import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
 
 const TYPE_LABELS: Record<number, string> = {
@@ -39,6 +40,9 @@ export default function PrListPage() {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [deptFilter, setDeptFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [prepaidFilter, setPrepaidFilter] = useState('all')
   const [sortField, setSortField] = useState<SortField>('submitted_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(1)
@@ -46,9 +50,15 @@ export default function PrListPage() {
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
   const navigate = useNavigate()
 
+  const { data: deptData } = useDepartments()
+  const departments = (deptData?.items ?? []).filter((d) => d.is_active)
+
   const { data, isLoading } = usePrs({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
+    department_id: deptFilter !== 'all' ? deptFilter : undefined,
+    pr_type: typeFilter !== 'all' ? Number(typeFilter) : undefined,
+    is_prepaid: prepaidFilter === 'all' ? undefined : prepaidFilter === 'yes',
     page,
     page_size: pageSize,
   })
@@ -113,7 +123,7 @@ export default function PrListPage() {
             className="pl-9"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Filter className="h-4 w-4 text-neutral-400" />
           <select
             value={statusFilter}
@@ -123,6 +133,35 @@ export default function PrListPage() {
             {STATUS_FILTER_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
+          </select>
+          <select
+            value={deptFilter}
+            onChange={(e) => handleFilterChange(setDeptFilter)(e.target.value)}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            <option value="all">All Departments</option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>{d.name}</option>
+            ))}
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => handleFilterChange(setTypeFilter)(e.target.value)}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            <option value="all">All Types</option>
+            {Object.entries(TYPE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+          <select
+            value={prepaidFilter}
+            onChange={(e) => handleFilterChange(setPrepaidFilter)(e.target.value)}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+          >
+            <option value="all">All (Prepaid)</option>
+            <option value="yes">Prepaid</option>
+            <option value="no">Not Prepaid</option>
           </select>
         </div>
       </div>

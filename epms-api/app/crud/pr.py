@@ -90,6 +90,8 @@ async def get_all(
     status: str | None = None,
     pr_type: int | None = None,
     cost_center_id: uuid.UUID | None = None,
+    department_id: uuid.UUID | None = None,
+    is_prepaid: bool | None = None,
     created_by: uuid.UUID | None = None,
     pr_ids_subq=None,
     search: str | None = None,
@@ -105,6 +107,13 @@ async def get_all(
         q = q.where(PurchaseRequest.type == pr_type)
     if cost_center_id:
         q = q.where(PurchaseRequest.cost_center_id == cost_center_id)
+    if department_id:
+        # PR carries cost_center_id; a department owns many cost centers.
+        q = q.where(PurchaseRequest.cost_center_id.in_(
+            select(CostCenter.id).where(CostCenter.department_id == department_id)
+        ))
+    if is_prepaid is not None:
+        q = q.where(PurchaseRequest.is_prepaid == is_prepaid)
     if created_by:
         q = q.where(PurchaseRequest.created_by == created_by)
     if search:
