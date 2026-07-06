@@ -84,7 +84,14 @@ async def get_all(
         q = q.where(PurchaseOrder.created_by == created_by)
     if search:
         term = f"%{search}%"
-        q = q.where(PurchaseOrder.title.ilike(term) | PurchaseOrder.number.ilike(term))
+        # Match what the UI advertises: PO#, title, vendor name, budget code.
+        # vendor_name is a NOT NULL snapshot on the PO, so no join needed.
+        q = q.where(
+            PurchaseOrder.title.ilike(term)
+            | PurchaseOrder.number.ilike(term)
+            | PurchaseOrder.vendor_name.ilike(term)
+            | PurchaseOrder.budget_code.ilike(term)
+        )
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
