@@ -15,12 +15,14 @@ ARG VITE_OA_URL
 ARG VITE_PORTAL_URL
 ARG VITE_BUDGET_API_URL
 ARG VITE_MDM_API_URL
+ARG VITE_EXPENSE_API_URL
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_FILE_SERVER_URL=$VITE_FILE_SERVER_URL \
     VITE_OA_URL=$VITE_OA_URL \
     VITE_PORTAL_URL=$VITE_PORTAL_URL \
     VITE_BUDGET_API_URL=$VITE_BUDGET_API_URL \
-    VITE_MDM_API_URL=$VITE_MDM_API_URL
+    VITE_MDM_API_URL=$VITE_MDM_API_URL \
+    VITE_EXPENSE_API_URL=$VITE_EXPENSE_API_URL
 
 # Shared workspace package is copied so the app can depend on it (file: + the
 # --install-links copy) without changing this Dockerfile. Harmless when unused.

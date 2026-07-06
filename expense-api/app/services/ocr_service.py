@@ -22,8 +22,10 @@ Return a JSON object with EXACTLY this structure (no extra keys, no markdown):
 {
   "vendor_name": {"value": "string or null", "confidence": 0.0-1.0},
   "invoice_number": {"value": "string or null", "confidence": 0.0-1.0},
+  "po_number": {"value": "string or null", "confidence": 0.0-1.0},
   "invoice_date": {"value": "YYYY-MM-DD or null", "confidence": 0.0-1.0},
   "due_date": {"value": "YYYY-MM-DD or null", "confidence": 0.0-1.0},
+  "payment_terms_net_days": {"value": number or null, "confidence": 0.0-1.0},
   "currency": {"value": "CAD", "confidence": 0.0-1.0},
   "subtotal": {"value": number or null, "confidence": 0.0-1.0},
   "tax_amount": {"value": number or null, "confidence": 0.0-1.0},
@@ -46,6 +48,15 @@ Rules:
 - Dates must be YYYY-MM-DD; null if not found
 - Numbers must be plain decimals (no currency symbols)
 - Default currency to CAD if not specified
+- "due_date": extract ONLY if an explicit due/payment date is printed on the
+  invoice. Do NOT derive or calculate it from payment terms — leave it null and let
+  payment_terms_net_days carry the terms (the application computes the date).
+- "po_number": a purchase order reference the vendor prints on the invoice, often
+  starting with "PO-" (also "P.O.", "Order No", "Purchase Order"). Null if absent.
+- "payment_terms_net_days": if the invoice shows payment terms like "NET 30",
+  "Net 45", "Due in 60 days", extract only the integer number of days (e.g. 30).
+  Null if no such terms are printed. Extract this even when an explicit due_date is
+  also shown; do NOT compute due_date from the terms (the application does that).
 - If there are no line items, return an empty array
 - Return ONLY the JSON object, no other text"""
 
@@ -80,7 +91,8 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
 
     Returns:
         {
-            vendor_name, invoice_number, invoice_date, due_date,
+            vendor_name, invoice_number, po_number,
+            invoice_date, due_date, payment_terms_net_days,
             currency, subtotal, tax_amount, total_amount,
             line_items: [...],
             ocr_confidence: float,          # average confidence
@@ -145,7 +157,8 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
         raise ValueError(f"OCR returned invalid JSON: {exc}")
 
     # Flatten extracted values and calculate confidence
-    scalar_fields = ["vendor_name", "invoice_number", "invoice_date", "due_date",
+    scalar_fields = ["vendor_name", "invoice_number", "po_number",
+                     "invoice_date", "due_date", "payment_terms_net_days",
                      "currency", "subtotal", "tax_amount", "total_amount"]
 
     result: dict = {}

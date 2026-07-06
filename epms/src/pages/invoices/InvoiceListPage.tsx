@@ -141,11 +141,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setNetTermsHint(null)
     setLineItems([])
 
-    if (!import.meta.env.VITE_ANTHROPIC_API_KEY) {
-      setParseError('AI parsing not configured — set VITE_ANTHROPIC_API_KEY in .env.local')
-      return
-    }
-
     setParsing(true)
     try {
       const result = await parseInvoiceFile(f)
@@ -167,17 +162,21 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       const resolvedInvoiceDate = fields.invoiceDate ?? new Date().toISOString().slice(0, 10)
       if (fields.invoiceDate) { setInvoiceDate(fields.invoiceDate); filled.add('invoiceDate') }
 
-      // Due date: explicit date takes priority; otherwise compute from NET XX terms
+      // Due date: explicit date takes priority; otherwise compute from NET XX terms.
+      // Date math is done in UTC (parse Y-M-D → Date.UTC → setUTCDate) so it never
+      // drifts by a day across timezones — parsing "YYYY-MM-DD" with new Date() is
+      // UTC midnight, but getDate/setDate are local, and mixing them is off-by-one.
       if (fields.dueDate) {
         setDueDate(fields.dueDate)
         filled.add('dueDate')
       } else if (fields.paymentTermsNetDays !== null && fields.paymentTermsNetDays > 0) {
-        const base = new Date(resolvedInvoiceDate)
-        base.setDate(base.getDate() + fields.paymentTermsNetDays)
+        const [y, m, d] = resolvedInvoiceDate.split('-').map(Number)
+        const base = new Date(Date.UTC(y, m - 1, d))
+        base.setUTCDate(base.getUTCDate() + fields.paymentTermsNetDays)
         const computed = base.toISOString().slice(0, 10)
         setDueDate(computed)
         filled.add('dueDate')
-        setNetTermsHint(`Calculated from NET ${fields.paymentTermsNetDays} terms`)
+        setNetTermsHint(`Calculated from NET ${fields.paymentTermsNetDays} terms (issue date + ${fields.paymentTermsNetDays} days)`)
       }
 
       if (fields.amount    !== null)  { setAmount(String(fields.amount));    filled.add('amount') }
