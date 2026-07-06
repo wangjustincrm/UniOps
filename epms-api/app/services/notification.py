@@ -122,6 +122,18 @@ async def _dispatch(
     company_channel: str = notif_settings.get("default_channel", "email_only")
     teams_webhook: str | None = notif_settings.get("teams_webhook_url")
 
+    # The company default_channel is a master switch: when set to "none",
+    # notifications are suppressed for everyone, regardless of per-user
+    # notification_channel. Per-user is NOT NULL (server default 'email_only'),
+    # so `user.notification_channel or company_channel` would otherwise always
+    # fall on the per-user value and silently defeat "disable notifications".
+    if company_channel == "none":
+        logger.info(
+            "Notifications disabled company-wide (default_channel=none); skipping task %s",
+            task.id,
+        )
+        return
+
     tpl_key = template_key or _infer_template(task.type, is_followup)
     tpl: dict | None = email_templates.get(tpl_key)
 
