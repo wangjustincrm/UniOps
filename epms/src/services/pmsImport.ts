@@ -12,6 +12,7 @@ export interface PmsReport {
   pr_missing_number: number
   pa_orphan_no_po: number
   invoices_no_vendor: number
+  invoices_discarded_no_po?: number
   created_vendors: number
   applier_fallback: number
   unmatched_vendors: { count: number; sample: string[] }

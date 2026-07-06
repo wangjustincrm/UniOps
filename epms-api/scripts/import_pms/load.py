@@ -52,6 +52,7 @@ class Report:
     pr_missing_number: int = 0
     pa_orphan_no_po: int = 0
     invoices_no_vendor: int = 0
+    invoices_discarded_no_po: int = 0
     created_vendors: int = 0
     temp_users_created: int = 0
     applier_fallback: int = 0
@@ -74,6 +75,7 @@ class Report:
             "pr_missing_number": self.pr_missing_number,
             "pa_orphan_no_po": self.pa_orphan_no_po,
             "invoices_no_vendor": self.invoices_no_vendor,
+            "invoices_discarded_no_po": self.invoices_discarded_no_po,
             "created_vendors": self.created_vendors,
             "temp_users_created": self.temp_users_created,
             "applier_fallback": self.applier_fallback,
@@ -102,6 +104,7 @@ class Report:
             print(f"    {k:12} {self.skipped_existing.get(k, 0)}")
         print(f"  PR rows without a PR No (skipped):     {self.pr_missing_number}")
         print(f"  PA rows with unresolved PO (skipped):  {self.pa_orphan_no_po}")
+        print(f"  Invoices discarded (no PO/PA link):    {self.invoices_discarded_no_po}")
         print(f"  Invoices with no resolvable vendor:    {self.invoices_no_vendor}")
         print(f"  Auto-created vendors (missing POID):   {self.created_vendors}")
         print(f"  Temporary user accounts created:       {self.temp_users_created}")
@@ -595,6 +598,13 @@ async def run_load(
                 inv_groups: dict[tuple, dict] = {}
                 for r in invoice_rows:
                     iid = int(r.get("ID"))
+                    # Business rule: an INVOICE is only real if a PO Item (or PA
+                    # Item) line references its ID via InvoiceID. inv_pono is built
+                    # from exactly those references, so an iid absent from it has no
+                    # PO link at all → discard (don't import a PO-less placeholder).
+                    if iid not in inv_pono:
+                        report.invoices_discarded_no_po += 1
+                        continue
                     invoice_no = clip(nz(r.get("Title"), str(iid)), 100)
                     po_no = inv_pono.get(iid)
                     po_id = pono_to_id.get(po_no) if po_no else None

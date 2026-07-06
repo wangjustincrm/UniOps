@@ -44,6 +44,7 @@ function ReportView({ r }: { r: PmsReport }) {
         {r.created_vendors > 0 && <span><b>{r.created_vendors}</b> vendors auto-created</span>}
         {r.applier_fallback > 0 && <span><b>{r.applier_fallback}</b> docs → system user</span>}
         {r.pa_orphan_no_po > 0 && <span><b>{r.pa_orphan_no_po}</b> PAs skipped (no PO)</span>}
+        {(r.invoices_discarded_no_po ?? 0) > 0 && <span><b>{r.invoices_discarded_no_po}</b> invoices discarded (no PO link)</span>}
         {r.invoices_no_vendor > 0 && <span><b>{r.invoices_no_vendor}</b> invoices w/o vendor</span>}
       </div>
       {r.attachments && (r.attachments.uploaded || r.attachments.skipped_existing || r.attachments.failed) ? (
