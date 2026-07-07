@@ -35,3 +35,25 @@ async def test_can_insert_jv_with_lines_and_dims(db_session):
         select(JournalVoucher).where(JournalVoucher.id == jv.id))).scalar_one()
     assert got.status == "draft"
     assert got.jv_number == "JV-202607-0001"
+
+
+async def test_next_jv_number_increments_per_period(db_session):
+    from app.services.journal_voucher import next_jv_number
+    n1 = await next_jv_number(db_session, "2026-07")
+    assert n1 == "JV-202607-0001"
+    db_session.add(JournalVoucher(
+        jv_number=n1, voucher_word="JV", voucher_date=date(2026, 7, 1),
+        fiscal_period="2026-07", status="draft"))
+    await db_session.flush()
+    n2 = await next_jv_number(db_session, "2026-07")
+    assert n2 == "JV-202607-0002"
+    # different period resets
+    assert await next_jv_number(db_session, "2026-08") == "JV-202608-0001"
+
+
+def test_build_summary_templates():
+    from app.services.journal_voucher import build_summary
+    assert build_summary("ap_invoice", "accrual", "AP-1", "ACME") == "应付计提 · AP-1 · ACME"
+    assert build_summary("pa", "payment", "PA-9", "ACME") == "付款 · PA-9 · ACME"
+    # unknown event falls back to doc number
+    assert build_summary("gl_opening", "opening", "OB-1", None) == "OB-1"
