@@ -14,34 +14,36 @@ manually verify the AI-parsed field values against the source document.
 
 - **No file selected:** modal stays as today — narrow `max-w-xl`, single column,
   drop zone + form stacked.
-- **File selected:** modal widens to `max-w-6xl`. Structure:
+- **File selected:** modal widens to `max-w-[90rem]` (revised 2026-07-07 from
+  `max-w-6xl` — user needed a larger preview to read invoice text). Structure:
   - **Top (full width):** the existing drop zone, collapsed to the file chip row
     (file name, size, parsing spinner, remove ×) — unchanged behavior.
   - **Below, two columns:**
-    - **Left (~55%):** preview panel. Dark-neutral background, independently
+    - **Left (60%):** preview panel. Dark-neutral background, independently
       scrollable, fills available height (modal keeps `max-h-[92vh]`).
-    - **Right (~45%):** the entire existing form (vendor, invoice #, PO number,
+    - **Right (40%):** the entire existing form (vendor, invoice #, PO number,
       dates, amounts, line items, notes) — unchanged fields and logic,
       independently scrollable.
   - **Footer:** Cancel / Upload Invoice buttons, unchanged.
 - **Removing the file** (× on the chip) collapses the modal back to the narrow
   single-column layout.
 
-## Preview Rendering — native browser (zero dependencies)
+## Preview Rendering — pdf.js canvas (revised 2026-07-07)
 
-- On file select, create `URL.createObjectURL(file)`.
-- **PDF:** render in an `<iframe>` — the browser's built-in PDF viewer provides
-  paging, zoom, and text search natively. The "Page < 1/4 >" control in the
-  mockup is therefore covered by the native viewer toolbar; no custom pager.
+- **PDF:** rendered to a `<canvas>` with `pdfjs-dist` (already an epms
+  dependency), following the proven `PdfPreview` pattern in OA
+  `PaDirectCreatePage.tsx` — scale 2.0, render-task cancellation, doc destroy
+  on cleanup, and a Prev/Next `Page x / y` pager for multi-page files.
+- **REJECTED: native `<iframe>` viewer.** Implemented first, but corporate
+  browser policy (`AlwaysOpenPdfExternally` / "Download PDFs") blocks inline
+  PDFs in iframes and shows a download placeholder instead — reproduced on the
+  user's machine. pdf.js rendering is browser-independent.
 - **JPG/PNG:** render in an `<img>` with `object-contain` inside a scrollable
-  container.
+  container (blob URL via `URL.createObjectURL`).
 - **Cleanup:** `URL.revokeObjectURL()` when the file is removed/replaced or the
   modal unmounts (avoid blob memory leaks).
 - **Panel header:** small toolbar with the file name and an "Open in new tab"
   link (opens the blob URL in a full browser tab).
-- Rejected alternative: `react-pdf`/pdf.js custom rendering (~400 KB bundle) —
-  only needed if we later want to highlight parsed-field locations on the page.
-  YAGNI for now.
 
 ## Component Boundaries
 

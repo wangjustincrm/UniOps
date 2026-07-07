@@ -1,10 +1,115 @@
-import { useEffect, useMemo } from 'react'
-import { ExternalLink, FileText } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronLeft, ChevronRight, ExternalLink, FileText, Loader2 } from 'lucide-react'
+import * as pdfjsLib from 'pdfjs-dist'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  'pdfjs-dist/build/pdf.worker.min.mjs',
+  import.meta.url,
+).href
 
 // Live preview of the uploaded invoice file so the user can verify AI-parsed
-// fields against the source document. PDFs render in the browser's native
-// viewer (iframe — has its own paging/zoom/search toolbar); images in <img>.
+// fields against the source document. PDFs are rendered to a canvas with
+// pdf.js (same pattern as OA PaDirectCreatePage) — the browser's native PDF
+// viewer is NOT used because corporate policy (AlwaysOpenPdfExternally /
+// "Download PDFs") blocks inline PDFs in iframes. Images render in <img>.
 // Owns the blob-URL lifecycle: revoked on file change and unmount.
+
+function PdfCanvas({ file }: { file: File }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [pageNum, setPageNum] = useState(1)
+  const [totalPages, setTotalPages] = useState(0)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const pdfRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null)
+  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    file.arrayBuffer().then(async (buf) => {
+      if (cancelled) return
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise
+      if (cancelled) { pdf.destroy(); return }
+      pdfRef.current = pdf
+      setTotalPages(pdf.numPages)
+      setPageNum(1)
+      setError(false)
+      setLoading(false)
+    }).catch(() => {
+      if (!cancelled) { setError(true); setLoading(false) }
+    })
+
+    return () => {
+      cancelled = true
+      renderTaskRef.current?.cancel()
+      pdfRef.current?.destroy()
+      pdfRef.current = null
+    }
+  }, [file])
+
+  useEffect(() => {
+    if (!pdfRef.current || loading) return
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    let cancelled = false
+    renderTaskRef.current?.cancel()
+
+    pdfRef.current.getPage(pageNum).then((page) => {
+      if (cancelled) return
+      const viewport = page.getViewport({ scale: 2.0 })
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      const ctx = canvas.getContext('2d')!
+      const task = page.render({ canvas, canvasContext: ctx, viewport })
+      renderTaskRef.current = task
+      return task.promise
+    }).catch(() => { /* render cancelled — superseded by a newer render */ })
+
+    return () => { cancelled = true; renderTaskRef.current?.cancel() }
+  }, [pageNum, loading])
+
+  if (loading) return (
+    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-neutral-400">
+      <Loader2 className="h-4 w-4 animate-spin" /> Rendering PDF…
+    </div>
+  )
+  if (error) return (
+    <div className="flex flex-1 items-center justify-center text-sm text-neutral-400">
+      Preview not available
+    </div>
+  )
+
+  return (
+    <>
+      <div className="flex-1 overflow-auto p-3">
+        <canvas ref={canvasRef} className="mx-auto max-w-full rounded shadow-sm" />
+      </div>
+      {totalPages > 1 && (
+        <div className="flex shrink-0 items-center justify-center gap-3 border-t border-neutral-700 bg-neutral-900 py-1.5 text-xs text-neutral-300">
+          <button
+            type="button"
+            onClick={() => setPageNum((p) => Math.max(1, p - 1))}
+            disabled={pageNum === 1}
+            className="rounded p-1 hover:bg-neutral-700 disabled:opacity-30"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span>Page {pageNum} / {totalPages}</span>
+          <button
+            type="button"
+            onClick={() => setPageNum((p) => Math.min(totalPages, p + 1))}
+            disabled={pageNum === totalPages}
+            className="rounded p-1 hover:bg-neutral-700 disabled:opacity-30"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function FilePreviewPanel({ file }: { file: File }) {
   const url = useMemo(() => {
     try { return URL.createObjectURL(file) } catch { return null }
@@ -36,15 +141,13 @@ export function FilePreviewPanel({ file }: { file: File }) {
           </a>
         )}
       </div>
-      {url && kind === 'pdf' && (
-        <iframe src={url} title="Invoice preview" className="w-full flex-1 border-0" />
-      )}
+      {kind === 'pdf' && <PdfCanvas file={file} />}
       {url && kind === 'image' && (
         <div className="flex-1 overflow-auto p-3">
           <img src={url} alt="Invoice preview" className="mx-auto max-w-full object-contain" />
         </div>
       )}
-      {(!url || kind === 'unsupported') && (
+      {(!url || kind === 'unsupported') && kind !== 'pdf' && (
         <div className="flex flex-1 items-center justify-center text-sm text-neutral-400">
           Preview not available
         </div>

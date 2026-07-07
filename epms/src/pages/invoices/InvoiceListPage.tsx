@@ -287,7 +287,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
       <div className={cn(
         'w-full rounded-2xl bg-white shadow-2xl flex flex-col',
-        file ? 'max-w-6xl h-[92vh]' : 'max-w-xl max-h-[92vh]'
+        file ? 'max-w-[90rem] h-[92vh]' : 'max-w-xl max-h-[92vh]'
       )}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
@@ -360,7 +360,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               makes both wrappers transparent so the layout is exactly as before. */}
           <div className={cn(file ? 'flex flex-1 min-h-0 gap-5' : 'contents')}>
           {file && (
-            <div className="w-[55%] shrink-0">
+            <div className="w-[60%] shrink-0">
               <FilePreviewPanel file={file.raw} />
             </div>
           )}
