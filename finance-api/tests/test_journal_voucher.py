@@ -57,3 +57,65 @@ def test_build_summary_templates():
     assert build_summary("pa", "payment", "PA-9", "ACME") == "付款 · PA-9 · ACME"
     # unknown event falls back to doc number
     assert build_summary("gl_opening", "opening", "OB-1", None) == "OB-1"
+
+
+async def _make_event(db, *, currency="CAD", fx="1", debit="100.00", credit="0"):
+    from app.services.posting import emit_event
+    ev_id = await emit_event(
+        db, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+        lines=[
+            {"line_role": "purchase_expense", "account_code": "5000",
+             "debit": Decimal(debit), "currency": currency, "fx_rate": Decimal(fx),
+             "partner_name": "ACME"},
+            {"line_role": "accounts_payable", "account_code": "2000",
+             "credit": Decimal("100.00"), "currency": currency, "fx_rate": Decimal(fx),
+             "partner_name": "ACME"},
+        ],
+    )
+    return ev_id
+
+
+async def test_generate_from_event_creates_balanced_draft_jv(db_session):
+    from app.services.journal_voucher import generate_from_event
+    prepared = uuid.uuid4()
+    ev_id = await _make_event(db_session)
+    jv = await generate_from_event(db_session, ev_id, prepared)
+    assert jv is not None
+    assert jv.status == "draft"
+    assert jv.jv_number.startswith("JV-")
+    assert jv.prepared_by == prepared
+    assert jv.summary == "应付计提 · AP-1 · ACME"
+    assert jv.total_debit == Decimal("100.00")
+    assert jv.total_credit == Decimal("100.00")
+    lines = (await db_session.execute(
+        select(JournalVoucherLine).where(JournalVoucherLine.jv_id == jv.id)
+        .order_by(JournalVoucherLine.line_no))).scalars().all()
+    assert len(lines) == 2
+    assert lines[0].account_code == "5000"
+    assert lines[0].orig_debit == Decimal("100.00")
+    assert lines[0].local_debit == Decimal("100.00")   # CAD, fx 1
+
+
+async def test_generate_computes_local_from_fx(db_session):
+    from app.services.journal_voucher import generate_from_event
+    ev_id = await _make_event(db_session, currency="USD", fx="1.35", debit="100.00")
+    jv = await generate_from_event(db_session, ev_id, uuid.uuid4())
+    line = (await db_session.execute(
+        select(JournalVoucherLine).where(JournalVoucherLine.jv_id == jv.id,
+                                          JournalVoucherLine.orig_debit > 0))).scalar_one()
+    assert line.currency == "USD"
+    assert line.orig_debit == Decimal("100.00")
+    assert line.local_debit == Decimal("135.00")       # 100 * 1.35
+    assert jv.total_local_debit == Decimal("135.00")
+
+
+async def test_generate_is_idempotent_per_event(db_session):
+    from app.services.journal_voucher import generate_from_event
+    ev_id = await _make_event(db_session)
+    jv1 = await generate_from_event(db_session, ev_id, uuid.uuid4())
+    jv2 = await generate_from_event(db_session, ev_id, uuid.uuid4())
+    assert jv2.id == jv1.id                              # returns existing, no dup
+    all_jv = (await db_session.execute(
+        select(JournalVoucher).where(JournalVoucher.posting_event_id == ev_id))).scalars().all()
+    assert len(all_jv) == 1
