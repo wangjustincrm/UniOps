@@ -344,10 +344,12 @@ async def _pa_rows(db: AsyncSession, statuses: list[str], limit: int = 8) -> lis
 # ── Role-specific dashboard builders ────────────────────────────────────────
 
 async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResponse:
+    # Active = in-progress only. Exclude terminal states (cancelled/rejected) AND
+    # completed ones (issued → a PO was raised): the card reads "In progress".
     pr_result = await db.execute(
         select(func.count()).select_from(PurchaseRequest).where(
             PurchaseRequest.created_by == user_id,
-            PurchaseRequest.status.notin_(["cancelled", "rejected"]),
+            PurchaseRequest.status.notin_(["cancelled", "rejected", "issued"]),
         )
     )
     active_prs = pr_result.scalar_one()
@@ -362,11 +364,16 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     )
     overdue_tasks = task_result.scalar_one()
 
-    # Paid this month via PAs linked to user's PRs (approximate: user's processed PAs)
-    today = _today()
+    # Payment KPIs follow the requester's OWN document chain (my PR → PO → PA),
+    # not PAs the requester personally created (requesters don't create PAs).
+    my_pr_ids = select(PurchaseRequest.id).where(PurchaseRequest.created_by == user_id)
+    my_po_ids = select(PurchaseOrder.id).where(PurchaseOrder.pr_id.in_(my_pr_ids))
+
+    # Paid this month — processed PAs in my chain. NOTE: PA has no dedicated paid
+    # date, so this uses updated_at as a proxy for the processing month.
     paid_result = await db.execute(
         select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
-            PaymentApplication.created_by == user_id,
+            PaymentApplication.po_id.in_(my_po_ids),
             PaymentApplication.status == "processed",
             func.date_trunc("month", PaymentApplication.updated_at) ==
             func.date_trunc("month", func.now()),
@@ -374,10 +381,10 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     )
     paid_month = Decimal(str(paid_result.scalar_one()))
 
-    # Pending payments
+    # Pending payments — PAs in my chain not yet processed.
     pending_result = await db.execute(
         select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
-            PaymentApplication.created_by == user_id,
+            PaymentApplication.po_id.in_(my_po_ids),
             PaymentApplication.status.in_(["draft", "submitted", "in_review", "approved"]),
         )
     )
