@@ -9,14 +9,15 @@ import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react'
 import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
-import { useActualsSummary, useMonthlyActualsSummary } from '@/hooks/useBudget'
+import { Card, CardHeader } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useConfig } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
 
 const currentYear = new Date().getUTCFullYear()
-const YEAR_OPTIONS = [currentYear + 1, currentYear, currentYear - 1, currentYear - 2]
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -29,6 +30,7 @@ export default function BudgetDashboard() {
   const { data: config } = useConfig()
   const { user } = useAuthStore()
   const { data: ccData } = useCostCenters({ active_only: true })
+  const yearOptions = useAvailableFiscalYears()
 
   const costCenters = ccData ?? []
   const yellowThreshold = config?.budget_admin_config?.yellow_threshold_pct ?? 80
@@ -60,7 +62,7 @@ export default function BudgetDashboard() {
   const accounts: ApiAccountSummary[] = data?.accounts ?? []
 
   const { data: monthlyData, isLoading: monthlyLoading } = useMonthlyActualsSummary(summaryParams)
-  const monthlyAccounts: ApiMonthlyAccountSummary[] = monthlyData?.accounts ?? []
+  const monthlyAccounts: ApiMonthlyAccountSummary[] = useMemo(() => monthlyData?.accounts ?? [], [monthlyData])
 
   const monthlyByL1 = useMemo(() => {
     const groups = new Map<string, { code: string; accounts: ApiMonthlyAccountSummary[] }>()
@@ -71,6 +73,22 @@ export default function BudgetDashboard() {
       groups.get(a.l1_code)!.accounts.push(a)
     }
     return Array.from(groups.values()).sort((a, b) => a.code.localeCompare(b.code))
+  }, [monthlyAccounts])
+
+  const monthlyGrandTotals = useMemo(() => {
+    const plan: Record<number, number> = {}
+    const actual: Record<number, number> = {}
+    for (let m = 1; m <= 12; m++) { plan[m] = 0; actual[m] = 0 }
+    let planYear = 0, actualYear = 0
+    for (const a of monthlyAccounts) {
+      for (let m = 1; m <= 12; m++) {
+        plan[m] += Number(a.plan_by_month?.[m] ?? 0)
+        actual[m] += Number(a.actual_by_month?.[m] ?? 0)
+      }
+      planYear += Number(a.plan_year)
+      actualYear += Number(a.actual_year)
+    }
+    return { plan, actual, planYear, actualYear }
   }, [monthlyAccounts])
 
   const totalBudget    = accounts.reduce((s, a) => s + Number(a.annual_budget), 0)
@@ -104,12 +122,12 @@ export default function BudgetDashboard() {
         </div>
         <div className="flex items-center gap-2">
           <select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}
-            className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm">
-            {YEAR_OPTIONS.map((y) => <option key={y} value={y}>FY {y}</option>)}
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600">
+            {yearOptions.map((y) => <option key={y} value={y}>FY {y}</option>)}
           </select>
           {visibleCCs.length > 1 && (
             <select value={ccId} onChange={(e) => setCcId(e.target.value)}
-              className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm">
+              className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600">
               <option value="all">All Cost Centers</option>
               {visibleCCs.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
             </select>
@@ -124,7 +142,7 @@ export default function BudgetDashboard() {
       {isLoading ? (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm animate-pulse h-24" />
+            <Skeleton key={i} className="h-24 rounded-xl" />
           ))}
         </div>
       ) : (
@@ -135,11 +153,11 @@ export default function BudgetDashboard() {
             { label: 'Total Actual Spent',  value: formatCADCompact(totalSpent), sub: 'Paid & booked' },
             { label: 'Total Available',     value: formatCADCompact(totalAvailable), sub: `${totalPct}% utilised`, alert: totalAvailable < 0 },
           ].map((s) => (
-            <div key={s.label} className={cn('rounded-xl border bg-white p-4 shadow-sm', s.alert ? 'border-danger-200' : 'border-neutral-200')}>
+            <Card key={s.label} className={cn('p-4', s.alert && 'ring-1 ring-danger-200')}>
               <p className="text-xs text-neutral-500">{s.label}</p>
               <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-600' : 'text-neutral-900')}>{s.value}</p>
               <p className="text-xs text-neutral-400 mt-0.5">{s.sub}</p>
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -192,15 +210,15 @@ export default function BudgetDashboard() {
       )}
 
       {/* Monthly plan-vs-actual grid */}
-      <div className="rounded-xl border border-neutral-200 bg-white shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-neutral-200">
+      <Card className="overflow-hidden">
+        <CardHeader>
           <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
           <p className="text-xs text-neutral-500 mt-0.5">
             Each cell: <span className="text-neutral-600 font-medium">plan</span> /{' '}
             <span className="text-primary-700 font-medium">actual</span> · actual over plan shown in red
             {ccId === 'all' && <span className="ml-2 text-neutral-400">· Aggregated across cost centers</span>}
           </p>
-        </div>
+        </CardHeader>
 
         {monthlyLoading ? (
           <div className="py-12 text-center text-sm text-neutral-400">Loading monthly data…</div>
@@ -210,32 +228,50 @@ export default function BudgetDashboard() {
             <Link to="/budget/plans" className="text-primary-600 hover:underline">Create a plan →</Link>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="text-sm min-w-[1100px] w-full border-collapse">
-              <thead>
-                <tr className="border-b border-neutral-200">
-                  <th className="sticky left-0 z-10 bg-white py-2.5 px-4 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                    Account
+          <table className="text-sm w-full table-fixed border-collapse">
+            <colgroup>
+              <col className="w-[15%] min-w-[160px]" />
+              {MONTHS.map((m) => <col key={m} />)}
+              <col className="w-[8%]" />
+            </colgroup>
+            <thead>
+              <tr className="border-b border-neutral-200">
+                <th className="py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  Account
+                </th>
+                {MONTHS.map((m) => (
+                  <th key={m} className="py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                    {m}
                   </th>
-                  {MONTHS.map((m) => (
-                    <th key={m} className="py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500 min-w-[78px]">
-                      {m}
-                    </th>
-                  ))}
-                  <th className="py-2.5 px-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-700 bg-neutral-50 min-w-[96px]">
-                    Year
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {monthlyByL1.map((g) => (
-                  <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} />
                 ))}
-              </tbody>
-            </table>
-          </div>
+                <th className="py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-700 bg-neutral-50">
+                  Year
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyByL1.map((g) => (
+                <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} />
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-neutral-300 bg-neutral-100">
+                <td className="py-3 px-3 text-sm font-bold text-neutral-900 uppercase tracking-wide">
+                  Total
+                </td>
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                  <td key={m} className="py-3 px-1.5">
+                    <PlanActualCell plan={monthlyGrandTotals.plan[m]} actual={monthlyGrandTotals.actual[m]} strong />
+                  </td>
+                ))}
+                <td className="py-3 px-2 bg-neutral-200/60">
+                  <PlanActualCell plan={monthlyGrandTotals.planYear} actual={monthlyGrandTotals.actualYear} strong />
+                </td>
+              </tr>
+            </tfoot>
+          </table>
         )}
-      </div>
+      </Card>
     </div>
   )
 }
@@ -246,11 +282,11 @@ function PlanActualCell({ plan, actual, strong }: { plan: number; actual: number
   const over = actual > plan && (plan > 0 || actual > 0)
   return (
     <div className="flex flex-col items-end leading-tight font-mono">
-      <span className={cn('text-[11px] text-neutral-500', strong && 'font-semibold text-neutral-600')}>
+      <span className={cn('text-[11px] whitespace-nowrap text-neutral-500', strong && 'font-semibold text-neutral-600')}>
         {plan ? formatCADCompact(plan) : '–'}
       </span>
       <span className={cn(
-        'text-[11px]',
+        'text-[11px] whitespace-nowrap',
         over ? 'text-danger-600 font-semibold' : 'text-primary-700',
         strong && 'font-semibold',
       )}>
@@ -284,30 +320,30 @@ function MonthlyL1Group({ l1Code, accounts }: { l1Code: string; accounts: ApiMon
   return (
     <>
       <tr className="border-b border-neutral-200 bg-neutral-50 cursor-pointer hover:bg-neutral-100" onClick={() => setExpanded((v) => !v)}>
-        <td className="sticky left-0 z-10 bg-neutral-50 py-2.5 px-4 text-sm font-semibold text-neutral-800">
+        <td className="py-2.5 px-3 text-sm font-semibold text-neutral-800">
           <span className="font-mono text-xs text-neutral-500 mr-1">{l1Code}</span>
         </td>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-          <td key={m} className="py-2.5 px-2">
+          <td key={m} className="py-2.5 px-1.5">
             <PlanActualCell plan={totals.plan[m]} actual={totals.actual[m]} strong />
           </td>
         ))}
-        <td className="py-2.5 px-3 bg-neutral-100">
+        <td className="py-2.5 px-2 bg-neutral-100">
           <PlanActualCell plan={totals.planYear} actual={totals.actualYear} strong />
         </td>
       </tr>
       {expanded && accounts.map((a) => (
         <tr key={a.account_id} className="border-b border-neutral-100 hover:bg-primary-50/50">
-          <td className="sticky left-0 z-10 bg-white py-2 px-4 whitespace-nowrap">
+          <td className="py-2 px-3">
             <span className="font-mono text-xs text-neutral-500 mr-2">{a.account_code}</span>
-            <span className="text-xs text-neutral-700">{a.account_name}</span>
+            <span className="text-xs text-neutral-700 break-words">{a.account_name}</span>
           </td>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <td key={m} className="py-2 px-2">
+            <td key={m} className="py-2 px-1.5">
               <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)} actual={Number(a.actual_by_month?.[m] ?? 0)} />
             </td>
           ))}
-          <td className="py-2 px-3 bg-neutral-50">
+          <td className="py-2 px-2 bg-neutral-50">
             <PlanActualCell plan={Number(a.plan_year)} actual={Number(a.actual_year)} strong />
           </td>
         </tr>

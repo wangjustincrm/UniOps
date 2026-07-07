@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { budgetService } from '@/services/budget'
+import { useConfig } from '@/hooks/useConfig'
 import type {
   CreateBudgetL1Body, UpdateBudgetL1Body,
   CreateBudgetAccountBody, UpdateBudgetAccountBody,
@@ -386,6 +387,26 @@ export function useBalance(params: {
     enabled: !!params && !!params.cost_center_id && !!(params.account_code || params.account_id),
     staleTime: 30_000,
   })
+}
+
+// ── Fiscal years ──────────────────────────────────────────────────────────────
+
+const currentYear = new Date().getUTCFullYear()
+/** Fallback if CompanyConfig.budget_admin_config.available_fiscal_years is unset. */
+const FALLBACK_YEAR_OPTIONS = [currentYear + 1, currentYear, currentYear - 1, currentYear - 2]
+
+/**
+ * Fiscal years selectable in budget UIs (dashboard, plan list, …).
+ * Reads CompanyConfig.budget_admin_config.available_fiscal_years, newest first.
+ */
+export function useAvailableFiscalYears(): number[] {
+  const { data: config } = useConfig()
+  const stored = config?.budget_admin_config?.available_fiscal_years
+  if (Array.isArray(stored) && stored.length > 0) {
+    // Configured order is ascending; the dropdown / filter prefers newest first.
+    return [...stored].sort((a, b) => b - a)
+  }
+  return FALLBACK_YEAR_OPTIONS
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

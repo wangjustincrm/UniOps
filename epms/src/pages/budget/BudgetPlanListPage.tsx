@@ -2,12 +2,10 @@ import { useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, X, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
 import { cn, formatDate } from '@/lib/utils'
-import { usePlans, useCreatePlan, useDeletePlan } from '@/hooks/useBudget'
+import { usePlans, useCreatePlan, useDeletePlan, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
-import { useConfig } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import type { DocumentStatus } from '@/types'
 
@@ -22,18 +20,6 @@ const STATUS_FILTER = [
 ]
 
 const currentYear = new Date().getUTCFullYear()
-/** Fallback if CompanyConfig.budget_admin_config.available_fiscal_years is unset. */
-const FALLBACK_YEAR_OPTIONS = [currentYear + 1, currentYear, currentYear - 1, currentYear - 2]
-
-function useAvailableFiscalYears(): number[] {
-  const { data: config } = useConfig()
-  const stored = config?.budget_admin_config?.available_fiscal_years
-  if (Array.isArray(stored) && stored.length > 0) {
-    // Configured order is ascending; the dropdown / filter prefers newest first.
-    return [...stored].sort((a, b) => b - a)
-  }
-  return FALLBACK_YEAR_OPTIONS
-}
 
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp', 'dept_manager'])
 
