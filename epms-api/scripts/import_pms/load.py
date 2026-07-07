@@ -597,6 +597,13 @@ async def run_load(
                         pono_to_id.setdefault(num, pid)
                         pono_to_vendor.setdefault(num, (vid, vname))
 
+                # A PO number counts as "real" if it exists in EPMS (pono_to_id,
+                # seeded above) or in the PMS PO List. An invoice whose only link is
+                # to a PO in NEITHER points at a phantom PO (deleted from PMS while a
+                # po_item lingered) — there's no vendor to resolve, so discard it.
+                pms_po_numbers = {str(r.get("Title") or "").strip() for r in po_rows
+                                  if str(r.get("Title") or "").strip()}
+
                 # Group SharePoint INVOICE rows by (vendor, Invoice No). The legacy
                 # PMS enters one row PER PO, so a single invoice spanning several POs
                 # appears as duplicate Invoice Nos — a violation of our Invoice-No
@@ -606,17 +613,17 @@ async def run_load(
                 inv_groups: dict[tuple, dict] = {}
                 for r in invoice_rows:
                     iid = int(r.get("ID"))
-                    # Business rule: an INVOICE is only real if a PO Item (or PA
-                    # Item) line references its ID via InvoiceID. inv_pono is built
-                    # from exactly those references, so an iid absent from it has no
-                    # PO link at all → discard (don't import a PO-less placeholder).
-                    if iid not in inv_pono:
+                    po_no = inv_pono.get(iid)
+                    # Discard invoices with no REAL PO link: either no PO Item/PA
+                    # Item references the invoice at all, or the referenced PO exists
+                    # in neither EPMS nor the PMS PO List (phantom PO). Both would
+                    # otherwise land as a PO-less "PMS Unknown Vendor" placeholder.
+                    if not po_no or (po_no not in pono_to_id and po_no not in pms_po_numbers):
                         report.invoices_discarded_no_po += 1
                         continue
                     invoice_no = clip(nz(r.get("Title"), str(iid)), 100)
-                    po_no = inv_pono.get(iid)
-                    po_id = pono_to_id.get(po_no) if po_no else None
-                    vend = (pono_to_vendor.get(po_no) if po_no else None) or res.unknown_vendor
+                    po_id = pono_to_id.get(po_no)
+                    vend = pono_to_vendor.get(po_no) or res.unknown_vendor
                     g = inv_groups.setdefault((vend[0], invoice_no), {
                         "iids": [], "vendor": vend, "invoice_no": invoice_no,
                         "po_amounts": {}, "po_order": [], "no_po_amount": Decimal("0"),

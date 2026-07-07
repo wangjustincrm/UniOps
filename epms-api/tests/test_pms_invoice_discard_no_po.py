@@ -21,15 +21,20 @@ PO_NUM = "PO-DISCARD-1"
 LINKED_IID = "9001"      # referenced by a po_item → keep
 ORPHAN_IID = "9002"      # referenced by nothing → discard
 
+PHANTOM_IID = "9003"     # po_item points at a PO in neither EPMS nor po.json → discard
+
 _STAGING = {
-    "po_item.json": [{
-        "ID": "1", "Title": PO_NUM, "InvoiceID": LINKED_IID,
-        "Description": "w", "QTY": "1", "UOM": "EA", "UnitPrice": "50", "TotalPrice": "50",
-    }],
+    "po_item.json": [
+        {"ID": "1", "Title": PO_NUM, "InvoiceID": LINKED_IID,
+         "Description": "w", "QTY": "1", "UOM": "EA", "UnitPrice": "50", "TotalPrice": "50"},
+        {"ID": "2", "Title": "PO-PHANTOM-99", "InvoiceID": PHANTOM_IID, "TotalPrice": "10"},
+    ],
     "invoice.json": [
         {"ID": LINKED_IID, "Title": "V-LINKED", "PONo": "",
          "IssueDate": "2024-01-01", "Created": "2024-01-01T00:00:00Z", "Modified": "2024-01-01T00:00:00Z"},
         {"ID": ORPHAN_IID, "Title": "V-ORPHAN", "PONo": "",
+         "IssueDate": "2024-01-01", "Created": "2024-01-01T00:00:00Z", "Modified": "2024-01-01T00:00:00Z"},
+        {"ID": PHANTOM_IID, "Title": "V-PHANTOM", "PONo": "",
          "IssueDate": "2024-01-01", "Created": "2024-01-01T00:00:00Z", "Modified": "2024-01-01T00:00:00Z"},
     ],
 }
@@ -64,17 +69,21 @@ async def test_orphan_invoice_discarded_linked_kept(test_engine, fake_staging):
             dry_run=False, mode="upsert", db_url=_TEST_DB_URL,
             reconstruct=False, dedup_invoices=False,
         )
-        assert report.invoices_discarded_no_po == 1
+        # ORPHAN (no reference) + PHANTOM (references a non-existent PO) both dropped.
+        assert report.invoices_discarded_no_po == 2
 
+        all_refs = [f"INV-{LINKED_IID}", f"INV-{ORPHAN_IID}", f"INV-{PHANTOM_IID}"]
         async with sf() as db:
             refs = set((await db.execute(
-                select(Invoice.internal_ref).where(Invoice.internal_ref.in_([f"INV-{LINKED_IID}", f"INV-{ORPHAN_IID}"]))
+                select(Invoice.internal_ref).where(Invoice.internal_ref.in_(all_refs))
             )).scalars().all())
-        assert f"INV-{LINKED_IID}" in refs, "invoice referenced by a PO Item must be imported"
+        assert f"INV-{LINKED_IID}" in refs, "invoice referenced by a real PO must be imported"
         assert f"INV-{ORPHAN_IID}" not in refs, "invoice with no PO/PA link must be discarded"
+        assert f"INV-{PHANTOM_IID}" not in refs, "invoice referencing a phantom PO must be discarded"
     finally:
         async with sf() as db:
-            await db.execute(sa_delete(Invoice).where(Invoice.internal_ref.in_([f"INV-{LINKED_IID}", f"INV-{ORPHAN_IID}"])))
+            await db.execute(sa_delete(Invoice).where(Invoice.internal_ref.in_(
+                [f"INV-{LINKED_IID}", f"INV-{ORPHAN_IID}", f"INV-{PHANTOM_IID}"])))
             await db.execute(sa_delete(PurchaseOrder).where(PurchaseOrder.number == PO_NUM))
             await db.execute(sa_delete(Vendor).where(Vendor.id == vendor_id))
             await db.commit()
