@@ -109,8 +109,15 @@ async def run(dry_run: bool, db_url: str | None = None,
                 # the intended clear→reimport→rebuild flow invoice_ids is already
                 # []). PAs whose invoices were all discarded stay [].
                 if new_ids and new_ids != (pa.invoice_ids or []):
+                    orig_updated = pa.updated_at
                     pa.invoice_ids = new_ids
                     flag_modified(pa, "invoice_ids")
+                    # Preserve updated_at — otherwise onupdate=now() bumps it and
+                    # corrupts time-based dashboards ("Paid This Month") and the
+                    # incremental-sync conflict check. flag_modified forces the
+                    # original value into the UPDATE (a plain re-assign is a no-op).
+                    pa.updated_at = orig_updated
+                    flag_modified(pa, "updated_at")
                     stats["pas_updated"] += 1
                     stats["links_set"] += len(new_ids)
 
