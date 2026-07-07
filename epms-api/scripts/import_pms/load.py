@@ -542,14 +542,22 @@ async def run_load(
                 inv_amount: dict[int, Decimal] = defaultdict(Decimal)
                 inv_pono: dict[int, str] = {}
                 for it in load_staging("po_item.json"):
+                    pono = str(it.get("Title") or "").strip()
                     # poitem_to_pono is otherwise only filled for POs inserted this
                     # run; seed it for every staged PO item so the pa_item linkage
                     # path (below) resolves invoices tied to already-imported POs.
-                    poitem_to_pono.setdefault(str(it.get("ID")), str(it.get("Title") or "").strip())
+                    if pono:
+                        poitem_to_pono.setdefault(str(it.get("ID")), pono)
                     iid = it.get("InvoiceID")
                     if iid:
                         inv_amount[int(iid)] += to_decimal(it.get("TotalPrice"))
-                        inv_pono.setdefault(int(iid), str(it.get("Title") or "").strip())
+                        # Only map to a NON-EMPTY PO number: a po_item row with a
+                        # blank Title must not poison inv_pono via setdefault (it
+                        # would lock the invoice to '' → unresolvable → wrongly
+                        # "PMS Unknown Vendor" even when a LATER row carries the
+                        # real PO number).
+                        if pono:
+                            inv_pono.setdefault(int(iid), pono)
                 # invoice → "paid?" via the PA that references it
                 pa_status_by_no = {
                     str(r.get("Title") or "").strip(): (r.get("Status") or "")
