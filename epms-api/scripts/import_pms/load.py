@@ -691,6 +691,7 @@ async def run_load(
                         status="paid" if g["paid_all"] else "matched",
                         line_items=line_items,
                         uploaded_by=res.system_user_id,
+                        uploaded_by_name="PMS Migration",
                         po_id=primary_id, po_number=clip(primary_no, 40) if primary_no else None,
                         created_at=to_dt(rep.get("Created")),
                         updated_at=to_dt(rep.get("Modified")) or to_dt(rep.get("Created")),

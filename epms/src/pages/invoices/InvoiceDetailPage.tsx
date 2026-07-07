@@ -349,7 +349,7 @@ export default function InvoiceDetailPage() {
                   <MetaRow label="Invoice Date"     value={formatDate(inv.invoice_date)} />
                   <MetaRow label="Due Date"         value={formatDate(inv.due_date)} />
                   <MetaRow label="Uploaded"         value={formatDateTime(inv.uploaded_at)} />
-                  <MetaRow label="Uploaded By"      value={inv.uploaded_by_name ?? inv.uploaded_by} />
+                  <MetaRow label="Uploaded By"      value={inv.uploaded_by_name ?? '—'} />
                 </div>
               </div>
 
@@ -925,13 +925,13 @@ export default function InvoiceDetailPage() {
                   },
                   inv.matched_at && {
                     date: inv.matched_at,
-                    actor: inv.matched_by_name ?? inv.matched_by ?? 'System',
+                    actor: inv.matched_by_name ?? 'System',
                     action: `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
                     color: hasException ? 'bg-danger-600' : 'bg-success-600',
                   },
                   {
                     date: inv.uploaded_at,
-                    actor: inv.uploaded_by_name ?? inv.uploaded_by,
+                    actor: inv.uploaded_by_name ?? 'System',
                     action: `Invoice uploaded (${inv.file_name ?? 'manual entry'})`,
                     color: 'bg-primary-600',
                   },
