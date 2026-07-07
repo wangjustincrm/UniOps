@@ -22,6 +22,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
+import { FilePreviewPanel } from './FilePreviewPanel'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
@@ -284,7 +285,10 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl flex flex-col max-h-[92vh]">
+      <div className={cn(
+        'w-full rounded-2xl bg-white shadow-2xl flex flex-col',
+        file ? 'max-w-6xl h-[92vh]' : 'max-w-xl max-h-[92vh]'
+      )}>
         {/* Header */}
         <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
           <div className="flex items-center gap-3">
@@ -301,7 +305,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
           </button>
         </div>
 
-        <div className="overflow-y-auto flex-1 px-6 py-5 flex flex-col gap-4">
+        <div className={cn('flex-1 min-h-0 px-6 py-5 flex flex-col gap-4', !file && 'overflow-y-auto')}>
           {/* File drop zone */}
           <div
             onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
@@ -309,7 +313,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             onDrop={handleDrop}
             onClick={() => fileRef.current?.click()}
             className={cn(
-              'flex flex-col items-center gap-2 rounded-xl border-2 border-dashed py-6 cursor-pointer transition-colors',
+              'flex flex-col items-center gap-2 rounded-xl border-2 border-dashed py-6 cursor-pointer transition-colors shrink-0',
               dragging ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 hover:border-primary-300 hover:bg-neutral-50'
             )}
           >
@@ -346,11 +350,21 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
           {/* AI parse error */}
           {parseError && (
-            <div className="flex items-center gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
+            <div className="flex shrink-0 items-center gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               AI parsing failed — please fill fields manually.{parseError && ` (${parseError})`}
             </div>
           )}
+
+          {/* File selected: preview (left) + form (right). No file: `contents`
+              makes both wrappers transparent so the layout is exactly as before. */}
+          <div className={cn(file ? 'flex flex-1 min-h-0 gap-5' : 'contents')}>
+          {file && (
+            <div className="w-[55%] shrink-0">
+              <FilePreviewPanel file={file.raw} />
+            </div>
+          )}
+          <div className={cn(file ? 'flex-1 min-w-0 overflow-y-auto flex flex-col gap-4 pr-1' : 'contents')}>
 
           {/* Vendor info */}
           <div className="flex flex-col gap-3">
@@ -733,6 +747,9 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
               placeholder="Any additional notes..."
               className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none" />
+          </div>
+
+          </div>
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { ExternalLink, FileText } from 'lucide-react'
 
 // Live preview of the uploaded invoice file so the user can verify AI-parsed
@@ -6,14 +6,13 @@ import { ExternalLink, FileText } from 'lucide-react'
 // viewer (iframe — has its own paging/zoom/search toolbar); images in <img>.
 // Owns the blob-URL lifecycle: revoked on file change and unmount.
 export function FilePreviewPanel({ file }: { file: File }) {
-  const [url, setUrl] = useState<string | null>(null)
+  const url = useMemo(() => {
+    try { return URL.createObjectURL(file) } catch { return null }
+  }, [file])
 
   useEffect(() => {
-    let objectUrl: string | null = null
-    try { objectUrl = URL.createObjectURL(file) } catch { objectUrl = null }
-    setUrl(objectUrl)
-    return () => { if (objectUrl) URL.revokeObjectURL(objectUrl) }
-  }, [file])
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [url])
 
   const kind = file.type === 'application/pdf'
     ? 'pdf'

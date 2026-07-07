@@ -1,6 +1,6 @@
-# EPMS Upload Invoice — PDF Preview Panel Implementation Plan
+﻿# EPMS Upload Invoice — PDF Preview Panel Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Show a live preview of the uploaded invoice file (PDF/image) to the left of the form in the EPMS Upload Invoice modal, so users can verify AI-parsed fields against the source document.
 
@@ -29,7 +29,7 @@
 - Consumes: nothing from other tasks (only `lucide-react` icons already in deps).
 - Produces: `export function FilePreviewPanel({ file }: { file: File }): JSX.Element` — Task 2 imports this. The component must fill its parent's height (`h-full` root), so the parent must give it a definite height.
 
-- [ ] **Step 1: Create the component file**
+- [x] **Step 1: Create the component file**
 
 Create `epms/src/pages/invoices/FilePreviewPanel.tsx` with exactly:
 
@@ -91,7 +91,7 @@ export function FilePreviewPanel({ file }: { file: File }) {
 }
 ```
 
-- [ ] **Step 2: Typecheck**
+- [x] **Step 2: Typecheck**
 
 Run from `epms/`:
 ```
@@ -99,7 +99,7 @@ npx tsc -p tsconfig.app.json --noEmit --ignoreDeprecations 6.0
 ```
 Expected: exits 0, no errors mentioning `FilePreviewPanel.tsx`. (If pre-existing errors in OTHER files appear, they are out of scope — only confirm this file is clean.)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add epms/src/pages/invoices/FilePreviewPanel.tsx docs/superpowers/specs/2026-07-07-epms-invoice-upload-pdf-preview-design.md docs/superpowers/plans/2026-07-07-epms-invoice-upload-pdf-preview.md
@@ -119,7 +119,7 @@ git commit -m "feat(epms): add FilePreviewPanel for invoice upload preview"
 
 Layout contract (from the approved mockup): drop zone stays full-width at top (collapses to the file chip once a file is chosen, as today). Below it, when a file is selected: left column = preview (~55%), right column = the entire existing form, independently scrollable. No file = exactly today's narrow single-column modal.
 
-- [ ] **Step 1: Add the import**
+- [x] **Step 1: Add the import**
 
 At the top of `InvoiceListPage.tsx`, next to the existing local import:
 
@@ -133,7 +133,7 @@ add:
 import { FilePreviewPanel } from './FilePreviewPanel'
 ```
 
-- [ ] **Step 2: Widen the modal when a file is selected**
+- [x] **Step 2: Widen the modal when a file is selected**
 
 In `UploadModal`'s return, find the modal container (currently line ~287):
 
@@ -150,7 +150,7 @@ replace with (fixed `h-[92vh]` in wide mode gives the iframe a definite height t
       )}>
 ```
 
-- [ ] **Step 3: Make the modal body a non-scrolling flex container in wide mode**
+- [x] **Step 3: Make the modal body a non-scrolling flex container in wide mode**
 
 Find the body wrapper (currently line ~304):
 
@@ -164,7 +164,7 @@ replace with (in wide mode the RIGHT COLUMN scrolls, not the whole body; `min-h-
         <div className={cn('flex-1 min-h-0 px-6 py-5 flex flex-col gap-4', !file && 'overflow-y-auto')}>
 ```
 
-- [ ] **Step 4: Pin the drop zone and parse-error banner (no shrink)**
+- [x] **Step 4: Pin the drop zone and parse-error banner (no shrink)**
 
 (a) In the drop-zone `div` (the one with `onDragOver`/`onDrop`, currently line ~306), the `cn(...)` first argument is:
 
@@ -190,7 +190,7 @@ replace with:
             <div className="flex shrink-0 items-center gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-700">
 ```
 
-- [ ] **Step 5: Wrap the form fields in the two-column split**
+- [x] **Step 5: Wrap the form fields in the two-column split**
 
 The form fields are the contiguous JSX from the `{/* Vendor info */}` comment (currently line ~355) through the closing `</div>` of the Notes block (currently line ~736 — the `div` containing `<label ...>Notes (optional)</label>` and the `<textarea>`). Do NOT change any of that JSX — only wrap it.
 
@@ -217,7 +217,7 @@ Insert AFTER the Notes block's closing `</div>` (i.e. just before the body wrapp
 
 Then re-indent the wrapped form-field JSX by one level if trivial to do; if the diff noise outweighs the benefit, leaving indentation as-is is acceptable (project has no enforced JSX indent lint).
 
-- [ ] **Step 6: Typecheck + lint**
+- [x] **Step 6: Typecheck + lint**
 
 Run from `epms/`:
 ```
@@ -226,7 +226,7 @@ npm run lint
 ```
 Expected: exit 0 / no NEW errors in `InvoiceListPage.tsx` or `FilePreviewPanel.tsx` (pre-existing lint findings in other files are out of scope).
 
-- [ ] **Step 7: Manual verification in the local dev stack**
+- [x] **Step 7: Manual verification in the local dev stack**
 
 Start the local dev stack (self-contained, local postgres) and open the EPMS frontend. In Invoices → Upload Invoice:
 
@@ -240,7 +240,7 @@ Start the local dev stack (self-contained, local postgres) and open the EPMS fro
 
 Expected: all 7 pass. If the iframe shows a download prompt instead of inline PDF (some browser configs), that is browser-level behavior — note it, don't work around it in code.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add epms/src/pages/invoices/InvoiceListPage.tsx
