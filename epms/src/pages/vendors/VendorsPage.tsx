@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Search, Plus, Pencil, Trash2, X, Check, Filter,
   Building2, ToggleLeft, ToggleRight, Download, Upload, Database,
@@ -105,8 +106,9 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
       err ? 'border-danger-600 bg-danger-50' : 'border-neutral-200'
     )
 
-  return (
-    <div className="rounded-xl border border-primary-200 bg-primary-50/60 p-5 mb-4">
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4 animate-[overlay-in_0.15s_ease-out]">
+      <div className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-primary-200 bg-white shadow-xl p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-neutral-900">{title}</h3>
         <button onClick={onCancel} className="text-neutral-400 hover:text-neutral-600">
@@ -308,7 +310,9 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
           Save Vendor
         </Button>
       </div>
-    </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 
