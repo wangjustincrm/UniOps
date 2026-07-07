@@ -218,7 +218,8 @@ NC 退役后本流关闭。**同步模型(用户定稿,2026-07-07):不推 JV,而
 - 灌进 **NC 应付(ARAP)模块**;NC 按其**推式生成**机制:**AP 单据审核后自动生成 JV**(NC 自己的制单
   规则,凭证 `PK_SYSTEM='AP'`)。
 - UniOps 与 NC **各自独立生成 JV**;通过**定期复核**核对两边 JV 是否匹配(控制点),而非把 JV 推给 NC。
-- **好处**:UniOps 无需复制 NC 的「AP→科目/税/凭证」制单逻辑,NC 用它自己的规则生成,最稳、最少维护。
+- **分工**:UniOps 给的是**已编码应付单**(费用科目 + 税码/税额,AP 录入本就要编码);**NC 负责凭证生成**
+  (补应付贷方、税分录、借贷平衡、过账)。UniOps **无需复制 NC 的凭证生成逻辑**,最稳、最少维护。
   实测支撑:该账簿最大凭证来源就是 `PK_SYSTEM='AP'`(19,843 张),NC 应付模块本就「应付单→审核→制单」。
 
 ### 9.2 机制(分期可插拔)
@@ -229,16 +230,39 @@ NC 退役后本流关闭。**同步模型(用户定稿,2026-07-07):不推 JV,而
 ### 9.3 范围(分阶段,用户定)
 Phase 1 = **AP 发起的应付单据**;导出器按单据来源可配置,后续按需扩其他业务单据。
 
-### 9.4 内容映射(UniOps AP Record → NC 应付单引入)
-业务级字段(比凭证少、更稳;科目/税/凭证由 NC 制单规则生成,UniOps **不填**):
-| UniOps AP Record | NC 应付单引入字段 |
+### 9.4 内容映射(UniOps AP Record → NC 应付单引入,依据 `AP_template.xlsx`)
+NC AP 导入模板 = **应付单(`payablebill`)主子表**结构:R2/R3 主表 head、R5/R6 子表 bodys,主子用
+**行号(line No.)关联**,主表与子表间**留一空行**(硬格式)。字段全文本、`*` 为必填。
+
+**主表 head**(`payablebill_$head`):
+| NC 字段 / 表头 | UniOps AP Record |
 |---|---|
-| 供应商 | 供应商(按 NC 供应商 **code** 反查,`nc_id_map`) |
-| 发票号 / 单据日期 / 到期日 | 发票号 / 单据日期 / 到期日 |
-| 金额 + 币种 + 汇率 | 原币金额 + 币种 + 汇率(本位币 CAD) |
-| 税额 / 税码 | 税额 / 税种(按 NC 税码映射) |
-| 成本维度(部门/项目…) | 辅助核算(按 NC 档案 **code**) |
-| **UniOps AP 号** | 摘要 / 来源单据号(**复核锚点**,随单据带入 NC) |
+| pk_org · *A/P Financial Org | 主体(Canada Royal Milk ULC) |
+| billno · *Doc No. | **UniOps AP 单号(复核锚点)** |
+| pk_tradetypeid · A/P Type · pk_tradetype · *A/P Type Code | 应付类型(Payable of Expense / `F1-Cxx-017`)|
+| pk_busitype · Business Process | 业务流程枚举(`选择付款`,固定值) |
+| billdate/busidate · *Doc Date/Effective Date | 单据/生效日期 |
+| objtype/supplier · *Payble Object/*Vendor | Supplier / 供应商 |
+| pk_deptid_v/pk_psndoc/pk_subjcode | 部门/职员/收支项目 |
+| pk_currtype · *Currency;taxcountryid · Tax Country | 币种(CAD)/报税国(Canada) |
+
+**子表 bodys**(每费用明细行):
+| NC 字段 / 表头 | UniOps |
+|---|---|
+| subjcode · *Account | ⚠️**NC 费用科目**(`510102\名称\...`;需 UniOps 行→NC 科目映射) |
+| invoiceno · *Invoice No.;scomment · Summary;material · Material Desc | 发票号/摘要/物料描述 |
+| pk_payterm · *付款协议 | 付款条件(net 30 days) |
+| supplier/pk_deptid_v/def5/pk_psndoc/project/pk_subjcode | 供应商/部门/成本中心/职员/项目/收支项目(**按名称或 code**) |
+| pk_currtype/rate · *Currency/*Ex.Rate | 币种/汇率 |
+| money_cr · *Amount(Tax incl);notax_cr · Amount(Tax excl);local_tax_cr · Tax | 含税/不含税/税额 |
+| taxcodeid/taxrate · Tax Code/*Tax Rate;taxtype · Ways of Tax Collection | 税码(001)/税率(HST 13%)/征税方式 |
+| quantity_cr · QTY;taxprice · Unit Price | 数量/含税单价 |
+| pk_deptid · *Department;def11 发票日期;buysellflag · *Purchase&Sales Type | 部门/发票日期/采购类型(Domestic Purchases) |
+
+**要点**:① UniOps **提供费用科目 + 税码/税额**(AP 录入本就编码到费用科目),NC 据此**推式生成凭证**
+(补应付贷方 + 平衡 + 过账)——「UniOps 不复制 NC 制单」仍成立,给的是**已编码应付单**。② 税为加拿大
+**HST 13%**,须含税/不含税/税额齐全。③ 科目/供应商/维度多**按 code 或名称**填,`nc_id_map` 提供
+UniOps→NC 反查;末尾另有 `税码主键` 等 PK 备选列。④ 主子表**行号关联 + 空行**是硬格式。
 
 ### 9.5 JV 复核(核心控制,对应用户第 2 点)
 定期(如每期末)把 **UniOps 生成的 JV** 与 **NC 由对应 AP 单据生成的 JV** 逐笔核对:
@@ -267,8 +291,11 @@ Phase 1 = **AP 发起的应付单据**;导出器按单据来源可配置,后续�
 3. 红字/作废凭证在 NC 的表达(`DISCARDFLAG`?)与目标 `reversed` 状态映射。
 4. 多科目表/科目版本(`PK_ORIGINALACCOUNT`)是否存在跨年重编码。
 5. `BD_PROJECT` 的实际存储(defdoc 结构)与维度归属。
-6. **NC 各表导入模板(用户提供)**:反向导出器按模板精确列布局实现;确认 NC「凭证引入」对科目/辅助核算
-   是按 code 还是 name、凭证号是否可留空自动编、外币行的原币/本币/汇率列要求。
+6. **NC 导入模板**:AP 应付单模板已到手(`uniops/AP_template.xlsx`,§9.4 已按它落表)。待确认:
+   ①各枚举/固定值取值域(Business Process `选择付款`、A/P Type Code `F1-Cxx-017`、Ways of Tax
+   Collection、Purchase&Sales Type);②Account 列格式(`code\名称\名称` 全路径 还是仅 code);
+   ③供应商/维度按 name/code/PK 哪种(模板混用,末尾有 `税码主键` PK 备选列);④HST 税码 `001` 与
+   UniOps 税码映射;⑤其他档案(供应商/客户/科目/职员…)各自的导入模板(用户后续提供)。
 
 ## 12. 不在本设计范围
 - JV 子系统本身的完整设计(制单→审核→过账运行时流程、GL 读取层迁移)——单独 spec,本文件是其数据约束前置。
