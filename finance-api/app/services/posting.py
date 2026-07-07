@@ -26,6 +26,7 @@ async def emit_event(
     event_type: str,
     lines: list[dict],
     occurred_at: datetime | None = None,
+    prepared_by: uuid.UUID | None = None,
 ) -> uuid.UUID | None:
     effective = [
         ln for ln in lines
@@ -100,4 +101,7 @@ async def emit_event(
                 value_id=vid, value_text=vtext,
             ))
     await db.flush()
+
+    from app.services.journal_voucher import generate_from_event
+    await generate_from_event(db, event_id, prepared_by)
     return event_id

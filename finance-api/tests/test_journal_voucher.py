@@ -1,4 +1,4 @@
-"""JV subsystem — data model + generation (Plan 1)."""
+﻿"""JV subsystem — data model + generation (Plan 1)."""
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -59,11 +59,13 @@ def test_build_summary_templates():
     assert build_summary("gl_opening", "opening", "OB-1", None) == "OB-1"
 
 
-async def _make_event(db, *, currency="CAD", fx="1", debit="100.00", credit="0"):
+async def _make_event(db, *, currency="CAD", fx="1", debit="100.00", credit="0",
+                      prepared_by=None):
     from app.services.posting import emit_event
     ev_id = await emit_event(
         db, source_service="finance", source_doc_type="ap_invoice",
         source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+        prepared_by=prepared_by,
         lines=[
             {"line_role": "purchase_expense", "account_code": "5000",
              "debit": Decimal(debit), "currency": currency, "fx_rate": Decimal(fx),
@@ -79,7 +81,7 @@ async def _make_event(db, *, currency="CAD", fx="1", debit="100.00", credit="0")
 async def test_generate_from_event_creates_balanced_draft_jv(db_session):
     from app.services.journal_voucher import generate_from_event
     prepared = uuid.uuid4()
-    ev_id = await _make_event(db_session)
+    ev_id = await _make_event(db_session, prepared_by=prepared)
     jv = await generate_from_event(db_session, ev_id, prepared)
     assert jv is not None
     assert jv.status == "draft"
@@ -119,3 +121,38 @@ async def test_generate_is_idempotent_per_event(db_session):
     all_jv = (await db_session.execute(
         select(JournalVoucher).where(JournalVoucher.posting_event_id == ev_id))).scalars().all()
     assert len(all_jv) == 1
+
+
+async def test_emit_event_auto_generates_jv(db_session):
+    from app.services.posting import emit_event
+    ev_id = await emit_event(
+        db_session, source_service="finance", source_doc_type="pa",
+        source_doc_id=uuid.uuid4(), source_doc_number="PA-9", event_type="payment",
+        prepared_by=uuid.uuid4(),
+        lines=[
+            {"line_role": "accounts_payable", "account_code": "2000",
+             "debit": Decimal("50.00"), "currency": "CAD"},
+            {"line_role": "bank", "account_code": "1000",
+             "credit": Decimal("50.00"), "currency": "CAD"},
+        ],
+    )
+    jv = (await db_session.execute(
+        select(JournalVoucher).where(JournalVoucher.posting_event_id == ev_id))).scalar_one()
+    assert jv.status == "draft"
+    assert jv.summary == "付款 · PA-9"  # no partner_name on these lines
+    assert jv.total_debit == Decimal("50.00")
+
+
+async def test_emit_event_idempotent_skip_makes_no_jv(db_session):
+    from app.services.posting import emit_event
+    doc_id = uuid.uuid4()
+    kw = dict(source_service="finance", source_doc_type="pa", source_doc_id=doc_id,
+              source_doc_number="PA-1", event_type="payment",
+              lines=[{"line_role": "bank", "credit": Decimal("1.00"), "currency": "CAD"},
+                     {"line_role": "accounts_payable", "debit": Decimal("1.00"), "currency": "CAD"}])
+    await emit_event(db_session, **kw)
+    second = await emit_event(db_session, **kw)   # ON CONFLICT DO NOTHING → None
+    assert second is None
+    jvs = (await db_session.execute(select(JournalVoucher).where(
+        JournalVoucher.source_doc_id == doc_id))).scalars().all()
+    assert len(jvs) == 1
