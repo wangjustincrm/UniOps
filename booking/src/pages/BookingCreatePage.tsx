@@ -17,6 +17,7 @@ import { AttendeePicker } from '@/components/AttendeePicker'
 import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { SuggestionPanel } from '@/components/SuggestionPanel'
 import type { RoomWithStatusOut } from '@/lib/types'
+import { useBookingAuth } from '@/store/auth'
 
 // ── Time options (15-min steps, 06:00–23:00) ──────────────────────────────────
 
@@ -107,6 +108,9 @@ export default function BookingCreatePage() {
   const [searchParams] = useSearchParams()
   const location = useLocation()
 
+  // Current user id — used to exclude organizer from the attendee picker
+  const currentUserId = useBookingAuth((s) => s.user?.id)
+
   // Restore form state when navigating from "pick alternative room"
   const locationState = (location.state as FormState | null) ?? {}
 
@@ -140,10 +144,35 @@ export default function BookingCreatePage() {
   const [needsVideo, setNeedsVideo] = useState(locationState.needsVideoConf ?? false)
   const [series, setSeries]         = useState<SeriesSpec | null>(locationState.series ?? null)
 
+  // B5: When the same component instance is kept alive (tab already open) and a new
+  // room or location.state arrives (e.g. user picked an alternative room from a conflict
+  // flow), apply the carried form snapshot explicitly — useState initialisers don't rerun.
+  const prevRoomIdRef = useRef<string | undefined>(undefined)
+  const prevStateRef  = useRef<FormState>({})
+  useEffect(() => {
+    const stateChanged = location.state !== null && location.state !== prevStateRef.current
+    const roomChanged  = roomId !== prevRoomIdRef.current
+    if ((stateChanged || roomChanged) && location.state) {
+      const s = location.state as FormState
+      if (s.title        !== undefined) setTitle(s.title)
+      if (s.description  !== undefined) setDesc(s.description)
+      if (s.date         !== undefined) setDate(s.date)
+      if (s.startTime    !== undefined) setStart(s.startTime)
+      if (s.endTime      !== undefined) setEnd(s.endTime)
+      if (s.attendees    !== undefined) setAttendees(s.attendees)
+      if (s.needsVideoConf !== undefined) setNeedsVideo(s.needsVideoConf)
+      if (s.series       !== undefined) setSeries(s.series)
+    }
+    prevRoomIdRef.current  = roomId
+    prevStateRef.current   = (location.state as FormState) ?? {}
+  }, [roomId, location.state])
+
   // ── Precheck ────────────────────────────────────────────────────────────────
   const [precheckResult, setPrecheckResult] = useState<PrecheckOut | null>(null)
   const [precheckAvailable, setPrecheckAvailable] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // B4: Sequence counter to discard stale out-of-order precheck responses
+  const precheckSeqRef = useRef(0)
 
   const precheck = usePrecheckBooking()
   const create   = useCreateBooking()
@@ -165,6 +194,8 @@ export default function BookingCreatePage() {
     }
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
+      // B4: capture sequence number before the async call; discard results from stale calls
+      const seq = ++precheckSeqRef.current
       precheck.mutate(
         {
           room_id: roomId,
@@ -175,11 +206,13 @@ export default function BookingCreatePage() {
         },
         {
           onSuccess: (data) => {
+            if (seq !== precheckSeqRef.current) return  // discard stale response
             setPrecheckResult(data)
             const hasConflict = data.conflicts.length > 0 || data.occurrence_conflicts.length > 0
             setPrecheckAvailable(!hasConflict)
           },
           onError: () => {
+            if (seq !== precheckSeqRef.current) return  // discard stale response
             setPrecheckResult(null)
             setPrecheckAvailable(false)
           },
@@ -236,10 +269,14 @@ export default function BookingCreatePage() {
           setTimeout(() => navigate('/my'), 1500)
         },
         onError: (err) => {
-          // ApiError carries the full response body for 400 conflict
-          if (err instanceof ApiError && err.status === 400 && err.message === 'conflict') {
-            const body = err.body as PrecheckOut
-            setConflictResult(body)
+          // B3: structural check — any 400 with a conflicts array is a booking conflict,
+          // regardless of the exact detail string the server sends.
+          if (
+            err instanceof ApiError &&
+            err.status === 400 &&
+            Array.isArray((err.body as any)?.conflicts)
+          ) {
+            setConflictResult(err.body as PrecheckOut)
           } else {
             setFormError((err as Error).message)
           }
@@ -429,7 +466,8 @@ export default function BookingCreatePage() {
           )}
 
           <Section title="Attendees">
-            <AttendeePicker value={attendees} onChange={setAttendees} />
+            {/* B6: exclude organizer (current user) — they are auto-included server-side */}
+            <AttendeePicker value={attendees} onChange={setAttendees} excludeUserId={currentUserId} />
           </Section>
 
           <Section title="Options">

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { useRoomList, useRoomAvailability, type RoomListFilters } from '@/services/api'
 import type { RoomWithStatusOut, RoomStatusNow, EquipmentOption } from '@/lib/types'
 import { EQUIPMENT_OPTIONS, EQUIPMENT_LABELS, ROOM_TYPES, ROOM_TYPE_LABELS } from '@/lib/types'
+import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
@@ -22,31 +23,13 @@ const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
-const STATUS_NOW_LABEL: Record<RoomStatusNow, string> = {
-  free:          'Available',
-  in_use:        'In Use',
-  starting_soon: 'Starting Soon',
-  booked:        'Booked Today',
-  disabled:      'Disabled',
-  maintenance:   'Maintenance',
-}
-
-const STATUS_NOW_STYLE: Record<RoomStatusNow, string> = {
-  free:          'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  in_use:        'bg-red-50 text-red-700 ring-red-200',
-  starting_soon: 'bg-amber-50 text-amber-700 ring-amber-200',
-  booked:        'bg-blue-50 text-blue-700 ring-blue-200',
-  disabled:      'bg-neutral-100 text-neutral-500 ring-neutral-200',
-  maintenance:   'bg-neutral-100 text-neutral-500 ring-neutral-200',
-}
-
 function RoomStatusBadge({ status }: { status: RoomStatusNow }) {
   return (
     <span className={cn(
       'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset',
-      STATUS_NOW_STYLE[status],
+      ROOM_STATUS_STYLE[status],
     )}>
-      {STATUS_NOW_LABEL[status]}
+      {ROOM_STATUS_LABEL[status]}
     </span>
   )
 }

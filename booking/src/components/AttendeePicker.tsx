@@ -16,10 +16,12 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   value: DirectoryUserOut[]
-  onChange: (users: DirectoryUserOut[]) => void
+  onChange: (users: DirectoryUserOut[])  => void
+  /** User id to exclude from results (typically the organizer / current user). */
+  excludeUserId?: string
 }
 
-export function AttendeePicker({ value, onChange }: Props) {
+export function AttendeePicker({ value, onChange, excludeUserId }: Props) {
   const [query, setQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
   const [results, setResults] = useState<DirectoryUserOut[]>([])
@@ -37,7 +39,8 @@ export function AttendeePicker({ value, onChange }: Props) {
     return () => clearTimeout(t)
   }, [query])
 
-  // Fetch when debounced query changes
+  // Fetch when debounced query changes (not on value change — chip removals must not
+  // trigger redundant network calls; re-filtering is done client-side below).
   useEffect(() => {
     if (debouncedQuery.length < 2) {
       setResults([])
@@ -47,24 +50,36 @@ export function AttendeePicker({ value, onChange }: Props) {
     setLoading(true)
     directoryService.search(debouncedQuery).then((data) => {
       if (!cancelled) {
-        // Exclude already-selected
         const selectedIds = new Set(value.map((u) => u.id))
-        setResults(data.filter((u) => !selectedIds.has(u.id)))
+        setResults(
+          data.filter((u) => !selectedIds.has(u.id) && u.id !== excludeUserId),
+        )
         setLoading(false)
       }
     }).catch(() => {
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [debouncedQuery, value])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedQuery])
 
-  // Compute and update dropdown position
+  // Re-filter fetched results client-side when selected set changes (no network call).
+  useEffect(() => {
+    setResults((prev) => {
+      const selectedIds = new Set(value.map((u) => u.id))
+      return prev.filter((u) => !selectedIds.has(u.id) && u.id !== excludeUserId)
+    })
+  }, [value, excludeUserId])
+
+  // Compute and update dropdown position using viewport-relative coords.
+  // getBoundingClientRect() already returns viewport coords; position:fixed needs those
+  // directly — no scrollY/scrollX offset required or desired.
   const updatePos = useCallback(() => {
     if (!triggerRef.current) return
     const rect = triggerRef.current.getBoundingClientRect()
     setDropPos({
-      top: rect.bottom + window.scrollY + 4,
-      left: rect.left + window.scrollX,
+      top:   rect.bottom + 4,
+      left:  rect.left,
       width: rect.width,
     })
   }, [])
@@ -122,8 +137,8 @@ export function AttendeePicker({ value, onChange }: Props) {
       className="z-[9999] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg"
       style={{
         position: 'fixed',
-        top:   dropPos.top - window.scrollY,
-        left:  dropPos.left - window.scrollX,
+        top:   dropPos.top,
+        left:  dropPos.left,
         width: dropPos.width,
         maxHeight: 240,
         overflowY: 'auto',

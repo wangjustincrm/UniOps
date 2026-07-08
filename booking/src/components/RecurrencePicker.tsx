@@ -5,6 +5,7 @@
  * - None → null
  * - Daily / Weekly → { freq, interval, count? | until? }
  */
+import { useState } from 'react'
 import type { SeriesSpec } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -18,9 +19,14 @@ const inputCls =
   'focus:border-[#085E5E]/60 focus:ring-1 focus:ring-[#085E5E]/30'
 
 export function RecurrencePicker({ value, onChange }: Props) {
+  // endMode is local state so clicking "By date" before entering a date doesn't snap back.
+  // Initialised from value prop once (if parent already has an until date set).
+  const [endMode, setEndModeState] = useState<'count' | 'until'>(
+    value?.until ? 'until' : 'count',
+  )
+
   const freq = value?.freq ?? null
   const interval = value?.interval ?? 1
-  const endMode: 'count' | 'until' = value?.until ? 'until' : 'count'
   const count = value?.count ?? 4
   const until = value?.until ?? ''
 
@@ -42,8 +48,10 @@ export function RecurrencePicker({ value, onChange }: Props) {
 
   function setEndMode(mode: 'count' | 'until') {
     if (!freq) return
+    setEndModeState(mode)
+    // Clear the other field when switching modes so emitted spec is unambiguous
     if (mode === 'count') onChange({ freq, interval, count })
-    else onChange({ freq, interval, until: until || undefined })
+    else onChange({ freq, interval })  // until is empty until user types a date
   }
 
   function setCount(n: number) {

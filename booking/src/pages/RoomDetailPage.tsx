@@ -12,8 +12,9 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRoomDetail } from '@/services/api'
-import type { RoomStatusNow, EquipmentOption, RoomStatus } from '@/lib/types'
+import type { EquipmentOption, RoomStatus } from '@/lib/types'
 import { EQUIPMENT_LABELS } from '@/lib/types'
+import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { DayTimeline } from '@/components/DayTimeline'
 import { WeekStrip } from '@/components/WeekStrip'
 
@@ -25,26 +26,6 @@ const EQUIPMENT_ICONS: Record<EquipmentOption, LucideIcon> = {
   whiteboard: PenLine,
   video_conf: Video,
   phone_conf: Phone,
-}
-
-// ── Status badges ─────────────────────────────────────────────────────────────
-
-const STATUS_NOW_LABEL: Record<RoomStatusNow, string> = {
-  free:          'Available',
-  in_use:        'In Use',
-  starting_soon: 'Starting Soon',
-  booked:        'Booked Today',
-  disabled:      'Disabled',
-  maintenance:   'Maintenance',
-}
-
-const STATUS_NOW_STYLE: Record<RoomStatusNow, string> = {
-  free:          'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  in_use:        'bg-red-50 text-red-700 ring-red-200',
-  starting_soon: 'bg-amber-50 text-amber-700 ring-amber-200',
-  booked:        'bg-blue-50 text-blue-700 ring-blue-200',
-  disabled:      'bg-neutral-100 text-neutral-500 ring-neutral-200',
-  maintenance:   'bg-neutral-100 text-neutral-500 ring-neutral-200',
 }
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
@@ -161,9 +142,9 @@ export default function RoomDetailPage() {
             {/* Status badge */}
             <span className={cn(
               'inline-flex items-center rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset',
-              STATUS_NOW_STYLE[room.status_now],
+              ROOM_STATUS_STYLE[room.status_now],
             )}>
-              {STATUS_NOW_LABEL[room.status_now]}
+              {ROOM_STATUS_LABEL[room.status_now]}
             </span>
           </div>
 
