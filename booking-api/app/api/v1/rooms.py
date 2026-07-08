@@ -10,35 +10,21 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import SessionDep
 from app.core.permissions import CurrentUser
-from app.crud.config import get_or_create_config
 from app.models.booking import Booking
 from app.models.room import MeetingRoom
 from app.models.user_mirror import User
 from app.schemas.booking import BookingSlimOut
-from app.schemas.room import RoomOut
+from app.schemas.room import RoomDetailOut, RoomOut, RoomWithStatusOut
 from app.services.availability import compute_room_status
 
 router = APIRouter()
-
-
-# ── Output schemas ─────────────────────────────────────────────────────────────
-
-class RoomWithStatusOut(RoomOut):
-    status_now: str
-    next_meeting_at: datetime | None = None
-
-
-class RoomDetailOut(RoomWithStatusOut):
-    today_bookings: list[BookingSlimOut]
-    week_bookings: list[BookingSlimOut]
 
 
 # ── Shared filter dependency ───────────────────────────────────────────────────
@@ -73,13 +59,19 @@ def _apply_room_filters(
     return stmt
 
 
-async def _load_today_bookings_by_rooms(
+async def _load_7day_bookings_by_rooms(
     db: AsyncSession,
     room_ids: list[uuid.UUID],
     today_start: datetime,
-    today_end: datetime,
+    week_end: datetime,
 ) -> dict[uuid.UUID, list[Booking]]:
-    """One query: all confirmed/cancelled bookings for given rooms today."""
+    """One query: all bookings (any status) for the 7-day window [today_start, week_end).
+
+    Returns all statuses so the caller can:
+    - filter to today's window for status computation (compute_room_status handles
+      confirmed-only internally)
+    - use confirmed bookings in the full 7-day window for next_meeting_at
+    """
     if not room_ids:
         return {}
     result = await db.execute(
@@ -87,7 +79,7 @@ async def _load_today_bookings_by_rooms(
         .where(
             and_(
                 Booking.room_id.in_(room_ids),
-                Booking.starts_at < today_end,
+                Booking.starts_at < week_end,
                 Booking.ends_at > today_start,
             )
         )
@@ -154,11 +146,15 @@ def _booking_to_slim(b: Booking, organizer_names: dict[uuid.UUID, str]) -> Booki
     )
 
 
-def _next_meeting(bookings_today: list[Booking], now: datetime) -> datetime | None:
-    """Return starts_at of next confirmed booking after now, or None."""
+def _next_meeting(bookings: list[Booking], now: datetime) -> datetime | None:
+    """Return starts_at of the next confirmed booking with starts_at >= now, or None.
+
+    Searches across all provided bookings — callers should pass a 7-day window
+    so next_meeting_at reflects tomorrow's first booking when today is clear.
+    """
     future_confirmed = [
-        b for b in bookings_today
-        if b.status == "confirmed" and b.starts_at > now
+        b for b in bookings
+        if b.status == "confirmed" and b.starts_at >= now
     ]
     if not future_confirmed:
         return None
@@ -189,6 +185,13 @@ async def get_available_rooms(
     (touching edges are NOT a conflict).
     Cancelled bookings are ignored.
     """
+    # FIX B-M4: guard against inverted or zero-length windows
+    if ends_at <= starts_at:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="ends_at must be after starts_at",
+        )
+
     tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
     now = datetime.now(tz)
 
@@ -223,17 +226,21 @@ async def get_available_rooms(
     if not available_rooms:
         return []
 
-    # Compute today's status for available rooms
+    # One query covering 7 days; today's subset feeds status, full window feeds next_meeting_at
     avail_ids = [r.id for r in available_rooms]
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
-    today_bookings_map = await _load_today_bookings_by_rooms(db, avail_ids, today_start, today_end)
+    week_end = today_start + timedelta(days=7)
+    week_bookings_map = await _load_7day_bookings_by_rooms(db, avail_ids, today_start, week_end)
 
     output = []
     for room in available_rooms:
-        bookings_today = today_bookings_map.get(room.id, [])
+        all_week = week_bookings_map.get(room.id, [])
+        # Today's subset for status computation
+        bookings_today = [b for b in all_week if b.starts_at < today_end and b.ends_at > today_start]
         status_now = compute_room_status(room, bookings_today, now)
-        next_at = _next_meeting(bookings_today, now)
+        # 7-day window for next_meeting_at (includes today+tomorrow+…+day6)
+        next_at = _next_meeting(all_week, now)
         out = RoomWithStatusOut(
             **RoomOut.model_validate(room).model_dump(),
             status_now=status_now,
@@ -271,16 +278,21 @@ async def list_rooms_employee(
 
     room_ids = [r.id for r in rooms]
 
-    # Batch-load today's bookings to avoid N+1
+    # One query covering 7 days; today's subset feeds status, full window feeds next_meeting_at
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     today_end = today_start + timedelta(days=1)
-    today_bookings_map = await _load_today_bookings_by_rooms(db, room_ids, today_start, today_end)
+    week_end = today_start + timedelta(days=7)
+    week_bookings_map = await _load_7day_bookings_by_rooms(db, room_ids, today_start, week_end)
 
     output = []
     for room in rooms:
-        bookings_today = today_bookings_map.get(room.id, [])
+        all_week = week_bookings_map.get(room.id, [])
+        # Today's subset for status computation (compute_room_status filters confirmed internally)
+        bookings_today = [b for b in all_week if b.starts_at < today_end and b.ends_at > today_start]
         status_now = compute_room_status(room, bookings_today, now)
-        next_at = _next_meeting(bookings_today, now)
+        # 7-day window for next_meeting_at so a room with nothing today but a meeting
+        # tomorrow does not incorrectly show next_meeting_at=None
+        next_at = _next_meeting(all_week, now)
         out = RoomWithStatusOut(
             **RoomOut.model_validate(room).model_dump(),
             status_now=status_now,
@@ -326,7 +338,9 @@ async def get_room_detail(
     )
     bookings_today_all = today_result.scalars().all()
 
-    # Week bookings (confirmed only, today through +7 days)
+    # Week bookings (confirmed only, today through +7 days).
+    # week_bookings intentionally spans today+6 days for the 7-day strip while
+    # today_bookings feeds the day timeline (the two overlap for today's confirmed bookings).
     week_result = await db.execute(
         select(Booking)
         .where(
@@ -341,8 +355,9 @@ async def get_room_detail(
     )
     bookings_week = week_result.scalars().all()
 
-    # Resolve organizer names in one query
-    all_bookings = list(bookings_today_all) + [b for b in bookings_week if b not in bookings_today_all]
+    # Resolve organizer names in one query (FIX B-I3: use id-set for dedup)
+    today_ids = {b.id for b in bookings_today_all}
+    all_bookings = list(bookings_today_all) + [b for b in bookings_week if b.id not in today_ids]
     organizer_names = await _resolve_organizer_names(db, all_bookings)
 
     # Today bookings for display (confirmed only)
@@ -350,9 +365,9 @@ async def get_room_detail(
     today_slim = [_booking_to_slim(b, organizer_names) for b in today_confirmed]
     week_slim = [_booking_to_slim(b, organizer_names) for b in bookings_week]
 
-    # Compute status
+    # Compute status and next meeting over the 7-day horizon (FIX B-I2)
     status_now = compute_room_status(room, bookings_today_all, now)
-    next_at = _next_meeting(bookings_today_all, now)
+    next_at = _next_meeting(bookings_week, now)
 
     return RoomDetailOut(
         **RoomOut.model_validate(room).model_dump(),

@@ -4,6 +4,8 @@ from datetime import datetime, time
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.booking import BookingSlimOut  # noqa: F401 — re-exported for Task 6
+
 
 class RoomBase(BaseModel):
     name: str
@@ -61,3 +63,13 @@ class StatusChangeIn(BaseModel):
 class StatusChangeOut(BaseModel):
     room: RoomOut
     affected_future_bookings: int
+
+
+class RoomWithStatusOut(RoomOut):
+    status_now: str
+    next_meeting_at: datetime | None = None
+
+
+class RoomDetailOut(RoomWithStatusOut):
+    today_bookings: list[BookingSlimOut]
+    week_bookings: list[BookingSlimOut]

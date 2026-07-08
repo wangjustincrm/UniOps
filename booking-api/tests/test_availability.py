@@ -691,3 +691,79 @@ class TestGetRoomsAvailability:
         resp = await req_client.get("/api/v1/rooms/availability")
         # 422 = FastAPI param validation (correct), 404 = caught by /{id} (wrong)
         assert resp.status_code == 422, f"Expected 422 (param error), got {resp.status_code}"
+
+    async def test_availability_422_when_ends_at_equals_starts_at(self, requester):
+        """FIX B-M4: ends_at == starts_at must return 422 (zero-length window)."""
+        user, req_client = requester
+        t = datetime.now(TZ).replace(hour=14, minute=0, second=0, microsecond=0)
+        resp = await req_client.get(
+            "/api/v1/rooms/availability",
+            params={
+                "starts_at": t.isoformat(),
+                "ends_at": t.isoformat(),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+    async def test_availability_422_when_ends_at_before_starts_at(self, requester):
+        """FIX B-M4: ends_at < starts_at must return 422 (inverted window)."""
+        user, req_client = requester
+        start = datetime.now(TZ).replace(hour=15, minute=0, second=0, microsecond=0)
+        end = datetime.now(TZ).replace(hour=14, minute=0, second=0, microsecond=0)
+        resp = await req_client.get(
+            "/api/v1/rooms/availability",
+            params={
+                "starts_at": start.isoformat(),
+                "ends_at": end.isoformat(),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+
+
+class TestNextMeetingAt7Days:
+    """FIX B-I2: next_meeting_at must look up to 7 days ahead, not just today."""
+
+    async def test_list_rooms_next_meeting_at_tomorrow(self, requester, admin, test_engine):
+        """Room with no bookings today but one tomorrow → next_meeting_at = tomorrow's start."""
+        user, req_client = requester
+        adm_user, adm_client = admin
+        code = f"NXT7-LIST-{uuid.uuid4().hex[:4]}"
+        room_data = await _create_room_via_admin(adm_client, code=code)
+        room_id = room_data["id"]
+
+        now_tz = datetime.now(TZ)
+        tomorrow = now_tz.date() + timedelta(days=1)
+        b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 10, 0, tzinfo=TZ)
+        b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 11, 0, tzinfo=TZ)
+        await _insert_booking(test_engine, room_id, adm_user.id, b_start, b_end)
+
+        resp = await req_client.get("/api/v1/rooms")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        our_room = next((r for r in data if r["code"] == code), None)
+        assert our_room is not None
+        assert our_room["next_meeting_at"] is not None, (
+            "Expected next_meeting_at to reflect tomorrow's booking, got None"
+        )
+
+    async def test_room_detail_next_meeting_at_tomorrow(self, requester, admin, test_engine):
+        """GET /rooms/{id}: room with no remaining bookings today but one tomorrow
+        → next_meeting_at = tomorrow's start."""
+        user, req_client = requester
+        adm_user, adm_client = admin
+        code = f"NXT7-DET-{uuid.uuid4().hex[:4]}"
+        room_data = await _create_room_via_admin(adm_client, code=code)
+        room_id = room_data["id"]
+
+        now_tz = datetime.now(TZ)
+        tomorrow = now_tz.date() + timedelta(days=1)
+        b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 9, 0, tzinfo=TZ)
+        b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 10, 0, tzinfo=TZ)
+        await _insert_booking(test_engine, room_id, adm_user.id, b_start, b_end)
+
+        resp = await req_client.get(f"/api/v1/rooms/{room_id}")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["next_meeting_at"] is not None, (
+            "Expected next_meeting_at to reflect tomorrow's booking, got None"
+        )
