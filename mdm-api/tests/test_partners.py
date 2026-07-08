@@ -55,6 +55,13 @@ async def test_role_filters(db_session):
     assert {p.id for p in customers} == {cust.id, both.id}
 
 
+def test_partner_update_schema_accepts_code():
+    """EPMS Vendor list edits POID via PATCH /partners; the schema must not drop `code`."""
+    from app.schemas.business_partner import PartnerUpdate
+    body = PartnerUpdate(code="NEW-01")
+    assert body.model_dump(exclude_unset=True) == {"code": "NEW-01"}
+
+
 async def test_vendor_alias_is_business_partner(db_session):
     """Legacy mdm imports keep working: Vendor IS BusinessPartner now."""
     from app.models.vendor import Vendor

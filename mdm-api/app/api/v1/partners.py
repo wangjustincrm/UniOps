@@ -96,6 +96,9 @@ async def update_partner(
         raise HTTPException(status_code=404, detail="Partner not found")
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(row, k, v)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        raise HTTPException(status_code=409, detail=f"Partner code '{body.code}' already exists")
     await db.commit()
     return row

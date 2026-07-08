@@ -32,6 +32,7 @@ class PartnerCreate(PartnerBase):
 
 
 class PartnerUpdate(BaseModel):
+    code: Optional[str] = Field(default=None, min_length=1, max_length=50)
     erp_id: Optional[str] = None
     name: Optional[str] = None
     category: Optional[str] = None

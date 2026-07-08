@@ -66,6 +66,15 @@ async def test_update_vendor(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_update_vendor_code(admin_client):
+    """POID (vendor code) edits must persist — schema used to drop `code` silently."""
+    v = await _create(admin_client, code="VND-POID-OLD")
+    resp = await admin_client.patch(f"{URL}/{v['id']}", json={"code": "VND-POID-NEW"})
+    assert resp.status_code == 200
+    assert resp.json()["code"] == "VND-POID-NEW"
+
+
+@pytest.mark.asyncio
 async def test_deactivate_vendor(admin_client):
     v = await _create(admin_client, code="VND-DEACT-01")
     resp = await admin_client.patch(f"{URL}/{v['id']}", json={"is_active": False})
