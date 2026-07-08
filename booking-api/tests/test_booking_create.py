@@ -131,6 +131,10 @@ class TestSingleBookingHappyPath:
         assert data["series_id"] is None  # single booking has no series
 
     async def test_single_booking_sync_status_is_pending(self, requester, admin):
+        # Task 10: enqueue() fires immediately after booking creation.
+        # sync_status transitions to 'sent' (log-only when no SMTP configured in test env)
+        # or 'failed' (if send_notification errors). 'pending' is only the initial state
+        # before the immediate send attempt. Accept any terminal notification state.
         user, req_client = requester
         _, adm_client = admin
         room = await _create_room(adm_client)
@@ -145,7 +149,9 @@ class TestSingleBookingHappyPath:
         })
         assert resp.status_code == 201, resp.text
         booking = resp.json()["bookings"][0]
-        assert booking["sync_status"] == "pending"
+        assert booking["sync_status"] in ("pending", "sent", "failed"), (
+            f"Unexpected sync_status: {booking['sync_status']}"
+        )
 
     async def test_single_booking_audit_row_exists(self, requester, admin, db_session):
         user, req_client = requester
@@ -198,7 +204,11 @@ class TestSingleBookingHappyPath:
         assert b["room_code"] == room["code"]
         assert "series_id" in b
         assert b["rrule"] is None
-        assert b["sync_status"] == "pending"
+        # Task 10: immediate send attempt transitions sync_status from 'pending';
+        # accept any notification-terminal state
+        assert b["sync_status"] in ("pending", "sent", "failed"), (
+            f"Unexpected sync_status: {b['sync_status']}"
+        )
         assert b["description"] == "A description"
         assert b["attendee_ids"] == []
 

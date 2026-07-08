@@ -25,10 +25,12 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
-    # Task 10 wires the notification retry scheduler here
-    scheduler_task = None
+    # Task 10: notification retry scheduler
+    from app.services import scheduler
+    scheduler_task = scheduler.start(app)
     yield
     logger.info("Shutting down — closing engine")
+    await scheduler.stop(scheduler_task)
     await engine.dispose()
 
 
