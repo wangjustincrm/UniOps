@@ -15,7 +15,11 @@ from app.schemas.room import RoomCreate, RoomUpdate
 
 async def create_room(db: AsyncSession, data: RoomCreate) -> MeetingRoom:
     """Create a new room. Raises IntegrityError on duplicate code."""
-    room = MeetingRoom(**data.model_dump())
+    kwargs = data.model_dump()
+    # JSONB columns require plain strings, not UUID objects.
+    if kwargs.get("image_file_ids"):
+        kwargs["image_file_ids"] = [str(i) for i in kwargs["image_file_ids"]]
+    room = MeetingRoom(**kwargs)
     db.add(room)
     await db.flush()  # raises IntegrityError on unique violation before commit
     await db.refresh(room)
@@ -50,6 +54,9 @@ async def update_room(
 ) -> MeetingRoom:
     """Apply only the provided fields (excludes unset)."""
     for field, value in data.model_dump(exclude_unset=True).items():
+        # JSONB columns require plain strings, not UUID objects.
+        if field == "image_file_ids" and value is not None:
+            value = [str(i) for i in value]
         setattr(room, field, value)
     await db.flush()
     await db.refresh(room)

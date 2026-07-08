@@ -87,9 +87,15 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):  # noqa: ARG001
         logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+        headers: dict[str, str] = {}
+        origin = request.headers.get("origin")
+        if origin and origin in settings.ALLOWED_ORIGINS:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": "Internal server error"},
+            headers=headers or None,
         )
 
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)

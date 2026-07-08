@@ -304,6 +304,37 @@ class TestXlsxImport:
         assert len(data["errors"]) == 1
 
 
+class TestImageFileIds:
+    """PATCH and POST with non-empty image_file_ids must not 500."""
+
+    async def test_patch_room_with_image_file_ids_returns_200(self, admin, test_engine):
+        """PATCH /admin/rooms/{id} with image_file_ids=[uuid] must return 200 and echo the ids."""
+        user, client = admin
+        payload = {**ROOM_PAYLOAD, "code": "IMG-PATCH-01"}
+        cr = await client.post("/api/v1/admin/rooms", json=payload)
+        assert cr.status_code == 201
+        room_id = cr.json()["id"]
+
+        image_id = str(uuid.uuid4())
+        resp = await client.patch(
+            f"/api/v1/admin/rooms/{room_id}",
+            json={"image_file_ids": [image_id]},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert image_id in data["image_file_ids"]
+
+    async def test_create_room_with_image_file_ids_returns_201(self, admin, test_engine):
+        """POST /admin/rooms with image_file_ids=[uuid] must return 201 and echo the ids."""
+        user, client = admin
+        image_id = str(uuid.uuid4())
+        payload = {**ROOM_PAYLOAD, "code": "IMG-CREATE-01", "image_file_ids": [image_id]}
+        resp = await client.post("/api/v1/admin/rooms", json=payload)
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert image_id in data["image_file_ids"]
+
+
 class TestAdminConfig:
     async def test_get_config_returns_defaults(self, admin):
         user, client = admin
