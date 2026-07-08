@@ -14,12 +14,13 @@ precheck is a static path segment, not a UUID).
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.core.deps import SessionDep
 from app.core.permissions import CurrentUser
 from app.crud.config import get_or_create_config
@@ -27,6 +28,7 @@ from app.models.room import MeetingRoom
 from app.models.user_mirror import User
 from app.schemas.booking import BookingSlimOut
 from app.schemas.room import RoomWithStatusOut
+from app.services.recurrence import SeriesSpec, expand_series  # noqa: F401 — re-exported; Task 7
 from app.services.recommend import find_conflicts, suggest
 
 router = APIRouter()
@@ -35,13 +37,6 @@ router = APIRouter()
 # ─────────────────────────────────────────────────────────────────────────────
 # Request / response schemas
 # ─────────────────────────────────────────────────────────────────────────────
-
-class SeriesSpec(BaseModel):
-    """Recurring series parameters (Task 7 wires expansion logic)."""
-    freq: str  # "daily" | "weekly"
-    interval: int = 1
-    count: int | None = None
-    until: date | None = None
 
 
 class PrecheckIn(BaseModel):
@@ -116,11 +111,57 @@ async def precheck_booking(
         for b in conflict_rows
     ]
 
-    # ── Suggestions (only when conflicts exist) ───────────────────────────────
-    suggestions_out: SuggestOut | None = None
-    if conflict_rows:
+    # ── Series expansion → per-occurrence conflicts ──────────────────────────
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    occurrence_conflicts: list = []
+
+    if body.series is not None:
         config = await get_or_create_config(db)
         cfg_rules: dict = config.rules or {}
+        advance_days = cfg_rules.get("advance_days", 30)
+        try:
+            occurrences = expand_series(
+                body.starts_at,
+                body.ends_at,
+                body.series,
+                advance_days=advance_days,
+                tz=tz,
+            )
+        except ValueError:
+            occurrences = []
+
+        for occ_start, occ_end in occurrences:
+            occ_conflicts = await find_conflicts(db, body.room_id, occ_start, occ_end)
+            if occ_conflicts:
+                occ_org_ids = list({b.organizer_id for b in occ_conflicts})
+                occ_org_names: dict[uuid.UUID, str] = {}
+                if occ_org_ids:
+                    occ_user_result = await db.execute(
+                        select(User.id, User.full_name).where(User.id.in_(occ_org_ids))
+                    )
+                    occ_org_names = {row.id: row.full_name for row in occ_user_result}
+
+                occ_slim = [
+                    BookingSlimOut(
+                        id=b.id,
+                        title=b.title,
+                        starts_at=b.starts_at,
+                        ends_at=b.ends_at,
+                        organizer_name=occ_org_names.get(b.organizer_id, "Unknown"),
+                    ).model_dump(mode="json")
+                    for b in occ_conflicts
+                ]
+                occurrence_conflicts.append({
+                    "date": occ_start.astimezone(tz).date().isoformat(),
+                    "conflicts": occ_slim,
+                })
+
+    # ── Suggestions (only when conflicts exist) ───────────────────────────────
+    suggestions_out: SuggestOut | None = None
+    if conflict_rows or occurrence_conflicts:
+        config = await get_or_create_config(db)
+        cfg_rules_s: dict = config.rules or {}
 
         suggest_result = await suggest(
             db,
@@ -129,18 +170,15 @@ async def precheck_booking(
             ends_at=body.ends_at,
             attendee_count=body.attendee_count,
             equipment=body.equipment,
-            cfg_rules=cfg_rules,
+            cfg_rules=cfg_rules_s,
         )
         suggestions_out = SuggestOut(
             nearest_slots=suggest_result["nearest_slots"],
             alternative_rooms=suggest_result["alternative_rooms"],
         )
 
-    # ── Task 7 wires series expansion here ───────────────────────────────────
-    # occurrence_conflicts: list = []  (series expansion not yet implemented)
-
     return PrecheckOut(
         conflicts=conflicts_out,
-        occurrence_conflicts=[],
+        occurrence_conflicts=occurrence_conflicts,
         suggestions=suggestions_out,
     )
