@@ -599,7 +599,9 @@ Status rules (PRD 9.3.3): `disabled|maintenance` from `room.status`; `in_use` if
 - [ ] **Step 3: Implement `rooms.py` router** — one query for rooms + one grouped query for today's/week's confirmed bookings (avoid N+1: `WHERE room_id = ANY(...) AND starts_at < :week_end AND ends_at > :today_start AND status='confirmed'`), then compute statuses in Python. Organizer names resolved by joining the `users` mirror.
 - [ ] **Step 4: Run tests + commit** — `git commit -m "feat(booking): computed room status + employee room list/detail endpoints"`
 
----### Task 6: Conflict precheck + recommendation engine
+---
+
+### Task 6: Conflict precheck + recommendation engine
 
 **Files:**
 - Create: `booking-api/app/services/recommend.py`, `booking-api/app/api/v1/precheck.py`
