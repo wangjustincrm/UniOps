@@ -70,12 +70,18 @@ async def import_rooms_xlsx(
     Returns: {created: n, errors: [{row: n, message: str}]}
     """
     import openpyxl
+    from starlette.datastructures import UploadFile as StarletteUploadFile
 
     content_type = request.headers.get("content-type", "")
     if "multipart/form-data" in content_type:
         form = await request.form()
-        # Take the first uploaded file
+        # Take the first uploaded file field; skip plain text form fields.
         for _key, field in form.items():
+            if not isinstance(field, StarletteUploadFile):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Expected a file upload field, got a plain text field: {_key!r}",
+                )
             file_bytes = await field.read()
             break
         else:
@@ -103,12 +109,8 @@ async def import_rooms_xlsx(
     errors: list[dict] = []
 
     for row_idx, row in enumerate(rows[1:], start=2):
-        excel_row = row_idx + 1  # 1-indexed, +1 because header is row 1, first data is row 2
-        # actually: header row = row 1, data starts at row 2
-        # rows[1:] starts at index 1, row_idx starts at 2 → excel row number = row_idx + 1? No:
-        # rows[0] = header (excel row 1), rows[1] = data row 1 (excel row 2)
-        # enumerate(rows[1:], start=2) → row_idx=2 for rows[1] = excel row 2. Correct.
-        # But test expects row 4 for the 3rd data row: header=1, data1=2, data2=3, data3=4. ✓
+        # rows[0] = header (excel row 1); rows[1] = first data row (excel row 2).
+        # enumerate(rows[1:], start=2) → row_idx == excel row number directly.
         excel_row_number = row_idx
 
         row_data: dict[str, Any] = {}

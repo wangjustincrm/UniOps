@@ -26,18 +26,10 @@ def has_permission(role: str, key: str, stored_matrix: dict) -> bool:
 
 
 async def _load_matrix(db: AsyncSession) -> dict:
-    try:
-        # Use a nested transaction (SAVEPOINT) so that if company_config doesn't
-        # exist (e.g., isolated test DB), the outer transaction stays healthy.
-        async with db.begin_nested():
-            row = (
-                await db.execute(text("SELECT role_permissions FROM company_config LIMIT 1"))
-            ).scalar_one_or_none()
-        return row if isinstance(row, dict) else {}
-    except Exception:
-        # company_config table may not exist in isolated test environments;
-        # fall back to defaults so system_admin still passes and non-admins are denied.
-        return {}
+    row = (
+        await db.execute(text("SELECT role_permissions FROM company_config LIMIT 1"))
+    ).scalar_one_or_none()
+    return row if isinstance(row, dict) else {}
 
 
 def require_perm(key: str):

@@ -29,7 +29,7 @@ async def update_config(
     if data.smtp_settings is not None:
         config.smtp_settings = data.smtp_settings
     if data.rules is not None:
-        config.rules = data.rules
+        config.rules = {**config.rules, **data.rules}
     if data.organizer_mode is not None:
         config.organizer_mode = data.organizer_mode
     await db.flush()

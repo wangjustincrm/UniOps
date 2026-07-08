@@ -1,4 +1,6 @@
 """Pydantic schemas for BookingConfig admin endpoints."""
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -12,4 +14,4 @@ class ConfigOut(BaseModel):
 class ConfigUpdate(BaseModel):
     smtp_settings: dict | None = None
     rules: dict | None = None
-    organizer_mode: str | None = None
+    organizer_mode: Literal["system", "initiator"] | None = None

@@ -334,14 +334,30 @@ class TestAdminConfig:
 
     async def test_put_config_updates_rules(self, admin):
         user, client = admin
+        # First, ensure a known baseline for slot_minutes
+        await client.put("/api/v1/admin/config", json={"rules": {"slot_minutes": 15}})
+
+        # Send a partial update that only touches advance_days.
         resp = await client.put(
             "/api/v1/admin/config",
-            json={"rules": {"slot_minutes": 30, "advance_days": 14}},
+            json={"rules": {"advance_days": 14}},
         )
         assert resp.status_code == 200
-        # rules are merged into existing (or replaced — either is fine; check the value is persisted)
-        resp2 = await client.get("/api/v1/admin/config")
-        assert resp2.json()["rules"]["slot_minutes"] == 30
+        rules = resp.json()["rules"]
+        # The updated key must be present.
+        assert rules["advance_days"] == 14
+        # The untouched key must survive (deep-merge semantics).
+        assert rules.get("slot_minutes") == 15
+
+        # A second partial update should still preserve other keys.
+        resp2 = await client.put(
+            "/api/v1/admin/config",
+            json={"rules": {"slot_minutes": 30}},
+        )
+        assert resp2.status_code == 200
+        rules2 = resp2.json()["rules"]
+        assert rules2["slot_minutes"] == 30
+        assert rules2.get("advance_days") == 14
 
     async def test_non_admin_config_returns_403(self, requester):
         user, client = requester

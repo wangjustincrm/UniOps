@@ -2,10 +2,12 @@
 alembic autogenerate or Base.metadata.create_all() is called.
 
 Import order respects FK dependencies:
-  user_mirror (no deps) → room (no deps) → booking (→ room) →
+  user_mirror (no deps) → company_config_mirror (no deps) →
+  room (no deps) → booking (→ room) →
   notification / audit (→ booking) → booking_config (no deps)
 """
 from app.models.user_mirror import User  # noqa: F401
+from app.models.company_config_mirror import CompanyConfig  # noqa: F401
 from app.models.room import MeetingRoom  # noqa: F401
 from app.models.booking import Booking  # noqa: F401
 from app.models.notification import NotificationLog  # noqa: F401
