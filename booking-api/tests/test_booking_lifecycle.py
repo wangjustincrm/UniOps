@@ -151,7 +151,8 @@ class TestPatchBookingAuth:
                 f"/api/v1/bookings/{booking['id']}",
                 json={"title": "Hacked Title"},
             )
-        assert resp.status_code == 403, resp.text
+        # Returns 404 (not 403) to prevent existence probing by unauthorized callers.
+        assert resp.status_code == 404, resp.text
 
     async def test_admin_patch_ok(self, requester, admin):
         """Admin (manage_meeting_rooms) can PATCH any booking."""
@@ -307,6 +308,38 @@ class TestPatchBookingRules:
         )
         assert resp.status_code == 400, resp.text
 
+    async def test_patch_time_only_change_on_maintenance_room_returns_422(
+        self, requester, admin
+    ):
+        """PATCH with only a time change must reject a maintenance/disabled room.
+
+        Even when room_id is unchanged, if the room was set to maintenance AFTER
+        booking creation the reschedule must be blocked with 422.
+        """
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        booking = await _create_booking(req_client, room["id"], _dt(10, 0), _dt(11, 0))
+
+        # Put the room into maintenance via admin API
+        sr = await adm_client.post(
+            f"/api/v1/admin/rooms/{room['id']}/status",
+            json={"status": "maintenance", "notes": "test maintenance"},
+        )
+        assert sr.status_code == 200, f"Status change failed: {sr.text}"
+
+        # Attempt a time-only PATCH — must be rejected because room is not available
+        resp = await req_client.patch(
+            f"/api/v1/bookings/{booking['id']}",
+            json={
+                "starts_at": _iso(_dt(12, 0)),
+                "ends_at": _iso(_dt(13, 0)),
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "not bookable" in resp.json()["detail"]
+
     async def test_patch_started_booking_organizer_403_admin_200(
         self, requester, admin, db_session
     ):
@@ -386,7 +419,8 @@ class TestCancelBooking:
         other_token = make_token(other_user.id, other_user.role)
         async with authed_client(other_token, session=db_session) as other_client:
             resp = await other_client.post(f"/api/v1/bookings/{booking['id']}/cancel")
-        assert resp.status_code == 403, resp.text
+        # Returns 404 (not 403) to prevent existence probing by unauthorized callers.
+        assert resp.status_code == 404, resp.text
 
     async def test_cancel_already_cancelled_returns_400(self, requester, admin):
         """Cancelling an already-cancelled booking → 400."""
@@ -426,9 +460,13 @@ class TestCancelBooking:
     ):
         """series=true: only future confirmed occurrences are cancelled.
 
-        We seed one past occurrence directly via db_session (status=confirmed,
-        starts_at in the past). The past occurrence must NOT be cancelled.
-        The future occurrences must all be cancelled.
+        PRD §9.7: organizers can cancel meetings that have not yet started;
+        in-progress meetings finish naturally (intentional, not a bug).
+
+        We seed:
+          - one past occurrence (starts_at 7 days ago) — must stay confirmed
+          - one in-progress occurrence (started 30 min ago, ends in 30 min) — must stay confirmed
+          - two future occurrences — must be cancelled
         """
         organizer, req_client = requester
         _, adm_client = admin
@@ -446,6 +484,21 @@ class TestCancelBooking:
             room["id"],
             past_start,
             past_end,
+            organizer_id=organizer.id,
+            series_id=series_id,
+            rrule=rrule,
+        )
+
+        # Seed one in-progress occurrence (started 30 min ago, ends 30 min from now).
+        # PRD §9.7: in-progress meetings must NOT be cancelled by series cancel —
+        # they finish naturally.
+        inprogress_start = datetime.now(TZ) - timedelta(minutes=30)
+        inprogress_end = datetime.now(TZ) + timedelta(minutes=30)
+        inprogress_booking = await _insert_booking_raw(
+            db_session,
+            room["id"],
+            inprogress_start,
+            inprogress_end,
             organizer_id=organizer.id,
             series_id=series_id,
             rrule=rrule,
@@ -482,7 +535,7 @@ class TestCancelBooking:
         )
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        assert data["cancelled"] == 2  # only 2 future ones
+        assert data["cancelled"] == 2  # only 2 future ones; in-progress excluded
 
         # Verify via DB
         from sqlalchemy import select
@@ -493,6 +546,16 @@ class TestCancelBooking:
         )
         past_row = past_result.scalar_one()
         assert past_row.status == "confirmed", "Past occurrence must NOT be cancelled"
+
+        # In-progress occurrence must stay confirmed — it finishes naturally (PRD §9.7).
+        inprogress_result = await db_session.execute(
+            select(BookingModel).where(BookingModel.id == inprogress_booking.id)
+        )
+        ip_row = inprogress_result.scalar_one()
+        assert ip_row.status == "confirmed", (
+            "In-progress occurrence must NOT be cancelled by series cancel (PRD §9.7: "
+            "meeting finishes naturally)"
+        )
 
         future1_result = await db_session.execute(
             select(BookingModel).where(BookingModel.id == future1.id)
@@ -747,3 +810,35 @@ class TestAdminBookingsExport:
         csv_text = resp.text
         assert b1["id"] in csv_text
         assert b2["id"] not in csv_text
+
+    async def test_export_timestamps_include_timezone_offset(self, requester, admin):
+        """CSV timestamps must carry a local timezone offset (DISPLAY_TIMEZONE), not UTC.
+
+        A 10:00 AM Toronto booking must appear as ...T10:00:00-04:00 (EDT) or
+        ...T10:00:00-05:00 (EST), never ...T14:00:00+00:00.
+        """
+        _, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        await _create_booking(
+            req_client, room["id"], _dt(10, 0), _dt(11, 0), title="TZ Offset Test"
+        )
+
+        resp = await adm_client.get("/api/v1/admin/bookings/export")
+        assert resp.status_code == 200, resp.text
+
+        import csv as csv_mod
+        import io as io_mod
+        reader = csv_mod.DictReader(io_mod.StringIO(resp.text))
+        rows = list(reader)
+        assert len(rows) >= 1, "Expected at least one data row in export"
+
+        # America/Toronto is UTC-4 (EDT) or UTC-5 (EST); either offset is valid.
+        # A UTC timestamp would have +00:00; a local one will have -04:00 or -05:00.
+        for row in rows:
+            for col in ("starts_at", "ends_at", "created_at"):
+                ts = row[col]
+                assert (
+                    "-04:00" in ts or "-05:00" in ts
+                ), f"Column '{col}' timestamp '{ts}' is not in DISPLAY_TIMEZONE (expected -04:00 or -05:00)"

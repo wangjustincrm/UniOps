@@ -651,9 +651,10 @@ async def update_booking(
 
     booking, room = row
 
-    # Authorization: organizer or admin
+    # Authorization: organizer or admin.
+    # Return 404 (not 403) to prevent existence probing by unauthorized callers.
     if actor_id != booking.organizer_id and not is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
     # Must be confirmed
     if booking.status != "confirmed":
@@ -702,6 +703,13 @@ async def update_booking(
             )
     else:
         new_room = room
+        # Re-validate room status even on a time-only change: the room may have
+        # been put into maintenance/disabled AFTER the original booking was created.
+        if new_room.status != "available":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Room is not bookable (status is not 'available')",
+            )
 
     if time_or_room_changed:
         # Load config
@@ -727,10 +735,9 @@ async def update_booking(
             exclude_booking_ids={booking.id}
         )
         if conflicts:
-            config2 = await get_or_create_config(db)
             return await _build_conflict_response(
                 db, new_room, new_starts_at, new_ends_at, conflicts,
-                config2.rules or {},
+                cfg_rules,
             )
     else:
         cfg_rules = {}
@@ -834,9 +841,10 @@ async def cancel_booking(
     if booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
-    # Authorization
+    # Authorization: organizer or admin.
+    # Return 404 (not 403) to prevent existence probing by unauthorized callers.
     if actor_id != booking.organizer_id and not is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
 
     now = datetime.now(tz)
 
@@ -848,7 +856,11 @@ async def cancel_booking(
                 detail="Booking is not a series member; series=true requires a series member",
             )
 
-        # Fetch all future confirmed occurrences
+        # Fetch all future confirmed occurrences.
+        # PRD §9.7: organizers can cancel meetings that have not yet started.
+        # Occurrences already in-progress or in the past are intentionally excluded —
+        # an in-progress meeting finishes naturally without being interrupted by the
+        # series cancel, which is the expected product behaviour.
         future_result = await db.execute(
             select(Booking).where(
                 Booking.series_id == booking.series_id,

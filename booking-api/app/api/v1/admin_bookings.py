@@ -165,18 +165,20 @@ async def admin_export_bookings(
         "sync_status", "created_at",
     ])
     for booking, room, organizer_name in rows:
+        # Render datetimes in DISPLAY_TIMEZONE (config contract: "exports render in
+        # this zone") so exported times match what users see in the UI, not UTC.
         writer.writerow([
             str(booking.id),
             room.code,
             room.name,
             booking.title,
             organizer_name or "Unknown",
-            booking.starts_at.isoformat(),
-            booking.ends_at.isoformat(),
+            booking.starts_at.astimezone(TZ).isoformat(),
+            booking.ends_at.astimezone(TZ).isoformat(),
             booking.status,
             len(booking.attendee_ids or []),
             booking.sync_status,
-            booking.created_at.isoformat(),
+            booking.created_at.astimezone(TZ).isoformat(),
         ])
 
     csv_content = output.getvalue()
