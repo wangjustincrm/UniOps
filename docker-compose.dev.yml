@@ -353,6 +353,46 @@ services:
       retries: 5
       start_period: 15s
 
+  booking-api:
+    <<: *python-base
+    build:
+      context: ./booking-api
+      dockerfile: Dockerfile
+    container_name: uniops_booking_api
+    ports:
+      - "8010:8010"
+    volumes:
+      - ./booking-api:/app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
+      # config.py builds DATABASE_URL from POSTGRES_* (the DATABASE_URL env var is
+      # ignored — it's a computed @property). Without this the password defaults to
+      # `epms_dev` and the prod DB rejects it with InvalidPasswordError.
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      APP_NAME: Booking API
+      APP_VERSION: 0.1.0
+      DEBUG: "true"
+      ENVIRONMENT: development
+      API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178"]'
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      FILE_SERVER_URL: http://file-api:8005/files/v1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      epms-api:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8010 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8010/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   # ── Frontend Applications ─────────────────────────────────────────────────────
 
   epms-frontend:
