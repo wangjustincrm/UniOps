@@ -60,7 +60,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'OA',          icon: Wallet,       href: 'oa' },
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
       { label: 'Finance',     icon: Landmark,     href: 'finance', anyPermission: FINANCE_ACCESS_PERMS },
-      { label: 'Booking',     icon: CalendarClock, href: 'booking', anyPermission: BOOKING_ACCESS_PERMS },
+      { label: 'Meeting Rooms', icon: CalendarClock, href: 'booking', anyPermission: BOOKING_ACCESS_PERMS },
     ],
   },
   {
