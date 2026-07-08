@@ -17,6 +17,7 @@ import { EQUIPMENT_LABELS } from '@/lib/types'
 import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 import { DayTimeline } from '@/components/DayTimeline'
 import { WeekStrip } from '@/components/WeekStrip'
+import { AuthImage } from '@/components/AuthImage'
 
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
@@ -195,19 +196,18 @@ export default function RoomDetailPage() {
             </div>
           )}
 
-          {/* Image thumbnails — only when image_file_ids provided and FILE_API configured */}
+          {/* Image thumbnails — authenticated via AuthImage (file-api requires Bearer token) */}
           {room.image_file_ids.length > 0 && (() => {
             const fileBase = (import.meta.env.VITE_FILE_API_URL as string | undefined) ?? ''
             if (!fileBase) return null
             return (
               <div className="mt-4 flex gap-2 flex-wrap">
                 {room.image_file_ids.map((fid) => (
-                  <img
+                  <AuthImage
                     key={fid}
                     src={`${fileBase}/files/v1/files/${fid}`}
                     alt={room.name}
                     className="h-20 w-28 rounded-lg object-cover border border-neutral-200"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                   />
                 ))}
               </div>

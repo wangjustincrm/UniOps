@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import {
   useAdminCreateRoom,
   useAdminUpdateRoom,
+  uploadRoomImage,
 } from '@/services/api'
 import type { RoomOut, RoomCreate, RoomUpdate } from '@/lib/types'
 import {
@@ -20,40 +21,12 @@ import {
   ROOM_TYPES,
   ROOM_TYPE_LABELS,
 } from '@/lib/types'
-import { ApiError, getToken } from '@/lib/api'
+import { ApiError } from '@/lib/api'
+import { AuthImage } from '@/components/AuthImage'
 
-// ── File-api upload helper ────────────────────────────────────────────────────
+// ── File-api base URL for thumbnail rendering ─────────────────────────────────
 
 const FILE_API_BASE = (import.meta.env.VITE_FILE_API_URL as string | undefined) ?? ''
-
-interface UploadedFile {
-  id: string
-  original_filename: string
-}
-
-/**
- * Upload a single image to file-api (multipart POST) and return the file id.
- * Mirrors the vms attachment pattern: multipart fetch with Bearer token.
- */
-async function uploadRoomImage(file: File): Promise<string> {
-  if (!FILE_API_BASE) {
-    throw new Error('File API URL not configured (VITE_FILE_API_URL is unset).')
-  }
-  const token = getToken()
-  const fd = new FormData()
-  fd.append('file', file)
-  const resp = await fetch(`${FILE_API_BASE}/files/v1/files`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: fd,
-  })
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ detail: resp.statusText }))
-    throw new Error(err.detail ?? `Upload failed: HTTP ${resp.status}`)
-  }
-  const data: UploadedFile = await resp.json()
-  return data.id
-}
 
 interface Props {
   room?: RoomOut | null
@@ -110,6 +83,10 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // Stable doc_id for file-api uploads: for edit use the room id;
+  // for new rooms, generate a client-side UUID once per modal session so all
+  // images uploaded before save share the same doc_id.
+  const docIdRef = useRef<string>(room?.id ?? crypto.randomUUID())
 
   useEffect(() => {
     setForm(room ? roomToForm(room) : EMPTY_FORM)
@@ -143,7 +120,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
     setUploadError(null)
     setUploading(true)
     try {
-      const ids = await Promise.all(files.map(uploadRoomImage))
+      const ids = await Promise.all(files.map((f) => uploadRoomImage(f, docIdRef.current)))
       // MUST append — never replace — so existing room images are preserved on edit.
       setForm((prev) => ({
         ...prev,
@@ -413,11 +390,10 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
               <div className="flex flex-wrap gap-2 mb-2">
                 {(form.image_file_ids ?? []).map((fid) => (
                   <div key={fid} className="relative group">
-                    <img
+                    <AuthImage
                       src={`${FILE_API_BASE}/files/v1/files/${fid}`}
                       alt="Room image"
                       className="h-20 w-28 rounded-lg object-cover border border-neutral-200"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
                     />
                     <button
                       type="button"

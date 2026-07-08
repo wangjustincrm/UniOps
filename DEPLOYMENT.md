@@ -330,6 +330,45 @@ EPMS_HOST={app-server-ip} ./check-health.sh
 
 ---
 
+## Booking Module Release Steps
+
+The `booking-api` and `booking-web` services follow the same build/push/deploy pattern as VMS.
+Additional one-time steps are required before the first booking release:
+
+1. **New services** — `booking-api` (`:8010`) and `booking-web` are added to `docker-compose.prod.yml`.
+   They are built and pushed alongside all other services in the standard build step.
+
+2. **Portal rebuild** — `portal-web` must be rebuilt with `VITE_BOOKING_URL=https://booking.canadaroyalmilk.com`
+   injected as a build arg (already present in `docker-compose.prod.yml`). A fresh portal image is
+   required so the Booking tile appears in the Portal home page.
+
+3. **Alembic migration** — `booking-api` owns its own alembic chain. `migrate-prod.sh` now includes
+   `booking-api` in its SERVICES list; it runs `alembic upgrade head` inside the `booking-api` container.
+   No ordering dependency with other services (booking-api has its own tables only).
+
+4. **File server: add booking origin to file-api ALLOWED_ORIGINS** (required for room image upload/preview)
+   On the File server (`10.10.50.66`), edit `file-api/.env.prod` and add
+   `https://booking.canadaroyalmilk.com` to the `ALLOWED_ORIGINS` list, then restart file-api:
+   ```bash
+   # On 10.10.50.66
+   nano /opt/uniops/file-api/.env.prod   # add https://booking.canadaroyalmilk.com to ALLOWED_ORIGINS
+   systemctl restart uniops-file-api
+   ```
+   Without this step, browser upload and image preview requests from the booking frontend will be
+   CORS-blocked by file-api.
+
+5. **Outlook real-invite verification** — booking-api sends calendar invites via the Microsoft Graph
+   API. Before going live, verify that invite emails are received by attendees and that the calendar
+   event appears in Outlook. Check `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, and `AZURE_TENANT_ID`
+   are set in the booking-api environment and that the Graph API `Calendars.ReadWrite` permission
+   has been admin-consented in Azure AD.
+
+6. **DNS + Caddy** — `booking.canadaroyalmilk.com` and `booking-api.canadaroyalmilk.com` are already
+   present in the `Caddyfile`. Add both A records (→ `45.78.113.218`) in the external DNS and the
+   corresponding internal split-DNS entries (→ `10.10.50.65`).
+
+---
+
 ## Security Notes
 
 - PostgreSQL and Redis must only be accessible on the **internal network** (no public port exposure)

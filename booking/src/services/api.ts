@@ -252,6 +252,44 @@ export function usePrecheckBooking() {
   })
 }
 
+// ── File-api image upload ─────────────────────────────────────────────────────
+
+const FILE_API_BASE = (import.meta.env.VITE_FILE_API_URL as string | undefined) ?? ''
+
+/**
+ * Upload a single image to file-api and return the file id (UUID string).
+ *
+ * Contract: POST /files/v1/files?doc_type=room_image&doc_id=<uuid>
+ * Both query params are required (FastAPI Query(...)). Response field for the
+ * file identifier is `id` (UUID, JSON-serialised as a string).
+ * See file-api/app/api/v1/files.py lines 38–88 and schemas/file.py.
+ *
+ * @param file     The image File to upload.
+ * @param docId    The room UUID to associate with this file. For new rooms that
+ *                 do not have a DB id yet, pass a client-generated UUID (stable
+ *                 per modal session so all images share the same doc_id).
+ */
+export async function uploadRoomImage(file: File, docId: string): Promise<string> {
+  if (!FILE_API_BASE) {
+    throw new Error('File API URL not configured (VITE_FILE_API_URL is unset).')
+  }
+  const token = getToken()
+  const fd = new FormData()
+  fd.append('file', file)
+  const qs = new URLSearchParams({ doc_type: 'room_image', doc_id: docId }).toString()
+  const resp = await fetch(`${FILE_API_BASE}/files/v1/files?${qs}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }))
+    throw new Error(err.detail ?? `Upload failed: HTTP ${resp.status}`)
+  }
+  const data: { id: string } = await resp.json()
+  return data.id
+}
+
 // ── Admin — helpers ───────────────────────────────────────────────────────────
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || ''
