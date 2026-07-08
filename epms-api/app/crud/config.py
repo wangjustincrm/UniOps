@@ -49,6 +49,9 @@ PERMISSION_KEYS: list[str] = [
     # view_finance gates the rest of the FINANCE section (Account Catalog, Factor
     # Library, Budget Config, CoA, Bank Recon, Payment Batches, AR, GL).
     "view_budget_dashboard", "view_budget_plans", "view_finance",
+    # Booking module (meeting rooms). view_booking gates the whole employee-facing
+    # module; manage_meeting_rooms gates room CRUD / all-bookings admin.
+    "view_booking", "manage_meeting_rooms",
 ]
 
 # ── Default values seeded on first access ───────────────────────────────────
@@ -209,23 +212,27 @@ _VIEW_ALL = dict(view_pr=True, view_po=True, view_gr=True, view_invoice=True, vi
 _BUDGET_VIEW = dict(view_budget_dashboard=True, view_budget_plans=True)
 _FINANCE_ALL = dict(view_budget_dashboard=True, view_budget_plans=True, view_finance=True)
 
+# All roles can book meeting rooms by default; manage_meeting_rooms stays
+# False for everyone except system_admin (granted via Access Control Matrix UI).
+_BOOKING = dict(view_booking=True)
+
 _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
-    "requester":            _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
-    "dept_admin":           _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
-    "dept_manager":         _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BUDGET_VIEW),
-    "supervisor":           _P(view_pr=True),
-    "director":             _P(view_pr=True, view_pa=True),
-    "gm":                   _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
-    "opm":                  _P(create_pr=True,  create_gr=True,  **_VIEW_ALL),
-    "procurement_officer":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, **_VIEW_ALL),
-    "procurement_manager":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, **_VIEW_ALL),
-    "warehouse_staff":      _P(create_gr=True,  view_gr=True),
-    "ap_clerk":             _P(create_gr=True,  invoice_upload=True, **_VIEW_ALL, **_FINANCE_ALL),
-    "finance_bp":           _P(create_gr=True,  **_VIEW_ALL, **_FINANCE_ALL),
-    "finance_manager":      _P(create_pr=True,  create_gr=True,  admin_panel=True, **_VIEW_ALL, **_FINANCE_ALL),
-    "vendor_manager":       _P(vendor_master=True, admin_panel=True),
-    "cfo":                  _P(**_VIEW_ALL, **_FINANCE_ALL),
-    "auditor":              _P(**_VIEW_ALL),
+    "requester":            _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BOOKING),
+    "dept_admin":           _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BOOKING),
+    "dept_manager":         _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BUDGET_VIEW, **_BOOKING),
+    "supervisor":           _P(view_pr=True, **_BOOKING),
+    "director":             _P(view_pr=True, view_pa=True, **_BOOKING),
+    "gm":                   _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BOOKING),
+    "opm":                  _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BOOKING),
+    "procurement_officer":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, **_VIEW_ALL, **_BOOKING),
+    "procurement_manager":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, **_VIEW_ALL, **_BOOKING),
+    "warehouse_staff":      _P(create_gr=True,  view_gr=True, **_BOOKING),
+    "ap_clerk":             _P(create_gr=True,  invoice_upload=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_bp":           _P(create_gr=True,  **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_manager":      _P(create_pr=True,  create_gr=True,  admin_panel=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "vendor_manager":       _P(vendor_master=True, admin_panel=True, **_BOOKING),
+    "cfo":                  _P(**_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "auditor":              _P(**_VIEW_ALL, **_BOOKING),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 
