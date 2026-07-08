@@ -237,7 +237,7 @@ export default function RoomsPage() {
 
         {/* Filter bar */}
         <div className="mb-6 rounded-xl border border-neutral-200 bg-white p-4 shadow-sm">
-          {/* Row 1: date + time window + attendees */}
+          {/* Row 1: date + time window + attendees + location + type */}
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-neutral-600">Date</label>
@@ -289,10 +289,7 @@ export default function RoomsPage() {
                 className="h-9 w-24 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
               />
             </div>
-          </div>
 
-          {/* Row 2: location filters */}
-          <div className="mt-3 flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-neutral-600">Floor</label>
               <input
@@ -328,7 +325,7 @@ export default function RoomsPage() {
             </div>
           </div>
 
-          {/* Row 3: equipment checkboxes */}
+          {/* Row 2: equipment checkboxes */}
           <div className="mt-3">
             <p className="mb-1.5 text-xs font-medium text-neutral-600">Equipment</p>
             <div className="flex flex-wrap gap-2">
