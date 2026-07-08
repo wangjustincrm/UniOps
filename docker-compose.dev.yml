@@ -380,6 +380,8 @@ services:
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
+      SCHEDULER_ENABLED: "true"
+      SCHEDULER_INTERVAL_SECONDS: "300"
     depends_on:
       postgres:
         condition: service_healthy

@@ -56,9 +56,7 @@ def require_roles(*roles: str):
             payload: Annotated[dict, Depends(require_roles("auditor", "system_admin"))]
         ): ...
 
-    Per VMS PRD §3: most VMS endpoints are open to any authenticated UniOps user
-    (the Host role is implicit — any logged-in user can act as Host). Use this
-    only for admin / auditor-gated endpoints.
+    Most booking endpoints use the Access Control Matrix dependency in app/core/permissions.py instead; use this only where raw role gating is required.
     """
     async def _check(payload: CurrentUserPayload) -> dict:
         role = payload.get("role")

@@ -12,7 +12,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
-    """All vms-api ORM models inherit from this."""
+    """All booking-api ORM models inherit from this."""
     pass
 
 
