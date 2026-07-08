@@ -36,8 +36,6 @@ def _make_xlsx(rows: list[dict]) -> bytes:
 ROOM_PAYLOAD = {
     "name": "Boardroom A",
     "code": "BR-A",
-    "campus": "Main",
-    "building": "HQ",
     "floor": "3",
     "area": "North",
     "capacity": 10,
@@ -234,23 +232,23 @@ class TestXlsxImport:
         user, client = admin
         rows = [
             {
-                "name": "Room Alpha", "code": "IMP-A", "campus": "Main",
-                "building": "HQ", "floor": "1", "area": "East",
+                "name": "Room Alpha", "code": "IMP-A",
+                "floor": "1", "area": "East",
                 "capacity": 6, "equipment": "projector,whiteboard",
                 "room_type": "standard",
                 "open_time_start": "08:00", "open_time_end": "18:00",
             },
             {
-                "name": "Room Beta", "code": "IMP-B", "campus": "Main",
-                "building": "HQ", "floor": "2", "area": "West",
+                "name": "Room Beta", "code": "IMP-B",
+                "floor": "2", "area": "West",
                 "capacity": 12, "equipment": "",
                 "room_type": "training",
                 "open_time_start": "", "open_time_end": "",
             },
             {
                 # bad capacity: 0
-                "name": "Bad Room", "code": "IMP-BAD", "campus": "",
-                "building": "", "floor": "", "area": "",
+                "name": "Bad Room", "code": "IMP-BAD",
+                "floor": "", "area": "",
                 "capacity": 0, "equipment": "",
                 "room_type": "standard",
                 "open_time_start": "", "open_time_end": "",
@@ -267,6 +265,29 @@ class TestXlsxImport:
         assert data["created"] == 2
         assert len(data["errors"]) == 1
         assert data["errors"][0]["row"] == 4  # header=1, data rows 2,3,4
+
+    async def test_xlsx_import_with_campus_building_backward_compat(self, admin, test_engine):
+        """Importer still accepts files WITH campus/building columns for backward compatibility."""
+        user, client = admin
+        rows = [
+            {
+                "name": "Room Legacy", "code": "IMP-LEGACY", "campus": "Main",
+                "building": "HQ", "floor": "1", "area": "East",
+                "capacity": 8, "equipment": "projector",
+                "room_type": "standard",
+                "open_time_start": "", "open_time_end": "",
+            },
+        ]
+        xlsx_bytes = _make_xlsx(rows)
+        resp = await client.post(
+            "/api/v1/admin/rooms/import",
+            content=xlsx_bytes,
+            headers={"Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["created"] == 1
+        assert len(data["errors"]) == 0
 
     async def test_xlsx_import_non_admin_returns_403(self, requester):
         user, client = requester
@@ -285,8 +306,8 @@ class TestXlsxImport:
         await client.post("/api/v1/admin/rooms", json={**ROOM_PAYLOAD, "code": "IMP-DUP"})
         rows = [
             {
-                "name": "Dup Room", "code": "IMP-DUP", "campus": "Main",
-                "building": "HQ", "floor": "1", "area": "East",
+                "name": "Dup Room", "code": "IMP-DUP",
+                "floor": "1", "area": "East",
                 "capacity": 5, "equipment": "",
                 "room_type": "standard",
                 "open_time_start": "", "open_time_end": "",
@@ -323,6 +344,32 @@ class TestImageFileIds:
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert image_id in data["image_file_ids"]
+
+    async def test_patch_room_with_null_image_file_ids_coerces_to_empty_list(self, admin, test_engine):
+        """PATCH /admin/rooms/{id} with image_file_ids=null must return 200 and coerce to []."""
+        user, client = admin
+        payload = {**ROOM_PAYLOAD, "code": "IMG-PATCH-NULL"}
+        cr = await client.post("/api/v1/admin/rooms", json=payload)
+        assert cr.status_code == 201
+        room_id = cr.json()["id"]
+
+        # First set some image_file_ids
+        image_id = str(uuid.uuid4())
+        resp1 = await client.patch(
+            f"/api/v1/admin/rooms/{room_id}",
+            json={"image_file_ids": [image_id]},
+        )
+        assert resp1.status_code == 200
+        assert image_id in resp1.json()["image_file_ids"]
+
+        # Then PATCH with explicit null → must coerce to [] and return 200
+        resp2 = await client.patch(
+            f"/api/v1/admin/rooms/{room_id}",
+            json={"image_file_ids": None},
+        )
+        assert resp2.status_code == 200, resp2.text
+        data = resp2.json()
+        assert data["image_file_ids"] == []
 
     async def test_create_room_with_image_file_ids_returns_201(self, admin, test_engine):
         """POST /admin/rooms with image_file_ids=[uuid] must return 201 and echo the ids."""

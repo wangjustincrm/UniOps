@@ -17,7 +17,7 @@ async def create_room(db: AsyncSession, data: RoomCreate) -> MeetingRoom:
     """Create a new room. Raises IntegrityError on duplicate code."""
     kwargs = data.model_dump()
     # JSONB columns require plain strings, not UUID objects.
-    if kwargs.get("image_file_ids"):
+    if kwargs.get("image_file_ids") is not None:
         kwargs["image_file_ids"] = [str(i) for i in kwargs["image_file_ids"]]
     room = MeetingRoom(**kwargs)
     db.add(room)
@@ -55,8 +55,12 @@ async def update_room(
     """Apply only the provided fields (excludes unset)."""
     for field, value in data.model_dump(exclude_unset=True).items():
         # JSONB columns require plain strings, not UUID objects.
-        if field == "image_file_ids" and value is not None:
-            value = [str(i) for i in value]
+        if field == "image_file_ids":
+            # Coerce None to [] to respect NOT NULL constraint.
+            if value is None:
+                value = []
+            else:
+                value = [str(i) for i in value]
         setattr(room, field, value)
     await db.flush()
     await db.refresh(room)

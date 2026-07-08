@@ -92,10 +92,11 @@ def create_app() -> FastAPI:
         if origin and origin in settings.ALLOWED_ORIGINS:
             headers["Access-Control-Allow-Origin"] = origin
             headers["Access-Control-Allow-Credentials"] = "true"
+        headers["Vary"] = "Origin"
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"detail": "Internal server error"},
-            headers=headers or None,
+            headers=headers,
         )
 
     app.include_router(api_router, prefix=settings.API_V1_PREFIX)
