@@ -67,6 +67,10 @@ async def resend_notification(
     """Manually resend a notification log entry (e.g. after fixing SMTP config).
 
     Re-runs send_notification and returns the updated log.
+
+    Note: resending a log whose status is already 'sent' will deliver a
+    duplicate email to all recipients in log.recipients — this is intentional
+    (admin override capability) and not guarded by an idempotency check.
     """
     result = await db.execute(
         select(NotificationLog).where(NotificationLog.id == log_id)

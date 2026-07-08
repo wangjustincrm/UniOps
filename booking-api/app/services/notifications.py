@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.crud.config import get_or_create_config
 from app.models.booking import Booking
+from app.models.company_config_mirror import CompanyConfig
 from app.models.notification import NotificationLog
 from app.models.room import MeetingRoom
 from app.models.user_mirror import User
@@ -68,34 +69,22 @@ async def _load_smtp_config(db: AsyncSession) -> dict[str, Any]:
             "from_email": bk_cfg.get("from_email"),
         }
 
-    # Fallback: shared epms-api SMTP columns (may not exist in test/stripped DB).
-    # Use a SAVEPOINT so a missing-column error doesn't abort the outer transaction.
-    try:
-        await db.execute(text("SAVEPOINT smtp_fallback"))
-        row = (
-            await db.execute(
-                text(
-                    "SELECT smtp_host, smtp_port, smtp_user, smtp_password, "
-                    "smtp_use_tls, smtp_from FROM company_config LIMIT 1"
-                )
-            )
-        ).first()
-        await db.execute(text("RELEASE SAVEPOINT smtp_fallback"))
-    except Exception:  # noqa: BLE001
-        try:
-            await db.execute(text("ROLLBACK TO SAVEPOINT smtp_fallback"))
-        except Exception:  # noqa: BLE001
-            pass
-        return {}
-    if row is None:
+    # Fallback: shared epms-api SMTP columns via the CompanyConfig mirror.
+    # The mirror registers the six smtp_* columns with Base.metadata so
+    # create_all() materialises them in the test DB (same pattern as vms-api).
+    # Any real DB error must propagate so send_notification's outer try/except
+    # marks the log failed and the scheduler retries — never silently dropped.
+    cc_result = await db.execute(select(CompanyConfig).limit(1))
+    cc = cc_result.scalar_one_or_none()
+    if cc is None:
         return {}
     return {
-        "host":       row[0],
-        "port":       row[1],
-        "user":       row[2],
-        "password":   row[3],
-        "use_tls":    row[4],
-        "from_email": row[5],
+        "host":       cc.smtp_host,
+        "port":       cc.smtp_port,
+        "user":       cc.smtp_user,
+        "password":   cc.smtp_password,
+        "use_tls":    cc.smtp_use_tls,
+        "from_email": cc.smtp_from,
     }
 
 
@@ -168,8 +157,10 @@ def _build_email_message(
 
     msg.attach(alternative)
 
-    # ICS attachment
+    # ICS attachment — name= on Content-Type aids older mail clients that read
+    # the filename from Content-Type rather than Content-Disposition.
     ics_attachment = MIMEBase("application", "ics")
+    ics_attachment.set_param("name", "invite.ics")
     ics_attachment.set_payload(ics_bytes)
     encoders.encode_base64(ics_attachment)
     ics_attachment.add_header(
@@ -233,6 +224,21 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
         # Load config to determine organizer_mode
         config = await get_or_create_config(db)
         smtp_cfg = await _load_smtp_config(db)
+
+        # LOG-ONLY mode (no SMTP host configured) — check before any email construction.
+        # Avoids wasted ICS/MIME work on unconfigured deployments and prevents
+        # placeholder addresses (e.g. "booking@system") from leaking into From/ORGANIZER.
+        if not smtp_cfg.get("host"):
+            log.info(
+                "SMTP not configured — log-only notification for booking %s "
+                "(type=%s, to=%s)",
+                booking.id, log_entry.notif_type, list(log_entry.recipients or []),
+            )
+            log_entry.status = "sent"
+            log_entry.sent_at = datetime.now(timezone.utc)
+            log_entry.error = "smtp_not_configured (logged only)"
+            booking.sync_status = "sent"
+            return True
 
         # Resolve organizer
         if config.organizer_mode == "initiator":
@@ -309,18 +315,14 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
             ical_method=ical_method,
         )
 
-        # LOG-ONLY mode (no SMTP host configured)
-        if not smtp_cfg.get("host"):
-            log.info(
-                "SMTP not configured — log-only notification for booking %s "
-                "(type=%s, to=%s, subject=%r)",
-                booking.id, log_entry.notif_type, to_emails, subject,
-            )
-            log_entry.status = "sent"
-            log_entry.sent_at = datetime.now(timezone.utc)
-            log_entry.error = "smtp_not_configured (logged only)"
-            booking.sync_status = "sent"
-            return True
+        # In initiator mode, From = organizer_email but the actual sending mailbox is
+        # smtp_from_email.  Adding a Sender: header is RFC 5321-compliant and signals
+        # the true submission agent.  Outlook/Exchange render this as "sent on behalf
+        # of <organizer>", which is the correct user-facing message in initiator mode.
+        # Use organizer_mode=system (default) to avoid the "on behalf of" banner when
+        # the system mailbox is the calendar organizer.
+        if config.organizer_mode == "initiator" and smtp_cfg.get("from_email"):
+            email_msg["Sender"] = smtp_cfg["from_email"]
 
         # Deliver via SMTP (blocking call in thread)
         await asyncio.to_thread(_send_smtp_blocking, cfg=smtp_cfg, msg=email_msg)
@@ -366,6 +368,12 @@ async def enqueue(
 
     For series bookings, pass the first occurrence + rrule; a single notification
     email covers the whole series (one RRULE VEVENT).
+
+    Recipients (organizer + current attendees + room_admin_emails) are resolved
+    at enqueue() time and frozen in NotificationLog.recipients.  Retry and resend
+    always use the frozen list — they do NOT re-resolve the booking's current
+    attendees.  Cancel paths must call enqueue() fresh (not send_notification on
+    an old log) to capture the current attendee list at cancellation time.
 
     Returns the NotificationLog (status=sent|failed) or None on unexpected error.
     Never raises — all exceptions are caught internally.
