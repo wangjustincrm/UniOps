@@ -36,6 +36,12 @@ export interface RoomWithStatusOut {
   next_meeting_at: string | null
 }
 
+/** Room detail with today's and this week's bookings */
+export interface RoomDetailOut extends RoomWithStatusOut {
+  today_bookings: BookingSlimOut[]
+  week_bookings: BookingSlimOut[]
+}
+
 // ── Booking ───────────────────────────────────────────────────────────────────
 
 export interface BookingSlimOut {

@@ -12,6 +12,7 @@ import type {
   BookingOut,
   BookingSlimOut,
   DirectoryUserOut,
+  RoomDetailOut,
   RoomWithStatusOut,
   SeriesSpec,
   SuggestOut,
@@ -61,19 +62,17 @@ export const roomService = {
   },
 
   detail(id: string) {
-    return api.get<RoomWithStatusOut & {
-      today_bookings: BookingSlimOut[]
-      week_bookings: BookingSlimOut[]
-    }>(`/api/v1/rooms/${id}`)
+    return api.get<RoomDetailOut>(`/api/v1/rooms/${id}`)
   },
 }
 
 // ── React Query hooks for rooms ───────────────────────────────────────────────
 
-export function useRoomList(filters: RoomListFilters = {}) {
+export function useRoomList(filters: RoomListFilters = {}, enabled = true) {
   return useQuery<RoomWithStatusOut[]>({
     queryKey: ['booking-rooms', filters],
     queryFn: () => roomService.list(filters),
+    enabled,
     staleTime: 30_000,
     refetchInterval: 60_000,
   })
@@ -93,10 +92,7 @@ export function useRoomAvailability(
 }
 
 export function useRoomDetail(id: string | undefined) {
-  return useQuery<RoomWithStatusOut & {
-    today_bookings: BookingSlimOut[]
-    week_bookings: BookingSlimOut[]
-  }>({
+  return useQuery<RoomDetailOut>({
     queryKey: ['booking-room', id],
     queryFn: () => roomService.detail(id!),
     enabled: !!id,
@@ -157,7 +153,7 @@ export interface PrecheckIn {
 
 export interface PrecheckOut {
   conflicts: BookingSlimOut[]
-  occurrence_conflicts: unknown[]
+  occurrence_conflicts: Array<{ date: string; conflicts: BookingSlimOut[] }>
   suggestions: SuggestOut | null
 }
 

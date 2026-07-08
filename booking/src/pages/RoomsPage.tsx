@@ -67,9 +67,9 @@ function buildTimeOptions(startHour: number, endHour: number): string[] {
 
 const TIME_OPTIONS = buildTimeOptions(6, 23)
 
-/** Combine a YYYY-MM-DD date string and HH:MM time string into an ISO datetime. */
+/** Combine a YYYY-MM-DD date string and HH:MM time string into an ISO datetime with UTC Z suffix. */
 function toISO(date: string, time: string): string {
-  return `${date}T${time}:00`
+  return new Date(`${date}T${time}:00`).toISOString()
 }
 
 // ── Skeleton loader ───────────────────────────────────────────────────────────
@@ -220,8 +220,8 @@ export default function RoomsPage() {
   // Availability query (only when window is set)
   const availQuery = useRoomAvailability(window, filters)
 
-  // List query (always fetching, used when no window)
-  const listQuery = useRoomList(filters)
+  // List query (only when no availability window is set)
+  const listQuery = useRoomList(filters, !hasWindow)
 
   const { data, isLoading, error } = hasWindow ? availQuery : listQuery
 
