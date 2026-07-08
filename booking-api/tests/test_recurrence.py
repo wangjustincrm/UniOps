@@ -80,14 +80,15 @@ class TestExpandSeriesWeeklyCount:
         starts_at = _future_dt(10, 0, days_ahead=1)
         ends_at = starts_at + timedelta(hours=1)
         spec = SeriesSpec(freq="weekly", interval=1, count=4)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
+        occurrences, truncated = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
         assert len(occurrences) == 4
+        assert truncated is False
 
     def test_weekly_count_4_first_occurrence_equals_input(self):
         starts_at = _future_dt(10, 0, days_ahead=1)
         ends_at = starts_at + timedelta(hours=1)
         spec = SeriesSpec(freq="weekly", count=4)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
         assert occurrences[0][0] == starts_at
         assert occurrences[0][1] == ends_at
 
@@ -95,7 +96,7 @@ class TestExpandSeriesWeeklyCount:
         starts_at = _future_dt(10, 0, days_ahead=1)
         ends_at = starts_at + timedelta(hours=1)
         spec = SeriesSpec(freq="weekly", count=4)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
         for i in range(1, len(occurrences)):
             delta = occurrences[i][0] - occurrences[i - 1][0]
             assert delta == timedelta(weeks=1), (
@@ -106,7 +107,7 @@ class TestExpandSeriesWeeklyCount:
         starts_at = _future_dt(10, 0, days_ahead=1)
         ends_at = starts_at + timedelta(hours=1)
         spec = SeriesSpec(freq="weekly", interval=2, count=3)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=90, tz=TZ)
         assert len(occurrences) == 3
         for i in range(1, len(occurrences)):
             delta = occurrences[i][0] - occurrences[i - 1][0]
@@ -124,7 +125,7 @@ class TestExpandSeriesUntilInclusive:
         ends_at = starts_at + timedelta(hours=1)
         until_date = (starts_at + timedelta(weeks=3)).date()
         spec = SeriesSpec(freq="weekly", until=until_date)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
         # Should have 4 occurrences: week 0, 1, 2, 3 (all <= until)
         assert len(occurrences) == 4
         last_occ_date = occurrences[-1][0].astimezone(TZ).date()
@@ -136,7 +137,7 @@ class TestExpandSeriesUntilInclusive:
         # until = 6 days after starts_at (before the 2nd weekly occurrence)
         until_date = (starts_at + timedelta(days=6)).date()
         spec = SeriesSpec(freq="weekly", until=until_date)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
         assert len(occurrences) == 1
 
     def test_until_exactly_on_second_occurrence_gives_2_occurrences(self):
@@ -144,7 +145,7 @@ class TestExpandSeriesUntilInclusive:
         ends_at = starts_at + timedelta(hours=1)
         until_date = (starts_at + timedelta(weeks=1)).date()
         spec = SeriesSpec(freq="weekly", until=until_date)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
         assert len(occurrences) == 2
 
 
@@ -157,17 +158,18 @@ class TestExpandSeriesAdvanceWindowCap:
         ends_at = starts_at + timedelta(hours=1)
         spec = SeriesSpec(freq="weekly", count=10)
         # advance_days=14: occurrences at +1d and +8d are within window; +15d is not
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=14, tz=TZ)
+        occurrences, truncated = expand_series(starts_at, ends_at, spec, advance_days=14, tz=TZ)
         assert len(occurrences) == 2, (
             f"With advance_days=14 and starts_at +1d, expected 2 occurrences, got {len(occurrences)}"
         )
+        assert truncated is True, "truncated must be True when advance-window capped the series"
 
     def test_all_occurrences_within_advance_window(self):
         starts_at = _future_dt(10, 0, days_ahead=1)
         ends_at = starts_at + timedelta(hours=1)
         spec = SeriesSpec(freq="weekly", count=8)
         advance_days = 30
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=advance_days, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=advance_days, tz=TZ)
         cutoff = datetime.now(TZ) + timedelta(days=advance_days)
         for occ_start, _ in occurrences:
             assert occ_start <= cutoff, (
@@ -190,7 +192,7 @@ class TestExpandSeriesOver60ValueError:
         ends_at = starts_at + timedelta(hours=1)
         spec = SeriesSpec(freq="daily", count=60)
         # Should not raise; may be capped by advance window but no ValueError
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=365, tz=TZ)
         assert len(occurrences) <= 60
 
     def test_until_producing_over_60_raises_value_error(self):
@@ -210,7 +212,7 @@ class TestExpandSeriesDaily:
         starts_at = _future_dt(9, 0, days_ahead=1)
         ends_at = starts_at + timedelta(minutes=30)
         spec = SeriesSpec(freq="daily", count=3)
-        occurrences = expand_series(starts_at, ends_at, spec, advance_days=30, tz=TZ)
+        occurrences, _truncated = expand_series(starts_at, ends_at, spec, advance_days=30, tz=TZ)
         assert len(occurrences) == 3
         for i in range(1, 3):
             delta = occurrences[i][0] - occurrences[i - 1][0]

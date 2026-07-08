@@ -12,13 +12,14 @@ Validation order (per task-7-brief):
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +35,8 @@ from app.schemas.booking import BookingCreate, BookingCreatedOut, BookingOut, Bo
 from app.services.notifications import enqueue
 from app.services.recurrence import SeriesSpec, build_rrule_string, expand_series
 from app.services.recommend import find_conflicts, suggest
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -194,6 +197,9 @@ async def create_booking(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Booking starts before room open time ({open_start})",
         )
+    # Half-open interval: a booking ending exactly at open_end is ALLOWED
+    # (e.g. open_end=20:00 accepts a booking ending 20:00 — it merely releases
+    # the room at close time, not after it).
     if end_time > open_end:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -226,10 +232,11 @@ async def create_booking(
 
     # ── Step 4: Series expansion + conflict check ─────────────────────────────
 
+    series_truncated: bool = False
     if body.series is not None:
         spec: SeriesSpec = body.series
         try:
-            occurrences = expand_series(
+            occurrences, series_truncated = expand_series(
                 body.starts_at,
                 body.ends_at,
                 spec,
@@ -271,8 +278,15 @@ async def create_booking(
                 first_conflicting_occ = (occ_start, occ_end)
 
     if all_conflict_rows:
-        # Generate suggestions for the FIRST conflicting occurrence
-        assert first_conflicting_occ is not None
+        # Generate suggestions for the FIRST conflicting occurrence.
+        # first_conflicting_occ is always set when all_conflict_rows is non-empty
+        # (the loop sets it on the first conflict iteration), but use an explicit
+        # guard instead of a bare assert so the invariant survives -O optimisation.
+        if first_conflicting_occ is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal error: conflict detected but no occurrence tracked",
+            )
         first_start, first_end = first_conflicting_occ
         suggest_result = await suggest(
             db,
@@ -342,28 +356,82 @@ async def create_booking(
         )
     except IntegrityError:
         await db.rollback()
-        # Re-query for conflicts (concurrency backstop)
-        conflict_rows = await find_conflicts(db, body.room_id, body.starts_at, body.ends_at)
-        conflicts_slim = await _build_slim_out_list(db, conflict_rows)
+        # Concurrency backstop: another transaction committed between our precheck
+        # and our INSERT.  Re-query ALL occurrences (not just occurrence 1) so the
+        # 400 body accurately identifies which slot(s) were grabbed.  Build the
+        # same {detail, conflicts, occurrence_conflicts, suggestions} shape as the
+        # precheck path so callers need no special-case handling.
+        ie_all_conflict_rows: list[Booking] = []
+        ie_first_conflicting_occ: tuple[datetime, datetime] | None = None
+        ie_occurrence_conflicts: list[dict] = []
+
+        for occ_start, occ_end in occurrences:
+            occ_conflicts = await find_conflicts(db, body.room_id, occ_start, occ_end)
+            if occ_conflicts:
+                ie_all_conflict_rows.extend(occ_conflicts)
+                occ_local_date = occ_start.astimezone(tz).date().isoformat()
+                ie_occurrence_conflicts.append({
+                    "date": occ_local_date,
+                    "conflicts": await _build_slim_out_list(db, occ_conflicts),
+                })
+                if ie_first_conflicting_occ is None:
+                    ie_first_conflicting_occ = (occ_start, occ_end)
+
+        if ie_all_conflict_rows:
+            # Deduplicate and build slim list
+            ie_seen_ids: set[uuid.UUID] = set()
+            ie_unique: list[Booking] = []
+            for c in ie_all_conflict_rows:
+                if c.id not in ie_seen_ids:
+                    ie_seen_ids.add(c.id)
+                    ie_unique.append(c)
+            conflicts_slim = await _build_slim_out_list(db, ie_unique)
+        else:
+            # Race resolved itself (the conflicting booking vanished between the
+            # IntegrityError and our re-query).  Return a safe 400 with empty lists
+            # so the client can retry cleanly.
+            conflicts_slim = []
+
         return JSONResponse(
             status_code=status.HTTP_400_BAD_REQUEST,
             content={
-                "detail": "conflict",
+                "detail": (
+                    "conflict"
+                    if ie_all_conflict_rows
+                    else "Booking conflict detected concurrently; please retry"
+                ),
                 "conflicts": [c.model_dump(mode="json") for c in conflicts_slim],
-                "occurrence_conflicts": [],
+                "occurrence_conflicts": [
+                    {
+                        "date": oc["date"],
+                        "conflicts": [c.model_dump(mode="json") for c in oc["conflicts"]],
+                    }
+                    for oc in ie_occurrence_conflicts
+                ],
                 "suggestions": None,
             },
         )
 
     # ── Step 6: Notifications stub + 201 ─────────────────────────────────────
 
-    await enqueue(db, bookings, "created", rrule=rrule)
+    # INVARIANT: notification failure must NEVER fail or roll back the booking.
+    # Wrap enqueue in try/except so that even when Task 10 replaces this stub
+    # with real sending, a transient notification error is logged and swallowed —
+    # the booking is already committed at this point.
+    try:
+        await enqueue(db, bookings, "created", rrule=rrule)
+    except Exception:
+        logger.exception(
+            "enqueue failed for booking(s) %s — notification suppressed, booking committed",
+            [str(b.id) for b in bookings],
+        )
 
     bookings_out = [_make_booking_out(b, room, organizer_name) for b in bookings]
 
     return BookingCreatedOut(
         bookings=bookings_out,
         series_id=series_id,
+        series_truncated=series_truncated,
     )
 
 
@@ -375,11 +443,16 @@ async def create_booking(
 async def get_my_bookings(
     db: SessionDep,
     current_user: CurrentUser,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
-    """Return all bookings where the current user is the organizer.
+    """Return bookings where the current user is the organizer.
 
     Ordered by starts_at descending. Room summary resolved via a single JOIN
     (no N+1 query).
+
+    limit: max results to return (1–500, default 200).
+    offset: number of results to skip (default 0).
     """
     organizer_id = uuid.UUID(current_user["sub"])
 
@@ -389,6 +462,8 @@ async def get_my_bookings(
         .join(MeetingRoom, Booking.room_id == MeetingRoom.id)
         .where(Booking.organizer_id == organizer_id)
         .order_by(Booking.starts_at.desc())
+        .offset(offset)
+        .limit(limit)
     )
     result = await db.execute(stmt)
     rows = result.all()

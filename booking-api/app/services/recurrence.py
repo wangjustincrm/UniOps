@@ -64,7 +64,7 @@ def expand_series(
     *,
     advance_days: int,
     tz: ZoneInfo,
-) -> list[tuple[datetime, datetime]]:
+) -> tuple[list[tuple[datetime, datetime]], bool]:
     """Expand a series spec into a list of (starts_at, ends_at) occurrence tuples.
 
     Rules:
@@ -86,7 +86,10 @@ def expand_series(
         tz:           Display timezone (used for date comparisons against until).
 
     Returns:
-        List of (starts_at, ends_at) tuples, in chronological order.
+        Tuple of (occurrences, truncated) where:
+        - occurrences: list of (starts_at, ends_at) tuples, chronological order.
+        - truncated: True when the advance-window cap dropped at least one
+          occurrence (i.e. the series was shortened relative to count/until).
     """
     duration = ends_at - starts_at
     now = datetime.now(tz)
@@ -125,12 +128,16 @@ def expand_series(
 
         current_start = current_start + step
 
-    # Second pass: apply advance-window cap (silently drop beyond now+advance_days)
+    # Second pass: apply advance-window cap (silently drop beyond now+advance_days).
+    # truncated=True signals to the caller that the series was shortened; the
+    # caller surfaces this as series_truncated=True in BookingCreatedOut so the
+    # client knows the response does not cover the full requested series.
     occurrences = [
         (s, e) for s, e in candidates if s <= cutoff
     ]
+    truncated = len(occurrences) < len(candidates)
 
-    return occurrences
+    return occurrences, truncated
 
 
 # ─────────────────────────────────────────────────────────────────────────────

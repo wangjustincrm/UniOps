@@ -121,7 +121,7 @@ async def precheck_booking(
         cfg_rules: dict = config.rules or {}
         advance_days = cfg_rules.get("advance_days", 30)
         try:
-            occurrences = expand_series(
+            occurrences, _truncated = expand_series(
                 body.starts_at,
                 body.ends_at,
                 body.series,
@@ -160,8 +160,10 @@ async def precheck_booking(
     # ── Suggestions (only when conflicts exist) ───────────────────────────────
     suggestions_out: SuggestOut | None = None
     if conflict_rows or occurrence_conflicts:
-        config = await get_or_create_config(db)
-        cfg_rules_s: dict = config.rules or {}
+        # cfg_rules is already loaded if body.series was set; fetch once otherwise.
+        if body.series is None:
+            config = await get_or_create_config(db)
+            cfg_rules: dict = config.rules or {}
 
         suggest_result = await suggest(
             db,
@@ -170,7 +172,7 @@ async def precheck_booking(
             ends_at=body.ends_at,
             attendee_count=body.attendee_count,
             equipment=body.equipment,
-            cfg_rules=cfg_rules_s,
+            cfg_rules=cfg_rules,
         )
         suggestions_out = SuggestOut(
             nearest_slots=suggest_result["nearest_slots"],

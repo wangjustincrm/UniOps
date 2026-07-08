@@ -88,6 +88,10 @@ class BookingCreatedOut(BaseModel):
 
     bookings: all created occurrence rows (1 for single, N for series).
     series_id: shared UUID for series; None for single bookings.
+    series_truncated: True when the advance-booking window capped the series
+        (i.e. expand_series dropped occurrences beyond now+advance_days).
+        Always False for single bookings.
     """
     bookings: list[BookingOut]
     series_id: uuid.UUID | None
+    series_truncated: bool = False
