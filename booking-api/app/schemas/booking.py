@@ -95,3 +95,37 @@ class BookingCreatedOut(BaseModel):
     bookings: list[BookingOut]
     series_id: uuid.UUID | None
     series_truncated: bool = False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Task 8 schemas
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BookingUpdate(BaseModel):
+    """Request body for PATCH /bookings/{id}.
+
+    All fields are optional — only provided fields are updated.
+    If room_id, starts_at, or ends_at are changed, re-validation and
+    conflict-check run against the new values.
+    """
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    description: str | None = None
+    attendee_ids: list[uuid.UUID] | None = None
+    room_id: uuid.UUID | None = None
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+
+
+class BookingAdminOut(BookingOut):
+    """BookingOut extended with organizer_name for admin list (no N+1).
+
+    organizer_name is already on BookingOut; this alias exists so Tasks 10/14/15
+    can import the distinct name and extend it further if needed.
+    """
+    pass
+
+
+class AdminBookingListOut(BaseModel):
+    """Response from GET /admin/bookings."""
+    items: list[BookingAdminOut]
+    total: int
