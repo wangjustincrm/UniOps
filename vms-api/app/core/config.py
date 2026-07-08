@@ -29,6 +29,7 @@ class Settings(BaseSettings):
         "http://localhost:5175",  # OA frontend
         "http://localhost:5176",  # VMS frontend
         "http://localhost:5177",  # Finance frontend
+        "http://localhost:5178",  # Booking frontend
         "http://localhost:3000",
     ]
 

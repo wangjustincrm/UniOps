@@ -286,6 +286,7 @@ export const EPMS_URL = (import.meta.env.VITE_EPMS_URL as string | undefined) ||
 export const OA_URL   = (import.meta.env.VITE_OA_URL   as string | undefined) || 'http://localhost:5175'
 export const VMS_URL  = (import.meta.env.VITE_VMS_URL  as string | undefined) || 'http://localhost:5176'
 export const FINANCE_URL = (import.meta.env.VITE_FINANCE_URL as string | undefined) || 'http://localhost:5177'
+export const BOOKING_URL = (import.meta.env.VITE_BOOKING_URL as string | undefined) || 'http://localhost:5178'
 
 // btoa() only handles Latin1; user data (e.g. Chinese full_name) is UTF-8, which
 // makes btoa throw "characters outside of the Latin1 range". Encode the JSON as

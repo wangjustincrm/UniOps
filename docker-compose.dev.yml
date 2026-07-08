@@ -84,7 +84,7 @@ services:
       APP_NAME: EPMS API
       APP_VERSION: 0.1.0
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177"]'
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178"]'
       ACCESS_TOKEN_EXPIRE_MINUTES: "480"
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
@@ -336,7 +336,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177"]'
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -442,6 +442,8 @@ services:
       VITE_EPMS_URL: http://localhost:5173
       VITE_OA_URL: http://localhost:5175
       VITE_VMS_URL: http://localhost:5176
+      VITE_FINANCE_URL: http://localhost:5177
+      VITE_BOOKING_URL: http://localhost:5178
       VITE_EPMS_API_URL: http://localhost:8000
       VITE_OA_API_URL: http://localhost:8006
       VITE_VMS_API_URL: http://localhost:8008

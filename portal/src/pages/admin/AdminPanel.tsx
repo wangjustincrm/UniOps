@@ -147,6 +147,7 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'oa', label: 'OA' },
   { key: 'vms', label: 'VMS' },
   { key: 'finance', label: 'Finance' },
+  { key: 'booking', label: 'Booking' },
 ]
 
 function CompanySettings() {

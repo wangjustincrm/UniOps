@@ -4,16 +4,16 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck, LogOut, ChevronDown, User, KeyRound, Menu,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud, Landmark,
+  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock,
   X, Eye, EyeOff,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, encodeSession } from '@/lib/api'
+import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
 import { globalSignOut } from '@/lib/signOut'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
-import { FINANCE_ACCESS_PERMS } from '@/components/layout/navConfig'
+import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS } from '@/components/layout/navConfig'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -622,6 +622,9 @@ export default function PortalHome() {
   const hasFinanceAccess =
     role === 'system_admin' ||
     (role !== null && FINANCE_ACCESS_PERMS.some((p) => !!matrix?.[role]?.[p]))
+  const hasBookingAccess =
+    role === 'system_admin' ||
+    (role !== null && BOOKING_ACCESS_PERMS.some((p) => !!matrix?.[role]?.[p]))
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -636,6 +639,7 @@ export default function PortalHome() {
   // Land on Finance root; the Finance app redirects to the first page the user
   // can access (don't deep-link to /finance/ap which needs view_finance).
   const financeHref = session ? `${FINANCE_URL}/#__session=${session}` : FINANCE_URL
+  const bookingHref = session ? `${BOOKING_URL}/#__session=${session}` : BOOKING_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -753,6 +757,15 @@ export default function PortalHome() {
       healthy: undefined,
       loading: false,
     }] : []),
+    ...(hasBookingAccess ? [{
+      icon: <CalendarClock className="h-5 w-5 text-teal-600" />,
+      iconBg: 'bg-teal-50',
+      label: 'Meeting Rooms',
+      description: 'Find and book meeting rooms',
+      href: bookingHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
   ]
 
   return (
@@ -769,7 +782,7 @@ export default function PortalHome() {
       {/* ── Sidebar ─────────────────────────────── */}
       <PortalSidebar
         activeKey="portal:/"
-        epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} session={session}
+        epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} bookingHref={bookingHref} session={session}
         userRole={auth.user?.role ?? null} matrix={matrix}
         mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)}
         collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)}
