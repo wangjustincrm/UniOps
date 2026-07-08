@@ -400,7 +400,7 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
 
   const inner = (
     <div className={cn(
-      'flex flex-col rounded-xl border bg-white p-5 transition-all duration-150',
+      'flex h-full flex-col rounded-xl border bg-white p-5 transition-all duration-150',
       comingSoon
         ? 'opacity-50 cursor-not-allowed border-neutral-200'
         : isDown
@@ -419,7 +419,7 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
       <p className="mt-1 text-xs text-neutral-500 leading-relaxed">{description}</p>
       {!comingSoon && (
         <div className={cn(
-          'mt-4 flex items-center gap-1 text-xs font-medium transition-colors',
+          'mt-auto pt-4 flex items-center gap-1 text-xs font-medium transition-colors',
           isDown ? 'text-neutral-300' : 'text-primary-600 group-hover:text-primary-700',
         )}>
           Explore Module <ArrowRight className="h-3.5 w-3.5" />
@@ -429,8 +429,8 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
   )
 
   return comingSoon || isDown
-    ? <div>{inner}</div>
-    : <a href={href}>{inner}</a>
+    ? <div className="h-full">{inner}</div>
+    : <a href={href} className="block h-full">{inner}</a>
 }
 
 // ── Task row ──────────────────────────────────────────────────────────────────
@@ -818,7 +818,7 @@ export default function PortalHome() {
                 </div>
 
                 {/* Module cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-5xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 auto-rows-fr gap-3 max-w-5xl">
                   {MODULES.map((m) => (
                     <ModuleCard
                       key={m.label}
