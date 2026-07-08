@@ -122,7 +122,12 @@ def upgrade() -> None:
         "booking_config",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
         sa.Column("smtp_settings", postgresql.JSONB, nullable=False, server_default="{}"),
-        sa.Column("rules", postgresql.JSONB, nullable=False, server_default="{}"),
+        sa.Column(
+            "rules",
+            postgresql.JSONB,
+            nullable=False,
+            server_default='{"slot_minutes": 15, "min_duration_minutes": 15, "max_duration_minutes": 240, "advance_days": 30, "default_open_start": "08:00", "default_open_end": "20:00", "notify_room_admin": false, "room_admin_emails": []}',
+        ),
         sa.Column("organizer_mode", sa.String(16), nullable=False, server_default="system"),
     )
 

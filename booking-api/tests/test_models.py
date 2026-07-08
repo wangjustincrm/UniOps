@@ -53,3 +53,19 @@ async def test_back_to_back_ok(db_session):
     db_session.add(_booking(room.id, t0, t0 + timedelta(hours=1)))
     db_session.add(_booking(room.id, t0 + timedelta(hours=1), t0 + timedelta(hours=2)))
     await db_session.flush()  # [14:00,15:00) and [15:00,16:00) do not overlap
+
+
+@pytest.mark.asyncio
+async def test_session_isolated_after_integrity_error(db_session):
+    """Prove that an IntegrityError in a *previous* test does not poison this session.
+
+    test_overlapping_confirmed_bookings_rejected raises IntegrityError inside its
+    db_session fixture.  With the old shared-connection approach that left the
+    connection in an aborted transaction state, so any subsequent DML would fail
+    with 'InFailedSqlTransaction'.  With the savepoint-isolation pattern each
+    test gets its own connection, so this trivial flush must succeed.
+    """
+    room = _room(code="R4")
+    db_session.add(room)
+    await db_session.flush()  # must NOT raise InFailedSqlTransaction
+    assert room.id is not None

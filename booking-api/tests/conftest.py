@@ -114,17 +114,31 @@ async def _patch_session_factory(test_engine):
 
 @pytest.fixture
 async def db_session(test_engine):
-    """Yield a fresh AsyncSession per test, rolled back on teardown.
+    """Yield a fully-isolated AsyncSession per test, always rolled back on teardown.
 
-    Uses SAVEPOINT so nested flushes can raise IntegrityError without
-    killing the outer transaction (the outer transaction is always rolled back
-    so tables stay clean between tests).
+    Standard savepoint-isolation pattern:
+      1. Open a real connection and begin an outer transaction.
+      2. Bind an AsyncSession to it with join_transaction_mode="create_savepoint"
+         so every session.begin() issues a SAVEPOINT, not a real BEGIN.
+      3. Any IntegrityError raised inside a test only aborts to the savepoint;
+         the outer connection stays alive and healthy.
+      4. Unconditionally roll back the outer transaction so no data leaks
+         between tests, regardless of what the test did.
     """
-    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
-    async with factory() as session:
-        async with session.begin():
-            yield session
-            await session.rollback()
+    conn = await test_engine.connect()
+    trans = await conn.begin()
+    session = AsyncSession(
+        bind=conn,
+        join_transaction_mode="create_savepoint",
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    try:
+        yield session
+    finally:
+        await session.close()
+        await trans.rollback()
+        await conn.close()
 
 
 # ── User factory ────────────────────────────────────────────────────────────-
