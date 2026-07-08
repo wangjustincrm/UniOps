@@ -725,6 +725,98 @@ class TestSuggestNearestSlots:
                 f"Expected slot duration {duration}, got {slot_dur}"
             )
 
+    async def test_nearest_slots_anchored_toward_requested_start(self, db_session):
+        """Nearest slots must be anchored toward starts_at, not at gap_start.
+
+        Setup:
+          - Two gaps: 08:00–13:00 and 15:00–20:00
+          - Requested window: 13:00–14:00 (1 hour) — conflicts with something at 13:00–15:00
+          - Conflict booking fills 13:00–15:00, creating the two gaps above.
+
+        Expected nearest slots (anchored at requested start 13:00, duration 1h):
+          - Gap 08:00–13:00: feasible range [08:00, 12:00]; anchor toward 13:00 → 12:00–13:00
+          - Gap 15:00–20:00: feasible range [15:00, 19:00]; anchor toward 13:00 → 15:00–16:00
+
+        The OLD behavior (anchoring at gap_start) would return 08:00–09:00 and 15:00–16:00.
+        The NEW behavior anchors to 12:00–13:00 and 15:00–16:00 — both much closer to 13:00.
+        """
+        from app.models.room import MeetingRoom
+        from app.models.booking import Booking
+
+        day = _dt(0, 0, day_offset=2).date()  # day after tomorrow (avoid today-boundary issues)
+
+        target_room = MeetingRoom(
+            id=uuid.uuid4(),
+            name="Anchor Test Room",
+            code=f"NS-ANC-{uuid.uuid4().hex[:4]}",
+            capacity=10,
+            equipment=[],
+            status="available",
+            open_time_start=time(8, 0),
+            open_time_end=time(20, 0),
+        )
+        db_session.add(target_room)
+        await db_session.flush()
+
+        # Booking that fills 13:00–15:00, creating gaps 08:00–13:00 and 15:00–20:00
+        conflict_booking = Booking(
+            room_id=target_room.id,
+            title="Blocker",
+            organizer_id=uuid.uuid4(),
+            attendee_ids=[],
+            starts_at=datetime(day.year, day.month, day.day, 13, 0, tzinfo=TZ),
+            ends_at=datetime(day.year, day.month, day.day, 15, 0, tzinfo=TZ),
+            status="confirmed",
+            calendar_uid=f"anc-{uuid.uuid4()}@test",
+        )
+        db_session.add(conflict_booking)
+        await db_session.flush()
+
+        # Request 13:00–14:00 (conflicts with the 13:00–15:00 booking)
+        starts_at = datetime(day.year, day.month, day.day, 13, 0, tzinfo=TZ)
+        ends_at = datetime(day.year, day.month, day.day, 14, 0, tzinfo=TZ)
+        duration = ends_at - starts_at  # 1 hour
+
+        cfg_rules = {"slot_minutes": 15, "default_open_start": "08:00", "default_open_end": "20:00"}
+        result = await suggest(
+            db_session,
+            room=target_room,
+            starts_at=starts_at,
+            ends_at=ends_at,
+            attendee_count=None,
+            equipment=[],
+            cfg_rules=cfg_rules,
+        )
+
+        slots = result["nearest_slots"]
+        assert len(slots) >= 1, "Expected at least one nearest slot"
+
+        # All returned slots must span exactly the requested duration
+        for slot in slots:
+            slot_dur = slot["ends_at"] - slot["starts_at"]
+            assert slot_dur == duration, f"Slot duration {slot_dur} != requested {duration}"
+
+        # The first (closest) slot should be anchored near 13:00.
+        # Gap 08:00–13:00 → anchored to 12:00–13:00 (distance = 1h from 13:00).
+        # Gap 15:00–20:00 → anchored to 15:00–16:00 (distance = 2h from 13:00).
+        # Both are better than 08:00–09:00 (distance = 5h).
+        slot_starts = [s["starts_at"] for s in slots]
+        ref = starts_at  # 13:00
+
+        # None of the offered slots should start at 08:00 (the old incorrect behavior)
+        eight_am = datetime(day.year, day.month, day.day, 8, 0, tzinfo=TZ)
+        assert eight_am not in slot_starts, (
+            "Slot anchored at gap_start 08:00 must not appear; "
+            "expected anchor near 12:00 (inside 08:00–13:00 gap)"
+        )
+
+        # The closest slot must be no farther than 2h from requested start
+        closest_dist = min(abs((s - ref).total_seconds()) for s in slot_starts)
+        assert closest_dist <= 2 * 3600, (
+            f"Closest slot is {closest_dist/3600:.1f}h from requested start — "
+            "expected ≤2h (anchored toward 13:00)"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section 3: POST /bookings/precheck — HTTP integration tests
@@ -753,10 +845,14 @@ async def _create_room_via_admin(admin_client, **overrides) -> dict:
     return resp.json()
 
 
-async def _insert_booking_committed(test_engine, room_id, starts_at, ends_at, status="confirmed"):
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+async def _insert_booking(db_session, room_id, starts_at, ends_at, status="confirmed"):
+    """Insert a booking via the per-test db_session (no commit needed).
+
+    The HTTP client fixture is bound to the same db_session connection so it
+    sees these rows immediately without any commit.  All rows are rolled back
+    on teardown — no cross-test pollution.
+    """
     from app.models.booking import Booking as BookingModel
-    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     b = BookingModel(
         room_id=uuid.UUID(room_id) if isinstance(room_id, str) else room_id,
         title="Precheck Conflict",
@@ -767,10 +863,8 @@ async def _insert_booking_committed(test_engine, room_id, starts_at, ends_at, st
         status=status,
         calendar_uid=f"pc-{uuid.uuid4()}@test",
     )
-    async with factory() as db:
-        db.add(b)
-        await db.commit()
-        await db.refresh(b)
+    db_session.add(b)
+    await db_session.flush()
     return b
 
 
@@ -833,7 +927,7 @@ class TestPrecheckEndpoint:
         assert data["suggestions"] is None, "suggestions must be null when no conflicts"
 
     async def test_precheck_with_conflict_returns_conflicts_and_suggestions(
-        self, requester, admin, test_engine
+        self, requester, admin, db_session
     ):
         user, req_client = requester
         adm_user, adm_client = admin
@@ -843,8 +937,9 @@ class TestPrecheckEndpoint:
         starts = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 14, 0, tzinfo=TZ)
         ends = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 15, 0, tzinfo=TZ)
 
-        # Insert a confirmed booking that conflicts
-        await _insert_booking_committed(test_engine, room["id"], starts, ends)
+        # Insert a confirmed booking via the per-test db_session.
+        # The HTTP client is bound to the same session, so it sees this row immediately.
+        await _insert_booking(db_session, room["id"], starts, ends)
 
         resp = await req_client.post(
             "/api/v1/bookings/precheck",
@@ -862,7 +957,7 @@ class TestPrecheckEndpoint:
         assert "alternative_rooms" in data["suggestions"]
 
     async def test_precheck_conflict_touching_edge_not_a_conflict(
-        self, requester, admin, test_engine
+        self, requester, admin, db_session
     ):
         """Existing booking ends exactly when requested window starts → no conflict."""
         user, req_client = requester
@@ -873,7 +968,7 @@ class TestPrecheckEndpoint:
         # Existing: 13:00–14:00
         b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 13, 0, tzinfo=TZ)
         b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 14, 0, tzinfo=TZ)
-        await _insert_booking_committed(test_engine, room["id"], b_start, b_end)
+        await _insert_booking(db_session, room["id"], b_start, b_end)
 
         # Requested: 14:00–15:00
         req_start = b_end

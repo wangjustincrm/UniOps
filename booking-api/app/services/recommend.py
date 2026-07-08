@@ -22,7 +22,7 @@ from app.core.config import settings
 from app.models.booking import Booking
 from app.models.room import MeetingRoom
 from app.schemas.room import RoomOut, RoomWithStatusOut
-from app.services.availability import free_slots
+from app.services.availability import compute_room_status, free_slots
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -196,18 +196,47 @@ async def suggest(
 
     gaps = free_slots((open_start, open_end), busy, day, slot_minutes, tz)
 
-    # Trim each gap to `duration`, collect candidates, pick ≤3 closest to starts_at
+    # Trim each gap to `duration`, anchored as close to starts_at as possible.
+    #
+    # For a gap [gap_start, gap_end) with requested start rs and duration d:
+    #   offered_start = clamp(rs, gap_start, gap_end - d)
+    #
+    # This places the offered slot at rs when the gap fully contains rs+d,
+    # at gap_start when rs falls before the gap, and at gap_end-d when
+    # rs+d would overshoot the gap end.  The sort key uses the anchored
+    # trimmed_start (not gap_start) so a large gap is offered near rs, not
+    # at the gap's open edge.
+    #
+    # Grid alignment: snap trimmed_start DOWN to the nearest slot_minutes
+    # boundary (floor toward rs) while remaining >= gap_start.
+    slot_minutes_td = timedelta(minutes=slot_minutes)
     slot_candidates: list[tuple[datetime, datetime]] = []
     for gap_start, gap_end in gaps:
         gap_duration = gap_end - gap_start
         if gap_duration < duration:
             continue  # gap too short
-        # Trim: starts at gap_start, length = duration
-        trimmed_start = gap_start
+
+        # Ideal anchor: clamp starts_at into the feasible range [gap_start, gap_end - duration]
+        feasible_end = gap_end - duration
+        raw_start = min(max(gap_start, starts_at), feasible_end)
+
+        # Snap DOWN to the nearest slot_minutes grid tick (keeps us inside the gap)
+        if slot_minutes > 0:
+            epoch = gap_start  # grid origin = gap_start
+            ticks_from_epoch = int((raw_start - epoch).total_seconds() // slot_minutes_td.total_seconds())
+            snapped_start = epoch + ticks_from_epoch * slot_minutes_td
+            # Ensure we didn't snap below gap_start (shouldn't happen, but guard it)
+            snapped_start = max(snapped_start, gap_start)
+            # Re-clamp so snapped_start + duration <= gap_end
+            snapped_start = min(snapped_start, feasible_end)
+        else:
+            snapped_start = raw_start
+
+        trimmed_start = snapped_start
         trimmed_end = trimmed_start + duration
         slot_candidates.append((trimmed_start, trimmed_end))
 
-    # Sort by closeness to requested starts_at (before or after)
+    # Sort by closeness of the *anchored* start to the requested starts_at
     slot_candidates.sort(key=lambda s: abs((s[0] - starts_at).total_seconds()))
     nearest = slot_candidates[:3]
     nearest_slots = [{"starts_at": s, "ends_at": e} for s, e in nearest]
@@ -247,16 +276,47 @@ async def suggest(
     # Cap at 5 and convert to RoomWithStatusOut
     top5 = free_candidates[:5]
     now = datetime.now(tz)
+
+    # Fetch today's confirmed bookings for the top-5 candidates so we can
+    # compute a real status_now (in_use / starting_soon / booked / free).
+    # One grouped query covers all candidates.
+    today_bookings_by_room: dict = {c.id: [] for c in top5}
+    if top5:
+        today_start_utc = datetime(now.year, now.month, now.day, 0, 0, tzinfo=tz).astimezone(
+            ZoneInfo("UTC")
+        )
+        today_end_utc = today_start_utc + timedelta(days=1)
+        top5_ids = [c.id for c in top5]
+        today_result = await db.execute(
+            select(Booking).where(
+                and_(
+                    Booking.room_id.in_(top5_ids),
+                    Booking.status == "confirmed",
+                    Booking.starts_at < today_end_utc,
+                    Booking.ends_at > today_start_utc,
+                )
+            )
+        )
+        for b in today_result.scalars().all():
+            if b.room_id in today_bookings_by_room:
+                today_bookings_by_room[b.room_id].append(b)
+
     alternative_rooms: list[RoomWithStatusOut] = []
     for cand in top5:
-        from app.services.availability import compute_room_status
         room_out = RoomOut.model_validate(cand)
-        # For suggestion purposes, use static "free" status (no bookings in window)
-        status_now = compute_room_status(cand, [], now)
+        bookings_today = today_bookings_by_room.get(cand.id, [])
+        status_now = compute_room_status(cand, bookings_today, now)
+        # next_meeting_at: derive from today's future confirmed bookings if available.
+        # B-M-3: surfaced in room cards; compute from the same data we already have.
+        future_today = [
+            b for b in bookings_today
+            if b.status == "confirmed" and b.starts_at > now
+        ]
+        next_meeting_at = min((b.starts_at for b in future_today), default=None)
         alt = RoomWithStatusOut(
             **room_out.model_dump(),
             status_now=status_now,
-            next_meeting_at=None,
+            next_meeting_at=next_meeting_at,
         )
         alternative_rooms.append(alt)
 

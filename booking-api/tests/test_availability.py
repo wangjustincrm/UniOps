@@ -381,11 +381,13 @@ async def _create_room_via_admin(admin_client, **overrides) -> dict:
     return resp.json()
 
 
-async def _insert_booking(test_engine, room_id, organizer_id, starts_at, ends_at, status="confirmed"):
-    """Directly insert a booking row via a fresh committed session (visible to HTTP client)."""
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+async def _insert_booking(db_session, room_id, organizer_id, starts_at, ends_at, status="confirmed"):
+    """Insert a booking row via the per-test db_session (no commit needed).
+
+    The HTTP client fixture is bound to the same db_session connection so it
+    sees these rows without any commit.  All rows are rolled back on teardown.
+    """
     from app.models.booking import Booking as BookingModel
-    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     b = BookingModel(
         room_id=uuid.UUID(room_id) if isinstance(room_id, str) else room_id,
         title="Endpoint Test Meeting",
@@ -396,10 +398,8 @@ async def _insert_booking(test_engine, room_id, organizer_id, starts_at, ends_at
         status=status,
         calendar_uid=f"ep-{uuid.uuid4()}@test",
     )
-    async with factory() as db:
-        db.add(b)
-        await db.commit()
-        await db.refresh(b)
+    db_session.add(b)
+    await db_session.flush()
     return b
 
 
@@ -523,7 +523,7 @@ class TestGetRoomDetail:
         assert resp.status_code == 404, resp.text
 
     async def test_room_detail_includes_today_bookings_with_organizer_name(
-        self, requester, admin, test_engine
+        self, requester, admin, db_session
     ):
         user, req_client = requester
         adm_user, adm_client = admin
@@ -531,12 +531,13 @@ class TestGetRoomDetail:
         room_data = await _create_room_via_admin(adm_client, code=code)
         room_id = room_data["id"]
 
-        # Create a booking for today via committed session (visible to HTTP client)
+        # Create a booking via the per-test db_session (visible to HTTP client
+        # because the client is bound to the same connection/savepoint).
         now_tz = datetime.now(TZ)
         today = now_tz.date()
         starts = datetime(today.year, today.month, today.day, 14, 0, tzinfo=TZ)
         ends = datetime(today.year, today.month, today.day, 15, 0, tzinfo=TZ)
-        await _insert_booking(test_engine, room_id, adm_user.id, starts, ends)
+        await _insert_booking(db_session, room_id, adm_user.id, starts, ends)
 
         resp = await req_client.get(f"/api/v1/rooms/{room_id}")
         assert resp.status_code == 200, resp.text
@@ -553,7 +554,7 @@ class TestGetRoomDetail:
         assert bk["organizer_name"] == adm_user.full_name
 
     async def test_room_detail_week_bookings_excludes_past_beyond_today(
-        self, requester, admin, test_engine
+        self, requester, admin, db_session
     ):
         user, req_client = requester
         adm_user, adm_client = admin
@@ -567,7 +568,7 @@ class TestGetRoomDetail:
         future_day = today + timedelta(days=3)
         starts = datetime(future_day.year, future_day.month, future_day.day, 10, 0, tzinfo=TZ)
         ends = datetime(future_day.year, future_day.month, future_day.day, 11, 0, tzinfo=TZ)
-        await _insert_booking(test_engine, room_id, adm_user.id, starts, ends)
+        await _insert_booking(db_session, room_id, adm_user.id, starts, ends)
 
         resp = await req_client.get(f"/api/v1/rooms/{room_id}")
         assert resp.status_code == 200
@@ -590,7 +591,7 @@ class TestGetRoomsAvailability:
         assert resp.status_code == 422, resp.text
 
     async def test_availability_returns_rooms_without_overlap(
-        self, requester, admin, test_engine
+        self, requester, admin, db_session
     ):
         user, req_client = requester
         adm_user, adm_client = admin
@@ -599,11 +600,11 @@ class TestGetRoomsAvailability:
         await _create_room_via_admin(adm_client, code=code_free)
         busy_room = await _create_room_via_admin(adm_client, code=code_busy)
 
-        # Book busy_room for 14:00–15:00 tomorrow via committed session
+        # Book busy_room for 14:00–15:00 tomorrow via the per-test db_session
         tomorrow = datetime.now(TZ).date() + timedelta(days=1)
         b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 14, 0, tzinfo=TZ)
         b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 15, 0, tzinfo=TZ)
-        await _insert_booking(test_engine, busy_room["id"], adm_user.id, b_start, b_end)
+        await _insert_booking(db_session, busy_room["id"], adm_user.id, b_start, b_end)
 
         # Query availability for that same window
         resp = await req_client.get(
@@ -620,7 +621,7 @@ class TestGetRoomsAvailability:
         assert code_busy not in codes
 
     async def test_availability_touching_edges_are_not_conflicting(
-        self, requester, admin, test_engine
+        self, requester, admin, db_session
     ):
         """Booking ends exactly when search window starts → no conflict (touching allowed)."""
         user, req_client = requester
@@ -632,7 +633,7 @@ class TestGetRoomsAvailability:
         # Existing booking: 13:00–14:00
         b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 13, 0, tzinfo=TZ)
         b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 14, 0, tzinfo=TZ)
-        await _insert_booking(test_engine, room["id"], adm_user.id, b_start, b_end)
+        await _insert_booking(db_session, room["id"], adm_user.id, b_start, b_end)
 
         # Search window: 14:00–15:00 (starts exactly when booking ends)
         resp = await req_client.get(
@@ -649,7 +650,7 @@ class TestGetRoomsAvailability:
         assert code in codes
 
     async def test_availability_cancelled_booking_does_not_block(
-        self, requester, admin, test_engine
+        self, requester, admin, db_session
     ):
         """Cancelled bookings don't block availability."""
         user, req_client = requester
@@ -660,7 +661,7 @@ class TestGetRoomsAvailability:
         tomorrow = datetime.now(TZ).date() + timedelta(days=1)
         b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 14, 0, tzinfo=TZ)
         b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 15, 0, tzinfo=TZ)
-        await _insert_booking(test_engine, room["id"], adm_user.id, b_start, b_end, status="cancelled")
+        await _insert_booking(db_session, room["id"], adm_user.id, b_start, b_end, status="cancelled")
 
         resp = await req_client.get(
             "/api/v1/rooms/availability",
@@ -723,7 +724,7 @@ class TestGetRoomsAvailability:
 class TestNextMeetingAt7Days:
     """FIX B-I2: next_meeting_at must look up to 7 days ahead, not just today."""
 
-    async def test_list_rooms_next_meeting_at_tomorrow(self, requester, admin, test_engine):
+    async def test_list_rooms_next_meeting_at_tomorrow(self, requester, admin, db_session):
         """Room with no bookings today but one tomorrow → next_meeting_at = tomorrow's start."""
         user, req_client = requester
         adm_user, adm_client = admin
@@ -735,7 +736,7 @@ class TestNextMeetingAt7Days:
         tomorrow = now_tz.date() + timedelta(days=1)
         b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 10, 0, tzinfo=TZ)
         b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 11, 0, tzinfo=TZ)
-        await _insert_booking(test_engine, room_id, adm_user.id, b_start, b_end)
+        await _insert_booking(db_session, room_id, adm_user.id, b_start, b_end)
 
         resp = await req_client.get("/api/v1/rooms")
         assert resp.status_code == 200, resp.text
@@ -746,7 +747,7 @@ class TestNextMeetingAt7Days:
             "Expected next_meeting_at to reflect tomorrow's booking, got None"
         )
 
-    async def test_room_detail_next_meeting_at_tomorrow(self, requester, admin, test_engine):
+    async def test_room_detail_next_meeting_at_tomorrow(self, requester, admin, db_session):
         """GET /rooms/{id}: room with no remaining bookings today but one tomorrow
         → next_meeting_at = tomorrow's start."""
         user, req_client = requester
@@ -759,7 +760,7 @@ class TestNextMeetingAt7Days:
         tomorrow = now_tz.date() + timedelta(days=1)
         b_start = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 9, 0, tzinfo=TZ)
         b_end = datetime(tomorrow.year, tomorrow.month, tomorrow.day, 10, 0, tzinfo=TZ)
-        await _insert_booking(test_engine, room_id, adm_user.id, b_start, b_end)
+        await _insert_booking(db_session, room_id, adm_user.id, b_start, b_end)
 
         resp = await req_client.get(f"/api/v1/rooms/{room_id}")
         assert resp.status_code == 200, resp.text

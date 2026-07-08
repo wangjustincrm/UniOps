@@ -11,6 +11,7 @@ write path for users — epms-api does.
 """
 import asyncio
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta
 
 import pytest
@@ -24,6 +25,7 @@ import app.models  # noqa: F401
 import app.db.session as session_module
 from app.core.config import settings
 from app.db.base import Base
+from app.db.session import get_session
 from app.main import create_app
 from app.models.user_mirror import User
 
@@ -141,6 +143,23 @@ async def db_session(test_engine):
         await conn.close()
 
 
+# ── Session override for HTTP integration tests ─────────────────────────────-
+
+def make_session_override(session: AsyncSession):
+    """Return a get_session override that yields the given session.
+
+    Binding the HTTP client's app to the same AsyncSession (and thus the same
+    connection/savepoint) as the db_session fixture means:
+      - Data inserted via db_session is immediately visible to HTTP requests
+        without any commit (the session is on the same connection).
+      - Everything is rolled back on teardown; no data leaks between tests.
+    """
+    async def _override() -> AsyncGenerator[AsyncSession, None]:
+        yield session
+
+    return _override
+
+
 # ── User factory ────────────────────────────────────────────────────────────-
 
 async def make_user(
@@ -182,8 +201,18 @@ def make_token(user_id: uuid.UUID | str, role: str) -> str:
     )
 
 
-def authed_client(token: str) -> AsyncClient:
+def authed_client(token: str, session: AsyncSession | None = None) -> AsyncClient:
+    """Build an authenticated HTTPX async client against the test app.
+
+    When ``session`` is provided the app's get_session dependency is overridden
+    to yield that session, binding the HTTP client to the same DB connection /
+    savepoint as the per-test db_session fixture.  This ensures HTTP requests
+    see data inserted via db_session without any intermediate commit, and all
+    data is rolled back on teardown.
+    """
     app = create_app()
+    if session is not None:
+        app.dependency_overrides[get_session] = make_session_override(session)
     return AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -194,33 +223,38 @@ def authed_client(token: str) -> AsyncClient:
 # ── Common-role fixtures ────────────────────────────────────────────────────-
 
 @pytest.fixture
-async def requester(test_engine):
-    """A typical requester + their authenticated client."""
+async def requester(test_engine, db_session):
+    """A typical requester + their authenticated client.
+
+    The client's app is bound to db_session so HTTP requests participate in
+    the same per-test savepoint and see unflushed inserts immediately.
+    """
     user = await make_user(test_engine, role="requester")
     token = make_token(user.id, user.role)
-    async with authed_client(token) as c:
+    async with authed_client(token, session=db_session) as c:
         yield user, c
 
 
 @pytest.fixture
-async def admin(test_engine):
+async def admin(test_engine, db_session):
     user = await make_user(test_engine, role="system_admin")
     token = make_token(user.id, user.role)
-    async with authed_client(token) as c:
+    async with authed_client(token, session=db_session) as c:
         yield user, c
 
 
 @pytest.fixture
-async def auditor(test_engine):
+async def auditor(test_engine, db_session):
     user = await make_user(test_engine, role="auditor")
     token = make_token(user.id, user.role)
-    async with authed_client(token) as c:
+    async with authed_client(token, session=db_session) as c:
         yield user, c
 
 
 @pytest.fixture
-async def client():
-    """Unauthenticated client."""
+async def client(db_session):
+    """Unauthenticated client, also bound to the per-test db_session."""
     app = create_app()
+    app.dependency_overrides[get_session] = make_session_override(db_session)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c

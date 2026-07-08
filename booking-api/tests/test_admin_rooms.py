@@ -171,41 +171,34 @@ class TestRoomStatusChange:
         assert resp.status_code == 200
         assert resp.json()["room"]["status"] == "disabled"
 
-    async def test_status_change_counts_affected_future_bookings(self, admin, test_engine):
+    async def test_status_change_counts_affected_future_bookings(self, admin, db_session):
         """Affected future bookings count = confirmed bookings with starts_at > now."""
         from app.models.booking import Booking
-        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-        from app.core.config import settings
 
         user, client = admin
 
-        # Create room
-        payload = {**ROOM_PAYLOAD, "code": "CNT-FUT"}
+        # Create room via the admin HTTP client (bound to db_session)
+        payload = {**ROOM_PAYLOAD, "code": f"CNT-FUT-{uuid.uuid4().hex[:4]}"}
         cr = await client.post("/api/v1/admin/rooms", json=payload)
         assert cr.status_code == 201
         room_id = uuid.UUID(cr.json()["id"])
 
-        # Insert a future confirmed booking directly via DB
-        _base_url, _ = str(settings.DATABASE_URL).rsplit("/", 1)
-        test_db_url = f"{_base_url}/booking_test"
-        engine = create_async_engine(test_db_url, echo=False)
-        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        # Insert a future confirmed booking via the per-test db_session.
+        # The client is bound to the same connection so it sees this row immediately.
         future_start = datetime.now(timezone.utc) + timedelta(days=1)
         future_end = future_start + timedelta(hours=1)
-        async with factory() as db:
-            booking = Booking(
-                room_id=room_id,
-                title="Future Meeting",
-                organizer_id=user.id,
-                attendee_ids=[],
-                starts_at=future_start,
-                ends_at=future_end,
-                status="confirmed",
-                calendar_uid=f"test-{uuid.uuid4()}@booking-test",
-            )
-            db.add(booking)
-            await db.commit()
-        await engine.dispose()
+        booking = Booking(
+            room_id=room_id,
+            title="Future Meeting",
+            organizer_id=user.id,
+            attendee_ids=[],
+            starts_at=future_start,
+            ends_at=future_end,
+            status="confirmed",
+            calendar_uid=f"test-{uuid.uuid4()}@booking-test",
+        )
+        db_session.add(booking)
+        await db_session.flush()
 
         resp = await client.post(
             f"/api/v1/admin/rooms/{room_id}/status",
