@@ -738,6 +738,17 @@ export default function PortalHome() {
       healthy: oaHealth.data?.ok,
       loading: oaHealth.isLoading,
     },
+    ...(hasFinanceAccess ? [{
+      icon: <Landmark className="h-5 w-5 text-primary-600" />,
+      iconBg: 'bg-primary-50',
+      label: 'Finance',
+      description: 'AP/AR, general ledger, payments, bank rec, budgets, tax',
+      href: financeHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
+    // Row break: with the 3-column grid, EPMS/OA/Finance fill row 1;
+    // VMS + Meeting Rooms flow onto row 2.
     {
       icon: <UserCheck className="h-5 w-5 text-primary-600" />,
       iconBg: 'bg-primary-50',
@@ -748,15 +759,6 @@ export default function PortalHome() {
       healthy: undefined,
       loading: false,
     },
-    ...(hasFinanceAccess ? [{
-      icon: <Landmark className="h-5 w-5 text-primary-600" />,
-      iconBg: 'bg-primary-50',
-      label: 'Finance',
-      description: 'AP/AR, general ledger, payments, bank rec, budgets, tax',
-      href: financeHref,
-      healthy: undefined,
-      loading: false,
-    }] : []),
     ...(hasBookingAccess ? [{
       icon: <CalendarClock className="h-5 w-5 text-teal-600" />,
       iconBg: 'bg-teal-50',
@@ -816,7 +818,7 @@ export default function PortalHome() {
                 </div>
 
                 {/* Module cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 max-w-5xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-5xl">
                   {MODULES.map((m) => (
                     <ModuleCard
                       key={m.label}
