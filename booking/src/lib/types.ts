@@ -263,3 +263,28 @@ export interface NotificationListOut {
   items: NotificationLogOut[]
   total: number
 }
+
+// ── Day Summary ───────────────────────────────────────────────────────────────
+
+export interface DaySummaryRoom {
+  id: string
+  name: string
+  code: string
+  floor: string | null
+  area: string | null
+  capacity: number
+  status: 'available' | 'maintenance'
+}
+
+/** BookingSlimOut extended with room_id for the day-summary grid. */
+export interface DaySummaryBooking extends BookingSlimOut {
+  room_id: string
+}
+
+export interface DaySummaryOut {
+  date: string          // "YYYY-MM-DD"
+  open_start: string    // "HH:MM"
+  open_end: string      // "HH:MM"
+  rooms: DaySummaryRoom[]
+  bookings: DaySummaryBooking[]
+}

@@ -15,6 +15,7 @@ import type {
   BookingAdminOut,
   BookingOut,
   BookingSlimOut,
+  DaySummaryOut,
   DirectoryUserOut,
   ImportResult,
   NotificationListOut,
@@ -198,6 +199,10 @@ export const bookingService = {
     const qs = series ? '?series=true' : ''
     return api.post<{ cancelled: number }>(`/api/v1/bookings/${id}/cancel${qs}`, {})
   },
+
+  daySummary(date: string) {
+    return api.get<DaySummaryOut>(`/api/v1/bookings/day?date=${encodeURIComponent(date)}`)
+  },
 }
 
 // ── React Query hooks for bookings ────────────────────────────────────────────
@@ -249,6 +254,15 @@ export function useCancelBooking() {
 export function usePrecheckBooking() {
   return useMutation<PrecheckOut, Error, PrecheckIn>({
     mutationFn: (payload) => bookingService.precheck(payload),
+  })
+}
+
+export function useDaySummary(date: string) {
+  return useQuery<DaySummaryOut>({
+    queryKey: ['booking-day-summary', date],
+    queryFn: () => bookingService.daySummary(date),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   })
 }
 

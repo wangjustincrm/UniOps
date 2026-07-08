@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -32,7 +32,10 @@ from app.models.audit import BookingAuditLog
 from app.models.booking import Booking
 from app.models.room import MeetingRoom
 from app.models.user_mirror import User
-from app.schemas.booking import BookingCreate, BookingCreatedOut, BookingOut, BookingSlimOut, BookingUpdate
+from app.schemas.booking import (
+    BookingCreate, BookingCreatedOut, BookingOut, BookingSlimOut, BookingUpdate,
+    DaySummaryOut, DaySummaryRoom, DaySummaryBookingOut,
+)
 from app.services.notifications import enqueue
 from app.services.recurrence import SeriesSpec, build_rrule_string, expand_series
 from app.services.recommend import find_conflicts, suggest
@@ -612,6 +615,99 @@ async def get_my_bookings(
         _make_booking_out(booking, room, organizer_name)
         for booking, room in rows
     ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /bookings/day
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/day", response_model=DaySummaryOut)
+async def get_day_summary(
+    db: SessionDep,
+    current_user: CurrentUser,
+    date: str = Query(..., description="Calendar date in YYYY-MM-DD format (interpreted in DISPLAY_TIMEZONE)"),
+):
+    """Return all rooms and confirmed bookings for a single calendar day.
+
+    `date` is a local calendar day in settings.DISPLAY_TIMEZONE.
+    The query window is [date 00:00 local, next day 00:00 local) converted to UTC.
+    Rooms with status 'disabled' are excluded; maintenance rooms are included
+    (frontend renders them greyed out).
+    Organizer names are resolved via a single bulk JOIN (no N+1).
+    """
+    from datetime import date as date_type
+
+    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+
+    # Parse date string
+    try:
+        parsed_date = date_type.fromisoformat(date)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="date must be in YYYY-MM-DD format",
+        )
+
+    # Local-day window → UTC
+    day_start_local = datetime(parsed_date.year, parsed_date.month, parsed_date.day, 0, 0, 0, tzinfo=tz)
+    day_end_local = day_start_local + timedelta(days=1)
+    day_start_utc = day_start_local.astimezone(timezone.utc)
+    day_end_utc = day_end_local.astimezone(timezone.utc)
+
+    # Config defaults for open hours
+    config = await get_or_create_config(db)
+    cfg_rules: dict = config.rules or {}
+    open_start = cfg_rules.get("default_open_start", "08:00")
+    open_end = cfg_rules.get("default_open_end", "20:00")
+
+    # All non-disabled rooms, sorted by floor then name
+    rooms_result = await db.execute(
+        select(MeetingRoom)
+        .where(MeetingRoom.status != "disabled")
+        .order_by(MeetingRoom.floor.nulls_last(), MeetingRoom.name)
+    )
+    rooms = list(rooms_result.scalars().all())
+
+    # Confirmed bookings overlapping the day window, joined with organizer names
+    bookings_result = await db.execute(
+        select(Booking, User.full_name)
+        .join(User, Booking.organizer_id == User.id, isouter=True)
+        .where(
+            Booking.status == "confirmed",
+            Booking.starts_at < day_end_utc,
+            Booking.ends_at > day_start_utc,
+        )
+    )
+    booking_rows = bookings_result.all()
+
+    return DaySummaryOut(
+        date=parsed_date.isoformat(),
+        open_start=open_start,
+        open_end=open_end,
+        rooms=[
+            DaySummaryRoom(
+                id=r.id,
+                name=r.name,
+                code=r.code,
+                floor=r.floor,
+                area=r.area,
+                capacity=r.capacity,
+                status=r.status,
+            )
+            for r in rooms
+        ],
+        bookings=[
+            DaySummaryBookingOut(
+                id=b.id,
+                title=b.title,
+                starts_at=b.starts_at,
+                ends_at=b.ends_at,
+                organizer_name=organizer_name or "Unknown",
+                room_id=b.room_id,
+            )
+            for b, organizer_name in booking_rows
+        ],
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

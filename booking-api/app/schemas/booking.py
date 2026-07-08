@@ -11,6 +11,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+
 from app.services.recurrence import SeriesSpec  # noqa: F401 — re-exported for Tasks 8/10/14/15
 
 
@@ -129,3 +130,36 @@ class AdminBookingListOut(BaseModel):
     """Response from GET /admin/bookings."""
     items: list[BookingAdminOut]
     total: int
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Day-summary schemas  (GET /bookings/day)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class DaySummaryRoom(BaseModel):
+    """Room row in the day-summary response."""
+    id: uuid.UUID
+    name: str
+    code: str
+    floor: str | None
+    area: str | None
+    capacity: int
+    status: str  # "available" | "maintenance" (disabled rooms excluded by query)
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DaySummaryBookingOut(BookingSlimOut):
+    """BookingSlimOut extended with room_id for the day-summary grid."""
+    room_id: uuid.UUID
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DaySummaryOut(BaseModel):
+    """Response from GET /bookings/day."""
+    date: str                       # "YYYY-MM-DD"
+    open_start: str                 # "HH:MM"  from config defaults
+    open_end: str                   # "HH:MM"
+    rooms: list[DaySummaryRoom]     # non-disabled rooms, sorted floor then name
+    bookings: list[DaySummaryBookingOut]  # confirmed bookings in the day window

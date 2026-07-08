@@ -24,8 +24,9 @@ const NAV: NavSection[] = [
   {
     title: 'Booking',
     items: [
-      { label: 'Rooms',       href: '/rooms', icon: DoorOpen,     permission: 'view_booking' },
-      { label: 'My Bookings', href: '/my',    icon: CalendarDays, permission: 'view_booking' },
+      { label: 'Rooms',           href: '/rooms',    icon: DoorOpen,     permission: 'view_booking' },
+      { label: 'Meeting Summary', href: '/summary',  icon: CalendarDays, permission: 'view_booking' },
+      { label: 'My Bookings',     href: '/my',       icon: CalendarDays, permission: 'view_booking' },
     ],
   },
   {
