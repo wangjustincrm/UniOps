@@ -7,6 +7,7 @@ from app.api.v1.admin_notifications import router as admin_notifications_router
 from app.api.v1.rooms import router as rooms_router
 from app.api.v1.precheck import router as precheck_router
 from app.api.v1.bookings import router as bookings_router
+from app.api.v1.directory import router as directory_router
 
 api_router = APIRouter()
 api_router.include_router(health_router, tags=["health"])
@@ -21,3 +22,5 @@ api_router.include_router(rooms_router, prefix="/rooms", tags=["rooms"])
 # so that "precheck" is not mistaken for a booking ID parameter.
 api_router.include_router(precheck_router, prefix="/bookings", tags=["bookings"])
 api_router.include_router(bookings_router, prefix="/bookings", tags=["bookings"])
+# /users/directory — Task 11 attendee picker source
+api_router.include_router(directory_router, prefix="/users", tags=["directory"])
