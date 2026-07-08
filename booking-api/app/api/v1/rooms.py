@@ -93,35 +93,6 @@ async def _load_7day_bookings_by_rooms(
     return grouped
 
 
-async def _load_week_bookings_by_rooms(
-    db: AsyncSession,
-    room_ids: list[uuid.UUID],
-    today_start: datetime,
-    week_end: datetime,
-) -> dict[uuid.UUID, list[Booking]]:
-    """One query: all confirmed bookings for the next 7 days (today inclusive)."""
-    if not room_ids:
-        return {}
-    result = await db.execute(
-        select(Booking)
-        .where(
-            and_(
-                Booking.room_id.in_(room_ids),
-                Booking.status == "confirmed",
-                Booking.starts_at < week_end,
-                Booking.ends_at > today_start,
-            )
-        )
-        .order_by(Booking.starts_at)
-    )
-    bookings = result.scalars().all()
-    grouped: dict[uuid.UUID, list[Booking]] = {rid: [] for rid in room_ids}
-    for b in bookings:
-        if b.room_id in grouped:
-            grouped[b.room_id].append(b)
-    return grouped
-
-
 async def _resolve_organizer_names(
     db: AsyncSession,
     bookings: list[Booking],
