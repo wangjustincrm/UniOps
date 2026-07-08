@@ -4,6 +4,22 @@ const BASE = (import.meta.env.VITE_API_URL as string | undefined) || ''
 const EPMS_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
+/**
+ * Structured API error that carries the raw response body.
+ * Used by BookingCreatePage to extract conflict details from 400 responses.
+ */
+export class ApiError extends Error {
+  status: number
+  body: unknown
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.body = body
+  }
+}
+
 function getToken(): string | null {
   try {
     // Prefer Booking's own persisted store, fall back to portal-auth (right after
@@ -38,7 +54,7 @@ async function request<T>(base: string, method: string, path: string, body?: unk
   }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail ?? `HTTP ${res.status}`)
+    throw new ApiError(err.detail ?? `HTTP ${res.status}`, res.status, err)
   }
   if (res.status === 204) return undefined as T
   return res.json()
