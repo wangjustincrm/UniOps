@@ -541,6 +541,35 @@ services:
       retries: 5
       start_period: 30s
 
+  booking-frontend:
+    image: node:20-alpine
+    container_name: uniops_booking_frontend
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "5178:5178"
+    volumes:
+      - ./booking:/app
+      - booking_node_modules:/app/node_modules
+      # Shared workspace package lives outside ./booking — mount it so the container
+      # can resolve `@uniops/shell` (file: dep). `/packages/shell` matches
+      # `../packages/shell` resolved from /app.
+      - ./packages/shell:/packages/shell
+    environment:
+      VITE_API_URL: http://localhost:8010
+      VITE_EPMS_API_URL: http://localhost:8000
+      VITE_PORTAL_URL: http://localhost:5174
+    # --install-links copies the file:../packages/shell dep into /app/node_modules
+    # as a real package (not a symlink to /packages/shell), so its transitive deps
+    # resolve from /app/node_modules inside the container.
+    command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5178"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5178"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
 # ── Volumes ───────────────────────────────────────────────────────────────────
 
 volumes:
@@ -551,3 +580,4 @@ volumes:
   oa_node_modules:
   vms_node_modules:
   finance_node_modules:
+  booking_node_modules:
