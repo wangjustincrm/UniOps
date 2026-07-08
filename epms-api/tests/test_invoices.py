@@ -63,6 +63,22 @@ async def test_create_invoice(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_create_after_delete_does_not_collide_internal_ref(admin_client):
+    """删除一张发票后再新建曾 500:_next_ref 用 count+1,硬删除让 count 回退,
+    新编号撞上现存最大号的 unique 约束(生产复现:detail Remove → 重新 Upload)。"""
+    v = await _make_vendor(admin_client, "VND-INV-REDEL-01")
+    first = await _create_inv(admin_client, v["id"], vendor_invoice_number="REDEL-001")
+    second = await _create_inv(admin_client, v["id"], vendor_invoice_number="REDEL-002")
+
+    # Remove the FIRST one — count drops by 1 while the second's ref remains taken
+    r = await admin_client.delete(f"{INV_URL}/{first['id']}")
+    assert r.status_code == 204, r.text
+
+    third = await _create_inv(admin_client, v["id"], vendor_invoice_number="REDEL-003")
+    assert third["internal_ref"] != second["internal_ref"]
+
+
+@pytest.mark.asyncio
 async def test_list_invoices(admin_client):
     v = await _make_vendor(admin_client, "VND-INV-LIST-01")
     await _create_inv(admin_client, v["id"])

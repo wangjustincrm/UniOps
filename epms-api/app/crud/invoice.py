@@ -44,11 +44,18 @@ async def _match_tolerance_pct(db: AsyncSession) -> Decimal:
 async def _next_ref(db: AsyncSession) -> str:
     year = datetime.now(timezone.utc).strftime("%Y")
     prefix = f"INV-{year}-"
-    result = await db.execute(
-        select(func.count()).where(Invoice.internal_ref.like(f"{prefix}%"))
-    )
-    count = result.scalar_one()
-    return f"{prefix}{count + 1:04d}"
+    # Highest existing suffix + 1 — NOT count()+1: invoices are hard-deleted, so a
+    # delete makes the count fall behind the surviving maximum and the next create
+    # collides with the internal_ref unique index. Order by length before value so
+    # a five-digit suffix (…-10000) outranks …-9999.
+    last = (await db.execute(
+        select(Invoice.internal_ref)
+        .where(Invoice.internal_ref.like(f"{prefix}%"))
+        .order_by(func.length(Invoice.internal_ref).desc(), Invoice.internal_ref.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    n = int(last[len(prefix):]) if last else 0
+    return f"{prefix}{n + 1:04d}"
 
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
