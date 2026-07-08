@@ -4,12 +4,10 @@ import RoomDetailPage from '@/pages/RoomDetailPage'
 import BookingCreatePage from '@/pages/BookingCreatePage'
 import MyBookingsPage from '@/pages/MyBookingsPage'
 import BookingEditPage from '@/pages/BookingEditPage'
-
-// Placeholder page components — Task 16 fills these in.
-function AdminRoomsPage() { return <div className="p-6 text-sm text-muted-foreground">Rooms Admin — Task 16</div> }
-function AdminAllBookingsPage() { return <div className="p-6 text-sm text-muted-foreground">All Bookings — Task 16</div> }
-function AdminNotificationsPage() { return <div className="p-6 text-sm text-muted-foreground">Notifications — Task 16</div> }
-function AdminSettingsPage() { return <div className="p-6 text-sm text-muted-foreground">Settings — Task 16</div> }
+import AdminRoomsPage from '@/pages/admin/RoomsAdminPage'
+import AdminAllBookingsPage from '@/pages/admin/AllBookingsPage'
+import AdminNotificationsPage from '@/pages/admin/NotificationsPage'
+import AdminSettingsPage from '@/pages/admin/SettingsPage'
 
 export const bookingRoutes: RouteDef[] = [
   { path: '/rooms',               element: <RoomsPage />,             tab: { title: 'Rooms',          icon: 'DoorOpen',    keyStrategy: 'static', pinned: true } },

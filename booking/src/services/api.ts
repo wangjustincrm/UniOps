@@ -9,12 +9,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type {
+  AdminBookingFilters,
+  AdminBookingListOut,
+  AdminConfig,
+  BookingAdminOut,
   BookingOut,
   BookingSlimOut,
   DirectoryUserOut,
+  ImportResult,
+  NotificationListOut,
+  NotificationLogOut,
+  RoomCreate,
   RoomDetailOut,
+  RoomOut,
+  RoomUpdate,
   RoomWithStatusOut,
   SeriesSpec,
+  StatusChangeOut,
   SuggestOut,
 } from '@/lib/types'
 
@@ -240,3 +251,236 @@ export function usePrecheckBooking() {
     mutationFn: (payload) => bookingService.precheck(payload),
   })
 }
+
+// ── Admin — helpers ───────────────────────────────────────────────────────────
+
+/** Get JWT token from local storage (same logic as api.ts) */
+function getAdminToken(): string | null {
+  try {
+    for (const key of ['booking-auth', 'portal-auth']) {
+      const raw = localStorage.getItem(key)
+      const token = raw ? JSON.parse(raw)?.state?.token : null
+      if (token) return token
+    }
+    return null
+  } catch { return null }
+}
+
+const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || ''
+
+/** Multipart POST (file upload) with auth header */
+async function postMultipart<T>(path: string, formData: FormData): Promise<T> {
+  const token = getAdminToken()
+  const resp = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }))
+    throw new Error(err.detail ?? `HTTP ${resp.status}`)
+  }
+  return resp.json()
+}
+
+/** Authenticated fetch returning a blob (for CSV export) */
+async function fetchBlob(path: string): Promise<Blob> {
+  const token = getAdminToken()
+  const resp = await fetch(`${BASE_URL}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }))
+    throw new Error(err.detail ?? `HTTP ${resp.status}`)
+  }
+  return resp.blob()
+}
+
+// ── Admin — Room service ──────────────────────────────────────────────────────
+
+export const adminRoomService = {
+  list(filters: { floor?: string; area?: string; status?: string } = {}) {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(filters)) {
+      if (v) qs.set(k, v)
+    }
+    const q = qs.toString()
+    return api.get<RoomOut[]>(`/api/v1/admin/rooms${q ? '?' + q : ''}`)
+  },
+
+  create(payload: RoomCreate) {
+    return api.post<RoomOut>('/api/v1/admin/rooms', payload)
+  },
+
+  update(id: string, payload: RoomUpdate) {
+    return api.patch<RoomOut>(`/api/v1/admin/rooms/${id}`, payload)
+  },
+
+  setStatus(id: string, status: string, notes?: string) {
+    return api.post<StatusChangeOut>(`/api/v1/admin/rooms/${id}/status`, { status, notes })
+  },
+
+  importXlsx(file: File) {
+    const fd = new FormData()
+    fd.append('file', file)
+    return postMultipart<ImportResult>('/api/v1/admin/rooms/import', fd)
+  },
+}
+
+export function useAdminRoomList(
+  filters: { floor?: string; area?: string; status?: string } = {},
+) {
+  return useQuery<RoomOut[]>({
+    queryKey: ['admin-rooms', filters],
+    queryFn: () => adminRoomService.list(filters),
+    staleTime: 30_000,
+  })
+}
+
+export function useAdminCreateRoom() {
+  const qc = useQueryClient()
+  return useMutation<RoomOut, Error, RoomCreate>({
+    mutationFn: (payload) => adminRoomService.create(payload),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-rooms'] }) },
+  })
+}
+
+export function useAdminUpdateRoom(id: string) {
+  const qc = useQueryClient()
+  return useMutation<RoomOut, Error, RoomUpdate>({
+    mutationFn: (payload) => adminRoomService.update(id, payload),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-rooms'] }) },
+  })
+}
+
+export function useAdminSetRoomStatus(id: string) {
+  const qc = useQueryClient()
+  return useMutation<StatusChangeOut, Error, { status: string; notes?: string }>({
+    mutationFn: ({ status, notes }) => adminRoomService.setStatus(id, status, notes),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-rooms'] }) },
+  })
+}
+
+export function useAdminImportRooms() {
+  const qc = useQueryClient()
+  return useMutation<ImportResult, Error, File>({
+    mutationFn: (file) => adminRoomService.importXlsx(file),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-rooms'] }) },
+  })
+}
+
+// ── Admin — Config service ────────────────────────────────────────────────────
+
+export const adminConfigService = {
+  get() {
+    return api.get<AdminConfig>('/api/v1/admin/config')
+  },
+  update(payload: Partial<AdminConfig>) {
+    return api.put<AdminConfig>('/api/v1/admin/config', payload)
+  },
+}
+
+export function useAdminConfig() {
+  return useQuery<AdminConfig>({
+    queryKey: ['admin-config'],
+    queryFn: () => adminConfigService.get(),
+    staleTime: 60_000,
+  })
+}
+
+export function useAdminUpdateConfig() {
+  const qc = useQueryClient()
+  return useMutation<AdminConfig, Error, Partial<AdminConfig>>({
+    mutationFn: (payload) => adminConfigService.update(payload),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-config'] }) },
+  })
+}
+
+// ── Admin — Bookings service ──────────────────────────────────────────────────
+
+export const adminBookingService = {
+  list(filters: AdminBookingFilters = {}) {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+    }
+    const q = qs.toString()
+    return api.get<AdminBookingListOut>(`/api/v1/admin/bookings${q ? '?' + q : ''}`)
+  },
+
+  async exportCsv(filters: Omit<AdminBookingFilters, 'limit' | 'offset'> = {}): Promise<void> {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+    }
+    const q = qs.toString()
+    const blob = await fetchBlob(`/api/v1/admin/bookings/export${q ? '?' + q : ''}`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `bookings-export-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  forceCancel(id: string, series = false) {
+    const qs = series ? '?series=true' : ''
+    return api.post<{ cancelled: number }>(`/api/v1/bookings/${id}/cancel${qs}`, {})
+  },
+}
+
+export function useAdminBookings(filters: AdminBookingFilters = {}) {
+  return useQuery<AdminBookingListOut>({
+    queryKey: ['admin-bookings', filters],
+    queryFn: () => adminBookingService.list(filters),
+    staleTime: 30_000,
+  })
+}
+
+export function useAdminForceCancel() {
+  const qc = useQueryClient()
+  return useMutation<{ cancelled: number }, Error, { id: string; series?: boolean }>({
+    mutationFn: ({ id, series }) => adminBookingService.forceCancel(id, series),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-bookings'] }) },
+  })
+}
+
+// ── Admin — Notifications service ─────────────────────────────────────────────
+
+export const adminNotificationService = {
+  list(filters: { status?: string; notif_type?: string; limit?: number; offset?: number } = {}) {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+    }
+    const q = qs.toString()
+    return api.get<NotificationListOut>(`/api/v1/admin/notifications${q ? '?' + q : ''}`)
+  },
+
+  resend(id: string) {
+    return api.post<NotificationLogOut>(`/api/v1/admin/notifications/${id}/resend`, {})
+  },
+}
+
+export function useAdminNotifications(
+  filters: { status?: string; notif_type?: string; limit?: number; offset?: number } = {},
+) {
+  return useQuery<NotificationListOut>({
+    queryKey: ['admin-notifications', filters],
+    queryFn: () => adminNotificationService.list(filters),
+    staleTime: 30_000,
+  })
+}
+
+export function useAdminResendNotification() {
+  const qc = useQueryClient()
+  return useMutation<NotificationLogOut, Error, string>({
+    mutationFn: (id) => adminNotificationService.resend(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-notifications'] }) },
+  })
+}
+
+// Re-export types consumed by admin pages (convenience)
+export type { RoomOut, RoomCreate, RoomUpdate, StatusChangeOut, AdminConfig, BookingAdminOut, NotificationLogOut, AdminBookingFilters }

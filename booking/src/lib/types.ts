@@ -124,3 +124,142 @@ export const ROOM_TYPE_LABELS: Record<RoomType, string> = {
   boardroom: 'Boardroom',
   multi_function: 'Multi-Function',
 }
+
+// ── Admin — Rooms ─────────────────────────────────────────────────────────────
+
+/** RoomOut without real-time fields (admin CRUD responses) */
+export interface RoomOut {
+  id: string
+  name: string
+  code: string
+  campus: string | null
+  building: string | null
+  floor: string | null
+  area: string | null
+  capacity: number
+  equipment: string[]
+  room_type: string
+  open_time_start: string | null
+  open_time_end: string | null
+  advance_booking_days: number | null
+  status: RoomStatus
+  owner_department: string | null
+  notes: string | null
+  image_file_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface RoomCreate {
+  name: string
+  code: string
+  campus?: string | null
+  building?: string | null
+  floor?: string | null
+  area?: string | null
+  capacity: number
+  equipment?: string[]
+  room_type?: string
+  open_time_start?: string | null
+  open_time_end?: string | null
+  advance_booking_days?: number | null
+  owner_department?: string | null
+  notes?: string | null
+  image_file_ids?: string[]
+}
+
+export interface RoomUpdate {
+  name?: string | null
+  code?: string | null
+  campus?: string | null
+  building?: string | null
+  floor?: string | null
+  area?: string | null
+  capacity?: number | null
+  equipment?: string[] | null
+  room_type?: string | null
+  open_time_start?: string | null
+  open_time_end?: string | null
+  advance_booking_days?: number | null
+  owner_department?: string | null
+  notes?: string | null
+  image_file_ids?: string[] | null
+}
+
+export interface StatusChangeOut {
+  room: RoomOut
+  affected_future_bookings: number
+}
+
+export interface ImportResult {
+  created: number
+  errors: Array<{ row: number; message: string }>
+}
+
+// ── Admin — Config ─────────────────────────────────────────────────────────────
+
+export interface SmtpSettings {
+  host: string | null
+  port: number | null
+  user: string | null
+  password: string | null
+  use_tls: boolean | null
+  from_email: string | null
+}
+
+export interface BookingRules {
+  slot_minutes: number | null
+  min_duration_minutes: number | null
+  max_duration_minutes: number | null
+  advance_days: number | null
+  default_open_start: string | null
+  default_open_end: string | null
+  notify_room_admin: boolean | null
+  room_admin_emails: string[]
+}
+
+export interface AdminConfig {
+  smtp_settings: SmtpSettings
+  rules: BookingRules
+  organizer_mode: 'system' | 'initiator'
+}
+
+// ── Admin — Bookings ──────────────────────────────────────────────────────────
+
+export interface BookingAdminOut extends BookingOut {
+  // organizer_name is already on BookingOut
+}
+
+export interface AdminBookingListOut {
+  items: BookingAdminOut[]
+  total: number
+}
+
+export interface AdminBookingFilters {
+  room_id?: string
+  organizer_id?: string
+  date_from?: string
+  date_to?: string
+  status?: string
+  limit?: number
+  offset?: number
+}
+
+// ── Admin — Notifications ─────────────────────────────────────────────────────
+
+export interface NotificationLogOut {
+  id: string
+  booking_id: string | null
+  notif_type: string
+  recipients: string[]
+  status: string
+  error: string | null
+  retry_count: number
+  sent_at: string | null
+  created_at: string
+}
+
+export interface NotificationListOut {
+  items: NotificationLogOut[]
+  total: number
+}
