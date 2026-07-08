@@ -15,6 +15,15 @@ from app.schemas.directory import DirectoryUserOut
 router = APIRouter()
 
 
+def escape_ilike_pattern(text: str) -> str:
+    r"""Escape LIKE metacharacters for safe pattern matching.
+
+    SQLAlchemy ilike() defaults to backslash as the escape character.
+    This function escapes the three special chars that need it: \, %, _.
+    """
+    return text.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+
+
 @router.get("/directory")
 async def search_directory(
     db: SessionDep,
@@ -25,6 +34,7 @@ async def search_directory(
 
     Query parameter `q` is matched against full_name and email (case-insensitive
     partial match). Users with empty email are excluded (cannot receive invites).
+    LIKE metacharacters (%, _, \\) in q are escaped to match literals.
     Results are sorted by full_name and limited to 50.
 
     Args:
@@ -36,18 +46,20 @@ async def search_directory(
         List of up to 50 users matching the query (or all if no query).
     """
     # Base conditions: active users with non-empty email
+    # Note: email is NOT NULL at schema level (User.email: Mapped[str]),
+    # so only the empty-string check is needed in practice.
     base_conditions = [
         User.is_active == True,
-        User.email.isnot(None),
         User.email != "",  # Exclude users with empty email
     ]
 
     if q:
-        # If q provided, match against full_name OR email (case-insensitive)
-        q_pattern = f"%{q}%"
+        # Escape LIKE metacharacters in user input for literal matching
+        escaped_q = escape_ilike_pattern(q)
+        q_pattern = f"%{escaped_q}%"
         search_condition = or_(
-            User.full_name.ilike(q_pattern),
-            User.email.ilike(q_pattern),
+            User.full_name.ilike(q_pattern, escape="\\"),
+            User.email.ilike(q_pattern, escape="\\"),
         )
         base_conditions.append(search_condition)
 

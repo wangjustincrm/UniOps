@@ -139,6 +139,63 @@ class TestDirectorySearch:
             assert "email" in item
             assert item["email"] != ""
 
+    async def test_q_escapes_ilike_percent_wildcard(self, admin, test_engine, db_session):
+        """Query with % is matched literally, not as a wildcard."""
+        user, client = admin
+        # Create users with literal % in their names
+        unique_suffix = uuid.uuid4().hex[:8]
+        alice = await make_user(
+            test_engine,
+            full_name=f"Alice 50%{unique_suffix}",
+            email="alice@test.com",
+            role="requester"
+        )
+        bob = await make_user(
+            test_engine,
+            full_name=f"Bob 50a{unique_suffix}",
+            email="bob@test.com",
+            role="requester"
+        )
+
+        # Search for "50%" should match only Alice (literal %), not Bob (50a)
+        # URL-encode the % as %25
+        resp = await client.get(f"/api/v1/users/directory?q=50%25{unique_suffix}")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        # Find users with our suffix
+        matching = [u for u in data if unique_suffix in u["full_name"]]
+        # Should only find Alice (who has literal %)
+        assert len(matching) == 1, f"Expected 1 match, got {len(matching)}: {matching}"
+        assert matching[0]["id"] == str(alice.id)
+
+    async def test_q_escapes_ilike_underscore_wildcard(self, admin, test_engine, db_session):
+        """Query with _ is matched literally, not as a wildcard."""
+        user, client = admin
+        # Create users with literal _ in their names
+        unique_suffix = uuid.uuid4().hex[:8]
+        bob = await make_user(
+            test_engine,
+            full_name=f"Bob_User{unique_suffix}",
+            email="bob@test.com",
+            role="requester"
+        )
+        charlie = await make_user(
+            test_engine,
+            full_name=f"BobxUser{unique_suffix}",
+            email="charlie@test.com",
+            role="requester"
+        )
+
+        # Search for "Bob_User" should match only Bob (literal _), not Charlie (BobxUser)
+        resp = await client.get(f"/api/v1/users/directory?q=Bob_User{unique_suffix}")
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        # Find users with our suffix
+        matching = [u for u in data if unique_suffix in u["full_name"]]
+        # Should only find Bob (who has literal _)
+        assert len(matching) == 1, f"Expected 1 match, got {len(matching)}: {matching}"
+        assert matching[0]["id"] == str(bob.id)
+
     async def test_results_sorted_by_full_name(self, admin, test_engine, db_session):
         """Results are sorted by full_name."""
         user, client = admin
@@ -161,20 +218,24 @@ class TestDirectorySearch:
     async def test_limit_50_results(self, admin, test_engine, db_session):
         """Results are limited to 50 even if there are more."""
         user, client = admin
-        # Create 60 test users
+        # Create test users with unique suffix to avoid interference from other tests
+        unique_suffix = uuid.uuid4().hex[:8]
         for i in range(60):
             await make_user(
                 test_engine,
-                full_name=f"Test User {i:03d}",
-                email=f"user{i:03d}@test.com",
+                full_name=f"LimitTest{unique_suffix}_{i:03d}",
+                email=f"limituser{i:03d}@test.com",
                 role="requester"
             )
 
-        resp = await client.get("/api/v1/users/directory")
+        # Search with unique suffix to get only our test users
+        resp = await client.get(f"/api/v1/users/directory?q={unique_suffix}")
         assert resp.status_code == 200, resp.text
         data = resp.json()
+        # Filter to only our test users
+        matching = [u for u in data if unique_suffix in u["full_name"]]
         # Should be limited to 50
-        assert len(data) == 50
+        assert len(matching) == 50
 
     async def test_requires_authentication(self, client, db_session):
         """Unauthenticated request returns 401."""
