@@ -135,6 +135,7 @@ export default function BookingEditPage() {
   const [endTime, setEnd]             = useState('10:00')
   const [roomId, setRoomId]           = useState('')
   const [attendees, setAttendees]     = useState<DirectoryUserOut[]>([])
+  const [attendeesTouched, setAttendeesTouched] = useState(false)
   const [formInitialised, setFormInit] = useState(false)
 
   // Prefill attendees: we only have ids from BookingOut — resolve to DirectoryUserOut
@@ -154,6 +155,7 @@ export default function BookingEditPage() {
     setRoomId(booking.room_id)
     // attendees: we have ids but no names — initialise to empty; user re-adds if needed
     setAttendees([])
+    setAttendeesTouched(false)
     setFormInit(true)
   }, [booking, formInitialised])
 
@@ -188,13 +190,18 @@ export default function BookingEditPage() {
             if (seq !== precheckSeqRef.current) return
             // Filter out conflicts that are THIS booking (self-conflict from precheck)
             const filteredConflicts = data.conflicts.filter((c) => c.id !== id)
+            const filteredOccurrence = data.occurrence_conflicts.map((occ) => ({
+              ...occ,
+              conflicts: occ.conflicts.filter((c) => c.id !== id),
+            })).filter((occ) => occ.conflicts.length > 0)
             const filtered: PrecheckOut = {
               ...data,
               conflicts: filteredConflicts,
+              occurrence_conflicts: filteredOccurrence,
             }
             setPrecheckResult(filtered)
             const hasConflict =
-              filteredConflicts.length > 0 || data.occurrence_conflicts.length > 0
+              filteredConflicts.length > 0 || filteredOccurrence.length > 0
             setPrecheckAvailable(!hasConflict)
           },
           onError: () => {
@@ -222,11 +229,17 @@ export default function BookingEditPage() {
 
   const update = useUpdateBooking(id)
 
+  // Block submit only when precheck has run and explicitly found a conflict (not merely "not yet checked")
+  const precheckHasConflict =
+    precheckResult !== null &&
+    (precheckResult.conflicts.length > 0 || precheckResult.occurrence_conflicts.length > 0)
+
   const canSubmit = !!(
     title.trim() &&
     hasWindow &&
     roomId &&
-    !update.isPending
+    !update.isPending &&
+    !precheckHasConflict
   )
 
   async function handleSubmit(e: React.FormEvent) {
@@ -239,7 +252,9 @@ export default function BookingEditPage() {
       {
         title: title.trim(),
         description: description.trim() || null,
-        attendee_ids: attendees.map((u) => u.id),
+        // Only include attendee_ids if the user has explicitly changed the attendee list.
+        // If untouched, omit the field so the server preserves existing attendees.
+        ...(attendeesTouched ? { attendee_ids: attendees.map((u) => u.id) } : {}),
         room_id: roomId,
         starts_at: toISO(date, startTime),
         ends_at: toISO(date, endTime),
@@ -460,13 +475,13 @@ export default function BookingEditPage() {
               label="Additional attendees"
               hint={
                 booking.attendee_ids.length > 0
-                  ? `Previously: ${booking.attendee_ids.length} attendee(s) — re-add below if needed.`
+                  ? `Previously: ${booking.attendee_ids.length} attendee(s). Leave untouched to keep them, or re-add to replace the full list.`
                   : undefined
               }
             >
               <AttendeePicker
                 value={attendees}
-                onChange={setAttendees}
+                onChange={(val) => { setAttendeesTouched(true); setAttendees(val) }}
                 excludeUserId={currentUserId}
               />
             </Field>

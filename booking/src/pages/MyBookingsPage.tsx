@@ -12,8 +12,8 @@
  *   - Edit: disabled for series members (tooltip); else navigate /my/:id/edit
  *   - Cancel: confirm dialog; series members → ?series=true
  */
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   CalendarDays,
   Users,
@@ -251,19 +251,41 @@ type Tab = 'upcoming' | 'past'
 
 export default function MyBookingsPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [activeTab, setActiveTab] = useState<Tab>('upcoming')
   const [cancelTarget, setCancelTarget] = useState<BookingOut | null>(null)
-  const [successNote, setSuccessNote] = useState<string | null>(null)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
-  // Accept success note from navigation state (BookingEditPage redirects here)
-  // We read it once on mount via location.state, then clear it
-  // (simple approach: just store in component state, no useEffect needed — nav state
-  //  is passed in via the router but we display via our own state set by BookingEditPage)
+  // Read success note from navigation state (BookingEditPage navigates here with successNote).
+  // We seed state from location.state once, then clear the history entry so a refresh
+  // doesn't re-show the banner.
+  const navState = (location.state as { successNote?: string } | null) ?? {}
+  const [successNote, setSuccessNote] = useState<string | null>(navState.successNote ?? null)
+  const clearedNavState = useRef(false)
+  useEffect(() => {
+    if (navState.successNote && !clearedNavState.current) {
+      clearedNavState.current = true
+      navigate(location.pathname, { replace: true, state: {} })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const { data: bookings, isLoading, error } = useMyBookings()
   const cancel = useCancelBooking()
 
-  const now = new Date().toISOString()
+  // Tick counter so `now` re-evaluates every 60 s even without a data refresh
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Re-compute `now` whenever bookings refresh OR the 60 s tick fires
+  const now = useMemo(
+    () => new Date().toISOString(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [bookings, tick],
+  )
 
   const upcoming = (bookings ?? []).filter(
     (b) => b.ends_at >= now && b.status === 'confirmed',
@@ -286,11 +308,12 @@ export default function MyBookingsPage() {
       {
         onSuccess: (data) => {
           setCancelTarget(null)
+          setCancelError(null)
           setSuccessNote(`${data.cancelled} booking${data.cancelled !== 1 ? 's' : ''} cancelled.`)
         },
         onError: (err) => {
           setCancelTarget(null)
-          setSuccessNote(`Error: ${err.message}`)
+          setCancelError(err.message)
         },
       },
     )
@@ -318,6 +341,23 @@ export default function MyBookingsPage() {
               type="button"
               onClick={() => setSuccessNote(null)}
               className="ml-3 text-emerald-500 hover:text-emerald-700"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Cancel error */}
+        {cancelError && (
+          <div className="flex items-center justify-between rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{cancelError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCancelError(null)}
+              className="ml-3 text-red-400 hover:text-red-600"
             >
               <XIcon className="h-4 w-4" />
             </button>
