@@ -392,7 +392,7 @@ async def create_booking(
                 detail="Series expansion produced no occurrences within the advance booking window",
             )
         series_id = uuid.uuid4()
-        rrule = build_rrule_string(spec, until_fallback=body.ends_at.astimezone(tz).date())
+        rrule = build_rrule_string(spec, actual_count=len(occurrences))
     else:
         occurrences = [(body.starts_at, body.ends_at)]
         series_id = None

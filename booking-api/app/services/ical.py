@@ -22,6 +22,12 @@ from app.models.booking import Booking
 from app.models.room import MeetingRoom
 
 
+def _ensure_mailto(address: str) -> str:
+    """Return a mailto: URI, stripping a leading 'mailto:' if already present."""
+    stripped = address[len("mailto:"):] if address.lower().startswith("mailto:") else address
+    return f"mailto:{stripped}"
+
+
 def _location_string(room: MeetingRoom) -> str:
     """Build the LOCATION value from room fields.
 
@@ -91,16 +97,17 @@ def build_event_ics(
     event.add("dtend", ends_local)
     event.add("summary", booking.title)
     event.add("location", _location_string(room))
-    event.add("description", booking.description or "")
+    if booking.description:
+        event.add("description", booking.description)
 
     # ORGANIZER with optional CN display name
-    organizer = vCalAddress(f"mailto:{organizer_email}")
+    organizer = vCalAddress(_ensure_mailto(organizer_email))
     organizer.params["CN"] = vText(organizer_cn or organizer_email)
     event.add("organizer", organizer)
 
     # One ATTENDEE per email
     for email in attendee_emails:
-        attendee = vCalAddress(f"mailto:{email}")
+        attendee = vCalAddress(_ensure_mailto(email))
         attendee.params["ROLE"] = vText("REQ-PARTICIPANT")
         attendee.params["PARTSTAT"] = vText("NEEDS-ACTION")
         attendee.params["RSVP"] = vText("TRUE")

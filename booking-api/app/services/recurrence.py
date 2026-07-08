@@ -144,15 +144,20 @@ def expand_series(
 # build_rrule_string
 # ─────────────────────────────────────────────────────────────────────────────
 
-def build_rrule_string(spec: SeriesSpec, until_fallback: date) -> str:
+def build_rrule_string(spec: SeriesSpec, actual_count: int) -> str:
     """Build an iCal-compatible RRULE string for storage.
 
-    Format: ``FREQ=...;INTERVAL=...`` + either ``;COUNT=n`` or ``;UNTIL=YYYYMMDDThhmmssZ``.
+    Always emits COUNT based on the *actual* number of occurrences created, so
+    the stored RRULE exactly describes the DB rows.  UNTIL is never used because
+    a UTC UNTIL value (``T235959Z``) is semantically wrong for local-time series
+    (off-by-hours in non-UTC zones) and would advertise more occurrences than
+    the DB holds when the advance-window cap truncates the series.
+
+    Format: ``FREQ=...;INTERVAL=...;COUNT={actual_count}``
 
     Args:
-        spec:           SeriesSpec.
-        until_fallback: Fallback UNTIL date used when both spec.count and spec.until are None
-                        (should not happen under normal validation).
+        spec:         SeriesSpec (freq/interval retained; count/until ignored).
+        actual_count: The exact number of occurrence rows committed to the DB.
 
     Returns:
         RRULE string, e.g. ``"FREQ=WEEKLY;INTERVAL=1;COUNT=4"``.
@@ -160,12 +165,6 @@ def build_rrule_string(spec: SeriesSpec, until_fallback: date) -> str:
     parts = [
         f"FREQ={spec.freq.upper()}",
         f"INTERVAL={spec.interval}",
+        f"COUNT={actual_count}",
     ]
-    if spec.count is not None:
-        parts.append(f"COUNT={spec.count}")
-    elif spec.until is not None:
-        parts.append(f"UNTIL={spec.until:%Y%m%dT235959Z}")
-    else:
-        # Fallback (should not happen under normal validator flow)
-        parts.append(f"UNTIL={until_fallback:%Y%m%dT235959Z}")
     return ";".join(parts)

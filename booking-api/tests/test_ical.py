@@ -180,6 +180,15 @@ class TestRequestInvite:
         """REQUEST invite must not carry STATUS:CANCELLED."""
         assert "STATUS:CANCELLED" not in self.raw
 
+    def test_dtstamp_present_and_utc(self):
+        """DTSTAMP must be present and be a UTC datetime (Z suffix in raw bytes)."""
+        assert "DTSTAMP" in self.raw
+        # iCalendar serialises UTC datetimes with a trailing Z
+        import re
+        assert re.search(r"DTSTAMP:\d{8}T\d{6}Z", self.raw), (
+            "DTSTAMP must be a UTC datetime (YYYYMMDDThhmmssZ)"
+        )
+
 
 class TestCancelInvite:
     """Test 2: CANCEL invite."""
@@ -209,6 +218,42 @@ class TestCancelInvite:
 
     def test_status_field_parsed(self):
         assert str(self.event.get("status")) == "CANCELLED"
+
+
+class TestCancelInviteMultiAttendee:
+    """FIX 2 (B2): CANCEL with multiple attendees — both ATTENDEE lines must appear."""
+
+    def setup_method(self):
+        booking = _make_booking()
+        room = _make_room()
+        self.ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=["alice@example.com", "bob@example.com"],
+            method="CANCEL",
+        )
+        self.raw = self.ics.decode()
+        self.cal = _parse(self.ics)
+        self.event = _first_event(self.cal)
+
+    def test_method_cancel(self):
+        assert str(self.cal.get("method")) == "CANCEL"
+
+    def test_status_cancelled(self):
+        assert str(self.event.get("status")) == "CANCELLED"
+
+    def test_both_attendees_present(self):
+        """Both ATTENDEEs must appear on CANCEL — RFC 5546 §3.2.5."""
+        attendees = self.event.get("attendee")
+        if not isinstance(attendees, list):
+            attendees = [attendees]
+        assert len(attendees) == 2
+
+    def test_both_attendee_emails_in_raw(self):
+        unfolded = self.raw.replace("\r\n ", "").replace("\r\n\t", "").lower()
+        assert "mailto:alice@example.com" in unfolded
+        assert "mailto:bob@example.com" in unfolded
 
 
 class TestSeriesInvite:
@@ -335,3 +380,164 @@ class TestOrganizerCn:
         raw = ics.decode()
         # CN should be set to the email address itself
         assert "mgr@example.com" in raw
+
+
+class TestUntilSeriesStoredAsCount:
+    """FIX 1 (B1): an until-based series must produce a RRULE with COUNT=, not UNTIL=.
+
+    This exercises the ical.py builder end-to-end: the rrule string passed in
+    (produced by build_rrule_string after FIX 1) always uses COUNT.
+    """
+
+    def test_count_based_rrule_no_until(self):
+        """RRULE string with COUNT passes through cleanly; no UNTIL in output."""
+        booking = _make_booking()
+        room = _make_room()
+        # Simulate an until-based series that expanded to 5 occurrences:
+        # build_rrule_string now always emits COUNT=5, never UNTIL.
+        rrule = "FREQ=DAILY;INTERVAL=1;COUNT=5"
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=["alice@example.com"],
+            method="REQUEST",
+            rrule=rrule,
+        )
+        raw = ics.decode()
+        assert "COUNT=5" in raw
+        assert "UNTIL=" not in raw
+
+    def test_truncated_series_count_reflects_actual(self):
+        """If advance-window truncated a count=10 series to 3, stored rrule has COUNT=3."""
+        booking = _make_booking()
+        room = _make_room()
+        rrule = "FREQ=WEEKLY;INTERVAL=1;COUNT=3"  # actual=3, not 10
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=["alice@example.com"],
+            method="REQUEST",
+            rrule=rrule,
+        )
+        raw = ics.decode()
+        assert "COUNT=3" in raw
+        assert "UNTIL=" not in raw
+        assert "COUNT=10" not in raw
+
+
+class TestMailtoDoublePrefix:
+    """FIX 3 (B3): _ensure_mailto must strip a leading 'mailto:' if already present."""
+
+    def test_bare_email_gets_mailto_prefix(self):
+        booking = _make_booking()
+        room = _make_room()
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="org@example.com",
+            attendee_emails=["att@example.com"],
+            method="REQUEST",
+        )
+        unfolded = ics.decode().replace("\r\n ", "").replace("\r\n\t", "").lower()
+        assert "mailto:org@example.com" in unfolded
+        assert "mailto:att@example.com" in unfolded
+
+    def test_already_prefixed_email_not_doubled(self):
+        """If caller passes 'mailto:foo@bar.com', the output must not have 'mailto:mailto:'."""
+        booking = _make_booking()
+        room = _make_room()
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="mailto:org@example.com",
+            attendee_emails=["mailto:att@example.com"],
+            method="REQUEST",
+        )
+        raw = ics.decode().lower()
+        assert "mailto:mailto:" not in raw
+        unfolded = raw.replace("\r\n ", "").replace("\r\n\t", "")
+        assert "mailto:org@example.com" in unfolded
+        assert "mailto:att@example.com" in unfolded
+
+
+class TestEmptyDescription:
+    """FIX 4 (B4): DESCRIPTION must be omitted entirely when booking.description is falsy."""
+
+    def test_none_description_omits_property(self):
+        booking = _make_booking(description=None)
+        room = _make_room()
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=[],
+            method="REQUEST",
+        )
+        raw = ics.decode()
+        assert "DESCRIPTION" not in raw
+
+    def test_empty_string_description_omits_property(self):
+        booking = _make_booking(description="")
+        room = _make_room()
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=[],
+            method="REQUEST",
+        )
+        raw = ics.decode()
+        assert "DESCRIPTION" not in raw
+
+    def test_non_empty_description_is_present(self):
+        booking = _make_booking(description="Quarterly review")
+        room = _make_room()
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=[],
+            method="REQUEST",
+        )
+        raw = ics.decode()
+        assert "DESCRIPTION" in raw
+        assert "Quarterly review" in raw
+
+
+class TestNonAsciiAndUtf8:
+    """FIX 5 (B5): non-ASCII title and room name must round-trip correctly."""
+
+    def test_non_ascii_title_round_trips(self):
+        """Title with Chinese + accented characters must parse back equal to input."""
+        title = "会议室 Café"
+        booking = _make_booking(title=title)
+        room = _make_room(name="Salle Réunion", building=None, floor=None, area=None)
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=[],
+            method="REQUEST",
+        )
+        cal = _parse(ics)
+        event = _first_event(cal)
+        assert str(event.get("summary")) == title
+
+    def test_non_ascii_location_round_trips(self):
+        """Room name with non-ASCII chars must survive ical serialisation/parse."""
+        room = _make_room(name="Salle Réunion", building="Bâtiment B", floor=None, area=None)
+        booking = _make_booking()
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=[],
+            method="REQUEST",
+        )
+        cal = _parse(ics)
+        event = _first_event(cal)
+        location = str(event.get("location"))
+        assert "Salle Réunion" in location
+        assert "Bâtiment B" in location

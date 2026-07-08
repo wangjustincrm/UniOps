@@ -226,38 +226,35 @@ class TestExpandSeriesDaily:
 class TestBuildRruleString:
     def test_weekly_count_produces_correct_string(self):
         spec = SeriesSpec(freq="weekly", interval=1, count=4)
-        rrule = build_rrule_string(spec, until_fallback=date(2030, 12, 31))
+        rrule = build_rrule_string(spec, actual_count=4)
         assert rrule.startswith("FREQ=WEEKLY")
         assert "INTERVAL=1" in rrule
         assert "COUNT=4" in rrule
         assert "UNTIL" not in rrule
 
-    def test_daily_until_produces_correct_string(self):
+    def test_daily_until_spec_still_produces_count_string(self):
+        """Until-based specs always store COUNT=<actual> — no UNTIL in the RRULE."""
         until = date(2030, 6, 15)
         spec = SeriesSpec(freq="daily", until=until)
-        rrule = build_rrule_string(spec, until_fallback=date(2030, 12, 31))
+        # Simulating 5 actual occurrences created
+        rrule = build_rrule_string(spec, actual_count=5)
         assert rrule.startswith("FREQ=DAILY")
         assert "INTERVAL=1" in rrule
-        assert "UNTIL=20300615T235959Z" in rrule
-        assert "COUNT" not in rrule
+        assert "COUNT=5" in rrule
+        assert "UNTIL" not in rrule
 
     def test_weekly_interval_2_count_produces_correct_string(self):
         spec = SeriesSpec(freq="weekly", interval=2, count=5)
-        rrule = build_rrule_string(spec, until_fallback=date(2030, 12, 31))
+        rrule = build_rrule_string(spec, actual_count=5)
         assert "FREQ=WEEKLY" in rrule
         assert "INTERVAL=2" in rrule
         assert "COUNT=5" in rrule
 
-    def test_count_none_uses_until_fallback(self):
-        """When spec.count is None and spec.until is also None (shouldn't happen via
-        normal validator, but build_rrule_string must handle it gracefully via fallback)."""
-        # This only tests the fallback path; normally until is set via until=
-        spec = SeriesSpec(freq="daily", count=3)
-        # Override spec.count to None manually to test fallback branch
-        import copy
-        s = copy.copy(spec)
-        object.__setattr__(s, "count", None)
-        object.__setattr__(s, "until", None)
-        fallback = date(2030, 1, 1)
-        rrule = build_rrule_string(s, until_fallback=fallback)
-        assert "UNTIL=20300101T235959Z" in rrule
+    def test_truncated_series_stores_actual_count(self):
+        """When advance-window cap truncates a count=10 spec to 2 actual occurrences,
+        the stored rrule must have COUNT=2, not COUNT=10."""
+        spec = SeriesSpec(freq="weekly", interval=1, count=10)
+        rrule = build_rrule_string(spec, actual_count=2)
+        assert "COUNT=2" in rrule
+        assert "COUNT=10" not in rrule
+        assert "UNTIL" not in rrule
