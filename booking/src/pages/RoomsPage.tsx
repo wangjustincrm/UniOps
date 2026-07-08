@@ -80,7 +80,7 @@ function RoomCard({
   room: RoomWithStatusOut
   onBook: (room: RoomWithStatusOut) => void
 }) {
-  const locationParts = [room.building, room.floor, room.area].filter(Boolean)
+  const locationParts = [room.floor, room.area].filter(Boolean)
   const locationLine = locationParts.length > 0 ? locationParts.join(' · ') : null
 
   const nextTime = room.next_meeting_at
@@ -174,8 +174,6 @@ export default function RoomsPage() {
   const [startTime, setStartTime] = useState<string>('')
   const [endTime, setEndTime] = useState<string>('')
   const [attendees, setAttendees] = useState<string>('')
-  const [campus, setCampus] = useState<string>('')
-  const [building, setBuilding] = useState<string>('')
   const [floor, setFloor] = useState<string>('')
   const [area, setArea] = useState<string>('')
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>([])
@@ -184,15 +182,13 @@ export default function RoomsPage() {
   // Build filter object for the service calls
   const filters: RoomListFilters = useMemo(() => {
     const f: RoomListFilters = {}
-    if (campus.trim())    f.campus   = campus.trim()
-    if (building.trim())  f.building = building.trim()
     if (floor.trim())     f.floor    = floor.trim()
     if (area.trim())      f.area     = area.trim()
     if (attendees && Number(attendees) > 0) f.min_capacity = Number(attendees)
     if (selectedEquipment.length > 0) f.equipment = selectedEquipment
     if (roomType) f.room_type = roomType
     return f
-  }, [campus, building, floor, area, attendees, selectedEquipment, roomType])
+  }, [floor, area, attendees, selectedEquipment, roomType])
 
   // Whether we have a full time window
   const hasWindow = !!(date && startTime && endTime && startTime < endTime)
@@ -297,26 +293,6 @@ export default function RoomsPage() {
 
           {/* Row 2: location filters */}
           <div className="mt-3 flex flex-wrap gap-3 items-end">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Campus</label>
-              <input
-                type="text"
-                value={campus}
-                onChange={e => setCampus(e.target.value)}
-                placeholder="All campuses"
-                className="h-9 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-600">Building</label>
-              <input
-                type="text"
-                value={building}
-                onChange={e => setBuilding(e.target.value)}
-                placeholder="All buildings"
-                className="h-9 rounded-md border border-neutral-300 px-2 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
-              />
-            </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-neutral-600">Floor</label>
               <input

@@ -164,8 +164,10 @@ class TestRequestInvite:
         assert "mailto:bob@example.com" in unfolded
 
     def test_location(self):
+        # building excluded from LOCATION — floor/area only
         location = str(self.event.get("location"))
-        assert location == "Maple Room (Building A, 3F)"
+        assert location == "Maple Room (3F)"
+        assert "Building A" not in location
 
     def test_summary(self):
         assert str(self.event.get("summary")) == "Team Standup"
@@ -333,7 +335,7 @@ class TestEmptyLocationParts:
         assert "(" not in location
 
     def test_location_partial_parts(self):
-        """If only some parts are set, only those appear."""
+        """Building is excluded from LOCATION; if only building set, result is just room name."""
         booking = _make_booking()
         room = _make_room(name="West Wing", building="HQ", floor=None, area=None)
         ics = build_event_ics(
@@ -346,7 +348,9 @@ class TestEmptyLocationParts:
         cal = _parse(ics)
         event = _first_event(cal)
         location = str(event.get("location"))
-        assert location == "West Wing (HQ)"
+        # building is no longer included in LOCATION (floor/area only)
+        assert location == "West Wing"
+        assert "HQ" not in location
 
 
 class TestOrganizerCn:
@@ -506,6 +510,46 @@ class TestEmptyDescription:
         assert "Quarterly review" in raw
 
 
+class TestLocationFloorAreaOnly:
+    """Change 2: LOCATION must use floor/area only — building is dropped."""
+
+    def test_location_uses_floor_and_area_not_building(self):
+        """When building, floor and area all set, only floor+area appear in LOCATION."""
+        booking = _make_booking()
+        room = _make_room(name="Maple Room", building="HQ", floor="3F", area="East Wing")
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=[],
+            method="REQUEST",
+        )
+        cal = _parse(ics)
+        event = _first_event(cal)
+        location = str(event.get("location"))
+        assert "HQ" not in location, f"building should be omitted from LOCATION: {location!r}"
+        assert "3F" in location
+        assert "East Wing" in location
+        assert location == "Maple Room (3F, East Wing)"
+
+    def test_location_floor_only(self):
+        """Only floor set — no area, no building."""
+        booking = _make_booking()
+        room = _make_room(name="Room B", building="Tower", floor="5", area=None)
+        ics = build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=[],
+            method="REQUEST",
+        )
+        cal = _parse(ics)
+        event = _first_event(cal)
+        location = str(event.get("location"))
+        assert "Tower" not in location
+        assert location == "Room B (5)"
+
+
 class TestNonAsciiAndUtf8:
     """FIX 5 (B5): non-ASCII title and room name must round-trip correctly."""
 
@@ -526,8 +570,11 @@ class TestNonAsciiAndUtf8:
         assert str(event.get("summary")) == title
 
     def test_non_ascii_location_round_trips(self):
-        """Room name with non-ASCII chars must survive ical serialisation/parse."""
-        room = _make_room(name="Salle Réunion", building="Bâtiment B", floor=None, area=None)
+        """Room name with non-ASCII chars must survive ical serialisation/parse.
+
+        Building is excluded from LOCATION (floor/area only); room.name must appear.
+        """
+        room = _make_room(name="Salle Réunion", building="Bâtiment B", floor="2", area=None)
         booking = _make_booking()
         ics = build_event_ics(
             booking=booking,
@@ -540,4 +587,6 @@ class TestNonAsciiAndUtf8:
         event = _first_event(cal)
         location = str(event.get("location"))
         assert "Salle Réunion" in location
-        assert "Bâtiment B" in location
+        # building excluded; floor present
+        assert "Bâtiment B" not in location
+        assert "2" in location

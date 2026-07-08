@@ -54,7 +54,7 @@ function RoomStatusBadge({ status }: { status: string }) {
 }
 
 function locationStr(room: RoomOut): string {
-  return [room.campus, room.building, room.floor && `Floor ${room.floor}`, room.area]
+  return [room.floor && `Floor ${room.floor}`, room.area]
     .filter(Boolean)
     .join(' · ')
 }

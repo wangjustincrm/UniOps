@@ -31,10 +31,12 @@ def _ensure_mailto(address: str) -> str:
 def _location_string(room: MeetingRoom) -> str:
     """Build the LOCATION value from room fields.
 
-    Format: "<name> (<building>, <floor>, <area>)"
-    If all three location-detail fields are empty/None, just "<name>".
+    Format: "<name> (<floor>, <area>)"
+    Building is intentionally excluded so calendar invites match the UI
+    (which displays floor/area only).
+    If neither floor nor area is set, just "<name>".
     """
-    parts = [p for p in [room.building, room.floor, room.area] if p]
+    parts = [p for p in [room.floor, room.area] if p]
     if parts:
         return f"{room.name} ({', '.join(parts)})"
     return room.name

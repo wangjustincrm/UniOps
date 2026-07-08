@@ -94,7 +94,7 @@ export default function RoomDetailPage() {
   }
 
   const isBookable = room.status === 'available' as RoomStatus
-  const locationParts = [room.campus, room.building, room.floor, room.area].filter(Boolean)
+  const locationParts = [room.floor, room.area].filter(Boolean)
 
   const nextTime = room.next_meeting_at
     ? new Date(room.next_meeting_at).toLocaleTimeString('en-CA', {

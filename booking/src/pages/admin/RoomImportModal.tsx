@@ -16,8 +16,6 @@ interface Props {
 const EXPECTED_COLUMNS = [
   'name',
   'code',
-  'campus',
-  'building',
   'floor',
   'area',
   'capacity',

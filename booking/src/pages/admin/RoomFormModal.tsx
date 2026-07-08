@@ -37,8 +37,6 @@ interface Props {
 const EMPTY_FORM: RoomCreate = {
   name: '',
   code: '',
-  campus: '',
-  building: '',
   floor: '',
   area: '',
   capacity: 1,
@@ -56,8 +54,6 @@ function roomToForm(room: RoomOut): RoomCreate {
   return {
     name: room.name,
     code: room.code,
-    campus: room.campus ?? '',
-    building: room.building ?? '',
     floor: room.floor ?? '',
     area: room.area ?? '',
     capacity: room.capacity,
@@ -146,8 +142,6 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
 
     const payload: RoomCreate = {
       ...form,
-      campus: nullify(form.campus as string | undefined),
-      building: nullify(form.building as string | undefined),
       floor: nullify(form.floor as string | undefined),
       area: nullify(form.area as string | undefined),
       open_time_start: nullify(form.open_time_start as string | undefined),
@@ -229,24 +223,6 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
 
           {/* Location */}
           <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Campus</label>
-              <input
-                value={form.campus as string ?? ''}
-                onChange={(e) => setField('campus', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
-                placeholder="Main Campus"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-neutral-700 mb-1">Building</label>
-              <input
-                value={form.building as string ?? ''}
-                onChange={(e) => setField('building', e.target.value)}
-                className="w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#085E5E]/40"
-                placeholder="Building 1"
-              />
-            </div>
             <div>
               <label className="block text-xs font-medium text-neutral-700 mb-1">Floor</label>
               <input
