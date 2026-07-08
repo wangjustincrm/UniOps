@@ -649,8 +649,12 @@ async def get_day_summary(
         )
 
     # Local-day window → UTC
+    # Construct next-day midnight from the DATE (not from timedelta) so DST
+    # transitions are handled correctly: timedelta(days=1) adds 86 400 s which
+    # gives the wrong answer on 23-/25-hour DST days.
     day_start_local = datetime(parsed_date.year, parsed_date.month, parsed_date.day, 0, 0, 0, tzinfo=tz)
-    day_end_local = day_start_local + timedelta(days=1)
+    next_day = parsed_date + timedelta(days=1)
+    day_end_local = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=tz)
     day_start_utc = day_start_local.astimezone(timezone.utc)
     day_end_utc = day_end_local.astimezone(timezone.utc)
 
@@ -668,7 +672,10 @@ async def get_day_summary(
     )
     rooms = list(rooms_result.scalars().all())
 
-    # Confirmed bookings overlapping the day window, joined with organizer names
+    # Confirmed bookings overlapping the day window, scoped to non-disabled rooms
+    # only (prevents bookings on disabled rooms from leaking into the response
+    # and corrupting the empty-state check on the frontend).
+    room_ids = [r.id for r in rooms]
     bookings_result = await db.execute(
         select(Booking, User.full_name)
         .join(User, Booking.organizer_id == User.id, isouter=True)
@@ -676,6 +683,7 @@ async def get_day_summary(
             Booking.status == "confirmed",
             Booking.starts_at < day_end_utc,
             Booking.ends_at > day_start_utc,
+            Booking.room_id.in_(room_ids),
         )
     )
     booking_rows = bookings_result.all()
@@ -684,6 +692,7 @@ async def get_day_summary(
         date=parsed_date.isoformat(),
         open_start=open_start,
         open_end=open_end,
+        timezone=settings.DISPLAY_TIMEZONE,
         rooms=[
             DaySummaryRoom(
                 id=r.id,

@@ -224,6 +224,7 @@ export function useCreateBooking() {
       qc.invalidateQueries({ queryKey: ['booking-mine'] })
       qc.invalidateQueries({ queryKey: ['booking-rooms'] })
       qc.invalidateQueries({ queryKey: ['booking-rooms-availability'] })
+      qc.invalidateQueries({ queryKey: ['booking-day-summary'] })
     },
   })
 }
@@ -235,6 +236,7 @@ export function useUpdateBooking(id: string | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['booking-mine'] })
       qc.invalidateQueries({ queryKey: ['booking-room', id] })
+      qc.invalidateQueries({ queryKey: ['booking-day-summary'] })
     },
   })
 }
@@ -247,6 +249,7 @@ export function useCancelBooking() {
       qc.invalidateQueries({ queryKey: ['booking-mine'] })
       qc.invalidateQueries({ queryKey: ['booking-rooms'] })
       qc.invalidateQueries({ queryKey: ['booking-rooms-availability'] })
+      qc.invalidateQueries({ queryKey: ['booking-day-summary'] })
     },
   })
 }

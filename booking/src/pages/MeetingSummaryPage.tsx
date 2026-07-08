@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -31,22 +31,42 @@ function hhmm2min(hhmm: string): number {
   return h * 60 + m
 }
 
-/** Convert a UTC ISO datetime string to local HH:MM. */
-function toLocalHHMM(utcIso: string): string {
-  const d = new Date(utcIso)
-  return d.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
+/**
+ * Extract {hour, minute} in a given IANA timezone from a Date using
+ * Intl.DateTimeFormat. This is the canonical way to project a UTC instant
+ * into an arbitrary timezone without relying on the browser's own TZ setting.
+ */
+function _partsInZone(d: Date, tz: string): { h: number; m: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz,
+    hour: 'numeric',
+    minute: 'numeric',
+    hour12: false,
+  }).formatToParts(d)
+  // hour12:false can produce "24" at midnight on some platforms — normalise to 0
+  const h = Number(parts.find(p => p.type === 'hour')!.value) % 24
+  const m = Number(parts.find(p => p.type === 'minute')!.value)
+  return { h, m }
 }
 
-/** Convert a UTC ISO datetime to local minutes-since-midnight. */
-function toLocalMin(utcIso: string): number {
+/** Convert a UTC ISO datetime string to HH:MM in the display timezone. */
+function toDisplayHHMM(utcIso: string, tz: string): string {
   const d = new Date(utcIso)
-  return d.getHours() * 60 + d.getMinutes()
+  const { h, m } = _partsInZone(d, tz)
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
-/** Current time as local minutes-since-midnight. */
-function nowLocalMin(): number {
-  const d = new Date()
-  return d.getHours() * 60 + d.getMinutes()
+/** Convert a UTC ISO datetime to minutes-since-midnight in the display timezone. */
+function toDisplayMin(utcIso: string, tz: string): number {
+  const d = new Date(utcIso)
+  const { h, m } = _partsInZone(d, tz)
+  return h * 60 + m
+}
+
+/** Current time as minutes-since-midnight in the display timezone. */
+function nowDisplayMin(tz: string): number {
+  const { h, m } = _partsInZone(new Date(), tz)
+  return h * 60 + m
 }
 
 // ── Grid constants ─────────────────────────────────────────────────────────────
@@ -94,11 +114,12 @@ interface BookingBlockProps {
   booking: DaySummaryBooking
   openStartMin: number
   openSpanMin: number
+  displayTz: string
 }
 
-function BookingBlock({ booking, openStartMin, openSpanMin }: BookingBlockProps) {
-  const startMin = toLocalMin(booking.starts_at)
-  const endMin   = toLocalMin(booking.ends_at)
+function BookingBlock({ booking, openStartMin, openSpanMin, displayTz }: BookingBlockProps) {
+  const startMin = toDisplayMin(booking.starts_at, displayTz)
+  const endMin   = toDisplayMin(booking.ends_at, displayTz)
 
   // Clamp to the visible span
   const clampedStart = Math.max(startMin, openStartMin)
@@ -109,8 +130,8 @@ function BookingBlock({ booking, openStartMin, openSpanMin }: BookingBlockProps)
   const topPct    = ((clampedStart - openStartMin) / openSpanMin) * 100
   const heightPct = ((clampedEnd - clampedStart) / openSpanMin) * 100
 
-  const startLabel = toLocalHHMM(booking.starts_at)
-  const endLabel   = toLocalHHMM(booking.ends_at)
+  const startLabel = toDisplayHHMM(booking.starts_at, displayTz)
+  const endLabel   = toDisplayHHMM(booking.ends_at, displayTz)
   const tooltip    = `${booking.title}\n${startLabel}–${endLabel}\n${booking.organizer_name}`
 
   return (
@@ -134,15 +155,16 @@ function BookingBlock({ booking, openStartMin, openSpanMin }: BookingBlockProps)
 interface CurrentTimeLineProps {
   openStartMin: number
   openSpanMin: number
+  displayTz: string
 }
 
-function CurrentTimeLine({ openStartMin, openSpanMin }: CurrentTimeLineProps) {
-  const [currentMin, setCurrentMin] = useState(nowLocalMin)
+function CurrentTimeLine({ openStartMin, openSpanMin, displayTz }: CurrentTimeLineProps) {
+  const [currentMin, setCurrentMin] = useState(() => nowDisplayMin(displayTz))
 
   useEffect(() => {
-    const id = setInterval(() => setCurrentMin(nowLocalMin()), 60_000)
+    const id = setInterval(() => setCurrentMin(nowDisplayMin(displayTz)), 60_000)
     return () => clearInterval(id)
-  }, [])
+  }, [displayTz])
 
   if (currentMin < openStartMin || currentMin > openStartMin + openSpanMin) return null
 
@@ -168,6 +190,9 @@ export default function MeetingSummaryPage() {
 
   const { data, isLoading, isError } = useDaySummary(selectedDate)
 
+  // IANA timezone from backend — falls back to a safe default while loading
+  const displayTz = data?.timezone ?? 'America/Toronto'
+
   // Computed from API response (or defaults while loading)
   const openStartMin = data ? hhmm2min(data.open_start) : hhmm2min('08:00')
   const openEndMin   = data ? hhmm2min(data.open_end)   : hhmm2min('20:00')
@@ -179,8 +204,8 @@ export default function MeetingSummaryPage() {
   const hours: number[] = []
   for (let h = startHour; h <= endHour; h++) hours.push(h)
 
-  // Bookings indexed by room_id
-  const bookingsByRoom = useCallback((): Map<string, DaySummaryBooking[]> => {
+  // Bookings indexed by room_id (useMemo — rebuilt only when data changes)
+  const bookingsByRoom = useMemo((): Map<string, DaySummaryBooking[]> => {
     const map = new Map<string, DaySummaryBooking[]>()
     if (!data) return map
     for (const b of data.bookings) {
@@ -189,7 +214,12 @@ export default function MeetingSummaryPage() {
       map.set(b.room_id, list)
     }
     return map
-  }, [data])()
+  }, [data])
+
+  // Count of bookings that match a visible room (for empty-state check)
+  const visibleBookingCount = data
+    ? data.bookings.filter(b => data.rooms.some(r => r.id === b.room_id)).length
+    : 0
 
   const gridH = (openSpanMin / 60) * ROW_H
 
@@ -334,7 +364,7 @@ export default function MeetingSummaryPage() {
 
               {/* Current time indicator across all room columns */}
               {isToday && (
-                <CurrentTimeLine openStartMin={openStartMin} openSpanMin={openSpanMin} />
+                <CurrentTimeLine openStartMin={openStartMin} openSpanMin={openSpanMin} displayTz={displayTz} />
               )}
 
               {/* Per-room column */}
@@ -350,8 +380,8 @@ export default function MeetingSummaryPage() {
                     )}
                     style={{ width: ROOM_MIN_W, height: '100%' }}
                   >
-                    {/* No-meetings overlay (only on first column when all rooms empty) */}
-                    {roomBookings.length === 0 && !isMaint && data.bookings.length === 0 && idx === 0 && (
+                    {/* No-meetings overlay (only on first column when all visible rooms empty) */}
+                    {roomBookings.length === 0 && !isMaint && visibleBookingCount === 0 && idx === 0 && (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className="text-[11px] text-neutral-300 select-none">No meetings scheduled</span>
                       </div>
@@ -362,6 +392,7 @@ export default function MeetingSummaryPage() {
                         booking={b}
                         openStartMin={openStartMin}
                         openSpanMin={openSpanMin}
+                        displayTz={displayTz}
                       />
                     ))}
                   </div>

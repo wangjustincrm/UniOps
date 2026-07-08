@@ -279,3 +279,125 @@ class TestDaySummaryShape:
         assert "organizer_name" in b
         assert "room_id" in b
         assert b["title"] == "Shape Test Meeting"
+
+    async def test_timezone_field_in_response(self, requester):
+        """DaySummaryOut must include the timezone (IANA) field."""
+        _, req = requester
+        resp = await req.get("/api/v1/bookings/day", params={"date": "2026-11-15"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "timezone" in data
+        assert data["timezone"] == "America/Toronto"
+
+
+class TestDaySummaryDST:
+    """Unit-level verification of the day-window DST arithmetic.
+
+    These tests exercise the same construct used inside the route without
+    going through the full HTTP stack.  Spring-forward 2026-03-08 in
+    America/Toronto is the canonical DST trap.
+
+    NOTE: The UTC window size must be checked by converting to UTC and diffing,
+    not by subtracting the two local datetimes directly — Python's aware datetime
+    subtraction does not always produce the UTC equivalent when zoneinfo folds/gaps
+    are involved on all platforms.
+    """
+
+    def test_dst_spring_forward_utc_window_is_23_hours(self):
+        """Spring-forward day (2026-03-08, America/Toronto): UTC window is 23 h.
+
+        day_start_local = 2026-03-08 00:00 EST (UTC-5) = 05:00 UTC
+        day_end_local   = 2026-03-09 00:00 EDT (UTC-4) = 04:00 UTC
+        UTC difference  = 23 h, NOT 24 h.
+
+        Constructing day_end via timedelta(days=1) would add 86 400 s to the UTC
+        equivalent, giving 2026-03-09 05:00 UTC (= 01:00 EDT on March 9) which is
+        1 hour too late — bookings from 00:00–01:00 EDT on March 9 would be wrongly
+        included in the March 8 query.  Using date arithmetic to build next midnight
+        avoids this.
+        """
+        from datetime import date, timedelta, timezone
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+
+        tz = ZoneInfo("America/Toronto")
+        spring_fwd = date(2026, 3, 8)
+
+        day_start = datetime(spring_fwd.year, spring_fwd.month, spring_fwd.day, 0, 0, 0, tzinfo=tz)
+        next_day = spring_fwd + timedelta(days=1)
+        day_end = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=tz)
+
+        utc_delta = day_end.astimezone(timezone.utc) - day_start.astimezone(timezone.utc)
+        assert utc_delta.total_seconds() == 23 * 3600, (
+            f"Spring-forward UTC window should be 23 h; got {utc_delta.total_seconds() / 3600} h"
+        )
+
+    def test_dst_fall_back_utc_window_is_25_hours(self):
+        """Fall-back day (2026-11-01, America/Toronto): UTC window is 25 h."""
+        from datetime import date, timedelta, timezone
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+
+        tz = ZoneInfo("America/Toronto")
+        fall_back = date(2026, 11, 1)
+
+        day_start = datetime(fall_back.year, fall_back.month, fall_back.day, 0, 0, 0, tzinfo=tz)
+        next_day = fall_back + timedelta(days=1)
+        day_end = datetime(next_day.year, next_day.month, next_day.day, 0, 0, 0, tzinfo=tz)
+
+        utc_delta = day_end.astimezone(timezone.utc) - day_start.astimezone(timezone.utc)
+        assert utc_delta.total_seconds() == 25 * 3600, (
+            f"Fall-back UTC window should be 25 h; got {utc_delta.total_seconds() / 3600} h"
+        )
+
+    async def test_dst_spring_forward_next_day_booking_excluded(self, admin, requester, db_session):
+        """A booking at 00:30 local on 2026-03-09 must NOT appear on 2026-03-08.
+
+        On spring-forward night clocks jump 02:00→03:00.  Using timedelta(days=1)
+        would set day_end_utc one hour late (06:00 UTC instead of 05:00+23h=04:00 UTC
+        for the spring-forward offset), wrongly including the first hour of March 9.
+        """
+        _, adm = admin
+        _, req = requester
+        room = await _create_room(adm)
+        # 2026-03-09 00:30 EDT (UTC-4) = 04:30 UTC — belongs to March 9 local day
+        starts = datetime(2026, 3, 9, 0, 30, tzinfo=TZ)
+        ends   = datetime(2026, 3, 9, 1, 0, tzinfo=TZ)
+        await _insert_booking(db_session, room["id"], starts, ends)
+
+        resp = await req.get("/api/v1/bookings/day", params={"date": "2026-03-08"})
+        assert resp.status_code == 200
+        bookings = resp.json()["bookings"]
+        matching = [b for b in bookings if b["room_id"] == room["id"]]
+        assert len(matching) == 0, (
+            "Booking at 00:30 local on 2026-03-09 must not appear on 2026-03-08 query"
+        )
+
+
+class TestDaySummaryDisabledRoomFilter:
+    """GET /bookings/day — disabled room bookings must not leak into bookings[]."""
+
+    async def test_disabled_room_booking_excluded_from_bookings(self, admin, requester, db_session):
+        """A confirmed booking on a disabled room must not appear in bookings[].
+
+        The room is absent from rooms[] (filtered by status != 'disabled').
+        Without the room_id.in_() filter on the bookings query, the booking
+        leaks into bookings[] even though it cannot be rendered.
+        """
+        _, adm = admin
+        _, req = requester
+        r_disabled = await _create_room(adm, status="disabled", name_prefix="DisabledLeakTest")
+        target = "2026-09-25"
+        await _insert_booking(
+            db_session, r_disabled["id"],
+            _local(2026, 9, 25, 10, 0),
+            _local(2026, 9, 25, 11, 0),
+        )
+
+        resp = await req.get("/api/v1/bookings/day", params={"date": target})
+        assert resp.status_code == 200
+        data = resp.json()
+        # Room must be excluded
+        assert r_disabled["id"] not in {r["id"] for r in data["rooms"]}
+        # Booking must also be excluded (not leaking through)
+        assert r_disabled["id"] not in {b["room_id"] for b in data["bookings"]}

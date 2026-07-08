@@ -285,6 +285,7 @@ export interface DaySummaryOut {
   date: string          // "YYYY-MM-DD"
   open_start: string    // "HH:MM"
   open_end: string      // "HH:MM"
+  timezone: string      // IANA name, e.g. "America/Toronto"
   rooms: DaySummaryRoom[]
   bookings: DaySummaryBooking[]
 }

@@ -161,5 +161,6 @@ class DaySummaryOut(BaseModel):
     date: str                       # "YYYY-MM-DD"
     open_start: str                 # "HH:MM"  from config defaults
     open_end: str                   # "HH:MM"
+    timezone: str                   # IANA name, e.g. "America/Toronto" (= DISPLAY_TIMEZONE)
     rooms: list[DaySummaryRoom]     # non-disabled rooms, sorted floor then name
     bookings: list[DaySummaryBookingOut]  # confirmed bookings in the day window
