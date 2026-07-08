@@ -41,5 +41,16 @@ def require_perm(key: str):
     return _check
 
 
+async def is_booking_admin(payload: CurrentUserPayload, db: SessionDep) -> bool:
+    """Return True if the caller holds the manage_meeting_rooms permission.
+
+    Resolves via the Access Control Matrix (company_config.role_permissions) so
+    that matrix-granted admins (e.g. procurement_manager with manage_meeting_rooms=true)
+    are treated the same as system_admin.  Single matrix load per request.
+    """
+    matrix = await _load_matrix(db)
+    return has_permission(payload.get("role", ""), "manage_meeting_rooms", matrix)
+
+
 CurrentUser = Annotated[dict, Depends(require_perm("view_booking"))]
 AdminUser = Annotated[dict, Depends(require_perm("manage_meeting_rooms"))]

@@ -846,3 +846,145 @@ class TestAdminBookingsExport:
                 assert (
                     "-04:00" in ts or "-05:00" in ts
                 ), f"Column '{col}' timestamp '{ts}' is not in DISPLAY_TIMEZONE (expected -04:00 or -05:00)"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 6: Matrix-admin regression tests (Finding 1)
+#
+# A user whose JWT *role* is NOT system_admin but whose role is granted
+# manage_meeting_rooms=true in company_config.role_permissions must be able to:
+#   (a) force-cancel another user's booking → 200, audit action force_cancel
+#   (b) PATCH another user's booking → 200
+# A plain requester (no matrix grant) must still get 404.
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _seed_matrix_admin_config(db_session, role: str) -> None:
+    """Insert (or upsert) a company_config row granting manage_meeting_rooms to role."""
+    from sqlalchemy import text
+    await db_session.execute(
+        text(
+            "INSERT INTO company_config (id, role_permissions) "
+            "VALUES (gen_random_uuid(), :perms) "
+            "ON CONFLICT DO NOTHING"
+        ),
+        {"perms": f'{{"{ role }": {{"manage_meeting_rooms": true, "view_booking": true}}}}'},
+    )
+    await db_session.flush()
+
+
+async def _seed_matrix_admin_config_typed(db_session, role: str) -> None:
+    """Insert a company_config row granting manage_meeting_rooms to role (using ORM)."""
+    import uuid as _uuid
+    from app.models.company_config_mirror import CompanyConfig
+    cfg = CompanyConfig(
+        id=_uuid.uuid4(),
+        role_permissions={role: {"manage_meeting_rooms": True, "view_booking": True}},
+    )
+    db_session.add(cfg)
+    await db_session.flush()
+
+
+class TestMatrixAdminOverride:
+    """Regression tests for Finding 1: admin override uses matrix, not role==system_admin."""
+
+    async def test_matrix_admin_force_cancel_another_users_booking(
+        self, requester, test_engine, db_session
+    ):
+        """A user whose role is granted manage_meeting_rooms via the matrix can
+        force-cancel another user's booking and audit action is 'force_cancel'."""
+        organizer, req_client = requester
+
+        # Create a matrix-admin user with role 'procurement_manager' (not system_admin)
+        matrix_admin_user = await make_user(test_engine, role="procurement_manager")
+        matrix_admin_token = make_token(matrix_admin_user.id, matrix_admin_user.role)
+
+        # Seed the matrix: procurement_manager gets manage_meeting_rooms=true
+        await _seed_matrix_admin_config_typed(db_session, "procurement_manager")
+
+        async with authed_client(matrix_admin_token, session=db_session) as matrix_admin_client:
+            # The matrix admin needs a room — use system_admin to create it
+            sys_admin_user = await make_user(test_engine, role="system_admin")
+            sys_admin_token = make_token(sys_admin_user.id, sys_admin_user.role)
+            async with authed_client(sys_admin_token, session=db_session) as adm_client:
+                room = await _create_room(adm_client)
+
+            # Organizer books the room
+            booking = await _create_booking(req_client, room["id"], _dt(10, 0), _dt(11, 0))
+
+            # Matrix-admin force-cancels (actor != organizer, but has manage_meeting_rooms)
+            resp = await matrix_admin_client.post(
+                f"/api/v1/bookings/{booking['id']}/cancel"
+            )
+            assert resp.status_code == 200, (
+                f"Matrix admin (procurement_manager) should be able to force-cancel: {resp.text}"
+            )
+            assert resp.json()["cancelled"] == 1
+
+        # Verify audit row has action='force_cancel'
+        from sqlalchemy import select
+        from app.models.audit import BookingAuditLog
+        result = await db_session.execute(
+            select(BookingAuditLog).where(
+                BookingAuditLog.booking_id == uuid.UUID(booking["id"]),
+                BookingAuditLog.action == "force_cancel",
+            )
+        )
+        audit = result.scalar_one_or_none()
+        assert audit is not None, (
+            "Expected audit row with action='force_cancel' for matrix-admin cancel"
+        )
+        assert audit.actor_id == matrix_admin_user.id
+
+    async def test_matrix_admin_patch_another_users_booking(
+        self, requester, test_engine, db_session
+    ):
+        """A user whose role is granted manage_meeting_rooms via the matrix can
+        PATCH another user's booking and get 200."""
+        organizer, req_client = requester
+
+        matrix_admin_user = await make_user(test_engine, role="procurement_manager")
+        matrix_admin_token = make_token(matrix_admin_user.id, matrix_admin_user.role)
+
+        # Seed the matrix
+        await _seed_matrix_admin_config_typed(db_session, "procurement_manager")
+
+        sys_admin_user = await make_user(test_engine, role="system_admin")
+        sys_admin_token = make_token(sys_admin_user.id, sys_admin_user.role)
+        async with authed_client(sys_admin_token, session=db_session) as adm_client:
+            room = await _create_room(adm_client)
+
+        booking = await _create_booking(req_client, room["id"], _dt(14, 0), _dt(15, 0))
+
+        async with authed_client(matrix_admin_token, session=db_session) as matrix_admin_client:
+            resp = await matrix_admin_client.patch(
+                f"/api/v1/bookings/{booking['id']}",
+                json={"title": "Matrix Admin Override"},
+            )
+        assert resp.status_code == 200, (
+            f"Matrix admin (procurement_manager) should be able to PATCH: {resp.text}"
+        )
+        assert resp.json()["title"] == "Matrix Admin Override"
+
+    async def test_plain_requester_cannot_cancel_other_users_booking(
+        self, requester, test_engine, db_session
+    ):
+        """A plain requester without manage_meeting_rooms must still get 404 when
+        trying to cancel another user's booking (no matrix grant)."""
+        organizer, req_client = requester
+
+        sys_admin_user = await make_user(test_engine, role="system_admin")
+        sys_admin_token = make_token(sys_admin_user.id, sys_admin_user.role)
+        async with authed_client(sys_admin_token, session=db_session) as adm_client:
+            room = await _create_room(adm_client)
+
+        booking = await _create_booking(req_client, room["id"], _dt(9, 0), _dt(10, 0))
+
+        other_user = await make_user(test_engine, role="requester")
+        other_token = make_token(other_user.id, other_user.role)
+        async with authed_client(other_token, session=db_session) as other_client:
+            resp = await other_client.post(
+                f"/api/v1/bookings/{booking['id']}/cancel"
+            )
+        assert resp.status_code == 404, (
+            f"Plain requester must not be able to cancel another user's booking: {resp.text}"
+        )

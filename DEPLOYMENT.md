@@ -342,8 +342,16 @@ Additional one-time steps are required before the first booking release:
    injected as a build arg (already present in `docker-compose.prod.yml`). A fresh portal image is
    required so the Booking tile appears in the Portal home page.
 
-3. **Alembic migration** — `booking-api` owns its own alembic chain. `migrate-prod.sh` now includes
-   `booking-api` in its SERVICES list; it runs `alembic upgrade head` inside the `booking-api` container.
+3. **Alembic migration — btree_gist prerequisite** — `booking-api`'s first migration creates the
+   `btree_gist` extension and the `no_double_booking` exclusion constraint.
+   `CREATE EXTENSION` requires superuser privilege; if the app DB user (`epms`) is not a superuser,
+   run the following as the `postgres` superuser on the DB server **before** running `migrate-prod.sh`:
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS btree_gist;
+   ```
+   Confirm with: `\dx` in psql — `btree_gist` must be listed.  Only needed once per DB.
+   After the extension exists, `migrate-prod.sh` (which runs `alembic upgrade head` inside the
+   `booking-api` container) will complete without privilege errors.
    No ordering dependency with other services (booking-api has its own tables only).
 
 4. **File server: add booking origin to file-api ALLOWED_ORIGINS** (required for room image upload/preview)
@@ -357,11 +365,35 @@ Additional one-time steps are required before the first booking release:
    Without this step, browser upload and image preview requests from the booking frontend will be
    CORS-blocked by file-api.
 
-5. **Outlook real-invite verification** — booking-api sends calendar invites via the Microsoft Graph
-   API. Before going live, verify that invite emails are received by attendees and that the calendar
-   event appears in Outlook. Check `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, and `AZURE_TENANT_ID`
-   are set in the booking-api environment and that the Graph API `Calendars.ReadWrite` permission
-   has been admin-consented in Azure AD.
+5. **Outlook real-invite verification (iMIP over SMTP)** — booking-api sends calendar invites as
+   iMIP emails over SMTP (`multipart/alternative` with a `text/calendar; method=REQUEST` part),
+   not via Microsoft Graph / Azure.  There are no Azure credentials involved.
+
+   **Before running the gate test, confirm SMTP is configured** — booking-api resolves SMTP settings
+   in this order:
+   1. `booking_config.smtp_settings` (set via Booking → Admin → Settings → Email in the UI, or
+      directly in the `booking_config` table).
+   2. Fallback: shared `company_config` SMTP columns (`smtp_host`, `smtp_port`, `smtp_user`,
+      `smtp_password`, `smtp_use_tls`, `smtp_from`) — the same settings used by other modules.
+
+   If neither is configured, booking-api logs the notification attempt and degrades gracefully
+   (no email sent, `sync_status = "failed"`).  Configure at least the shared company SMTP before
+   the gate test.
+
+   **Organizer mode** — by default booking-api uses `system` mode: the `From:` address is the
+   configured SMTP sender, and the ORGANIZER in the iCalendar object is the booking creator's
+   display name only.  There is no "send on behalf of" Exchange delegation — this is correct for
+   the iMIP-over-SMTP design.
+
+   **Gate test — run before going live:**
+   1. Create a booking with yourself as organizer and attendee.
+   2. Verify you receive an email with a `text/calendar` attachment and that
+      **Outlook Classic Desktop** renders it as a calendar event with Accept/Decline buttons.
+      (Web Outlook and mobile may render differently — Classic Desktop is the acceptance criterion.)
+   3. PATCH the booking (e.g. change the title).  Verify Outlook updates the event
+      (the iMIP SEQUENCE number increments → Outlook replaces the existing event).
+   4. Cancel the booking.  Verify Outlook receives a `METHOD:CANCEL` iMIP message and
+      removes the event from the calendar.
 
 6. **DNS + Caddy** — `booking.canadaroyalmilk.com` and `booking-api.canadaroyalmilk.com` are already
    present in the `Caddyfile`. Add both A records (→ `45.78.113.218`) in the external DNS and the

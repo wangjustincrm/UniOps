@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.deps import SessionDep
-from app.core.permissions import AdminUser, CurrentUser
+from app.core.permissions import AdminUser, CurrentUser, is_booking_admin
 from app.crud.booking import create_booking_records
 from app.crud.config import get_or_create_config
 from app.models.audit import BookingAuditLog
@@ -637,7 +637,7 @@ async def update_booking(
     """
     tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
     actor_id = uuid.UUID(current_user["sub"])
-    is_admin = current_user.get("role") == "system_admin"
+    is_admin = await is_booking_admin(current_user, db)
 
     # Fetch the booking with its room
     result = await db.execute(
@@ -832,7 +832,7 @@ async def cancel_booking(
     Returns: {"cancelled": n}
     """
     actor_id = uuid.UUID(current_user["sub"])
-    is_admin = current_user.get("role") == "system_admin"
+    is_admin = await is_booking_admin(current_user, db)
     tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
 
     # Fetch the target booking
