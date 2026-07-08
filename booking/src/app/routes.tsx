@@ -1,7 +1,7 @@
 import type { RouteDef } from '@uniops/shell'
+import RoomsPage from '@/pages/RoomsPage'
 
-// Placeholder page components — Tasks 13–16 fill these in.
-function RoomsPage() { return <div className="p-6 text-sm text-muted-foreground">Rooms — Task 13</div> }
+// Placeholder page components — Tasks 14–16 fill these in.
 function MyBookingsPage() { return <div className="p-6 text-sm text-muted-foreground">My Bookings — Task 13</div> }
 function AdminRoomsPage() { return <div className="p-6 text-sm text-muted-foreground">Rooms Admin — Task 14</div> }
 function AdminAllBookingsPage() { return <div className="p-6 text-sm text-muted-foreground">All Bookings — Task 14</div> }
