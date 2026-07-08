@@ -11,7 +11,7 @@ function AdminSettingsPage() { return <div className="p-6 text-sm text-muted-for
 export const bookingRoutes: RouteDef[] = [
   { path: '/rooms',               element: <RoomsPage />,             tab: { title: 'Rooms',          icon: 'DoorOpen',    keyStrategy: 'static', pinned: true } },
   { path: '/my',                  element: <MyBookingsPage />,        tab: { title: 'My Bookings',    icon: 'CalendarDays', keyStrategy: 'static' } },
-  { path: '/admin/rooms',         element: <AdminRoomsPage />,        tab: { title: 'Rooms Admin',    icon: 'DoorOpen',    keyStrategy: 'static' } },
+  { path: '/admin/rooms',         element: <AdminRoomsPage />,        tab: { title: 'Rooms Admin',    icon: 'Wrench',      keyStrategy: 'static' } },
   { path: '/admin/bookings',      element: <AdminAllBookingsPage />,  tab: { title: 'All Bookings',   icon: 'LayoutList',  keyStrategy: 'static' } },
   { path: '/admin/notifications', element: <AdminNotificationsPage />,tab: { title: 'Notifications',  icon: 'BellRing',    keyStrategy: 'static' } },
   { path: '/admin/settings',      element: <AdminSettingsPage />,     tab: { title: 'Settings',       icon: 'Settings',    keyStrategy: 'static' } },

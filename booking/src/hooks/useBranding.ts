@@ -8,11 +8,15 @@ export interface PublicBranding {
   module?: string | null
 }
 
-/** Booking branding — shared company name/logo from epms-api, Booking-specific tagline. */
-export function useBranding() {
+/**
+ * Company branding (name / tagline / logo) for a specific module.
+ * `module` selects which tagline the backend resolves (default 'booking').
+ * Name and logo are shared across all modules.
+ */
+export function useBranding(module = 'booking') {
   return useQuery<PublicBranding>({
-    queryKey: ['public-branding', 'booking'],
-    queryFn: () => epmsApi.get<PublicBranding>('/config/public/branding?module=booking'),
+    queryKey: ['public-branding', module],
+    queryFn: () => epmsApi.get<PublicBranding>(`/config/public/branding?module=${module}`),
     staleTime: 5 * 60_000,
     retry: 1,
   })

@@ -35,6 +35,6 @@ RUN cd booking && npx vite build
 
 # ── Serve stage ───────────────────────────────────────────────────────────────
 FROM nginx:alpine AS serve
-COPY vms/nginx.conf /etc/nginx/conf.d/default.conf
+COPY booking/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /repo/booking/dist /usr/share/nginx/html
 EXPOSE 80

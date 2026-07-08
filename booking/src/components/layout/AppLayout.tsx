@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-  DoorOpen, CalendarDays, Settings, BellRing, LayoutList,
+  DoorOpen, CalendarDays, Settings, BellRing, LayoutList, Wrench,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
   type LucideIcon,
 } from 'lucide-react'
@@ -31,7 +31,7 @@ const NAV: NavSection[] = [
   {
     title: 'Admin',
     items: [
-      { label: 'Rooms Admin',    href: '/admin/rooms',         icon: DoorOpen,    permission: 'manage_meeting_rooms' },
+      { label: 'Rooms Admin',    href: '/admin/rooms',         icon: Wrench,      permission: 'manage_meeting_rooms' },
       { label: 'All Bookings',   href: '/admin/bookings',      icon: LayoutList,  permission: 'manage_meeting_rooms' },
       { label: 'Notifications',  href: '/admin/notifications', icon: BellRing,    permission: 'manage_meeting_rooms' },
       { label: 'Settings',       href: '/admin/settings',      icon: Settings,    permission: 'manage_meeting_rooms' },
