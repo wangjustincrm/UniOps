@@ -14,6 +14,7 @@ import uuid
 from datetime import datetime, timedelta
 
 import pytest
+import sqlalchemy
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -50,11 +51,47 @@ def pytest_collection_modifyitems(items):
 
 @pytest.fixture(scope="session")
 async def test_engine():
-    """Drop + recreate every table at the start of the session."""
+    """Drop + recreate every table at the start of the session.
+
+    After create_all, we also install the btree_gist extension and the
+    no_double_booking exclusion constraint, which are SQL-only constructs
+    that Base.metadata.create_all() cannot generate.  This mirrors what the
+    Alembic migration does in production.
+    """
     engine = create_async_engine(_TEST_DB_URL, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        # Install the exclusion constraint that lives only in migration SQL.
+        # asyncpg does not support multiple statements in one execute() call,
+        # so each DDL statement is executed separately.
+        await conn.execute(
+            sqlalchemy.text("CREATE EXTENSION IF NOT EXISTS btree_gist")
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                "ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_double_booking"
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                """
+                ALTER TABLE bookings ADD CONSTRAINT no_double_booking
+                EXCLUDE USING gist (room_id WITH =, tstzrange(starts_at, ends_at) WITH &&)
+                WHERE (status = 'confirmed')
+                """
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                "ALTER TABLE bookings DROP CONSTRAINT IF EXISTS ck_booking_times"
+            )
+        )
+        await conn.execute(
+            sqlalchemy.text(
+                "ALTER TABLE bookings ADD CONSTRAINT ck_booking_times CHECK (ends_at > starts_at)"
+            )
+        )
 
     yield engine
     async with engine.begin() as conn:
@@ -71,6 +108,23 @@ async def _patch_session_factory(test_engine):
     )
     yield
     session_module.AsyncSessionLocal = original
+
+
+# ── Per-test DB session ─────────────────────────────────────────────────────-
+
+@pytest.fixture
+async def db_session(test_engine):
+    """Yield a fresh AsyncSession per test, rolled back on teardown.
+
+    Uses SAVEPOINT so nested flushes can raise IntegrityError without
+    killing the outer transaction (the outer transaction is always rolled back
+    so tables stay clean between tests).
+    """
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
+    async with factory() as session:
+        async with session.begin():
+            yield session
+            await session.rollback()
 
 
 # ── User factory ────────────────────────────────────────────────────────────-
