@@ -4,19 +4,20 @@ import { formatAmount } from '@/lib/utils'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 
+// invoiceLineId -> { poId, poLineId }
+export type AllocationAssignment = Record<string, { poId: string; poLineId: string }>
+
 interface Props {
   invoice: ApiInvoice
   pos: ApiPo[]                 // candidate POs (issued/approved, same vendor)
   onSubmit: (allocations: AllocationInput[]) => void
   submitting?: boolean
+  defaultAssignments?: AllocationAssignment  // prefill (e.g. AI-recognized PO on upload)
 }
 
-// invoiceLineId -> { poId, poLineId }
-type Assignment = Record<string, { poId: string; poLineId: string }>
-
-export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting }: Props) {
+export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, defaultAssignments }: Props) {
   const lines: InvoiceLineItem[] = invoice.line_items ?? []
-  const [assign, setAssign] = useState<Assignment>({})
+  const [assign, setAssign] = useState<AllocationAssignment>(defaultAssignments ?? {})
   const [dragLineId, setDragLineId] = useState<string | null>(null)
 
   const currency = invoice.currency

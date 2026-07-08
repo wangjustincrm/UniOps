@@ -118,6 +118,28 @@ async def test_match_two_pos_line_level_matched(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_legacy_match_rejects_multiple_po_line_ids(admin_client):
+    """旧签名 po_line_ids 多于 1 个曾被静默丢弃(只取第一个做 reference)→ 现在必须 422,
+    要求调用方改用行级 allocations。单个/零个 po_line_id 的旧路径保持兼容。"""
+    v = await _make_vendor(admin_client, "VND-ALLOC-LEGACY-01")
+    po = await _make_issued_po(admin_client, v["id"], lines=[
+        {"description": "A", "qty": "1", "unit": "EA", "unit_price": "600.00"},
+        {"description": "B", "qty": "1", "unit": "EA", "unit_price": "400.00"},
+    ])
+    po_line_ids = [line["id"] for line in po["line_items"]]
+    assert len(po_line_ids) == 2
+
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="1000.00", tax_amount="0.00"))).json()
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "po_id": po["id"], "po_line_ids": po_line_ids,
+    })
+    assert r.status_code == 422, r.text
+    assert "allocations" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_match_allocations_must_sum_to_total(admin_client):
     v = await _make_vendor(admin_client, "VND-ALLOC-SUM-01")
     po = await _make_issued_po(admin_client, v["id"])
