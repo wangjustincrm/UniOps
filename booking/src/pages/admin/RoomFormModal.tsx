@@ -153,7 +153,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
         </div>
 
         {/* Scrollable body */}
-        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+        <form id="room-form" onSubmit={handleSubmit} className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
           {error && (
             <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
               <AlertCircle className="h-4 w-4 shrink-0" />
@@ -340,7 +340,7 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
           </div>
 
           {/* Image upload — wired in Task 18 via file-api */}
-          {/* TODO(Task 18): wire file-api image upload here — store returned ids in image_file_ids */}
+          {/* TODO(Task 18): wire file-api upload. MUST append new upload ids to the existing form.image_file_ids — do NOT assign only new ids or existing room images will be wiped on edit. */}
         </form>
 
         {/* Footer */}

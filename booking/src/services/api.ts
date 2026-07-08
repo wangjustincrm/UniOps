@@ -7,7 +7,7 @@
  * All paths here must include /api/v1 explicitly.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/lib/api'
+import { api, getToken } from '@/lib/api'
 import type {
   AdminBookingFilters,
   AdminBookingListOut,
@@ -254,23 +254,11 @@ export function usePrecheckBooking() {
 
 // ── Admin — helpers ───────────────────────────────────────────────────────────
 
-/** Get JWT token from local storage (same logic as api.ts) */
-function getAdminToken(): string | null {
-  try {
-    for (const key of ['booking-auth', 'portal-auth']) {
-      const raw = localStorage.getItem(key)
-      const token = raw ? JSON.parse(raw)?.state?.token : null
-      if (token) return token
-    }
-    return null
-  } catch { return null }
-}
-
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) || ''
 
 /** Multipart POST (file upload) with auth header */
 async function postMultipart<T>(path: string, formData: FormData): Promise<T> {
-  const token = getAdminToken()
+  const token = getToken()
   const resp = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -285,7 +273,7 @@ async function postMultipart<T>(path: string, formData: FormData): Promise<T> {
 
 /** Authenticated fetch returning a blob (for CSV export) */
 async function fetchBlob(path: string): Promise<Blob> {
-  const token = getAdminToken()
+  const token = getToken()
   const resp = await fetch(`${BASE_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   })
@@ -422,7 +410,7 @@ export const adminBookingService = {
     document.body.appendChild(a)
     a.click()
     a.remove()
-    URL.revokeObjectURL(url)
+    setTimeout(() => URL.revokeObjectURL(url), 100)
   },
 
   forceCancel(id: string, series = false) {

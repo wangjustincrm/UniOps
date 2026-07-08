@@ -365,14 +365,15 @@ function SmtpCard({ smtp: initialSmtp, organizerMode: initialMode, onSave, savin
 
 export default function SettingsPage() {
   const { data: config, isLoading, error } = useAdminConfig()
-  const updateMut = useAdminUpdateConfig()
+  const rulesMut = useAdminUpdateConfig()
+  const smtpMut = useAdminUpdateConfig()
 
   async function handleRulesSave(rules: BookingRules) {
-    await updateMut.mutateAsync({ rules })
+    await rulesMut.mutateAsync({ rules })
   }
 
   async function handleSmtpSave(smtp: SmtpSettings, organizer_mode: 'system' | 'initiator') {
-    await updateMut.mutateAsync({ smtp_settings: smtp, organizer_mode })
+    await smtpMut.mutateAsync({ smtp_settings: smtp, organizer_mode })
   }
 
   if (isLoading) {
@@ -423,13 +424,13 @@ export default function SettingsPage() {
         <RulesCard
           rules={rules}
           onSave={handleRulesSave}
-          saving={updateMut.isPending}
+          saving={rulesMut.isPending}
         />
         <SmtpCard
           smtp={smtp}
           organizerMode={config.organizer_mode}
           onSave={handleSmtpSave}
-          saving={updateMut.isPending}
+          saving={smtpMut.isPending}
         />
       </div>
     </div>

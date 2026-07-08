@@ -20,7 +20,7 @@ export class ApiError extends Error {
   }
 }
 
-function getToken(): string | null {
+export function getToken(): string | null {
   try {
     // Prefer Booking's own persisted store, fall back to portal-auth (right after
     // a Portal SSO handoff, booking-auth may not be hydrated yet).
