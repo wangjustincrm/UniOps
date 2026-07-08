@@ -235,6 +235,34 @@ services:
       retries: 5
       start_period: 20s
 
+  booking-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-booking-api:${TAG:-latest}
+    build: { context: ./booking-api }
+    environment:
+      <<: *db-env
+      APP_NAME: Booking API
+      APP_VERSION: 0.1.0
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      EPMS_API_URL: http://epms-api:8000/api/v1
+      FILE_SERVER_URL: ${FILE_SERVER_INTERNAL_URL}
+      SCHEDULER_ENABLED: "true"
+      SCHEDULER_INTERVAL_SECONDS: "300"
+    ports: ["8010:8010"]
+    depends_on:
+      epms-api:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8010
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8010/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   # ── Frontends (multi-stage build → nginx static) ──────────────────────────────
 
   epms-web:
@@ -270,6 +298,7 @@ services:
         VITE_OA_URL: ${OA_URL}
         VITE_VMS_URL: ${VMS_URL}
         VITE_FINANCE_URL: ${FINANCE_URL}
+        VITE_BOOKING_URL: ${BOOKING_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_OA_API_URL: ${OA_API_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}
@@ -314,6 +343,25 @@ services:
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_PORTAL_URL: ${PORTAL_URL}
     ports: ["5176:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  booking-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-booking-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: booking/Dockerfile
+      args:
+        VITE_API_URL: ${BOOKING_API_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_FILE_API_URL: ${FILE_SERVER_URL}
+    ports: ["5178:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
       interval: 30s

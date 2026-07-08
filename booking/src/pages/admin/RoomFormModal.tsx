@@ -1,13 +1,13 @@
 /**
  * RoomFormModal — create / edit a meeting room.
  *
- * File-api image upload is deferred to Task 18. The image_file_ids field
- * is included in the payload as an empty array by default, and a placeholder
- * comment marks where upload UI should be wired in.
+ * Image upload is wired to file-api (Task 18): selecting a file immediately
+ * uploads it and appends the returned id to image_file_ids. Existing ids are
+ * preserved on edit so removing and re-saving does not wipe existing images.
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Loader2, X as XIcon, AlertCircle } from 'lucide-react'
+import { Loader2, X as XIcon, AlertCircle, ImagePlus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   useAdminCreateRoom,
@@ -20,7 +20,40 @@ import {
   ROOM_TYPES,
   ROOM_TYPE_LABELS,
 } from '@/lib/types'
-import { ApiError } from '@/lib/api'
+import { ApiError, getToken } from '@/lib/api'
+
+// ── File-api upload helper ────────────────────────────────────────────────────
+
+const FILE_API_BASE = (import.meta.env.VITE_FILE_API_URL as string | undefined) ?? ''
+
+interface UploadedFile {
+  id: string
+  original_filename: string
+}
+
+/**
+ * Upload a single image to file-api (multipart POST) and return the file id.
+ * Mirrors the vms attachment pattern: multipart fetch with Bearer token.
+ */
+async function uploadRoomImage(file: File): Promise<string> {
+  if (!FILE_API_BASE) {
+    throw new Error('File API URL not configured (VITE_FILE_API_URL is unset).')
+  }
+  const token = getToken()
+  const fd = new FormData()
+  fd.append('file', file)
+  const resp = await fetch(`${FILE_API_BASE}/files/v1/files`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: fd,
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }))
+    throw new Error(err.detail ?? `Upload failed: HTTP ${resp.status}`)
+  }
+  const data: UploadedFile = await resp.json()
+  return data.id
+}
 
 interface Props {
   room?: RoomOut | null
@@ -74,10 +107,14 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
   const isEdit = !!room
   const [form, setForm] = useState<RoomCreate>(room ? roomToForm(room) : EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setForm(room ? roomToForm(room) : EMPTY_FORM)
     setError(null)
+    setUploadError(null)
   }, [room])
 
   const createMut = useAdminCreateRoom()
@@ -95,6 +132,34 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
       equipment: prev.equipment?.includes(item)
         ? (prev.equipment ?? []).filter((e) => e !== item)
         : [...(prev.equipment ?? []), item],
+    }))
+  }
+
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length === 0) return
+    // Reset the input so the same file can be re-selected if needed
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    setUploadError(null)
+    setUploading(true)
+    try {
+      const ids = await Promise.all(files.map(uploadRoomImage))
+      // MUST append — never replace — so existing room images are preserved on edit.
+      setForm((prev) => ({
+        ...prev,
+        image_file_ids: [...(prev.image_file_ids ?? []), ...ids],
+      }))
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'Image upload failed.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  function removeImage(id: string) {
+    setForm((prev) => ({
+      ...prev,
+      image_file_ids: (prev.image_file_ids ?? []).filter((fid) => fid !== id),
     }))
   }
 
@@ -339,8 +404,71 @@ export function RoomFormModal({ room, onClose, onSaved }: Props) {
             />
           </div>
 
-          {/* Image upload — wired in Task 18 via file-api */}
-          {/* TODO(Task 18): wire file-api upload. MUST append new upload ids to the existing form.image_file_ids — do NOT assign only new ids or existing room images will be wiped on edit. */}
+          {/* Image upload — file-api */}
+          <div>
+            <label className="block text-xs font-medium text-neutral-700 mb-1">Room Images</label>
+
+            {/* Thumbnail grid with per-image remove */}
+            {(form.image_file_ids ?? []).length > 0 && FILE_API_BASE && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {(form.image_file_ids ?? []).map((fid) => (
+                  <div key={fid} className="relative group">
+                    <img
+                      src={`${FILE_API_BASE}/files/v1/files/${fid}`}
+                      alt="Room image"
+                      className="h-20 w-28 rounded-lg object-cover border border-neutral-200"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeImage(fid)}
+                      className="absolute top-1 right-1 hidden group-hover:flex items-center justify-center h-5 w-5 rounded-full bg-red-500 text-white shadow"
+                      title="Remove image"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upload button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="sr-only"
+              onChange={handleImageSelect}
+              disabled={uploading || !FILE_API_BASE}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || !FILE_API_BASE}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1.5 text-xs text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed',
+              )}
+            >
+              {uploading
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <ImagePlus className="h-3.5 w-3.5" />
+              }
+              {uploading ? 'Uploading…' : 'Add Images'}
+            </button>
+
+            {!FILE_API_BASE && (
+              <p className="mt-1 text-xs text-neutral-400">
+                Image upload requires VITE_FILE_API_URL to be configured.
+              </p>
+            )}
+            {uploadError && (
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-red-600">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                {uploadError}
+              </div>
+            )}
+          </div>
         </form>
 
         {/* Footer */}

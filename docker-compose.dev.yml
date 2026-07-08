@@ -561,6 +561,7 @@ services:
       VITE_API_URL: http://localhost:8010
       VITE_EPMS_API_URL: http://localhost:8000
       VITE_PORTAL_URL: http://localhost:5174
+      VITE_FILE_API_URL: http://localhost:8005
     # --install-links copies the file:../packages/shell dep into /app/node_modules
     # as a real package (not a symlink to /packages/shell), so its transitive deps
     # resolve from /app/node_modules inside the container.

@@ -204,7 +204,7 @@ export default function RoomDetailPage() {
                 {room.image_file_ids.map((fid) => (
                   <img
                     key={fid}
-                    src={`${fileBase}/files/v1/${fid}/download`}
+                    src={`${fileBase}/files/v1/files/${fid}`}
                     alt={room.name}
                     className="h-20 w-28 rounded-lg object-cover border border-neutral-200"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}

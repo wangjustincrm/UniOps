@@ -17,9 +17,11 @@ WORKDIR /repo
 ARG VITE_API_URL
 ARG VITE_EPMS_API_URL
 ARG VITE_PORTAL_URL
+ARG VITE_FILE_API_URL
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_EPMS_API_URL=$VITE_EPMS_API_URL \
-    VITE_PORTAL_URL=$VITE_PORTAL_URL
+    VITE_PORTAL_URL=$VITE_PORTAL_URL \
+    VITE_FILE_API_URL=$VITE_FILE_API_URL
 
 # Install booking deps + the shared package first (cached unless manifests change).
 # --install-links copies @uniops/shell into booking/node_modules as a real package,
