@@ -26,7 +26,7 @@ from email import encoders
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -187,6 +187,34 @@ def _send_smtp_blocking(*, cfg: dict[str, Any], msg: MIMEMultipart) -> None:
         s.send_message(msg)
 
 
+# ── Series sync_status propagation ───────────────────────────────────────────
+
+async def _propagate_series_sync_status(
+    db: AsyncSession,
+    booking: Booking,
+    new_status: str,
+) -> None:
+    """When *booking* belongs to a recurring series, apply *new_status* to every
+    sibling row that still has status='confirmed'.
+
+    A single UPDATE avoids N+1 loads.  Past occurrences are included — they are
+    part of the same iMIP invite and their admin-visible sync_status must reflect
+    the actual delivery outcome.
+
+    For single bookings (series_id is None) this is a no-op.
+    """
+    if booking.series_id is None:
+        return
+    await db.execute(
+        update(Booking)
+        .where(
+            Booking.series_id == booking.series_id,
+            Booking.status == "confirmed",
+        )
+        .values(sync_status=new_status)
+    )
+
+
 # ── Core send function ────────────────────────────────────────────────────────
 
 async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> bool:
@@ -238,6 +266,7 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
             log_entry.sent_at = datetime.now(timezone.utc)
             log_entry.error = "smtp_not_configured (logged only)"
             booking.sync_status = "sent"
+            await _propagate_series_sync_status(db, booking, "sent")
             return True
 
         # Resolve organizer
@@ -330,6 +359,7 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
         log_entry.status = "sent"
         log_entry.sent_at = datetime.now(timezone.utc)
         booking.sync_status = "sent"
+        await _propagate_series_sync_status(db, booking, "sent")
         log.info(
             "Notification sent for booking %s (type=%s, to=%s)",
             booking.id, log_entry.notif_type, to_emails,
@@ -350,6 +380,7 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
             bk = booking_result2.scalar_one_or_none()
             if bk is not None:
                 bk.sync_status = "failed"
+                await _propagate_series_sync_status(db, bk, "failed")
         except Exception:  # noqa: BLE001
             pass
         return False

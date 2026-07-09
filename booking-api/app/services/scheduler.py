@@ -84,7 +84,7 @@ async def _run_tick_with_session(db: AsyncSession) -> None:
                 )
                 continue
 
-        # Mark compensating on the booking
+        # Mark compensating on the booking (and all series siblings)
         if log_entry.booking_id is not None:
             bk_result = await db.execute(
                 select(Booking).where(Booking.id == log_entry.booking_id)
@@ -92,6 +92,8 @@ async def _run_tick_with_session(db: AsyncSession) -> None:
             booking = bk_result.scalar_one_or_none()
             if booking is not None:
                 booking.sync_status = "compensating"
+                from app.services.notifications import _propagate_series_sync_status
+                await _propagate_series_sync_status(db, booking, "compensating")
 
         # Increment retry count before attempt
         log_entry.retry_count += 1

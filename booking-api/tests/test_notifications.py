@@ -676,3 +676,158 @@ class TestSchedulerTick:
         )
         alert = result.scalar_one_or_none()
         assert alert is not None, "Expected a sync_alert NotificationLog to be created"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 8 — Series sync_status propagation
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _make_series_bookings(db_session, room_id, organizer_id, count: int = 3):
+    """Create *count* confirmed bookings sharing a series_id; return list in order."""
+    from app.models.booking import Booking
+    series_id = uuid.uuid4()
+    bookings = []
+    for i in range(count):
+        bk = Booking(
+            room_id=room_id,
+            title="Series Meeting",
+            organizer_id=organizer_id,
+            attendee_ids=[],
+            starts_at=_dt(10, days_ahead=1 + i * 7),
+            ends_at=_dt(11, days_ahead=1 + i * 7),
+            status="confirmed",
+            series_id=series_id,
+            rrule="FREQ=WEEKLY;COUNT=3",
+            calendar_uid=f"series-{series_id}@booking-test.com",
+            ical_sequence=0,
+            sync_status="pending",
+        )
+        db_session.add(bk)
+        bookings.append(bk)
+    await db_session.flush()
+    return bookings
+
+
+class TestSeriesSyncStatusPropagation:
+    async def test_successful_send_marks_all_series_rows_sent(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """After a successful enqueue for a 3-occurrence weekly series,
+        ALL sibling rows must have sync_status='sent'."""
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+
+        organizer = await make_user(
+            test_engine, role="requester",
+            email="series_ok@test.com", full_name="Series Org",
+        )
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+
+        bookings = await _make_series_bookings(db_session, room.id, organizer.id, count=3)
+        anchor = bookings[0]
+
+        from app.services.notifications import enqueue
+        log = await enqueue(db_session, [anchor], "created", rrule=anchor.rrule)
+
+        assert log is not None
+        assert log.status == "sent", f"Expected log.status=sent, got {log.status}"
+
+        # Flush so the bulk UPDATE lands, then refresh each sibling from DB
+        await db_session.flush()
+        for bk in bookings:
+            await db_session.refresh(bk)
+            assert bk.sync_status == "sent", (
+                f"Sibling booking {bk.id} (starts_at={bk.starts_at}) "
+                f"has sync_status={bk.sync_status!r}, expected 'sent'"
+            )
+
+    async def test_smtp_failure_marks_all_series_rows_failed(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """When SMTP fails on a series anchor, ALL sibling rows must have
+        sync_status='failed'."""
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPFailRecorder)
+
+        organizer = await make_user(
+            test_engine, role="requester",
+            email="series_fail@test.com", full_name="Series Fail Org",
+        )
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+
+        bookings = await _make_series_bookings(db_session, room.id, organizer.id, count=3)
+        anchor = bookings[0]
+
+        from app.services.notifications import enqueue
+        log = await enqueue(db_session, [anchor], "created", rrule=anchor.rrule)
+
+        assert log is not None
+        assert log.status == "failed", f"Expected log.status=failed, got {log.status}"
+
+        await db_session.flush()
+        for bk in bookings:
+            await db_session.refresh(bk)
+            assert bk.sync_status == "failed", (
+                f"Sibling booking {bk.id} has sync_status={bk.sync_status!r}, expected 'failed'"
+            )
+
+    async def test_single_booking_unaffected_by_propagation(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """A single (non-series) booking must not be affected by propagation logic;
+        sync_status='sent' after successful send, and no other booking rows change."""
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+
+        organizer = await make_user(
+            test_engine, role="requester",
+            email="single_ok@test.com", full_name="Single Org",
+        )
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+
+        # Single booking — no series_id
+        single = await _make_booking(db_session, room.id, organizer.id)
+        assert single.series_id is None
+
+        # A separate series booking to verify it is NOT touched
+        series_id = uuid.uuid4()
+        from app.models.booking import Booking
+        bystander = Booking(
+            room_id=room.id,
+            title="Bystander Series",
+            organizer_id=organizer.id,
+            attendee_ids=[],
+            starts_at=_dt(14, days_ahead=2),
+            ends_at=_dt(15, days_ahead=2),
+            status="confirmed",
+            series_id=series_id,
+            calendar_uid=f"bystander-{series_id}@booking-test.com",
+            ical_sequence=0,
+            sync_status="pending",
+        )
+        db_session.add(bystander)
+        await db_session.flush()
+
+        from app.services.notifications import enqueue
+        log = await enqueue(db_session, [single], "created")
+
+        assert log is not None
+        assert log.status == "sent"
+
+        # In-memory check (no flush yet; ORM object carries the updated value)
+        assert single.sync_status == "sent"
+
+        # Bystander series booking: flush so the UPDATE statement (if any) lands,
+        # then refresh to get the DB-authoritative value.
+        await db_session.flush()
+        await db_session.refresh(bystander)
+        assert bystander.sync_status == "pending", (
+            f"Bystander booking sync_status changed to {bystander.sync_status!r} — "
+            "propagation must be scoped to same series_id only"
+        )
