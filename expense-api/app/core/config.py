@@ -32,6 +32,8 @@ class Settings(BaseSettings):
         "http://localhost:5174",
         "http://localhost:5175",
         "http://localhost:5176",
+        "http://localhost:5177",  # Finance frontend
+        "http://localhost:5178",  # Booking frontend
     ]
 
 

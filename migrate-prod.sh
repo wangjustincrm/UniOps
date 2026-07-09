@@ -13,7 +13,7 @@ set -euo pipefail
 COMPOSE="docker compose -f docker-compose.prod.yml"
 
 # finance-api first (hard ordering constraint); the rest in a safe order.
-SERVICES="finance-api epms-api mdm-api identity-api budget-api expense-api vms-api"
+SERVICES="finance-api epms-api mdm-api identity-api budget-api expense-api vms-api booking-api"
 
 for svc in $SERVICES; do
   echo ">> alembic upgrade head: ${svc}"

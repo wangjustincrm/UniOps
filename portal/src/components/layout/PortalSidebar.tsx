@@ -20,6 +20,7 @@ interface PortalSidebarProps {
   oaHref: string
   vmsHref: string
   financeHref: string
+  bookingHref: string
   /** base64 session for epms:/… sub-route handoff (may be empty). */
   session?: string
   userRole: string | null
@@ -31,10 +32,10 @@ interface PortalSidebarProps {
 }
 
 export function PortalSidebar({
-  activeKey, epmsHref, oaHref, vmsHref, financeHref, session = '',
+  activeKey, epmsHref, oaHref, vmsHref, financeHref, bookingHref, session = '',
   userRole, matrix, mobileOpen, onClose, collapsed, onToggleCollapse,
 }: PortalSidebarProps) {
-  const ctx = { epmsHref, oaHref, vmsHref, financeHref, session, epmsUrl: EPMS_URL }
+  const ctx = { epmsHref, oaHref, vmsHref, financeHref, bookingHref, session, epmsUrl: EPMS_URL }
 
   const { data: branding } = useBranding('portal')
   const brandName = branding?.name || 'UniOps'

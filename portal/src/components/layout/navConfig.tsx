@@ -12,7 +12,7 @@
  * role lists — see `permission` below and useRolePermissions().
  */
 import {
-  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark,
+  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock,
 } from 'lucide-react'
 import type { RolePermissionMatrix } from '@/hooks/useRolePermissions'
 
@@ -39,6 +39,9 @@ export interface NavItemDef {
 /** Permissions that grant access to the Finance module (finance + budget pages). */
 export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'view_budget_plans']
 
+/** Permissions that grant access to the Booking module. */
+export const BOOKING_ACCESS_PERMS = ['view_booking', 'manage_meeting_rooms']
+
 export interface NavSectionDef {
   title?: string
   items: NavItemDef[]
@@ -57,6 +60,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'OA',          icon: Wallet,       href: 'oa' },
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
       { label: 'Finance',     icon: Landmark,     href: 'finance', anyPermission: FINANCE_ACCESS_PERMS },
+      { label: 'Meeting Rooms', icon: CalendarClock, href: 'booking', anyPermission: BOOKING_ACCESS_PERMS },
     ],
   },
   {
@@ -91,6 +95,7 @@ export interface HrefContext {
   oaHref: string
   vmsHref: string
   financeHref: string
+  bookingHref: string
   /** base64 session for epms:/… sub-route handoff. */
   session: string
   epmsUrl: string
@@ -102,6 +107,7 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   if (key === 'oa')   return ctx.oaHref
   if (key === 'vms')  return ctx.vmsHref
   if (key === 'finance') return ctx.financeHref
+  if (key === 'booking') return ctx.bookingHref
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {

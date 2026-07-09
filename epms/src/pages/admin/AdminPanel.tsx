@@ -2518,6 +2518,8 @@ const PERMISSION_LABELS: Record<string, string> = {
   view_budget_dashboard:  'Budget Dashboard',
   view_budget_plans:      'Budget Plans',
   view_finance:           'Finance Module',
+  view_booking:           'View Booking',
+  manage_meeting_rooms:   'Manage Meeting Rooms',
 }
 
 function AccessControlMatrix() {

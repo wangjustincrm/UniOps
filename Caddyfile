@@ -40,6 +40,10 @@ vms.canadaroyalmilk.com {
 	import wildcard
 	reverse_proxy vms-web:80
 }
+booking.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy booking-web:80
+}
 finance.canadaroyalmilk.com {
 	import wildcard
 	reverse_proxy finance-web:80
@@ -57,6 +61,10 @@ oa-api.canadaroyalmilk.com {
 vms-api.canadaroyalmilk.com {
 	import wildcard
 	reverse_proxy vms-api:8008
+}
+booking-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy booking-api:8010
 }
 finance-api.canadaroyalmilk.com {
 	import wildcard

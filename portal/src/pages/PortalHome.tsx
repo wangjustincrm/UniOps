@@ -4,16 +4,16 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck, LogOut, ChevronDown, User, KeyRound, Menu,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud, Landmark,
+  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock,
   X, Eye, EyeOff,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, encodeSession } from '@/lib/api'
+import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
 import { globalSignOut } from '@/lib/signOut'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
-import { FINANCE_ACCESS_PERMS } from '@/components/layout/navConfig'
+import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS } from '@/components/layout/navConfig'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -400,7 +400,7 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
 
   const inner = (
     <div className={cn(
-      'flex flex-col rounded-xl border bg-white p-5 transition-all duration-150',
+      'flex h-full flex-col rounded-xl border bg-white p-5 transition-all duration-150',
       comingSoon
         ? 'opacity-50 cursor-not-allowed border-neutral-200'
         : isDown
@@ -419,7 +419,7 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
       <p className="mt-1 text-xs text-neutral-500 leading-relaxed">{description}</p>
       {!comingSoon && (
         <div className={cn(
-          'mt-4 flex items-center gap-1 text-xs font-medium transition-colors',
+          'mt-auto pt-4 flex items-center gap-1 text-xs font-medium transition-colors',
           isDown ? 'text-neutral-300' : 'text-primary-600 group-hover:text-primary-700',
         )}>
           Explore Module <ArrowRight className="h-3.5 w-3.5" />
@@ -429,8 +429,8 @@ function ModuleCard({ icon, iconBg, label, description, href, healthy, loading, 
   )
 
   return comingSoon || isDown
-    ? <div>{inner}</div>
-    : <a href={href}>{inner}</a>
+    ? <div className="h-full">{inner}</div>
+    : <a href={href} className="block h-full">{inner}</a>
 }
 
 // ── Task row ──────────────────────────────────────────────────────────────────
@@ -622,6 +622,9 @@ export default function PortalHome() {
   const hasFinanceAccess =
     role === 'system_admin' ||
     (role !== null && FINANCE_ACCESS_PERMS.some((p) => !!matrix?.[role]?.[p]))
+  const hasBookingAccess =
+    role === 'system_admin' ||
+    (role !== null && BOOKING_ACCESS_PERMS.some((p) => !!matrix?.[role]?.[p]))
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -636,6 +639,7 @@ export default function PortalHome() {
   // Land on Finance root; the Finance app redirects to the first page the user
   // can access (don't deep-link to /finance/ap which needs view_finance).
   const financeHref = session ? `${FINANCE_URL}/#__session=${session}` : FINANCE_URL
+  const bookingHref = session ? `${BOOKING_URL}/#__session=${session}` : BOOKING_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -734,6 +738,17 @@ export default function PortalHome() {
       healthy: oaHealth.data?.ok,
       loading: oaHealth.isLoading,
     },
+    ...(hasFinanceAccess ? [{
+      icon: <Landmark className="h-5 w-5 text-primary-600" />,
+      iconBg: 'bg-primary-50',
+      label: 'Finance',
+      description: 'AP/AR, general ledger, payments, bank rec, budgets, tax',
+      href: financeHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
+    // Row break: with the 3-column grid, EPMS/OA/Finance fill row 1;
+    // VMS + Meeting Rooms flow onto row 2.
     {
       icon: <UserCheck className="h-5 w-5 text-primary-600" />,
       iconBg: 'bg-primary-50',
@@ -744,12 +759,12 @@ export default function PortalHome() {
       healthy: undefined,
       loading: false,
     },
-    ...(hasFinanceAccess ? [{
-      icon: <Landmark className="h-5 w-5 text-primary-600" />,
-      iconBg: 'bg-primary-50',
-      label: 'Finance',
-      description: 'AP/AR, general ledger, payments, bank rec, budgets, tax',
-      href: financeHref,
+    ...(hasBookingAccess ? [{
+      icon: <CalendarClock className="h-5 w-5 text-teal-600" />,
+      iconBg: 'bg-teal-50',
+      label: 'Meeting Rooms',
+      description: 'Find and book meeting rooms',
+      href: bookingHref,
       healthy: undefined,
       loading: false,
     }] : []),
@@ -769,7 +784,7 @@ export default function PortalHome() {
       {/* ── Sidebar ─────────────────────────────── */}
       <PortalSidebar
         activeKey="portal:/"
-        epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} session={session}
+        epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} bookingHref={bookingHref} session={session}
         userRole={auth.user?.role ?? null} matrix={matrix}
         mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)}
         collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)}
@@ -803,7 +818,7 @@ export default function PortalHome() {
                 </div>
 
                 {/* Module cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 max-w-5xl">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 auto-rows-fr gap-3 max-w-5xl">
                   {MODULES.map((m) => (
                     <ModuleCard
                       key={m.label}
