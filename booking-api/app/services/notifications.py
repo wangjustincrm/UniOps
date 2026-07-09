@@ -203,15 +203,17 @@ async def _propagate_series_sync_status(
 
     For single bookings (series_id is None) this is a no-op.
     """
-    if booking.series_id is None:
+    series_id = booking.series_id  # capture plain value before any potential expiry
+    if series_id is None:
         return
     await db.execute(
         update(Booking)
         .where(
-            Booking.series_id == booking.series_id,
+            Booking.series_id == series_id,
             Booking.status == "confirmed",
         )
         .values(sync_status=new_status)
+        .execution_options(synchronize_session=False)
     )
 
 
