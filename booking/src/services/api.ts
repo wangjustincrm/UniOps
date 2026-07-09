@@ -26,6 +26,7 @@ import type {
   RoomUpdate,
   RoomWithStatusOut,
   SeriesSpec,
+  SeriesUpdate,
   StatusChangeOut,
   SuggestOut,
 } from '@/lib/types'
@@ -200,6 +201,13 @@ export const bookingService = {
     return api.post<{ cancelled: number }>(`/api/v1/bookings/${id}/cancel${qs}`, {})
   },
 
+  updateSeries(seriesId: string, payload: SeriesUpdate) {
+    return api.patch<{ updated: number; series_id: string }>(
+      `/api/v1/bookings/series/${seriesId}`,
+      payload,
+    )
+  },
+
   daySummary(date: string) {
     return api.get<DaySummaryOut>(`/api/v1/bookings/day?date=${encodeURIComponent(date)}`)
   },
@@ -236,6 +244,17 @@ export function useUpdateBooking(id: string | undefined) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['booking-mine'] })
       qc.invalidateQueries({ queryKey: ['booking-room', id] })
+      qc.invalidateQueries({ queryKey: ['booking-day-summary'] })
+    },
+  })
+}
+
+export function useUpdateSeries(seriesId: string | undefined) {
+  const qc = useQueryClient()
+  return useMutation<{ updated: number; series_id: string }, Error, SeriesUpdate>({
+    mutationFn: (payload) => bookingService.updateSeries(seriesId!, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['booking-mine'] })
       qc.invalidateQueries({ queryKey: ['booking-day-summary'] })
     },
   })

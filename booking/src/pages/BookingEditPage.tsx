@@ -1,27 +1,34 @@
 /**
  * BookingEditPage — /my/:id/edit
  *
- * Reuses the same form pieces as BookingCreatePage (time selects, AttendeePicker,
- * SuggestionPanel) but NO RecurrencePicker — series editing is blocked upstream.
+ * Two modes:
+ *   Single booking: same as before — date/time/room all editable, live precheck.
+ *   Series mode (booking.series_id != null): banner shown, date hidden (pattern
+ *     fixed per series), start/end time selects (HH:MM) prefilled from booking's
+ *     local times, live precheck SKIPPED (server validates on submit),
+ *     submit → PATCH /bookings/series/{series_id}.
  *
  * Prefill: prefers booking passed via location.state; falls back to fetching
  * /my list and finding by id. Not-found → back to /my.
  *
  * Room switch: native <select> populated from roomService.list().
  *
- * Live precheck: same 400ms debounce as create, but filters out a conflict that
- * is EXACTLY the booking being edited (precheck has no exclude param; compare ids).
+ * Live precheck (single mode only): same 400ms debounce as create, filters out
+ * self-conflict.
  *
- * Submit: PATCH /bookings/:id  → success → /my with note; 400 conflict → SuggestionPanel.
+ * Submit: single → PATCH /bookings/:id → success → /my with note;
+ *         series → PATCH /bookings/series/:series_id → success → /my with note;
+ *         400 conflict → SuggestionPanel / occurrence conflict list.
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
-import { ArrowLeft, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import {
   useMyBookings,
   useUpdateBooking,
+  useUpdateSeries,
   usePrecheckBooking,
   useRoomList,
 } from '@/services/api'
@@ -92,6 +99,36 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
+// ── Occurrence conflict list (series conflict response) ───────────────────────
+
+interface OccurrenceConflict {
+  date: string
+  conflicts: Array<{ id: string; title: string; starts_at: string; ends_at: string; organizer_name: string }>
+}
+
+function OccurrenceConflictList({ items }: { items: OccurrenceConflict[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="rounded-md border border-red-200 bg-red-50 p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-red-700">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        Conflicts on the following dates:
+      </div>
+      <ul className="space-y-2">
+        {items.map((oc) => (
+          <li key={oc.date} className="text-sm text-red-600">
+            <span className="font-medium">{oc.date}:</span>{' '}
+            {oc.conflicts.map((c) => c.title).join(', ')}
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-red-500">
+        Please choose a different time or room that is free on all dates.
+      </p>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 interface LocationState {
@@ -124,6 +161,9 @@ export default function BookingEditPage() {
     }
   }, [mineList, id, booking])
 
+  // ── Series mode detection ─────────────────────────────────────────────────
+  const isSeries = !!(booking?.series_id)
+
   // ── Room list ────────────────────────────────────────────────────────────────
   const { data: rooms } = useRoomList()
 
@@ -138,13 +178,6 @@ export default function BookingEditPage() {
   const [attendeesTouched, setAttendeesTouched] = useState(false)
   const [formInitialised, setFormInit] = useState(false)
 
-  // Prefill attendees: we only have ids from BookingOut — resolve to DirectoryUserOut
-  // via the existing mine data (we don't have a separate user-detail endpoint).
-  // We can construct minimal DirectoryUserOut objects from the booking data we have.
-  // The AttendeePicker only needs id+full_name+email for display/chip rendering.
-  // Since we only have attendee_ids (not names), we leave attendees empty on first
-  // load; the user can re-add. This is consistent with the brief (no attendee-detail
-  // endpoint mentioned). We do prefill all other fields.
   useEffect(() => {
     if (!booking || formInitialised) return
     setTitle(booking.title)
@@ -153,13 +186,12 @@ export default function BookingEditPage() {
     setStart(isoToHM(booking.starts_at))
     setEnd(isoToHM(booking.ends_at))
     setRoomId(booking.room_id)
-    // attendees: we have ids but no names — initialise to empty; user re-adds if needed
     setAttendees([])
     setAttendeesTouched(false)
     setFormInit(true)
   }, [booking, formInitialised])
 
-  // ── Precheck ─────────────────────────────────────────────────────────────────
+  // ── Precheck (single mode only) ───────────────────────────────────────────────
   const [precheckResult, setPrecheckResult] = useState<PrecheckOut | null>(null)
   const [precheckAvailable, setPrecheckAvailable] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -170,6 +202,8 @@ export default function BookingEditPage() {
   const hasWindow = !!(date && startTime && endTime && startTime < endTime)
 
   const runPrecheck = useCallback(() => {
+    // Series mode: skip live precheck — server validates on submit
+    if (isSeries) return
     if (!roomId || !hasWindow) {
       setPrecheckResult(null)
       setPrecheckAvailable(false)
@@ -188,7 +222,6 @@ export default function BookingEditPage() {
         {
           onSuccess: (data) => {
             if (seq !== precheckSeqRef.current) return
-            // Filter out conflicts that are THIS booking (self-conflict from precheck)
             const filteredConflicts = data.conflicts.filter((c) => c.id !== id)
             const filteredOccurrence = data.occurrence_conflicts.map((occ) => ({
               ...occ,
@@ -212,33 +245,42 @@ export default function BookingEditPage() {
         },
       )
     }, 400)
-  }, [roomId, date, startTime, endTime, attendees.length, hasWindow, id, precheck])
+  }, [isSeries, roomId, date, startTime, endTime, attendees.length, hasWindow, id, precheck])
 
   useEffect(() => {
-    if (!formInitialised) return
+    if (!formInitialised || isSeries) return
     runPrecheck()
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, startTime, endTime, roomId, formInitialised])
+  }, [date, startTime, endTime, roomId, formInitialised, isSeries])
 
   // ── Submit / conflict state ───────────────────────────────────────────────────
   const [formError, setFormError]       = useState<string | null>(null)
   const [conflictResult, setConflictResult] = useState<PrecheckOut | null>(null)
+  const [occurrenceConflicts, setOccurrenceConflicts] = useState<OccurrenceConflict[]>([])
 
   const update = useUpdateBooking(id)
+  const updateSeries = useUpdateSeries(booking?.series_id ?? undefined)
+
+  const isPending = isSeries ? updateSeries.isPending : update.isPending
 
   // Block submit only when precheck has run and explicitly found a conflict (not merely "not yet checked")
   const precheckHasConflict =
+    !isSeries &&
     precheckResult !== null &&
     (precheckResult.conflicts.length > 0 || precheckResult.occurrence_conflicts.length > 0)
 
+  // Series mode: hasWindow uses start/end times only (no date required)
+  const seriesHasWindow = !!(startTime && endTime && startTime < endTime)
+  const effectiveHasWindow = isSeries ? seriesHasWindow : hasWindow
+
   const canSubmit = !!(
     title.trim() &&
-    hasWindow &&
+    effectiveHasWindow &&
     roomId &&
-    !update.isPending &&
+    !isPending &&
     !precheckHasConflict
   )
 
@@ -247,21 +289,27 @@ export default function BookingEditPage() {
     if (!canSubmit) return
     setFormError(null)
     setConflictResult(null)
+    setOccurrenceConflicts([])
 
-    update.mutate(
-      {
-        title: title.trim(),
-        description: description.trim() || null,
-        // Only include attendee_ids if the user has explicitly changed the attendee list.
-        // If untouched, omit the field so the server preserves existing attendees.
-        ...(attendeesTouched ? { attendee_ids: attendees.map((u) => u.id) } : {}),
-        room_id: roomId,
-        starts_at: toISO(date, startTime),
-        ends_at: toISO(date, endTime),
-      },
-      {
+    if (isSeries && booking?.series_id) {
+      // Series mode: build payload with only changed fields
+      const payload: import('@/lib/types').SeriesUpdate = {}
+      if (title.trim() !== (booking.title ?? '')) payload.title = title.trim()
+      if (description.trim() !== (booking.description ?? '')) payload.description = description.trim() || null
+      if (attendeesTouched) payload.attendee_ids = attendees.map((u) => u.id)
+      if (roomId !== booking.room_id) payload.room_id = roomId
+
+      // Time: compare against original local times
+      const origStart = isoToHM(booking.starts_at)
+      const origEnd = isoToHM(booking.ends_at)
+      if (startTime !== origStart || endTime !== origEnd) {
+        payload.start_time = startTime
+        payload.end_time = endTime
+      }
+
+      updateSeries.mutate(payload, {
         onSuccess: () => {
-          navigate('/my', { state: { successNote: 'Booking updated.' } })
+          navigate('/my', { state: { successNote: 'Series updated.' } })
         },
         onError: (err) => {
           if (
@@ -269,34 +317,67 @@ export default function BookingEditPage() {
             err.status === 400 &&
             Array.isArray((err.body as Record<string, unknown>)?.conflicts)
           ) {
-            setConflictResult(err.body as PrecheckOut)
-          } else if (
-            err instanceof ApiError &&
-            err.status === 400 &&
-            (err.body as Record<string, unknown>)?.detail === 'series_member_immutable'
-          ) {
-            setFormError('Recurring meeting occurrences cannot be edited individually.')
+            const body = err.body as unknown as PrecheckOut & { occurrence_conflicts?: OccurrenceConflict[] }
+            setConflictResult(body)
+            const occConflicts = (body.occurrence_conflicts as OccurrenceConflict[] | undefined) ?? []
+            setOccurrenceConflicts(occConflicts)
           } else {
             setFormError((err as Error).message)
           }
         },
-      },
-    )
+      })
+    } else {
+      // Single booking mode
+      update.mutate(
+        {
+          title: title.trim(),
+          description: description.trim() || null,
+          ...(attendeesTouched ? { attendee_ids: attendees.map((u) => u.id) } : {}),
+          room_id: roomId,
+          starts_at: toISO(date, startTime),
+          ends_at: toISO(date, endTime),
+        },
+        {
+          onSuccess: () => {
+            navigate('/my', { state: { successNote: 'Booking updated.' } })
+          },
+          onError: (err) => {
+            if (
+              err instanceof ApiError &&
+              err.status === 400 &&
+              Array.isArray((err.body as Record<string, unknown>)?.conflicts)
+            ) {
+              setConflictResult(err.body as PrecheckOut)
+            } else if (
+              err instanceof ApiError &&
+              err.status === 400 &&
+              (err.body as Record<string, unknown>)?.detail === 'series_member_immutable'
+            ) {
+              setFormError('Recurring meeting occurrences cannot be edited individually.')
+            } else {
+              setFormError((err as Error).message)
+            }
+          },
+        },
+      )
+    }
   }
 
-  // Suggestion panel handlers (for PATCH conflict flow)
+  // Suggestion panel handlers (for single-booking PATCH conflict flow)
   function handlePickSlot(startsISO: string, endsISO: string) {
     setDate(isoToDate(startsISO))
     setStart(isoToHM(startsISO))
     setEnd(isoToHM(endsISO))
     setPrecheckResult(null)
     setConflictResult(null)
+    setOccurrenceConflicts([])
   }
 
   function handlePickRoom(altRoom: RoomWithStatusOut) {
     setRoomId(altRoom.id)
     setConflictResult(null)
     setPrecheckResult(null)
+    setOccurrenceConflicts([])
   }
 
   const activePrecheckResult = conflictResult ?? precheckResult
@@ -355,9 +436,22 @@ export default function BookingEditPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Edit Booking</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            Update details, time, or room. Attendees will receive an updated invite.
+            {isSeries
+              ? 'Update details for your recurring series.'
+              : 'Update details, time, or room. Attendees will receive an updated invite.'}
           </p>
         </div>
+
+        {/* Series mode banner */}
+        {isSeries && (
+          <div className="flex items-start gap-3 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <Info className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              You are editing the entire series — changes apply to all upcoming occurrences.
+              Past occurrences are not affected.
+            </span>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm space-y-6">
@@ -391,7 +485,6 @@ export default function BookingEditPage() {
                 onChange={(e) => setRoomId(e.target.value)}
                 className={inputCls}
               >
-                {/* Keep current room as fallback option even if rooms list hasn't loaded */}
                 {!rooms && (
                   <option value={booking.room_id}>
                     {booking.room_name} ({booking.room_code})
@@ -407,18 +500,25 @@ export default function BookingEditPage() {
           </Section>
 
           <Section title="Time">
-            <Field label="Date" required>
-              <input
-                type="date"
-                value={date}
-                min={today}
-                onChange={(e) => setDate(e.target.value)}
-                className={inputCls}
-              />
-            </Field>
+            {/* Date input: hidden in series mode (pattern is fixed; date is per-occurrence) */}
+            {!isSeries && (
+              <Field label="Date" required>
+                <input
+                  type="date"
+                  value={date}
+                  min={today}
+                  onChange={(e) => setDate(e.target.value)}
+                  className={inputCls}
+                />
+              </Field>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Start time" required>
+              <Field
+                label="Start time"
+                required
+                hint={isSeries ? 'Applied to all upcoming occurrences' : undefined}
+              >
                 <select
                   value={startTime}
                   onChange={(e) => setStart(e.target.value)}
@@ -443,8 +543,8 @@ export default function BookingEditPage() {
             </div>
           </Section>
 
-          {/* Live precheck */}
-          {hasWindow && formInitialised && (
+          {/* Live precheck — single booking mode only */}
+          {!isSeries && hasWindow && formInitialised && (
             <div>
               {precheck.isPending && (
                 <div className="flex items-center gap-2 text-xs text-neutral-500">
@@ -458,7 +558,7 @@ export default function BookingEditPage() {
                   Room is available for the selected time.
                 </div>
               )}
-              {!precheck.isPending && showConflict && (
+              {!precheck.isPending && showConflict && !isSeries && (
                 <SuggestionPanel
                   conflicts={activePrecheckResult!.conflicts}
                   occurrenceConflicts={activePrecheckResult!.occurrence_conflicts}
@@ -468,6 +568,11 @@ export default function BookingEditPage() {
                 />
               )}
             </div>
+          )}
+
+          {/* Series conflict: occurrence list */}
+          {isSeries && occurrenceConflicts.length > 0 && (
+            <OccurrenceConflictList items={occurrenceConflicts} />
           )}
 
           <Section title="Attendees">
@@ -514,8 +619,8 @@ export default function BookingEditPage() {
                   : 'bg-neutral-100 text-neutral-400 cursor-not-allowed',
               )}
             >
-              {update.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Save Changes
+              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {isSeries ? 'Update Series' : 'Save Changes'}
             </button>
           </div>
         </form>

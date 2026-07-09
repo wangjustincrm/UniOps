@@ -149,7 +149,6 @@ interface RowProps {
 
 function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
   const isSeries = !!booking.series_id
-  const editDisabled = isSeries
 
   return (
     <tr className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 transition-colors">
@@ -197,22 +196,12 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
       <td className="px-4 py-3">
         {showActions && (
           <div className="flex items-center gap-1.5">
-            {/* Edit */}
+            {/* Edit — enabled for all bookings including series members (series mode handled in edit page) */}
             <button
               type="button"
-              disabled={editDisabled}
-              onClick={() => !editDisabled && onEdit(booking)}
-              title={
-                editDisabled
-                  ? "Recurring meetings can't be edited individually — cancel the series and re-book."
-                  : 'Edit booking'
-              }
-              className={cn(
-                'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                editDisabled
-                  ? 'border-neutral-200 bg-neutral-50 text-neutral-300 cursor-not-allowed'
-                  : 'border-[#085E5E]/30 bg-white text-[#085E5E] hover:bg-[#085E5E]/5',
-              )}
+              onClick={() => onEdit(booking)}
+              title={isSeries ? 'Edit entire series' : 'Edit booking'}
+              className="inline-flex items-center gap-1 rounded-md border border-[#085E5E]/30 bg-white px-2.5 py-1 text-xs font-medium text-[#085E5E] hover:bg-[#085E5E]/5 transition-colors"
             >
               <Pencil className="h-3 w-3" />
               Edit

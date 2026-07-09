@@ -6,10 +6,12 @@ BookingSlimOut is the read model used by:
 
 BookingCreate / BookingOut / BookingCreatedOut are the Task 7 write models.
 """
+import re
 import uuid
 from datetime import datetime
+from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 from app.services.recurrence import SeriesSpec  # noqa: F401 — re-exported for Tasks 8/10/14/15
@@ -115,6 +117,37 @@ class BookingUpdate(BaseModel):
     room_id: uuid.UUID | None = None
     starts_at: datetime | None = None
     ends_at: datetime | None = None
+
+
+class SeriesUpdate(BaseModel):
+    """Request body for PATCH /bookings/series/{series_id}.
+
+    All fields optional — only provided fields are applied to future occurrences.
+
+    start_time / end_time:
+        Local time-of-day strings "HH:MM" (DISPLAY_TIMEZONE).
+        Applied to every future occurrence's own calendar date.
+        Both must be provided together or both omitted (both-or-neither rule).
+    """
+    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    attendee_ids: Optional[list[uuid.UUID]] = None
+    room_id: Optional[uuid.UUID] = None
+    start_time: Optional[str] = None   # "HH:MM" local time
+    end_time: Optional[str] = None     # "HH:MM" local time
+
+    @model_validator(mode="after")
+    def _times_both_or_neither(self) -> "SeriesUpdate":
+        has_start = self.start_time is not None
+        has_end = self.end_time is not None
+        if has_start != has_end:
+            raise ValueError("start_time and end_time must be provided together or both omitted")
+        if has_start:
+            _HHmm = re.compile(r"^\d{2}:\d{2}$")
+            for label, val in [("start_time", self.start_time), ("end_time", self.end_time)]:
+                if not _HHmm.match(val):  # type: ignore[arg-type]
+                    raise ValueError(f"{label} must be in HH:MM format")
+        return self
 
 
 class BookingAdminOut(BookingOut):

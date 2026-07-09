@@ -81,6 +81,19 @@ export interface SeriesSpec {
   until?: string | null
 }
 
+/** Request body for PATCH /bookings/series/{series_id}.
+ *  start_time / end_time are "HH:MM" local-time strings (DISPLAY_TIMEZONE).
+ *  Both must be provided together or both omitted.
+ */
+export interface SeriesUpdate {
+  title?: string | null
+  description?: string | null
+  attendee_ids?: string[] | null
+  room_id?: string | null
+  start_time?: string | null   // "HH:MM"
+  end_time?: string | null     // "HH:MM"
+}
+
 // ── Directory ─────────────────────────────────────────────────────────────────
 
 export interface DirectoryUserOut {

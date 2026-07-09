@@ -34,7 +34,7 @@ from app.models.room import MeetingRoom
 from app.models.user_mirror import User
 from app.schemas.booking import (
     BookingCreate, BookingCreatedOut, BookingOut, BookingSlimOut, BookingUpdate,
-    DaySummaryOut, DaySummaryRoom, DaySummaryBookingOut,
+    DaySummaryOut, DaySummaryRoom, DaySummaryBookingOut, SeriesUpdate,
 )
 from app.services.notifications import enqueue
 from app.services.recurrence import SeriesSpec, build_rrule_string, expand_series
@@ -717,6 +717,324 @@ async def get_day_summary(
             for b, organizer_name in booking_rows
         ],
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PATCH /bookings/series/{series_id}
+# NOTE: This MUST be registered BEFORE PATCH /{booking_id} so FastAPI matches
+# the literal path segment "series" before the wildcard {booking_id}.
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.patch("/series/{series_id}")
+async def update_booking_series(
+    series_id: uuid.UUID,
+    body: SeriesUpdate,
+    db: SessionDep,
+    current_user: CurrentUser,
+):
+    """Edit all FUTURE confirmed occurrences of a recurring series.
+
+    Authorization: organizer (any member of the series) OR admin
+    (manage_meeting_rooms via the Access Control Matrix).
+    Unauthorized callers — including unknown series_id — get 404 (anti-probing).
+
+    Semantics:
+      - target rows = series' confirmed occurrences with starts_at > now
+      - None left → 400 "series_fully_started"
+      - room_id given: room must exist + status=available (else 404/422)
+      - start_time/end_time given (HH:MM local): 15-min grid, duration within
+        config min/max, inside room open hours; applied to each occurrence's
+        own calendar date.
+      - Conflict check: each future occurrence's new window against OTHER
+        bookings (series own IDs excluded). ANY conflict → 400 flat body with
+        occurrence_conflicts; nothing persisted.
+      - Apply in one transaction; ical_sequence = max(series)+1 for ALL future
+        rows; sync_status = "pending"; one audit row per updated booking.
+      - ONE enqueue() for the first future occurrence (same UID + bumped SEQUENCE
+        + RRULE) so Outlook updates the entire series.
+
+    NOTE: Outlook rewrites past occurrences too when a series UPDATE is received;
+    the DB intentionally keeps historical rows unchanged — accepted tradeoff.
+    """
+    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    actor_id = uuid.UUID(current_user["sub"])
+    is_admin = await is_booking_admin(current_user, db)
+
+    # ── Fetch all confirmed occurrences of the series ─────────────────────────
+    series_result = await db.execute(
+        select(Booking)
+        .where(
+            Booking.series_id == series_id,
+            Booking.status == "confirmed",
+        )
+        .order_by(Booking.starts_at)
+    )
+    all_series_bookings = list(series_result.scalars().all())
+
+    if not all_series_bookings:
+        # No confirmed bookings with this series_id → treat as not found
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
+
+    # Authorization: must be organizer of the series or admin
+    # (anti-probing: return 404 not 403)
+    organizer_id = all_series_bookings[0].organizer_id
+    if actor_id != organizer_id and not is_admin:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
+
+    # ── Target rows: future confirmed only ────────────────────────────────────
+    now = datetime.now(tz)
+    future_bookings = [b for b in all_series_bookings if b.starts_at > now]
+
+    if not future_bookings:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="series_fully_started",
+        )
+
+    # ── Room resolution ───────────────────────────────────────────────────────
+    current_room_id = future_bookings[0].room_id
+    effective_room: MeetingRoom | None = None
+
+    if body.room_id is not None and body.room_id != current_room_id:
+        new_room_result = await db.execute(
+            select(MeetingRoom).where(MeetingRoom.id == body.room_id)
+        )
+        resolved_room = new_room_result.scalar_one_or_none()
+        if resolved_room is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
+        if resolved_room.status != "available":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Room is not bookable (status is not 'available')",
+            )
+        effective_room_id = body.room_id
+        effective_room = resolved_room
+    else:
+        effective_room_id = current_room_id
+        # Load current room for open-hours validation when times change
+        if body.start_time is not None:
+            cur_room_result = await db.execute(
+                select(MeetingRoom).where(MeetingRoom.id == current_room_id)
+            )
+            effective_room = cur_room_result.scalar_one_or_none()
+
+    # ── Time validation (if times provided) ──────────────────────────────────
+    config = await get_or_create_config(db)
+    cfg_rules: dict = config.rules or {}
+    min_dur = cfg_rules.get("min_duration_minutes", 15)
+    max_dur = cfg_rules.get("max_duration_minutes", 240)
+    default_open_start = cfg_rules.get("default_open_start", "08:00")
+    default_open_end = cfg_rules.get("default_open_end", "20:00")
+
+    new_start_h: int = 0
+    new_start_m: int = 0
+    new_end_h: int = 0
+    new_end_m: int = 0
+
+    if body.start_time is not None:
+        # Parse the new times — schema already validated HH:MM format
+        try:
+            new_start_h, new_start_m = [int(x) for x in body.start_time.split(":")]
+            new_end_h, new_end_m = [int(x) for x in body.end_time.split(":")]  # type: ignore[union-attr]
+        except (ValueError, AttributeError):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="start_time and end_time must be in HH:MM format",
+            )
+
+        # 15-min grid check
+        if new_start_m % 15 != 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="start_time must be aligned to a 15-minute boundary",
+            )
+        if new_end_m % 15 != 0:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="end_time must be aligned to a 15-minute boundary",
+            )
+
+        # Check duration using the first future occurrence's date as a proxy
+        sample_date = future_bookings[0].starts_at.astimezone(tz).date()
+        sample_start = datetime(sample_date.year, sample_date.month, sample_date.day,
+                                new_start_h, new_start_m, tzinfo=tz)
+        sample_end = datetime(sample_date.year, sample_date.month, sample_date.day,
+                              new_end_h, new_end_m, tzinfo=tz)
+
+        if sample_end <= sample_start:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="end_time must be after start_time",
+            )
+
+        duration_minutes = (sample_end - sample_start).total_seconds() / 60
+        if duration_minutes < min_dur:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Booking duration must be at least {min_dur} minutes",
+            )
+        if duration_minutes > max_dur:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Booking duration must not exceed {max_dur} minutes",
+            )
+
+        # Open-hours check against the effective room
+        if effective_room is not None:
+            _validate_open_hours(sample_start, sample_end, effective_room, tz,
+                                 default_open_start, default_open_end)
+
+    # ── Compute new windows for each future occurrence ────────────────────────
+    series_ids_set = {b.id for b in all_series_bookings}
+    occurrence_windows: list[tuple[Booking, datetime, datetime]] = []
+
+    for b in future_bookings:
+        if body.start_time is not None:
+            local_date = b.starts_at.astimezone(tz).date()
+            new_starts = datetime(local_date.year, local_date.month, local_date.day,
+                                  new_start_h, new_start_m, tzinfo=tz)
+            new_ends = datetime(local_date.year, local_date.month, local_date.day,
+                                new_end_h, new_end_m, tzinfo=tz)
+        else:
+            new_starts = b.starts_at
+            new_ends = b.ends_at
+
+        occurrence_windows.append((b, new_starts, new_ends))
+
+    # ── Conflict check: exclude ALL series members ────────────────────────────
+    all_conflict_rows: list[Booking] = []
+    occurrence_conflicts: list[dict] = []
+
+    for b, new_starts, new_ends in occurrence_windows:
+        conflicts = await find_conflicts(
+            db, effective_room_id, new_starts, new_ends,
+            exclude_booking_ids=series_ids_set,
+        )
+        if conflicts:
+            all_conflict_rows.extend(conflicts)
+            occ_local_date = new_starts.astimezone(tz).date().isoformat()
+            occurrence_conflicts.append({
+                "date": occ_local_date,
+                "conflicts": await _build_slim_out_list(db, conflicts),
+            })
+
+    if all_conflict_rows:
+        # Deduplicate global conflicts
+        seen_ids: set[uuid.UUID] = set()
+        unique_conflicts: list[Booking] = []
+        for c in all_conflict_rows:
+            if c.id not in seen_ids:
+                seen_ids.add(c.id)
+                unique_conflicts.append(c)
+
+        conflicts_slim = await _build_slim_out_list(db, unique_conflicts)
+
+        # No suggestions for series edit — keep it simple
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "detail": "conflict",
+                "conflicts": [c.model_dump(mode="json") for c in conflicts_slim],
+                "occurrence_conflicts": [
+                    {
+                        "date": oc["date"],
+                        "conflicts": [c.model_dump(mode="json") for c in oc["conflicts"]],
+                    }
+                    for oc in occurrence_conflicts
+                ],
+                "suggestions": None,
+            },
+        )
+
+    # ── Apply in one transaction ──────────────────────────────────────────────
+    # Compute new ical_sequence = max(existing sequence across all series rows) + 1
+    new_sequence = max(b.ical_sequence for b in all_series_bookings) + 1
+
+    try:
+        for b, new_starts, new_ends in occurrence_windows:
+            before_snapshot = {
+                "id": str(b.id),
+                "room_id": str(b.room_id),
+                "title": b.title,
+                "description": b.description,
+                "organizer_id": str(b.organizer_id),
+                "attendee_ids": b.attendee_ids,
+                "starts_at": b.starts_at.isoformat(),
+                "ends_at": b.ends_at.isoformat(),
+                "status": b.status,
+                "ical_sequence": b.ical_sequence,
+                "sync_status": b.sync_status,
+            }
+
+            # Apply field updates
+            if body.title is not None:
+                b.title = body.title
+            if body.description is not None:
+                b.description = body.description
+            if body.attendee_ids is not None:
+                b.attendee_ids = [str(aid) for aid in body.attendee_ids]
+            if effective_room_id != b.room_id:
+                b.room_id = effective_room_id
+            if body.start_time is not None:
+                b.starts_at = new_starts
+                b.ends_at = new_ends
+
+            b.ical_sequence = new_sequence
+            b.sync_status = "pending"
+
+            await db.flush()
+
+            after_snapshot = {
+                "id": str(b.id),
+                "room_id": str(b.room_id),
+                "title": b.title,
+                "description": b.description,
+                "organizer_id": str(b.organizer_id),
+                "attendee_ids": b.attendee_ids,
+                "starts_at": b.starts_at.isoformat(),
+                "ends_at": b.ends_at.isoformat(),
+                "status": b.status,
+                "ical_sequence": b.ical_sequence,
+                "sync_status": b.sync_status,
+            }
+
+            audit = BookingAuditLog(
+                booking_id=b.id,
+                action="update",
+                actor_id=actor_id,
+                before=before_snapshot,
+                after=after_snapshot,
+            )
+            db.add(audit)
+
+        await db.flush()
+
+    except IntegrityError:
+        await db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "detail": "conflict",
+                "conflicts": [],
+                "occurrence_conflicts": [],
+                "suggestions": None,
+            },
+        )
+
+    # ── ONE notification for the first future occurrence ──────────────────────
+    # Outlook rewrites past occurrences too on series updates — the DB keeps
+    # historical rows unchanged. This is the accepted tradeoff for series edits.
+    first_future = future_bookings[0]
+    series_rrule = first_future.rrule
+    try:
+        await enqueue(db, [first_future], "updated", rrule=series_rrule)
+    except Exception:
+        logger.exception(
+            "enqueue failed for series edit of series_id %s — suppressed",
+            series_id,
+        )
+
+    return {"updated": len(future_bookings), "series_id": str(series_id)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
