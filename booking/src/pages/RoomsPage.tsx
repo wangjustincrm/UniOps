@@ -10,6 +10,7 @@ import { useRoomList, useRoomAvailability, type RoomListFilters } from '@/servic
 import type { RoomWithStatusOut, RoomStatusNow, EquipmentOption } from '@/lib/types'
 import { EQUIPMENT_OPTIONS, EQUIPMENT_LABELS, ROOM_TYPES, ROOM_TYPE_LABELS } from '@/lib/types'
 import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
+import { zonedToISO, DISPLAY_TZ } from '@/lib/tz'
 
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
@@ -50,10 +51,8 @@ function buildTimeOptions(startHour: number, endHour: number): string[] {
 
 const TIME_OPTIONS = buildTimeOptions(6, 23)
 
-/** Combine a YYYY-MM-DD date string and HH:MM time string into an ISO datetime with UTC Z suffix. */
-function toISO(date: string, time: string): string {
-  return new Date(`${date}T${time}:00`).toISOString()
-}
+/** Combine a YYYY-MM-DD date string and HH:MM wall-clock time (in DISPLAY_TZ) into a UTC ISO string. */
+const toISO = (date: string, time: string) => zonedToISO(date, time, DISPLAY_TZ)
 
 // ── Skeleton loader ───────────────────────────────────────────────────────────
 

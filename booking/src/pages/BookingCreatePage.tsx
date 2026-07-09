@@ -18,6 +18,7 @@ import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { SuggestionPanel } from '@/components/SuggestionPanel'
 import type { RoomWithStatusOut } from '@/lib/types'
 import { useBookingAuth } from '@/store/auth'
+import { isoToHMInZone, isoToDateInZone, zonedToISO, DISPLAY_TZ } from '@/lib/tz'
 
 // ── Time options (15-min steps, 06:00–23:00) ──────────────────────────────────
 
@@ -34,22 +35,14 @@ function buildTimeOptions(startHour: number, endHour: number): string[] {
 
 const TIME_OPTIONS = buildTimeOptions(6, 23)
 
-/** Date+time → UTC ISO string */
-function toISO(date: string, time: string): string {
-  return new Date(`${date}T${time}:00`).toISOString()
-}
+/** Date+time (wall-clock in DISPLAY_TZ) → UTC ISO string */
+const toISO = (date: string, time: string) => zonedToISO(date, time, DISPLAY_TZ)
 
-/** UTC ISO → local "HH:MM" */
-function isoToHM(iso: string): string {
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
+/** UTC ISO → "HH:MM" in DISPLAY_TZ */
+const isoToHM = (iso: string) => isoToHMInZone(iso, DISPLAY_TZ)
 
-/** UTC ISO → local "YYYY-MM-DD" */
-function isoToDate(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+/** UTC ISO → "YYYY-MM-DD" in DISPLAY_TZ */
+const isoToDate = (iso: string) => isoToDateInZone(iso, DISPLAY_TZ)
 
 // ── Toast (simple inline) ─────────────────────────────────────────────────────
 

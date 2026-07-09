@@ -793,30 +793,30 @@ async def update_booking_series(
 
     # ── Room resolution ───────────────────────────────────────────────────────
     current_room_id = future_bookings[0].room_id
-    effective_room: MeetingRoom | None = None
+    room_explicitly_changed = body.room_id is not None and body.room_id != current_room_id
 
-    if body.room_id is not None and body.room_id != current_room_id:
+    if room_explicitly_changed:
         new_room_result = await db.execute(
             select(MeetingRoom).where(MeetingRoom.id == body.room_id)
         )
-        resolved_room = new_room_result.scalar_one_or_none()
-        if resolved_room is None:
+        effective_room = new_room_result.scalar_one_or_none()
+        if effective_room is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found")
-        if resolved_room.status != "available":
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Room is not bookable (status is not 'available')",
-            )
         effective_room_id = body.room_id
-        effective_room = resolved_room
     else:
         effective_room_id = current_room_id
-        # Load current room for open-hours validation when times change
-        if body.start_time is not None:
-            cur_room_result = await db.execute(
-                select(MeetingRoom).where(MeetingRoom.id == current_room_id)
-            )
-            effective_room = cur_room_result.scalar_one_or_none()
+        # Always load the current room — needed for status check (C3) and open-hours validation
+        cur_room_result = await db.execute(
+            select(MeetingRoom).where(MeetingRoom.id == current_room_id)
+        )
+        effective_room = cur_room_result.scalar_one_or_none()
+
+    # Always validate room status (C3: maintenance room must block even title-only edits)
+    if effective_room is None or effective_room.status != "available":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Room is not bookable (status is not 'available')",
+        )
 
     # ── Time validation (if times provided) ──────────────────────────────────
     config = await get_or_create_config(db)
@@ -879,10 +879,9 @@ async def update_booking_series(
                 detail=f"Booking duration must not exceed {max_dur} minutes",
             )
 
-        # Open-hours check against the effective room
-        if effective_room is not None:
-            _validate_open_hours(sample_start, sample_end, effective_room, tz,
-                                 default_open_start, default_open_end)
+        # Open-hours check against the effective room (always loaded above)
+        _validate_open_hours(sample_start, sample_end, effective_room, tz,
+                             default_open_start, default_open_end)
 
     # ── Compute new windows for each future occurrence ────────────────────────
     series_ids_set = {b.id for b in all_series_bookings}
@@ -969,11 +968,13 @@ async def update_booking_series(
             # Apply field updates
             if body.title is not None:
                 b.title = body.title
-            if body.description is not None:
+            # C2: use model_fields_set to distinguish explicit null (clear) from absent
+            if "description" in body.model_fields_set:
                 b.description = body.description
             if body.attendee_ids is not None:
                 b.attendee_ids = [str(aid) for aid in body.attendee_ids]
-            if effective_room_id != b.room_id:
+            # C4: only reassign room when caller explicitly requested a change
+            if room_explicitly_changed:
                 b.room_id = effective_room_id
             if body.start_time is not None:
                 b.starts_at = new_starts

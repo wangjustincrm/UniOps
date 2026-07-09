@@ -37,8 +37,9 @@ import type { PrecheckOut } from '@/services/api'
 import { AttendeePicker } from '@/components/AttendeePicker'
 import { SuggestionPanel } from '@/components/SuggestionPanel'
 import { useBookingAuth } from '@/store/auth'
+import { isoToHMInZone, isoToDateInZone, zonedToISO, DISPLAY_TZ } from '@/lib/tz'
 
-// ── Time helpers (duplicated from CreatePage to keep pages independent) ────────
+// ── Time helpers ──────────────────────────────────────────────────────────────
 
 function buildTimeOptions(startHour: number, endHour: number): string[] {
   const opts: string[] = []
@@ -53,19 +54,10 @@ function buildTimeOptions(startHour: number, endHour: number): string[] {
 
 const TIME_OPTIONS = buildTimeOptions(6, 23)
 
-function toISO(date: string, time: string): string {
-  return new Date(`${date}T${time}:00`).toISOString()
-}
-
-function isoToHM(iso: string): string {
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-function isoToDate(iso: string): string {
-  const d = new Date(iso)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+/** Shorthand wrappers using the app DISPLAY_TZ */
+const isoToHM = (iso: string) => isoToHMInZone(iso, DISPLAY_TZ)
+const isoToDate = (iso: string) => isoToDateInZone(iso, DISPLAY_TZ)
+const toISO = (date: string, time: string) => zonedToISO(date, time, DISPLAY_TZ)
 
 // ── Form UI helpers (mirrors BookingCreatePage style) ─────────────────────────
 
