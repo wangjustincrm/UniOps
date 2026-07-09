@@ -8,18 +8,84 @@ Outlook Classic requires:
   - A VTIMEZONE component so the client can resolve the TZID
   - SEQUENCE monotonically increasing on updates
   - ORGANIZER + ATTENDEE lines with correct RSVP params
+
+VTIMEZONE / Outlook RDATE limitation
+-------------------------------------
+icalendar.Timezone.from_tzid() generates VTIMEZONE observances using RDATE
+year-lists (one per historical transition year).  Outlook Classic Desktop does
+NOT process RDATE-based observances — it falls back to the first STANDARD
+offset only, causing EDT meetings to display 1 hour late (e.g. 09:00 EDT →
+shown as 10:00).
+
+For America/Toronto (and its common aliases America/New_York, America/Montreal)
+we therefore hand-build a RRULE-based VTIMEZONE that Outlook understands.
+For any other DISPLAY_TIMEZONE we fall back to from_tzid() since we cannot
+guarantee the hand-built rules are correct for arbitrary zones.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from zoneinfo import ZoneInfo
 
-from icalendar import Calendar, Event, Timezone, vCalAddress, vRecur, vText
+from icalendar import Calendar, Event, Timezone, TimezoneStandard, TimezoneDaylight, vCalAddress, vRecur, vText, vUTCOffset
 
 from app.core.config import settings
 from app.models.booking import Booking
 from app.models.room import MeetingRoom
+
+# Timezone IDs for which we emit a hand-built RRULE-based VTIMEZONE.
+# Outlook Classic ignores RDATE observances (from_tzid default) and falls back
+# to the first STANDARD offset, shifting EDT meetings by +1 hour.
+_EASTERN_TZIDS = frozenset({
+    "America/Toronto",
+    "America/New_York",
+    "America/Montreal",
+})
+
+
+def _build_vtimezone(tzid: str) -> Timezone:
+    """Return a VTIMEZONE component for *tzid*.
+
+    For Eastern time zones (America/Toronto, America/New_York, America/Montreal)
+    we hand-build RRULE-based STANDARD/DAYLIGHT observances.  Outlook Classic
+    Desktop does not process RDATE year-lists emitted by from_tzid(), so we
+    must use RRULE or Outlook falls back to the first STANDARD offset only.
+
+    For all other zones, fall back to icalendar's from_tzid() (RDATE-based).
+    Outlook may display those incorrectly if they have DST, but we cannot
+    guarantee correctness for arbitrary zones without hand-crafted rules.
+    """
+    if tzid not in _EASTERN_TZIDS:
+        # Non-Eastern zone: use the library default (RDATE observances).
+        # Outlook Classic may misbehave for DST zones, but we have no reliable
+        # hand-built fallback for the full tz database.
+        return Timezone.from_tzid(tzid)
+
+    # Hand-built RRULE-based Eastern Time VTIMEZONE.
+    # Post-2007 US/Canada DST rules (Energy Policy Act 2005):
+    #   STANDARD: first Sunday in November at 02:00 (clocks fall back to EST -0500)
+    #   DAYLIGHT: second Sunday in March at 02:00 (clocks spring forward to EDT -0400)
+    vtimezone = Timezone()
+    vtimezone.add("TZID", tzid)
+
+    standard = TimezoneStandard()
+    standard.add("DTSTART", datetime(2007, 11, 4, 2, 0, 0))
+    standard.add("RRULE", vRecur.from_ical("FREQ=YEARLY;BYMONTH=11;BYDAY=1SU"))
+    standard.add("TZOFFSETFROM", vUTCOffset(timedelta(hours=-4)))
+    standard.add("TZOFFSETTO", vUTCOffset(timedelta(hours=-5)))
+    standard.add("TZNAME", "EST")
+    vtimezone.add_component(standard)
+
+    daylight = TimezoneDaylight()
+    daylight.add("DTSTART", datetime(2007, 3, 11, 2, 0, 0))
+    daylight.add("RRULE", vRecur.from_ical("FREQ=YEARLY;BYMONTH=3;BYDAY=2SU"))
+    daylight.add("TZOFFSETFROM", vUTCOffset(timedelta(hours=-5)))
+    daylight.add("TZOFFSETTO", vUTCOffset(timedelta(hours=-4)))
+    daylight.add("TZNAME", "EDT")
+    vtimezone.add_component(daylight)
+
+    return vtimezone
 
 
 def _ensure_mailto(address: str) -> str:
@@ -86,7 +152,9 @@ def build_event_ics(
     cal.add("method", method)
 
     # ── VTIMEZONE (required by Outlook Classic for TZID resolution) ───────────
-    vtimezone = Timezone.from_tzid(settings.DISPLAY_TIMEZONE)
+    # Use RRULE-based observances for Eastern zones; RDATE fallback otherwise.
+    # See module docstring for the Outlook RDATE limitation.
+    vtimezone = _build_vtimezone(settings.DISPLAY_TIMEZONE)
     cal.add_component(vtimezone)
 
     # ── VEVENT ────────────────────────────────────────────────────────────────

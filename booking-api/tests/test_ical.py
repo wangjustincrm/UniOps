@@ -590,3 +590,80 @@ class TestNonAsciiAndUtf8:
         # building excluded; floor present
         assert "Bâtiment B" not in location
         assert "2" in location
+
+
+class TestVtimezoneRruleBased:
+    """FIX 6 (B6): VTIMEZONE must use RRULE-based observances for Eastern zones.
+
+    Outlook Classic Desktop ignores RDATE year-lists (emitted by from_tzid())
+    and falls back to the first STANDARD offset (-0500 EST), causing EDT
+    meetings (UTC-4 summer) to display 1 hour late (09:00 EDT → shown 10:00).
+    The fix hand-builds RRULE-based STANDARD/DAYLIGHT blocks.
+    """
+
+    def _build_ics(self):
+        # UTC 13:00 on a summer date → 09:00 EDT (UTC-4)
+        booking = _make_booking(
+            starts_at=datetime(2026, 7, 8, 13, 0, 0, tzinfo=timezone.utc),
+            ends_at=datetime(2026, 7, 8, 14, 0, 0, tzinfo=timezone.utc),
+        )
+        room = _make_room()
+        return build_event_ics(
+            booking=booking,
+            room=room,
+            organizer_email="organizer@example.com",
+            attendee_emails=["alice@example.com"],
+            method="REQUEST",
+        )
+
+    def test_vtimezone_rrule_standard_november(self):
+        """VTIMEZONE STANDARD block must use RRULE with BYMONTH=11;BYDAY=1SU."""
+        raw = self._build_ics().decode()
+        # Line-unfold before searching (RRULE may be folded across lines)
+        unfolded = raw.replace("\r\n ", "").replace("\r\n\t", "")
+        assert "RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11" in unfolded or \
+               "RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU" in unfolded, (
+            "VTIMEZONE STANDARD block missing expected RRULE"
+        )
+
+    def test_vtimezone_rrule_daylight_march(self):
+        """VTIMEZONE DAYLIGHT block must use RRULE with BYMONTH=3;BYDAY=2SU."""
+        raw = self._build_ics().decode()
+        unfolded = raw.replace("\r\n ", "").replace("\r\n\t", "")
+        assert "RRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3" in unfolded or \
+               "RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU" in unfolded, (
+            "VTIMEZONE DAYLIGHT block missing expected RRULE"
+        )
+
+    def test_vtimezone_no_rdate(self):
+        """VTIMEZONE must NOT contain RDATE lines (Outlook ignores them)."""
+        raw = self._build_ics().decode()
+        assert "RDATE" not in raw, "VTIMEZONE must not use RDATE observances"
+
+    def test_vtimezone_tzid_matches_dtstart_tzid(self):
+        """VTIMEZONE TZID must be identical to the TZID param on DTSTART."""
+        raw = self._build_ics().decode()
+        unfolded = raw.replace("\r\n ", "").replace("\r\n\t", "")
+        # Extract VTIMEZONE TZID
+        import re
+        tz_match = re.search(r"BEGIN:VTIMEZONE\r?\n(.*?)END:VTIMEZONE", raw, re.DOTALL)
+        assert tz_match, "No VTIMEZONE block found"
+        vtimezone_block = tz_match.group(1)
+        tzid_match = re.search(r"TZID:(.+)", vtimezone_block)
+        assert tzid_match, "No TZID in VTIMEZONE"
+        vtimezone_tzid = tzid_match.group(1).strip()
+        # Extract DTSTART TZID param
+        dtstart_match = re.search(r"DTSTART;TZID=([^:]+):", unfolded)
+        assert dtstart_match, "No DTSTART;TZID= found"
+        dtstart_tzid = dtstart_match.group(1).strip()
+        assert vtimezone_tzid == dtstart_tzid, (
+            f"VTIMEZONE TZID {vtimezone_tzid!r} != DTSTART TZID param {dtstart_tzid!r}"
+        )
+
+    def test_dtstart_local_time_summer_09h(self):
+        """UTC 13:00 on a summer date must render as 09:00 local (EDT, UTC-4)."""
+        raw = self._build_ics().decode()
+        unfolded = raw.replace("\r\n ", "").replace("\r\n\t", "")
+        assert "DTSTART;TZID=America/Toronto:20260708T090000" in unfolded, (
+            f"Expected 09:00 EDT in DTSTART. Raw (unfolded):\n{unfolded}"
+        )
