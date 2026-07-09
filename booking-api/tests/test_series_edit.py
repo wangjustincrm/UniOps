@@ -25,6 +25,7 @@ from sqlalchemy import select
 from app.models.audit import BookingAuditLog
 from app.models.booking import Booking as BookingModel
 from app.models.notification import NotificationLog
+from app.models.room import MeetingRoom
 from tests.conftest import authed_client, make_token, make_user
 
 TZ = ZoneInfo("America/Toronto")
@@ -687,4 +688,107 @@ class TestSeriesEditAudit:
         # sync_status transitions to pending then the enqueue immediately updates it
         assert row.sync_status in ("pending", "sent", "failed"), (
             f"Unexpected sync_status: {row.sync_status}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 7: Regression tests for model_fields_set fix + room revalidation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSeriesEditRegressions:
+    async def test_series_edit_can_clear_description(
+        self, requester, admin, db_session
+    ):
+        """PATCH /bookings/series/{id} with description:null clears description.
+
+        Verifies model_fields_set fix in app/api/v1/bookings.py line 972:
+        checks "description" in body.model_fields_set to distinguish
+        explicit null (clear field) from absent (leave as-is).
+        """
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series_id = uuid.uuid4()
+        rrule = "FREQ=WEEKLY;COUNT=2"
+        uid = f"series-{uuid.uuid4()}@test"
+
+        # Create two future occurrences WITH descriptions
+        f1 = await _insert_booking_raw(
+            db_session, room["id"], _dt(10, 0, 7), _dt(11, 0, 7),
+            organizer_id=organizer.id, series_id=series_id, rrule=rrule,
+            calendar_uid=uid, title="Series Title",
+        )
+        f1.description = "Meeting agenda: Q3 planning"
+
+        f2 = await _insert_booking_raw(
+            db_session, room["id"], _dt(10, 0, 14), _dt(11, 0, 14),
+            organizer_id=organizer.id, series_id=series_id, rrule=rrule,
+            calendar_uid=uid, title="Series Title",
+        )
+        f2.description = "Meeting agenda: Q3 planning"
+        await db_session.flush()
+
+        # PATCH with explicit description:null to clear it
+        resp = await req_client.patch(
+            f"/api/v1/bookings/series/{series_id}",
+            json={"description": None},
+        )
+        assert resp.status_code == 200, resp.text
+
+        # Verify both future rows' description is now None in DB
+        for b_id in [f1.id, f2.id]:
+            result = await db_session.execute(select(BookingModel).where(BookingModel.id == b_id))
+            row = result.scalar_one()
+            assert row.description is None, (
+                f"Expected description=None for {b_id} after clear, got {row.description!r}"
+            )
+
+    async def test_series_edit_title_only_on_maintenance_room_422(
+        self, requester, admin, db_session
+    ):
+        """PATCH /bookings/series/{id} with only {"title": "New"} → 422
+        when room status is maintenance.
+
+        Verifies room re-validation happens even without room/time changes
+        (C3: always validate effective_room.status == available).
+        """
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client, status="available")
+        series_id = uuid.uuid4()
+        rrule = "FREQ=WEEKLY;COUNT=2"
+        uid = f"series-{uuid.uuid4()}@test"
+
+        # Create two future occurrences in an available room
+        f1 = await _insert_booking_raw(
+            db_session, room["id"], _dt(10, 0, 7), _dt(11, 0, 7),
+            organizer_id=organizer.id, series_id=series_id, rrule=rrule,
+            calendar_uid=uid, title="Series Title",
+        )
+        await _insert_booking_raw(
+            db_session, room["id"], _dt(10, 0, 14), _dt(11, 0, 14),
+            organizer_id=organizer.id, series_id=series_id, rrule=rrule,
+            calendar_uid=uid, title="Series Title",
+        )
+
+        # Now change the room status to maintenance via db_session
+        room_obj_result = await db_session.execute(
+            select(MeetingRoom).where(MeetingRoom.id == uuid.UUID(room["id"]))
+        )
+        room_obj = room_obj_result.scalar_one()
+        room_obj.status = "maintenance"
+        await db_session.flush()
+
+        # PATCH with only title (no room_id, no times) → must still fail with 422
+        resp = await req_client.patch(
+            f"/api/v1/bookings/series/{series_id}",
+            json={"title": "New Title"},
+        )
+        assert resp.status_code == 422, (
+            f"Expected 422 on room re-validation, got {resp.status_code}: {resp.text}"
+        )
+        assert "not bookable" in resp.json().get("detail", "").lower() or "not 'available'" in resp.json().get("detail", ""), (
+            f"Expected 'not bookable' error, got: {resp.json()}"
         )
