@@ -77,3 +77,33 @@ async def unreview(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVou
     jv.reviewed_at = None
     await db.flush()
     return jv
+
+
+async def _require_period_open(db: AsyncSession, period: str) -> None:
+    row = (await db.execute(
+        select(FiscalPeriod).where(FiscalPeriod.period == period)
+    )).scalar_one_or_none()
+    if row is not None and row.status != OPEN:
+        raise JvStateError(f"Fiscal period {period} is closed ({row.status})")
+
+
+async def post(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
+    jv = await _require(db, jv_id, REVIEWED)
+    _require_role(user)
+    await _require_period_open(db, jv.fiscal_period)
+    jv.status = POSTED
+    jv.posted_by = uuid.UUID(user["sub"])
+    jv.posted_at = datetime.now(timezone.utc)
+    await db.flush()
+    return jv
+
+
+async def unpost(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
+    jv = await _require(db, jv_id, POSTED)
+    _require_role(user)
+    await _require_period_open(db, jv.fiscal_period)
+    jv.status = REVIEWED
+    jv.posted_by = None
+    jv.posted_at = None
+    await db.flush()
+    return jv

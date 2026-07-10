@@ -73,3 +73,49 @@ async def test_unreview_moves_reviewed_to_draft(db_session):
     assert out.status == "draft"
     assert out.reviewed_by is None
     assert out.reviewed_at is None
+
+
+async def _open_period(db, period="2026-07"):
+    # A row with status != OPEN would block posting; absence of a row means open.
+    # Insert an explicit OPEN row to be deterministic regardless of today's date.
+    from app.models.fiscal_period import OPEN, FiscalPeriod
+    existing = (await db.execute(select(FiscalPeriod).where(FiscalPeriod.period == period))).scalar_one_or_none()
+    if existing is None:
+        db.add(FiscalPeriod(period=period, status=OPEN))
+        await db.flush()
+
+
+async def test_post_moves_reviewed_to_posted(db_session):
+    jv = await _draft_jv(db_session, uuid.uuid4())
+    await _open_period(db_session, jv.fiscal_period)
+    await jv_crud.review(db_session, jv.id, _user())
+    out = await jv_crud.post(db_session, jv.id, _user())
+    assert out.status == "posted"
+    assert out.posted_at is not None
+    assert out.posted_by is not None
+
+
+async def test_post_rejects_non_reviewed(db_session):
+    jv = await _draft_jv(db_session, uuid.uuid4())
+    with pytest.raises(jv_crud.JvStateError):
+        await jv_crud.post(db_session, jv.id, _user())  # still draft
+
+
+async def test_post_blocked_in_closed_period(db_session):
+    from app.models.fiscal_period import FiscalPeriod
+    jv = await _draft_jv(db_session, uuid.uuid4())
+    await jv_crud.review(db_session, jv.id, _user())
+    db_session.add(FiscalPeriod(period=jv.fiscal_period, status="hard_closed"))
+    await db_session.flush()
+    with pytest.raises(jv_crud.JvStateError):
+        await jv_crud.post(db_session, jv.id, _user())
+
+
+async def test_unpost_moves_posted_to_reviewed(db_session):
+    jv = await _draft_jv(db_session, uuid.uuid4())
+    await _open_period(db_session, jv.fiscal_period)
+    await jv_crud.review(db_session, jv.id, _user())
+    await jv_crud.post(db_session, jv.id, _user())
+    out = await jv_crud.unpost(db_session, jv.id, _user())
+    assert out.status == "reviewed"
+    assert out.posted_by is None and out.posted_at is None
