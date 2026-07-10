@@ -174,3 +174,24 @@ async def reverse(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVouc
     jv.reversed_by_jv_id = red.id
     await db.flush()
     return red
+
+
+async def _batch(db, ids, user, fn) -> list[dict]:
+    """Apply a single-voucher transition to each id, collecting per-id outcome.
+    Each failure is caught and reported; successes stay in the shared txn."""
+    out: list[dict] = []
+    for jid in ids:
+        try:
+            await fn(db, jid, user)
+            out.append({"id": str(jid), "ok": True, "error": None})
+        except (JvStateError, JvPermissionError) as e:
+            out.append({"id": str(jid), "ok": False, "error": str(e)})
+    return out
+
+
+async def review_batch(db: AsyncSession, ids: list[uuid.UUID], user: dict) -> list[dict]:
+    return await _batch(db, ids, user, review)
+
+
+async def post_batch(db: AsyncSession, ids: list[uuid.UUID], user: dict) -> list[dict]:
+    return await _batch(db, ids, user, post)

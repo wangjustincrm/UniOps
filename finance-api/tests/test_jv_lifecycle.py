@@ -154,3 +154,30 @@ async def test_reverse_rejects_non_posted(db_session):
     jv = await _draft_jv(db_session, uuid.uuid4())
     with pytest.raises(jv_crud.JvStateError):
         await jv_crud.reverse(db_session, jv.id, _user())  # draft, not posted
+
+
+async def test_review_batch_reports_per_id(db_session):
+    good = await _draft_jv(db_session, uuid.uuid4())
+    already = await _draft_jv(db_session, uuid.uuid4())
+    await jv_crud.review(db_session, already.id, _user())  # already reviewed → error in batch
+    missing = uuid.uuid4()
+
+    res = await jv_crud.review_batch(db_session, [good.id, already.id, missing], _user())
+    by_id = {r["id"]: r for r in res}
+    assert by_id[str(good.id)]["ok"] is True
+    assert by_id[str(already.id)]["ok"] is False
+    assert by_id[str(missing)]["ok"] is False
+    assert (await jv_crud.get(db_session, good.id)).status == "reviewed"
+
+
+async def test_post_batch_posts_reviewed_only(db_session):
+    a = await _draft_jv(db_session, uuid.uuid4())
+    b = await _draft_jv(db_session, uuid.uuid4())
+    await _open_period(db_session, a.fiscal_period)
+    await jv_crud.review(db_session, a.id, _user())
+    # b left as draft → should fail in batch
+    res = await jv_crud.post_batch(db_session, [a.id, b.id], _user())
+    by_id = {r["id"]: r for r in res}
+    assert by_id[str(a.id)]["ok"] is True
+    assert by_id[str(b.id)]["ok"] is False
+    assert (await jv_crud.get(db_session, a.id)).status == "posted"
