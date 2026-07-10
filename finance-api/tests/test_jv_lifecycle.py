@@ -8,7 +8,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from app.crud import journal_voucher as jv_crud
-from app.models.journal_voucher import JournalVoucher
+from app.models.journal_voucher import JournalVoucher, JournalVoucherLine
 from app.models.mirrors import SodRule
 from app.services.posting import emit_event
 
@@ -119,3 +119,38 @@ async def test_unpost_moves_posted_to_reviewed(db_session):
     out = await jv_crud.unpost(db_session, jv.id, _user())
     assert out.status == "reviewed"
     assert out.posted_by is None and out.posted_at is None
+
+
+async def test_reverse_creates_red_voucher_and_marks_original(db_session):
+    jv = await _draft_jv(db_session, uuid.uuid4())
+    await _open_period(db_session, jv.fiscal_period)
+    await jv_crud.review(db_session, jv.id, _user())
+    await jv_crud.post(db_session, jv.id, _user())
+
+    actor = _user()
+    red = await jv_crud.reverse(db_session, jv.id, actor)
+
+    # red voucher: posted, links to original, negated amounts
+    assert red.id != jv.id
+    assert red.status == "posted"
+    assert red.reverses_jv_id == jv.id
+    assert red.total_debit == Decimal("-100.00")
+    assert red.total_credit == Decimal("-100.00")
+    red_lines = (await db_session.execute(
+        select(JournalVoucherLine).where(JournalVoucherLine.jv_id == red.id)
+        .order_by(JournalVoucherLine.line_no))).scalars().all()
+    assert len(red_lines) == 2
+    assert red_lines[0].orig_debit == Decimal("-100.00")
+    assert red_lines[0].local_debit == Decimal("-100.00")
+    assert red_lines[0].account_code == "5000"
+
+    # original marked reversed + back-link
+    original = await jv_crud.get(db_session, jv.id)
+    assert original.status == "reversed"
+    assert original.reversed_by_jv_id == red.id
+
+
+async def test_reverse_rejects_non_posted(db_session):
+    jv = await _draft_jv(db_session, uuid.uuid4())
+    with pytest.raises(jv_crud.JvStateError):
+        await jv_crud.reverse(db_session, jv.id, _user())  # draft, not posted

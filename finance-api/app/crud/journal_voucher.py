@@ -107,3 +107,70 @@ async def unpost(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVouch
     jv.posted_at = None
     await db.flush()
     return jv
+
+
+def _neg(v: Decimal | None) -> Decimal | None:
+    return None if v is None else -v
+
+
+async def reverse(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
+    """红冲: create a posted red (negated) voucher that offsets the original, and
+    mark the original `reversed`. Both stay for audit. Period must be open."""
+    jv = await _require(db, jv_id, POSTED)
+    _require_role(user)
+    await _require_period_open(db, jv.fiscal_period)
+
+    now = datetime.now(timezone.utc)
+    red = JournalVoucher(
+        jv_number=await next_jv_number(db, jv.fiscal_period, jv.voucher_word),
+        voucher_word=jv.voucher_word,
+        voucher_date=jv.voucher_date,
+        fiscal_period=jv.fiscal_period,
+        summary=f"红冲: {jv.summary or jv.jv_number}",
+        status=POSTED,
+        source_service=jv.source_service, source_doc_type=jv.source_doc_type,
+        source_doc_id=jv.source_doc_id, source_doc_number=jv.source_doc_number,
+        prepared_by=uuid.UUID(user["sub"]), prepared_at=now,
+        reviewed_by=uuid.UUID(user["sub"]), reviewed_at=now,
+        posted_by=uuid.UUID(user["sub"]), posted_at=now,
+        reverses_jv_id=jv.id,
+        total_debit=_neg(jv.total_debit), total_credit=_neg(jv.total_credit),
+        total_local_debit=_neg(jv.total_local_debit),
+        total_local_credit=_neg(jv.total_local_credit),
+        entity_id=jv.entity_id,
+    )
+    db.add(red)
+    await db.flush()
+
+    src_lines = (await db.execute(
+        select(JournalVoucherLine).where(JournalVoucherLine.jv_id == jv.id)
+        .order_by(JournalVoucherLine.line_no))).scalars().all()
+    line_map: list[tuple[JournalVoucherLine, uuid.UUID]] = []
+    for sl in src_lines:
+        rl = JournalVoucherLine(
+            jv_id=red.id, line_no=sl.line_no, account_code=sl.account_code,
+            summary=sl.summary,
+            orig_debit=_neg(sl.orig_debit), orig_credit=_neg(sl.orig_credit),
+            local_debit=_neg(sl.local_debit), local_credit=_neg(sl.local_credit),
+            currency=sl.currency, fx_rate=sl.fx_rate,
+            quantity=_neg(sl.quantity), unit=sl.unit, price=sl.price,
+            cost_center_id=sl.cost_center_id, department_id=sl.department_id,
+            partner_id=sl.partner_id, partner_name=sl.partner_name,
+            tax_code=sl.tax_code, project_id=sl.project_id, item_id=sl.item_id,
+        )
+        db.add(rl)
+        line_map.append((rl, sl.id))
+    await db.flush()
+
+    for rl, src_id in line_map:
+        dims = (await db.execute(
+            select(JvLineDimension).where(JvLineDimension.jv_line_id == src_id)
+        )).scalars().all()
+        for d in dims:
+            db.add(JvLineDimension(jv_line_id=rl.id, dim_code=d.dim_code,
+                                   value_id=d.value_id, value_text=d.value_text))
+
+    jv.status = REVERSED
+    jv.reversed_by_jv_id = red.id
+    await db.flush()
+    return red
