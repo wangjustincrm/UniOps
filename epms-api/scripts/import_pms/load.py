@@ -477,6 +477,23 @@ async def run_load(
 
             # ── PO ──────────────────────────────────────────────────────────────
             if run_all or "po" in only:
+                # 跨批次 PR 种子:PR 在早前批次已导入(或本次增量没拉到它的行)时,
+                # pono_to_pr 不会在 PR 段被填充 —— 新 PO 会丢 pr_id/title/type/created_by。
+                # 从库里按 PR.po_number 反查补齐(同 2026-07-06 发票→vendor 的跨批修复)。
+                batch_ponos = {clip(r.get("Title"), 40) for r in po_rows} - {None, ""}
+                missing_ponos = [n for n in batch_ponos if n not in pono_to_pr]
+                if missing_ponos:
+                    rows_db = (await db.execute(
+                        select(PurchaseRequest.id, PurchaseRequest.number,
+                               PurchaseRequest.type, PurchaseRequest.created_by,
+                               PurchaseRequest.po_number)
+                        .where(PurchaseRequest.po_number.in_(missing_ponos))
+                    )).all()
+                    for pid_db, prnum_db, ptype_db, pcb_db, pono_db in rows_db:
+                        pono_to_pr.setdefault(pono_db, {
+                            "pr_id": pid_db, "pr_number": prnum_db,
+                            "type": ptype_db, "created_by": pcb_db,
+                        })
                 seen = set()
                 for r in po_rows:
                     number = clip(r.get("Title"), 40)
