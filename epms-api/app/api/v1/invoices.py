@@ -349,6 +349,23 @@ async def list_match_candidates(
                PurchaseOrder.status.in_(_MATCHABLE_PO_STATUSES))
         .order_by(PurchaseOrder.number)
     )).scalars().all())
+
+    # 每条 PO line 被【其他发票】累计分摊的税前额 —— 前端据此显示真实 Remaining。
+    # 排除当前发票自身(重匹配时它的旧分摊会整体重建,不应占额度)。
+    if pos:
+        from sqlalchemy import func as sa_func
+        from app.models.invoice_allocation import InvoicePoAllocation
+        sums = dict((await db.execute(
+            select(InvoicePoAllocation.po_line_id,
+                   sa_func.sum(InvoicePoAllocation.allocated_amount))
+            .where(InvoicePoAllocation.po_id.in_([p.id for p in pos]),
+                   InvoicePoAllocation.po_line_id.isnot(None),
+                   InvoicePoAllocation.invoice_id != invoice_id)
+            .group_by(InvoicePoAllocation.po_line_id)
+        )).all())
+        for po in pos:
+            for li in po.line_items:
+                li.already_allocated = sums.get(li.id)
     return PoListResponse(
         items=[PoResponse.model_validate(po) for po in pos],
         total=len(pos),

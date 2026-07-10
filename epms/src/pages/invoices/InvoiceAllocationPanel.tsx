@@ -46,7 +46,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
     ]
     const key = (n: number) => n.toFixed(2)
     const invAmounts = new Set(lines.map((l) => key(Number(l.line_total))))
-    const poAmounts = new Set(pos.flatMap((po) => po.line_items.map((pl) => key(Number(pl.line_total)))))
+    const poAmounts = new Set(pos.flatMap((po) => po.line_items.map((pl) => key(Number(pl.line_total) - Number(pl.already_allocated ?? 0)))))
     const shared = [...invAmounts].filter((a) => poAmounts.has(a) && Number(a) > 0)
     return new Map(shared.map((a, i) => [a, HINT_COLORS[i % HINT_COLORS.length]]))
   }, [lines, pos])
@@ -130,18 +130,21 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                   const allocatedHere = Object.entries(assign)
                     .filter(([, t]) => t.poLineId === pl.id)
                     .reduce((s, [lid]) => s + allocatedByLine(lid), 0)
+                  const priorAllocated = Number(pl.already_allocated ?? 0)
+                  const remaining = Number(pl.line_total) - priorAllocated - allocatedHere
                   return (
                     <div key={pl.id}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={() => drop(po.id, pl.id)}
-                      className={`mb-1 rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm hover:border-primary-400 ${hintColor(Number(pl.line_total)) ? `border-l-4 ${hintColor(Number(pl.line_total))}` : ''}`}>
+                      className={`mb-1 rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm hover:border-primary-400 ${hintColor(Number(pl.line_total) - priorAllocated) ? `border-l-4 ${hintColor(Number(pl.line_total) - priorAllocated)}` : ''}`}>
                       <div className="flex justify-between">
                         <span className="truncate">{pl.description}</span>
                         <span className="font-mono text-xs">{formatAmount(Number(pl.line_total), po.currency)}</span>
                       </div>
                       <p className="text-[11px] text-neutral-400">
-                        Allocated {formatAmount(allocatedHere, po.currency)} -
-                        Remaining {formatAmount(Number(pl.line_total) - allocatedHere, po.currency)}
+                        Allocated {formatAmount(priorAllocated + allocatedHere, po.currency)}
+                        {priorAllocated > 0 && ` (${formatAmount(priorAllocated, po.currency)} by other invoices)`}
+                        {' - '}Remaining {formatAmount(remaining, po.currency)}
                       </p>
                     </div>
                   )

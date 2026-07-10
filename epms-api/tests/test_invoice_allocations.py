@@ -331,3 +331,35 @@ async def test_edit_gr_ids_persist_through_rematch(admin_client):
     data = r.json()
     assert data["status"] == "matched"
     assert data["gr_ids"] == [gr_id]   # selection persisted (not dropped)
+
+
+@pytest.mark.asyncio
+async def test_partial_invoicing_cumulative(admin_client):
+    """部分开票:少开放行;累计恰好对上照常 matched;累计超开才 exception。"""
+    v = await _make_vendor(admin_client, "VND-ALLOC-PART-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "5 units", "qty": "5", "unit": "EA", "unit_price": "40.00"}])
+    line = po["line_items"][0]["id"]
+
+    def payload(no, amt):
+        return _inv_payload(v["id"], vendor_invoice_number=no, amount=amt, tax_amount="0.00",
+            line_items=[{"description": "part", "quantity": "1",
+                         "unit_price": amt, "line_total": amt}])
+
+    async def match(inv, amt):
+        return await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+            {"invoice_line_id": inv["line_items"][0]["id"], "po_id": po["id"],
+             "po_line_id": line, "allocated_amount": amt, "allocated_tax": "0.00"}]})
+
+    a = (await admin_client.post(INV_URL, json=payload("PART-A", "120.00"))).json()
+    r = await match(a, "120.00")
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"        # 3/5 少开 → 放行
+
+    b = (await admin_client.post(INV_URL, json=payload("PART-B", "80.00"))).json()
+    r = await match(b, "80.00")
+    assert r.json()["status"] == "matched"        # 累计 200 = line 总额
+
+    c = (await admin_client.post(INV_URL, json=payload("PART-C", "50.00"))).json()
+    r = await match(c, "50.00")
+    assert r.json()["status"] == "exception"      # 累计 250 超开 → 拦

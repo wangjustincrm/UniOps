@@ -26,6 +26,8 @@ export interface ApiPoLineItem {
   line_total: number
   received_qty: number
   notes?: string
+  // 该 line 被其他发票累计分摊的税前额(仅 match-candidates 端点返回)
+  already_allocated?: string | null
 }
 
 export interface ApiPo {

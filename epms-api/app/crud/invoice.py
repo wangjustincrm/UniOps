@@ -349,7 +349,9 @@ async def match(
         )
         row.variance = variance
         row.variance_pct = variance_pct
-        if not within_tolerance(variance, variance_pct, tolerance):
+        # 部分开票规则(2026-07-10):少开(variance<0)放行 —— PO line 可由多张
+        # 发票分次开票;只有累计【超开】超容差才算 exception。
+        if variance > Decimal("0") and not within_tolerance(variance, variance_pct, tolerance):
             any_exception = True
 
     # 5. roll up to invoice header (summary + backward-compat single values)
@@ -424,7 +426,12 @@ async def match(
         )
     else:
         invoice.status = "matched"
-        if invoice.variance != Decimal("0"):
+        if invoice.variance is not None and invoice.variance < Decimal("0"):
+            invoice.exception_reason = (
+                f"Partially invoiced against PO reference (variance: {invoice.variance:+.2f}) — "
+                "remaining amount may be billed by later invoices"
+            )
+        elif invoice.variance != Decimal("0"):
             invoice.exception_reason = (
                 f"Auto-matched within tolerance {tolerance}% (variance: {invoice.variance:+.2f})"
             )
@@ -450,7 +457,8 @@ async def review_match(
         )).scalars().all()
         tolerance = await _match_tolerance_pct(db)
         any_exception = any(
-            not within_tolerance(r.variance or Decimal("0"), r.variance_pct or Decimal("0"), tolerance)
+            (r.variance or Decimal("0")) > Decimal("0")
+            and not within_tolerance(r.variance or Decimal("0"), r.variance_pct or Decimal("0"), tolerance)
             for r in rows
         )
         if any_exception:

@@ -335,3 +335,38 @@ async def test_decline_match_bounces_back_to_assigner(admin_client):
     async with await _client_for_user(stranger) as c:
         assert (await c.post(f"{INV_URL}/{inv['id']}/decline-match",
                              json={"note": "x"})).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_match_candidates_carry_already_allocated(admin_client):
+    """候选 PO line 带其他发票的历史已分摊额(真实 Remaining 的数据源)。"""
+    v = await _make_vendor(admin_client, "VND-CAND-ALLOC-01")
+    po = await _make_po(admin_client, v["id"],
+                        [{"description": "5 units", "qty": "5", "unit": "EA", "unit_price": "40.00"}])
+    await _set_po_status(po["id"], "issued")
+    line_id = po["line_items"][0]["id"]
+
+    # 发票 A 部分开票 120(matched,新规则下少开放行)
+    inv_a = await _make_invoice(admin_client, v["id"], number="CAND-ALLOC-A", amount="120.00",
+                                lines=[{"description": "part", "quantity": "1",
+                                        "unit_price": "120.00", "line_total": "120.00"}])
+    r = await admin_client.post(f"{INV_URL}/{inv_a['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv_a["line_items"][0]["id"], "po_id": po["id"],
+         "po_line_id": line_id, "allocated_amount": "120.00", "allocated_tax": "0.00"}]})
+    assert r.json()["status"] == "matched"
+
+    # 发票 B 的候选:该 line 应显示已被(其他发票)分摊 120
+    inv_b = await _make_invoice(admin_client, v["id"], number="CAND-ALLOC-B", amount="80.00",
+                                lines=[{"description": "rest", "quantity": "1",
+                                        "unit_price": "80.00", "line_total": "80.00"}])
+    r = await admin_client.get(f"{INV_URL}/{inv_b['id']}/match-candidates")
+    assert r.status_code == 200, r.text
+    item = next(p for p in r.json()["items"] if p["id"] == po["id"])
+    line = next(l for l in item["line_items"] if l["id"] == line_id)
+    assert line["already_allocated"] == "120.00"
+
+    # 排除自身:发票 A 自己再看候选(例如改配后重匹),不应把自己的 120 算进去
+    r = await admin_client.get(f"{INV_URL}/{inv_a['id']}/match-candidates")
+    item = next(p for p in r.json()["items"] if p["id"] == po["id"])
+    line = next(l for l in item["line_items"] if l["id"] == line_id)
+    assert line["already_allocated"] in (None, "0", "0.00")

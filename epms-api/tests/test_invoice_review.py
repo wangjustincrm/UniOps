@@ -21,21 +21,21 @@ async def _open_review_task(invoice_id):
         ))).scalar_one_or_none()
 
 
-async def _assigned_variance_match(admin_client, *, code, number):
+async def _assigned_variance_match(admin_client, *, code, number, amount="900.00"):
     """搭台:PO 1000,发票 900(有偏差),指派并由被指派人 match。返回 (inv, assignee)。"""
     v = await _make_vendor(admin_client, code)
     po = await _make_po(admin_client, v["id"],
                         [{"description": "A", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
-    inv = await _make_invoice(admin_client, v["id"], number=number, amount="900.00",
+    inv = await _make_invoice(admin_client, v["id"], number=number, amount=amount,
                               lines=[{"description": "L", "quantity": "1",
-                                      "unit_price": "900.00", "line_total": "900.00"}])
+                                      "unit_price": amount, "line_total": amount}])
     assignee = await _make_user()
     await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match", json={"user_id": str(assignee)})
     async with await _client_for_user(assignee) as c:
         r = await c.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
             {"invoice_line_id": inv["line_items"][0]["id"], "po_id": po["id"],
              "po_line_id": po["line_items"][0]["id"],
-             "allocated_amount": "900.00", "allocated_tax": "0.00"}]})
+             "allocated_amount": amount, "allocated_tax": "0.00"}]})
         assert r.status_code == 200, r.text
         inv = r.json()
     return inv, assignee
@@ -56,9 +56,20 @@ async def test_review_approve_lands_by_tolerance(admin_client):
     inv, _ = await _assigned_variance_match(admin_client, code="VND-REV-02", number="REV-002")
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={"action": "approve"})
     assert r.status_code == 200, r.text
-    # 偏差 -100/1000 = -10%,默认容差 0 → exception(既有 tolerance 语义)
-    assert r.json()["status"] == "exception"
+    # 少开(-10%)不再是 exception:部分开票放行(2026-07-10 规则),approve → matched
+    assert r.json()["status"] == "matched"
     assert await _open_review_task(inv["id"]) is None
+
+
+@pytest.mark.asyncio
+async def test_review_approve_overbilled_lands_exception(admin_client):
+    """超开(+20%)approve 后仍按容差拦截 → exception。"""
+    inv, _ = await _assigned_variance_match(admin_client, code="VND-REV-08",
+                                            number="REV-008", amount="1200.00")
+    assert inv["status"] == "match_review"
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={"action": "approve"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "exception"
 
 
 @pytest.mark.asyncio
@@ -125,7 +136,7 @@ async def test_review_approve_within_tolerance_matched(admin_client):
 
 @pytest.mark.asyncio
 async def test_ap_direct_match_unaffected(admin_client):
-    """AP 自己 match 有偏差 → 照旧 exception,不进 review(现状回归)。"""
+    """AP 自己少开 match → 部分开票放行落 matched,且不进 review。"""
     v = await _make_vendor(admin_client, "VND-REV-06")
     po = await _make_po(admin_client, v["id"],
                         [{"description": "A", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
@@ -136,4 +147,4 @@ async def test_ap_direct_match_unaffected(admin_client):
         {"invoice_line_id": inv["line_items"][0]["id"], "po_id": po["id"],
          "po_line_id": po["line_items"][0]["id"],
          "allocated_amount": "900.00", "allocated_tax": "0.00"}]})
-    assert r.json()["status"] == "exception"
+    assert r.json()["status"] == "matched"   # 少开放行(部分开票);超开场景见 allocations 测试
