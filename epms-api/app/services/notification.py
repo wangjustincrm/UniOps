@@ -157,7 +157,8 @@ async def _dispatch(
     # ── Common template variables ───────────────────────────────────────────
     system_url = "http://localhost:5173"  # overridden by notification_settings.system_url if set
     system_url = notif_settings.get("system_url", system_url)
-    link = f"{system_url}/{task.document_type}/{task.document_id}"
+    doc_path = "invoices" if task.document_type == "invoice" else task.document_type
+    link = f"{system_url}/{doc_path}/{task.document_id}"
 
     base_vars: dict[str, Any] = {
         "company_name": cfg.name,
@@ -278,6 +279,8 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "create_pa": "create_pa_reminder",
         "approve_pa": "pa_approval_request",
         "settle_prepayment": "prepayment_settlement_overdue",
+        "match_invoice": "match_invoice_assigned",
+        "review_match": "match_review_request",
     }.get(task_type, "pr_approval_request")
 
 

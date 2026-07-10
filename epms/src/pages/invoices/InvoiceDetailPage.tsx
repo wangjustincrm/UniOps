@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
-  AlertTriangle, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload,
+  AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,20 +11,25 @@ import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { EXPENSE_BASE } from '@/lib/api'
 import { computeSla } from '@/stores/invoice.store'
 import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
-import { useInvoice, useDeleteInvoice, useUpdateInvoice } from '@/hooks/useInvoices'
+import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
+import { AssignMatchDialog } from './AssignMatchDialog'
+import { MatchPanel } from './MatchPanel'
+
+const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
-  unmatched: { label: 'Unmatched',  variant: 'warning', dot: 'bg-warning-500' },
-  matched:   { label: 'Matched',    variant: 'success', dot: 'bg-success-600' },
-  exception: { label: 'Exception',  variant: 'danger',  dot: 'bg-danger-600'  },
-  approved:  { label: 'Approved',   variant: 'success', dot: 'bg-success-600' },
-  paid:      { label: 'Paid',       variant: 'neutral', dot: 'bg-neutral-400' },
+  unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-500'  },
+  matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-600'  },
+  exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-600'   },
+  match_review: { label: 'Pending Review',  variant: 'info',    dot: 'bg-primary-500'  },
+  approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-600'  },
+  paid:         { label: 'Paid',            variant: 'neutral', dot: 'bg-neutral-400'  },
 }
 
 function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
@@ -98,6 +103,10 @@ export default function InvoiceDetailPage() {
   const [activeTab, setActiveTab] = useState<'details' | 'match' | 'history'>('details')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [showAssignDialog, setShowAssignDialog] = useState(false)
+  const [showMatchPanel, setShowMatchPanel] = useState(false)
+  const [reviewNote, setReviewNote] = useState('')
+  const reviewMutation = useReviewMatch()
 
   // Edit form state
   const [editVendorInvoiceNumber, setEditVendorInvoiceNumber] = useState('')
@@ -186,6 +195,8 @@ export default function InvoiceDetailPage() {
   const hasInvoiceUpload =
     user?.role === 'system_admin' || !!(user?.role && rolePermissions?.[user.role]?.invoice_upload)
 
+  const isAp = !!user?.role && MATCH_ROLES.has(user.role)
+
   const canDelete =
     hasInvoiceUpload && !!inv && (inv.status === 'unmatched' || inv.status === 'exception')
 
@@ -253,6 +264,19 @@ export default function InvoiceDetailPage() {
 
         {/* Header actions */}
         <div className="flex items-center gap-2">
+          {!!inv && (inv.status === 'unmatched' || inv.status === 'exception') && !editing &&
+            (isAp || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)) && (
+            <Button size="sm" className="gap-1.5" onClick={() => setShowMatchPanel((v) => !v)}>
+              <GitMerge className="h-3.5 w-3.5" />
+              Match to PO
+            </Button>
+          )}
+          {isAp && !!inv && (inv.status === 'unmatched' || inv.status === 'exception') && !editing && (
+            <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setShowAssignDialog(true)}>
+              <UserPlus className="h-3.5 w-3.5" />
+              {inv.match_assignee_name ? `Reassign (${inv.match_assignee_name})` : 'Assign'}
+            </Button>
+          )}
           {canEdit && !editing && (
             <Button variant="secondary" size="sm" className="gap-1.5" onClick={startEdit}>
               <Pencil className="h-3.5 w-3.5" />
@@ -303,6 +327,11 @@ export default function InvoiceDetailPage() {
         </div>
       </div>
 
+      {/* Inline match panel — Task Inbox / email links land on this page */}
+      {showMatchPanel && !!inv && (inv.status === 'unmatched' || inv.status === 'exception') && (
+        <MatchPanel inv={inv} onClose={() => setShowMatchPanel(false)} />
+      )}
+
       {/* Exception banner */}
       {hasException && (
         <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 flex gap-3">
@@ -339,6 +368,42 @@ export default function InvoiceDetailPage() {
           {/* ── Details tab ───────────────────────────────────────────────────── */}
           {activeTab === 'details' && !editing && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {/* Match review panel — shown to AP roles when invoice is pending review */}
+              {inv.status === 'match_review' && isAp && (
+                <div className="sm:col-span-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
+                  <p className="text-sm font-semibold text-primary-800">Match pending review</p>
+                  <p className="text-xs text-neutral-600">
+                    This invoice was matched with a variance of {formatAmount(Math.abs(Number(inv.variance ?? 0)), inv.currency)}
+                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Approve to finalize the match,
+                    or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
+                  </p>
+                  <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
+                    placeholder="Review note (required to reject)..."
+                    className="px-3 py-2 rounded-lg border border-neutral-300 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-600" />
+                  {reviewMutation.isError && (
+                    <p className="text-xs text-danger-600">
+                      {reviewMutation.error instanceof Error ? reviewMutation.error.message : 'Review action failed'}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Button size="sm" disabled={reviewMutation.isPending}
+                      onClick={() => reviewMutation.mutate(
+                        { id: inv.id, action: 'approve', note: reviewNote || undefined },
+                        { onSuccess: () => setReviewNote('') },
+                      )}>
+                      Approve Match
+                    </Button>
+                    <Button size="sm" variant="secondary" disabled={reviewMutation.isPending || !reviewNote.trim()}
+                      onClick={() => reviewMutation.mutate(
+                        { id: inv.id, action: 'reject', note: reviewNote },
+                        { onSuccess: () => setReviewNote('') },
+                      )}>
+                      Reject — send back
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* Invoice fields */}
               <div className="rounded-xl border border-neutral-200 bg-white p-5">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Invoice Information</h3>
@@ -981,6 +1046,15 @@ export default function InvoiceDetailPage() {
 
         </div>
       </div>
+
+      {showAssignDialog && (
+        <AssignMatchDialog
+          invoiceId={inv.id}
+          currentAssigneeName={inv.match_assignee_name}
+          onClose={() => setShowAssignDialog(false)}
+          onAssigned={() => setShowAssignDialog(false)}
+        />
+      )}
     </div>
   )
 }

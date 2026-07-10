@@ -7,6 +7,52 @@ import {
   type MatchInvoiceBody,
 } from '@/services/invoices'
 
+export function useAssignMatch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, userId }: { id: string; userId: string }) =>
+      invoiceService.assignMatch(id, userId),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices', id] })
+    },
+  })
+}
+
+export function useMatchCandidates(invoiceId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['invoices', invoiceId, 'match-candidates'],
+    queryFn: () => invoiceService.matchCandidates(invoiceId),
+    enabled: Boolean(invoiceId) && enabled,
+    staleTime: 30_000,
+  })
+}
+
+export function useDeclineMatch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, note }: { id: string; note: string }) =>
+      invoiceService.declineMatch(id, note),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices', id] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+    },
+  })
+}
+
+export function useReviewMatch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, action, note }: { id: string; action: 'approve' | 'reject'; note?: string }) =>
+      invoiceService.reviewMatch(id, action, note),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['invoices', id] })
+    },
+  })
+}
+
 // Without explicit page/page_size the caller wants the complete list, so we
 // page through the API (server defaults to 20 rows and silently truncates).
 export function useInvoices(filters?: InvoiceFilters, enabled = true) {

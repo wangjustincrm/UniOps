@@ -35,6 +35,22 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
     () => Object.keys(assign).reduce((s, lid) => s + allocatedByLine(lid), 0),
     [assign, lines],
   )
+
+  // Same-amount hint: amounts that appear on BOTH sides get the same accent
+  // color — a visual shortcut only, it never assigns anything.
+  const amountColorMap = useMemo(() => {
+    const HINT_COLORS = [
+      'border-l-emerald-400', 'border-l-sky-400', 'border-l-amber-400',
+      'border-l-fuchsia-400', 'border-l-indigo-400', 'border-l-rose-400',
+      'border-l-teal-400', 'border-l-orange-400',
+    ]
+    const key = (n: number) => n.toFixed(2)
+    const invAmounts = new Set(lines.map((l) => key(Number(l.line_total))))
+    const poAmounts = new Set(pos.flatMap((po) => po.line_items.map((pl) => key(Number(pl.line_total)))))
+    const shared = [...invAmounts].filter((a) => poAmounts.has(a) && Number(a) > 0)
+    return new Map(shared.map((a, i) => [a, HINT_COLORS[i % HINT_COLORS.length]]))
+  }, [lines, pos])
+  const hintColor = (amount: number) => amountColorMap.get(amount.toFixed(2))
   const unallocated = total - assignedTotal
   const balanced = Math.abs(unallocated) < 0.01
 
@@ -76,14 +92,14 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         {/* Invoice lines (drag source) */}
         <div className="rounded-xl border border-neutral-200 bg-white p-4">
           <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">Invoice lines</h4>
-          <div className="flex flex-col gap-2">
+          <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {lines.map((l) => {
               const a = l.id ? assign[l.id] : undefined
               return (
                 <div key={l.id}
                   draggable
                   onDragStart={() => setDragLineId(l.id ?? null)}
-                  className={`cursor-grab rounded-lg border px-3 py-2 text-sm ${a ? 'border-primary-200 bg-primary-50' : 'border-neutral-200'}`}>
+                  className={`cursor-grab rounded-lg border px-3 py-2 text-sm ${a ? 'border-primary-200 bg-primary-50' : 'border-neutral-200'} ${hintColor(Number(l.line_total)) ? `border-l-4 ${hintColor(Number(l.line_total))}` : ''}`}>
                   <div className="flex justify-between">
                     <span className="truncate">{l.description}</span>
                     <span className="font-mono text-xs">{formatAmount(Number(l.line_total), currency)}</span>
@@ -102,8 +118,11 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
 
         {/* PO lines (drop target) */}
         <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">PO lines (drop here)</h4>
-          <div className="flex flex-col gap-3">
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">
+            PO lines (drop here)
+            <span className="ml-2 normal-case font-normal text-neutral-300">same accent color = same amount on both sides (hint only)</span>
+          </h4>
+          <div className="flex max-h-[55vh] flex-col gap-3 overflow-y-auto pr-1">
             {pos.map((po) => (
               <div key={po.id}>
                 <p className="mb-1 font-mono text-xs text-neutral-500">{po.number}</p>
@@ -115,7 +134,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                     <div key={pl.id}
                       onDragOver={(e) => e.preventDefault()}
                       onDrop={() => drop(po.id, pl.id)}
-                      className="mb-1 rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm hover:border-primary-400">
+                      className={`mb-1 rounded-lg border border-dashed border-neutral-300 px-3 py-2 text-sm hover:border-primary-400 ${hintColor(Number(pl.line_total)) ? `border-l-4 ${hintColor(Number(pl.line_total))}` : ''}`}>
                       <div className="flex justify-between">
                         <span className="truncate">{pl.description}</span>
                         <span className="font-mono text-xs">{formatAmount(Number(pl.line_total), po.currency)}</span>

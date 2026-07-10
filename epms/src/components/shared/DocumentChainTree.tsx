@@ -39,11 +39,12 @@ const GR_STATUS_LABELS: Record<GrStatus, string> = {
 }
 
 const INV_STATUS_LABELS: Record<InvoiceStatus, string> = {
-  unmatched: 'Unmatched',
-  matched:   'Matched',
-  exception: 'Exception',
-  approved:  'Approved',
-  paid:      'Paid',
+  unmatched:    'Unmatched',
+  matched:      'Matched',
+  exception:    'Exception',
+  match_review: 'Pending Review',
+  approved:     'Approved',
+  paid:         'Paid',
 }
 
 const PA_STATUS_LABELS: Record<PaStatus, string> = {
@@ -77,7 +78,7 @@ function grStatusToDoc(s: GrStatus): DocumentStatus {
 }
 
 function invStatusToDoc(s: InvoiceStatus): DocumentStatus {
-  return ({ unmatched: 'submitted', matched: 'matched', exception: 'returned', approved: 'approved', paid: 'paid' } as Record<InvoiceStatus, DocumentStatus>)[s]
+  return ({ unmatched: 'submitted', matched: 'matched', exception: 'returned', match_review: 'in_review', approved: 'approved', paid: 'paid' } as Record<InvoiceStatus, DocumentStatus>)[s]
 }
 
 function paStatusToDoc(s: PaStatus): DocumentStatus {

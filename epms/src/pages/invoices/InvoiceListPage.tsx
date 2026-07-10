@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
-  X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2,
+  X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
 } from 'lucide-react'
 import { parseInvoiceFile } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
@@ -23,6 +23,7 @@ import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/in
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
 import { FilePreviewPanel } from './FilePreviewPanel'
+import { AssignMatchDialog } from './AssignMatchDialog'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
@@ -35,11 +36,12 @@ const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'full
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 const STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutral' | 'warning' | 'info' | 'success' | 'danger'; dot: string }> = {
-  unmatched: { label: 'Unmatched',  variant: 'warning', dot: 'bg-warning-500' },
-  matched:   { label: 'Matched',    variant: 'success', dot: 'bg-success-600' },
-  exception: { label: 'Exception',  variant: 'danger',  dot: 'bg-danger-600'  },
-  approved:  { label: 'Approved',   variant: 'success', dot: 'bg-success-600' },
-  paid:      { label: 'Paid',       variant: 'neutral', dot: 'bg-neutral-400' },
+  unmatched:    { label: 'Unmatched',       variant: 'warning', dot: 'bg-warning-500'  },
+  matched:      { label: 'Matched',         variant: 'success', dot: 'bg-success-600'  },
+  exception:    { label: 'Exception',       variant: 'danger',  dot: 'bg-danger-600'   },
+  match_review: { label: 'Pending Review',  variant: 'info',    dot: 'bg-primary-500'  },
+  approved:     { label: 'Approved',        variant: 'success', dot: 'bg-success-600'  },
+  paid:         { label: 'Paid',            variant: 'neutral', dot: 'bg-neutral-400'  },
 }
 
 function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
@@ -129,6 +131,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   // Set after create when a recognized PO leads into the allocation step (plan B):
   // the invoice exists, and the user confirms line-level allocations to match it.
   const [createdInv, setCreatedInv] = useState<ApiInvoice | null>(null)
+  const [showAssignDialog, setShowAssignDialog] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -329,49 +332,64 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     // Closing/skipping keeps the invoice — it stays in the queue as unmatched.
     const finishUnmatched = () => onUploaded(createdInv.id)
 
-    return createPortal(
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
-        <div className="w-full max-w-3xl max-h-[92vh] rounded-2xl bg-white shadow-2xl flex flex-col">
-          <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-success-50">
-                <CheckCircle2 className="h-5 w-5 text-success-600" />
+    return (
+      <>
+        {createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-3xl max-h-[92vh] rounded-2xl bg-white shadow-2xl flex flex-col">
+              <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-success-50">
+                    <CheckCircle2 className="h-5 w-5 text-success-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold text-neutral-900">Allocate to Purchase Order</h2>
+                    <p className="text-xs text-neutral-400">
+                      Invoice {createdInv.vendor_invoice_number} uploaded — confirm line allocations to complete the match
+                    </p>
+                  </div>
+                </div>
+                <button onClick={finishUnmatched} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <div>
-                <h2 className="text-sm font-semibold text-neutral-900">Allocate to Purchase Order</h2>
-                <p className="text-xs text-neutral-400">
-                  Invoice {createdInv.vendor_invoice_number} uploaded — confirm line allocations to complete the match
-                </p>
-              </div>
-            </div>
-            <button onClick={finishUnmatched} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 flex flex-col gap-4">
-            <InvoiceAllocationPanel
-              invoice={createdInv}
-              pos={allocPos}
-              submitting={matchInvoiceMutation.isPending}
-              defaultAssignments={prefill}
-              onSubmit={handleAllocSubmit}
-            />
-            {matchInvoiceMutation.isError && (
-              <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
-                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                {matchInvoiceMutation.error instanceof Error ? matchInvoiceMutation.error.message : 'Match failed'}
+              <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 flex flex-col gap-4">
+                <InvoiceAllocationPanel
+                  invoice={createdInv}
+                  pos={allocPos}
+                  submitting={matchInvoiceMutation.isPending}
+                  defaultAssignments={prefill}
+                  onSubmit={handleAllocSubmit}
+                />
+                {matchInvoiceMutation.isError && (
+                  <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    {matchInvoiceMutation.error instanceof Error ? matchInvoiceMutation.error.message : 'Match failed'}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 justify-start flex-wrap">
+                  <Button variant="secondary" size="sm" onClick={finishUnmatched}>
+                    Skip for now — leave unmatched
+                  </Button>
+                  <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setShowAssignDialog(true)}>
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Assign to someone instead
+                  </Button>
+                </div>
               </div>
-            )}
-            <div className="flex justify-start">
-              <Button variant="secondary" size="sm" onClick={finishUnmatched}>
-                Skip for now — leave unmatched
-              </Button>
             </div>
-          </div>
-        </div>
-      </div>,
-      document.body
+          </div>,
+          document.body
+        )}
+        {showAssignDialog && (
+          <AssignMatchDialog
+            invoiceId={createdInv.id}
+            onClose={() => setShowAssignDialog(false)}
+            onAssigned={() => { setShowAssignDialog(false); onUploaded(createdInv.id) }}
+          />
+        )}
+      </>
     )
   }
 
@@ -788,78 +806,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   )
 }
 
-// ─── Inline match panel ───────────────────────────────────────────────────────
-
-function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => void }) {
-  const { data: posData } = usePos()
-  const pos = posData?.items ?? []
-  const matchInvoiceMutation = useMatchInvoice()
-  const navigate = useNavigate()
-
-  const [poSearch, setPoSearch] = useState('')
-
-  // Candidate POs the invoice can be allocated across: open POs for the same vendor.
-  // Search narrows the list by PO number or vendor name.
-  const matchablePOs: ApiPo[] = pos.filter((p) =>
-    ['issued', 'approved', 'partially_received', 'fully_received', 'closed'].includes(p.status) &&
-    p.vendor_id === inv.vendor_id &&
-    (poSearch === '' ||
-      p.number.toLowerCase().includes(poSearch.toLowerCase()) ||
-      p.vendor_name.toLowerCase().includes(poSearch.toLowerCase()))
-  )
-
-  const handleMatch = (allocations: AllocationInput[]) => {
-    matchInvoiceMutation.mutate(
-      { id: inv.id, allocations },
-      {
-        onSuccess: () => {
-          onClose()
-          navigate(`/invoices/${inv.id}`)
-        },
-      }
-    )
-  }
-
-  return (
-    <div className="mt-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-primary-700">Allocate to Purchase Orders</p>
-        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      {/* PO search — narrows the candidate POs shown as drop targets */}
-      <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400 pointer-events-none" />
-        <input
-          type="text"
-          placeholder="Filter candidate POs by number or vendor..."
-          value={poSearch}
-          onChange={(e) => setPoSearch(e.target.value)}
-          className="w-full h-8 pl-7 pr-3 rounded-lg border border-neutral-300 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
-        />
-      </div>
-
-      {matchablePOs.length === 0 ? (
-        <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
-          No open purchase orders found for this vendor.
-        </p>
-      ) : (
-        <InvoiceAllocationPanel
-          invoice={inv}
-          pos={matchablePOs}
-          submitting={matchInvoiceMutation.isPending}
-          onSubmit={handleMatch}
-        />
-      )}
-
-      <div className="flex justify-end">
-        <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
-      </div>
-    </div>
-  )
-}
 
 // ─── Exception resolve panel ──────────────────────────────────────────────────
 
@@ -956,11 +902,14 @@ function UnmatchedTab() {
   const { data } = useInvoices({ status: 'unmatched', page, page_size: pageSize })
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [assigningInv, setAssigningInv] = useState<ApiInvoice | null>(null)
   const deleteInvoice = useDeleteInvoice()
   const { user } = useAuthStore()
   const { data: rolePermissions } = useRolePermissions()
   const canDelete = user?.role === 'system_admin' || !!(user?.role && rolePermissions?.[user.role]?.invoice_upload)
-  const canMatch = !!user?.role && MATCH_ROLES.has(user.role)
+  const isAp = !!user?.role && MATCH_ROLES.has(user.role)
+  const canMatchInvoice = (inv: ApiInvoice) =>
+    isAp || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
 
   const unmatched = [...(data?.items ?? [])].sort(
     (a, b) => new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime()
@@ -1034,13 +983,29 @@ function UnmatchedTab() {
                         </>
                       ) : (
                         <>
-                          {canMatch && (
+                          {inv.match_assignee_name && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-[11px] font-medium text-primary-700">
+                              <UserPlus className="h-3 w-3" />
+                              {inv.match_assignee_name}
+                            </span>
+                          )}
+                          {canMatchInvoice(inv) && (
                             <button
                               onClick={() => { setDeletingId(null); setExpandedId(expandedId === inv.id ? null : inv.id) }}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors"
                             >
                               Match to PO
                               {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+                          {isAp && (
+                            <button
+                              onClick={() => { setExpandedId(null); setDeletingId(null); setAssigningInv(inv) }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+                              title="Assign to someone"
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                              {inv.match_assignee_name ? 'Reassign' : 'Assign'}
                             </button>
                           )}
                           {canDelete && (
@@ -1070,6 +1035,14 @@ function UnmatchedTab() {
         </table>
       </div>
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
+      {assigningInv && (
+        <AssignMatchDialog
+          invoiceId={assigningInv.id}
+          currentAssigneeName={assigningInv.match_assignee_name}
+          onClose={() => setAssigningInv(null)}
+          onAssigned={() => setAssigningInv(null)}
+        />
+      )}
     </div>
   )
 }
@@ -1202,11 +1175,11 @@ function AllInvoicesTab() {
             className="w-full h-9 pl-9 pr-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
         <div className="flex flex-wrap gap-1.5">
-          {(['all', 'unmatched', 'matched', 'exception', 'approved', 'paid'] as const).map((s) => (
+          {(['all', 'unmatched', 'matched', 'match_review', 'exception', 'approved', 'paid'] as const).map((s) => (
             <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
               className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors capitalize',
                 statusFilter === s ? 'bg-primary-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200')}>
-              {s === 'all' ? 'All' : s}
+              {s === 'all' ? 'All' : s === 'match_review' ? 'Pending Review' : s}
             </button>
           ))}
         </div>

@@ -1,5 +1,6 @@
 """Invoice endpoints."""
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,13 +15,17 @@ from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.invoice import (
+    AssignMatchRequest,
+    DeclineMatchRequest,
     InvoiceCreate,
     InvoiceExceptionRequest,
     InvoiceListResponse,
     InvoiceMatchRequest,
     InvoiceResponse,
     InvoiceUpdate,
+    MatchReviewRequest,
 )
+from app.schemas.po import PoListResponse, PoResponse
 from app.services.notification import dispatch_task_notification, fire_and_forget_notify
 from app.services import finance_client
 from app.services import finance_sync
@@ -31,6 +36,40 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 _AP_ROLES = ("system_admin", "ap_clerk", "finance_manager", "finance_bp")
 ApDep = Annotated[dict, Depends(require_roles(*_AP_ROLES))]
 InvoiceUploadDep = Annotated[dict, Depends(require_permission("invoice_upload"))]
+
+
+async def _attach_match_assignees(db, invoices: list) -> None:
+    """Inject match_assignee_id / match_assignee_name onto ORM invoice instances."""
+    ids = [inv.id for inv in invoices]
+    if not ids:
+        return
+    rows = (await db.execute(
+        select(Task.document_id, Task.assigned_user_id, User.full_name)
+        .join(User, User.id == Task.assigned_user_id, isouter=True)
+        .where(
+            Task.type == "match_invoice",
+            Task.document_type == "invoice",
+            Task.document_id.in_(ids),
+            Task.is_completed.is_(False),
+        )
+    )).all()
+    by_doc = {r[0]: (r[1], r[2]) for r in rows}
+    for inv in invoices:
+        assignee = by_doc.get(inv.id)
+        inv.match_assignee_id = assignee[0] if assignee else None
+        inv.match_assignee_name = assignee[1] if assignee else None
+
+
+async def _has_open_match_task(db, user_id: uuid.UUID, invoice_id: uuid.UUID) -> bool:
+    """Return True if the user has an open match_invoice task for this invoice."""
+    row = (await db.execute(select(Task.id).where(
+        Task.type == "match_invoice",
+        Task.document_type == "invoice",
+        Task.document_id == invoice_id,
+        Task.assigned_user_id == user_id,
+        Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+    return row is not None
 
 
 async def _notify_requester_create_pa(db, invoice) -> None:
@@ -113,12 +152,16 @@ async def list_invoices(
     if not scope["perms"].get("view_invoice", False):
         return InvoiceListResponse(items=[], total=0)
     own_uploads = scope["user_id"] if scope["role"] == "requester" else None
+    # Only inject task_user_id when scope is restricted; unrestricted users see all.
+    task_uid = uuid.UUID(user["sub"]) if scope["restrict"] else None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, search=search,
         po_ids_subq=scope["po_subq"],
         own_uploads_user_id=own_uploads,
+        task_user_id=task_uid,
         page=page, page_size=page_size,
     )
+    await _attach_match_assignees(db, items)
     return InvoiceListResponse(items=items, total=total)
 
 
@@ -145,8 +188,18 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
     if not scope["perms"].get("view_invoice", False):
         raise HTTPException(status_code=404, detail="Invoice not found")
     if scope["restrict"]:
+        caller_id = uuid.UUID(user["sub"])
+        if await _has_open_match_task(db, caller_id, invoice_id):
+            await _attach_match_assignees(db, [inv])
+            return inv
+        # Matcher retention: the person who performed the match retains detail visibility
+        # even after their task is completed (you can see what you acted on).
+        if inv.matched_by == caller_id:
+            await _attach_match_assignees(db, [inv])
+            return inv
         if not await invoice_crud.is_visible(db, inv, scope):
             raise HTTPException(status_code=404, detail="Invoice not found")
+    await _attach_match_assignees(db, [inv])
     return inv
 
 
@@ -192,30 +245,273 @@ async def match_invoice(
     invoice_id: uuid.UUID,
     body: InvoiceMatchRequest,
     db: SessionDep,
+    user: CurrentUserPayload,
+    token: BearerToken,
+):
+    caller_id = uuid.UUID(user["sub"])
+    is_ap = user.get("role") in _AP_ROLES
+    if not is_ap and not await _has_open_match_task(db, caller_id, invoice_id):
+        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv.status not in ("unmatched", "exception"):
+        raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
+    require_review = not is_ap
+    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported
+    try:
+        result = await invoice_crud.match(db, inv, body, matched_by=caller_id,
+                                          require_review=require_review)
+
+        # 完成调用者的 match 任务(指派场景)
+        now_ts = datetime.now(timezone.utc)
+        my_task = (await db.execute(select(Task).where(
+            Task.type == "match_invoice", Task.document_type == "invoice",
+            Task.document_id == inv.id, Task.assigned_user_id == caller_id,
+            Task.is_completed.is_(False),
+        ))).scalar_one_or_none()
+        reviewer_id = None
+        if my_task is not None:
+            my_task.is_completed = True
+            my_task.completed_at = now_ts
+            my_task.completed_by = caller_id
+            reviewer_id = my_task.created_by
+
+        # Complete any OTHER open match_invoice tasks for this invoice (e.g. AP matched
+        # directly while an assignee still had an open task — no orphans left behind).
+        other_open_tasks = (await db.execute(select(Task).where(
+            Task.type == "match_invoice", Task.document_type == "invoice",
+            Task.document_id == inv.id, Task.assigned_user_id != caller_id,
+            Task.is_completed.is_(False),
+        ))).scalars().all()
+        for other in other_open_tasks:
+            other.is_completed = True
+            other.completed_at = now_ts
+            other.completed_by = caller_id
+
+        if result.status == "match_review" and my_task is not None:
+            review = Task(
+                type="review_match", priority="normal",
+                document_type="invoice", document_id=inv.id,
+                document_number=inv.internal_ref,
+                assigned_role="ap_clerk",
+                assigned_user_id=reviewer_id,
+                created_by=caller_id,
+                title=f"Review match variance on invoice {inv.internal_ref}",
+                description=(
+                    f"Invoice {inv.internal_ref} was matched with a non-zero variance "
+                    f"({result.variance}). Please review and approve or reject."
+                ),
+                vendor=inv.vendor_name, amount=inv.total_amount,
+            )
+            db.add(review)
+            await db.flush()
+            await db.refresh(review)
+            fire_and_forget_notify(review, db, extra_vars={"invoice_number": inv.internal_ref})
+
+        if result.status == "matched":
+            await _notify_requester_create_pa(db, result)
+
+        # Sync to finance: posted if matched, draft otherwise. Fail-open.
+        await finance_sync.sync_ap_invoice(db, result, token)
+
+        await _attach_match_assignees(db, [result])
+        return result
+    except (AllocationImbalance, LegacyMatchUnsupported) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+# 发票可匹配的 PO 状态(与前端 MATCHABLE_PO_STATUSES 一致)
+_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received", "closed")
+
+
+@router.get("/{invoice_id}/match-candidates", response_model=PoListResponse)
+async def list_match_candidates(
+    invoice_id: uuid.UUID,
+    db: SessionDep,
+    user: CurrentUserPayload,
+):
+    """该发票可分摊的候选 PO(同 vendor、开放状态)。按【发票的匹配权限】授权,
+    不走通用 PO scope — 否则没有相关 PR 的被指派人一个候选都看不到(死锁)。"""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    caller_id = uuid.UUID(user["sub"])
+    if user.get("role") not in _AP_ROLES and not await _has_open_match_task(db, caller_id, invoice_id):
+        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
+
+    pos = list((await db.execute(
+        select(PurchaseOrder)
+        .where(PurchaseOrder.vendor_id == inv.vendor_id,
+               PurchaseOrder.status.in_(_MATCHABLE_PO_STATUSES))
+        .order_by(PurchaseOrder.number)
+    )).scalars().all())
+    return PoListResponse(
+        items=[PoResponse.model_validate(po) for po in pos],
+        total=len(pos),
+    )
+
+
+@router.post("/{invoice_id}/decline-match", response_model=InvoiceResponse)
+async def decline_match(
+    invoice_id: uuid.UUID,
+    body: DeclineMatchRequest,
+    db: SessionDep,
+    user: CurrentUserPayload,
+):
+    """被指派人退回匹配指派(必填原因):任务弹回给指派人(created_by)并通知,
+    发票保持 unmatched。没有退回路径时,不熟悉该供应商的被指派人会卡死。"""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if not body.note.strip():
+        raise HTTPException(status_code=422, detail="A note is required when declining")
+    caller_id = uuid.UUID(user["sub"])
+    task = (await db.execute(select(Task).where(
+        Task.type == "match_invoice",
+        Task.document_type == "invoice",
+        Task.document_id == inv.id,
+        Task.assigned_user_id == caller_id,
+        Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=403, detail="No active match assignment for you on this invoice")
+
+    caller_name = (await db.execute(
+        select(User.full_name).where(User.id == caller_id)
+    )).scalar_one_or_none()
+
+    # 弹回指派人;指派人缺失(历史数据)则退给 ap_clerk 角色池
+    if task.created_by is not None:
+        task.assigned_user_id = task.created_by
+        task.assigned_role = "assigned"
+    else:
+        task.assigned_user_id = None
+        task.assigned_role = "ap_clerk"
+    task.title = f"Match invoice {inv.internal_ref} to PO (assignment declined)"
+    task.description = (
+        f"{caller_name or 'The assignee'} declined this match assignment: {body.note.strip()} "
+        f"Please match the invoice yourself or reassign it."
+    )
+    await db.flush()
+    await db.refresh(task)
+    fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
+    await _attach_match_assignees(db, [inv])
+    return inv
+
+
+@router.post("/{invoice_id}/assign-match", response_model=InvoiceResponse)
+async def assign_match(
+    invoice_id: uuid.UUID,
+    body: AssignMatchRequest,
+    db: SessionDep,
+    user: ApDep,
+):
+    """AP 将这张发票的 PO 匹配工作指派给某个用户(任何角色)。重复调用=改派。"""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv.status not in ("unmatched", "exception"):
+        raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
+
+    assignee = await db.get(User, body.user_id)
+    if assignee is None or not assignee.is_active:
+        raise HTTPException(status_code=404, detail="Assignee not found or inactive")
+
+    assigner_id = uuid.UUID(user["sub"])
+    existing = (await db.execute(select(Task).where(
+        Task.type == "match_invoice",
+        Task.document_type == "invoice",
+        Task.document_id == inv.id,
+        Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+
+    description = (
+        f"You have been assigned to match invoice {inv.internal_ref} "
+        f"({inv.vendor_name}, {inv.currency} {inv.total_amount}) to its purchase order(s). "
+        f"Open the invoice and allocate its lines to the PO lines."
+    )
+    if existing is not None:
+        existing.assigned_user_id = assignee.id
+        existing.created_by = assigner_id
+        existing.description = description
+        task = existing
+    else:
+        task = Task(
+            type="match_invoice", priority="normal",
+            document_type="invoice", document_id=inv.id,
+            document_number=inv.internal_ref,
+            assigned_role="assigned",            # 非真实角色,防止角色池广播
+            assigned_user_id=assignee.id,
+            created_by=assigner_id,
+            title=f"Match invoice {inv.internal_ref} to PO",
+            description=description,
+            vendor=inv.vendor_name, amount=inv.total_amount,
+        )
+        db.add(task)
+    await db.flush()
+    await db.refresh(task)
+    fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
+    await _attach_match_assignees(db, [inv])
+    return inv
+
+
+@router.post("/{invoice_id}/match-review", response_model=InvoiceResponse)
+async def match_review(
+    invoice_id: uuid.UUID,
+    body: MatchReviewRequest,
+    db: SessionDep,
     user: ApDep,
     token: BearerToken,
 ):
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    if inv.status not in ("unmatched", "exception"):
-        raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
-    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported
+    if body.action == "reject" and not (body.note or "").strip():
+        raise HTTPException(status_code=422, detail="A note is required when rejecting")
+    reviewer_id = uuid.UUID(user["sub"])
     try:
-        result = await invoice_crud.match(db, inv, body, matched_by=uuid.UUID(user["sub"]))
-
-        # After matching, notify the PR requester to create a PA.
-        # Lookup chain: invoice.po_id → PO.pr_id → PR.created_by (requester)
-        await _notify_requester_create_pa(db, result)
-
-        # Sync to finance: posted if matched, draft otherwise. Fail-open.
-        await finance_sync.sync_ap_invoice(db, result, token)
-
-        return result
-    except (AllocationImbalance, LegacyMatchUnsupported) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        result = await invoice_crud.review_match(db, inv, body.action, body.note, reviewer_id)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    # 完成 open review 任务
+    review_task = (await db.execute(select(Task).where(
+        Task.type == "review_match", Task.document_type == "invoice",
+        Task.document_id == inv.id, Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+    prev_assignee = review_task.created_by if review_task else None   # match 者
+    if review_task is not None:
+        review_task.is_completed = True
+        review_task.completed_at = datetime.now(timezone.utc)
+        review_task.completed_by = reviewer_id
+
+    if body.action == "reject" and prev_assignee is not None:
+        redo = Task(
+            type="match_invoice", priority="normal",
+            document_type="invoice", document_id=inv.id,
+            document_number=inv.internal_ref,
+            assigned_role="assigned", assigned_user_id=prev_assignee,
+            created_by=reviewer_id,
+            title=f"Re-match invoice {inv.internal_ref} to PO",
+            description=(
+                f"Your match of invoice {inv.internal_ref} was rejected: {body.note} "
+                f"Please review the allocation and match again."
+            ),
+            vendor=inv.vendor_name, amount=inv.total_amount,
+        )
+        db.add(redo)
+        await db.flush()
+        await db.refresh(redo)
+        fire_and_forget_notify(redo, db, extra_vars={"invoice_number": inv.internal_ref})
+
+    if result.status == "matched":
+        await _notify_requester_create_pa(db, result)
+    await finance_sync.sync_ap_invoice(db, result, token)
+    await _attach_match_assignees(db, [result])
+    return result
 
 
 @router.delete("/{invoice_id}", status_code=204)
@@ -230,6 +526,21 @@ async def delete_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     try:
         await finance_sync.sync_ap_invoice(db, inv, token, void=True)
+        # Complete all open match_invoice and review_match tasks before hard delete
+        # so no orphaned tasks reference a non-existent invoice.
+        caller_id = uuid.UUID(user["sub"])
+        now_ts = datetime.now(timezone.utc)
+        open_tasks = (await db.execute(select(Task).where(
+            Task.type.in_(["match_invoice", "review_match"]),
+            Task.document_type == "invoice",
+            Task.document_id == invoice_id,
+            Task.is_completed.is_(False),
+        ))).scalars().all()
+        for t in open_tasks:
+            t.is_completed = True
+            t.completed_at = now_ts
+            t.completed_by = caller_id
+        await db.flush()
         await invoice_crud.delete(db, inv)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

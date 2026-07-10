@@ -1,4 +1,5 @@
 import { api, fetchAllPages } from '@/lib/api'
+import type { ApiPo } from '@/services/po'
 
 export interface InvoiceLineItem {
   id?:         string
@@ -13,6 +14,7 @@ export type InvoiceStatus =
   | 'unmatched'
   | 'matched'
   | 'exception'
+  | 'match_review'
   | 'approved'
   | 'paid'
 
@@ -35,6 +37,8 @@ export interface ApiInvoice {
   gr_id?: string
   gr_number?: string
   gr_ids?: string[]
+  match_assignee_id?: string | null
+  match_assignee_name?: string | null
   matched_at?: string
   matched_by?: string
   matched_by_name?: string
@@ -152,9 +156,25 @@ export const invoiceService = {
   match: (id: string, body: MatchInvoiceBody) =>
     api.post<ApiInvoice>(`/invoices/${id}/match`, body),
 
+  // Candidate POs for allocation (same vendor, open statuses) — authorized by
+  // the invoice's match rights, NOT the caller's general PO scope, so task
+  // assignees without related PRs still see them.
+  matchCandidates: (id: string) =>
+    api.get<{ items: ApiPo[]; total: number }>(`/invoices/${id}/match-candidates`),
+
+  // Assignee bounces the match assignment back to the assigner (note required).
+  declineMatch: (id: string, note: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/decline-match`, { note }),
+
   resolveException: (id: string, resolution: 'accepted' | 'credit_note_requested', note?: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/exception`, { resolution, note }),
 
   delete: (id: string) =>
     api.delete<void>(`/invoices/${id}`),
+
+  assignMatch: (id: string, userId: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/assign-match`, { user_id: userId }),
+
+  reviewMatch: (id: string, action: 'approve' | 'reject', note?: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/match-review`, { action, note }),
 }

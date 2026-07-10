@@ -39,3 +39,8 @@ class Task(UUIDPrimaryKey, TimestampMixin, Base):
     completed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+    # 任务发起人(如 match 指派的 AP);历史任务为 NULL
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )

@@ -197,6 +197,19 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "Hi {recipient_name},\n\n{document_type} <b>{document_number}</b> has been waiting and requires urgent attention.\n\n"
         "<a href=\"{link}\">View Document</a>\n\n{company_name}",
     ),
+    # ── Invoice match ──────────────────────────────────────────────────────────
+    "match_invoice_assigned": _DEFAULT_EMAIL_TEMPLATE(
+        "Invoice {invoice_number} assigned to you for PO matching",
+        "Hi {recipient_name},\n\nYou have been assigned to match invoice <b>{invoice_number}</b> "
+        "from {vendor} (CAD {amount}) to its purchase order(s).\n\n"
+        "<a href=\"{link}\">Open Invoice &amp; Match to PO</a>\n\n{company_name}",
+    ),
+    "match_review_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Match review required — invoice {invoice_number}",
+        "Hi {recipient_name},\n\nThe assigned matcher has completed matching on invoice <b>{invoice_number}</b> "
+        "with a non-zero variance. Please review the allocation and approve or reject it.\n\n"
+        "<a href=\"{link}\">Review Match</a>\n\n{company_name}",
+    ),
 }
 
 _P = lambda **kw: {k: kw.get(k, False) for k in PERMISSION_KEYS}  # noqa: E731

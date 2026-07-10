@@ -2,11 +2,12 @@ import { create } from 'zustand'
 import type { Currency } from '@/types'
 
 export type InvoiceStatus =
-  | 'unmatched'   // uploaded, not yet linked to a PO
-  | 'matched'     // linked to PO, 3-way match within tolerance
-  | 'exception'   // linked to PO but variance exceeds threshold
-  | 'approved'    // approved for payment application
-  | 'paid'        // paid
+  | 'unmatched'     // uploaded, not yet linked to a PO
+  | 'matched'       // linked to PO, 3-way match within tolerance
+  | 'exception'     // linked to PO but variance exceeds threshold
+  | 'match_review'  // matched with variance, awaiting AP/Finance review
+  | 'approved'      // approved for payment application
+  | 'paid'          // paid
 
 export interface InvoiceRecord {
   id: string

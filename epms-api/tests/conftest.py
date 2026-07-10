@@ -170,3 +170,9 @@ async def admin_client(test_engine):
 async def finance_client(test_engine):
     async with await _authenticated_client(test_engine, "finance_manager") as c:
         yield c
+
+
+@pytest.fixture
+async def requester_client(test_engine):
+    async with await _authenticated_client(test_engine, "requester") as c:
+        yield c

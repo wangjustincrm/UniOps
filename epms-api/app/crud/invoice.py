@@ -69,13 +69,14 @@ async def get_all(
     search: str | None = None,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
+    task_user_id: uuid.UUID | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Invoice], int]:
     from sqlalchemy import or_
     q = select(Invoice)
 
-    if po_ids_subq is not None or own_uploads_user_id is not None:
+    if po_ids_subq is not None or own_uploads_user_id is not None or task_user_id is not None:
         scope_conds = []
         if po_ids_subq is not None:
             alloc_scope = select(InvoicePoAllocation.invoice_id).where(
@@ -85,6 +86,11 @@ async def get_all(
             scope_conds.append(Invoice.id.in_(alloc_scope))
         if own_uploads_user_id is not None:
             scope_conds.append(Invoice.uploaded_by == own_uploads_user_id)
+        if task_user_id is not None:
+            from app.core.access_scope import _open_task_doc_ids
+            scope_conds.append(Invoice.id.in_(_open_task_doc_ids(task_user_id, "invoice")))
+            # Matcher retention: invoices this user matched remain visible in the list
+            scope_conds.append(Invoice.matched_by == task_user_id)
         q = q.where(or_(*scope_conds))
 
     if status:
@@ -153,6 +159,13 @@ async def is_visible(db: AsyncSession, invoice: Invoice, scope: dict) -> bool:
         conds.append(Invoice.id.in_(alloc_scope))
     if role == "requester":
         conds.append(Invoice.uploaded_by == user_id)
+    # Task-based visibility: if the user has an open match_invoice task for this
+    # invoice, they can see it regardless of department/PO scope.
+    from app.core.access_scope import _open_task_doc_ids
+    conds.append(Invoice.id.in_(_open_task_doc_ids(user_id, "invoice")))
+    # Matcher retention: once a user has matched an invoice they retain visibility
+    # even after their task is completed (you can see what you acted on).
+    conds.append(Invoice.matched_by == user_id)
 
     if not conds:
         return True  # unrestricted
@@ -255,6 +268,7 @@ async def match(
     invoice: Invoice,
     req: InvoiceMatchRequest,
     matched_by: uuid.UUID,
+    require_review: bool = False,
 ) -> Invoice:
     now = datetime.now(timezone.utc)
     allocs = await _normalize_allocations(invoice, req)
@@ -398,7 +412,11 @@ async def match(
         invoice.gr_value = None
         invoice.gr_ids = None
 
-    if any_exception:
+    all_zero = all((row.variance or Decimal("0")) == Decimal("0") for row in new_rows)
+    if require_review and not all_zero:
+        invoice.status = "match_review"
+        invoice.exception_reason = None
+    elif any_exception:
         invoice.status = "exception"
         invoice.exception_reason = (
             "One or more PO lines are outside tolerance "
@@ -411,6 +429,49 @@ async def match(
                 f"Auto-matched within tolerance {tolerance}% (variance: {invoice.variance:+.2f})"
             )
 
+    await db.flush()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def review_match(
+    db: AsyncSession,
+    invoice: Invoice,
+    action: str,
+    note: str | None,
+    reviewer_id: uuid.UUID,
+) -> Invoice:
+    """复核被指派人的 match:approve 按容差落定,reject 回 unmatched。"""
+    if invoice.status != "match_review":
+        raise ValueError(f"Invoice is not pending review (status '{invoice.status}')")
+    if action == "approve":
+        rows = (await db.execute(
+            select(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id)
+        )).scalars().all()
+        tolerance = await _match_tolerance_pct(db)
+        any_exception = any(
+            not within_tolerance(r.variance or Decimal("0"), r.variance_pct or Decimal("0"), tolerance)
+            for r in rows
+        )
+        if any_exception:
+            invoice.status = "exception"
+            invoice.exception_reason = (
+                "Reviewed: variance outside tolerance "
+                f"(invoice total {invoice.total_amount} vs reference {invoice.po_total})"
+            )
+        else:
+            invoice.status = "matched"
+            invoice.exception_reason = (
+                f"Reviewed and approved (variance: {invoice.variance:+.2f})"
+                if invoice.variance else None
+            )
+    else:  # reject
+        invoice.status = "unmatched"
+        invoice.matched_at = None
+        invoice.matched_by = None
+        invoice.matched_by_name = None
+        invoice.exception_reason = None   # defensive: stale reason must not survive back to unmatched
+        # 分摊行保留供参考;下次 match 会整体重建(match() 幂等删除)
     await db.flush()
     await db.refresh(invoice)
     return invoice

@@ -2,6 +2,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -86,6 +87,19 @@ class InvoiceExceptionRequest(BaseModel):
     note: str | None = None
 
 
+class AssignMatchRequest(BaseModel):
+    user_id: uuid.UUID
+
+
+class DeclineMatchRequest(BaseModel):
+    note: str
+
+
+class MatchReviewRequest(BaseModel):
+    action: Literal["approve", "reject"]
+    note: str | None = None
+
+
 class InvoiceResponse(BaseModel):
     id: uuid.UUID
     internal_ref: str
@@ -128,6 +142,8 @@ class InvoiceResponse(BaseModel):
     updated_at: datetime
     uploaded_at: datetime | None = None
     allocations: list[AllocationResponse] = Field(default_factory=list)
+    match_assignee_id: uuid.UUID | None = None
+    match_assignee_name: str | None = None
 
     @model_validator(mode='after')
     def _set_uploaded_at(self) -> 'InvoiceResponse':
