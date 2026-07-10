@@ -22,6 +22,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
+import { MatchPanel } from './MatchPanel'
 import { FilePreviewPanel } from './FilePreviewPanel'
 import { AssignMatchDialog } from './AssignMatchDialog'
 
