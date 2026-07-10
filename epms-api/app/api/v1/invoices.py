@@ -24,6 +24,7 @@ from app.schemas.invoice import (
 from app.services.notification import dispatch_task_notification, fire_and_forget_notify
 from app.services import finance_client
 from app.services import finance_sync
+from app.services import tax_prefill
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -129,6 +130,7 @@ async def upload_invoice(body: InvoiceCreate, db: SessionDep, user: InvoiceUploa
     inv = await invoice_crud.create(
         db, body, vendor_name=vendor.name, uploaded_by=uuid.UUID(user["sub"])
     )
+    await tax_prefill.apply_tax_prefill(db, inv, token)   # 新增
     await finance_sync.sync_ap_invoice(db, inv, token)
     return inv
 

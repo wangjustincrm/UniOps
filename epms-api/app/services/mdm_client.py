@@ -61,6 +61,10 @@ class MdmClient:
     async def get_supplier(self, code: str) -> dict | None:
         return await self._get(f"/erp/suppliers/{code}")
 
+    async def get_tax_codes(self) -> list | None:
+        """B2 税码主数据(激活集)。"""
+        return await self._get("/tax/codes")
+
     # ── business_partners (mdm owns the table; epms forwards supplier writes) ──────
     async def find_partner_by_code(self, code: str) -> dict | None:
         """Exact-code lookup via the partners list (search matches name OR code)."""
