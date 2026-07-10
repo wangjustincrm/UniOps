@@ -47,7 +47,7 @@ async def test_review_moves_draft_to_reviewed(db_session):
 async def test_review_blocks_self_review_when_sod_enabled(db_session):
     preparer = uuid.uuid4()
     jv = await _draft_jv(db_session, preparer)
-    db_session.add(SodRule(rule_code="jv_self_review", enabled=True))
+    db_session.add(SodRule(rule_code="jv_self_review", name="jv self review", enabled=True))
     await db_session.flush()
     with pytest.raises(jv_crud.JvPermissionError):
         await jv_crud.review(db_session, jv.id, _user(sub=preparer))  # same person
