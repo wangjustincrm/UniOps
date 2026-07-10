@@ -283,10 +283,13 @@ async def test_assignee_sees_match_candidates(admin_client):
                            [{"description": "A", "qty": "1", "unit": "EA", "unit_price": "100.00"}])
     po_draft = await _make_po(admin_client, v["id"],
                               [{"description": "B", "qty": "1", "unit": "EA", "unit_price": "50.00"}])
+    po_closed = await _make_po(admin_client, v["id"],
+                               [{"description": "D", "qty": "1", "unit": "EA", "unit_price": "60.00"}])
     po_other = await _make_po(admin_client, other["id"],
                               [{"description": "C", "qty": "1", "unit": "EA", "unit_price": "70.00"}])
     await _set_po_status(po_ok["id"], "issued")
     await _set_po_status(po_other["id"], "issued")
+    await _set_po_status(po_closed["id"], "closed")
     inv = await _make_invoice(admin_client, v["id"], number="CAND-001", amount="100.00")
     assignee = await _make_user()
     await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match", json={"user_id": str(assignee)})
@@ -298,6 +301,7 @@ async def test_assignee_sees_match_candidates(admin_client):
         ids = {p["id"] for p in items}
         assert po_ok["id"] in ids          # 同 vendor + issued
         assert po_draft["id"] not in ids   # draft 不可匹配
+        assert po_closed["id"] not in ids  # closed 不进候选(僵尸 PO 治理)
         assert po_other["id"] not in ids   # 其他 vendor
         assert items[0]["line_items"]      # 带行,供分摊面板用
 

@@ -31,7 +31,8 @@ import { AssignMatchDialog } from './AssignMatchDialog'
 const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
 
 // PO statuses an invoice can be matched/allocated against.
-const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'fully_received', 'closed']
+// closed excluded: closed POs (incl. PMS imports closed by PAID) never enter match candidates
+const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'fully_received']
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 

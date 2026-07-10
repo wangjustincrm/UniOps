@@ -497,7 +497,7 @@ async def run_load(
                         id=oid, number=number,
                         title=clip(pr_link["pr_number"] if pr_link else number, 255),
                         type=pr_link["type"] if pr_link else M.PR_TYPE_DEFAULT,
-                        status=M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus")),
+                        status=M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"), r.get("PaymentStatus")),
                         approval_step_idx=M.po_approval_step_idx(r.get("Status")),
                         currency=M.normalize_currency(r.get("Currency")),
                         subtotal=subtotal,
@@ -872,7 +872,7 @@ async def _upsert_po(db, dry_run, report, existing, r, res) -> None:
     obj = await db.get(PurchaseOrder, obj_id)
     if obj is None:
         return
-    obj.status = M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"))
+    obj.status = M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"), r.get("PaymentStatus"))
     obj.approval_step_idx = M.po_approval_step_idx(r.get("Status"))
     obj.currency = M.normalize_currency(r.get("Currency"))
     obj.total = to_decimal(r.get("TotalPrice"), default=obj.total)

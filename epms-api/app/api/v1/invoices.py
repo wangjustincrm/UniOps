@@ -323,8 +323,9 @@ async def match_invoice(
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-# 发票可匹配的 PO 状态(与前端 MATCHABLE_PO_STATUSES 一致)
-_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received", "closed")
+# 发票可匹配的 PO 状态(与前端 MATCHABLE_PO_STATUSES 一致)。
+# closed 不在其中:已关闭(含 PMS 导入按 PAID 收口)的 PO 不再进入候选(2026-07-10)。
+_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received")
 
 
 @router.get("/{invoice_id}/match-candidates", response_model=PoListResponse)

@@ -258,12 +258,17 @@ def map_pr_status(status: str | None, has_po: bool = False) -> str:
 
 # EPMS PO statuses: draft|submitted|in_review|approved|returned|rejected|issued|
 #                    partially_received|fully_received|closed|cancelled
-def map_po_status(status: str | None, final: str | None, receive: str | None = None) -> str:
-    """Map SharePoint PO approval status (`Status`), final status (`Status0`) and
-    receive status (`ReceiveStatus`) → EPMS status. Precedence matters:
+def map_po_status(status: str | None, final: str | None, receive: str | None = None,
+                  payment: str | None = None) -> str:
+    """Map SharePoint PO approval status (`Status`), final status (`Status0`),
+    receive status (`ReceiveStatus`) and payment status (`PaymentStatus`)
+    → EPMS status. Precedence matters:
       * REJECTED → cancelled — checked FIRST because rejected PMS POs carry
         Status0='CLOSED', which would otherwise mis-map them to 'closed'.
       * Status0 CANCELED → cancelled (also catches POs cancelled mid-approval).
+      * PaymentStatus PAID → closed — 用户决策(2026-07-10):付款是最高业务信号,
+        老系统大量已付清 PO 的 Status0 仍是 OPEN,若不按 PAID 收口会以 issued
+        进入 EPMS,灌爆发票匹配的候选列表。
       * Status0 COMPLETED/CLOSED → closed (business-completed; user decision:
         takes priority over receive status).
       * Approval still running (…APPROVING) → in_review.
@@ -273,10 +278,13 @@ def map_po_status(status: str | None, final: str | None, receive: str | None = N
     s = (status or "").strip().upper()
     f = (final or "").strip().upper()
     r = (receive or "").strip().upper()
+    p = (payment or "").strip().upper()
     if "REJECT" in s:
         return "cancelled"
     if f in ("CANCELED", "CANCELLED"):
         return "cancelled"
+    if p == "PAID":
+        return "closed"
     if f in ("COMPLETED", "CLOSED", "CLOSE"):
         return "closed"
     if "APPROVING" in s:
