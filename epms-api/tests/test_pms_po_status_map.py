@@ -23,3 +23,12 @@ def test_unpaid_paths_unchanged():
 
 def test_payment_param_optional_backcompat():
     assert map_po_status("GM APPROVED", "OPEN", "DELIVERING") == "issued"
+
+
+def test_backup_list_forces_closed():
+    # PO List Backup 归档区:不论付款状态一律 closed(2026-07-10 用户决策)
+    assert map_po_status("GM APPROVED", "OPEN", "DELIVERING", "WAITING INVOICE", True) == "closed"
+    assert map_po_status("GM APPROVED", "OPEN", None, None, True) == "closed"
+    # rejected/cancelled 仍优先
+    assert map_po_status("GM REJECTED", "OPEN", None, None, True) == "cancelled"
+    assert map_po_status("GM APPROVED", "CANCELED", None, None, True) == "cancelled"

@@ -259,7 +259,7 @@ def map_pr_status(status: str | None, has_po: bool = False) -> str:
 # EPMS PO statuses: draft|submitted|in_review|approved|returned|rejected|issued|
 #                    partially_received|fully_received|closed|cancelled
 def map_po_status(status: str | None, final: str | None, receive: str | None = None,
-                  payment: str | None = None) -> str:
+                  payment: str | None = None, from_backup: bool = False) -> str:
     """Map SharePoint PO approval status (`Status`), final status (`Status0`),
     receive status (`ReceiveStatus`) and payment status (`PaymentStatus`)
     → EPMS status. Precedence matters:
@@ -283,6 +283,9 @@ def map_po_status(status: str | None, final: str | None, receive: str | None = N
         return "cancelled"
     if f in ("CANCELED", "CANCELLED"):
         return "cancelled"
+    if from_backup:
+        # 用户决策(2026-07-10):PO List Backup 是归档区,里面的 PO 一律强制关闭
+        return "closed"
     if p == "PAID":
         return "closed"
     if f in ("COMPLETED", "CLOSED", "CLOSE"):

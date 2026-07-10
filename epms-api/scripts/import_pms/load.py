@@ -375,7 +375,9 @@ async def run_load(
 
     # staged data
     pr_rows = load_staging("pr.json") + load_staging("pr_backup.json")
-    po_rows = load_staging("po.json") + load_staging("po_backup.json")
+    po_rows = load_staging("po.json") + [
+        {**r, "_from_backup": True} for r in load_staging("po_backup.json")
+    ]
     pa_rows = load_staging("pa.json") + load_staging("pa_backup.json")
     pr_items = _group_items(load_staging("pr_item.json"))
     po_items = _group_items(load_staging("po_item.json"))
@@ -497,7 +499,7 @@ async def run_load(
                         id=oid, number=number,
                         title=clip(pr_link["pr_number"] if pr_link else number, 255),
                         type=pr_link["type"] if pr_link else M.PR_TYPE_DEFAULT,
-                        status=M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"), r.get("PaymentStatus")),
+                        status=M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"), r.get("PaymentStatus"), r.get("_from_backup", False)),
                         approval_step_idx=M.po_approval_step_idx(r.get("Status")),
                         currency=M.normalize_currency(r.get("Currency")),
                         subtotal=subtotal,
@@ -872,7 +874,7 @@ async def _upsert_po(db, dry_run, report, existing, r, res) -> None:
     obj = await db.get(PurchaseOrder, obj_id)
     if obj is None:
         return
-    obj.status = M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"), r.get("PaymentStatus"))
+    obj.status = M.map_po_status(r.get("Status"), r.get("Status0"), r.get("ReceiveStatus"), r.get("PaymentStatus"), r.get("_from_backup", False))
     obj.approval_step_idx = M.po_approval_step_idx(r.get("Status"))
     obj.currency = M.normalize_currency(r.get("Currency"))
     obj.total = to_decimal(r.get("TotalPrice"), default=obj.total)
