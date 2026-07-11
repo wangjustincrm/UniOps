@@ -195,3 +195,29 @@ async def review_batch(db: AsyncSession, ids: list[uuid.UUID], user: dict) -> li
 
 async def post_batch(db: AsyncSession, ids: list[uuid.UUID], user: dict) -> list[dict]:
     return await _batch(db, ids, user, post)
+
+
+async def backfill_posted_jvs(db: AsyncSession) -> dict:
+    """One-time migration: ensure every posting_event has a JV (generate via the
+    Plan-1 path if missing) and mark it `posted` directly — bypassing the human
+    post flow + period gate, because this reflects already-live GL data. Idempotent
+    (skips events whose JV is already posted/reversed). Returns counts."""
+    from app.models.posting import PostingEvent
+    from app.services.journal_voucher import generate_from_event
+
+    event_ids = (await db.execute(select(PostingEvent.id))).scalars().all()
+    generated = posted = 0
+    now = datetime.now(timezone.utc)
+    for eid in event_ids:
+        jv = (await db.execute(
+            select(JournalVoucher).where(JournalVoucher.posting_event_id == eid)
+        )).scalar_one_or_none()
+        if jv is None:
+            jv = await generate_from_event(db, eid, None)
+            generated += 1
+        if jv is not None and jv.status == DRAFT:
+            jv.status = POSTED
+            jv.posted_at = now
+            posted += 1
+    await db.flush()
+    return {"generated": generated, "posted": posted}
