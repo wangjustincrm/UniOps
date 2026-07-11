@@ -27,6 +27,19 @@ class SodRule(UUIDPrimaryKey, TimestampMixin, Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class CostCenter(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror of the shared `cost_centers` master (epms/mdm own it).
+    Finance resolves posting/JV `cost_center_id` -> code/name for the account
+    balance report + Budget Actual (code prefix MOH/RD/SELL/GA -> category).
+    NC cost centers map 1:1 to these (via Budget Config)."""
+    __tablename__ = "cost_centers"
+
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
 class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     """epms-api owns schema. A2 extends the mirror for AP accrual + open items
     (columns verified against information_schema 2026-06-12)."""

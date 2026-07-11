@@ -82,3 +82,71 @@ async def test_account_balance_endpoint(client, db_session):
     by_code = {row["account_code"]: row for row in body["rows"]}
     assert by_code["5000"]["closing"] == "55.00"
     assert body["balanced"] is True
+
+
+# ── ②③④ cost-center expansion / drill-down / Budget Actual ──────────────────────
+from app.models.mirrors import CostCenter
+
+
+async def _cc(db, code, name="cc"):
+    cid = uuid.uuid4()
+    db.add(CostCenter(id=cid, code=code, name=name))
+    await db.flush()
+    return cid
+
+
+async def _posted_cc_event(db, account, cc_id, amount, period="2026-07"):
+    occurred = datetime(int(period[:4]), int(period[5:7]), 15, tzinfo=timezone.utc)
+    await emit_event(
+        db, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+        occurred_at=occurred, prepared_by=uuid.uuid4(),
+        lines=[{"line_role": "purchase_expense", "account_code": account,
+                "debit": Decimal(amount), "currency": "CAD", "cost_center_id": cc_id},
+               {"line_role": "accounts_payable", "account_code": "2000",
+                "credit": Decimal(amount), "currency": "CAD"}])
+
+
+async def test_budget_actual_by_cost_center(db_session):
+    moh = await _cc(db_session, "MOH-01", "Line 1")
+    await _posted_cc_event(db_session, "5101", moh, "300.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    ba = await ab.budget_actual(db_session, "2026-07")
+    rows = [r for r in ba["rows"] if r["account_code"] == "5101"]
+    assert len(rows) == 1
+    assert rows[0]["category"] == "MOH"
+    assert rows[0]["cost_center_code"] == "MOH-01"
+    assert rows[0]["actual"] == "300.00"
+
+
+async def test_expand_by_cost_center(db_session):
+    cc1 = await _cc(db_session, "MOH-01")
+    cc2 = await _cc(db_session, "MOH-02")
+    await _posted_cc_event(db_session, "5101", cc1, "100.00")
+    await _posted_cc_event(db_session, "5101", cc2, "50.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    exp = await ab.expand_by_cost_center(db_session, "5101", "2026-07")
+    by = {r["cost_center_code"]: r for r in exp["rows"]}
+    assert by["MOH-01"]["amount"] == "100.00"
+    assert by["MOH-02"]["amount"] == "50.00"
+
+
+async def test_account_vouchers_drilldown(db_session):
+    cc1 = await _cc(db_session, "MOH-01")
+    await _posted_cc_event(db_session, "5101", cc1, "77.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    v = await ab.account_vouchers(db_session, "5101", "2026-07", cost_center_id=cc1)
+    assert len(v["rows"]) == 1
+    assert v["rows"][0]["local_debit"] == "77.00"
+    assert v["rows"][0]["jv_number"].startswith("JV-")
+
+
+async def test_budget_actual_endpoint(client, db_session):
+    moh = await _cc(db_session, "MOH-01")
+    await _posted_cc_event(db_session, "5101", moh, "42.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    r = await client.get("/finance/v1/gl/budget-actual?period=2026-07", headers=_h())
+    assert r.status_code == 200, r.text
+    rows = [x for x in r.json()["rows"] if x["account_code"] == "5101"]
+    assert rows[0]["actual"] == "42.00"
+    assert rows[0]["category"] == "MOH"
