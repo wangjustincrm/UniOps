@@ -34,24 +34,25 @@ DEV_DSN = "host=localhost port=5432 dbname=epms user=epms " \
 AUX_DEPT = "0001Z0100000000005CS"           # 部门 -> ORG_DEPT
 AUX_COSTCENTER = "1003Z31000000000SP6J"     # 成本中心 -> RESA_COSTCENTER
 
-# (NC dept code, NC cost-center code) -> EPMS cost-center code (user's curated map).
-# Cost center is mandatory only on 5101; other accounts classify by department.
-# Lookup tries (dept, cc) then falls back to (dept, "").
-CC_MAP = {
-    ("0100", ""): "GA-0100", ("0101", ""): "GA-0101", ("0103", ""): "GA-0103",
-    ("0105", ""): "GA-0105", ("0107", ""): "GA-0107",
-    ("0101", "H01"): "MOH-0101",
-    ("0106", "E01"): "MOH-0106-E01", ("0106", "E02"): "MOH-0106-E01",
-    ("0106", "E03"): "MOH-0106-E01", ("0106", "E04"): "MOH-0106-E01",
-    ("0106", "E05"): "MOH-0106-E01", ("0106", "E06"): "MOH-0106-E01",
-    ("0106", "E07"): "MOH-0106-E01",
-    ("0104", "P01"): "MOH-0104-P01", ("0104", "P02"): "MOH-0104-P02",
-    ("0104", "P03"): "MOH-0104-P03",
-    ("0105", "Q01"): "MOH-0105-LAB", ("0105", "Q02"): "MOH-0105-LAB",
-    ("0107", "S02"): "MOH-0107-S02", ("0107", "S03"): "SELL-0107-S03",
-    ("0109", ""): "RD-0109",
-    ("0110", ""): "SELL-0110", ("0111", ""): "SELL-0111",
-    ("0112", ""): "SELL-0112", ("0113", ""): "SELL-0113",
+# Curated NC -> EPMS cost-center map (user, 2026-07-12). Rule: if the line carries
+# a cost-center code, the CODE decides (department-independent); otherwise classify
+# by DEPARTMENT. This covers every row of the user's table incl. rollup codes
+# (ENG/PD/QA/SC/HR) and cross-department bookings.
+CC_BY_CODE = {
+    "E01": "MOH-0106-E01", "E02": "MOH-0106-E01", "E03": "MOH-0106-E01",
+    "E04": "MOH-0106-E01", "E05": "MOH-0106-E01", "E06": "MOH-0106-E01",
+    "E07": "MOH-0106-E01", "ENG": "MOH-0106-E01",
+    "P01": "MOH-0104-P01", "P02": "MOH-0104-P02", "P03": "MOH-0104-P03",
+    "PD": "MOH-0104-P01",
+    "Q01": "MOH-0105-LAB", "Q02": "MOH-0105-LAB", "QA": "GA-0105",
+    "S02": "MOH-0107-S02", "S03": "SELL-0107-S03", "SC": "GA-0107",
+    "H01": "MOH-0101", "HR": "GA-0101",
+    # F01 -> None (6603, no EPMS cost center)
+}
+CC_BY_DEPT = {
+    "0100": "GA-0100", "0101": "GA-0101", "0103": "GA-0103",
+    "0105": "GA-0105", "0107": "GA-0107", "0109": "RD-0109",
+    "0110": "SELL-0110", "0111": "SELL-0111", "0112": "SELL-0112", "0113": "SELL-0113",
 }
 
 
@@ -90,9 +91,10 @@ def load_uniops_cc(dsn: str) -> dict:
 
 
 def resolve_cc_id(assid, aux: dict, uni_cc: dict):
-    """NC line assid -> EPMS cost center -> UniOps cost_center_id (or None)."""
+    """NC line assid -> EPMS cost center -> UniOps cost_center_id (or None).
+    Cost-center code wins when present; else classify by department."""
     d, c = aux.get(assid, ("", ""))
-    epms = CC_MAP.get((d, c)) or CC_MAP.get((d, ""))
+    epms = CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)
     return uni_cc.get(epms) if epms else None
 
 
