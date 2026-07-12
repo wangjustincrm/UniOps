@@ -131,7 +131,9 @@ async def budget_actual(db: AsyncSession, period: str) -> dict:
                 "cost_center_id": str(ccid) if ccid else None,
                 "cost_center_code": center.code if center else None,
                 "cost_center_name": center.name if center else None,
-                "actual": _s(_net(d, c)),
+                # Actual spend = period DEBIT movement. Expense accounts net to ~0
+                # within a period (结转/allocated out), so net would understate.
+                "actual": _s(Decimal(d)),
             })
     return {"period": period, "rows": rows}
 
