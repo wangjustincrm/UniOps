@@ -183,6 +183,23 @@ async def test_balance_sheet_balances_with_net_income(client, db_session):
     assert any("Current Year Earnings" in e["account_name"] for e in bs["equity"])
 
 
+# ── journal(posted JV 凭证列表) ──────────────────────────────────────────────────
+
+async def test_journal_lists_posted_jvs(client, db_session):
+    await _post_ar_invoice(client)
+    r0 = await client.get(f"/finance/v1/gl/journal?period={PERIOD}", headers=_h())
+    assert r0.json() == []                          # draft not in the journal
+    await _post_all_draft_jvs(db_session)
+    r = await client.get(f"/finance/v1/gl/journal?period={PERIOD}", headers=_h())
+    entries = r.json()
+    assert len(entries) == 1
+    e = entries[0]
+    assert e["jv_number"].startswith("JV-")
+    assert e["source"] == "ar_invoice:" + e["source"].split(":", 1)[1]
+    assert len(e["lines"]) == 3                     # AR / revenue / output tax
+    assert {l["account_code"] for l in e["lines"]} == {"1100", "4000", "2200"}
+
+
 # ── year-end close ────────────────────────────────────────────────────────────────
 
 async def test_close_year_sweeps_pl_to_retained_earnings(client, db_session):
