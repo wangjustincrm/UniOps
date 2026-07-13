@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.journal_voucher import DRAFT, JournalVoucher, JournalVoucherLine, JvLineDimension
@@ -45,13 +45,16 @@ def build_summary(source_doc_type: str, event_type: str,
 
 
 async def next_jv_number(db: AsyncSession, fiscal_period: str, voucher_word: str = "JV") -> str:
+    """Max-suffix+1, not count: NC-imported history shares the JV- namespace and
+    can have numbering gaps — a count would reissue a taken number."""
     yyyymm = fiscal_period.replace("-", "")
-    like = f"{voucher_word}-{yyyymm}-%"
+    prefix = f"{voucher_word}-{yyyymm}-"
     n = (await db.execute(
-        select(func.count()).select_from(JournalVoucher).where(
-            JournalVoucher.jv_number.like(like))
+        select(func.coalesce(func.max(
+            cast(func.split_part(JournalVoucher.jv_number, "-", 3), Integer)), 0))
+        .where(JournalVoucher.jv_number.like(prefix + "%"))
     )).scalar_one()
-    return f"{voucher_word}-{yyyymm}-{n + 1:04d}"
+    return f"{prefix}{n + 1:04d}"
 
 
 async def generate_from_event(db: AsyncSession, event_id: uuid.UUID,

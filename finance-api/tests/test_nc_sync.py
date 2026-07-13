@@ -64,7 +64,7 @@ def test_transform_maps_dims_and_nets_sides():
     vouchers, lines, dims, unmapped = transform(
         _mini_extract(), uni_cc={"MOH-0106-E01": cc_id},
         uni_dept={"0104": dept_id}, uni_ba={"CRM004": ba_id}, skip_pks=set())
-    assert len(vouchers) == 1 and vouchers[0]["jv_number"] == "记-202607-12"
+    assert len(vouchers) == 1 and vouchers[0]["jv_number"] == "JV-202607-0012"
     assert vouchers[0]["nc_pk"] == "NCPK1"
     l1 = next(l for l in lines if l[2] == 1)
     assert (l1[5], l1[6]) == (Decimal("100"), Decimal("0"))   # netted to debit

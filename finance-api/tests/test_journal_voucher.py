@@ -51,6 +51,18 @@ async def test_next_jv_number_increments_per_period(db_session):
     assert await next_jv_number(db_session, "2026-08") == "JV-202608-0001"
 
 
+async def test_next_jv_number_is_max_based_not_count(db_session):
+    """NC-imported history shares the JV- namespace and can have numbering gaps
+    (deleted NC vouchers): with 1 row numbered 0007, a count would hand out
+    0002 forever colliding at 0007 — max-based must return 0008."""
+    from app.services.journal_voucher import next_jv_number
+    db_session.add(JournalVoucher(
+        jv_number="JV-202609-0007", voucher_word="JV", voucher_date=date(2026, 9, 1),
+        fiscal_period="2026-09", status="posted", nc_source_pk="NCGAP1"))
+    await db_session.flush()
+    assert await next_jv_number(db_session, "2026-09") == "JV-202609-0008"
+
+
 def test_build_summary_templates():
     from app.services.journal_voucher import build_summary
     assert build_summary("ap_invoice", "accrual", "AP-1", "ACME") == "应付计提 · AP-1 · ACME"

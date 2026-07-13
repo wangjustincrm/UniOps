@@ -142,9 +142,10 @@ def read_vouchers(cur) -> tuple[dict, list]:
         jid = uuid.uuid4()
         pk2id[pk] = jid
         vdate = (pdate[:10] if pdate and len(pdate) >= 10 else f"{year}-{period}-01")
-        num_s = str(int(num)) if num is not None else "0"
+        num_i = int(num) if num is not None else 0
         vouchers.append({
-            "id": jid, "jv_number": f"记-{year}{period}-{num_s}",
+            # JV- prefix + 4-padded (user 2026-07-13; keep in sync with services/nc_sync.py)
+            "id": jid, "jv_number": f"JV-{year}{period}-{num_i:04d}",
             "period": f"{year}-{period}", "vdate": vdate,
             "summary": (expl or "")[:255], "nc_pk": pk,
         })
@@ -199,7 +200,7 @@ def load(vouchers, lines, dims, dsn, clear):
         " source_service, source_doc_type, source_doc_number, nc_source_pk, "
         " total_debit, total_credit, total_local_debit, total_local_credit, "
         " created_at, updated_at) values %s",
-        [(v["id"], v["jv_number"], "记", v["vdate"], v["period"], v["summary"], "posted",
+        [(v["id"], v["jv_number"], "JV", v["vdate"], v["period"], v["summary"], "posted",
           "nc", "nc_voucher", v["jv_number"], v["nc_pk"],
           *(tot.get(v["id"], [Decimal("0")] * 4)))
          for v in vouchers],

@@ -84,9 +84,11 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
         jid = uuid.uuid4()
         pk2id[pk] = jid
         vdate = (pdate[:10] if pdate and len(pdate) >= 10 else f"{year}-{period}-01")
-        num_s = str(int(num)) if num is not None else "0"
+        num_i = int(num) if num is not None else 0
         vouchers.append({
-            "id": jid, "jv_number": f"记-{year}{period}-{num_s}",
+            # JV- prefix + 4-padded, same shape as go-forward numbers (user 2026-07-13;
+            # next_jv_number is max-based so the shared namespace can't collide).
+            "id": jid, "jv_number": f"JV-{year}{period}-{num_i:04d}",
             "period": f"{year}-{period}", "vdate": vdate,
             "summary": (expl or "")[:255], "nc_pk": pk,
         })
@@ -294,7 +296,7 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             t = tot.setdefault(jid, [Decimal("0")] * 4)
             t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
 
-        v_rows = [(v["id"], v["jv_number"], "记", v["vdate"], v["period"], v["summary"],
+        v_rows = [(v["id"], v["jv_number"], "JV", v["vdate"], v["period"], v["summary"],
                    "posted", "nc", "nc_voucher", v["jv_number"], v["nc_pk"],
                    *(tot.get(v["id"], [Decimal("0")] * 4))) for v in vouchers]
         for i in range(0, len(v_rows), _CHUNK):
