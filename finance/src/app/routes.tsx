@@ -2,6 +2,7 @@ import type { RouteDef } from '@uniops/shell'
 import AccountsPayablePage from '@/pages/finance/AccountsPayablePage'
 import AccountsReceivablePage from '@/pages/finance/AccountsReceivablePage'
 import GeneralLedgerPage from '@/pages/finance/GeneralLedgerPage'
+import JournalVouchersPage from '@/pages/finance/JournalVouchersPage'
 import PaymentBatchPage from '@/pages/finance/PaymentBatchPage'
 import BankReconciliationPage from '@/pages/finance/BankReconciliationPage'
 import CoaConfigPage from '@/pages/finance/CoaConfigPage'
@@ -18,6 +19,7 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
   { path: '/finance/ar', element: <AccountsReceivablePage />, tab: { title: 'Accounts Receivable', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/finance/gl', element: <GeneralLedgerPage />, tab: { title: 'General Ledger', icon: 'BookOpen', keyStrategy: 'static' } },
+  { path: '/finance/journal-vouchers', element: <JournalVouchersPage />, tab: { title: 'Journal Vouchers', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/finance/payment-batches', element: <PaymentBatchPage />, tab: { title: 'Payment Batches', icon: 'Banknote', keyStrategy: 'static' } },
   { path: '/finance/bank', element: <BankReconciliationPage />, tab: { title: 'Bank Reconciliation', icon: 'Landmark', keyStrategy: 'static' } },
 
