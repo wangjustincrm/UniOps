@@ -1,7 +1,9 @@
 """NC sync runs — model/migration + service + API tests."""
+import os
 import uuid
 from datetime import datetime, timezone
 
+import psycopg2
 import pytest
 from sqlalchemy import select
 
@@ -76,3 +78,80 @@ def test_transform_skips_existing_and_counts_unmapped():
                     max_creationtime=ex.max_creationtime)
     v2, l2, _, unmapped2 = transform(ex2, {}, {}, {}, skip_pks=set())
     assert len(l2) == 1 and l2[0][11] is None and unmapped2 == 1
+
+
+# ── worker tests (psycopg2 direct, finance_test DB) ──────────────────────────
+
+_TEST_DSN = (f"host={os.getenv('TEST_PG_HOST', 'localhost')} "
+             f"port={os.getenv('TEST_PG_PORT', '5432')} "
+             f"dbname={os.getenv('TEST_FINANCE_DB', 'finance_test')} "
+             f"user={os.getenv('TEST_PG_USER', 'epms')} "
+             f"password={os.getenv('TEST_PG_PASSWORD', 'epms_dev')}")
+
+
+def _pg(sql, params=()):
+    con = psycopg2.connect(_TEST_DSN); con.autocommit = True
+    cur = con.cursor(); cur.execute(sql, params)
+    out = cur.fetchall() if cur.description else None
+    con.close(); return out
+
+
+async def test_start_run_incremental_inserts_and_sets_watermark(db_session):
+    # db_session fixture has migrated finance_test; worker writes via its own psycopg2 conn
+    from app.services import nc_sync
+    run_id = nc_sync.start_run("incremental", uuid.uuid4(),
+                               fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    rows = _pg("select status, vouchers_inserted, lines_inserted, dims_inserted, "
+               "watermark_to from nc_sync_runs where id = %s", (run_id,))
+    assert rows[0] == ("success", 1, 2, 1, "2026-07-11 08:00:00")
+    assert _pg("select count(*) from journal_vouchers where nc_source_pk = 'NCPK1'")[0][0] == 1
+    # second incremental: same extract -> pk skipped, 0 inserted, watermark kept
+    run2 = nc_sync.start_run("incremental", uuid.uuid4(),
+                             fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    rows2 = _pg("select status, vouchers_inserted, watermark_from, watermark_to "
+                "from nc_sync_runs where id = %s", (run2,))
+    assert rows2[0] == ("success", 0, "2026-07-11 08:00:00", "2026-07-11 08:00:00")
+
+
+async def test_full_clears_and_reloads(db_session):
+    from app.services import nc_sync
+    nc_sync.start_run("incremental", uuid.uuid4(),
+                      fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    run_id = nc_sync.start_run("full", uuid.uuid4(),
+                               fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    rows = _pg("select status, vouchers_deleted, vouchers_inserted "
+               "from nc_sync_runs where id = %s", (run_id,))
+    assert rows[0] == ("success", 1, 1)
+    assert _pg("select count(*) from journal_vouchers where nc_source_pk is not null")[0][0] == 1
+
+
+async def test_concurrent_run_blocked_and_stale_recovered(db_session):
+    from datetime import timedelta
+    from app.services import nc_sync
+    from app.services.nc_sync import SyncAlreadyRunning
+    # plant a fresh 'running' row -> new run must be refused
+    _pg("insert into nc_sync_runs (id, mode, status, started_at, created_at, updated_at) "
+        "values (%s, 'incremental', 'running', now(), now(), now())", (uuid.uuid4(),))
+    with pytest.raises(SyncAlreadyRunning):
+        nc_sync.start_run("incremental", uuid.uuid4(),
+                          fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    # make it stale (>30 min) -> auto-failed, new run proceeds
+    _pg("update nc_sync_runs set started_at = now() - interval '31 minutes' "
+        "where status = 'running'")
+    run_id = nc_sync.start_run("incremental", uuid.uuid4(),
+                               fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    assert _pg("select status from nc_sync_runs where id = %s", (run_id,))[0][0] == "success"
+    assert _pg("select count(*) from nc_sync_runs where status='failed' "
+               "and error='abandoned'")[0][0] == 1
+
+
+async def test_worker_failure_marks_failed_and_rolls_back(db_session):
+    from app.services import nc_sync
+
+    def boom(wm):
+        raise RuntimeError("NC unreachable")
+
+    run_id = nc_sync.start_run("incremental", uuid.uuid4(), fetch=boom, pg_dsn=_TEST_DSN)
+    rows = _pg("select status, error from nc_sync_runs where id = %s", (run_id,))
+    assert rows[0][0] == "failed" and "NC unreachable" in rows[0][1]
+    assert _pg("select count(*) from journal_vouchers where nc_source_pk is not null")[0][0] == 0

@@ -170,3 +170,154 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         con.close()
     return NcExtract(ccy=ccy, aux=aux, vouchers=vouchers, details=details,
                      max_creationtime=max_ct)
+
+
+# ── run lifecycle (worker) ─────────────────────────────────────────────────────────
+import threading
+from datetime import datetime, timedelta, timezone
+
+import psycopg2
+from psycopg2.extras import execute_values, register_uuid
+from sqlalchemy.engine.url import make_url
+
+register_uuid()
+
+_start_lock = threading.Lock()
+STALE_AFTER = timedelta(minutes=30)
+_CHUNK = 5000
+
+
+class SyncAlreadyRunning(Exception):
+    pass
+
+
+def _pg_dsn() -> str:
+    u = make_url(settings.database_url)
+    return (f"host={u.host} port={u.port or 5432} dbname={u.database} "
+            f"user={u.username} password={u.password}")
+
+
+def _mark(dsn, run_id, **fields):
+    """Small autocommit update on the run row (progress + terminal states)."""
+    con = psycopg2.connect(dsn); con.autocommit = True
+    cur = con.cursor()
+    sets = ", ".join(f"{k} = %s" for k in fields)
+    cur.execute(f"update nc_sync_runs set {sets}, updated_at = now() where id = %s",
+                (*fields.values(), run_id))
+    con.close()
+
+
+def start_run(mode: str, started_by, *, fetch=fetch_from_nc,
+              pg_dsn: str | None = None, run_worker: bool = True):
+    """Single-flight gate + run-row insert. Synchronous — the API layer threads it.
+    Returns the new run id. Raises SyncAlreadyRunning if a live run exists."""
+    dsn = pg_dsn or _pg_dsn()
+    with _start_lock:
+        con = psycopg2.connect(dsn); con.autocommit = True
+        cur = con.cursor()
+        # auto-fail stale 'running' rows (crashed container), then check liveness
+        cur.execute("update nc_sync_runs set status = 'failed', error = 'abandoned', "
+                    "finished_at = now(), updated_at = now() "
+                    "where status = 'running' and started_at < %s",
+                    (datetime.now(timezone.utc) - STALE_AFTER,))
+        cur.execute("select id from nc_sync_runs where status = 'running'")
+        if cur.fetchone():
+            con.close()
+            raise SyncAlreadyRunning("an NC sync is already running")
+        run_id = uuid.uuid4()
+        cur.execute("insert into nc_sync_runs (id, mode, status, started_by, started_at, "
+                    "created_at, updated_at) values (%s, %s, 'running', %s, now(), now(), now())",
+                    (run_id, mode, started_by))
+        con.close()
+    if run_worker:
+        _run_worker(run_id, mode, fetch, dsn)
+    return run_id
+
+
+def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
+    try:
+        con = psycopg2.connect(dsn); con.autocommit = False
+        cur = con.cursor()
+        cur.execute("select nc_source_pk from journal_vouchers where nc_source_pk is not null")
+        existing = {r[0] for r in cur.fetchall()}
+        cur.execute("select watermark_to from nc_sync_runs where status = 'success' "
+                    "and watermark_to is not null order by started_at desc limit 1")
+        row = cur.fetchone()
+        prev_wm = row[0] if row else None
+
+        extract = fetch(prev_wm if mode == "incremental" else None)
+
+        cur.execute("select code, id from cost_centers")
+        uni_cc = dict(cur.fetchall())
+        cur.execute("select code, id from departments")
+        uni_dept = dict(cur.fetchall())
+        # budget_accounts is owned by budget-api; may not exist in this DB
+        try:
+            sp = con.cursor()
+            sp.execute("savepoint _ba")
+            sp.execute("select code, id from budget_accounts")
+            uni_ba = dict(sp.fetchall())
+            sp.execute("release savepoint _ba")
+            sp.close()
+        except Exception:  # noqa: BLE001
+            cur.execute("rollback to savepoint _ba")
+            cur.execute("release savepoint _ba")
+            uni_ba = {}
+
+        skip = existing if mode == "incremental" else set()
+        vouchers, lines, dims, unmapped = transform(extract, uni_cc, uni_dept, uni_ba, skip)
+
+        deleted = 0
+        if mode == "full":
+            cur.execute("delete from journal_vouchers where nc_source_pk is not null")
+            deleted = cur.rowcount
+
+        tot: dict = {}
+        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _ in lines:
+            t = tot.setdefault(jid, [Decimal("0")] * 4)
+            t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
+
+        v_rows = [(v["id"], v["jv_number"], "记", v["vdate"], v["period"], v["summary"],
+                   "posted", "nc", "nc_voucher", v["jv_number"], v["nc_pk"],
+                   *(tot.get(v["id"], [Decimal("0")] * 4))) for v in vouchers]
+        for i in range(0, len(v_rows), _CHUNK):
+            execute_values(cur,
+                "insert into journal_vouchers "
+                "(id, jv_number, voucher_word, voucher_date, fiscal_period, summary, status, "
+                " source_service, source_doc_type, source_doc_number, nc_source_pk, "
+                " total_debit, total_credit, total_local_debit, total_local_credit, "
+                " created_at, updated_at) values %s",
+                v_rows[i:i + _CHUNK],
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+            _mark(dsn, run_id, vouchers_inserted=min(i + _CHUNK, len(v_rows)))
+        for i in range(0, len(lines), _CHUNK):
+            execute_values(cur,
+                "insert into journal_voucher_lines "
+                "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
+                " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
+                " created_at, updated_at) values %s",
+                lines[i:i + _CHUNK],
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+            _mark(dsn, run_id, lines_inserted=min(i + _CHUNK, len(lines)))
+        for i in range(0, len(dims), _CHUNK):
+            execute_values(cur,
+                "insert into jv_line_dimensions "
+                "(id, jv_line_id, dim_code, value_id, value_text, created_at, updated_at) "
+                "values %s",
+                dims[i:i + _CHUNK],
+                template="(%s,%s,%s,%s,%s, now(), now())")
+            _mark(dsn, run_id, dims_inserted=min(i + _CHUNK, len(dims)))
+
+        con.commit(); con.close()
+        _mark(dsn, run_id, status="success", finished_at=datetime.now(timezone.utc),
+              vouchers_deleted=deleted, vouchers_inserted=len(vouchers),
+              lines_inserted=len(lines), dims_inserted=len(dims),
+              unmapped_cc_count=unmapped, watermark_from=prev_wm,
+              watermark_to=extract.max_creationtime or prev_wm)
+    except Exception as e:  # noqa: BLE001 — terminal state must always be written
+        try:
+            con.rollback(); con.close()
+        except Exception:
+            pass
+        _mark(dsn, run_id, status="failed", error=str(e)[:2000],
+              finished_at=datetime.now(timezone.utc))
