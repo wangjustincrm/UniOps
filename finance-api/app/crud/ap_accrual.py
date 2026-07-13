@@ -22,9 +22,63 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.payment_execute import _stamp_account_codes, _stamp_fx
 from app.models.ap_invoice import ApInvoice, ApInvoiceTaxLine, OPEN_STATUSES
+from app.models.posting import PostingEvent, PostingLine
 from app.services.posting import emit_event
 
 _ZERO = Decimal("0")
+
+
+async def has_postings(db: AsyncSession, invoice_id: uuid.UUID) -> bool:
+    """True if any GL event references this AP invoice (accrual or otherwise)."""
+    from sqlalchemy import func
+    n = (await db.execute(
+        select(func.count()).select_from(PostingEvent)
+        .where(PostingEvent.source_doc_type == "ap_invoice",
+               PostingEvent.source_doc_id == invoice_id)
+    )).scalar_one()
+    return n > 0
+
+
+async def reverse_invoice_accrual(db: AsyncSession, invoice_id: uuid.UUID) -> dict:
+    """Emit the mirror of this invoice's accrual (debit AP back, credit expense/ITC).
+
+    Called when a posted AP invoice is voided — the GL must not keep carrying a
+    liability whose source document is gone. Lines are copied from the original
+    accrual (not recomputed) so the reversal nets to exactly zero even if the
+    invoice fields changed since posting. Idempotent on
+    (ap_invoice, id, accrual_reversal); no-op when no accrual exists."""
+    ev = (await db.execute(
+        select(PostingEvent).where(PostingEvent.source_doc_type == "ap_invoice",
+                                   PostingEvent.source_doc_id == invoice_id,
+                                   PostingEvent.event_type == "accrual")
+    )).scalar_one_or_none()
+    if ev is None:
+        return {"invoice_id": invoice_id, "posting_event_id": None, "reversed": False}
+
+    lines = (await db.execute(
+        select(PostingLine).where(PostingLine.event_id == ev.id)
+        .order_by(PostingLine.line_no)
+    )).scalars().all()
+    reversal = [
+        {"line_role": ln.line_role, "account_code": ln.account_code,
+         "debit": ln.credit, "credit": ln.debit,
+         "cost_center_id": ln.cost_center_id, "department_id": ln.department_id,
+         "partner_id": ln.partner_id, "partner_name": ln.partner_name,
+         "tax_code": ln.tax_code, "currency": ln.currency, "fx_rate": ln.fx_rate,
+         "memo": f"Reversal of accrual {ev.source_doc_number}"}
+        for ln in lines
+    ]
+    event_id = await emit_event(
+        db,
+        source_service="finance",
+        source_doc_type="ap_invoice",
+        source_doc_id=invoice_id,
+        source_doc_number=ev.source_doc_number,
+        event_type="accrual_reversal",
+        lines=reversal,
+    )
+    return {"invoice_id": invoice_id, "posting_event_id": event_id,
+            "reversed": event_id is not None}
 
 
 async def post_invoice_accrual(db: AsyncSession, invoice_id: uuid.UUID) -> dict:

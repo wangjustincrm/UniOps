@@ -16,12 +16,35 @@ def _q(v) -> Decimal:
 
 
 async def _next_number(db: AsyncSession) -> str:
+    # max-suffix, not count: voided-and-deleted invoices leave gaps, and a
+    # count would reissue a number that is still taken (unique constraint).
     today = date.today().strftime("%Y%m%d")
     like = f"AP-{today}-%"
-    n = (await db.execute(
-        select(func.count()).select_from(ApInvoice).where(ApInvoice.ap_invoice_number.like(like))
-    )).scalar_one()
-    return f"AP-{today}-{n + 1:04d}"
+    nums = (await db.execute(
+        select(ApInvoice.ap_invoice_number).where(ApInvoice.ap_invoice_number.like(like))
+    )).scalars().all()
+    highest = 0
+    for n in nums:
+        try:
+            highest = max(highest, int(n.rsplit("-", 1)[1]))
+        except (IndexError, ValueError):
+            continue
+    return f"AP-{today}-{highest + 1:04d}"
+
+
+async def get_by_source(db: AsyncSession, *, source: str,
+                        source_invoice_id: uuid.UUID) -> ApInvoice | None:
+    return (await db.execute(
+        select(ApInvoice).where(ApInvoice.source == source,
+                                ApInvoice.source_invoice_id == source_invoice_id)
+    )).scalar_one_or_none()
+
+
+async def delete_invoice(db: AsyncSession, inv: ApInvoice) -> None:
+    """Hard-delete an AP invoice (tax lines cascade via FK). Only for invoices
+    that never touched the GL and were never paid — callers must check."""
+    await db.delete(inv)
+    await db.flush()
 
 
 async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
@@ -30,10 +53,7 @@ async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
     payload keys: source_ref, vendor_id, vendor_name, vendor_invoice_number,
     amount, tax_amount, total_amount, currency, invoice_date, due_date, status,
     source_status, po_id, po_number. Tax lines are rebuilt each call."""
-    inv = (await db.execute(
-        select(ApInvoice).where(ApInvoice.source == source,
-                                ApInvoice.source_invoice_id == source_invoice_id)
-    )).scalar_one_or_none()
+    inv = await get_by_source(db, source=source, source_invoice_id=source_invoice_id)
 
     fields = dict(
         source_ref=payload.get("source_ref"),
