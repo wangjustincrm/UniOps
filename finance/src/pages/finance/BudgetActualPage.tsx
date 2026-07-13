@@ -6,7 +6,7 @@
  */
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
@@ -42,6 +42,7 @@ interface Drill { accountCode: string; costCenterId?: string | null; title: stri
 
 export default function BudgetActualPage() {
   const { user } = useAuthStore()
+  const qc = useQueryClient()
   const [period, setPeriod] = useState(thisMonth())
   const [drill, setDrill] = useState<Drill | null>(null)
   const [jvId, setJvId] = useState<string | null>(null)
@@ -62,6 +63,13 @@ export default function BudgetActualPage() {
     for (const rows of Object.values(g)) rows.sort((a, b) => Number(b.actual) - Number(a.actual))
     return g
   }, [data])
+
+  const onJvActed = () => {
+    qc.invalidateQueries({ queryKey: ['account-balance'] })
+    qc.invalidateQueries({ queryKey: ['ab-expand'] })
+    qc.invalidateQueries({ queryKey: ['ab-vouchers'] })
+    qc.invalidateQueries({ queryKey: ['budget-actual'] })
+  }
 
   if (!user) return <Navigate to="/login" replace />
 
@@ -130,7 +138,7 @@ export default function BudgetActualPage() {
                               onClose={() => setDrill(null)} onOpenJv={(id) => setJvId(id)} />
       )}
       {jvId && (
-        <JvDetailModal jvId={jvId} canAct={perms?.can_act ?? false} onClose={() => setJvId(null)} />
+        <JvDetailModal jvId={jvId} canAct={perms?.can_act ?? false} onClose={() => setJvId(null)} onActed={onJvActed} />
       )}
     </PortalChromeLayout>
   )

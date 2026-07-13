@@ -6,7 +6,7 @@
  */
 import { Fragment, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2, Scale } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
@@ -40,6 +40,7 @@ interface Drill { accountCode: string; costCenterId?: string | null; title: stri
 
 export default function AccountBalancePage() {
   const { user } = useAuthStore()
+  const qc = useQueryClient()
   const [period, setPeriod] = useState(thisMonth())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [drill, setDrill] = useState<Drill | null>(null)
@@ -58,6 +59,13 @@ export default function AccountBalancePage() {
   const toggle = (code: string) => setExpanded((p) => {
     const n = new Set(p); if (n.has(code)) n.delete(code); else n.add(code); return n
   })
+
+  const onJvActed = () => {
+    qc.invalidateQueries({ queryKey: ['account-balance'] })
+    qc.invalidateQueries({ queryKey: ['ab-expand'] })
+    qc.invalidateQueries({ queryKey: ['ab-vouchers'] })
+    qc.invalidateQueries({ queryKey: ['budget-actual'] })
+  }
 
   if (!user) return <Navigate to="/login" replace />
 
@@ -152,7 +160,7 @@ export default function AccountBalancePage() {
                               onOpenJv={(id) => setJvId(id)} />
       )}
       {jvId && (
-        <JvDetailModal jvId={jvId} canAct={perms?.can_act ?? false} onClose={() => setJvId(null)} />
+        <JvDetailModal jvId={jvId} canAct={perms?.can_act ?? false} onClose={() => setJvId(null)} onActed={onJvActed} />
       )}
     </PortalChromeLayout>
   )
