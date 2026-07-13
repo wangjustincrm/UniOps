@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   CreditCard, Receipt, BookOpen, FileText, Banknote, Landmark, LayoutDashboard,
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
-  ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale,
+  ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -31,6 +31,7 @@ const NAV: NavSection[] = [
       { label: 'General Ledger', href: '/finance/gl', icon: BookOpen, permission: 'view_finance' },
       { label: 'Journal Vouchers', href: '/finance/journal-vouchers', icon: FileText, permission: 'view_finance' },
       { label: 'Account Balance', href: '/finance/account-balance', icon: Scale, permission: 'view_finance' },
+      { label: 'Budget Actual', href: '/finance/budget-actual', icon: Target, permission: 'view_finance' },
       { label: 'Payment Batches', href: '/finance/payment-batches', icon: Banknote, permission: 'view_finance' },
       { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark, permission: 'view_finance' },
     ],
