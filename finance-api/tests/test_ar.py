@@ -163,14 +163,19 @@ async def test_void_only_draft(client):
 
 
 async def test_output_tax_flows_into_gst_return(client):
-    """AR output tax + AP-style ITC net out in the GST/HST return."""
+    """AR output tax + AP-style ITC net out in the GST/HST return.
+
+    The tax return groups by the posting event's fiscal_period, which
+    emit_event stamps with TODAY's month — query dynamically (a hardcoded
+    month rots at rollover, same class as the old test_gl failures)."""
+    period = datetime.now(timezone.utc).strftime("%Y-%m")
     r = await client.post("/finance/v1/ar/invoices", headers=_h(),
                           json=_invoice_body("1000.00",
                               [{"tax_code": "HST_ON", "tax_amount": "130.00"}],
                               invoice_date="2026-06-10", due_date="2026-07-10"))
     await client.post(f"/finance/v1/ar/invoices/{r.json()['id']}/post", headers=_h())
 
-    rep = (await client.get("/finance/v1/tax/gst-hst-return?period=2026-06", headers=_h())).json()
+    rep = (await client.get(f"/finance/v1/tax/gst-hst-return?period={period}", headers=_h())).json()
     out = {row["tax_code"]: row["output_tax"] for row in rep["output_tax_by_code"]}
     assert out.get("HST_ON") == "130.00"
     assert rep["output_tax_total"] == "130.00"
