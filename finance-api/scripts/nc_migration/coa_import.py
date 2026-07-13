@@ -67,10 +67,11 @@ def read_nc_accounts() -> list[dict]:
     con = oracledb.connect(user=cfg["NC65_USER"], password=cfg["NC65_PASSWORD"], dsn=dsn)
     cur = con.cursor()
     cur.execute(
-        "select pk_account, code, name, pid, quantity "
+        "select pk_account, code, name, name2, pid, quantity "
         "from NCSC.BD_ACCOUNT where pk_accchart = :chart and enablestate = 2",
         chart=PK_ACCCHART)
-    rows = [{"pk": r[0], "code": r[1], "name": r[2], "pid": r[3], "quantity": r[4]}
+    rows = [{"pk": r[0], "code": r[1], "name_cn": r[2], "name_en": r[3],
+             "pid": r[4], "quantity": r[5]}
             for r in cur.fetchall()]
     con.close()
 
@@ -79,7 +80,10 @@ def read_nc_accounts() -> list[dict]:
     for r in rows:
         r["parent_code"] = pk2code.get(r["pid"])          # None for top-level
         r["is_postable"] = r["pk"] not in parents         # leaf = postable
-        r["name"] = r["name"] if r["name"] and r["name"] != "~" else r["code"]
+        # Prefer English (NAME2), fall back to Chinese (NAME), then the code.
+        def _clean(v):
+            return v if v and v != "~" else None
+        r["name"] = _clean(r["name_en"]) or _clean(r["name_cn"]) or r["code"]
         atype = account_type(r["code"])
         r["account_type"] = atype
         r["normal_balance"] = normal_balance(atype)
