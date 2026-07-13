@@ -1,11 +1,12 @@
 """NC65 voucher sync — status + trigger (system_admin only for writes)."""
 import asyncio
 import uuid
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
@@ -41,6 +42,13 @@ def _run_out(r: NcSyncRun | None) -> dict | None:
 
 @router.get("/status")
 async def status(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    # sweep stale running rows so the UI never shows a permanently-stuck run
+    await db.execute(text(
+        "update nc_sync_runs set status = 'failed', error = 'abandoned', "
+        "finished_at = now(), updated_at = now() "
+        "where status = 'running' and updated_at < :cutoff"),
+        {"cutoff": datetime.now(timezone.utc) - svc.STALE_AFTER})
+    await db.commit()
     current = (await db.execute(
         select(NcSyncRun).where(NcSyncRun.status == RUNNING)
         .order_by(NcSyncRun.started_at.desc()).limit(1))).scalars().first()

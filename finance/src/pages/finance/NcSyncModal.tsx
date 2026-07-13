@@ -68,6 +68,10 @@ export function NcSyncModal({ onClose, onSynced }: { onClose: () => void; onSync
   useEffect(() => {
     if (finishedOurRun) {
       setStartedRunId(null)
+      qc.invalidateQueries({ queryKey: ['account-balance'] })
+      qc.invalidateQueries({ queryKey: ['ab-expand'] })
+      qc.invalidateQueries({ queryKey: ['ab-vouchers'] })
+      qc.invalidateQueries({ queryKey: ['budget-actual'] })
       onSynced()
     }
   }, [finishedOurRun])  // eslint-disable-line react-hooks/exhaustive-deps

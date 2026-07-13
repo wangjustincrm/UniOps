@@ -201,11 +201,23 @@ def _pg_dsn() -> str:
 
 
 def _mark(dsn, run_id, **fields):
-    """Small autocommit update on the run row (progress + terminal states)."""
+    """Small autocommit update on the run row (progress counters)."""
     con = psycopg2.connect(dsn); con.autocommit = True
     cur = con.cursor()
     sets = ", ".join(f"{k} = %s" for k in fields)
     cur.execute(f"update nc_sync_runs set {sets}, updated_at = now() where id = %s",
+                (*fields.values(), run_id))
+    con.close()
+
+
+def _mark_terminal(dsn, run_id, **fields):
+    """Terminal update that refuses to overwrite an already-terminal row
+    (e.g. a run swept as abandoned must not flip back to success)."""
+    con = psycopg2.connect(dsn); con.autocommit = True
+    cur = con.cursor()
+    sets = ", ".join(f"{k} = %s" for k in fields)
+    cur.execute(f"update nc_sync_runs set {sets}, updated_at = now() "
+                f"where id = %s and status = 'running'",
                 (*fields.values(), run_id))
     con.close()
 
@@ -221,7 +233,7 @@ def start_run(mode: str, started_by, *, fetch=fetch_from_nc,
         # auto-fail stale 'running' rows (crashed container), then check liveness
         cur.execute("update nc_sync_runs set status = 'failed', error = 'abandoned', "
                     "finished_at = now(), updated_at = now() "
-                    "where status = 'running' and started_at < %s",
+                    "where status = 'running' and updated_at < %s",
                     (datetime.now(timezone.utc) - STALE_AFTER,))
         cur.execute("select id from nc_sync_runs where status = 'running'")
         if cur.fetchone():
@@ -313,16 +325,22 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 template="(%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, dims_inserted=min(i + _CHUNK, len(dims)))
 
+        # superseded-run guard: if sweeper already marked us abandoned, do not commit.
+        cur.execute("select status from nc_sync_runs where id = %s for update", (run_id,))
+        row = cur.fetchone()
+        if not row or row[0] != "running":
+            con.rollback(); con.close()
+            return
         con.commit(); con.close()
-        _mark(dsn, run_id, status="success", finished_at=datetime.now(timezone.utc),
-              vouchers_deleted=deleted, vouchers_inserted=len(vouchers),
-              lines_inserted=len(lines), dims_inserted=len(dims),
-              unmapped_cc_count=unmapped, watermark_from=prev_wm,
-              watermark_to=extract.max_creationtime or prev_wm)
+        _mark_terminal(dsn, run_id, status="success", finished_at=datetime.now(timezone.utc),
+                       vouchers_deleted=deleted, vouchers_inserted=len(vouchers),
+                       lines_inserted=len(lines), dims_inserted=len(dims),
+                       unmapped_cc_count=unmapped, watermark_from=prev_wm,
+                       watermark_to=extract.max_creationtime or prev_wm)
     except Exception as e:  # noqa: BLE001 — terminal state must always be written
         try:
             con.rollback(); con.close()
         except Exception:
             pass
-        _mark(dsn, run_id, status="failed", error=str(e)[:2000],
-              finished_at=datetime.now(timezone.utc))
+        _mark_terminal(dsn, run_id, status="failed", error=str(e)[:2000],
+                       finished_at=datetime.now(timezone.utc))

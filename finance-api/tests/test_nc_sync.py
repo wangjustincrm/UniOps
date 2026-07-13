@@ -143,7 +143,8 @@ async def test_concurrent_run_blocked_and_stale_recovered(db_session):
         nc_sync.start_run("incremental", uuid.uuid4(),
                           fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
     # make it stale (>30 min) -> auto-failed, new run proceeds
-    _pg("update nc_sync_runs set started_at = now() - interval '31 minutes' "
+    _pg("update nc_sync_runs set started_at = now() - interval '31 minutes', "
+        "updated_at = now() - interval '31 minutes' "
         "where status = 'running'")
     run_id = nc_sync.start_run("incremental", uuid.uuid4(),
                                fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
@@ -250,3 +251,15 @@ async def test_post_conflict_when_running(client, monkeypatch):
         "values (%s, 'incremental', 'running', now(), now(), now())", (uuid.uuid4(),))
     r = await client.post("/finance/v1/nc-sync", json={"mode": "incremental"}, headers=_h())
     assert r.status_code == 409
+
+
+async def test_status_sweeps_stale_running_row(client, monkeypatch):
+    _configure_nc(monkeypatch)
+    rid = uuid.uuid4()
+    _pg("insert into nc_sync_runs (id, mode, status, started_at, created_at, updated_at) "
+        "values (%s, 'incremental', 'running', now() - interval '31 minutes', now(), "
+        "now() - interval '31 minutes')", (rid,))
+    r = await client.get("/finance/v1/nc-sync/status", headers=_h())
+    assert r.status_code == 200
+    assert r.json()["current_run"] is None
+    assert _pg("select status, error from nc_sync_runs where id = %s", (rid,))[0] == ("failed", "abandoned")
