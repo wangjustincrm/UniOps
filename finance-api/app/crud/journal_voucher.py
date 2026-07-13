@@ -197,6 +197,18 @@ async def post_batch(db: AsyncSession, ids: list[uuid.UUID], user: dict) -> list
     return await _batch(db, ids, user, post)
 
 
+async def post_system_jv(db: AsyncSession, event_id: uuid.UUID) -> JournalVoucher | None:
+    """开账/结转 JV 系统直接过账(spec §4 系统权威):绕过角色/SoD/期间门。
+    幂等 — 非 draft 原样返回。"""
+    jv = (await db.execute(select(JournalVoucher).where(
+        JournalVoucher.posting_event_id == event_id))).scalar_one_or_none()
+    if jv is not None and jv.status == DRAFT:
+        jv.status = POSTED
+        jv.posted_at = datetime.now(timezone.utc)
+        await db.flush()
+    return jv
+
+
 async def backfill_posted_jvs(db: AsyncSession) -> dict:
     """One-time migration: ensure every posting_event has a JV (generate via the
     Plan-1 path if missing) and mark it `posted` directly — bypassing the human

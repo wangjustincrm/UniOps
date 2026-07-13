@@ -181,3 +181,21 @@ async def test_post_batch_posts_reviewed_only(db_session):
     assert by_id[str(a.id)]["ok"] is True
     assert by_id[str(b.id)]["ok"] is False
     assert (await jv_crud.get(db_session, a.id)).status == "posted"
+
+
+async def test_gl_opening_and_close_jvs_post_immediately(db_session):
+    """spec §4: 开账/结转 are system-authoritative — their JVs skip the human
+    review/post flow and land already posted."""
+    from datetime import date
+    from app.crud.gl import post_opening_balance
+    from app.models.journal_voucher import JournalVoucher
+
+    r = await post_opening_balance(db_session, as_of=date(2026, 1, 1), lines=[
+        {"account_code": "1010", "debit": "100.00"},
+        {"account_code": "3100", "credit": "100.00"},
+    ])
+    assert r["posting_event_id"] is not None
+    jv = (await db_session.execute(select(JournalVoucher).where(
+        JournalVoucher.posting_event_id == r["posting_event_id"]))).scalar_one()
+    assert jv.status == "posted"
+    assert jv.posted_at is not None

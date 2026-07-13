@@ -271,6 +271,9 @@ async def post_opening_balance(db: AsyncSession, *, as_of: date, lines: list[dic
                 "debit": l.get("debit", 0), "credit": l.get("credit", 0)} for l in lines],
         occurred_at=datetime(as_of.year, as_of.month, as_of.day, tzinfo=timezone.utc),
     )
+    if event_id is not None:
+        from app.crud.journal_voucher import post_system_jv
+        await post_system_jv(db, event_id)
     return {"posting_event_id": event_id, "already_posted": event_id is None}
 
 
@@ -313,5 +316,8 @@ async def close_year(db: AsyncSession, *, fiscal_year: int,
         event_type="closing", lines=lines,
         occurred_at=datetime(fiscal_year, 12, 31, tzinfo=timezone.utc),
     )
+    if event_id is not None:
+        from app.crud.journal_voucher import post_system_jv
+        await post_system_jv(db, event_id)
     return {"fiscal_year": fiscal_year, "posting_event_id": event_id,
             "already_closed": event_id is None, "net_income": _s(net)}
