@@ -31,8 +31,9 @@ DEV_DSN = "host=localhost port=5432 dbname=epms user=epms " \
           "password=7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9"
 
 # NC 辅助核算 global type pks (first 20 chars of a GL_FREEVALUE.typevalueN):
-AUX_DEPT = "0001Z0100000000005CS"           # 部门 -> ORG_DEPT
-AUX_COSTCENTER = "1003Z31000000000SP6J"     # 成本中心 -> RESA_COSTCENTER
+AUX_DEPT = "0001Z0100000000005CS"           # 部门 -> ORG_DEPT (1:1 by code -> departments)
+AUX_COSTCENTER = "1003Z31000000000SP6J"     # 成本中心 -> RESA_COSTCENTER (curated map)
+AUX_IOITEM = "0001Z0100000000005CZ"         # 收支项目 -> BD_INOUTBUSICLASS (1:1 by code -> budget_accounts)
 
 # Curated NC -> EPMS cost-center map (user, 2026-07-12). Rule: if the line carries
 # a cost-center code, the CODE decides (department-independent); otherwise classify
@@ -57,19 +58,22 @@ CC_BY_DEPT = {
 
 
 def load_aux(cur) -> dict:
-    """freevalueid -> (dept_code, cc_code) by parsing GL_FREEVALUE typevalues and
-    resolving the 部门 / 成本中心 slots via ORG_DEPT / RESA_COSTCENTER."""
+    """freevalueid -> (dept_code, cc_code, ioitem_code) by parsing GL_FREEVALUE
+    typevalues, resolving the 部门/成本中心/收支项目 slots via
+    ORG_DEPT / RESA_COSTCENTER / BD_INOUTBUSICLASS."""
     cur.execute("select pk_dept, code from NCSC.ORG_DEPT")
     dept = {pk: code for pk, code in cur.fetchall()}
     cur.execute("select pk_costcenter, cccode from NCSC.RESA_COSTCENTER")
     cc = {pk: code for pk, code in cur.fetchall()}
+    cur.execute("select pk_inoutbusiclass, code from NCSC.BD_INOUTBUSICLASS")
+    io = {pk: code for pk, code in cur.fetchall()}
     cur.execute("select freevalueid, typevalue1, typevalue2, typevalue3, typevalue4, "
                 "typevalue5, typevalue6, typevalue7, typevalue8, typevalue9 "
                 "from NCSC.GL_FREEVALUE")
     out = {}
     for row in cur:
         fid, tvs = row[0], row[1:]
-        dcode, ccode = "", ""
+        dcode = ccode = iocode = ""
         for tv in tvs:
             if not tv or len(tv) < 40:
                 continue
@@ -78,24 +82,31 @@ def load_aux(cur) -> dict:
                 dcode = dept.get(vpk, "")
             elif tpk == AUX_COSTCENTER:
                 ccode = cc.get(vpk, "")
-        out[fid] = (dcode, ccode)
+            elif tpk == AUX_IOITEM:
+                iocode = io.get(vpk, "")
+        out[fid] = (dcode, ccode, iocode)
     return out
 
 
-def load_uniops_cc(dsn: str) -> dict:
+def load_uniops_map(dsn: str, table: str) -> dict:
+    """code -> id from a UniOps master (cost_centers / departments / budget_accounts)."""
     con = psycopg2.connect(dsn); cur = con.cursor()
-    cur.execute("select code, id from cost_centers")
+    cur.execute(f"select code, id from {table}")
     m = {code: cid for code, cid in cur.fetchall()}
     con.close()
     return m
 
 
-def resolve_cc_id(assid, aux: dict, uni_cc: dict):
-    """NC line assid -> EPMS cost center -> UniOps cost_center_id (or None).
-    Cost-center code wins when present; else classify by department."""
-    d, c = aux.get(assid, ("", ""))
+def resolve_dims(assid, aux, uni_cc, uni_dept, uni_ba):
+    """-> (cost_center_id, department_id, ioitem_code, budget_account_id).
+    Cost center: code-first else department (curated). Department + income/expense
+    item: direct 1:1 by code."""
+    d, c, io = aux.get(assid, ("", "", ""))
     epms = CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)
-    return uni_cc.get(epms) if epms else None
+    return (uni_cc.get(epms) if epms else None,
+            uni_dept.get(d) if d else None,
+            io or None,
+            uni_ba.get(io) if io else None)
 
 
 def _nc_cfg() -> dict:
@@ -140,12 +151,14 @@ def read_vouchers(cur) -> tuple[dict, list]:
     return pk2id, vouchers
 
 
-def read_details(cur, pk2id: dict, ccy: dict, aux: dict, uni_cc: dict) -> list:
+def read_details(cur, pk2id, ccy, aux, uni_cc, uni_dept, uni_ba):
+    """Returns (lines, dims). Lines carry cost_center_id + department_id; dims are
+    jv_line_dimensions rows for the 收支项目 (income/expense item)."""
     cur.execute(
         "select pk_voucher, detailindex, accountcode, debitamount, creditamount, "
         "localdebitamount, localcreditamount, pk_currtype, excrate1, explanation, assid "
         "from NCSC.GL_DETAIL where pk_accountingbook = :b", b=PK_BOOK)
-    lines = []
+    lines, dims = [], []
     for pk, idx, acct, dr, cr, ldr, lcr, curr, rate, expl, assid in cur:
         jid = pk2id.get(pk)
         if jid is None:
@@ -154,12 +167,15 @@ def read_details(cur, pk2id: dict, ccy: dict, aux: dict, uni_cc: dict) -> list:
         # Net onto a single side — preserves the line's net effect on its account.
         odr, ocr = _net_side(_d(dr), _d(cr))
         ldr_, lcr_ = _net_side(_d(ldr), _d(lcr))
+        cc_id, dept_id, io_code, ba_id = resolve_dims(assid, aux, uni_cc, uni_dept, uni_ba)
+        lid = uuid.uuid4()
         lines.append((
-            uuid.uuid4(), jid, int(idx or 0), (acct or "").strip() or None,
+            lid, jid, int(idx or 0), (acct or "").strip() or None,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
-            ccy.get(curr, "CAD"), _d(rate) if rate else Decimal("1"),
-            resolve_cc_id(assid, aux, uni_cc)))
-    return lines
+            ccy.get(curr, "CAD"), _d(rate) if rate else Decimal("1"), cc_id, dept_id))
+        if io_code:
+            dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
+    return lines, dims
 
 
 def _net_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
@@ -167,13 +183,14 @@ def _net_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
     return (n, Decimal("0")) if n >= 0 else (Decimal("0"), -n)
 
 
-def load(vouchers, lines, dsn, clear):
+def load(vouchers, lines, dims, dsn, clear):
     con = psycopg2.connect(dsn); con.autocommit = False; cur = con.cursor()
     if clear:
+        # cascades to journal_voucher_lines + jv_line_dimensions (ondelete CASCADE)
         cur.execute("delete from journal_vouchers where nc_source_pk is not null")
     # totals per voucher (from lines)
     tot: dict = {}
-    for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _ in lines:
+    for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _ in lines:
         t = tot.setdefault(jid, [Decimal("0")] * 4)
         t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
     execute_values(cur,
@@ -191,11 +208,18 @@ def load(vouchers, lines, dsn, clear):
     execute_values(cur,
         "insert into journal_voucher_lines "
         "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
-        " local_debit, local_credit, currency, fx_rate, cost_center_id, "
+        " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
         " created_at, updated_at) values %s",
         lines,
-        template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())",
+        template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())",
         page_size=5000)
+    if dims:
+        execute_values(cur,
+            "insert into jv_line_dimensions "
+            "(id, jv_line_id, dim_code, value_id, value_text, created_at, updated_at) values %s",
+            dims,
+            template="(%s,%s,%s,%s,%s, now(), now())",
+            page_size=5000)
     con.commit(); con.close()
 
 
@@ -236,17 +260,21 @@ def main():
     cur.execute("select pk_currtype, code from NCSC.BD_CURRTYPE")
     ccy = {pk: code for pk, code in cur.fetchall()}
     aux = load_aux(cur)
-    uni_cc = load_uniops_cc(args.database)
-    print(f"aux combos={len(aux)}, UniOps cost_centers={len(uni_cc)}")
+    uni_cc = load_uniops_map(args.database, "cost_centers")
+    uni_dept = load_uniops_map(args.database, "departments")
+    uni_ba = load_uniops_map(args.database, "budget_accounts")
+    print(f"aux combos={len(aux)}, UniOps cc={len(uni_cc)} dept={len(uni_dept)} "
+          f"budget_accounts={len(uni_ba)}")
     pk2id, vouchers = read_vouchers(cur)
-    lines = read_details(cur, pk2id, ccy, aux, uni_cc)
+    lines, dims = read_details(cur, pk2id, ccy, aux, uni_cc, uni_dept, uni_ba)
     con.close()
-    mapped = sum(1 for ln in lines if ln[11] is not None)
-    print(f"NC read: {len(vouchers)} vouchers, {len(lines)} detail lines "
-          f"({mapped} lines mapped to a cost center)")
+    cc_n = sum(1 for ln in lines if ln[11] is not None)
+    dept_n = sum(1 for ln in lines if ln[12] is not None)
+    print(f"NC read: {len(vouchers)} vouchers, {len(lines)} lines "
+          f"(cost_center={cc_n}, department={dept_n}, income/expense dims={len(dims)})")
 
     if args.load:
-        load(vouchers, lines, args.database, clear=args.confirm_clear)
+        load(vouchers, lines, dims, args.database, clear=args.confirm_clear)
         print("loaded. reconciling...")
         con = _nc_connect()
         reconcile(con.cursor(), args.database)
