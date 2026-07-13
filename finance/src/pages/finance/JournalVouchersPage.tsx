@@ -7,12 +7,13 @@
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, ChevronLeft, ChevronRight, Loader2, Search, Send } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, DatabaseZap, Loader2, Search, Send } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal, JvStatusBadge, type JvHeader } from './JvDetailModal'
+import { NcSyncModal, type NcSyncStatus } from './NcSyncModal'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
@@ -41,6 +42,11 @@ export default function JournalVouchersPage() {
   const [detailId, setDetailId] = useState<string | null>(null)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState<'review' | 'post' | null>(null)
+  const [showNcSync, setShowNcSync] = useState(false)
+  const { data: ncStatus } = useQuery({
+    queryKey: ['nc-sync-status'],
+    queryFn: () => financeApi.get<NcSyncStatus>('/nc-sync/status'),
+  })
 
   const { data: perms } = useQuery({
     queryKey: ['jv-permissions'],
@@ -105,6 +111,12 @@ export default function JournalVouchersPage() {
       activeKey="portal:/finance/journal-vouchers"
       title="Journal Vouchers"
       subtitle="Voucher center — review, post, and trace formal GL journal vouchers"
+      headerActions={ncStatus?.configured && ncStatus?.can_sync ? (
+        <button onClick={() => setShowNcSync(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+          <DatabaseZap className="h-4 w-4" /> NC Sync
+        </button>
+      ) : undefined}
     >
       <div className="mx-auto max-w-7xl">
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -208,6 +220,9 @@ export default function JournalVouchersPage() {
       {detailId && (
         <JvDetailModal jvId={detailId} canAct={canAct}
                        onClose={() => setDetailId(null)} onActed={refresh} />
+      )}
+      {showNcSync && (
+        <NcSyncModal onClose={() => setShowNcSync(false)} onSynced={refresh} />
       )}
     </PortalChromeLayout>
   )
