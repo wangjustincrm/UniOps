@@ -1,11 +1,18 @@
 """NC sync runs — model/migration + service + API tests."""
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import psycopg2
 import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from jose import jwt
 from sqlalchemy import select
+
+from app.core.config import settings as app_settings
+from app.db.base import get_db
+from app.main import app
 
 from app.models.nc_sync import RUNNING, SUCCESS, NcSyncRun
 
@@ -155,3 +162,91 @@ async def test_worker_failure_marks_failed_and_rolls_back(db_session):
     rows = _pg("select status, error from nc_sync_runs where id = %s", (run_id,))
     assert rows[0][0] == "failed" and "NC unreachable" in rows[0][1]
     assert _pg("select count(*) from journal_vouchers where nc_source_pk is not null")[0][0] == 0
+
+
+# ── API endpoint tests ────────────────────────────────────────────────────────
+
+
+def _token(role="system_admin", sub=None):
+    return jwt.encode({"sub": str(sub or uuid.uuid4()), "role": role,
+                       "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                      app_settings.jwt_secret_key, algorithm=app_settings.jwt_algorithm)
+
+
+def _h(role="system_admin"):
+    return {"Authorization": f"Bearer {_token(role)}"}
+
+
+@pytest_asyncio.fixture
+async def client(db_session):
+    async def _override_get_db():
+        yield db_session
+    app.dependency_overrides[get_db] = _override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+def _configure_nc(monkeypatch):
+    for f in ("nc_host", "nc_service", "nc_user", "nc_password"):
+        monkeypatch.setattr(app_settings, f, "x")
+
+
+async def test_status_shape_and_can_sync(client, monkeypatch):
+    _configure_nc(monkeypatch)
+    r = await client.get("/finance/v1/nc-sync/status", headers=_h())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["can_sync"] is True and body["configured"] is True
+    assert body["current_run"] is None and body["last_run"] is None
+    r2 = await client.get("/finance/v1/nc-sync/status", headers=_h(role="finance_manager"))
+    assert r2.json()["can_sync"] is False
+
+
+async def test_post_guards(client, monkeypatch):
+    # not configured -> 503
+    monkeypatch.setattr(app_settings, "nc_host", None)
+    r = await client.post("/finance/v1/nc-sync", json={"mode": "incremental"}, headers=_h())
+    assert r.status_code == 503
+    _configure_nc(monkeypatch)
+    # non-admin -> 403
+    r = await client.post("/finance/v1/nc-sync", json={"mode": "incremental"},
+                          headers=_h(role="finance_manager"))
+    assert r.status_code == 403
+    # full without confirm -> 422
+    r = await client.post("/finance/v1/nc-sync", json={"mode": "full"}, headers=_h())
+    assert r.status_code == 422
+    # bad mode -> 422 (pydantic Literal)
+    r = await client.post("/finance/v1/nc-sync", json={"mode": "bananas"}, headers=_h())
+    assert r.status_code == 422
+
+
+async def test_post_triggers_run_and_status_reports_it(client, monkeypatch, db_session):
+    from app.api.v1 import nc_sync as api_mod
+    _configure_nc(monkeypatch)
+    monkeypatch.setattr(api_mod, "_worker_dsn", lambda: _TEST_DSN)
+    monkeypatch.setattr(api_mod, "_fetch", lambda wm: _mini_extract())
+    r = await client.post("/finance/v1/nc-sync", json={"mode": "incremental"}, headers=_h())
+    assert r.status_code == 202, r.text
+    run_id = r.json()["run_id"]
+    # endpoint runs the worker synchronously in tests? No — it schedules a thread;
+    # poll the DB (worker writes via psycopg2, visible outside the async session)
+    import time
+    for _ in range(50):
+        rows = _pg("select status from nc_sync_runs where id = %s", (run_id,))
+        if rows and rows[0][0] != "running":
+            break
+        time.sleep(0.2)
+    assert rows[0][0] == "success"
+    r2 = await client.get("/finance/v1/nc-sync/status", headers=_h())
+    assert r2.json()["last_run"]["vouchers_inserted"] == 1
+
+
+async def test_post_conflict_when_running(client, monkeypatch):
+    _configure_nc(monkeypatch)
+    from app.api.v1 import nc_sync as api_mod
+    monkeypatch.setattr(api_mod, "_worker_dsn", lambda: _TEST_DSN)
+    _pg("insert into nc_sync_runs (id, mode, status, started_at, created_at, updated_at) "
+        "values (%s, 'incremental', 'running', now(), now(), now())", (uuid.uuid4(),))
+    r = await client.post("/finance/v1/nc-sync", json={"mode": "incremental"}, headers=_h())
+    assert r.status_code == 409
