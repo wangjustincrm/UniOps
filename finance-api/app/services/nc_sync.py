@@ -173,6 +173,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
 
 
 # ── run lifecycle (worker) ─────────────────────────────────────────────────────────
+import logging
 import threading
 from datetime import datetime, timedelta, timezone
 
@@ -181,6 +182,8 @@ from psycopg2.extras import execute_values, register_uuid
 from sqlalchemy.engine.url import make_url
 
 register_uuid()
+
+logger = logging.getLogger(__name__)
 
 _start_lock = threading.Lock()
 STALE_AFTER = timedelta(minutes=30)
@@ -262,6 +265,8 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         except Exception:  # noqa: BLE001
             cur.execute("rollback to savepoint _ba")
             cur.execute("release savepoint _ba")
+            logger.warning("budget_accounts table not found; income/expense dims will have "
+                           "value_id=NULL — check the finance DB schema")
             uni_ba = {}
 
         skip = existing if mode == "incremental" else set()
