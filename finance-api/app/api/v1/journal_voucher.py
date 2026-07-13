@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
@@ -40,16 +40,27 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         period: str | None = Query(default=None),
                         status: str | None = Query(default=None),
                         source_doc_type: str | None = Query(default=None),
-                        limit: int = Query(default=200, le=1000)):
-    q = select(JournalVoucher).order_by(JournalVoucher.voucher_date.desc()).limit(limit)
+                        q: str | None = Query(default=None),
+                        limit: int = Query(default=50, le=200),
+                        offset: int = Query(default=0, ge=0)):
+    base = select(JournalVoucher)
     if period:
-        q = q.where(JournalVoucher.fiscal_period == period)
+        base = base.where(JournalVoucher.fiscal_period == period)
     if status:
-        q = q.where(JournalVoucher.status == status)
+        base = base.where(JournalVoucher.status == status)
     if source_doc_type:
-        q = q.where(JournalVoucher.source_doc_type == source_doc_type)
-    rows = (await db.execute(q)).scalars().all()
-    return [_hdr(jv) for jv in rows]
+        base = base.where(JournalVoucher.source_doc_type == source_doc_type)
+    if q:
+        like = f"%{q}%"
+        base = base.where(or_(JournalVoucher.jv_number.ilike(like),
+                              JournalVoucher.summary.ilike(like)))
+    total = (await db.execute(
+        select(func.count()).select_from(base.subquery()))).scalar_one()
+    rows = (await db.execute(
+        base.order_by(JournalVoucher.voucher_date.desc(),
+                      JournalVoucher.jv_number.desc())
+        .offset(offset).limit(limit))).scalars().all()
+    return {"total": total, "items": [_hdr(jv) for jv in rows]}
 
 
 @router.get("/{jv_id}")

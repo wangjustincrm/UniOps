@@ -53,7 +53,7 @@ async def test_list_and_get_detail(client, db_session):
     jv = await _draft_jv(db_session)
     r = await client.get("/finance/v1/journal-vouchers", headers=_h())
     assert r.status_code == 200
-    assert any(row["id"] == str(jv.id) for row in r.json())
+    assert any(row["id"] == str(jv.id) for row in r.json()["items"])
 
     r2 = await client.get(f"/finance/v1/journal-vouchers/{jv.id}", headers=_h())
     assert r2.status_code == 200
@@ -86,3 +86,21 @@ async def test_post_batch_endpoint(client, db_session):
                           json={"ids": [str(jv.id)]}, headers=_h())
     assert r.status_code == 200
     assert r.json()[0]["ok"] is True
+
+
+async def test_list_pagination_and_search(client, db_session):
+    a = await _draft_jv(db_session)
+    b = await _draft_jv(db_session)
+    # paginated envelope
+    r = await client.get("/finance/v1/journal-vouchers?limit=1&offset=0", headers=_h())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] >= 2
+    assert len(body["items"]) == 1
+    # offset walks the list
+    r2 = await client.get("/finance/v1/journal-vouchers?limit=1&offset=1", headers=_h())
+    assert r2.json()["items"][0]["id"] != body["items"][0]["id"]
+    # q matches jv_number
+    r3 = await client.get(f"/finance/v1/journal-vouchers?q={a.jv_number}", headers=_h())
+    ids = [row["id"] for row in r3.json()["items"]]
+    assert str(a.id) in ids and str(b.id) not in ids
