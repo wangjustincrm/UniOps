@@ -73,6 +73,17 @@ def read_nc_accounts() -> list[dict]:
     rows = [{"pk": r[0], "code": r[1], "name_cn": r[2], "name_en": r[3],
              "pid": r[4], "quantity": r[5]}
             for r in cur.fetchall()]
+
+    # Account names actually live in BD_ACCASOA (科目辅助核算对照), keyed by
+    # pk_account (multiple rows per account; name is consistent — take a filled one).
+    # This covers 348/360 vs 184 via BD_ACCOUNT.name2.
+    cur.execute("select pk_account, name, name2 from NCSC.BD_ACCASOA where pk_accchart = :chart",
+                chart=PK_ACCCHART)
+    accasoa: dict = {}
+    for pka, nm, nm2 in cur.fetchall():
+        cur_nm, cur_nm2 = accasoa.get(pka, (None, None))
+        accasoa[pka] = (cur_nm or (nm if nm and nm != "~" else None),
+                        cur_nm2 or (nm2 if nm2 and nm2 != "~" else None))
     con.close()
 
     pk2code = {r["pk"]: r["code"] for r in rows}
@@ -80,10 +91,12 @@ def read_nc_accounts() -> list[dict]:
     for r in rows:
         r["parent_code"] = pk2code.get(r["pid"])          # None for top-level
         r["is_postable"] = r["pk"] not in parents         # leaf = postable
-        # Prefer English (NAME2), fall back to Chinese (NAME), then the code.
+        # Name: BD_ACCASOA English -> BD_ACCASOA Chinese -> BD_ACCOUNT en/cn -> code.
         def _clean(v):
             return v if v and v != "~" else None
-        r["name"] = _clean(r["name_en"]) or _clean(r["name_cn"]) or r["code"]
+        a_nm, a_nm2 = accasoa.get(r["pk"], (None, None))
+        r["name"] = (_clean(a_nm2) or _clean(a_nm)
+                     or _clean(r["name_en"]) or _clean(r["name_cn"]) or r["code"])
         atype = account_type(r["code"])
         r["account_type"] = atype
         r["normal_balance"] = normal_balance(atype)
