@@ -104,3 +104,45 @@ async def test_list_pagination_and_search(client, db_session):
     r3 = await client.get(f"/finance/v1/journal-vouchers?q={a.jv_number}", headers=_h())
     ids = [row["id"] for row in r3.json()["items"]]
     assert str(a.id) in ids and str(b.id) not in ids
+
+
+async def test_jv_permissions_endpoint(client, db_session):
+    r = await client.get("/finance/v1/journal-vouchers/permissions", headers=_h())
+    assert r.status_code == 200          # not 422 — route must sit above /{jv_id}
+    assert r.json()["can_act"] is True
+    r2 = await client.get("/finance/v1/journal-vouchers/permissions",
+                          headers=_h(role="requester"))
+    assert r2.json()["can_act"] is False
+
+
+async def test_detail_resolves_names_and_dims(client, db_session):
+    from app.models.journal_voucher import JournalVoucherLine, JvLineDimension
+    from app.models.mirrors import CostCenter, Department, User
+
+    preparer = uuid.uuid4()
+    db_session.add(User(id=preparer, email="fin@x.com", full_name="Fin Preparer"))
+    cc = CostCenter(id=uuid.uuid4(), code="MOH-0104-P02", name="Processing", is_active=True)
+    dept = Department(id=uuid.uuid4(), code="0104", name="Production", is_active=True)
+    db_session.add_all([cc, dept])
+    await db_session.flush()
+
+    jv = await _draft_jv(db_session)
+    jv.prepared_by = preparer
+    line = (await db_session.execute(select(JournalVoucherLine).where(
+        JournalVoucherLine.jv_id == jv.id).order_by(JournalVoucherLine.line_no))
+        ).scalars().first()
+    line.cost_center_id = cc.id
+    line.department_id = dept.id
+    db_session.add(JvLineDimension(jv_line_id=line.id, dim_code="income_expense_item",
+                                   value_text="CRM004"))
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/journal-vouchers/{jv.id}", headers=_h())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["voucher"]["prepared_by_name"] == "Fin Preparer"
+    ln = next(l for l in body["lines"] if l["line_no"] == line.line_no)
+    assert ln["cost_center_code"] == "MOH-0104-P02"
+    assert ln["department_name"] == "Production"
+    assert {"dim_code": "income_expense_item", "value_text": "CRM004"} in [
+        {"dim_code": d["dim_code"], "value_text": d["value_text"]} for d in ln["dims"]]

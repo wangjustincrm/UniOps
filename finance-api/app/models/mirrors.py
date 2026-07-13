@@ -40,6 +40,17 @@ class CostCenter(UUIDPrimaryKey, TimestampMixin, Base):
     department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
+class Department(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror of the shared `departments` master (epms owns schema).
+    Columns verified against information_schema 2026-07-13:
+    id/code/name/is_active/created_at/updated_at (all NOT NULL)."""
+    __tablename__ = "departments"
+
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     """epms-api owns schema. A2 extends the mirror for AP accrual + open items
     (columns verified against information_schema 2026-06-12)."""

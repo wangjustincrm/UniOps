@@ -63,6 +63,13 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
     return {"total": total, "items": [_hdr(jv) for jv in rows]}
 
 
+@router.get("/permissions")
+async def jv_permissions(user: CurrentUser):
+    """UI capability gate — same role set the lifecycle actions enforce."""
+    from app.crud.journal_voucher import _JV_ROLES
+    return {"can_act": user.get("role") in _JV_ROLES}
+
+
 @router.get("/{jv_id}")
 async def get_voucher(jv_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depends(get_db)):
     jv = await crud.get(db, jv_id)
@@ -71,13 +78,69 @@ async def get_voucher(jv_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depen
     lines = (await db.execute(
         select(JournalVoucherLine).where(JournalVoucherLine.jv_id == jv_id)
         .order_by(JournalVoucherLine.line_no))).scalars().all()
-    return {"voucher": _hdr(jv), "lines": [
-        {"line_no": ln.line_no, "account_code": ln.account_code, "summary": ln.summary,
-         "orig_debit": str(ln.orig_debit), "orig_credit": str(ln.orig_credit),
-         "local_debit": str(ln.local_debit), "local_credit": str(ln.local_credit),
-         "currency": ln.currency, "fx_rate": str(ln.fx_rate),
-         "partner_name": ln.partner_name, "tax_code": ln.tax_code}
-        for ln in lines]}
+
+    from app.models.coa import ChartOfAccount
+    from app.models.journal_voucher import JvLineDimension
+    from app.models.mirrors import CostCenter, Department, User
+
+    async def _lookup(model, ids, key=lambda r: r.id):
+        ids = {i for i in ids if i is not None}
+        if not ids:
+            return {}
+        rows = (await db.execute(select(model).where(model.id.in_(ids)))).scalars().all()
+        return {key(r): r for r in rows}
+
+    users = await _lookup(User, {jv.prepared_by, jv.reviewed_by, jv.posted_by})
+    ccs = await _lookup(CostCenter, {ln.cost_center_id for ln in lines})
+    depts = await _lookup(Department, {ln.department_id for ln in lines})
+    codes = {ln.account_code for ln in lines if ln.account_code}
+    coa = {}
+    if codes:
+        coa = {a.code: a for a in (await db.execute(
+            select(ChartOfAccount).where(ChartOfAccount.code.in_(codes)))).scalars()}
+    dims_by_line: dict = {}
+    line_ids = [ln.id for ln in lines]
+    if line_ids:
+        for d in (await db.execute(select(JvLineDimension).where(
+                JvLineDimension.jv_line_id.in_(line_ids)))).scalars():
+            dims_by_line.setdefault(d.jv_line_id, []).append(
+                {"dim_code": d.dim_code, "value_text": d.value_text})
+
+    def _name(uid):
+        u = users.get(uid)
+        return u.full_name if u else None
+
+    def _iso(dt):
+        return dt.isoformat() if dt else None
+
+    voucher = _hdr(jv) | {
+        "source_service": jv.source_service, "nc_source_pk": jv.nc_source_pk,
+        "prepared_by_name": _name(jv.prepared_by), "prepared_at": _iso(jv.prepared_at),
+        "reviewed_by_name": _name(jv.reviewed_by), "reviewed_at": _iso(jv.reviewed_at),
+        "posted_by_name": _name(jv.posted_by), "posted_at": _iso(jv.posted_at),
+    }
+
+    def _line(ln: JournalVoucherLine) -> dict:
+        cc, dept = ccs.get(ln.cost_center_id), depts.get(ln.department_id)
+        acct = coa.get(ln.account_code) if ln.account_code else None
+        return {
+            "line_no": ln.line_no, "account_code": ln.account_code,
+            "account_name": acct.name if acct else None, "summary": ln.summary,
+            "orig_debit": str(ln.orig_debit), "orig_credit": str(ln.orig_credit),
+            "local_debit": str(ln.local_debit), "local_credit": str(ln.local_credit),
+            "currency": ln.currency, "fx_rate": str(ln.fx_rate),
+            "quantity": str(ln.quantity) if ln.quantity is not None else None,
+            "unit": ln.unit,
+            "price": str(ln.price) if ln.price is not None else None,
+            "cost_center_code": cc.code if cc else None,
+            "cost_center_name": cc.name if cc else None,
+            "department_code": dept.code if dept else None,
+            "department_name": dept.name if dept else None,
+            "partner_name": ln.partner_name, "tax_code": ln.tax_code,
+            "dims": dims_by_line.get(ln.id, []),
+        }
+
+    return {"voucher": voucher, "lines": [_line(ln) for ln in lines]}
 
 
 def _err(e: Exception):
