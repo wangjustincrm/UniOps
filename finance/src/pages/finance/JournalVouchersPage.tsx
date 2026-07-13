@@ -72,6 +72,7 @@ export default function JournalVouchersPage() {
     setSelected(new Set())
   }
   const resetPage = () => { setPage(0); setSelected(new Set()) }
+  const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
 
   const toggle = (id: string) => setSelected((p) => {
     const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n
@@ -191,11 +192,11 @@ export default function JournalVouchersPage() {
             <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
               <span>{total.toLocaleString()} voucher{total === 1 ? '' : 's'}</span>
               <div className="flex items-center gap-2">
-                <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} className={secondaryBtn}>
+                <button onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0} className={secondaryBtn}>
                   <ChevronLeft className="h-4 w-4" /> Prev
                 </button>
                 <span>Page {page + 1} / {pageCount}</span>
-                <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={page >= pageCount - 1} className={secondaryBtn}>
+                <button onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))} disabled={page >= pageCount - 1} className={secondaryBtn}>
                   Next <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
