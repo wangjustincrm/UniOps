@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.coa import ChartOfAccount
+from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
 from app.models.posting import PostingEvent, PostingLine
 from app.services.posting import emit_event
 
@@ -51,15 +52,16 @@ async def trial_balance(db: AsyncSession, period: str) -> dict:
     coa = await _coa_map(db)
 
     async def sums(where):
-        q = (select(PostingLine.account_code,
-                    func.coalesce(func.sum(PostingLine.debit), 0),
-                    func.coalesce(func.sum(PostingLine.credit), 0))
-             .join(PostingEvent, PostingLine.event_id == PostingEvent.id)
-             .where(where).group_by(PostingLine.account_code))
+        q = (select(JournalVoucherLine.account_code,
+                    func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+                    func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+             .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+             .where(JournalVoucher.status == POSTED).where(where)
+             .group_by(JournalVoucherLine.account_code))
         return {code: (Decimal(d), Decimal(c)) for code, d, c in (await db.execute(q)).all()}
 
-    opening = await sums(PostingEvent.fiscal_period < period)
-    movement = await sums(PostingEvent.fiscal_period == period)
+    opening = await sums(JournalVoucher.fiscal_period < period)
+    movement = await sums(JournalVoucher.fiscal_period == period)
 
     codes = sorted(set(opening) | set(movement), key=lambda c: (c is None, c or ""))
     rows = []
@@ -95,30 +97,35 @@ async def account_ledger(db: AsyncSession, code: str, period: str) -> dict:
     acct = coa.get(code)
 
     opening_row = (await db.execute(
-        select(func.coalesce(func.sum(PostingLine.debit), 0),
-               func.coalesce(func.sum(PostingLine.credit), 0))
-        .join(PostingEvent, PostingLine.event_id == PostingEvent.id)
-        .where(PostingLine.account_code == code, PostingEvent.fiscal_period < period)
+        select(func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+               func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+        .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+        .where(JournalVoucherLine.account_code == code,
+               JournalVoucher.status == POSTED,
+               JournalVoucher.fiscal_period < period)
     )).one()
     running = Decimal(opening_row[0]) - Decimal(opening_row[1])
     opening = running
 
     lines = (await db.execute(
-        select(PostingLine, PostingEvent)
-        .join(PostingEvent, PostingLine.event_id == PostingEvent.id)
-        .where(PostingLine.account_code == code, PostingEvent.fiscal_period == period)
-        .order_by(PostingEvent.occurred_at, PostingLine.line_no)
+        select(JournalVoucherLine, JournalVoucher)
+        .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+        .where(JournalVoucherLine.account_code == code,
+               JournalVoucher.status == POSTED,
+               JournalVoucher.fiscal_period == period)
+        .order_by(JournalVoucher.voucher_date, JournalVoucher.jv_number,
+                  JournalVoucherLine.line_no)
     )).all()
 
     entries = []
-    for ln, ev in lines:
-        running += ln.debit - ln.credit
+    for ln, jv in lines:
+        running += ln.local_debit - ln.local_credit
         entries.append({
-            "date": ev.occurred_at.date().isoformat(),
-            "source": f"{ev.source_doc_type}:{ev.source_doc_number}",
-            "event_type": ev.event_type, "line_role": ln.line_role,
-            "partner_name": ln.partner_name, "memo": ln.memo,
-            "debit": _s(ln.debit), "credit": _s(ln.credit),
+            "date": jv.voucher_date.isoformat(),
+            "source": f"{jv.source_doc_type}:{jv.source_doc_number}"
+                      if jv.source_doc_type else jv.jv_number,
+            "partner_name": ln.partner_name, "memo": ln.summary,
+            "debit": _s(ln.local_debit), "credit": _s(ln.local_credit),
             "balance": _s(running),
         })
     return {
