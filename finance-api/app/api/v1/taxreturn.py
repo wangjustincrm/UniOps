@@ -6,6 +6,12 @@ expenses). Output tax (sales) comes from line_role='output_tax' (credit),
 emitted by AR revenue recognition. Both are grouped by tax_code within a fiscal
 period. Net tax = output − ITC (negative = refund/credit). Uncoded lines
 (tax_code NULL) are listed as exceptions to be coded before filing.
+
+Basis note (Plan 5 GL switchover): this worksheet reads the BUSINESS SPINE
+(posting_lines — all events, including ones whose JV is still draft), while
+the GL 2200 balance reflects POSTED journal vouchers only, and a JV-level
+red-flush (红冲) writes no posting_lines. The two can therefore diverge by
+design; follow-up planned to move ITC/output tax onto posted-JV lines.
 """
 import csv
 import io
