@@ -14,7 +14,8 @@ NC 凭证导入目前是宿主机手工脚本:全量、清空重灌、仅本地 
 
 用户已确认的决策:
 - **增量语义 = 只补新凭证**:按 `nc_source_pk` 跳过已存在的,只插入 NC 新出现的凭证;
-  用 `GL_VOUCHER.ts` 时间戳水位加速。已导凭证永不改动(不处理 NC 侧修改)。
+  用 `GL_VOUCHER.creationtime`(char(19),NC 字典确认;GL_VOUCHER 无 ts 列)时间戳水位
+  加速,查询用 `>=` 上次水位、靠 pk 跳重保证边界不丢不重。已导凭证永不改动(不处理 NC 侧修改)。
 - **场景 = dev + 生产并行期**:按生产可用来设计;生产前提=app server(10.10.50.65)到
   NC(10.10.95.67:1521)网络可达,上生产前需验证。
 - **权限 = 两种模式都仅 `system_admin`**(JWT role),财务角色不可见不可用。
@@ -29,7 +30,7 @@ NC 凭证导入目前是宿主机手工脚本:全量、清空重灌、仅本地 
 | mode | `full` / `incremental` |
 | status | `running` / `success` / `failed` |
 | started_by / started_at / finished_at | 操作人(uuid)与起止时间 |
-| watermark_from / watermark_to | 本次扫描的 NC `GL_VOUCHER.ts` 水位区间(字符串,NC ts 原格式) |
+| watermark_from / watermark_to | 本次扫描的 NC `GL_VOUCHER.creationtime` 水位区间(char(19) 原格式字符串) |
 | vouchers_deleted | 全量模式清掉的旧凭证数(增量恒 0) |
 | vouchers_inserted / lines_inserted / dims_inserted | 导入计数 |
 | unmapped_cc_count | 未命中成本中心映射的行数(照导,仅计数) |
