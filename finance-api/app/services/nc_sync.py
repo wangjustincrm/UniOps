@@ -109,7 +109,7 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             lid, jid, int(idx or 0), (acct or "").strip() or None,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
             extract.ccy.get(curr, "CAD"), _d(rate) if rate else Decimal("1"),
-            cc_id, dept_id))
+            cc_id, dept_id, ba_id))
         if io_code:
             dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
     return vouchers, lines, dims, unmapped
@@ -292,7 +292,7 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             deleted = cur.rowcount
 
         tot: dict = {}
-        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _ in lines:
+        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _, _ in lines:
             t = tot.setdefault(jid, [Decimal("0")] * 4)
             t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
 
@@ -314,9 +314,9 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 "insert into journal_voucher_lines "
                 "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
                 " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
-                " created_at, updated_at) values %s",
+                " income_expense_item_id, created_at, updated_at) values %s",
                 lines[i:i + _CHUNK],
-                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, lines_inserted=min(i + _CHUNK, len(lines)))
         for i in range(0, len(dims), _CHUNK):
             execute_values(cur,

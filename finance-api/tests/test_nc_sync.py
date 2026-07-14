@@ -69,6 +69,7 @@ def test_transform_maps_dims_and_nets_sides():
     l1 = next(l for l in lines if l[2] == 1)
     assert (l1[5], l1[6]) == (Decimal("100"), Decimal("0"))   # netted to debit
     assert l1[11] is cc_id and l1[12] is dept_id
+    assert l1[13] is ba_id            # promoted income/expense item column
     assert len(dims) == 1 and dims[0][2] == "income_expense_item" and dims[0][3] is ba_id
     assert unmapped == 0
 
@@ -106,12 +107,18 @@ def _pg(sql, params=()):
 async def test_start_run_incremental_inserts_and_sets_watermark(db_session):
     # db_session fixture has migrated finance_test; worker writes via its own psycopg2 conn
     from app.services import nc_sync
+    # seed a budget_account so the worker can resolve CRM004 -> a real UUID
+    ba_uuid = uuid.uuid4()
+    _pg("insert into budget_accounts (id, code, name, is_active, created_at, updated_at) "
+        "values (%s, 'CRM004', 'CRM004 Test', true, now(), now())", (ba_uuid,))
     run_id = nc_sync.start_run("incremental", uuid.uuid4(),
                                fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
     rows = _pg("select status, vouchers_inserted, lines_inserted, dims_inserted, "
                "watermark_to from nc_sync_runs where id = %s", (run_id,))
     assert rows[0] == ("success", 1, 2, 1, "2026-07-11 08:00:00")
     assert _pg("select count(*) from journal_vouchers where nc_source_pk = 'NCPK1'")[0][0] == 1
+    assert _pg("select count(*) from journal_voucher_lines "
+               "where income_expense_item_id is not null")[0][0] == 1
     # second incremental: same extract -> pk skipped, 0 inserted, watermark kept
     run2 = nc_sync.start_run("incremental", uuid.uuid4(),
                              fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)

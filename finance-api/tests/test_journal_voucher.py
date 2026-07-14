@@ -168,3 +168,27 @@ async def test_emit_event_idempotent_skip_makes_no_jv(db_session):
     jvs = (await db_session.execute(select(JournalVoucher).where(
         JournalVoucher.source_doc_id == doc_id))).scalars().all()
     assert len(jvs) == 1
+
+
+async def test_generate_from_event_promotes_income_expense_item(db_session):
+    """aux dim 'income_expense_item' lands BOTH in jv_line_dimensions (audit)
+    and in the promoted jv_lines column (queries read the column)."""
+    from app.services.posting import emit_event
+    from app.models.journal_voucher import JournalVoucher, JournalVoucherLine
+
+    ba_id = uuid.uuid4()
+    ev_id = await emit_event(
+        db_session, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-9", event_type="accrual",
+        prepared_by=uuid.uuid4(),
+        lines=[{"line_role": "purchase_expense", "account_code": "5101",
+                "debit": Decimal("10.00"), "currency": "CAD",
+                "aux": {"income_expense_item": {"value_id": ba_id, "value_text": "CRM004"}}},
+               {"line_role": "accounts_payable", "account_code": "2000",
+                "credit": Decimal("10.00"), "currency": "CAD"}])
+    jv = (await db_session.execute(select(JournalVoucher).where(
+        JournalVoucher.posting_event_id == ev_id))).scalar_one()
+    ln = (await db_session.execute(select(JournalVoucherLine).where(
+        JournalVoucherLine.jv_id == jv.id, JournalVoucherLine.account_code == "5101"
+    ))).scalar_one()
+    assert ln.income_expense_item_id == ba_id

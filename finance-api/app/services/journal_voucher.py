@@ -116,7 +116,8 @@ async def generate_from_event(db: AsyncSession, event_id: uuid.UUID,
         line_map.append((jl, pl.id))
     await db.flush()
 
-    # copy long-tail dimensions
+    # copy long-tail dimensions; income_expense_item is ALSO promoted onto the
+    # line column (queries read the column; the KV row keeps the code text).
     for jl, pl_id in line_map:
         dims = (await db.execute(
             select(PostingLineDimension).where(PostingLineDimension.posting_line_id == pl_id)
@@ -124,6 +125,8 @@ async def generate_from_event(db: AsyncSession, event_id: uuid.UUID,
         for d in dims:
             db.add(JvLineDimension(jv_line_id=jl.id, dim_code=d.dim_code,
                                    value_id=d.value_id, value_text=d.value_text))
+            if d.dim_code == "income_expense_item" and d.value_id is not None:
+                jl.income_expense_item_id = d.value_id
 
     jv.total_debit = _q(tot_d); jv.total_credit = _q(tot_c)
     jv.total_local_debit = _q(tot_ld); jv.total_local_credit = _q(tot_lc)

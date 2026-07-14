@@ -173,7 +173,7 @@ def read_details(cur, pk2id, ccy, aux, uni_cc, uni_dept, uni_ba):
         lines.append((
             lid, jid, int(idx or 0), (acct or "").strip() or None,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
-            ccy.get(curr, "CAD"), _d(rate) if rate else Decimal("1"), cc_id, dept_id))
+            ccy.get(curr, "CAD"), _d(rate) if rate else Decimal("1"), cc_id, dept_id, ba_id))
         if io_code:
             dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
     return lines, dims
@@ -191,7 +191,7 @@ def load(vouchers, lines, dims, dsn, clear):
         cur.execute("delete from journal_vouchers where nc_source_pk is not null")
     # totals per voucher (from lines)
     tot: dict = {}
-    for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _ in lines:
+    for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _, _ in lines:
         t = tot.setdefault(jid, [Decimal("0")] * 4)
         t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
     execute_values(cur,
@@ -210,9 +210,9 @@ def load(vouchers, lines, dims, dsn, clear):
         "insert into journal_voucher_lines "
         "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
         " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
-        " created_at, updated_at) values %s",
+        " income_expense_item_id, created_at, updated_at) values %s",
         lines,
-        template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())",
+        template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())",
         page_size=5000)
     if dims:
         execute_values(cur,
