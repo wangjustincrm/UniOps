@@ -25,6 +25,7 @@ def _req(pa, **over):
         reference = None
         notes = None
         payment_date = None
+        bank_account_id = None
     r = _Req()
     for k, v in over.items():
         setattr(r, k, v)
