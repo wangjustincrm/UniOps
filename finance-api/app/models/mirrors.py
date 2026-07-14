@@ -62,6 +62,16 @@ class BudgetAccount(UUIDPrimaryKey, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class ErpSupplier(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror of mdm-api's erp_suppliers (integration-API synced).
+    Column SUBSET verified against information_schema 2026-07-14 — resolves the
+    supplier partner dimension to code/name."""
+    __tablename__ = "erp_suppliers"
+
+    erp_supplier_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    supplier_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     """epms-api owns schema. A2 extends the mirror for AP accrual + open items
     (columns verified against information_schema 2026-06-12)."""

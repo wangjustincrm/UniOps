@@ -302,3 +302,26 @@ def test_aux_item_name_mapping():
     assert f("客户", "kh") == "customer"
     assert f("神秘档案", "SomeCode") == "somecode"     # unknown -> code slug
     assert f("神秘档案", "神秘") == "unknown"           # empty-slug fallback
+
+
+# ── partner dimensions foundations ────────────────────────────────────────────
+
+async def test_nc_customer_roundtrip_and_unique(db_session):
+    from sqlalchemy.exc import IntegrityError
+    from app.models.nc_customer import NcCustomer
+    db_session.add(NcCustomer(code="CRM027", name="Debang Duoling", is_active=True))
+    await db_session.flush()
+    db_session.add(NcCustomer(code="CRM027", name="dup", is_active=True))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+
+
+async def test_erp_supplier_mirror_readable(db_session):
+    from app.models.mirrors import ErpSupplier
+    sid = uuid.uuid4()
+    db_session.add(ErpSupplier(id=sid, erp_supplier_code="S001", supplier_name="ACME"))
+    await db_session.flush()
+    got = (await db_session.execute(select(ErpSupplier).where(
+        ErpSupplier.id == sid))).scalar_one()
+    assert got.supplier_name == "ACME"
