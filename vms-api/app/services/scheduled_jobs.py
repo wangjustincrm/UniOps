@@ -7,10 +7,14 @@ these are trivially unit-testable with a fixed clock.
 
 Idempotency:
   - no-show is a status transition (confirmed → no_show), naturally one-shot.
-  - reminders / escalation persist a one-shot timestamp flag on the visit
+  - reminders / escalation persist a timestamp flag on the visit
     (`reminder_sent_at`, `overdue_reminder_sent_at`, `overdue_escalated_at`),
     set only when email delivery is attempted, so a transient SMTP outage
     retries on the next tick instead of silently dropping the notice.
+  - the day-before reminder and the escalation are one-shot; the overdue
+    Host reminder re-sends every `OVERDUE_REMINDER_REPEAT` (24h) until the
+    visitor is checked out — `overdue_reminder_sent_at` is its LAST send
+    time, not a one-shot flag.
 
 "Overdue" (VMS-CO-009) is a derived state — a checked_in visit past its
 planned_departure — not a stored status (there is no `overdue` VisitStatus).
@@ -24,7 +28,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -46,6 +50,7 @@ SYSTEM_ACTOR_NAME = "VMS Scheduler"
 NO_SHOW_GRACE = timedelta(hours=2)         # VMS-PR-019
 OVERDUE_REMINDER_AFTER = timedelta(hours=1)  # VMS-CO-010
 OVERDUE_ESCALATE_AFTER = timedelta(hours=4)  # VMS-CO-011
+OVERDUE_REMINDER_REPEAT = timedelta(hours=24)  # re-nag the Host daily until checkout
 
 
 def _now(now: datetime | None) -> datetime:
@@ -162,16 +167,22 @@ async def send_day_before_reminders(
 async def send_overdue_reminders(
     db: AsyncSession, *, now: datetime | None = None,
 ) -> list[uuid.UUID]:
-    """Remind the Host once when a checked-in visitor is 1h+ past planned
-    departure. One-shot via `overdue_reminder_sent_at`."""
+    """Remind the Host when a checked-in visitor is 1h+ past planned
+    departure, then re-send every `OVERDUE_REMINDER_REPEAT` until checkout.
+    `overdue_reminder_sent_at` holds the LAST send time (not a one-shot
+    flag), so the nag naturally stops once the visit leaves `checked_in`."""
     now = _now(now)
     cutoff = now - OVERDUE_REMINDER_AFTER
+    resend_before = now - OVERDUE_REMINDER_REPEAT
     rows = (await db.execute(
         select(Visit).where(
             Visit.status == VisitStatus.checked_in,
             Visit.planned_departure.is_not(None),
             Visit.planned_departure < cutoff,
-            Visit.overdue_reminder_sent_at.is_(None),
+            or_(
+                Visit.overdue_reminder_sent_at.is_(None),
+                Visit.overdue_reminder_sent_at < resend_before,
+            ),
         )
     )).scalars().all()
 

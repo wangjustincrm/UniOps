@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Plus, AlertCircle } from 'lucide-react'
 import { useVisits, type Visit } from '@/services/api'
-import { StatusBadge, AccessAreaBadge } from '@/components/StatusBadge'
+import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
 import { formatDateTime } from '@/lib/utils'
 
 export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
@@ -82,7 +82,10 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
                   <AccessAreaBadge area={v.access_area} />
                 </td>
                 <td className="px-4 py-2.5">
-                  <StatusBadge status={v.status} />
+                  <span className="inline-flex items-center gap-1.5">
+                    <StatusBadge status={v.status} />
+                    {isVisitOverdue(v) && <OverdueBadge />}
+                  </span>
                 </td>
               </tr>
             ))}
