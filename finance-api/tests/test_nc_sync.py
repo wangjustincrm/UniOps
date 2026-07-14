@@ -284,11 +284,15 @@ def test_resolve_aux_type_pks_validates_constants():
     from app.services.nc_sync import (AUX_COSTCENTER, AUX_DEPT, AUX_IOITEM,
                                       resolve_aux_type_pks)
     items = [(AUX_DEPT, "部门"), (AUX_COSTCENTER, "成本中心"), (AUX_IOITEM, "收支项目"),
-             ("SUPPK0000000000000001"[:20], "供应商档案"), ("CUSPK0000000000000001"[:20], "客户档案")]
+             ("CLSPK000000000000001"[:20], "供应商基本分类"),   # must be ignored
+             ("SUPPK000000000000001"[:20], "供应商档案"),
+             ("SUPPK000000000000002"[:20], "供应商档案"),       # multi-org duplicate
+             ("CUSPK000000000000001"[:20], "客户档案")]
     got = resolve_aux_type_pks(items)
-    assert got["supplier"] and got["customer"]
-    assert got["department"] == AUX_DEPT
-    # constant mismatch -> hard error (typevalue-prefix == pk_accassitem assumption)
+    assert got["supplier"] == {"SUPPK000000000000001"[:20], "SUPPK000000000000002"[:20]}
+    assert "CLSPK000000000000001"[:20] not in got["supplier"]
+    assert got["customer"] == {"CUSPK000000000000001"[:20]}
+    assert AUX_DEPT in got["department"]
     bad = [("WRONGPK0000000000001"[:20], "部门"), (AUX_COSTCENTER, "成本中心"),
            (AUX_IOITEM, "收支项目")]
     with pytest.raises(RuntimeError):

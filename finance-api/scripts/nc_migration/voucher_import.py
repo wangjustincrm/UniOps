@@ -64,7 +64,7 @@ def load_aux(cur) -> dict:
     from app.services.nc_sync import resolve_aux_type_pks
     cur.execute("select pk_accassitem, name from NCSC.BD_ACCASSITEM")
     type_pks = resolve_aux_type_pks(list(cur.fetchall()))
-    aux_sup_pk, aux_cust_pk = type_pks.get("supplier"), type_pks.get("customer")
+    aux_sup_pks, aux_cust_pks = type_pks.get("supplier") or set(), type_pks.get("customer") or set()
 
     cur.execute("select pk_supplier, code from NCSC.BD_SUPPLIER")
     sup_codes = {pk: code for pk, code in cur.fetchall()}
@@ -94,9 +94,9 @@ def load_aux(cur) -> dict:
                 ccode = cc.get(vpk, "")
             elif tpk == AUX_IOITEM:
                 iocode = io.get(vpk, "")
-            elif aux_sup_pk and tpk == aux_sup_pk:
+            elif tpk in aux_sup_pks:
                 supcode = sup_codes.get(vpk, "")
-            elif aux_cust_pk and tpk == aux_cust_pk:
+            elif tpk in aux_cust_pks:
                 custcode = cust_codes.get(vpk, "")
         out[fid] = (dcode, ccode, iocode, supcode, custcode)
     return out

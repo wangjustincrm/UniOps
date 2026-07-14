@@ -62,17 +62,21 @@ _AUX_CONSTANTS = {"department": AUX_DEPT, "cost_center": AUX_COSTCENTER,
 
 
 def resolve_aux_type_pks(items) -> dict:
-    """[(pk_accassitem, name)] -> {slot: pk}. Validates the known three against
-    the frozen constants — proves GL_FREEVALUE's typevalue prefix IS
-    pk_accassitem; a mismatch means the assumption broke: stop, don't guess."""
+    """[(pk_accassitem, name)] -> {slot: set of pks}. Collects EVERY item whose
+    name contains the slot needle but not 分类 (classification types never
+    appear as GL_FREEVALUE prefixes; live NC carries e.g. both 客户基本分类 and
+    客户档案 — only the latter shows up in vouchers). Set-based because
+    multi-org NC catalogs can hold several 档案 rows per slot.
+    Validates the three frozen constants are AMONG their resolved sets."""
     out: dict = {}
     for slot, needle in _AUX_NAME_SLOTS.items():
-        out[slot] = next((pk for pk, name in items if needle in (name or "")), None)
+        out[slot] = {pk for pk, name in items
+                     if needle in (name or "") and "分类" not in (name or "")}
     for slot, const in _AUX_CONSTANTS.items():
-        if out.get(slot) and out[slot] != const:
+        if out.get(slot) and const not in out[slot]:
             raise RuntimeError(
-                f"aux type pk mismatch for {slot}: resolved {out[slot]!r} != "
-                f"constant {const!r} — typevalue-prefix assumption broke")
+                f"aux type pk mismatch for {slot}: constant {const!r} not among "
+                f"resolved {sorted(out[slot])!r} — typevalue-prefix assumption broke")
     return out
 
 
@@ -166,7 +170,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
 
         cur.execute("select pk_accassitem, name from NCSC.BD_ACCASSITEM")
         type_pks = resolve_aux_type_pks(list(cur.fetchall()))
-        aux_sup_pk, aux_cust_pk = type_pks.get("supplier"), type_pks.get("customer")
+        aux_sup_pks, aux_cust_pks = type_pks.get("supplier") or set(), type_pks.get("customer") or set()
 
         cur.execute("select pk_supplier, code from NCSC.BD_SUPPLIER")
         sup_codes = {pk: code for pk, code in cur.fetchall()}
@@ -196,9 +200,9 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
                     ccode = cc.get(vpk, "")
                 elif tpk == AUX_IOITEM:
                     iocode = io.get(vpk, "")
-                elif aux_sup_pk and tpk == aux_sup_pk:
+                elif tpk in aux_sup_pks:
                     supcode = sup_codes.get(vpk, "")
-                elif aux_cust_pk and tpk == aux_cust_pk:
+                elif tpk in aux_cust_pks:
                     custcode = cust_codes.get(vpk, "")
             aux[fid] = (dcode, ccode, iocode, supcode, custcode)
 
