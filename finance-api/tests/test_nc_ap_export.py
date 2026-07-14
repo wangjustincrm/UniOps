@@ -162,7 +162,7 @@ async def test_build_rows_epms_allocations(db_session):
     assert errors == []
     assert len(heads) == 1 and len(bodies) == 2
     h = heads[0]
-    assert h["seq"] == 0 and h["billno"] == "AP-2026-0100"
+    assert h["seq"] == 0 and h["billno"] == "" and h["ap_number"] == "AP-2026-0100"
     # head department = first body row's dept CODE
     assert h["department"] == "0104"
     b1 = next(b for b in bodies if b["notax"] == "60.00")
@@ -280,12 +280,12 @@ async def test_new_mirror_subsets_readable(db_session):
 def test_write_xlsx_structure(tmp_path):
     import openpyxl
     from app.services.nc_ap_export import write_xlsx
-    heads = [{"seq": 0, "billno": "AP-1", "ap_type": "Payable of Expense",
+    heads = [{"seq": 0, "billno": "", "ap_number": "AP-1", "ap_type": "Payable of Expense",
               "busi_process": "AP01", "billdate": "2026-07-10",
               "busidate": "2026-07-10", "obj_type": "1", "supplier": "ACME",
               "department": "0104", "employee": "", "revexp": "CRM004",
               "currency": "CAD", "ap_type_code": "F1-Cxx-017", "tax_country": "Canada"},
-             {"seq": 1, "billno": "AP-2", "ap_type": "Payable of Expense",
+             {"seq": 1, "billno": "", "ap_number": "AP-2", "ap_type": "Payable of Expense",
               "busi_process": "AP01", "billdate": "2026-07-11",
               "busidate": "2026-07-11", "obj_type": "1", "supplier": "Beta",
               "department": "", "employee": "Alice Wong", "revexp": "",
@@ -305,8 +305,8 @@ def test_write_xlsx_structure(tmp_path):
     p.write_bytes(data)
     ws = openpyxl.load_workbook(p)["Sheet1"]
     assert str(ws["A2"].value).startswith('"payablebill_$head')   # tech row kept
-    assert ws["A3"].value == "0" and ws["C3"].value == "AP-1"     # head seq + billno
-    assert ws["A4"].value == "1" and ws["C4"].value == "AP-2"
+    assert ws["A3"].value == "0" and ws["C3"].value in (None, "")     # head seq + billno (now empty)
+    assert ws["A4"].value == "1" and ws["C4"].value in (None, "")
     assert ws.cell(5, 1).value in (None, "")                      # blank separator
     assert str(ws["A6"].value).startswith('"bodys')               # body tech row
     assert ws["A7"].value == "0" and ws["B7"].value == "510101"
@@ -322,7 +322,7 @@ async def test_export_endpoint_streams_and_marks(client, db_session):
                           json={"ap_ids": [str(ap.id)]}, headers=_h())
     assert r.status_code == 200, r.text
     assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
-    assert "NC-AP-" in r.headers["content-disposition"]
+    assert "AP-2026-0200.xlsx" in r.headers["content-disposition"]
     assert len(r.content) > 1000
     await db_session.refresh(ap)
     assert ap.nc_exported_at is not None and ap.nc_export_batch_id is not None

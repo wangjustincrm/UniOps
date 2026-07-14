@@ -263,7 +263,8 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
         first = rows[0]
         # first row tuple: (notax, tax, cc_nc, dept_code, revexp_code, emp, cc_uniops, dept_name)
         heads.append({
-            "seq": seq, "billno": ap.ap_invoice_number,
+            "seq": seq, "billno": "",                          # NC auto-assigns the doc number
+            "ap_number": ap.ap_invoice_number,     # internal only — filename/batch, not a template column
             "ap_type": d["ap_type"], "busi_process": d["busi_process"],
             "billdate": ap.invoice_date.isoformat(), "busidate": ap.invoice_date.isoformat(),
             "obj_type": d["obj_type"], "supplier": ap.vendor_name or "",

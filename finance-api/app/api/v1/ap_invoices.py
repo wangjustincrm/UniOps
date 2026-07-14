@@ -150,7 +150,8 @@ async def nc_export(body: NcExportIn, user: CurrentUser,
     data = write_xlsx(heads, bodies)
 
     now = datetime.now(timezone.utc)
-    fname = f"NC-AP-{now.strftime('%Y%m%d-%H%M')}.xlsx"
+    nums = [h["ap_number"] for h in heads]
+    fname = f"{nums[0]}.xlsx" if len(nums) == 1 else f"{nums[0]}+{len(nums) - 1}.xlsx"
     batch = NcExportBatch(exported_by=uuid.UUID(user["sub"]), exported_at=now,
                           ap_count=len(heads), filename=fname)
     db.add(batch)

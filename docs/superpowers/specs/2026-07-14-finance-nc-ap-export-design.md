@@ -110,3 +110,9 @@ NC_CC_BY_UNIOPS = {
 | 其他 / 兜底 | `6602` |
 
 accrual posting 的 `purchase_expense` account_code 不再用于 account_path 取值(仅保留 accrual 存在性校验)。
+
+## 11. 变更(2026-07-14 二轮):Doc No. 置空 + 文件名用 AP 号
+
+- head 的 `billno` 一律留空——NC 引入时自动分配单据号(用户要求)。
+- 导出文件名 = 单张 `{AP号}.xlsx`;多张 `{首张AP号}+{其余张数}.xlsx`(原 NC-AP-时间戳 废弃)。
+- 复核锚点随之调整:两边 JV 复核改以 body 行 `invoiceno`(Vendor Inv #)+金额为锚,billno 不再承载 UniOps AP 号。
