@@ -75,6 +75,7 @@ async def get_all(
     vendor_id: uuid.UUID | None = None,
     department_id: uuid.UUID | None = None,
     created_by: uuid.UUID | None = None,
+    search: str | None = None,
     po_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
@@ -100,6 +101,15 @@ async def get_all(
         q = q.where(PaymentApplication.po_id == po_id)
     if vendor_id:
         q = q.where(PaymentApplication.vendor_id == vendor_id)
+    if search:
+        # Match what the UI advertises: PA #, vendor name, PO # (all snapshot
+        # columns on the PA row — no join needed; NULL po_number never matches).
+        term = f"%{search}%"
+        q = q.where(
+            PaymentApplication.pa_number.ilike(term)
+            | PaymentApplication.vendor_name.ilike(term)
+            | PaymentApplication.po_number.ilike(term)
+        )
     if department_id:
         # PA has no cost center — resolve department via PA → PO → PR → cost center.
         q = q.where(PaymentApplication.po_id.in_(
