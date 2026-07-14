@@ -182,7 +182,12 @@ async def list_dims(db: AsyncSession, account_code: str) -> dict:
     items = (await db.execute(
         select(CoaAuxItem).where(CoaAuxItem.account_code == account_code)
         .order_by(CoaAuxItem.seq))).scalars().all()
-    codes = [i.dim_code for i in items] if items else list(reg.keys())
+    codes = [i.dim_code for i in items]
+    # union with the supported registry (user 2026-07-13): NC's per-account config
+    # omits cost_center (it enters via voucher aux values, not BD_ACCASS), yet CC
+    # is the most-used expansion — configured dims keep their order, registry
+    # additions append after.
+    codes += [c for c in reg if c not in codes]
     return {"account_code": account_code, "dims": [
         {"dim_code": c, "label": DIM_LABELS.get(c, c), "supported": c in reg}
         for c in codes]}

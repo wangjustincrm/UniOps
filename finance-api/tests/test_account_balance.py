@@ -263,8 +263,10 @@ async def test_dims_endpoint_config_and_fallback(client, db_session):
     await db_session.flush()
     r = await client.get("/finance/v1/gl/account-balance/5101/dims", headers=_h())
     dims = r.json()["dims"]
-    assert [d["dim_code"] for d in dims] == ["cost_center", "supplier"]
+    assert [d["dim_code"] for d in dims] == [
+        "cost_center", "supplier", "department", "income_expense_item"]
     assert dims[0]["supported"] is True and dims[1]["supported"] is False
+    assert dims[2]["supported"] is True and dims[3]["supported"] is True
     # unconfigured account falls back to the full supported registry
     r2 = await client.get("/finance/v1/gl/account-balance/9999/dims", headers=_h())
     assert {d["dim_code"] for d in r2.json()["dims"]} == {
