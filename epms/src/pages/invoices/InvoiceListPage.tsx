@@ -21,13 +21,16 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
-import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
+import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
 import { FilePreviewPanel } from './FilePreviewPanel'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
 // offered the "Match to PO" action — the backend would 403.
 const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
+
+// PO statuses an invoice can be matched/allocated against.
+const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'fully_received', 'closed']
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -123,7 +126,9 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const [currency, setCurrency] = useState('CAD')
   const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([])
-  const [selectedPoLineIds, setSelectedPoLineIds] = useState<Set<string>>(new Set())
+  // Set after create when a recognized PO leads into the allocation step (plan B):
+  // the invoice exists, and the user confirms line-level allocations to match it.
+  const [createdInv, setCreatedInv] = useState<ApiInvoice | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -213,7 +218,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const matchedPo: ApiPo | undefined = poNumber.trim()
     ? pos.find((p) =>
         p.number.toLowerCase() === poNumber.trim().toLowerCase() &&
-        ['issued', 'approved', 'partially_received', 'fully_received', 'closed'].includes(p.status)
+        MATCHABLE_PO_STATUSES.includes(p.status)
       )
     : undefined
 
@@ -261,18 +266,15 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         } catch (e) { console.error('Invoice attachment upload error:', e) }
       }
 
-      // If a valid PO was found, immediately match — but only if this user is
-      // allowed to match (else the backend 403s; invoice stays in the queue).
+      // If a valid PO was recognized and this user may match, continue into the
+      // allocation step (line-level flow) instead of auto-matching — the invoice
+      // stays unmatched until the user confirms the allocation. Users who can't
+      // match (or invoices without line items) land in the queue as unmatched.
       const matcherRole = useAuthStore.getState().user?.role
       const canMatch = !!matcherRole && MATCH_ROLES.has(matcherRole)
-      if (matchedPo && canMatch) {
-        const linkedGr = grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled')
-        await matchInvoiceMutation.mutateAsync({
-          id: inv.id,
-          po_id: matchedPo.id,
-          gr_id: linkedGr?.id,
-          po_line_ids: selectedPoLineIds.size > 0 ? Array.from(selectedPoLineIds) : undefined,
-        })
+      if (matchedPo && canMatch && (inv.line_items?.length ?? 0) > 0) {
+        setCreatedInv(inv)
+        return
       }
 
       onUploaded(inv.id)
@@ -282,6 +284,96 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   }
 
   const fieldErr = (val: string) => submitted && !val.trim() ? 'border-danger-400' : 'border-neutral-300'
+
+  // ── Step 2: line-level allocation (invoice created, PO recognized) ──────────
+  if (createdInv) {
+    // Candidate POs: the recognized PO first, then other open POs for the vendor.
+    const allocPos: ApiPo[] = [
+      ...(matchedPo ? [matchedPo] : []),
+      ...pos.filter((p) =>
+        p.id !== matchedPo?.id &&
+        p.vendor_id === createdInv.vendor_id &&
+        MATCHABLE_PO_STATUSES.includes(p.status)),
+    ]
+
+    // Prefill: greedily pair each invoice line with an unused PO line of the same
+    // pre-tax amount on the recognized PO; single-line vs single-line pairs match
+    // regardless of amount. Anything else is left for the user to drag.
+    const prefill: AllocationAssignment = {}
+    if (matchedPo) {
+      const usedPoLines = new Set<string>()
+      const invLines = createdInv.line_items ?? []
+      for (const l of invLines) {
+        if (!l.id) continue
+        const amt = Number(l.line_total)
+        const target = matchedPo.line_items.find((pl) =>
+          !usedPoLines.has(pl.id) && Math.abs(Number(pl.line_total) - amt) < 0.01)
+        if (target) {
+          prefill[l.id] = { poId: matchedPo.id, poLineId: target.id }
+          usedPoLines.add(target.id)
+        }
+      }
+      if (Object.keys(prefill).length === 0 && invLines.length === 1 && invLines[0].id && matchedPo.line_items.length === 1) {
+        prefill[invLines[0].id!] = { poId: matchedPo.id, poLineId: matchedPo.line_items[0].id }
+      }
+    }
+
+    const handleAllocSubmit = (allocations: AllocationInput[]) => {
+      const linkedGr = matchedPo ? grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled') : undefined
+      matchInvoiceMutation.mutate(
+        { id: createdInv.id, allocations, gr_id: linkedGr?.id },
+        { onSuccess: () => onUploaded(createdInv.id) },
+      )
+    }
+
+    // Closing/skipping keeps the invoice — it stays in the queue as unmatched.
+    const finishUnmatched = () => onUploaded(createdInv.id)
+
+    return createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
+        <div className="w-full max-w-3xl max-h-[92vh] rounded-2xl bg-white shadow-2xl flex flex-col">
+          <div className="flex items-center justify-between border-b border-neutral-100 px-6 py-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-success-50">
+                <CheckCircle2 className="h-5 w-5 text-success-600" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-neutral-900">Allocate to Purchase Order</h2>
+                <p className="text-xs text-neutral-400">
+                  Invoice {createdInv.vendor_invoice_number} uploaded — confirm line allocations to complete the match
+                </p>
+              </div>
+            </div>
+            <button onClick={finishUnmatched} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-5 flex flex-col gap-4">
+            <InvoiceAllocationPanel
+              invoice={createdInv}
+              pos={allocPos}
+              submitting={matchInvoiceMutation.isPending}
+              defaultAssignments={prefill}
+              onSubmit={handleAllocSubmit}
+            />
+            {matchInvoiceMutation.isError && (
+              <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {matchInvoiceMutation.error instanceof Error ? matchInvoiceMutation.error.message : 'Match failed'}
+              </div>
+            )}
+            <div className="flex justify-start">
+              <Button variant="secondary" size="sm" onClick={finishUnmatched}>
+                Skip for now — leave unmatched
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
@@ -462,7 +554,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               value={poNumber}
               onChange={(e) => {
                 setPoNumber(e.target.value)
-                setSelectedPoLineIds(new Set())
                 setAiFields((prev) => { const n = new Set(prev); n.delete('poNumber'); return n })
               }}
               placeholder="e.g. PO-ABC-2603-01"
@@ -476,7 +567,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
                     <span className="font-semibold">{matchedPo.number}</span>
                     {' — '}{matchedPo.vendor_name}
                     {' · '}{formatAmount(matchedPo.total, matchedPo.currency)}
-                    {' · '}Invoice will be auto-matched on upload
+                    {' · '}After upload you will allocate invoice lines to this PO to complete the match
                   </span>
                 </div>
               ) : (
@@ -485,84 +576,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
                   PO not found or not in an issued/approved state — invoice will be queued as unmatched
                 </p>
               )
-            )}
-
-            {/* PO line item selector — shown when a PO is matched */}
-            {matchedPo && matchedPo.line_items.length > 0 && (
-              <div className="flex flex-col gap-1.5">
-                <p className="text-xs font-medium text-neutral-700">
-                  Select PO Line Items Covered by This Invoice
-                  <span className="ml-1 font-normal text-neutral-400">(match variance is calculated against selected lines)</span>
-                </p>
-                <div className="rounded-lg border border-neutral-200 overflow-hidden">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-neutral-50 border-b border-neutral-200">
-                        <th className="w-8 px-2 py-2" />
-                        <th className="px-2 py-2 text-left font-semibold text-neutral-500">Description</th>
-                        <th className="px-2 py-2 text-right font-semibold text-neutral-500 w-16">Qty</th>
-                        <th className="px-2 py-2 text-right font-semibold text-neutral-500 w-24">Line Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {matchedPo.line_items.map((line) => {
-                        const checked = selectedPoLineIds.has(line.id)
-                        return (
-                          <tr
-                            key={line.id}
-                            onClick={() => setSelectedPoLineIds((prev) => {
-                              const n = new Set(prev)
-                              if (n.has(line.id)) n.delete(line.id); else n.add(line.id)
-                              return n
-                            })}
-                            className={cn(
-                              'border-b border-neutral-100 last:border-0 cursor-pointer hover:bg-primary-50 transition-colors',
-                              checked && 'bg-primary-50'
-                            )}
-                          >
-                            <td className="px-2 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {}}
-                                onClick={(e) => e.stopPropagation()}
-                                className="h-3.5 w-3.5 rounded border-neutral-300 text-primary-600"
-                              />
-                            </td>
-                            <td className="px-2 py-2 text-neutral-800">{line.description}</td>
-                            <td className="px-2 py-2 text-right font-mono text-neutral-500">{line.qty} {line.unit}</td>
-                            <td className="px-2 py-2 text-right font-mono font-semibold text-neutral-900">
-                              {formatAmount(line.line_total, matchedPo.currency)}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    {selectedPoLineIds.size > 0 && (
-                      <tfoot>
-                        <tr className="border-t border-neutral-200 bg-primary-50">
-                          <td colSpan={3} className="px-2 py-2 text-xs text-primary-700 font-medium">
-                            {selectedPoLineIds.size} line{selectedPoLineIds.size !== 1 ? 's' : ''} selected — match reference
-                          </td>
-                          <td className="px-2 py-2 text-right font-mono font-bold text-primary-700">
-                            {formatAmount(
-                              matchedPo.line_items
-                                .filter((l) => selectedPoLineIds.has(l.id))
-                                .reduce((s, l) => s + Number(l.line_total), 0),
-                              matchedPo.currency
-                            )}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    )}
-                  </table>
-                </div>
-                {selectedPoLineIds.size === 0 && (
-                  <p className="text-[11px] text-neutral-400">
-                    No lines selected — variance will be computed against the full PO total ({formatAmount(matchedPo.total, matchedPo.currency)})
-                  </p>
-                )}
-              </div>
             )}
           </div>
 

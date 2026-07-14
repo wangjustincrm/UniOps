@@ -198,7 +198,7 @@ async def match_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     if inv.status not in ("unmatched", "exception"):
         raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
-    from app.crud.invoice import AllocationImbalance
+    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported
     try:
         result = await invoice_crud.match(db, inv, body, matched_by=uuid.UUID(user["sub"]))
 
@@ -210,7 +210,7 @@ async def match_invoice(
         await finance_sync.sync_ap_invoice(db, result, token)
 
         return result
-    except AllocationImbalance as exc:
+    except (AllocationImbalance, LegacyMatchUnsupported) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

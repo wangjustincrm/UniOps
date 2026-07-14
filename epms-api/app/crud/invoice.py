@@ -44,11 +44,18 @@ async def _match_tolerance_pct(db: AsyncSession) -> Decimal:
 async def _next_ref(db: AsyncSession) -> str:
     year = datetime.now(timezone.utc).strftime("%Y")
     prefix = f"INV-{year}-"
-    result = await db.execute(
-        select(func.count()).where(Invoice.internal_ref.like(f"{prefix}%"))
-    )
-    count = result.scalar_one()
-    return f"{prefix}{count + 1:04d}"
+    # Highest existing suffix + 1 — NOT count()+1: invoices are hard-deleted, so a
+    # delete makes the count fall behind the surviving maximum and the next create
+    # collides with the internal_ref unique index. Order by length before value so
+    # a five-digit suffix (…-10000) outranks …-9999.
+    last = (await db.execute(
+        select(Invoice.internal_ref)
+        .where(Invoice.internal_ref.like(f"{prefix}%"))
+        .order_by(func.length(Invoice.internal_ref).desc(), Invoice.internal_ref.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    n = int(last[len(prefix):]) if last else 0
+    return f"{prefix}{n + 1:04d}"
 
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
@@ -210,6 +217,11 @@ class AllocationImbalance(ValueError):
     """Raised when allocations don't sum to the invoice total (→ HTTP 422)."""
 
 
+class LegacyMatchUnsupported(ValueError):
+    """Raised when a legacy match request can't be expressed as one header-level
+    allocation (→ HTTP 422)."""
+
+
 async def _normalize_allocations(invoice: Invoice, req: InvoiceMatchRequest) -> list[AllocationInput]:
     """Return the effective allocation list. Legacy single-PO requests become one
     PO-header-level allocation covering the full invoice total."""
@@ -217,6 +229,12 @@ async def _normalize_allocations(invoice: Invoice, req: InvoiceMatchRequest) -> 
         return req.allocations
     if req.po_id is None:
         raise ValueError("Either allocations or po_id is required")
+    if req.po_line_ids and len(req.po_line_ids) > 1:
+        # The legacy shim can only reference ONE PO line — earlier versions silently
+        # dropped the rest and compared the full invoice against the first line.
+        raise LegacyMatchUnsupported(
+            "Multiple PO lines require line-level allocations — send the 'allocations' field instead of po_line_ids"
+        )
     line_id = None
     if invoice.line_items:
         line_id = invoice.line_items[0].get("id")
