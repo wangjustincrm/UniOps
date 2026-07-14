@@ -19,7 +19,7 @@
 ### 2.1 `journal_vouchers`(凭证头)
 | 字段 | 说明 |
 |---|---|
-| id / jv_number / voucher_word | go-forward `JV-YYYYMM-0001`;**导入历史保留 NC 原号 `记-YYYY-NUM`**;voucher_word=`JV`/`记` |
+| id / jv_number / voucher_word | go-forward `JV-YYYYMM-0001`;**导入历史同用 `JV-YYYYMM-NNNN`(NC 原号补零 4 位,用户 2026-07-13 推翻原「保留记-」决定)**;voucher_word 统一 `JV`;next_jv_number 取 max-suffix+1(共享命名空间防撞号) |
 | voucher_date / fiscal_period | 凭证日期 / `YYYY-MM` |
 | summary | 摘要(按 event_type 模板自动生成,可手改) |
 | status | `draft`(已制单)→`reviewed`(已审核)→`posted`(已过账);`reversed`(已红冲) |

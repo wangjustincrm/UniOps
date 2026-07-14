@@ -108,7 +108,7 @@ export default function GeneralLedgerPage() {
     <PortalChromeLayout
       activeKey="portal:/finance/gl"
       title="General Ledger"
-      subtitle="Trial balance, financial statements, and period close over the posting spine"
+      subtitle="Trial balance, financial statements, and period close over posted journal vouchers"
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -303,21 +303,21 @@ function IncomeStatementTab({ q, ytd, setYtd }: { q: any; ytd: boolean; setYtd: 
 function JournalTab({ q }: { q: any }) {
   if (q.isFetching && !q.data) return <Loading />
   const entries: any[] = q.data ?? []
-  if (entries.length === 0) return <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">No journal entries this period.</div>
+  if (entries.length === 0) return <div className="rounded-lg border border-dashed border-neutral-300 p-10 text-center text-sm text-neutral-500">No posted journal vouchers this period.</div>
   return (
     <div className="space-y-3">
       {entries.map((e) => (
-        <div key={e.event_id} className="overflow-hidden rounded-lg border border-neutral-200">
+        <div key={e.jv_id} className="overflow-hidden rounded-lg border border-neutral-200">
           <div className="flex items-center justify-between bg-neutral-50 px-3 py-2 text-sm">
             <span className="font-mono text-xs">{e.date} · {e.source}</span>
-            <span className="rounded-full bg-white px-2 py-0.5 text-xs text-neutral-600">{e.event_type}</span>
+            <span className="rounded-full bg-white px-2 py-0.5 font-mono text-xs text-neutral-600">{e.jv_number}</span>
           </div>
           <table className="w-full text-sm">
             <tbody>
               {e.lines.map((l: any, i: number) => (
                 <tr key={i} className="border-t border-neutral-100">
                   <td className="px-3 py-1.5 w-20 font-mono text-xs text-neutral-500">{l.account_code ?? '—'}</td>
-                  <td className="px-3 py-1.5">{l.partner_name || l.line_role}</td>
+                  <td className="px-3 py-1.5">{l.partner_name || l.summary || '—'}</td>
                   <td className="px-3 py-1.5 w-28 text-right font-mono">{num(l.debit) ? money(l.debit) : ''}</td>
                   <td className="px-3 py-1.5 w-28 text-right font-mono">{num(l.credit) ? money(l.credit) : ''}</td>
                 </tr>

@@ -9,18 +9,20 @@ the GL is a read/aggregation layer plus two write flows:
   * year-end close   — sweep revenue/expense balances into Retained Earnings
     (`closing` journal), resetting P&L for the new year
 
-Reporting basis: all posting_events are live GL (sub-ledgers were already
-approved; no separate GL-post step). Balances use a debit-positive convention
-internally; statements present natural signs by account_type.
+Reporting basis (Plan 5): the GL reads POSTED journal_vouchers only —
+business-event JVs are born draft and enter the GL when finance reviews and
+posts them; opening/close/NC-import vouchers post immediately (system-
+authoritative). posting_events remain as the business spine / Document Chain.
 """
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.coa import ChartOfAccount
+from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
 from app.models.posting import PostingEvent, PostingLine
 from app.services.posting import emit_event
 
@@ -51,15 +53,16 @@ async def trial_balance(db: AsyncSession, period: str) -> dict:
     coa = await _coa_map(db)
 
     async def sums(where):
-        q = (select(PostingLine.account_code,
-                    func.coalesce(func.sum(PostingLine.debit), 0),
-                    func.coalesce(func.sum(PostingLine.credit), 0))
-             .join(PostingEvent, PostingLine.event_id == PostingEvent.id)
-             .where(where).group_by(PostingLine.account_code))
+        q = (select(JournalVoucherLine.account_code,
+                    func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+                    func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+             .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+             .where(JournalVoucher.status == POSTED).where(where)
+             .group_by(JournalVoucherLine.account_code))
         return {code: (Decimal(d), Decimal(c)) for code, d, c in (await db.execute(q)).all()}
 
-    opening = await sums(PostingEvent.fiscal_period < period)
-    movement = await sums(PostingEvent.fiscal_period == period)
+    opening = await sums(JournalVoucher.fiscal_period < period)
+    movement = await sums(JournalVoucher.fiscal_period == period)
 
     codes = sorted(set(opening) | set(movement), key=lambda c: (c is None, c or ""))
     rows = []
@@ -95,30 +98,35 @@ async def account_ledger(db: AsyncSession, code: str, period: str) -> dict:
     acct = coa.get(code)
 
     opening_row = (await db.execute(
-        select(func.coalesce(func.sum(PostingLine.debit), 0),
-               func.coalesce(func.sum(PostingLine.credit), 0))
-        .join(PostingEvent, PostingLine.event_id == PostingEvent.id)
-        .where(PostingLine.account_code == code, PostingEvent.fiscal_period < period)
+        select(func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+               func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+        .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+        .where(JournalVoucherLine.account_code == code,
+               JournalVoucher.status == POSTED,
+               JournalVoucher.fiscal_period < period)
     )).one()
     running = Decimal(opening_row[0]) - Decimal(opening_row[1])
     opening = running
 
     lines = (await db.execute(
-        select(PostingLine, PostingEvent)
-        .join(PostingEvent, PostingLine.event_id == PostingEvent.id)
-        .where(PostingLine.account_code == code, PostingEvent.fiscal_period == period)
-        .order_by(PostingEvent.occurred_at, PostingLine.line_no)
+        select(JournalVoucherLine, JournalVoucher)
+        .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+        .where(JournalVoucherLine.account_code == code,
+               JournalVoucher.status == POSTED,
+               JournalVoucher.fiscal_period == period)
+        .order_by(JournalVoucher.voucher_date, JournalVoucher.jv_number,
+                  JournalVoucherLine.line_no)
     )).all()
 
     entries = []
-    for ln, ev in lines:
-        running += ln.debit - ln.credit
+    for ln, jv in lines:
+        running += ln.local_debit - ln.local_credit
         entries.append({
-            "date": ev.occurred_at.date().isoformat(),
-            "source": f"{ev.source_doc_type}:{ev.source_doc_number}",
-            "event_type": ev.event_type, "line_role": ln.line_role,
-            "partner_name": ln.partner_name, "memo": ln.memo,
-            "debit": _s(ln.debit), "credit": _s(ln.credit),
+            "date": jv.voucher_date.isoformat(),
+            "source": f"{jv.source_doc_type}:{jv.source_doc_number}"
+                      if jv.source_doc_type else jv.jv_number,
+            "partner_name": ln.partner_name, "memo": ln.summary,
+            "debit": _s(ln.local_debit), "credit": _s(ln.local_credit),
             "balance": _s(running),
         })
     return {
@@ -129,35 +137,39 @@ async def account_ledger(db: AsyncSession, code: str, period: str) -> dict:
     }
 
 
-# ── journal (events as journal entries) ─────────────────────────────────────────
+# ── journal (posted JV voucher list) ────────────────────────────────────────────
 
 async def journal(db: AsyncSession, period: str, limit: int = 200) -> list[dict]:
-    events = (await db.execute(
-        select(PostingEvent).where(PostingEvent.fiscal_period == period)
-        .order_by(PostingEvent.occurred_at.desc()).limit(limit)
+    """Posted journal vouchers as journal entries (was posting_events pre-Plan-5)."""
+    jvs = (await db.execute(
+        select(JournalVoucher)
+        .where(JournalVoucher.status == POSTED, JournalVoucher.fiscal_period == period)
+        .order_by(JournalVoucher.voucher_date.desc(), JournalVoucher.jv_number.desc())
+        .limit(limit)
     )).scalars().all()
-    if not events:
+    if not jvs:
         return []
-    ids = [e.id for e in events]
+    ids = [j.id for j in jvs]
     lines = (await db.execute(
-        select(PostingLine).where(PostingLine.event_id.in_(ids))
-        .order_by(PostingLine.line_no)
+        select(JournalVoucherLine).where(JournalVoucherLine.jv_id.in_(ids))
+        .order_by(JournalVoucherLine.line_no)
     )).scalars().all()
-    by_event: dict[uuid.UUID, list] = {}
+    by_jv: dict[uuid.UUID, list] = {}
     for ln in lines:
-        by_event.setdefault(ln.event_id, []).append(ln)
+        by_jv.setdefault(ln.jv_id, []).append(ln)
     out = []
-    for ev in events:
-        evlines = by_event.get(ev.id, [])
+    for jv in jvs:
+        jlines = by_jv.get(jv.id, [])
         out.append({
-            "event_id": str(ev.id),
-            "date": ev.occurred_at.date().isoformat(),
-            "source": f"{ev.source_doc_type}:{ev.source_doc_number}",
-            "event_type": ev.event_type,
-            "debit_total": _s(sum((l.debit for l in evlines), _ZERO)),
-            "lines": [{"account_code": l.account_code, "line_role": l.line_role,
-                       "partner_name": l.partner_name, "debit": _s(l.debit),
-                       "credit": _s(l.credit), "currency": l.currency} for l in evlines],
+            "jv_id": str(jv.id), "jv_number": jv.jv_number,
+            "date": jv.voucher_date.isoformat(),
+            "source": f"{jv.source_doc_type}:{jv.source_doc_number}"
+                      if jv.source_doc_type else jv.jv_number,
+            "summary": jv.summary,
+            "lines": [{"account_code": l.account_code, "partner_name": l.partner_name,
+                       "summary": l.summary, "debit": _s(l.local_debit),
+                       "credit": _s(l.local_credit), "currency": l.currency}
+                      for l in jlines],
         })
     return out
 
@@ -166,18 +178,20 @@ async def journal(db: AsyncSession, period: str, limit: int = 200) -> list[dict]
 
 async def _balances_through(db: AsyncSession, period_lo: str | None, period_hi: str,
                             exclude_closing: bool = False):
-    """{code: signed balance (debit-positive)} for events in [lo, hi] (lo=None ⇒ all ≤ hi).
-    exclude_closing drops `closing` journals so a year's P&L is measured from
-    operational activity (used by close_year for idempotency + correctness)."""
-    conds = [PostingEvent.fiscal_period <= period_hi]
+    """{code: signed local balance (debit-positive)} over POSTED JVs in [lo, hi].
+    exclude_closing drops year-end close vouchers (source_doc_type='gl_close',
+    NULL-safe) so close_year measures operational P&L idempotently."""
+    conds = [JournalVoucher.status == POSTED, JournalVoucher.fiscal_period <= period_hi]
     if period_lo is not None:
-        conds.append(PostingEvent.fiscal_period >= period_lo)
+        conds.append(JournalVoucher.fiscal_period >= period_lo)
     if exclude_closing:
-        conds.append(PostingEvent.event_type != "closing")
-    q = (select(PostingLine.account_code,
-                func.coalesce(func.sum(PostingLine.debit), 0) - func.coalesce(func.sum(PostingLine.credit), 0))
-         .join(PostingEvent, PostingLine.event_id == PostingEvent.id)
-         .where(*conds).group_by(PostingLine.account_code))
+        conds.append(or_(JournalVoucher.source_doc_type.is_(None),
+                         JournalVoucher.source_doc_type != "gl_close"))
+    q = (select(JournalVoucherLine.account_code,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0)
+                - func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .where(*conds).group_by(JournalVoucherLine.account_code))
     return {code: Decimal(bal) for code, bal in (await db.execute(q)).all()}
 
 
@@ -271,6 +285,9 @@ async def post_opening_balance(db: AsyncSession, *, as_of: date, lines: list[dic
                 "debit": l.get("debit", 0), "credit": l.get("credit", 0)} for l in lines],
         occurred_at=datetime(as_of.year, as_of.month, as_of.day, tzinfo=timezone.utc),
     )
+    if event_id is not None:
+        from app.crud.journal_voucher import post_system_jv
+        await post_system_jv(db, event_id)
     return {"posting_event_id": event_id, "already_posted": event_id is None}
 
 
@@ -313,5 +330,8 @@ async def close_year(db: AsyncSession, *, fiscal_year: int,
         event_type="closing", lines=lines,
         occurred_at=datetime(fiscal_year, 12, 31, tzinfo=timezone.utc),
     )
+    if event_id is not None:
+        from app.crud.journal_voucher import post_system_jv
+        await post_system_jv(db, event_id)
     return {"fiscal_year": fiscal_year, "posting_event_id": event_id,
             "already_closed": event_id is None, "net_income": _s(net)}

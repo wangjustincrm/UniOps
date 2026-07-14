@@ -70,3 +70,14 @@ class AccountMapping(UUIDPrimaryKey, TimestampMixin, Base):
     source_code: Mapped[str] = mapped_column(String(50), nullable=False)
     account_code: Mapped[str] = mapped_column(String(10), nullable=False)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class CoaAuxItem(UUIDPrimaryKey, TimestampMixin, Base):
+    """科目→辅助核算项挂接(从 NC BD_ACCASS 导入,只读;报表据此列可勾维度)。"""
+    __tablename__ = "coa_aux_items"
+    __table_args__ = (UniqueConstraint("account_code", "dim_code",
+                                       name="uq_coa_aux_items_acct_dim"),)
+
+    account_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    dim_code: Mapped[str] = mapped_column(String(40), nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

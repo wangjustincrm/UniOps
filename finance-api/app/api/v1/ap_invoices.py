@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.coa import _require_manage
 from app.core.deps import CurrentUser
 from app.crud import ap_invoice as crud
-from app.crud.ap_accrual import post_invoice_accrual
+from app.crud.ap_accrual import has_postings, post_invoice_accrual, reverse_invoice_accrual
 from app.db.base import get_db
-from app.models.ap_invoice import POSTED
+from app.models.ap_invoice import POSTED, VOID
 
 router = APIRouter(prefix="/ap/invoices", tags=["accounts-payable-invoices"])
 
@@ -72,12 +72,30 @@ class InvoiceOut(BaseModel):
     def _s(cls, v): return str(v)
 
 
-@router.post("", response_model=InvoiceOut)
+@router.post("", response_model=InvoiceOut | None)
 async def upsert_invoice(body: UpsertIn, user: CurrentUser, db: AsyncSession = Depends(get_db)):
     # Internal sync ingestion: EPMS/OA push their own invoices carrying the end
     # user's token (who created/matched the invoice but may lack finance-manage
     # rights). Auth (CurrentUser) is sufficient here — same as /ap/post-invoice.
     # No _require_manage (that gate is for human AP admins; void still uses it).
+    if body.status == VOID:
+        # Source deleted its invoice. An AP row that never touched the GL and
+        # was never paid is just noise — remove it. A posted one stays for the
+        # audit trail, voided, with its accrual reversed out of the GL.
+        inv = await crud.get_by_source(db, source=body.source,
+                                       source_invoice_id=body.source_invoice_id)
+        if inv is None:
+            return None
+        if not await has_postings(db, inv.id) and inv.paid_amount == Decimal("0"):
+            out = InvoiceOut.model_validate(inv)
+            await crud.delete_invoice(db, inv)
+            await db.commit()
+            return out
+        inv.status = VOID
+        await reverse_invoice_accrual(db, inv.id)
+        await db.commit()
+        return inv
+
     inv = await crud.upsert(
         db, source=body.source, source_invoice_id=body.source_invoice_id,
         payload=body.model_dump(exclude={"source", "source_invoice_id", "tax_lines"}),
@@ -119,5 +137,7 @@ async def void_invoice(invoice_id: uuid.UUID, user: CurrentUser, db: AsyncSessio
     inv = await crud.set_void(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="AP invoice not found")
+    # a void must not leave its accrual on the books
+    await reverse_invoice_accrual(db, invoice_id)
     await db.commit()
     return inv

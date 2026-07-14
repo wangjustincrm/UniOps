@@ -211,6 +211,13 @@ services:
       PORT: "8004"
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
+      # NC65 read-only connection for the NC Sync button (values live in the
+      # gitignored root .env as NC65_*; missing values = feature hidden).
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/health').status==200 else 1)"]

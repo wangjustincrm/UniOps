@@ -10,8 +10,11 @@ from app.api.v1.coa import router as coa_router
 from app.api.v1.bank import router as bank_router
 from app.api.v1.taxreturn import router as taxreturn_router
 from app.api.v1.gl import router as gl_router
+from app.api.v1.journal_voucher import router as journal_voucher_router
+from app.api.v1.account_balance import router as account_balance_router
 from app.api.v1.admin import router as admin_router
 from app.api.v1.health import router as health_router
+from app.api.v1.nc_sync import router as nc_sync_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -26,4 +29,7 @@ api_router.include_router(coa_router)
 api_router.include_router(bank_router)
 api_router.include_router(taxreturn_router)
 api_router.include_router(gl_router)
+api_router.include_router(journal_voucher_router)
+api_router.include_router(account_balance_router)
 api_router.include_router(admin_router)
+api_router.include_router(nc_sync_router)
