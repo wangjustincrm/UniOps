@@ -157,6 +157,7 @@ async def reverse(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVouc
             cost_center_id=sl.cost_center_id, department_id=sl.department_id,
             partner_id=sl.partner_id, partner_name=sl.partner_name,
             tax_code=sl.tax_code, project_id=sl.project_id, item_id=sl.item_id,
+            income_expense_item_id=sl.income_expense_item_id,
         )
         db.add(rl)
         line_map.append((rl, sl.id))

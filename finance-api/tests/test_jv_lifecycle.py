@@ -199,3 +199,54 @@ async def test_gl_opening_and_close_jvs_post_immediately(db_session):
         JournalVoucher.posting_event_id == r["posting_event_id"]))).scalar_one()
     assert jv.status == "posted"
     assert jv.posted_at is not None
+
+
+async def test_reverse_copies_promoted_income_expense_item(db_session):
+    """红冲 red lines must carry income_expense_item_id, else item-level
+    expansions stop netting (red lands in the (none) group)."""
+    from app.services.posting import emit_event
+
+    ba_id = uuid.uuid4()
+    # Create a posted JV with income_expense_item promoted to column
+    ev_id = await emit_event(
+        db_session, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-5", event_type="accrual",
+        prepared_by=uuid.uuid4(),
+        lines=[
+            {"line_role": "purchase_expense", "account_code": "5101",
+             "debit": Decimal("50.00"), "currency": "CAD",
+             "aux": {"income_expense_item": {"value_id": ba_id, "value_text": "CRM005"}}},
+            {"line_role": "accounts_payable", "account_code": "2000",
+             "credit": Decimal("50.00"), "currency": "CAD"},
+        ],
+    )
+    jv = (await db_session.execute(select(JournalVoucher).where(
+        JournalVoucher.posting_event_id == ev_id))).scalar_one()
+
+    # Review and post
+    await _open_period(db_session, jv.fiscal_period)
+    await jv_crud.review(db_session, jv.id, _user())
+    await jv_crud.post(db_session, jv.id, _user())
+
+    # Verify original line has income_expense_item_id set
+    orig_line = (await db_session.execute(
+        select(JournalVoucherLine).where(
+            JournalVoucherLine.jv_id == jv.id,
+            JournalVoucherLine.account_code == "5101"
+        )
+    )).scalar_one()
+    assert orig_line.income_expense_item_id == ba_id
+
+    # Reverse
+    actor = _user()
+    red = await jv_crud.reverse(db_session, jv.id, actor)
+
+    # Fetch red line and verify income_expense_item_id is carried over
+    red_line = (await db_session.execute(
+        select(JournalVoucherLine).where(
+            JournalVoucherLine.jv_id == red.id,
+            JournalVoucherLine.account_code == "5101"
+        )
+    )).scalar_one()
+    assert red_line.income_expense_item_id == ba_id
+    assert red_line.orig_debit == Decimal("-50.00")
