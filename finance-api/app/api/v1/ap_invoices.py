@@ -112,13 +112,20 @@ async def upsert_invoice(body: UpsertIn, user: CurrentUser, db: AsyncSession = D
     return inv
 
 
-@router.get("/invoices", response_model=list[InvoiceOut])
+@router.get("/invoices")
 async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         source: str | None = Query(default=None),
                         vendor_id: uuid.UUID | None = Query(default=None),
                         status: str | None = Query(default=None),
-                        limit: int = Query(default=500, le=2000)):
-    return await crud.list_invoices(db, source=source, vendor_id=vendor_id, status=status, limit=limit)
+                        q: str | None = Query(default=None),
+                        exported: bool | None = Query(default=None),
+                        limit: int = Query(default=50, le=200),
+                        offset: int = Query(default=0, ge=0)):
+    total, rows = await crud.list_invoices(
+        db, source=source, vendor_id=vendor_id, status=status, q=q,
+        exported=exported, limit=limit, offset=offset)
+    return {"total": total,
+            "items": [InvoiceOut.model_validate(r) for r in rows]}
 
 
 class NcExportIn(BaseModel):

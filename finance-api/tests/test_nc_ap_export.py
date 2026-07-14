@@ -351,3 +351,32 @@ async def test_buysell_non_cad(db_session):
     _, bodies, errors = await build_export_rows(db_session, [ap.id])
     assert errors == []
     assert bodies[0]["buysell"] == "4"
+
+
+async def test_ap_list_pagination_and_search(client, db_session):
+    for i in range(3):
+        await _mk_ap(db_session, number=f"AP-2026-05{i:02d}",
+                     vendor=("ACME Ltd" if i < 2 else "Beta Corp"), src_id=uuid.uuid4())
+    # give one a vendor invoice number to search on
+    from app.models.ap_invoice import ApInvoice
+    target = (await db_session.execute(select(ApInvoice).where(
+        ApInvoice.ap_invoice_number == "AP-2026-0500"))).scalar_one()
+    target.vendor_invoice_number = "INV-XYZ-77"
+    target.nc_exported_at = datetime.now(timezone.utc)
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/ap/invoices?limit=2&offset=0", headers=_h())
+    body = r.json()
+    assert body["total"] == 3 and len(body["items"]) == 2
+    r2 = await client.get("/finance/v1/ap/invoices?limit=2&offset=2", headers=_h())
+    assert len(r2.json()["items"]) == 1
+
+    rq = await client.get("/finance/v1/ap/invoices?q=INV-XYZ", headers=_h())
+    assert [i["ap_invoice_number"] for i in rq.json()["items"]] == ["AP-2026-0500"]
+    rv = await client.get("/finance/v1/ap/invoices?q=beta", headers=_h())
+    assert rv.json()["total"] == 1 and rv.json()["items"][0]["vendor_name"] == "Beta Corp"
+
+    re_ = await client.get("/finance/v1/ap/invoices?exported=false", headers=_h())
+    assert re_.json()["total"] == 2
+    rt = await client.get("/finance/v1/ap/invoices?exported=true", headers=_h())
+    assert rt.json()["total"] == 1 and rt.json()["items"][0]["nc_exported_at"] is not None
