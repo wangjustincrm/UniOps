@@ -1,12 +1,35 @@
 """NC AP export (parallel-run) — batches, assembly, xlsx, API."""
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, timedelta
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from jose import jwt
 from sqlalchemy import select
 from app.services.posting import emit_event
+
+from app.core.config import settings as app_settings
+from app.db.base import get_db
+from app.main import app
+
+
+def _h(role="finance_manager"):
+    tok = jwt.encode({"sub": str(uuid.uuid4()), "role": role,
+                      "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                     app_settings.jwt_secret_key, algorithm=app_settings.jwt_algorithm)
+    return {"Authorization": f"Bearer {tok}"}
+
+
+@pytest_asyncio.fixture
+async def client(db_session):
+    async def _override():
+        yield db_session
+    app.dependency_overrides[get_db] = _override
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
 
 
 async def _mk_ap(db, *, source="epms", amount="100.00", tax="13.00",
@@ -197,3 +220,32 @@ def test_write_xlsx_structure(tmp_path):
     assert ws["A7"].value == "0" and ws["B7"].value.startswith("510102")
     assert ws["A9"].value == "1"                                  # 3rd body row -> doc 1
     assert ws["U7"].value == "60.00"                              # notax col
+
+
+async def test_export_endpoint_streams_and_marks(client, db_session):
+    from app.models.nc_export import NcExportBatch
+    ap = await _mk_ap(db_session, number="AP-2026-0200")
+    await _mk_accrual(db_session, ap)
+    r = await client.post("/finance/v1/ap/nc-export",
+                          json={"ap_ids": [str(ap.id)]}, headers=_h())
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert "NC-AP-" in r.headers["content-disposition"]
+    assert len(r.content) > 1000
+    await db_session.refresh(ap)
+    assert ap.nc_exported_at is not None and ap.nc_export_batch_id is not None
+    batch = (await db_session.execute(select(NcExportBatch))).scalars().first()
+    assert batch is not None and batch.ap_count == 1
+
+
+async def test_export_endpoint_guards(client, db_session):
+    ap = await _mk_ap(db_session, number="AP-2026-0201")   # no accrual
+    r = await client.post("/finance/v1/ap/nc-export",
+                          json={"ap_ids": [str(ap.id)]}, headers=_h())
+    assert r.status_code == 409
+    assert r.json()["detail"]["errors"][0]["reason"] == "no accrual posting"
+    r403 = await client.post("/finance/v1/ap/nc-export",
+                             json={"ap_ids": [str(ap.id)]}, headers=_h(role="requester"))
+    assert r403.status_code == 403
+    rb = await client.get("/finance/v1/ap/nc-export/batches", headers=_h())
+    assert rb.status_code == 200 and rb.json() == []

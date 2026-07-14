@@ -1,10 +1,11 @@
 """AP Invoice API — finance-owned AP invoices upserted from EPMS/OA."""
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
@@ -12,9 +13,9 @@ from app.core.deps import CurrentUser
 from app.crud import ap_invoice as crud
 from app.crud.ap_accrual import has_postings, post_invoice_accrual, reverse_invoice_accrual
 from app.db.base import get_db
-from app.models.ap_invoice import POSTED, VOID
+from app.models.ap_invoice import POSTED, VOID, ApInvoice
 
-router = APIRouter(prefix="/ap/invoices", tags=["accounts-payable-invoices"])
+router = APIRouter(prefix="/ap", tags=["accounts-payable-invoices"])
 
 
 class TaxLineIn(BaseModel):
@@ -66,13 +67,14 @@ class InvoiceOut(BaseModel):
     source_status: str | None
     po_id: uuid.UUID | None
     po_number: str | None
+    nc_exported_at: datetime | None = None
 
     @field_validator("amount", "tax_amount", "total_amount", "paid_amount", mode="before")
     @classmethod
     def _s(cls, v): return str(v)
 
 
-@router.post("", response_model=InvoiceOut | None)
+@router.post("/invoices", response_model=InvoiceOut | None)
 async def upsert_invoice(body: UpsertIn, user: CurrentUser, db: AsyncSession = Depends(get_db)):
     # Internal sync ingestion: EPMS/OA push their own invoices carrying the end
     # user's token (who created/matched the invoice but may lack finance-manage
@@ -110,7 +112,7 @@ async def upsert_invoice(body: UpsertIn, user: CurrentUser, db: AsyncSession = D
     return inv
 
 
-@router.get("", response_model=list[InvoiceOut])
+@router.get("/invoices", response_model=list[InvoiceOut])
 async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         source: str | None = Query(default=None),
                         vendor_id: uuid.UUID | None = Query(default=None),
@@ -119,7 +121,55 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
     return await crud.list_invoices(db, source=source, vendor_id=vendor_id, status=status, limit=limit)
 
 
-@router.get("/{invoice_id}")
+class NcExportIn(BaseModel):
+    ap_ids: list[uuid.UUID]
+
+
+@router.post("/nc-export")
+async def nc_export(body: NcExportIn, user: CurrentUser,
+                    db: AsyncSession = Depends(get_db)):
+    """Generate the NC payable-module import xlsx for the chosen AP invoices,
+    record a batch, and stamp the invoices. 409 lists non-exportable ones."""
+    from fastapi.responses import Response
+    from app.models.nc_export import NcExportBatch
+    from app.services.nc_ap_export import build_export_rows, write_xlsx
+
+    await _require_manage(db, user)
+    heads, bodies, errors = await build_export_rows(db, body.ap_ids)
+    if errors:
+        raise HTTPException(status_code=409, detail={"errors": errors})
+    if not heads:
+        raise HTTPException(status_code=422, detail="no invoices to export")
+    data = write_xlsx(heads, bodies)
+
+    now = datetime.now(timezone.utc)
+    fname = f"NC-AP-{now.strftime('%Y%m%d-%H%M')}.xlsx"
+    batch = NcExportBatch(exported_by=uuid.UUID(user["sub"]), exported_at=now,
+                          ap_count=len(heads), filename=fname)
+    db.add(batch)
+    await db.flush()
+    for ap in (await db.execute(select(ApInvoice).where(
+            ApInvoice.id.in_(body.ap_ids)))).scalars():
+        ap.nc_exported_at = now
+        ap.nc_export_batch_id = batch.id
+    await db.commit()
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@router.get("/nc-export/batches")
+async def nc_export_batches(_: CurrentUser, db: AsyncSession = Depends(get_db)):
+    from app.models.nc_export import NcExportBatch
+    rows = (await db.execute(select(NcExportBatch)
+            .order_by(NcExportBatch.exported_at.desc()).limit(20))).scalars().all()
+    return [{"id": str(b.id), "exported_at": b.exported_at.isoformat(),
+             "exported_by": str(b.exported_by) if b.exported_by else None,
+             "ap_count": b.ap_count, "filename": b.filename} for b in rows]
+
+
+@router.get("/invoices/{invoice_id}")
 async def get_invoice(invoice_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depends(get_db)):
     inv = await crud.get(db, invoice_id)
     if inv is None:
@@ -131,7 +181,7 @@ async def get_invoice(invoice_id: uuid.UUID, _: CurrentUser, db: AsyncSession = 
                            "recoverable": t.recoverable} for t in tax]}
 
 
-@router.post("/{invoice_id}/void", response_model=InvoiceOut)
+@router.post("/invoices/{invoice_id}/void", response_model=InvoiceOut)
 async def void_invoice(invoice_id: uuid.UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
     await _require_manage(db, user)
     inv = await crud.set_void(db, invoice_id)
