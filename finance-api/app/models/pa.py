@@ -25,4 +25,6 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False)
     expected_settlement_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    budget_account_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
