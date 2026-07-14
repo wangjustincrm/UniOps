@@ -110,13 +110,17 @@ class BadDims(ValueError):
 
 
 def _dimensions():
-    """dim_code -> (jv_lines column, mirror model). Registry — adding a future
-    dimension (supplier/customer) is one line here once its column+mirror exist."""
-    from app.models.mirrors import BudgetAccount, CostCenter, Department
+    """dim_code -> (jv_lines column, master model, code attr, name attr).
+    supplier/customer share the partner_id column — coa_aux_items keeps them
+    apart per account (AP accounts carry suppliers, AR customers)."""
+    from app.models.mirrors import BudgetAccount, CostCenter, Department, ErpSupplier
+    from app.models.nc_customer import NcCustomer
     return {
-        "cost_center": (JournalVoucherLine.cost_center_id, CostCenter),
-        "department": (JournalVoucherLine.department_id, Department),
-        "income_expense_item": (JournalVoucherLine.income_expense_item_id, BudgetAccount),
+        "cost_center": (JournalVoucherLine.cost_center_id, CostCenter, "code", "name"),
+        "department": (JournalVoucherLine.department_id, Department, "code", "name"),
+        "income_expense_item": (JournalVoucherLine.income_expense_item_id, BudgetAccount, "code", "name"),
+        "supplier": (JournalVoucherLine.partner_id, ErpSupplier, "erp_supplier_code", "supplier_name"),
+        "customer": (JournalVoucherLine.partner_id, NcCustomer, "code", "name"),
     }
 
 
@@ -167,8 +171,10 @@ async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
         for i, d in enumerate(dims):
             vid = row[i]
             m = lookups[d].get(vid)
+            _, _, code_attr, name_attr = reg[d]
             keys.append({"dim_code": d, "id": str(vid) if vid else None,
-                         "code": m.code if m else None, "name": m.name if m else None})
+                         "code": getattr(m, code_attr) if m else None,
+                         "name": getattr(m, name_attr) if m else None})
         rows.append({"keys": keys, "amount": _s(_net(row[len(dims)], row[len(dims) + 1]))})
     rows.sort(key=lambda r: tuple(k["code"] or "￿" for k in r["keys"]))
     return {"account_code": account_code, "period": period, "dims": dims, "rows": rows}

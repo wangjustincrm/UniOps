@@ -264,13 +264,13 @@ async def test_dims_endpoint_config_and_fallback(client, db_session):
     r = await client.get("/finance/v1/gl/account-balance/5101/dims", headers=_h())
     dims = r.json()["dims"]
     assert [d["dim_code"] for d in dims] == [
-        "cost_center", "supplier", "department", "income_expense_item"]
-    assert dims[0]["supported"] is True and dims[1]["supported"] is False
-    assert dims[2]["supported"] is True and dims[3]["supported"] is True
+        "cost_center", "supplier", "department", "income_expense_item", "customer"]
+    assert dims[0]["supported"] is True and dims[1]["supported"] is True
+    assert dims[2]["supported"] is True and dims[3]["supported"] is True and dims[4]["supported"] is True
     # unconfigured account falls back to the full supported registry
     r2 = await client.get("/finance/v1/gl/account-balance/9999/dims", headers=_h())
     assert {d["dim_code"] for d in r2.json()["dims"]} == {
-        "cost_center", "department", "income_expense_item"}
+        "cost_center", "department", "income_expense_item", "supplier", "customer"}
 
 
 async def test_expand_endpoint_dims_param(client, db_session):
@@ -336,3 +336,36 @@ def test_customer_pick_name():
     assert mod.pick_name("Acme Ltd", "阿克梅", "C1") == "Acme Ltd"
     assert mod.pick_name(None, "阿克梅", "C1") == "阿克梅"
     assert mod.pick_name(" ", "", "C1") == "C1"
+
+
+async def test_expand_by_supplier_and_customer(db_session):
+    from app.models.mirrors import ErpSupplier
+    from app.models.nc_customer import NcCustomer
+    sup_id, cust_id, ghost = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    db_session.add(ErpSupplier(id=sup_id, erp_supplier_code="S001", supplier_name="ACME"))
+    db_session.add(NcCustomer(id=cust_id, code="CRM027", name="Debang", is_active=True))
+    await db_session.flush()
+
+    async def _ev(account, amount, pid):
+        occurred = datetime(2026, 7, 15, tzinfo=timezone.utc)
+        await emit_event(
+            db_session, source_service="finance", source_doc_type="ap_invoice",
+            source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+            occurred_at=occurred, prepared_by=uuid.uuid4(),
+            lines=[{"line_role": "purchase_expense", "account_code": "5000",
+                    "debit": Decimal(amount), "currency": "CAD"},
+                   {"line_role": "accounts_payable", "account_code": account,
+                    "credit": Decimal(amount), "currency": "CAD", "partner_id": pid}])
+
+    await _ev("2202", "100.00", sup_id)
+    await _ev("2202", "40.00", ghost)          # no master row -> (unknown)
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    exp = await ab.expand_by_dims(db_session, "2202", "2026-07", ["supplier"])
+    by_id = {r["keys"][0]["id"]: r for r in exp["rows"]}
+    assert by_id[str(sup_id)]["keys"][0]["code"] == "S001"
+    assert by_id[str(sup_id)]["keys"][0]["name"] == "ACME"
+    assert by_id[str(ghost)]["keys"][0]["code"] is None      # unknown master
+
+    exp_c = await ab.expand_by_dims(db_session, "2202", "2026-07", ["customer"])
+    assert str(cust_id) not in {r["keys"][0]["id"] for r in exp_c["rows"]}  # no data yet

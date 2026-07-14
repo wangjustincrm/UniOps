@@ -264,7 +264,8 @@ function DimExpansion({ accountCode, accountName, period, dims, onDrill }: {
     <>
       {rows.map((row, ri) => {
         const label = row.keys.map((k) =>
-          k.code ? `${k.code}${k.name ? ' · ' + k.name : ''}` : '(none)').join('  |  ')
+          k.code ? `${k.code}${k.name ? ' · ' + k.name : ''}`
+                 : k.id ? '(unknown)' : '(none)').join('  |  ')
         const dv = row.keys.map((k) => `${k.dim_code}:${k.id ?? 'none'}`).join(',')
         return (
           <tr key={ri} className="border-t border-neutral-100 bg-neutral-50/60 text-xs">
