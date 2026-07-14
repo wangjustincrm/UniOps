@@ -153,12 +153,20 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
                 dept = depts_by_id.get(cc.department_id)
                 if dept:
                     return dept.code
-            # fallback: case-insensitive substring match on department name
+            # fallback: deterministic multi-tier name match
+            # exact → mutual prefix → needle-contained-in-stored; each tier picks
+            # the shortest stored name for determinism. Never stored-in-needle,
+            # which made "After-Sales Service" match "Sales".
             if dept_name:
-                needle = dept_name.lower()
-                for dname, dept in depts_by_name.items():
-                    if needle in dname or dname in needle:
-                        return dept.code
+                needle = dept_name.strip().lower()
+                for tier in (
+                    lambda dn: dn == needle,
+                    lambda dn: dn.startswith(needle) or needle.startswith(dn),
+                    lambda dn: needle in dn,
+                ):
+                    hits = sorted((dn for dn in depts_by_name if tier(dn)), key=len)
+                    if hits:
+                        return depts_by_name[hits[0]].code
             return ""
 
         # per-source dimension rows:
@@ -224,6 +232,7 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
                 cc = ccs.get(pa.cost_center_id)
                 cc_nc = NC_CC_BY_UNIOPS.get(cc.code, "") if cc else ""
                 cc_uniops = cc.code if cc else None
+                # PA carries no department name; dept code resolvable only via the CC chain.
                 dept_code = _dept_code_from_cc(cc, None)
                 # revexp = budget CODE directly
                 revexp_code = pa.budget_account_code or ""

@@ -112,6 +112,25 @@ def test_classify_expense_account_no_cc_unknown():
 
 # ── integration tests ──────────────────────────────────────────────────────────
 
+async def test_dept_fallback_not_fooled_by_substring(db_session):
+    """Department-name fallback must NOT match 'Sales' for 'After-Sales Service'."""
+    from app.models.mirrors import Department, InvoicePoAllocation, PurchaseRequest
+    from app.services.nc_ap_export import build_export_rows
+    db_session.add(Department(id=uuid.uuid4(), code="0110", name="Sales", is_active=True))
+    src, po = uuid.uuid4(), uuid.uuid4()
+    db_session.add(PurchaseRequest(id=uuid.uuid4(), po_id=po, cost_center_id=None,
+                                   budget_code=None, department_name="After-Sales Service",
+                                   created_by=uuid.uuid4()))
+    db_session.add(InvoicePoAllocation(id=uuid.uuid4(), invoice_id=src, po_id=po,
+                                       allocated_amount=Decimal("10.00"),
+                                       allocated_tax=Decimal("0.00")))
+    await db_session.flush()
+    ap = await _mk_ap(db_session, src_id=src, number="AP-2026-0300")
+    await _mk_accrual(db_session, ap)
+    heads, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert errors == []
+    assert bodies[0]["department"] == ""  # must NOT resolve to Sales (0110)
+
 async def test_build_rows_epms_allocations(db_session):
     from app.models.mirrors import CostCenter, Department, InvoicePoAllocation, PurchaseRequest, BudgetAccount
     from app.services.nc_ap_export import build_export_rows
