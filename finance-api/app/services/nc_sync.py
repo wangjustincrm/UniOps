@@ -46,11 +46,34 @@ def nc_configured() -> bool:
 class NcExtract:
     """Raw NC reads, pre-transform. Tests inject a fake one."""
     ccy: dict           # pk_currtype -> currency code
-    aux: dict           # freevalueid -> (dept_code, cc_code, io_code)
+    aux: dict           # freevalueid -> (dept_code, cc_code, io_code, sup_code, cust_code)
     vouchers: list      # (pk, year, period, num, explanation, prepareddate, creationtime)
     details: list       # (pk_voucher, detailindex, accountcode, dr, cr, ldr, lcr,
                         #  pk_currtype, excrate1, explanation, assid)
     max_creationtime: str | None
+
+
+_AUX_NAME_SLOTS = {
+    "department": "部门", "cost_center": "成本中心", "income_expense_item": "收支项目",
+    "supplier": "供应商", "customer": "客户",
+}
+_AUX_CONSTANTS = {"department": AUX_DEPT, "cost_center": AUX_COSTCENTER,
+                  "income_expense_item": AUX_IOITEM}
+
+
+def resolve_aux_type_pks(items) -> dict:
+    """[(pk_accassitem, name)] -> {slot: pk}. Validates the known three against
+    the frozen constants — proves GL_FREEVALUE's typevalue prefix IS
+    pk_accassitem; a mismatch means the assumption broke: stop, don't guess."""
+    out: dict = {}
+    for slot, needle in _AUX_NAME_SLOTS.items():
+        out[slot] = next((pk for pk, name in items if needle in (name or "")), None)
+    for slot, const in _AUX_CONSTANTS.items():
+        if out.get(slot) and out[slot] != const:
+            raise RuntimeError(
+                f"aux type pk mismatch for {slot}: resolved {out[slot]!r} != "
+                f"constant {const!r} — typevalue-prefix assumption broke")
+    return out
 
 
 def _d(v) -> Decimal:
@@ -62,18 +85,31 @@ def _net_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
     return (n, Decimal("0")) if n >= 0 else (Decimal("0"), -n)
 
 
-def _resolve_dims(assid, aux, uni_cc, uni_dept, uni_ba):
-    """-> (cost_center_id, department_id, io_code, budget_account_id, had_cc_hint)."""
-    d, c, io = aux.get(assid, ("", "", ""))
+def _resolve_dims(assid, aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust):
+    """-> (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, had_cc_hint).
+    Supplier wins over customer when both appear (AP accounts carry suppliers,
+    AR customers; a clash is NC data noise). Missing master row -> partner_id
+    None with the NC code kept as partner_name text."""
+    d, c, io, sup, cust = aux.get(assid, ("", "", "", "", ""))
     epms = CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)
+    partner_id = partner_name = None
+    code = sup or cust
+    if code:
+        hit = (uni_sup.get(sup) if sup else None) or (uni_cust.get(cust) if cust else None)
+        if hit:
+            partner_id, partner_name = hit
+        else:
+            partner_name = code
     return (uni_cc.get(epms) if epms else None,
             uni_dept.get(d) if d else None,
             io or None,
             uni_ba.get(io) if io else None,
+            partner_id, partner_name,
             bool(c or d))
 
 
 def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
+              uni_sup: dict, uni_cust: dict,
               skip_pks: set) -> tuple[list, list, list, int]:
     """NC rows -> (voucher dicts, line tuples, dim tuples, unmapped_cc count).
     Skips vouchers whose pk is in skip_pks (incremental pk-dedup)."""
@@ -100,8 +136,8 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             continue
         odr, ocr = _net_side(_d(dr), _d(cr))
         ldr_, lcr_ = _net_side(_d(ldr), _d(lcr))
-        cc_id, dept_id, io_code, ba_id, had_hint = _resolve_dims(
-            assid, extract.aux, uni_cc, uni_dept, uni_ba)
+        cc_id, dept_id, io_code, ba_id, partner_id, partner_name, had_hint = _resolve_dims(
+            assid, extract.aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust)
         if had_hint and cc_id is None:
             unmapped += 1
         lid = uuid.uuid4()
@@ -109,7 +145,7 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             lid, jid, int(idx or 0), (acct or "").strip() or None,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
             extract.ccy.get(curr, "CAD"), _d(rate) if rate else Decimal("1"),
-            cc_id, dept_id, ba_id))
+            cc_id, dept_id, ba_id, partner_id, partner_name))
         if io_code:
             dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
     return vouchers, lines, dims, unmapped
@@ -128,6 +164,15 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         cur.execute("select pk_currtype, code from NCSC.BD_CURRTYPE")
         ccy = {pk: code for pk, code in cur.fetchall()}
 
+        cur.execute("select pk_accassitem, name from NCSC.BD_ACCASSITEM")
+        type_pks = resolve_aux_type_pks(list(cur.fetchall()))
+        aux_sup_pk, aux_cust_pk = type_pks.get("supplier"), type_pks.get("customer")
+
+        cur.execute("select pk_supplier, code from NCSC.BD_SUPPLIER")
+        sup_codes = {pk: code for pk, code in cur.fetchall()}
+        cur.execute("select pk_customer, code from NCSC.BD_CUSTOMER")
+        cust_codes = {pk: code for pk, code in cur.fetchall()}
+
         cur.execute("select pk_dept, code from NCSC.ORG_DEPT")
         dept = {pk: code for pk, code in cur.fetchall()}
         cur.execute("select pk_costcenter, cccode from NCSC.RESA_COSTCENTER")
@@ -140,7 +185,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         aux = {}
         for row in cur:
             fid, tvs = row[0], row[1:]
-            dcode = ccode = iocode = ""
+            dcode = ccode = iocode = supcode = custcode = ""
             for tv in tvs:
                 if not tv or len(tv) < 40:
                     continue
@@ -151,7 +196,11 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
                     ccode = cc.get(vpk, "")
                 elif tpk == AUX_IOITEM:
                     iocode = io.get(vpk, "")
-            aux[fid] = (dcode, ccode, iocode)
+                elif aux_sup_pk and tpk == aux_sup_pk:
+                    supcode = sup_codes.get(vpk, "")
+                elif aux_cust_pk and tpk == aux_cust_pk:
+                    custcode = cust_codes.get(vpk, "")
+            aux[fid] = (dcode, ccode, iocode, supcode, custcode)
 
         vq = ("select pk_voucher, year, period, num, explanation, prepareddate, "
               "creationtime from NCSC.GL_VOUCHER where pk_accountingbook = :b")
@@ -283,8 +332,38 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                            "value_id=NULL — check the finance DB schema")
             uni_ba = {}
 
+        # erp_suppliers mirrors NC BD_SUPPLIER; may not exist in very minimal DBs
+        try:
+            sp = con.cursor()
+            sp.execute("savepoint _sup")
+            sp.execute("select erp_supplier_code, id, supplier_name from erp_suppliers")
+            uni_sup = {c: (i, n) for c, i, n in sp.fetchall()}
+            sp.execute("release savepoint _sup")
+            sp.close()
+        except Exception:  # noqa: BLE001
+            cur.execute("rollback to savepoint _sup")
+            cur.execute("release savepoint _sup")
+            logger.warning("erp_suppliers table not found; partner_id will be NULL for all "
+                           "supplier lines — check the finance DB schema")
+            uni_sup = {}
+
+        try:
+            sp = con.cursor()
+            sp.execute("savepoint _cust")
+            sp.execute("select code, id, name from nc_customers")
+            uni_cust = {c: (i, n) for c, i, n in sp.fetchall()}
+            sp.execute("release savepoint _cust")
+            sp.close()
+        except Exception:  # noqa: BLE001
+            cur.execute("rollback to savepoint _cust")
+            cur.execute("release savepoint _cust")
+            logger.warning("nc_customers table not found; partner_id will be NULL for all "
+                           "customer lines — check the finance DB schema")
+            uni_cust = {}
+
         skip = existing if mode == "incremental" else set()
-        vouchers, lines, dims, unmapped = transform(extract, uni_cc, uni_dept, uni_ba, skip)
+        vouchers, lines, dims, unmapped = transform(
+            extract, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, skip)
 
         deleted = 0
         if mode == "full":
@@ -292,7 +371,7 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             deleted = cur.rowcount
 
         tot: dict = {}
-        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _, _ in lines:
+        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _, _, _, _ in lines:
             t = tot.setdefault(jid, [Decimal("0")] * 4)
             t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
 
@@ -314,9 +393,9 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 "insert into journal_voucher_lines "
                 "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
                 " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
-                " income_expense_item_id, created_at, updated_at) values %s",
+                " income_expense_item_id, partner_id, partner_name, created_at, updated_at) values %s",
                 lines[i:i + _CHUNK],
-                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, lines_inserted=min(i + _CHUNK, len(lines)))
         for i in range(0, len(dims), _CHUNK):
             execute_values(cur,

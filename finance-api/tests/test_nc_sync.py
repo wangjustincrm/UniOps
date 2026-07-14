@@ -42,16 +42,16 @@ def test_nc_configured_all_or_nothing(monkeypatch):
 
 def _mini_extract():
     from app.services.nc_sync import NcExtract
-    # one voucher, two lines (5101 with cc E01 -> MOH-0106-E01; 2202 no dims);
-    # line 1 is NC "both-sided" (dr and cr both >0) -> must net to one side.
+    # voucher 1: line 1 both-sided w/ cc+ioitem aux; line 2 payable w/ supplier aux
     return NcExtract(
         ccy={"CADPK": "CAD"},
-        aux={"ASS1": ("0104", "E01", "CRM004")},
+        aux={"ASS1": ("0104", "E01", "CRM004", "", ""),
+             "ASS2": ("", "", "", "SUP01", "")},
         vouchers=[("NCPK1", "2026", "07", 12, "test voucher",
                    "2026-07-10 09:00:00", "2026-07-11 08:00:00")],
         details=[
             ("NCPK1", 1, "5101", 150, 50, 150, 50, "CADPK", 1, "expense", "ASS1"),
-            ("NCPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "payable", None),
+            ("NCPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "payable", "ASS2"),
         ],
         max_creationtime="2026-07-11 08:00:00",
     )
@@ -61,9 +61,12 @@ def test_transform_maps_dims_and_nets_sides():
     from decimal import Decimal
     from app.services.nc_sync import transform
     cc_id, dept_id, ba_id = object(), object(), object()
+    sup_id = object()
     vouchers, lines, dims, unmapped = transform(
         _mini_extract(), uni_cc={"MOH-0106-E01": cc_id},
-        uni_dept={"0104": dept_id}, uni_ba={"CRM004": ba_id}, skip_pks=set())
+        uni_dept={"0104": dept_id}, uni_ba={"CRM004": ba_id},
+        uni_sup={"SUP01": (sup_id, "ACME Supplies")}, uni_cust={},
+        skip_pks=set())
     assert len(vouchers) == 1 and vouchers[0]["jv_number"] == "JV-202607-0012"
     assert vouchers[0]["nc_pk"] == "NCPK1"
     l1 = next(l for l in lines if l[2] == 1)
@@ -72,19 +75,22 @@ def test_transform_maps_dims_and_nets_sides():
     assert l1[13] is ba_id            # promoted income/expense item column
     assert len(dims) == 1 and dims[0][2] == "income_expense_item" and dims[0][3] is ba_id
     assert unmapped == 0
+    l2 = next(l for l in lines if l[2] == 2)
+    assert l2[14] is sup_id and l2[15] == "ACME Supplies"
+    assert l1[14] is None                     # no partner aux on line 1
 
 
 def test_transform_skips_existing_and_counts_unmapped():
     from app.services.nc_sync import NcExtract, transform
     ex = _mini_extract()
     # skip the only voucher -> nothing out
-    v, l, d, _ = transform(ex, {}, {}, {}, skip_pks={"NCPK1"})
+    v, l, d, _ = transform(ex, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks={"NCPK1"})
     assert v == [] and l == [] and d == []
     # unknown cc code -> unmapped counted (line still produced, cc_id None)
-    ex2 = NcExtract(ccy=ex.ccy, aux={"ASS1": ("", "ZZZ", "")},
+    ex2 = NcExtract(ccy=ex.ccy, aux={"ASS1": ("", "ZZZ", "", "", "")},
                     vouchers=ex.vouchers, details=ex.details[:1],
                     max_creationtime=ex.max_creationtime)
-    v2, l2, _, unmapped2 = transform(ex2, {}, {}, {}, skip_pks=set())
+    v2, l2, _, unmapped2 = transform(ex2, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks=set())
     assert len(l2) == 1 and l2[0][11] is None and unmapped2 == 1
 
 
@@ -119,6 +125,8 @@ async def test_start_run_incremental_inserts_and_sets_watermark(db_session):
     assert _pg("select count(*) from journal_vouchers where nc_source_pk = 'NCPK1'")[0][0] == 1
     assert _pg("select count(*) from journal_voucher_lines "
                "where income_expense_item_id is not null")[0][0] == 1
+    assert _pg("select partner_name from journal_voucher_lines "
+               "where account_code = '2202'")[0][0] == "SUP01"
     # second incremental: same extract -> pk skipped, 0 inserted, watermark kept
     run2 = nc_sync.start_run("incremental", uuid.uuid4(),
                              fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
@@ -270,3 +278,18 @@ async def test_status_sweeps_stale_running_row(client, monkeypatch):
     assert r.status_code == 200
     assert r.json()["current_run"] is None
     assert _pg("select status, error from nc_sync_runs where id = %s", (rid,))[0] == ("failed", "abandoned")
+
+
+def test_resolve_aux_type_pks_validates_constants():
+    from app.services.nc_sync import (AUX_COSTCENTER, AUX_DEPT, AUX_IOITEM,
+                                      resolve_aux_type_pks)
+    items = [(AUX_DEPT, "部门"), (AUX_COSTCENTER, "成本中心"), (AUX_IOITEM, "收支项目"),
+             ("SUPPK0000000000000001"[:20], "供应商档案"), ("CUSPK0000000000000001"[:20], "客户档案")]
+    got = resolve_aux_type_pks(items)
+    assert got["supplier"] and got["customer"]
+    assert got["department"] == AUX_DEPT
+    # constant mismatch -> hard error (typevalue-prefix == pk_accassitem assumption)
+    bad = [("WRONGPK0000000000001"[:20], "部门"), (AUX_COSTCENTER, "成本中心"),
+           (AUX_IOITEM, "收支项目")]
+    with pytest.raises(RuntimeError):
+        resolve_aux_type_pks(bad)
