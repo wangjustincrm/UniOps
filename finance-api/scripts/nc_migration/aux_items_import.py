@@ -29,9 +29,9 @@ DEV_DSN = "host=localhost port=5432 dbname=epms user=epms " \
 # NC 辅助项名称 -> our dim_code (curated); unknown names fall back to a slug of
 # the NC item code so nothing silently disappears.
 NAME_MAP = {
-    "部門": "department", "成本中心": "cost_center", "收支項目": "income_expense_item",
-    "供應商": "supplier", "客戶": "customer", "人員": "employee", "職員": "employee",
-    "項目": "project",
+    "部门": "department", "成本中心": "cost_center", "收支项目": "income_expense_item",
+    "供应商": "supplier", "客户": "customer", "人员": "employee", "职员": "employee",
+    "项目": "project",
 }
 
 
@@ -39,7 +39,8 @@ def map_assitem_name(name: str, code: str) -> str:
     for key, dim in NAME_MAP.items():
         if key in (name or ""):
             return dim
-    return re.sub(r"[^a-z0-9_]+", "_", (code or "unknown").strip().lower()).strip("_")
+    slug = re.sub(r"[^a-z0-9_]+", "_", (code or "").strip().lower()).strip("_")
+    return slug or "unknown"
 
 
 def _nc_cfg() -> dict:

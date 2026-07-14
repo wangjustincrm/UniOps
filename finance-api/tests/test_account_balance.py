@@ -293,9 +293,10 @@ def test_aux_item_name_mapping():
     spec = importlib.util.spec_from_file_location("aux_items_import", p)
     mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
     f = mod.map_assitem_name
-    assert f("部門", "bm") == "department"
+    assert f("部门", "bm") == "department"
     assert f("成本中心", "cbzx") == "cost_center"
-    assert f("收支項目", "szxm") == "income_expense_item"
-    assert f("供應商", "gys") == "supplier"
-    assert f("客戶", "kh") == "customer"
-    assert f("神秘檔案", "SomeCode") == "somecode"     # unknown -> code slug
+    assert f("收支项目", "szxm") == "income_expense_item"
+    assert f("供应商", "gys") == "supplier"
+    assert f("客户", "kh") == "customer"
+    assert f("神秘档案", "SomeCode") == "somecode"     # unknown -> code slug
+    assert f("神秘档案", "神秘") == "unknown"           # empty-slug fallback
