@@ -57,3 +57,56 @@
 ## 8. 范围外
 
 - 自动传输/接口对接 NC(维持人工引入);档案模板导出;JV 复核对账工具;EPMS 行级真实**费用科目**细分(CC/收支项已从 PR 取到,科目仍是 accrual 兜底科目,细分另一工程);Claim 之外的 OA 单据特化。
+
+## 10. NC 试引入反馈修订(2026-07-14)
+
+NC 试引入后反馈:所有枚举字段必须填 **NC 内码(CODE)**,而非中英文名称。以下修订覆盖 §3.2 样例值与 §3.5 全路径科目方案。
+
+### 枚举 CODE 对照表
+
+| 字段 | 旧值(名称) | 新值(NC CODE) |
+|------|------------|---------------|
+| org | Canada Royal Milk ULC | `01010104` |
+| busi_process | 选择付款 | `AP01` |
+| obj_type | Supplier | `1` |
+| pay_term | net 30 days | `FH01` |
+| taxtype | Tax Excluded | `02` |
+| buysell | Domestic Purchases(固定) | `2`(CAD) / `4`(其他币种) — **改为按行** |
+
+`ap_type / ap_type_code / tax_code / tax_rate / tax_country` 不变。
+
+### 维度字段改输 CODE
+
+| 维度 | 取值来源 | 规则 |
+|------|---------|------|
+| department / department2 / head department | UniOps `departments.code` | 优先通过 `cost_center.department_id → departments.code`；无 CC 时按 PR/PA department_name 与 `departments.name` 大小写不敏感子串匹配找 code；找不到→ `''` |
+| revexp | `pr.budget_code` / `pa.budget_account_code` | 直接输出,已是 CRM 编码(如 `CRM004`);不再查 BudgetAccount 名称 |
+| cost_center | UniOps `cc.code` → NC code | 经下表反向映射;不在映射表的 UniOps CC → `''` |
+
+**NC CC 反向映射表(`NC_CC_BY_UNIOPS`)**:
+
+```python
+NC_CC_BY_UNIOPS = {
+    "MOH-0106-E01": "ENG", "MOH-0104-P01": "P01", "MOH-0104-P02": "P02",
+    "MOH-0104-P03": "P03", "MOH-0105-LAB": "Q01", "GA-0105": "QA",
+    "MOH-0107-S02": "S02", "SELL-0107-S03": "S03", "GA-0107": "SC",
+    "MOH-0101": "H01", "GA-0101": "HR",
+}
+```
+
+### 科目(account_path)—取代 §3.5 全路径方案
+
+`account_path` 改为裸 NC 科目 CODE,由纯函数 `classify_expense_account(cc_code, department_name) -> str` 分类(见实现文件 `services/nc_ap_export.py`):
+
+| 条件 | 输出 |
+|------|------|
+| CC 前缀 `MOH*` | `510101` |
+| CC 前缀 `RD*` | `5301` |
+| CC 前缀 `SELL*` | `660101` |
+| CC 前缀 `GA*` | `6602` |
+| 无 CC,部门名含 Engineering/Production | `510101` |
+| 无 CC,部门名含 Marketing/Sales/BD/E-COM | `660101` |
+| 无 CC,部门名含 R&D | `5301` |
+| 其他 / 兜底 | `6602` |
+
+accrual posting 的 `purchase_expense` account_code 不再用于 account_path 取值(仅保留 accrual 存在性校验)。

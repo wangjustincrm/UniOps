@@ -33,14 +33,15 @@ async def client(db_session):
 
 
 async def _mk_ap(db, *, source="epms", amount="100.00", tax="13.00",
-                 number="AP-2026-0100", vendor="ACME Ltd", src_id=None):
+                 number="AP-2026-0100", vendor="ACME Ltd", src_id=None,
+                 currency="CAD"):
     from app.models.ap_invoice import ApInvoice
     inv = ApInvoice(ap_invoice_number=number, source=source,
                     source_invoice_id=src_id or uuid.uuid4(),
                     vendor_name=vendor, amount=Decimal(amount),
                     tax_amount=Decimal(tax),
                     total_amount=Decimal(amount) + Decimal(tax),
-                    currency="CAD", invoice_date=date(2026, 7, 10), status="posted")
+                    currency=currency, invoice_date=date(2026, 7, 10), status="posted")
     db.add(inv)
     await db.flush()
     return inv
@@ -59,26 +60,72 @@ async def _mk_accrual(db, ap, account="510102"):
                 "credit": ap.total_amount, "currency": "CAD"}])
 
 
-def test_account_full_path():
-    from types import SimpleNamespace as NS
-    from app.services.nc_ap_export import account_full_path
-    coa = {"5101": NS(code="5101", name="Manufacturing Overhead", parent_code=None),
-           "510102": NS(code="510102", name="Repairs", parent_code="5101")}
-    assert account_full_path(coa, "510102") == "510102\\Manufacturing Overhead\\Repairs"
-    assert account_full_path(coa, "9999") == "9999"
+# ── classify_expense_account unit tests ────────────────────────────────────────
 
+def test_classify_expense_account_moh():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account("MOH-0106-E01", None) == "510101"
+    assert classify_expense_account("MOH-0104-P01", "Production") == "510101"
+
+
+def test_classify_expense_account_rd():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account("RD-001", None) == "5301"
+
+
+def test_classify_expense_account_sell():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account("SELL-0107-S03", None) == "660101"
+
+
+def test_classify_expense_account_ga():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account("GA-0105", None) == "6602"
+    assert classify_expense_account("GA-0101", "HR") == "6602"
+
+
+def test_classify_expense_account_no_cc_engineering():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account(None, "Engineering") == "510101"
+    assert classify_expense_account(None, "Production") == "510101"
+
+
+def test_classify_expense_account_no_cc_sales():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account(None, "Sales") == "660101"
+    assert classify_expense_account(None, "Marketing") == "660101"
+    assert classify_expense_account(None, "BD") == "660101"
+    assert classify_expense_account(None, "E-COM") == "660101"
+
+
+def test_classify_expense_account_no_cc_rnd():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account(None, "R&D") == "5301"
+
+
+def test_classify_expense_account_no_cc_unknown():
+    from app.services.nc_ap_export import classify_expense_account
+    assert classify_expense_account(None, "Maintenance") == "6602"
+    assert classify_expense_account(None, None) == "6602"
+    assert classify_expense_account(None, "") == "6602"
+
+
+# ── integration tests ──────────────────────────────────────────────────────────
 
 async def test_build_rows_epms_allocations(db_session):
-    from app.models.mirrors import CostCenter, InvoicePoAllocation, PurchaseRequest, BudgetAccount
+    from app.models.mirrors import CostCenter, Department, InvoicePoAllocation, PurchaseRequest, BudgetAccount
     from app.services.nc_ap_export import build_export_rows
     src = uuid.uuid4()
     po1, po2 = uuid.uuid4(), uuid.uuid4()
-    cc = uuid.uuid4()
-    db_session.add(CostCenter(id=cc, code="MOH-0106-E01", name="Engineering CC"))
+    cc_id = uuid.uuid4()
+    dept_id = uuid.uuid4()
+    db_session.add(Department(id=dept_id, code="0104", name="Production", is_active=True))
+    db_session.add(CostCenter(id=cc_id, code="MOH-0104-P01", name="Production CC",
+                              department_id=dept_id))
     db_session.add(BudgetAccount(id=uuid.uuid4(), code="CRM004", name="Depreciation", is_active=True))
     db_session.add_all([
-        PurchaseRequest(id=uuid.uuid4(), po_id=po1, cost_center_id=cc,
-                        budget_code="CRM004", department_name="Engineering",
+        PurchaseRequest(id=uuid.uuid4(), po_id=po1, cost_center_id=cc_id,
+                        budget_code="CRM004", department_name="Production",
                         created_by=uuid.uuid4()),
         PurchaseRequest(id=uuid.uuid4(), po_id=po2, cost_center_id=None,
                         budget_code=None, department_name="Maintenance",
@@ -97,24 +144,39 @@ async def test_build_rows_epms_allocations(db_session):
     assert len(heads) == 1 and len(bodies) == 2
     h = heads[0]
     assert h["seq"] == 0 and h["billno"] == "AP-2026-0100"
-    assert h["department"] == "Engineering"          # first body row's dept
+    # head department = first body row's dept CODE
+    assert h["department"] == "0104"
     b1 = next(b for b in bodies if b["notax"] == "60.00")
-    assert b1["cost_center"] == "Engineering CC"
-    assert b1["revexp"] == "Depreciation"
+    # cost_center: MOH-0104-P01 → 'P01' via NC_CC_BY_UNIOPS
+    assert b1["cost_center"] == "P01"
+    # revexp is the budget CODE directly
+    assert b1["revexp"] == "CRM004"
     assert b1["tax"] == "7.80" and b1["money"] == "67.80"
-    assert b1["account_path"].startswith("510102")
+    # account_path: MOH prefix → 510101
+    assert b1["account_path"] == "510101"
     assert b1["tax_code"] == "001" and b1["tax_rate"] == "13.00"
+    # CAD → buysell '2'
+    assert b1["buysell"] == "2"
+    # pay_term code
+    assert b1["pay_term"] == "FH01"
+    # obj_type code
+    assert b1["obj_type"] == "1"
     b2 = next(b for b in bodies if b["notax"] == "40.00")
+    # no CC, Maintenance dept → unresolvable dept code → ''
     assert b2["cost_center"] == "" and b2["revexp"] == ""
-    assert b2["department"] == "Maintenance"
+    # Maintenance → no keyword match → 6602
+    assert b2["account_path"] == "6602"
 
 
 async def test_build_rows_oa_pa_chain(db_session):
-    from app.models.mirrors import CostCenter, ExpenseInvoice, User, BudgetAccount
+    from app.models.mirrors import CostCenter, Department, ExpenseInvoice, User, BudgetAccount
     from app.models.pa import PaymentApplication
     from app.services.nc_ap_export import build_export_rows
-    src, pa_id, cc, creator = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    db_session.add(CostCenter(id=cc, code="GA-0100", name="Admin CC"))
+    src, pa_id, cc_id, creator = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    dept_id = uuid.uuid4()
+    db_session.add(Department(id=dept_id, code="0101", name="Administration", is_active=True))
+    db_session.add(CostCenter(id=cc_id, code="GA-0101", name="Admin CC",
+                              department_id=dept_id))
     db_session.add(BudgetAccount(id=uuid.uuid4(), code="CRM010", name="Office Supplies", is_active=True))
     db_session.add(User(id=creator, email="a@x.com", full_name="Alice Wong"))
     db_session.add(ExpenseInvoice(id=src, pa_id=pa_id))
@@ -122,7 +184,7 @@ async def test_build_rows_oa_pa_chain(db_session):
         id=pa_id, pa_number="PA-1", title="t", pa_type="PA-DIR", status="paid",
         vendor_id=uuid.uuid4(), vendor_name="ACME Ltd",
         payment_amount=Decimal("113.00"), currency="CAD",
-        cost_center_id=cc, budget_account_code="CRM010", created_by=creator))
+        cost_center_id=cc_id, budget_account_code="CRM010", created_by=creator))
     await db_session.flush()
     ap = await _mk_ap(db_session, source="oa", number="AP-2026-0101", src_id=src)
     await _mk_accrual(db_session, ap)
@@ -130,9 +192,20 @@ async def test_build_rows_oa_pa_chain(db_session):
     heads, bodies, errors = await build_export_rows(db_session, [ap.id])
     assert errors == [] and len(bodies) == 1
     b = bodies[0]
-    assert b["cost_center"] == "Admin CC" and b["revexp"] == "Office Supplies"
+    # GA-0101 → 'HR' via NC_CC_BY_UNIOPS
+    assert b["cost_center"] == "HR"
+    # revexp = budget CODE directly
+    assert b["revexp"] == "CRM010"
     assert b["employee"] == "Alice Wong"
     assert heads[0]["employee"] == "Alice Wong"
+    # GA prefix → account 6602
+    assert b["account_path"] == "6602"
+    # dept code via CC.department_id → dept code '0101'
+    assert b["department"] == "0101"
+    # buysell CAD → '2'
+    assert b["buysell"] == "2"
+    assert b["pay_term"] == "FH01"
+    assert b["obj_type"] == "1"
 
 
 async def test_build_rows_errors(db_session):
@@ -189,23 +262,23 @@ def test_write_xlsx_structure(tmp_path):
     import openpyxl
     from app.services.nc_ap_export import write_xlsx
     heads = [{"seq": 0, "billno": "AP-1", "ap_type": "Payable of Expense",
-              "busi_process": "选择付款", "billdate": "2026-07-10",
-              "busidate": "2026-07-10", "obj_type": "Supplier", "supplier": "ACME",
-              "department": "Engineering", "employee": "", "revexp": "Depreciation",
+              "busi_process": "AP01", "billdate": "2026-07-10",
+              "busidate": "2026-07-10", "obj_type": "1", "supplier": "ACME",
+              "department": "0104", "employee": "", "revexp": "CRM004",
               "currency": "CAD", "ap_type_code": "F1-Cxx-017", "tax_country": "Canada"},
              {"seq": 1, "billno": "AP-2", "ap_type": "Payable of Expense",
-              "busi_process": "选择付款", "billdate": "2026-07-11",
-              "busidate": "2026-07-11", "obj_type": "Supplier", "supplier": "Beta",
+              "busi_process": "AP01", "billdate": "2026-07-11",
+              "busidate": "2026-07-11", "obj_type": "1", "supplier": "Beta",
               "department": "", "employee": "Alice Wong", "revexp": "",
               "currency": "CAD", "ap_type_code": "F1-Cxx-017", "tax_country": "Canada"}]
-    body_base = {"account_path": "510102\\MOH\\Repairs", "invoice_no": "INV-9",
-                 "summary": "ACME PO-1", "pay_term": "net 30 days",
-                 "obj_type": "Supplier", "supplier": "ACME", "department": "Engineering",
-                 "cost_center": "Engineering CC", "employee": "", "revexp": "Depreciation",
+    body_base = {"account_path": "510101", "invoice_no": "INV-9",
+                 "summary": "ACME PO-1", "pay_term": "FH01",
+                 "obj_type": "1", "supplier": "ACME", "department": "0104",
+                 "cost_center": "P01", "employee": "", "revexp": "CRM004",
                  "currency": "CAD", "rate": "1", "money": "67.80", "qty": "",
                  "tax_code": "001", "tax_rate": "13.00", "tax_price": "0.00000000",
-                 "notax": "60.00", "tax": "7.80", "taxtype": "Tax Excluded",
-                 "department2": "Engineering", "buysell": "Domestic Purchases"}
+                 "notax": "60.00", "tax": "7.80", "taxtype": "02",
+                 "department2": "0104", "buysell": "2"}
     bodies = [dict(body_base, seq=0), dict(body_base, seq=0, notax="40.00"),
               dict(body_base, seq=1)]
     data = write_xlsx(heads, bodies)
@@ -217,7 +290,7 @@ def test_write_xlsx_structure(tmp_path):
     assert ws["A4"].value == "1" and ws["C4"].value == "AP-2"
     assert ws.cell(5, 1).value in (None, "")                      # blank separator
     assert str(ws["A6"].value).startswith('"bodys')               # body tech row
-    assert ws["A7"].value == "0" and ws["B7"].value.startswith("510102")
+    assert ws["A7"].value == "0" and ws["B7"].value == "510101"
     assert ws["A9"].value == "1"                                  # 3rd body row -> doc 1
     assert ws["U7"].value == "60.00"                              # notax col
 
@@ -249,3 +322,13 @@ async def test_export_endpoint_guards(client, db_session):
     assert r403.status_code == 403
     rb = await client.get("/finance/v1/ap/nc-export/batches", headers=_h())
     assert rb.status_code == 200 and rb.json() == []
+
+
+async def test_buysell_non_cad(db_session):
+    """Non-CAD invoice → buysell '4'."""
+    from app.services.nc_ap_export import build_export_rows
+    ap = await _mk_ap(db_session, number="AP-2026-0300", currency="USD")
+    await _mk_accrual(db_session, ap)
+    _, bodies, errors = await build_export_rows(db_session, [ap.id])
+    assert errors == []
+    assert bodies[0]["buysell"] == "4"
