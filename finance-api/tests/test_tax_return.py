@@ -104,9 +104,13 @@ async def test_claim_payment_splits_sales_tax_by_code(client, db_session):
     ])
     await db_session.flush()
 
+    # emit_event stamps fiscal_period from now(), not payment_date, so pay
+    # "today" and query the current period — a fixed date only passes in the
+    # month it was written (same rollover family as test_gl/test_ar).
+    today = date.today()
     r = await client.post("/finance/v1/payments/execute", headers=_h("ap_clerk"),
                           json={"doc_kind": "expense_claim", "doc_id": str(claim.id),
-                                "payment_date": "2026-06-10"})
+                                "payment_date": today.isoformat()})
     assert r.status_code == 200, r.text
 
     ev = (await db_session.execute(
@@ -118,6 +122,6 @@ async def test_claim_payment_splits_sales_tax_by_code(client, db_session):
 
     # and it shows up coded in the return
     r = await client.get("/finance/v1/tax/gst-hst-return", headers=_h(),
-                         params={"period": "2026-06"})
+                         params={"period": today.strftime("%Y-%m")})
     itc = {row["tax_code"]: row["itc"] for row in r.json()["itc_by_code"]}
     assert itc.get("HST_ON") == "13.00" and itc.get("GST") == "5.00"

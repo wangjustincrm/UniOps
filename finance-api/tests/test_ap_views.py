@@ -39,7 +39,10 @@ def _inv(vendor, due_days_ago: int, total="100.00", status="posted", vid=None) -
     return ApInvoice(
         ap_invoice_number=f"AP-{uuid.uuid4().hex[:12]}",
         source="epms", source_invoice_id=uuid.uuid4(),
-        source_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number="VI",
+        source_ref=f"INV-{uuid.uuid4().hex[:8]}",
+        # Unique per row — (vendor_id, vendor_invoice_number) carries a partial
+        # unique index (uq_ap_invoices_vendor_invno) since migration 0022.
+        vendor_invoice_number=f"VI-{uuid.uuid4().hex[:8]}",
         vendor_id=vid or uuid.uuid4(), vendor_name=vendor,
         amount=Decimal(total), tax_amount=Decimal("0"), total_amount=Decimal(total),
         currency="CAD", invoice_date=today - timedelta(days=due_days_ago + 30),
