@@ -160,3 +160,40 @@ async def test_new_mirror_subsets_readable(db_session):
     got = (await db_session.execute(select(PurchaseRequest).where(
         PurchaseRequest.po_id == po))).scalar_one()
     assert got.department_name == "Engineering"
+
+
+def test_write_xlsx_structure(tmp_path):
+    import openpyxl
+    from app.services.nc_ap_export import write_xlsx
+    heads = [{"seq": 0, "billno": "AP-1", "ap_type": "Payable of Expense",
+              "busi_process": "选择付款", "billdate": "2026-07-10",
+              "busidate": "2026-07-10", "obj_type": "Supplier", "supplier": "ACME",
+              "department": "Engineering", "employee": "", "revexp": "Depreciation",
+              "currency": "CAD", "ap_type_code": "F1-Cxx-017", "tax_country": "Canada"},
+             {"seq": 1, "billno": "AP-2", "ap_type": "Payable of Expense",
+              "busi_process": "选择付款", "billdate": "2026-07-11",
+              "busidate": "2026-07-11", "obj_type": "Supplier", "supplier": "Beta",
+              "department": "", "employee": "Alice Wong", "revexp": "",
+              "currency": "CAD", "ap_type_code": "F1-Cxx-017", "tax_country": "Canada"}]
+    body_base = {"account_path": "510102\\MOH\\Repairs", "invoice_no": "INV-9",
+                 "summary": "ACME PO-1", "pay_term": "net 30 days",
+                 "obj_type": "Supplier", "supplier": "ACME", "department": "Engineering",
+                 "cost_center": "Engineering CC", "employee": "", "revexp": "Depreciation",
+                 "currency": "CAD", "rate": "1", "money": "67.80", "qty": "",
+                 "tax_code": "001", "tax_rate": "13.00", "tax_price": "0.00000000",
+                 "notax": "60.00", "tax": "7.80", "taxtype": "Tax Excluded",
+                 "department2": "Engineering", "buysell": "Domestic Purchases"}
+    bodies = [dict(body_base, seq=0), dict(body_base, seq=0, notax="40.00"),
+              dict(body_base, seq=1)]
+    data = write_xlsx(heads, bodies)
+    p = tmp_path / "out.xlsx"
+    p.write_bytes(data)
+    ws = openpyxl.load_workbook(p)["Sheet1"]
+    assert str(ws["A2"].value).startswith('"payablebill_$head')   # tech row kept
+    assert ws["A3"].value == "0" and ws["C3"].value == "AP-1"     # head seq + billno
+    assert ws["A4"].value == "1" and ws["C4"].value == "AP-2"
+    assert ws.cell(5, 1).value in (None, "")                      # blank separator
+    assert str(ws["A6"].value).startswith('"bodys')               # body tech row
+    assert ws["A7"].value == "0" and ws["B7"].value.startswith("510102")
+    assert ws["A9"].value == "1"                                  # 3rd body row -> doc 1
+    assert ws["U7"].value == "60.00"                              # notax col

@@ -205,3 +205,55 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
             })
         seq += 1
     return heads, bodies, errors
+
+
+# ── xlsx writer ────────────────────────────────────────────────────────────────────
+import io
+import os
+
+_ASSET = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__)))), "assets", "nc_ap_template.xlsx")
+
+_HEAD_COLS = ["org", "billno", "ap_type", "busi_process", "billdate", "busidate",
+              "obj_type", "supplier", "department", "employee", "revexp",
+              "currency", "ap_type_code", "tax_country", "", ""]
+_BODY_COLS = ["account_path", "invoice_no", "summary", "", "pay_term", "obj_type",
+              "supplier", "department", "cost_center", "employee", "", "revexp",
+              "currency", "rate", "money", "qty", "tax_code", "tax_rate",
+              "tax_price", "notax", "tax", "taxtype", "department2", "", "", "",
+              "buysell", "", ""]
+
+
+def write_xlsx(heads: list, bodies: list) -> bytes:
+    """Rebuild the NC import layout on a template copy: notice + head tech row,
+    head data rows (A=doc seq), one blank row, body tech row, body data rows.
+    Everything written as text (NC requires all-text cells)."""
+    import openpyxl
+    wb = openpyxl.load_workbook(_ASSET)
+    ws = wb["Sheet1"]
+
+    # snapshot the two tech/label rows before clearing sample data
+    body_tech = [ws.cell(5, c).value for c in range(1, ws.max_column + 1)]
+    ws.delete_rows(3, ws.max_row - 2)   # drop head sample, blank, body tech, body sample
+
+    r = 3
+    for h in heads:
+        ws.cell(r, 1, str(h["seq"]))
+        for i, key in enumerate(_HEAD_COLS, start=2):
+            ws.cell(r, i, "" if key == "" else str(h.get(key, "") if key != "org"
+                    else NC_EXPORT_DEFAULTS["org"]))
+        r += 1
+    r += 1                               # blank separator row
+    for c, v in enumerate(body_tech, start=1):
+        if v is not None:
+            ws.cell(r, c, v)
+    r += 1
+    for b in bodies:
+        ws.cell(r, 1, str(b["seq"]))
+        for i, key in enumerate(_BODY_COLS, start=2):
+            ws.cell(r, i, "" if key == "" else str(b.get(key, "")))
+        r += 1
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
