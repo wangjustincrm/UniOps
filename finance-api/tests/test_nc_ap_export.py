@@ -380,3 +380,28 @@ async def test_ap_list_pagination_and_search(client, db_session):
     assert re_.json()["total"] == 2
     rt = await client.get("/finance/v1/ap/invoices?exported=true", headers=_h())
     assert rt.json()["total"] == 1 and rt.json()["items"][0]["nc_exported_at"] is not None
+
+
+async def test_vendor_invoice_number_unique(client, db_session):
+    vid = uuid.uuid4()
+    from app.models.ap_invoice import ApInvoice
+    a = await _mk_ap(db_session, number="AP-2026-0400", src_id=uuid.uuid4())
+    a.vendor_id = vid; a.vendor_invoice_number = "DUP-1"
+    await db_session.flush()
+    b = ApInvoice(ap_invoice_number="AP-2026-0401", source="epms",
+                  source_invoice_id=uuid.uuid4(), vendor_id=vid,
+                  vendor_invoice_number="DUP-1", amount=Decimal("1"),
+                  tax_amount=Decimal("0"), total_amount=Decimal("1"),
+                  currency="CAD", invoice_date=date(2026, 7, 1), status="posted")
+    db_session.add(b)
+    from sqlalchemy.exc import IntegrityError
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
+    # void rows are exempt — same number allowed again
+    v = await _mk_ap(db_session, number="AP-2026-0402", src_id=uuid.uuid4())
+    v.vendor_id = vid; v.vendor_invoice_number = "DUP-2"; v.status = "void"
+    await db_session.flush()
+    ok = await _mk_ap(db_session, number="AP-2026-0403", src_id=uuid.uuid4())
+    ok.vendor_id = vid; ok.vendor_invoice_number = "DUP-2"
+    await db_session.flush()          # must NOT raise

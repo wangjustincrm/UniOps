@@ -6,6 +6,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
@@ -98,17 +99,25 @@ async def upsert_invoice(body: UpsertIn, user: CurrentUser, db: AsyncSession = D
         await db.commit()
         return inv
 
-    inv = await crud.upsert(
-        db, source=body.source, source_invoice_id=body.source_invoice_id,
-        payload=body.model_dump(exclude={"source", "source_invoice_id", "tax_lines"}),
-        tax_lines=[t.model_dump() for t in body.tax_lines],
-    )
-    if inv.status == POSTED:
-        try:
-            await post_invoice_accrual(db, inv.id)
-        except ValueError:
-            pass
-    await db.commit()
+    try:
+        inv = await crud.upsert(
+            db, source=body.source, source_invoice_id=body.source_invoice_id,
+            payload=body.model_dump(exclude={"source", "source_invoice_id", "tax_lines"}),
+            tax_lines=[t.model_dump() for t in body.tax_lines],
+        )
+        if inv.status == POSTED:
+            try:
+                await post_invoice_accrual(db, inv.id)
+            except ValueError:
+                pass
+        await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        if "uq_ap_invoices_vendor_invno" in str(e.orig):
+            raise HTTPException(status_code=409, detail=(
+                "duplicate vendor invoice: this vendor already has an invoice "
+                "with the same vendor invoice number"))
+        raise
     return inv
 
 
