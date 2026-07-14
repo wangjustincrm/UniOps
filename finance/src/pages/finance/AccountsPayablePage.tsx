@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const PAGE_SIZE = 50
 
 interface ApInvoice {
   id: string; ap_invoice_number: string; source: string
@@ -31,6 +32,10 @@ interface ApInvoice {
   status: string; source_status: string | null
   po_id: string | null; po_number: string | null
   nc_exported_at: string | null
+}
+interface ApListResp {
+  total: number
+  items: ApInvoice[]
 }
 interface AgingRow {
   vendor_id: string | null; vendor_name: string; currency: string
@@ -59,11 +64,17 @@ export default function AccountsPayablePage() {
   const [source, setSource] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [hideExported, setHideExported] = useState(true)
+  const [q, setQ] = useState('')
+  const [qInput, setQInput] = useState('')
+  const [page, setPage] = useState(0)
 
   const qc = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [exporting, setExporting] = useState(false)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  const resetPage = () => { setPage(0); setSelected(new Set()) }
+  const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
 
   const exportable = (inv: ApInvoice) => inv.status !== 'draft' && inv.status !== 'void'
   const toggle = (id: string) => setSelected((p) => {
@@ -85,17 +96,20 @@ export default function AccountsPayablePage() {
     } finally { setExporting(false) }
   }
 
-  const { data: invoices = [], isFetching } = useQuery({
-    queryKey: ['ap-invoices', source, statusFilter],
+  const { data, isFetching } = useQuery({
+    queryKey: ['ap-invoices', source, statusFilter, q, hideExported, page],
     queryFn: () => {
-      const qs = new URLSearchParams({ limit: '1000' })
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
       if (source) qs.set('source', source)
       if (statusFilter) qs.set('status', statusFilter)
-      return financeApi.get<ApInvoice[]>(`/ap/invoices?${qs.toString()}`)
+      if (q) qs.set('q', q)
+      if (hideExported) qs.set('exported', 'false')
+      return financeApi.get<ApListResp>(`/ap/invoices?${qs.toString()}`)
     },
   })
-
-  const visible = hideExported ? invoices.filter((i) => !i.nc_exported_at) : invoices
+  const invoices = data?.items ?? []
+  const total = data?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const pickedCount = invoices.filter((i) => selected.has(i.id)).length
   const { data: aging = [] } = useQuery({
     queryKey: ['ap-aging'],
@@ -151,17 +165,23 @@ export default function AccountsPayablePage() {
         {tab === 'invoices' ? (
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
-              <select value={source} onChange={(e) => setSource(e.target.value)} className={cn(inputCls, 'w-40')}>
+              <select value={source} onChange={(e) => { setSource(e.target.value); resetPage() }} className={cn(inputCls, 'w-40')}>
                 <option value="">All sources</option>
                 {SOURCES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
               </select>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={cn(inputCls, 'w-44')}>
+              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage() }} className={cn(inputCls, 'w-44')}>
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
               </select>
+              <form className="flex items-center gap-1"
+                    onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
+                <input value={qInput} onChange={(e) => setQInput(e.target.value)}
+                       placeholder="Vendor / vendor inv #…" className={cn(inputCls, 'w-52')} />
+                <button type="submit" className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Search</button>
+              </form>
               <label className="flex items-center gap-1.5 text-sm text-neutral-600">
                 <input type="checkbox" checked={hideExported}
-                       onChange={(e) => setHideExported(e.target.checked)} />
+                       onChange={(e) => { setHideExported(e.target.checked); resetPage() }} />
                 Hide exported
               </label>
               <button onClick={runExport} disabled={exporting || pickedCount === 0}
@@ -200,10 +220,10 @@ export default function AccountsPayablePage() {
                     <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                   )}
-                  {!isFetching && visible.length === 0 && (
+                  {!isFetching && invoices.length === 0 && (
                     <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">No AP invoices.</td></tr>
                   )}
-                  {visible.map((inv, i) => {
+                  {invoices.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
                     const open = inv.status === 'posted' || inv.status === 'partially_paid'
                     return (
@@ -234,6 +254,18 @@ export default function AccountsPayablePage() {
                   })}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
+              <span>{total.toLocaleString()} invoice{total === 1 ? '' : 's'}</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0}
+                        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Prev</button>
+                <span>Page {page + 1} / {pageCount}</span>
+                <button onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))}
+                        disabled={page >= pageCount - 1}
+                        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Next</button>
+              </div>
             </div>
           </>
         ) : (
