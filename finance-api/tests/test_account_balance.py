@@ -325,3 +325,14 @@ async def test_erp_supplier_mirror_readable(db_session):
     got = (await db_session.execute(select(ErpSupplier).where(
         ErpSupplier.id == sid))).scalar_one()
     assert got.supplier_name == "ACME"
+
+
+def test_customer_pick_name():
+    import importlib.util, os
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "scripts", "nc_migration", "customers_import.py")
+    spec = importlib.util.spec_from_file_location("customers_import", p)
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    assert mod.pick_name("Acme Ltd", "阿克梅", "C1") == "Acme Ltd"
+    assert mod.pick_name(None, "阿克梅", "C1") == "阿克梅"
+    assert mod.pick_name(" ", "", "C1") == "C1"
