@@ -1,13 +1,13 @@
 /**
- * Account Balance report (科目余额表) — Plan 4, 能力①②③ UI.
- * Per-account opening / period Dr / period Cr / closing over POSTED JV lines
- * (local CAD). Rows expand inline by cost center (能力②); every row and
- * expansion drills into its composing vouchers (能力③ → JvDetailModal).
+ * Account Balance report (科目余额表) — 能力①②③ with generic multi-dim expansion.
+ * Rows expand by any subset of the account's configured aux dimensions
+ * (/dims → checkbox picker → /expand?dims=a,b → grouped rows), and every
+ * expansion row drills into its composing vouchers with a dims_values combo.
  */
 import { Fragment, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, Loader2, Scale } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Scale, X } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,8 @@ import { AccountVouchersModal } from './AccountVouchersModal'
 import { JvDetailModal } from './JvDetailModal'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
+const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
 const linkBtn = 'text-xs font-medium text-[#085E5E] hover:underline'
 
 interface AbRow {
@@ -27,8 +29,9 @@ interface AbResp {
   totals: { period_debit: string; period_credit: string; closing: string }
   balanced: boolean
 }
-interface ExpandRow { cost_center_id: string | null; cost_center_code: string | null; cost_center_name: string | null; amount: string }
-interface ExpandResp { account_code: string; period: string; rows: ExpandRow[] }
+interface DimOption { dim_code: string; label: string; supported: boolean }
+interface ExpandKey { dim_code: string; id: string | null; code: string | null; name: string | null }
+interface ExpandResp { account_code: string; period: string; dims: string[]; rows: { keys: ExpandKey[]; amount: string }[] }
 
 function money(v: string) {
   const n = Number(v)
@@ -36,13 +39,14 @@ function money(v: string) {
 }
 function thisMonth() { return new Date().toISOString().slice(0, 7) }
 
-interface Drill { accountCode: string; costCenterId?: string | null; title: string }
+interface Drill { accountCode: string; dimsValues?: string | null; title: string }
 
 export default function AccountBalancePage() {
   const { user } = useAuthStore()
   const qc = useQueryClient()
   const [period, setPeriod] = useState(thisMonth())
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Record<string, string[]>>({})
+  const [picker, setPicker] = useState<string | null>(null)   // account_code being configured
   const [drill, setDrill] = useState<Drill | null>(null)
   const [jvId, setJvId] = useState<string | null>(null)
 
@@ -56,15 +60,19 @@ export default function AccountBalancePage() {
     queryFn: () => financeApi.get<AbResp>(`/gl/account-balance?period=${period}`),
   })
 
-  const toggle = (code: string) => setExpanded((p) => {
-    const n = new Set(p); if (n.has(code)) n.delete(code); else n.add(code); return n
-  })
-
   const onJvActed = () => {
     qc.invalidateQueries({ queryKey: ['account-balance'] })
     qc.invalidateQueries({ queryKey: ['ab-expand'] })
     qc.invalidateQueries({ queryKey: ['ab-vouchers'] })
     qc.invalidateQueries({ queryKey: ['budget-actual'] })
+  }
+
+  const toggle = (code: string) => {
+    if (expanded[code]) {
+      setExpanded((p) => { const n = { ...p }; delete n[code]; return n })
+    } else {
+      setPicker(code)   // choose dims before expanding
+    }
   }
 
   if (!user) return <Navigate to="/login" replace />
@@ -78,7 +86,7 @@ export default function AccountBalancePage() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex items-center gap-2">
           <input type="month" value={period}
-                 onChange={(e) => { setPeriod(e.target.value); setExpanded(new Set()) }}
+                 onChange={(e) => { setPeriod(e.target.value); setExpanded({}) }}
                  className={cn(inputCls, 'w-40')} />
           {data && (
             <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
@@ -115,8 +123,8 @@ export default function AccountBalancePage() {
                       <td className="px-2 py-2">
                         <button onClick={() => toggle(r.account_code)}
                                 className="rounded p-0.5 text-neutral-400 hover:text-neutral-700"
-                                title="Expand by cost center">
-                          {expanded.has(r.account_code) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                                title="Expand by auxiliary dimensions">
+                          {expanded[r.account_code] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </button>
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{r.account_code}</td>
@@ -132,9 +140,10 @@ export default function AccountBalancePage() {
                         </button>
                       </td>
                     </tr>
-                    {expanded.has(r.account_code) && (
-                      <CostCenterExpansion accountCode={r.account_code} accountName={r.account_name}
-                                           period={period} onDrill={setDrill} />
+                    {expanded[r.account_code] && (
+                      <DimExpansion accountCode={r.account_code} accountName={r.account_name}
+                                    period={period} dims={expanded[r.account_code]}
+                                    onDrill={setDrill} />
                     )}
                   </Fragment>
                 ))}
@@ -153,25 +162,88 @@ export default function AccountBalancePage() {
         )}
       </div>
 
+      {picker && (
+        <DimPickerModal accountCode={picker} onClose={() => setPicker(null)}
+                        onApply={(dims) => {
+                          setExpanded((p) => ({ ...p, [picker]: dims }))
+                          setPicker(null)
+                        }} />
+      )}
       {drill && (
         <AccountVouchersModal accountCode={drill.accountCode} period={period}
-                              costCenterId={drill.costCenterId} title={drill.title}
+                              dimsValues={drill.dimsValues} title={drill.title}
                               onClose={() => setDrill(null)}
                               onOpenJv={(id) => setJvId(id)} />
       )}
       {jvId && (
-        <JvDetailModal jvId={jvId} canAct={perms?.can_act ?? false} onClose={() => setJvId(null)} onActed={onJvActed} />
+        <JvDetailModal jvId={jvId} canAct={perms?.can_act ?? false}
+                       onClose={() => setJvId(null)} onActed={onJvActed} />
       )}
     </PortalChromeLayout>
   )
 }
 
-function CostCenterExpansion({ accountCode, accountName, period, onDrill }: {
-  accountCode: string; accountName: string; period: string; onDrill: (d: Drill) => void
+function DimPickerModal({ accountCode, onClose, onApply }: {
+  accountCode: string; onClose: () => void; onApply: (dims: string[]) => void
 }) {
+  const [chosen, setChosen] = useState<string[]>(['cost_center'])
   const { data, isLoading } = useQuery({
-    queryKey: ['ab-expand', accountCode, period],
-    queryFn: () => financeApi.get<ExpandResp>(`/gl/account-balance/${accountCode}/expand?period=${period}`),
+    queryKey: ['ab-dims', accountCode],
+    queryFn: () => financeApi.get<{ account_code: string; dims: DimOption[] }>(
+      `/gl/account-balance/${accountCode}/dims`),
+  })
+  const flip = (d: string) => setChosen((p) =>
+    p.includes(d) ? p.filter((x) => x !== d) : [...p, d])
+  const options = data?.dims ?? []
+  const chosenSupported = chosen.filter((c) => options.some((o) => o.dim_code === c && o.supported))
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-base font-semibold text-neutral-800">Expand {accountCode} by…</h2>
+          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {isLoading ? (
+          <div className="py-6 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
+        ) : (
+          <div className="space-y-2">
+            {options.map((o) => (
+              <label key={o.dim_code}
+                     className={cn('flex items-center gap-2 text-sm',
+                       o.supported ? 'text-neutral-700' : 'cursor-not-allowed text-neutral-400')}>
+                <input type="checkbox" disabled={!o.supported}
+                       checked={chosen.includes(o.dim_code)}
+                       onChange={() => flip(o.dim_code)} />
+                {o.label}
+                {!o.supported && <span className="text-[11px]">(no data yet)</span>}
+              </label>
+            ))}
+          </div>
+        )}
+        <div className="mt-4 flex justify-end gap-2 border-t border-neutral-100 pt-3">
+          <button onClick={onClose} className={secondaryBtn}>Cancel</button>
+          <button onClick={() => onApply(chosenSupported)}
+                  disabled={chosenSupported.length === 0} className={primaryBtn}>
+            Expand
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DimExpansion({ accountCode, accountName, period, dims, onDrill }: {
+  accountCode: string; accountName: string; period: string; dims: string[]
+  onDrill: (d: Drill) => void
+}) {
+  const dimsParam = dims.join(',')
+  const { data, isLoading } = useQuery({
+    queryKey: ['ab-expand', accountCode, period, dimsParam],
+    queryFn: () => financeApi.get<ExpandResp>(
+      `/gl/account-balance/${accountCode}/expand?period=${period}&dims=${dimsParam}`),
   })
   if (isLoading) {
     return (
@@ -190,24 +262,27 @@ function CostCenterExpansion({ accountCode, accountName, period, onDrill }: {
   }
   return (
     <>
-      {rows.map((cc) => (
-        <tr key={cc.cost_center_id ?? 'none'} className="border-t border-neutral-100 bg-neutral-50/60 text-xs">
-          <td />
-          <td colSpan={2} className="px-3 py-1.5 pl-8 text-neutral-600">
-            {cc.cost_center_code ? `${cc.cost_center_code} · ${cc.cost_center_name ?? ''}` : '(no cost center)'}
-          </td>
-          <td colSpan={4} className="px-3 py-1.5 text-right font-mono">{money(cc.amount)}</td>
-          <td className="px-3 py-1.5 text-right">
-            <button className={linkBtn}
-                    onClick={() => onDrill({
-                      accountCode, costCenterId: cc.cost_center_id,
-                      title: `Vouchers — ${accountCode} ${accountName} · ${cc.cost_center_code ?? 'no cost center'} · ${period}`,
-                    })}>
-              Vouchers
-            </button>
-          </td>
-        </tr>
-      ))}
+      {rows.map((row, ri) => {
+        const label = row.keys.map((k) =>
+          k.code ? `${k.code}${k.name ? ' · ' + k.name : ''}` : '(none)').join('  |  ')
+        const dv = row.keys.map((k) => `${k.dim_code}:${k.id ?? 'none'}`).join(',')
+        return (
+          <tr key={ri} className="border-t border-neutral-100 bg-neutral-50/60 text-xs">
+            <td />
+            <td colSpan={2} className="px-3 py-1.5 pl-8 text-neutral-600">{label}</td>
+            <td colSpan={4} className="px-3 py-1.5 text-right font-mono">{money(row.amount)}</td>
+            <td className="px-3 py-1.5 text-right">
+              <button className={linkBtn}
+                      onClick={() => onDrill({
+                        accountCode, dimsValues: dv,
+                        title: `Vouchers — ${accountCode} ${accountName} · ${label} · ${period}`,
+                      })}>
+                Vouchers
+              </button>
+            </td>
+          </tr>
+        )
+      })}
     </>
   )
 }

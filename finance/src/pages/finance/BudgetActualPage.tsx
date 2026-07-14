@@ -38,7 +38,7 @@ function money(v: string | number) {
 }
 function thisMonth() { return new Date().toISOString().slice(0, 7) }
 
-interface Drill { accountCode: string; costCenterId?: string | null; title: string }
+interface Drill { accountCode: string; dimsValues?: string | null; title: string }
 
 export default function BudgetActualPage() {
   const { user } = useAuthStore()
@@ -115,7 +115,7 @@ export default function BudgetActualPage() {
                           <td className="px-3 py-2 w-24 text-right">
                             <button className={linkBtn}
                                     onClick={() => setDrill({
-                                      accountCode: r.account_code, costCenterId: r.cost_center_id,
+                                      accountCode: r.account_code, dimsValues: `cost_center:${r.cost_center_id ?? 'none'}`,
                                       title: `Vouchers — ${r.account_code} · ${r.cost_center_code ?? 'no cost center'} · ${period}`,
                                     })}>
                               Vouchers
@@ -134,7 +134,7 @@ export default function BudgetActualPage() {
 
       {drill && (
         <AccountVouchersModal accountCode={drill.accountCode} period={period}
-                              costCenterId={drill.costCenterId} title={drill.title}
+                              dimsValues={drill.dimsValues} title={drill.title}
                               onClose={() => setDrill(null)} onOpenJv={(id) => setJvId(id)} />
       )}
       {jvId && (

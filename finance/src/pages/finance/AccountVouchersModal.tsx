@@ -20,13 +20,15 @@ interface VoucherRow {
 }
 interface VouchersResp { account_code: string; period: string; rows: VoucherRow[] }
 
-export function AccountVouchersModal({ accountCode, period, costCenterId, title, onClose, onOpenJv }: {
-  accountCode: string; period: string; costCenterId?: string | null
+export function AccountVouchersModal({ accountCode, period, dimsValues, title, onClose, onOpenJv }: {
+  accountCode: string; period: string; dimsValues?: string | null
   title: string; onClose: () => void; onOpenJv: (jvId: string) => void
 }) {
-  const qs = costCenterId ? `?period=${period}&cost_center_id=${costCenterId}` : `?period=${period}`
+  const qs = dimsValues
+    ? `?period=${period}&dims_values=${encodeURIComponent(dimsValues)}`
+    : `?period=${period}`
   const { data, isLoading } = useQuery({
-    queryKey: ['ab-vouchers', accountCode, period, costCenterId ?? ''],
+    queryKey: ['ab-vouchers', accountCode, period, dimsValues ?? ''],
     queryFn: () => financeApi.get<VouchersResp>(`/gl/account-balance/${accountCode}/vouchers${qs}`),
   })
 
