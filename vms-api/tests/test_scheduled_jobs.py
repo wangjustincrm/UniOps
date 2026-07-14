@@ -224,6 +224,71 @@ async def test_overdue_reminder_skips_not_yet_overdue(test_engine, captured_emai
     assert visit.id not in sent
 
 
+async def test_overdue_reminder_resends_after_repeat_interval(test_engine, captured_emails):
+    host = await make_user(test_engine, role="requester")
+    visitor = await _mk_visitor(test_engine)
+    now = datetime(2026, 6, 15, 20, 0, tzinfo=UTC)
+    # Reminder last sent 25h ago, visitor STILL checked in → nag again.
+    visit = await _mk_visit(
+        test_engine, host=host, visitor=visitor, status=VisitStatus.checked_in,
+        visit_date=date(2026, 6, 14),
+        planned_arrival=now - timedelta(days=1, hours=5),
+        planned_departure=now - timedelta(days=1, hours=2),
+        actual_arrival=now - timedelta(days=1, hours=5),
+        overdue_reminder_sent_at=now - timedelta(hours=25),
+    )
+    async with _factory(test_engine)() as db:
+        sent = await jobs.send_overdue_reminders(db, now=now)
+        await db.commit()
+    assert visit.id in sent
+    assert captured_emails["overdue"] == [visit.id]
+    # Timestamp refreshed to this send, so the next nag is 24h from NOW.
+    assert (await _get(test_engine, visit.id)).overdue_reminder_sent_at == now
+
+
+async def test_overdue_reminder_not_resent_within_repeat_interval(test_engine, captured_emails):
+    host = await make_user(test_engine, role="requester")
+    visitor = await _mk_visitor(test_engine)
+    now = datetime(2026, 6, 15, 20, 0, tzinfo=UTC)
+    # Last reminded 2h ago — inside the 24h repeat window.
+    last_sent = now - timedelta(hours=2)
+    visit = await _mk_visit(
+        test_engine, host=host, visitor=visitor, status=VisitStatus.checked_in,
+        visit_date=date(2026, 6, 15),
+        planned_arrival=now - timedelta(hours=6),
+        planned_departure=now - timedelta(hours=3),
+        actual_arrival=now - timedelta(hours=6),
+        overdue_reminder_sent_at=last_sent,
+    )
+    async with _factory(test_engine)() as db:
+        sent = await jobs.send_overdue_reminders(db, now=now)
+        await db.commit()
+    assert visit.id not in sent
+    assert captured_emails["overdue"] == []
+    assert (await _get(test_engine, visit.id)).overdue_reminder_sent_at == last_sent
+
+
+async def test_overdue_reminder_stops_after_checkout(test_engine, captured_emails):
+    host = await make_user(test_engine, role="requester")
+    visitor = await _mk_visitor(test_engine)
+    now = datetime(2026, 6, 15, 20, 0, tzinfo=UTC)
+    # Checked out days ago; stale reminder timestamp must NOT trigger a resend.
+    visit = await _mk_visit(
+        test_engine, host=host, visitor=visitor, status=VisitStatus.checked_out,
+        visit_date=date(2026, 6, 12),
+        planned_arrival=now - timedelta(days=3, hours=5),
+        planned_departure=now - timedelta(days=3, hours=2),
+        actual_arrival=now - timedelta(days=3, hours=5),
+        actual_departure=now - timedelta(days=3),
+        overdue_reminder_sent_at=now - timedelta(days=3, hours=1),
+    )
+    async with _factory(test_engine)() as db:
+        sent = await jobs.send_overdue_reminders(db, now=now)
+        await db.commit()
+    assert visit.id not in sent
+    assert captured_emails["overdue"] == []
+
+
 # ── VMS-CO-011: 4h overdue escalation to dept manager ───────────────────────-
 
 async def test_overdue_escalation_emails_dept_manager(test_engine, captured_emails):

@@ -398,7 +398,8 @@ async def notify_host_visit_reminder(
 async def notify_host_overdue(
     db: AsyncSession, *, visit: Visit, visitor: Visitor, host: User | None,
 ) -> bool:
-    """1-hour-overdue reminder to the Host (PRD VMS-CO-010).
+    """1-hour-overdue reminder to the Host (PRD VMS-CO-010), re-sent daily
+    by the scheduler until the visitor is checked out.
 
     The visitor is still checked in past their planned departure. Returns True
     if delivery was attempted (caller persists `visit.overdue_reminder_sent_at`).
@@ -417,6 +418,7 @@ async def notify_host_overdue(
         f"Access area:      {visit.access_area.value.replace('_', ' ')}\n"
         f"Visit ID:         {visit.id}\n\n"
         f"Please check the visitor out in VMS once they have left.\n"
+        f"You will receive this reminder daily until the visitor is checked out.\n"
     )
     smtp_cfg = await _load_smtp_config(db)
     return await _send_email(cfg=smtp_cfg, to=host.email, subject=subject, body=body)

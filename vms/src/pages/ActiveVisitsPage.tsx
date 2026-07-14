@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, UserCheck, Users } from 'lucide-react'
 import { useActiveVisits, useBatchCheckOut } from '@/services/api'
-import { AccessAreaBadge } from '@/components/StatusBadge'
+import { AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
 import { formatDateTime, timeAgo } from '@/lib/utils'
 
 function getRole(): string | null {
@@ -96,11 +96,14 @@ export default function ActiveVisitsPage() {
             {items.map(v => (
               <tr key={v.id} className="hover:bg-primary-50/30">
                 <td className="px-4 py-2.5">
-                  <Link to={`/${v.id}`} className="text-primary-700 hover:underline">
-                    {v.visitor
-                      ? `${v.visitor.first_name} ${v.visitor.last_name}`
-                      : `Visit #${v.id.slice(0, 8)}`}
-                  </Link>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Link to={`/${v.id}`} className="text-primary-700 hover:underline">
+                      {v.visitor
+                        ? `${v.visitor.first_name} ${v.visitor.last_name}`
+                        : `Visit #${v.id.slice(0, 8)}`}
+                    </Link>
+                    {isVisitOverdue(v) && <OverdueBadge />}
+                  </span>
                   {v.visitor?.company_name && (
                     <p className="text-xs text-neutral-500">{v.visitor.company_name}</p>
                   )}

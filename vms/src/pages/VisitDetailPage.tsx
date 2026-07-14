@@ -10,7 +10,7 @@ import {
   useMyVmsTasks, useVisitAction, isComplianceFresh,
   type Visitor, type VisitApprovalAction, type HealthDeclaration,
 } from '@/services/api'
-import { StatusBadge, AccessAreaBadge } from '@/components/StatusBadge'
+import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
 import { CheckOutConfirm } from '@/components/CheckOutConfirm'
 import { HealthDeclForm } from '@/components/HealthDeclForm'
 import { HealthDeclView } from '@/components/HealthDeclView'
@@ -147,6 +147,7 @@ export default function VisitDetailPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {isVisitOverdue(visit) && <OverdueBadge />}
           <StatusBadge status={visit.status} />
           <AccessAreaBadge area={visit.access_area} />
         </div>

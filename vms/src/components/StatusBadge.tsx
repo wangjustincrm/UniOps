@@ -30,6 +30,27 @@ export function StatusBadge({ status }: { status: VisitStatus }) {
   )
 }
 
+// Overdue is a derived state, not a stored VisitStatus: a checked-in visit
+// past its planned departure (mirrors the backend scheduler's definition).
+export function isVisitOverdue(visit: {
+  status: VisitStatus
+  planned_departure: string | null
+}): boolean {
+  return (
+    visit.status === 'checked_in' &&
+    !!visit.planned_departure &&
+    new Date(visit.planned_departure).getTime() < Date.now()
+  )
+}
+
+export function OverdueBadge() {
+  return (
+    <span className="inline-flex items-center rounded-full bg-danger-50 px-2 py-0.5 text-xs font-medium text-danger-600 ring-1 ring-inset ring-red-200">
+      Overdue
+    </span>
+  )
+}
+
 const ACCESS_AREA_LABEL: Record<AccessArea, string> = {
   office:              'Office',
   warehouse:           'Warehouse',
