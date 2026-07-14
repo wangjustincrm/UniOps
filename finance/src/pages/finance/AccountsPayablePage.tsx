@@ -58,6 +58,7 @@ export default function AccountsPayablePage() {
   const [tab, setTab] = useState<'invoices' | 'aging'>('invoices')
   const [source, setSource] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [hideExported, setHideExported] = useState(true)
 
   const qc = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -93,6 +94,9 @@ export default function AccountsPayablePage() {
       return financeApi.get<ApInvoice[]>(`/ap/invoices?${qs.toString()}`)
     },
   })
+
+  const visible = hideExported ? invoices.filter((i) => !i.nc_exported_at) : invoices
+  const pickedCount = invoices.filter((i) => selected.has(i.id)).length
   const { data: aging = [] } = useQuery({
     queryKey: ['ap-aging'],
     queryFn: () => financeApi.get<AgingRow[]>('/ap/aging'),
@@ -155,10 +159,15 @@ export default function AccountsPayablePage() {
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
               </select>
-              <button onClick={runExport} disabled={exporting || selected.size === 0}
+              <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+                <input type="checkbox" checked={hideExported}
+                       onChange={(e) => setHideExported(e.target.checked)} />
+                Hide exported
+              </label>
+              <button onClick={runExport} disabled={exporting || pickedCount === 0}
                       className="ml-auto flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50">
                 {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                Export to NC{selected.size > 0 ? ` (${selected.size})` : ''}
+                Export to NC{pickedCount > 0 ? ` (${pickedCount})` : ''}
               </button>
             </div>
 
@@ -191,10 +200,10 @@ export default function AccountsPayablePage() {
                     <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                   )}
-                  {!isFetching && invoices.length === 0 && (
+                  {!isFetching && visible.length === 0 && (
                     <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">No AP invoices.</td></tr>
                   )}
-                  {invoices.map((inv, i) => {
+                  {visible.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
                     const open = inv.status === 'posted' || inv.status === 'partially_paid'
                     return (
