@@ -233,6 +233,12 @@ async def test_expand_rejects_unknown_dim(db_session):
         await ab.expand_by_dims(db_session, "5101", "2026-07", ["bananas"])
 
 
+async def test_expand_rejects_duplicate_dims(db_session):
+    with pytest.raises(ab.BadDims):
+        await ab.expand_by_dims(db_session, "5101", "2026-07",
+                                ["cost_center", "cost_center"])
+
+
 async def test_vouchers_filter_none_and_combo(db_session):
     cc = await _cc(db_session, "MOH-01")
     ba = uuid.uuid4()

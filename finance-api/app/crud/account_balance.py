@@ -132,6 +132,8 @@ def _check_dims(dims: list[str]) -> dict:
     bad = [d for d in dims if d not in reg]
     if bad or not dims:
         raise BadDims(f"unknown or empty dims: {bad or dims}")
+    if len(dims) != len(set(dims)):
+        raise BadDims(f"duplicate dims: {dims}")
     return reg
 
 
