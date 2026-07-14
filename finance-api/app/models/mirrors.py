@@ -187,3 +187,34 @@ class ExpenseClaim(UUIDPrimaryKey, TimestampMixin, Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
     tax_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
     net_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
+
+
+class ExpenseInvoice(UUIDPrimaryKey, Base):
+    """Read-only mirror subset (expense-api owns schema) — OA invoice -> Direct PA
+    link for the NC AP export dimension chain. Verified 2026-07-14."""
+    __tablename__ = "expense_invoices"
+
+    pa_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class InvoicePoAllocation(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror subset (epms-api owns schema) — line-level multi-PO
+    allocation amounts for the NC AP export. Verified 2026-07-14."""
+    __tablename__ = "invoice_po_allocations"
+
+    invoice_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    po_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    allocated_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    allocated_tax: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+
+
+class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror subset (epms-api owns schema) — PR head carries the
+    budget dims (CC 100% coverage on dev). Verified 2026-07-14."""
+    __tablename__ = "purchase_requests"
+
+    po_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    budget_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

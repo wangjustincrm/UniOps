@@ -52,7 +52,7 @@ async def test_upsert_creates_then_updates_idempotent(db_session):
     assert inv2.ap_invoice_number == inv1.ap_invoice_number
     assert inv2.status == "posted"
 
-    rows = await crud.list_invoices(db_session, source="epms")
+    total, rows = await crud.list_invoices(db_session, source="epms")
     assert len([r for r in rows if r.source_invoice_id == src_id]) == 1
 
 

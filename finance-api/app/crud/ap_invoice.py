@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy import delete as sa_delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ap_invoice import ApInvoice, ApInvoiceTaxLine, VOID
@@ -96,17 +96,31 @@ async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
 
 async def list_invoices(db: AsyncSession, *, source: str | None = None,
                         vendor_id: uuid.UUID | None = None, status: str | None = None,
-                        limit: int = 500) -> list[ApInvoice]:
-    q = select(ApInvoice)
+                        q: str | None = None, exported: bool | None = None,
+                        limit: int = 50, offset: int = 0) -> tuple[int, list[ApInvoice]]:
+    """Paginated envelope (total, page). `q` matches vendor_invoice_number /
+    vendor_name; `exported` filters on nc_exported_at presence."""
+    base = select(ApInvoice)
     if source:
-        q = q.where(ApInvoice.source == source)
+        base = base.where(ApInvoice.source == source)
     if vendor_id:
-        q = q.where(ApInvoice.vendor_id == vendor_id)
+        base = base.where(ApInvoice.vendor_id == vendor_id)
     if status:
-        q = q.where(ApInvoice.status == status)
-    return list((await db.execute(
-        q.order_by(ApInvoice.invoice_date.desc()).limit(limit)
-    )).scalars().all())
+        base = base.where(ApInvoice.status == status)
+    if q:
+        like = f"%{q}%"
+        base = base.where(or_(ApInvoice.vendor_invoice_number.ilike(like),
+                              ApInvoice.vendor_name.ilike(like)))
+    if exported is True:
+        base = base.where(ApInvoice.nc_exported_at.is_not(None))
+    elif exported is False:
+        base = base.where(ApInvoice.nc_exported_at.is_(None))
+    total = (await db.execute(
+        select(func.count()).select_from(base.subquery()))).scalar_one()
+    rows = list((await db.execute(
+        base.order_by(ApInvoice.invoice_date.desc(), ApInvoice.ap_invoice_number.desc())
+        .offset(offset).limit(limit))).scalars().all())
+    return total, rows
 
 
 async def get(db: AsyncSession, invoice_id: uuid.UUID) -> ApInvoice | None:

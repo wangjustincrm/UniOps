@@ -55,6 +55,8 @@ class ApInvoice(UUIDPrimaryKey, TimestampMixin, Base):
 
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    nc_exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    nc_export_batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class ApInvoiceTaxLine(UUIDPrimaryKey, TimestampMixin, Base):

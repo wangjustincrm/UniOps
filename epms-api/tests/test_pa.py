@@ -88,6 +88,52 @@ async def test_list_pas(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_list_pas_search(admin_client, test_engine):
+    """`search` matches PA #, vendor name and PO # (what the UI advertises)."""
+    # The list route gates on view_pa via the ACM; without a CompanyConfig row
+    # every permission resolves False and the list is empty for everyone.
+    from sqlalchemy import select as _select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.models.config import CompanyConfig
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        if (await db.execute(_select(CompanyConfig).limit(1))).scalar_one_or_none() is None:
+            db.add(CompanyConfig(role_permissions={}, custom_roles=[]))
+            await db.commit()
+
+    v1 = await admin_client.post(VENDOR_URL, json={
+        "code": "VND-PA-SRCH-01", "name": "Srchbl Dairy Co", "category": "Parts",
+        "contact_name": "V", "contact_email": "v@v.com",
+        "payment_terms": "net30", "currency": "CAD"})
+    v1.raise_for_status()
+    v2 = await admin_client.post(VENDOR_URL, json={
+        "code": "VND-PA-SRCH-02", "name": "Unrelated Supplier", "category": "Parts",
+        "contact_name": "V", "contact_email": "v@v.com",
+        "payment_terms": "net30", "currency": "CAD"})
+    v2.raise_for_status()
+    po1 = await _make_po(admin_client, v1.json()["id"])
+    po2 = await _make_po(admin_client, v2.json()["id"])
+    pa1 = await _create_pa(admin_client, po1["id"])
+    pa2 = await _create_pa(admin_client, po2["id"])
+
+    async def _numbers(term):
+        r = await admin_client.get(PA_URL, params={"search": term})
+        assert r.status_code == 200, r.text
+        return [p["pa_number"] for p in r.json()["items"]]
+
+    # exact PA number
+    assert await _numbers(pa1["pa_number"]) == [pa1["pa_number"]]
+    # vendor name fragment, case-insensitive
+    got = await _numbers("srchbl dairy")
+    assert pa1["pa_number"] in got and pa2["pa_number"] not in got
+    # PO number
+    got = await _numbers(po1["number"])
+    assert pa1["pa_number"] in got and pa2["pa_number"] not in got
+    # no match
+    assert await _numbers("zzz-no-such-thing") == []
+
+
+@pytest.mark.asyncio
 async def test_get_pa(admin_client):
     v = await _make_vendor(admin_client, "VND-PA-GET-01")
     po = await _make_approved_po(admin_client, v["id"])

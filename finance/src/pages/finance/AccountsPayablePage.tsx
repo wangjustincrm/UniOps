@@ -12,15 +12,16 @@
  */
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Loader2 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Loader2, FileDown } from 'lucide-react'
 import { useTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
-import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
+import { financeApi, financePostDownload, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const PAGE_SIZE = 50
 
 interface ApInvoice {
   id: string; ap_invoice_number: string; source: string
@@ -30,6 +31,11 @@ interface ApInvoice {
   currency: string; invoice_date: string; due_date: string | null
   status: string; source_status: string | null
   po_id: string | null; po_number: string | null
+  nc_exported_at: string | null
+}
+interface ApListResp {
+  total: number
+  items: ApInvoice[]
 }
 interface AgingRow {
   vendor_id: string | null; vendor_name: string; currency: string
@@ -57,16 +63,54 @@ export default function AccountsPayablePage() {
   const [tab, setTab] = useState<'invoices' | 'aging'>('invoices')
   const [source, setSource] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [hideExported, setHideExported] = useState(true)
+  const [q, setQ] = useState('')
+  const [qInput, setQInput] = useState('')
+  const [page, setPage] = useState(0)
 
-  const { data: invoices = [], isFetching } = useQuery({
-    queryKey: ['ap-invoices', source, statusFilter],
+  const qc = useQueryClient()
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [exporting, setExporting] = useState(false)
+  const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
+
+  const resetPage = () => { setPage(0); setSelected(new Set()) }
+  const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
+
+  const exportable = (inv: ApInvoice) => inv.status !== 'draft' && inv.status !== 'void'
+  const toggle = (id: string) => setSelected((p) => {
+    const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n
+  })
+  const runExport = async () => {
+    const picked = invoices.filter((i) => selected.has(i.id))
+    if (picked.length === 0) return
+    const already = picked.filter((i) => i.nc_exported_at).length
+    if (already && !window.confirm(`${already} of ${picked.length} selected were already exported. Export again?`)) return
+    setExporting(true); setBanner(null)
+    try {
+      await financePostDownload('/ap/nc-export', { ap_ids: picked.map((i) => i.id) })
+      setBanner({ kind: 'ok', text: `Exported ${picked.length} invoice${picked.length === 1 ? '' : 's'} to NC file.` })
+      setSelected(new Set())
+      qc.invalidateQueries({ queryKey: ['ap-invoices'] })
+    } catch (e) {
+      setBanner({ kind: 'err', text: (e as Error).message })
+    } finally { setExporting(false) }
+  }
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['ap-invoices', source, statusFilter, q, hideExported, page],
     queryFn: () => {
-      const qs = new URLSearchParams({ limit: '1000' })
+      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
       if (source) qs.set('source', source)
       if (statusFilter) qs.set('status', statusFilter)
-      return financeApi.get<ApInvoice[]>(`/ap/invoices?${qs.toString()}`)
+      if (q) qs.set('q', q)
+      if (hideExported) qs.set('exported', 'false')
+      return financeApi.get<ApListResp>(`/ap/invoices?${qs.toString()}`)
     },
   })
+  const invoices = data?.items ?? []
+  const total = data?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pickedCount = invoices.filter((i) => selected.has(i.id)).length
   const { data: aging = [] } = useQuery({
     queryKey: ['ap-aging'],
     queryFn: () => financeApi.get<AgingRow[]>('/ap/aging'),
@@ -121,20 +165,44 @@ export default function AccountsPayablePage() {
         {tab === 'invoices' ? (
           <>
             <div className="mb-3 flex flex-wrap items-center gap-3">
-              <select value={source} onChange={(e) => setSource(e.target.value)} className={cn(inputCls, 'w-40')}>
+              <select value={source} onChange={(e) => { setSource(e.target.value); resetPage() }} className={cn(inputCls, 'w-40')}>
                 <option value="">All sources</option>
                 {SOURCES.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
               </select>
-              <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={cn(inputCls, 'w-44')}>
+              <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage() }} className={cn(inputCls, 'w-44')}>
                 <option value="">All statuses</option>
                 {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
               </select>
+              <form className="flex items-center gap-1"
+                    onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
+                <input value={qInput} onChange={(e) => setQInput(e.target.value)}
+                       placeholder="Vendor / vendor inv #…" className={cn(inputCls, 'w-52')} />
+                <button type="submit" className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Search</button>
+              </form>
+              <label className="flex items-center gap-1.5 text-sm text-neutral-600">
+                <input type="checkbox" checked={hideExported}
+                       onChange={(e) => { setHideExported(e.target.checked); resetPage() }} />
+                Hide exported
+              </label>
+              <button onClick={runExport} disabled={exporting || pickedCount === 0}
+                      className="ml-auto flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50">
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                Export to NC{pickedCount > 0 ? ` (${pickedCount})` : ''}
+              </button>
             </div>
+
+            {banner && (
+              <div className={cn('mb-3 rounded-md px-3 py-2 text-sm',
+                banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+                {banner.text}
+              </div>
+            )}
 
             <div className="overflow-hidden rounded-lg border border-neutral-200">
               <table className="w-full text-sm">
                 <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
+                    <th className="w-9 px-3 py-2" />
                     <th className="px-3 py-2 w-40">AP No.</th>
                     <th className="px-3 py-2 w-16">Source</th>
                     <th className="px-3 py-2">Vendor</th>
@@ -144,15 +212,16 @@ export default function AccountsPayablePage() {
                     <th className="px-3 py-2 w-32 text-right">Total</th>
                     <th className="px-3 py-2 w-32 text-right">Outstanding</th>
                     <th className="px-3 py-2 w-28">Status</th>
+                    <th className="px-3 py-2 w-24">NC Export</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isFetching && (
-                    <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+                    <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                   )}
                   {!isFetching && invoices.length === 0 && (
-                    <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">No AP invoices.</td></tr>
+                    <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">No AP invoices.</td></tr>
                   )}
                   {invoices.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
@@ -162,6 +231,12 @@ export default function AccountsPayablePage() {
                           onClick={() => openInvoiceTab(inv)}
                           title="Open invoice detail in a tab"
                           className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                        <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                          {exportable(inv) && (
+                            <input type="checkbox" checked={selected.has(inv.id)}
+                                   onChange={() => toggle(inv.id)} />
+                          )}
+                        </td>
                         <td className="px-3 py-2 font-mono text-xs text-[#085E5E] underline-offset-2 hover:underline">{inv.ap_invoice_number}</td>
                         <td className="px-3 py-2 text-xs uppercase text-neutral-500">{inv.source}</td>
                         <td className="px-3 py-2">{inv.vendor_name ?? '—'}</td>
@@ -171,11 +246,26 @@ export default function AccountsPayablePage() {
                         <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
                         <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
                         <td className="px-3 py-2"><StatusPill status={inv.status} /></td>
+                        <td className="px-3 py-2 text-xs text-neutral-500">
+                          {inv.nc_exported_at ? inv.nc_exported_at.slice(0, 10) : '—'}
+                        </td>
                       </tr>
                     )
                   })}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
+              <span>{total.toLocaleString()} invoice{total === 1 ? '' : 's'}</span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => gotoPage(Math.max(0, page - 1))} disabled={page === 0}
+                        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Prev</button>
+                <span>Page {page + 1} / {pageCount}</span>
+                <button onClick={() => gotoPage(Math.min(pageCount - 1, page + 1))}
+                        disabled={page >= pageCount - 1}
+                        className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">Next</button>
+              </div>
             </div>
           </>
         ) : (

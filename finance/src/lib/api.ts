@@ -256,6 +256,28 @@ export async function financeDownload(path: string, filename: string): Promise<v
   URL.revokeObjectURL(url)
 }
 
+/** POST JSON to Finance API and download the streamed file (Content-Disposition name). */
+export async function financePostDownload(path: string, body: unknown): Promise<void> {
+  const res = await fetch(`${FINANCE_API}/finance/v1${path}`, {
+    method: 'POST', headers: authHeaders(true), body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({ detail: res.statusText }))
+    const d = b.detail
+    if (d && typeof d === 'object' && Array.isArray(d.errors)) {
+      throw new Error(d.errors.map((e: any) => `${e.ap_number}: ${e.reason}`).join(' · '))
+    }
+    throw new Error(extractDetail(d, res.status))
+  }
+  const cd = res.headers.get('content-disposition') ?? ''
+  const m = /filename="?([^";]+)"?/.exec(cd)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = m?.[1] ?? 'nc-export.xlsx'; a.click()
+  URL.revokeObjectURL(url)
+}
+
 /** POST a File (plus optional form fields) as multipart/form-data to Budget API. */
 export async function budgetUpload<T>(
   path: string, file: File, fields?: Record<string, string>,
