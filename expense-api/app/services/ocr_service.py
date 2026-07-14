@@ -58,7 +58,8 @@ Rules:
   Null if no such terms are printed. Extract this even when an explicit due_date is
   also shown; do NOT compute due_date from the terms (the application does that).
 - If there are no line items, return an empty array
-- Return ONLY the JSON object, no other text"""
+- "line_items": include at most 100 rows; if the invoice has more, keep the first 100
+- Return ONLY the JSON object, minified (no indentation or extra whitespace), no other text"""
 
 _RECEIPT_PROMPT = """\
 Extract receipt information from this image.
@@ -125,9 +126,11 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
         }
 
     try:
+        # 8192 covers ~100 minified line items; 2048 truncated invoices with
+        # many lines (46-line lab invoice → JSON cut mid-array, 2026-07).
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=2048,
+            max_tokens=8192,
             messages=[{
                 "role": "user",
                 "content": [content_block, {"type": "text", "text": _INVOICE_PROMPT}],
@@ -142,6 +145,10 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
     except anthropic.APIConnectionError as exc:
         log.error("Claude API connection error: %s", exc)
         raise RuntimeError("OCR service unreachable — check ANTHROPIC_API_KEY and network")
+
+    if response.stop_reason == "max_tokens":
+        log.error("Invoice OCR output truncated at max_tokens — invoice likely has too many line items")
+        raise ValueError("OCR output was truncated — the invoice may have too many line items")
 
     raw_text = response.content[0].text.strip()
     # Strip markdown fences if present
@@ -178,7 +185,7 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
     # Line items (no confidence per-item in the response, use overall confidence)
     raw_lines = parsed.get("line_items", []) or []
     lines = []
-    for i, li in enumerate(raw_lines[:20]):  # cap at 20 lines
+    for i, li in enumerate(raw_lines[:100]):  # safety cap, matches prompt limit
         lines.append({
             "line_number": i + 1,
             "description": str(li.get("description", "")),
