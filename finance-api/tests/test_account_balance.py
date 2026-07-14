@@ -119,23 +119,25 @@ async def test_budget_actual_by_cost_center(db_session):
     assert rows[0]["actual"] == "300.00"
 
 
-async def test_expand_by_cost_center(db_session):
+async def test_expand_single_dim_matches_old_behavior(db_session):
     cc1 = await _cc(db_session, "MOH-01")
     cc2 = await _cc(db_session, "MOH-02")
     await _posted_cc_event(db_session, "5101", cc1, "100.00")
     await _posted_cc_event(db_session, "5101", cc2, "50.00")
     await jv_crud.backfill_posted_jvs(db_session)
-    exp = await ab.expand_by_cost_center(db_session, "5101", "2026-07")
-    by = {r["cost_center_code"]: r for r in exp["rows"]}
+    exp = await ab.expand_by_dims(db_session, "5101", "2026-07", ["cost_center"])
+    by = {r["keys"][0]["code"]: r for r in exp["rows"]}
     assert by["MOH-01"]["amount"] == "100.00"
     assert by["MOH-02"]["amount"] == "50.00"
+    assert by["MOH-01"]["keys"][0]["dim_code"] == "cost_center"
 
 
-async def test_account_vouchers_drilldown(db_session):
+async def test_account_vouchers_drilldown_by_dims(db_session):
     cc1 = await _cc(db_session, "MOH-01")
     await _posted_cc_event(db_session, "5101", cc1, "77.00")
     await jv_crud.backfill_posted_jvs(db_session)
-    v = await ab.account_vouchers(db_session, "5101", "2026-07", cost_center_id=cc1)
+    v = await ab.account_vouchers(db_session, "5101", "2026-07",
+                                  dims_values={"cost_center": cc1})
     assert len(v["rows"]) == 1
     assert v["rows"][0]["local_debit"] == "77.00"
     assert v["rows"][0]["jv_number"].startswith("JV-")
@@ -180,3 +182,99 @@ async def test_coa_aux_item_roundtrip_and_unique(db_session):
     with pytest.raises(IntegrityError):
         await db_session.flush()
     await db_session.rollback()
+
+
+# ── generic multi-dim expansion (Task 3) ──────────────────────────────────────────
+from app.models.mirrors import BudgetAccount, Department
+
+
+async def _posted_dim_event(db, account, amount, cc_id=None, dept_id=None, ba_id=None,
+                            period="2026-07"):
+    occurred = datetime(int(period[:4]), int(period[5:7]), 15, tzinfo=timezone.utc)
+    line = {"line_role": "purchase_expense", "account_code": account,
+            "debit": Decimal(amount), "currency": "CAD"}
+    if cc_id:
+        line["cost_center_id"] = cc_id
+    if dept_id:
+        line["department_id"] = dept_id
+    if ba_id:
+        line["aux"] = {"income_expense_item": {"value_id": ba_id, "value_text": "X"}}
+    await emit_event(
+        db, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+        occurred_at=occurred, prepared_by=uuid.uuid4(),
+        lines=[line, {"line_role": "accounts_payable", "account_code": "2000",
+                      "credit": Decimal(amount), "currency": "CAD"}])
+
+
+async def test_expand_two_dims_and_none_group(db_session):
+    cc = await _cc(db_session, "MOH-01")
+    ba = uuid.uuid4()
+    db_session.add(BudgetAccount(id=ba, code="CRM004", name="Depreciation", is_active=True))
+    await db_session.flush()
+    await _posted_dim_event(db_session, "5101", "100.00", cc_id=cc, ba_id=ba)
+    await _posted_dim_event(db_session, "5101", "40.00", cc_id=cc)          # no ioitem
+    await jv_crud.backfill_posted_jvs(db_session)
+    exp = await ab.expand_by_dims(db_session, "5101", "2026-07",
+                                  ["cost_center", "income_expense_item"])
+    assert len(exp["rows"]) == 2
+    rows = {tuple((k["dim_code"], k["code"]) for k in r["keys"]): r["amount"]
+            for r in exp["rows"]}
+    assert rows[(("cost_center", "MOH-01"), ("income_expense_item", "CRM004"))] == "100.00"
+    assert rows[(("cost_center", "MOH-01"), ("income_expense_item", None))] == "40.00"
+    # name resolution
+    named = next(r for r in exp["rows"]
+                 if r["keys"][1]["code"] == "CRM004")
+    assert named["keys"][1]["name"] == "Depreciation"
+
+
+async def test_expand_rejects_unknown_dim(db_session):
+    with pytest.raises(ab.BadDims):
+        await ab.expand_by_dims(db_session, "5101", "2026-07", ["bananas"])
+
+
+async def test_vouchers_filter_none_and_combo(db_session):
+    cc = await _cc(db_session, "MOH-01")
+    ba = uuid.uuid4()
+    await _posted_dim_event(db_session, "5101", "100.00", cc_id=cc, ba_id=ba)
+    await _posted_dim_event(db_session, "5101", "40.00", cc_id=cc)
+    await jv_crud.backfill_posted_jvs(db_session)
+    v_none = await ab.account_vouchers(db_session, "5101", "2026-07",
+                                       dims_values={"cost_center": cc,
+                                                    "income_expense_item": None})
+    assert [r["local_debit"] for r in v_none["rows"]] == ["40.00"]
+    v_hit = await ab.account_vouchers(db_session, "5101", "2026-07",
+                                      dims_values={"income_expense_item": ba})
+    assert [r["local_debit"] for r in v_hit["rows"]] == ["100.00"]
+
+
+async def test_dims_endpoint_config_and_fallback(client, db_session):
+    from app.models.coa import CoaAuxItem
+    db_session.add_all([
+        CoaAuxItem(account_code="5101", dim_code="cost_center", seq=1),
+        CoaAuxItem(account_code="5101", dim_code="supplier", seq=2),
+    ])
+    await db_session.flush()
+    r = await client.get("/finance/v1/gl/account-balance/5101/dims", headers=_h())
+    dims = r.json()["dims"]
+    assert [d["dim_code"] for d in dims] == ["cost_center", "supplier"]
+    assert dims[0]["supported"] is True and dims[1]["supported"] is False
+    # unconfigured account falls back to the full supported registry
+    r2 = await client.get("/finance/v1/gl/account-balance/9999/dims", headers=_h())
+    assert {d["dim_code"] for d in r2.json()["dims"]} == {
+        "cost_center", "department", "income_expense_item"}
+
+
+async def test_expand_endpoint_dims_param(client, db_session):
+    cc = await _cc(db_session, "MOH-01")
+    await _posted_cc_event(db_session, "5101", cc, "60.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    r = await client.get(
+        "/finance/v1/gl/account-balance/5101/expand?period=2026-07&dims=cost_center",
+        headers=_h())
+    assert r.status_code == 200, r.text
+    assert r.json()["rows"][0]["amount"] == "60.00"
+    r422 = await client.get(
+        "/finance/v1/gl/account-balance/5101/expand?period=2026-07&dims=bananas",
+        headers=_h())
+    assert r422.status_code == 422

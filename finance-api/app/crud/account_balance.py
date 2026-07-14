@@ -103,19 +103,87 @@ async def _by_cost_center(db: AsyncSession, account_code: str, period: str):
     return (await db.execute(q)).all()
 
 
-async def expand_by_cost_center(db: AsyncSession, account_code: str, period: str) -> dict:
-    """② auxiliary expansion (by cost center) of one account over posted JV lines."""
-    cc = await _cc_map(db)
+# ── generic multi-dim expansion (能力② full) ────────────────────────────────────
+
+class BadDims(ValueError):
+    """Unknown/unsupported dimension code in a request."""
+
+
+def _dimensions():
+    """dim_code -> (jv_lines column, mirror model). Registry — adding a future
+    dimension (supplier/customer) is one line here once its column+mirror exist."""
+    from app.models.mirrors import BudgetAccount, CostCenter, Department
+    return {
+        "cost_center": (JournalVoucherLine.cost_center_id, CostCenter),
+        "department": (JournalVoucherLine.department_id, Department),
+        "income_expense_item": (JournalVoucherLine.income_expense_item_id, BudgetAccount),
+    }
+
+
+DIM_LABELS = {
+    "cost_center": "Cost Center", "department": "Department",
+    "income_expense_item": "Income/Expense Item", "supplier": "Supplier",
+    "customer": "Customer", "employee": "Employee", "project": "Project",
+}
+
+
+def _check_dims(dims: list[str]) -> dict:
+    reg = _dimensions()
+    bad = [d for d in dims if d not in reg]
+    if bad or not dims:
+        raise BadDims(f"unknown or empty dims: {bad or dims}")
+    return reg
+
+
+async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
+                         dims: list[str]) -> dict:
+    """② dynamic expansion: GROUP BY the chosen dimension columns (all promoted
+    columns — no KV join), resolve each id to code/name via its mirror."""
+    reg = _check_dims(dims)
+    cols = [reg[d][0] for d in dims]
+    q = (select(*cols,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+                func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .where(JournalVoucher.status == POSTED,
+                JournalVoucher.fiscal_period == period,
+                JournalVoucherLine.account_code == account_code)
+         .group_by(*cols))
+    raw = (await db.execute(q)).all()
+
+    # batch-load mirror rows per dimension
+    lookups: dict[str, dict] = {}
+    for i, d in enumerate(dims):
+        ids = {row[i] for row in raw if row[i] is not None}
+        model = reg[d][1]
+        lookups[d] = ({r.id: r for r in (await db.execute(
+            select(model).where(model.id.in_(ids)))).scalars()} if ids else {})
+
     rows = []
-    for ccid, d, c in await _by_cost_center(db, account_code, period):
-        center = cc.get(ccid)
-        rows.append({
-            "cost_center_id": str(ccid) if ccid else None,
-            "cost_center_code": center.code if center else None,
-            "cost_center_name": center.name if center else None,
-            "amount": _s(_net(d, c)),
-        })
-    return {"account_code": account_code, "period": period, "rows": rows}
+    for row in raw:
+        keys = []
+        for i, d in enumerate(dims):
+            vid = row[i]
+            m = lookups[d].get(vid)
+            keys.append({"dim_code": d, "id": str(vid) if vid else None,
+                         "code": m.code if m else None, "name": m.name if m else None})
+        rows.append({"keys": keys, "amount": _s(_net(row[len(dims)], row[len(dims) + 1]))})
+    rows.sort(key=lambda r: tuple(k["code"] or "￿" for k in r["keys"]))
+    return {"account_code": account_code, "period": period, "dims": dims, "rows": rows}
+
+
+async def list_dims(db: AsyncSession, account_code: str) -> dict:
+    """Dims checkable for an account: coa_aux_items config (NC BD_ACCASS import),
+    falling back to the full supported registry for unconfigured accounts."""
+    from app.models.coa import CoaAuxItem
+    reg = _dimensions()
+    items = (await db.execute(
+        select(CoaAuxItem).where(CoaAuxItem.account_code == account_code)
+        .order_by(CoaAuxItem.seq))).scalars().all()
+    codes = [i.dim_code for i in items] if items else list(reg.keys())
+    return {"account_code": account_code, "dims": [
+        {"dim_code": c, "label": DIM_LABELS.get(c, c), "supported": c in reg}
+        for c in codes]}
 
 
 async def budget_actual(db: AsyncSession, period: str) -> dict:
@@ -139,17 +207,20 @@ async def budget_actual(db: AsyncSession, period: str) -> dict:
 
 
 async def account_vouchers(db: AsyncSession, account_code: str, period: str,
-                           cost_center_id=None) -> dict:
-    """③ voucher drill-down: posted JV lines composing an account (+period,
-    +optional cost center), each linked to its voucher header."""
+                           dims_values: dict | None = None) -> dict:
+    """③ drill-down: posted JV lines for an account, optionally filtered by a
+    dimension-value combo ({dim_code: uuid | None}; None = IS NULL)."""
     q = (select(JournalVoucherLine, JournalVoucher)
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period == period,
                 JournalVoucherLine.account_code == account_code)
          .order_by(JournalVoucher.voucher_date))
-    if cost_center_id is not None:
-        q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    if dims_values:
+        reg = _check_dims(list(dims_values.keys()))
+        for d, v in dims_values.items():
+            col = reg[d][0]
+            q = q.where(col.is_(None) if v is None else col == v)
     rows = []
     for ln, jv in (await db.execute(q)).all():
         rows.append({
