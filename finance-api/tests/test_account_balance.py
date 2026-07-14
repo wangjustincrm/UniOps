@@ -284,3 +284,18 @@ async def test_expand_endpoint_dims_param(client, db_session):
         "/finance/v1/gl/account-balance/5101/expand?period=2026-07&dims=bananas",
         headers=_h())
     assert r422.status_code == 422
+
+
+def test_aux_item_name_mapping():
+    import importlib.util, os
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                     "scripts", "nc_migration", "aux_items_import.py")
+    spec = importlib.util.spec_from_file_location("aux_items_import", p)
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    f = mod.map_assitem_name
+    assert f("部門", "bm") == "department"
+    assert f("成本中心", "cbzx") == "cost_center"
+    assert f("收支項目", "szxm") == "income_expense_item"
+    assert f("供應商", "gys") == "supplier"
+    assert f("客戶", "kh") == "customer"
+    assert f("神秘檔案", "SomeCode") == "somecode"     # unknown -> code slug
