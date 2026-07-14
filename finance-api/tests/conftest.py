@@ -56,7 +56,7 @@ def _migrate():
     from app.db.base import Base
     from app.models.admin_audit_log import AdminAuditLog  # shared table, no finance migration owns it
     from app.models.mirrors import (  # noqa: F401
-        CompanyConfig, CostCenter, Department, ExpenseApprovalEvent, ExpenseClaim,
+        BudgetAccount, CompanyConfig, CostCenter, Department, ExpenseApprovalEvent, ExpenseClaim,
         ExpenseLineItem, ExpenseTripItem, Invoice, InvoiceTaxLine, SodRule, Task, User,
     )
     from app.models.pa import PaymentApplication
@@ -67,7 +67,7 @@ def _migrate():
         SodRule.__table__, User.__table__, ExpenseApprovalEvent.__table__,
         ExpenseLineItem.__table__, ExpenseTripItem.__table__,
         AdminAuditLog.__table__, CostCenter.__table__,
-        Department.__table__,
+        Department.__table__, BudgetAccount.__table__,
     ])
     eng.dispose()
     # PaymentApplication mirror needs pa_type for A4 partial-payment logic

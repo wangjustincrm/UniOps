@@ -96,6 +96,8 @@ class JournalVoucherLine(UUIDPrimaryKey, TimestampMixin, Base):
     tax_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     project_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    income_expense_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True)  # 收支项目提列 (multi-dim expand)
 
 
 class JvLineDimension(UUIDPrimaryKey, TimestampMixin, Base):

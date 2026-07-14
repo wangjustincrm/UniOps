@@ -51,6 +51,17 @@ class Department(UUIDPrimaryKey, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class BudgetAccount(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror of budget_accounts (budget-api owns schema). Column
+    SUBSET verified against information_schema 2026-07-13 — resolves the
+    income_expense_item dimension (CRM code) to a display name."""
+    __tablename__ = "budget_accounts"
+
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     """epms-api owns schema. A2 extends the mirror for AP accrual + open items
     (columns verified against information_schema 2026-06-12)."""

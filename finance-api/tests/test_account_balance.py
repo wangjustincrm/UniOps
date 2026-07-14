@@ -150,3 +150,33 @@ async def test_budget_actual_endpoint(client, db_session):
     rows = [x for x in r.json()["rows"] if x["account_code"] == "5101"]
     assert rows[0]["actual"] == "42.00"
     assert rows[0]["category"] == "MOH"
+
+
+# ── multi-dim expand foundations (Task 1) ─────────────────────────────────────────
+
+async def test_jv_line_income_expense_item_column(db_session):
+    from app.models.journal_voucher import JournalVoucher, JournalVoucherLine
+    from datetime import date
+    ba = uuid.uuid4()
+    jv = JournalVoucher(jv_number="JV-209901-0001", voucher_word="JV",
+                        voucher_date=date(2099, 1, 1), fiscal_period="2099-01",
+                        status="posted")
+    db_session.add(jv); await db_session.flush()
+    ln = JournalVoucherLine(jv_id=jv.id, line_no=1, account_code="5101",
+                            local_debit=Decimal("1.00"), currency="CAD",
+                            fx_rate=Decimal("1"), income_expense_item_id=ba)
+    db_session.add(ln); await db_session.flush()
+    got = (await db_session.execute(select(JournalVoucherLine).where(
+        JournalVoucherLine.id == ln.id))).scalar_one()
+    assert got.income_expense_item_id == ba
+
+
+async def test_coa_aux_item_roundtrip_and_unique(db_session):
+    from sqlalchemy.exc import IntegrityError
+    from app.models.coa import CoaAuxItem
+    db_session.add(CoaAuxItem(account_code="5101", dim_code="cost_center", seq=1))
+    await db_session.flush()
+    db_session.add(CoaAuxItem(account_code="5101", dim_code="cost_center", seq=2))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+    await db_session.rollback()
