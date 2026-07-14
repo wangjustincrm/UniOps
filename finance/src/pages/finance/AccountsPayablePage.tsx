@@ -70,11 +70,12 @@ export default function AccountsPayablePage() {
   })
   const runExport = async () => {
     const picked = invoices.filter((i) => selected.has(i.id))
+    if (picked.length === 0) return
     const already = picked.filter((i) => i.nc_exported_at).length
     if (already && !window.confirm(`${already} of ${picked.length} selected were already exported. Export again?`)) return
     setExporting(true); setBanner(null)
     try {
-      await financePostDownload('/ap/nc-export', { ap_ids: [...selected] })
+      await financePostDownload('/ap/nc-export', { ap_ids: picked.map((i) => i.id) })
       setBanner({ kind: 'ok', text: `Exported ${picked.length} invoice${picked.length === 1 ? '' : 's'} to NC file.` })
       setSelected(new Set())
       qc.invalidateQueries({ queryKey: ['ap-invoices'] })
