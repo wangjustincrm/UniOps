@@ -25,7 +25,7 @@
 3. **body 行重组 = 按费用行多行,税按行不含税金额比例分摊**(行自带税额优先用行税;尾差进末行)。
 4. **维度从源单取**(两条链,能力如实):
    - **OA 来源**:`source_invoice_id` → 报销单(claim)→ `expense_line_items`(镜像已有)逐行 → body 多行:net_amount/tax_amount/tax_code、CC(cost_center_id→名称)、收支项目(budget_account_id→名称)、部门(CC 的 department_id→名称)、Employee=claim 申请人姓名。(实现时按 oa→ap 同步代码核对 source_invoice_id↔claim 的键。)
-   - **EPMS 来源**:结构上无行级 CC/收支项 → body 单行(=accrual 费用行金额);**部门 = 发票→PO→PR→创建人→users.department_id**(多 PO 分摊时取分摊金额最大的 PO);**CC = 部门推导**(复用 NC 迁移整定映射 CC_BY_DEPT,部门 code→CC code→名称);**收支项目留空**;Employee 空。需补 3 个只读镜像(invoice_po_allocations / purchase_orders / purchase_requisitions 子集,物理列实现前核对;若 invoices 镜像已带 po_id 可缩链)。
+   - **EPMS 来源**(2026-07-14 用户纠正后核实,链条完整):**PR 头上维度齐全且 100% 覆盖**——`purchase_requests(cost_center_id, budget_code[=budget_accounts.code 收支项目], department_name, po_id)`(dev 实测 6293/6293 有 CC)。链:发票 → `invoice_po_allocations(invoice_id, po_id, allocated_amount/allocated_tax/allocated_total)` 行级分摊(无分摊行时退回 `invoices.po_id` 单 PO)→ 各 PO 反查 `purchase_requests`(PR.po_id=PO)→ CC 名称(cost_centers)/收支项目名称(budget_accounts by budget_code)/部门名(PR.department_name 直取)。**body 按分摊行拆多行**(金额=allocated_amount,税=allocated_tax);Employee 空。兜底:PR 缺失时部门经 PO→PR 创建人推导、CC 经 CC_BY_DEPT 整定映射(极少用)。需补只读镜像:`invoice_po_allocations` 子集、`purchase_requests` 子集(物理列实现前按 information_schema 核对;`mirrors.Invoice` 已有,po_id 列缺则补)。
 5. **科目(subjcode)** = accrual JV 费用行的 account_code(现阶段为兜底费用科目)→ **全路径本地拼**:COA parent 链 `code\name₁\name₂…\name本级`(与 NC 对照校一次;真实科目细分是另一工程,明示不在本期)。
 6. **Head 的 Department/Rev-Exp Item** = body 首行同名维度;billdate/busidate=invoice_date;supplier=vendor_name;currency=AP 币种。
 
@@ -49,11 +49,11 @@
 
 ## 7. 验证
 
-- 组装纯逻辑:OA 多行维度/税分摊尾差/EPMS 部门链+CC 推导/收支项空/全路径拼/多单序号;错误清单(draft/void/无 accrual)。
+- 组装纯逻辑:OA 多行维度/税分摊尾差/EPMS 分摊行拆分+PR 维度(CC/收支项/部门)/全路径拼/多单序号;错误清单(draft/void/无 accrual)。
 - xlsx 读回断言(技术行保留、块结构、样例清除、文本格式)。
 - API:权限/409 清单/批次落库/AP 标记/重导放行。
 - dev 实测:导一批真实 posted AP → 人工核对样例格式一致 → **你拿去 NC 试引入一次终验**(引入结果反馈修口径)。
 
 ## 8. 范围外
 
-- 自动传输/接口对接 NC(维持人工引入);档案模板导出;JV 复核对账工具;EPMS 行级真实科目/CC(源头无,另一工程);Claim 之外的 OA 单据特化。
+- 自动传输/接口对接 NC(维持人工引入);档案模板导出;JV 复核对账工具;EPMS 行级真实**费用科目**细分(CC/收支项已从 PR 取到,科目仍是 accrual 兜底科目,细分另一工程);Claim 之外的 OA 单据特化。
