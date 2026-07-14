@@ -72,7 +72,10 @@ def extract(only: set[str] | None = None, since: str | None = None,
         (``InvoiceID`` on the line row). An incremental invoice usually points
         at a PO that did NOT change, so its line rows would be missing under a
         Modified filter and the invoice would resolve to no PO / no vendor
-        ("PMS Unknown Vendor"). Full-pulling them keeps the linkage complete."""
+        ("PMS Unknown Vendor"). Full-pulling them keeps the linkage complete.
+      * pr_item — the upsert item sync matches rows by position within the
+        doc's full item list; a Modified-filtered partial list would misalign
+        (and read as "rows deleted in PMS")."""
     DATA_DIR.mkdir(exist_ok=True)
     sp = SharePointClient()
 
@@ -80,7 +83,7 @@ def extract(only: set[str] | None = None, since: str | None = None,
     print(f"Connected to {sp.site} as {sp.user}  [{mode}]\n")
     overview = {o["title"]: o["count"] for o in sp.list_overview()}
 
-    ALWAYS_FULL = {"vendorlist.json", "po_item.json", "pa_item.json"}
+    ALWAYS_FULL = {"vendorlist.json", "pr_item.json", "po_item.json", "pa_item.json"}
     summary: dict[str, int] = {}
     for list_title, (filename, fields) in EXTRACT_SPEC.items():
         if only and filename.split(".")[0] not in only:

@@ -17,7 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -26,6 +26,7 @@ from app.core.config import settings
 from app.core.security import hash_password
 from app.models.cost_center import CostCenter
 from app.models.department import Department
+from app.models.gr import GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pa import PaLineItem, PaymentApplication
@@ -93,11 +94,11 @@ class Report:
             print(f"    {k:12} {self.inserted.get(k, 0)}")
         if any(self.updated.values()):
             print("  Updated (incremental):")
-            for k in ("pr", "po", "pa", "invoices"):
+            for k in ("pr", "pr_items", "po", "po_items", "pa", "pa_items", "invoices"):
                 print(f"    {k:12} {self.updated.get(k, 0)}")
         if any(self.skipped_conflict.values()):
-            print("  Skipped (locally edited in EPMS):")
-            for k in ("pr", "po", "pa", "invoices"):
+            print("  Skipped (locally edited in EPMS / still referenced):")
+            for k in ("pr", "pr_items", "po", "po_items", "pa", "pa_items", "invoices"):
                 print(f"    {k:12} {self.skipped_conflict.get(k, 0)}")
         print("  Skipped (already in EPMS, idempotent):")
         for k in ("pr", "po", "pa", "invoices"):
@@ -422,7 +423,8 @@ async def run_load(
                     pono = (r.get("PONo") or "").strip() or None
                     if number in existing_pr:
                         if upsert:
-                            await _upsert_pr(db, dry_run, report, pr_map[number], r, res)
+                            await _upsert_pr(db, dry_run, report, pr_map[number], r, res,
+                                             pr_items.get(number, []))
                         else:
                             report.skipped_existing["pr"] += 1
                         continue
@@ -483,7 +485,8 @@ async def run_load(
                     seen.add(number)
                     if number in existing_po:
                         if upsert:
-                            await _upsert_po(db, dry_run, report, po_map[number], r, res)
+                            await _upsert_po(db, dry_run, report, po_map[number], r, res,
+                                             po_items.get(number, []))
                         else:
                             report.skipped_existing["po"] += 1
                         continue
@@ -714,7 +717,8 @@ async def run_load(
                     seen.add(number)
                     if number in existing_pa:
                         if upsert:
-                            await _upsert_pa(db, dry_run, report, pa_map[number], r, res)
+                            await _upsert_pa(db, dry_run, report, pa_map[number], r, res,
+                                             pa_items.get(number, []))
                         else:
                             report.skipped_existing["pa"] += 1
                         continue
@@ -832,7 +836,80 @@ async def run_load(
     return report
 
 
-async def _upsert_pr(db, dry_run, report, existing, r, res) -> None:
+def _pr_item_vals(it: dict) -> dict:
+    return {
+        "description": clip(nz(it.get("Description"), "(no description)"), 500),
+        "material_id": clip(it.get("CRMPartNo"), 50),
+        "supplier_item_id": clip(it.get("PartNo"), 100),
+        "qty": to_decimal(it.get("Qty")),
+        "unit": clip(nz(it.get("UOM"), "EA"), 30),
+        "unit_price": to_decimal(it.get("UnitPrice")),
+        "line_total": to_decimal(it.get("Total_x0020_Price")),
+    }
+
+
+def _po_item_vals(it: dict) -> dict:
+    return {
+        "description": clip(nz(it.get("Description"), "(no description)"), 500),
+        "supplier_item_id": clip(it.get("PartNo"), 100),
+        "qty": to_decimal(it.get("QTY")),
+        "unit": clip(nz(it.get("UOM"), "EA"), 30),
+        "unit_price": to_decimal(it.get("UnitPrice")),
+        "line_total": to_decimal(it.get("TotalPrice")),
+        "received_qty": to_decimal(it.get("ReceivedQTY")),
+    }
+
+
+def _pa_item_vals(it: dict) -> dict:
+    return {
+        "description": clip(nz(it.get("Description"), "(no description)"), 500),
+        "qty": to_decimal(it.get("QTY")),
+        "unit": clip(nz(it.get("UOM"), "EA"), 30),
+        "unit_price": to_decimal(it.get("UnitPrice")),
+        "line_total": to_decimal(it.get("TotalPrice")),
+    }
+
+
+async def _sync_items(db, report, key, model, doc_fk, doc_id, staged, vals_fn, ref_cols) -> None:
+    """Refresh a doc's line items from the staged PMS rows on incremental upsert.
+
+    Headers-only upsert left line-item edits made in PMS after the first import
+    (e.g. discount rows corrected from positive to negative) stranded in EPMS
+    forever. Rows are matched by position (sort_order == staged index): PMS item
+    lists are append-ordered and the initial import assigned sort_order from the
+    same enumeration. Matching in place keeps line-item UUIDs stable — GR lines,
+    PA lines and invoice allocations reference them. Surplus EPMS rows (deleted
+    in PMS) are removed only when nothing in ref_cols points at them. An empty
+    staged list means the doc wasn't in the item file (or the extract failed) —
+    never treat that as "delete everything"."""
+    if not staged:
+        return
+    existing = (await db.execute(
+        select(model).where(getattr(model, doc_fk) == doc_id).order_by(model.sort_order)
+    )).scalars().all()
+    for idx, it in enumerate(staged):
+        vals = vals_fn(it)
+        if idx < len(existing):
+            obj = existing[idx]
+            dirty = False
+            for k, v in vals.items():
+                if getattr(obj, k) != v:
+                    setattr(obj, k, v)
+                    dirty = True
+            if dirty:
+                report.updated[key] += 1
+        else:
+            db.add(model(id=uuid.uuid4(), sort_order=idx, **{doc_fk: doc_id}, **vals))
+            report.inserted[key] += 1
+    for obj in existing[len(staged):]:
+        if any([await db.scalar(select(exists().where(col == obj.id))) for col in ref_cols]):
+            report.skipped_conflict[key] += 1
+        else:
+            await db.delete(obj)
+            report.updated[key] += 1
+
+
+async def _upsert_pr(db, dry_run, report, existing, r, res, items) -> None:
     obj_id, updated_at = existing
     modified = to_dt(r.get("Modified"))
     if _is_local_edit(updated_at, modified):
@@ -857,10 +934,12 @@ async def _upsert_pr(db, dry_run, report, existing, r, res) -> None:
     obj.budget_code = clip(r.get("GLCode"), 100)
     obj.project_code = clip(r.get("ProjectNo"), 100)
     obj.po_number = clip(pono, 30)
+    await _sync_items(db, report, "pr_items", PrLineItem, "pr_id", obj_id, items,
+                      _pr_item_vals, [PoLineItem.pr_line_id])
     _stamp(obj, modified)
 
 
-async def _upsert_po(db, dry_run, report, existing, r, res) -> None:
+async def _upsert_po(db, dry_run, report, existing, r, res, items) -> None:
     obj_id, updated_at = existing
     modified = to_dt(r.get("Modified"))
     if _is_local_edit(updated_at, modified):
@@ -878,10 +957,15 @@ async def _upsert_po(db, dry_run, report, existing, r, res) -> None:
     obj.total = to_decimal(r.get("TotalPrice"), default=obj.total)
     obj.is_prepaid = bool(r.get("PayFirst"))
     obj.notes = _po_notes(r)
+    await _sync_items(db, report, "po_items", PoLineItem, "po_id", obj_id, items,
+                      _po_item_vals,
+                      [PaLineItem.po_line_id, GrLineItem.po_line_id, InvoicePoAllocation.po_line_id])
+    if items:
+        obj.subtotal = sum((to_decimal(it.get("TotalPrice")) for it in items), Decimal("0"))
     _stamp(obj, modified)
 
 
-async def _upsert_pa(db, dry_run, report, existing, r, res) -> None:
+async def _upsert_pa(db, dry_run, report, existing, r, res, items) -> None:
     obj_id, updated_at = existing
     modified = to_dt(r.get("Modified"))
     if _is_local_edit(updated_at, modified):
@@ -902,6 +986,8 @@ async def _upsert_pa(db, dry_run, report, existing, r, res) -> None:
     obj.currency = M.normalize_currency(r.get("Currency"))
     obj.subtotal, obj.tax_amount, obj.shipping_amount, obj.other_charges = subtotal, tax, shipping, other
     obj.payment_amount = to_decimal(r.get("TotalPrice"), default=subtotal + tax + shipping + other)
+    await _sync_items(db, report, "pa_items", PaLineItem, "pa_id", obj_id, items,
+                      _pa_item_vals, [])
     _stamp(obj, modified)
 
 
