@@ -2,6 +2,7 @@
 import uuid
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 
@@ -15,7 +16,7 @@ from app.schemas.config import (
     TempAssignmentResponse,
     RolePermissionsUpdate,
 )
-from app.crud.config import LOCKED_PERMISSIONS, PERMISSION_KEYS
+from app.crud.config import BUILT_IN_ROLES, LOCKED_PERMISSIONS, PERMISSION_KEYS
 from app.services.email import send_email
 
 
@@ -172,20 +173,21 @@ async def get_locked_permissions(_: CurrentUserPayload, token: BearerToken) -> d
 
     Proxies GET /authz/defs from identity and transforms permissions[].locked_for
     into the legacy {role: [keys]} shape.  Falls back to the local LOCKED_PERMISSIONS
-    constant when identity is unreachable.
+    constant only when identity is unreachable (httpx.RequestError / connection failure).
+    4xx/5xx from identity and transform errors are not swallowed.
     """
     try:
         status_code, body = await authz_client.forward("GET", "/authz/defs", token)
-        if status_code == 200:
-            result: dict[str, list[str]] = {}
-            for perm in body.get("permissions", []):
-                for role in perm.get("locked_for", []):
-                    result.setdefault(role, []).append(perm["key"])
-            return result
-    except Exception:
-        pass
-    # Fallback: local constant
-    return {role: list(perms) for role, perms in LOCKED_PERMISSIONS.items()}
+    except httpx.RequestError:
+        return {role: list(perms) for role, perms in LOCKED_PERMISSIONS.items()}
+    if status_code != 200:
+        return {role: list(perms) for role, perms in LOCKED_PERMISSIONS.items()}
+    # Transform outside the try so KeyError/TypeError from a malformed response is not swallowed
+    result: dict[str, list[str]] = {}
+    for perm in body.get("permissions", []):
+        for role in perm.get("locked_for", []):
+            result.setdefault(role, []).append(perm["key"])
+    return result
 
 
 @router.get("/permission-keys")
@@ -196,8 +198,15 @@ async def get_permission_keys(_: CurrentUserPayload) -> list[str]:
 
 @router.get("/role-permissions")
 async def get_role_permissions(db: SessionDep, _: CurrentUserPayload, token: BearerToken) -> dict:
-    """Return the effective permission matrix from identity (60 s cached); fallback = frozen JSONB."""
-    return await authz_client.get_matrix(db, token)
+    """Return the effective permission matrix from identity (60 s cached); fallback = frozen JSONB.
+
+    Passes through 4xx/5xx from identity as-is (e.g. 401 invalid token → 401 here).
+    Only falls back to frozen JSONB on network/timeout failures.
+    """
+    try:
+        return await authz_client.get_matrix(db, token)
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
 
 
 @router.patch("/role-permissions")
@@ -227,28 +236,31 @@ async def update_role_permissions(
 
 @router.get("/roles", response_model=list[dict])
 async def list_roles(db: SessionDep, _: CurrentUserPayload, token: BearerToken):
-    """List all roles from identity defs; falls back to local list_all_roles."""
+    """List all roles from identity defs; falls back to local list_all_roles.
+
+    Falls back only on connection failure (httpx.RequestError) or a non-200 from
+    identity.  Transform errors (KeyError on a malformed response) are not swallowed.
+    """
     try:
         status_code, body = await authz_client.forward("GET", "/authz/defs", token)
-        if status_code == 200:
-            # Map identity role shape to legacy list_all_roles shape:
-            # {code, label, sort, is_active} → {code, name, description, is_active, is_builtin}
-            from app.crud.config import BUILT_IN_ROLES
-            return [
-                {
-                    "code": r["code"],
-                    "name": r.get("label", r["code"]),
-                    "description": "",
-                    "is_active": r.get("is_active", True),
-                    "is_builtin": r["code"] in BUILT_IN_ROLES,
-                }
-                for r in body.get("roles", [])
-            ]
-    except Exception:
-        pass
-    # Fallback: local config
-    cfg = await config_crud.get_or_create(db)
-    return config_crud.list_all_roles(cfg)
+    except httpx.RequestError:
+        cfg = await config_crud.get_or_create(db)
+        return config_crud.list_all_roles(cfg)
+    if status_code != 200:
+        cfg = await config_crud.get_or_create(db)
+        return config_crud.list_all_roles(cfg)
+    # Transform outside the try — BUILT_IN_ROLES imported at module level (finding 4)
+    # Map identity role shape {code, label, sort, is_active} → legacy {code, name, description, is_active, is_builtin}
+    return [
+        {
+            "code": r["code"],
+            "name": r.get("label", r["code"]),
+            "description": "",
+            "is_active": r.get("is_active", True),
+            "is_builtin": r["code"] in BUILT_IN_ROLES,
+        }
+        for r in body.get("roles", [])
+    ]
 
 
 # ── New passthrough endpoints ────────────────────────────────────────────────
