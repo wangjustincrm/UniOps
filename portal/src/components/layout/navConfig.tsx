@@ -12,7 +12,7 @@
  * role lists — see `permission` below and useRolePermissions().
  */
 import {
-  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock,
+  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck,
 } from 'lucide-react'
 import type { RolePermissionMatrix } from '@/hooks/useRolePermissions'
 
@@ -66,8 +66,9 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
   {
     title: 'ADMIN',
     items: [
-      { label: 'Admin',            icon: Settings,  href: 'admin',                          adminOnly: true },
-      { label: 'Data Maintenance', icon: Database,  href: 'portal:/admin/data-maintenance', adminOnly: true },
+      { label: 'Admin',            icon: Settings,    href: 'admin',                          adminOnly: true },
+      { label: 'Data Maintenance', icon: Database,    href: 'portal:/admin/data-maintenance', adminOnly: true },
+      { label: 'Access Control',   icon: ShieldCheck, href: 'portal:/admin/access-control',   adminOnly: true },
     ],
   },
 ]
