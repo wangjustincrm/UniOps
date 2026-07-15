@@ -79,6 +79,7 @@ from app.crud.engine import execute_action
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
 from app.models.pr import PurchaseRequest
+from app.models.routing import DeptRouting
 from app.models.task import Task
 
 
@@ -89,13 +90,19 @@ async def _seed(
     director_active=True,
     with_supervisor=False,
 ):
-    """Seed requester (with dept), a dept_manager, a gm user + CompanyConfig, and a
-    draft PR. Optionally add a director (+mapping) and/or supervisor (+enabled dept).
+    """Seed requester (with dept), a dept_manager, a gm user + dept routing row, and
+    a draft PR. Optionally add a director and/or supervisor.
+
+    role_management/dept_gm_opm_mapping/dept_director_mapping/dept_supervisor_enabled
+    used to be seeded as company_config JSONB (retired mirror, Task 4) — this test
+    exercises engine BEHAVIOUR, not the data source, so the GM post is now the gm
+    user's own primary role (users.role) and the dept-level routing facts live on
+    an approval_dept_routing row instead.
 
     Returns a dict of the created objects.
     """
     dept = uuid.uuid4()
-    gm = User(id=uuid.uuid4(), role="requester", is_active=True)
+    gm = User(id=uuid.uuid4(), role="gm", is_active=True)
     manager = User(id=uuid.uuid4(), role="dept_manager", department_id=dept, is_active=True)
 
     supervisor = None
@@ -113,12 +120,10 @@ async def _seed(
     )
 
     director = None
-    dept_director_mapping = {}
+    director_user_id = None
     if with_director:
         director = User(id=uuid.uuid4(), role="requester", is_active=director_active)
-        dept_director_mapping = {str(dept): str(director.id)}
-
-    dept_supervisor_enabled = {str(dept): True} if with_supervisor else {}
+        director_user_id = director.id
 
     to_add = [gm, manager, requester]
     if supervisor is not None:
@@ -128,16 +133,14 @@ async def _seed(
     db.add_all(to_add)
     await db.flush()
 
-    cfg = CompanyConfig(
-        id=uuid.uuid4(),
-        workflow_defs={},
-        role_management={"gm_user_id": str(gm.id)},
-        dept_gm_opm_mapping={str(dept): "gm"},
-        dept_director_mapping=dept_director_mapping,
-        dept_supervisor_enabled=dept_supervisor_enabled,
-        budget_admin_config={},
-    )
+    cfg = CompanyConfig(id=uuid.uuid4(), workflow_defs={})
     db.add(cfg)
+    db.add(DeptRouting(
+        dept_id=dept,
+        gm_or_opm="gm",
+        director_user_id=director_user_id,
+        supervisor_enabled=with_supervisor,
+    ))
     await db.flush()
 
     pr = PurchaseRequest(

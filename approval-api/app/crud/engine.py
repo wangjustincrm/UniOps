@@ -10,6 +10,8 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.workflow import (get_dept_director_mapping, get_dept_gm_opm_mapping,
+                                get_dept_supervisor_enabled, get_role_management)
 from app.models.budget_plan import BudgetPlan
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
@@ -771,16 +773,16 @@ async def execute_action(
     now = datetime.now(timezone.utc)
     step = doc.approval_step_idx
     cfg = await _get_config(db)
-    rm = cfg.role_management if cfg else {}
-    dept_gm_opm = cfg.dept_gm_opm_mapping if cfg else {}
+    rm = await get_role_management(db)
+    dept_gm_opm = await get_dept_gm_opm_mapping(db)
 
     # Department-based routing (dept_manager / gm_or_opm) follows the requester's
     # department — the originating PR creator — not the PO/PA creator. See
     # _routing_user_id. For PR and other doc types this is just doc.created_by.
     routing_uid = await _routing_user_id(db, doc_type, doc)
 
-    dept_director = cfg.dept_director_mapping if cfg else {}
-    dept_supervisor = cfg.dept_supervisor_enabled if cfg else {}
+    dept_director = await get_dept_director_mapping(db)
+    dept_supervisor = await get_dept_supervisor_enabled(db)
     director_uid = await _resolve_director(db, routing_uid, dept_director)
     supervisor_uid = await _resolve_supervisor(db, routing_uid, dept_supervisor)
     # dept-level "configured?" flags — distinguish opt-out vs misconfig in skip reasons
