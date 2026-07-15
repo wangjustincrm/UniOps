@@ -44,9 +44,9 @@ EPMS `company_config.role_management` + `dept_*` 三件套是历史包袱(EPMS �
 ```
 approval_dept_routing(
   dept_id uuid PK,
-  gm_or_opm varchar(3) NOT NULL,          -- 'gm' | 'opm'
+  gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',   -- 'gm' | 'opm'
   director_user_id uuid NULL,
-  supervisor_enabled bool NOT NULL DEFAULT true,
+  supervisor_enabled bool NOT NULL DEFAULT false,
   updated_by uuid, updated_at timestamptz
 )
 approval_backups(
@@ -66,7 +66,17 @@ CREATE UNIQUE INDEX uq_user_roles_singleton_post ON user_roles (role_code)
 `PUT /authz/users/{id}/roles` 的**校验必须查两边**(`users.role` ∪ `user_roles`):若该岗已被他人持有(无论作为主角色还是副角色)→ **409**,错误信息点名持有者。DB 索引只是兜底(管不住"甲主角色=gm、乙副角色=gm"的情形)。
 
 **dev 实测现状(佐证)**:被指派的 4 人主角色分别是 `dept_manager`×3、`warehouse_staff`×1,**无人主角色是这五个岗位角色**;Farshid 一人兼 `opm`+`finance_manager`,PM test 兼 `procurement_manager`+`finance_bp`(多副角色是刚需);GM/OPM **互为备份**。
-三个 JSONB 合成一张按部门的行表——**部门是天然主键**,三件套本来就是同一部门的三个属性。`dept_supervisor_enabled` 缺省语义为 true(现 JSONB 只显式记 false 的部门),迁移时只有显式 false 的部门写 false,其余部门要么建行为 true、要么不建行(读取端 `.get(dept, True)`);**实现取「为每个已知部门建行」**,让 UI 能列全并显式管理。
+三个 JSONB 合成一张按部门的行表——**部门是天然主键**,三件套本来就是同一部门的三个属性。**为每个已激活部门建行**(dev 实测 12 个),让 UI 能列全并显式管理。
+
+### ⚠️ 缺省语义(计划期从 engine 代码 + 权威测试核实,勿凭字段名臆断)
+
+| 字段 | 现 JSONB 缺省(未列出该部门时) | 依据 |
+|---|---|---|
+| `gm_or_opm` | **`"gm"`** | `engine.py`:`dept_gm_opm.get(str(dept), "gm")` |
+| `director_user_id` | **无 director**(跳过该层) | `engine.py`:`uid_str = mapping.get(...)`,falsy → `return None` |
+| `supervisor_enabled` | **`false`**(无 supervisor 层) | `engine.py:414`:`if not dept_id or not dept_supervisor_enabled.get(str(dept))` → `return None`;`tests/test_engine_optional_levels.py:64` 钉死 `_resolve_supervisor(db, req.id, {}) is None` |
+
+**dev 实测**:`dept_supervisor_enabled = {"6296bec4…": false}` ——12 个部门中仅 1 个显式 false(实为冗余,缺省本就是 false)、**无任何部门为 true** → **当前所有部门都没有 supervisor 审批层**。迁移必须原样保持:12 行全部 `supervisor_enabled=false`。若误把缺省当 true 建行,将让所有部门凭空多出一层审批——本期最大的行为变化风险点。
 
 ## 5. 读取方式:同库只读镜像,不走 HTTP
 
