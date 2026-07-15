@@ -9,11 +9,29 @@ pytestmark = pytest.mark.asyncio
 
 async def test_seed_matches_effective_matrix(db_session):
     import json
-    # Drop and recreate shadow company_config table (identity_test has no epms config)
+    # Clear authz tables from any previous test (idempotency test)
+    await db_session.execute(sa.text("DELETE FROM role_permission_locks"))
+    await db_session.execute(sa.text("DELETE FROM role_permissions"))
+    await db_session.execute(sa.text("DELETE FROM permission_defs"))
+    await db_session.execute(sa.text("DELETE FROM user_roles"))
+    await db_session.execute(sa.text("DELETE FROM role_defs"))
+    # Drop and recreate shadow company_config table with all required columns
+    # (identity_test has no epms config, but other tests need the CompanyConfig columns)
     await db_session.execute(sa.text("DROP TABLE IF EXISTS company_config"))
     await db_session.execute(sa.text(
-        "CREATE TABLE company_config "
-        "(role_permissions jsonb default '{}'::jsonb, custom_roles jsonb default '[]'::jsonb)"))
+        "CREATE TABLE company_config ("
+        "id uuid PRIMARY KEY DEFAULT gen_random_uuid(), "
+        "mfa_enabled boolean NOT NULL DEFAULT true, "
+        "password_expiry_days integer, "
+        "smtp_host varchar(255), "
+        "smtp_port integer, "
+        "smtp_user varchar(255), "
+        "smtp_password varchar(255), "
+        "smtp_use_tls boolean, "
+        "smtp_from varchar(255), "
+        "role_permissions jsonb DEFAULT '{}'::jsonb, "
+        "custom_roles jsonb DEFAULT '[]'::jsonb"
+        ")"))
     await db_session.commit()
     stored = {"requester": {"view_po": False, "view_booking": False}}
     await db_session.execute(

@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.auth import router as auth_router
+from app.api.v1.authz import router as authz_router
 from app.api.v1.health import router as health_router
 from app.api.v1.sod import router as sod_router
 from app.core.config import settings
@@ -25,6 +26,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/identity/v1")
+app.include_router(authz_router, prefix="/identity/v1")
 app.include_router(sod_router, prefix="/identity/v1")
 app.include_router(health_router)
 
