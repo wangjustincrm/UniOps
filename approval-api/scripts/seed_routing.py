@@ -14,10 +14,13 @@ supervisor_enabled -> FALSE (an unlisted dept has NO supervisor layer today).
 """
 import asyncio
 import json
+import logging
 
 import sqlalchemy as sa
 
 from app.db.base import AsyncSessionLocal
+
+logger = logging.getLogger(__name__)
 
 # role_management key -> role code carried as an additional role
 _POST_KEYS = {
@@ -43,24 +46,56 @@ async def seed_routing(session) -> dict:
     director = _as_dict(row[2]) if row else {}
     supervisor = _as_dict(row[3]) if row else {}
 
-    counts = {"user_roles": 0, "dept_rows": 0, "backups": 0}
+    counts = {"user_roles": 0, "dept_rows": 0, "backups": 0, "reassigned": 0}
 
-    # 1) post holders -> user_roles (skip when it already is the user's primary role)
-    pairs: list[tuple[str, str]] = []
+    # 1) singleton post holders -> user_roles. role_management is authoritative:
+    # if a post role is currently held by a DIFFERENT user (e.g. leftover from
+    # manual testing, or a stale prior seed run), reassign it loudly rather than
+    # silently skipping via ON CONFLICT — see uq_user_roles_singleton_post.
+    post_pairs: list[tuple[str, str]] = []
     for key, code in _POST_KEYS.items():
         uid = rm.get(key)
         if uid:
-            pairs.append((str(uid), code))
-    for uid in rm.get("finance_bp_user_ids", []) or []:
-        pairs.append((str(uid), "finance_bp"))
-    for uid, code in pairs:
+            post_pairs.append((str(uid), code))
+    for uid, code in post_pairs:
         primary = (await session.execute(sa.text(
             "SELECT role FROM users WHERE id = :u"), {"u": uid})).scalar_one_or_none()
         if primary == code:
             continue
+        existing_uid = (await session.execute(sa.text(
+            "SELECT user_id FROM user_roles WHERE role_code = :c"), {"c": code})
+            ).scalar_one_or_none()
+        if existing_uid is not None and str(existing_uid) != uid:
+            old_name = (await session.execute(sa.text(
+                "SELECT full_name FROM users WHERE id = :u"), {"u": str(existing_uid)})
+                ).scalar_one_or_none()
+            new_name = (await session.execute(sa.text(
+                "SELECT full_name FROM users WHERE id = :u"), {"u": uid})
+                ).scalar_one_or_none()
+            msg = (f"reassigned {code} from {existing_uid} ({old_name}) to {uid} "
+                   f"({new_name}) — company_config.role_management is authoritative")
+            logger.warning(msg)
+            print(f"WARNING: {msg}")
+            await session.execute(sa.text(
+                "DELETE FROM user_roles WHERE role_code = :c AND user_id = :u"),
+                {"c": code, "u": str(existing_uid)})
+            counts["reassigned"] += 1
         r = await session.execute(sa.text(
             "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :c) "
-            "ON CONFLICT DO NOTHING"), {"u": uid, "c": code})
+            "ON CONFLICT (user_id, role_code) DO NOTHING"), {"u": uid, "c": code})
+        counts["user_roles"] += r.rowcount or 0
+
+    # finance_bp is NOT a singleton post (always a list) — plain idempotent
+    # insert, no reassignment logic.
+    for uid in rm.get("finance_bp_user_ids", []) or []:
+        uid = str(uid)
+        primary = (await session.execute(sa.text(
+            "SELECT role FROM users WHERE id = :u"), {"u": uid})).scalar_one_or_none()
+        if primary == "finance_bp":
+            continue
+        r = await session.execute(sa.text(
+            "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :c) "
+            "ON CONFLICT (user_id, role_code) DO NOTHING"), {"u": uid, "c": "finance_bp"})
         counts["user_roles"] += r.rowcount or 0
 
     # 2) backups
