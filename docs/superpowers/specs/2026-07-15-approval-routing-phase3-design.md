@@ -26,6 +26,7 @@ EPMS `company_config.role_management` + `dept_*` 三件套是历史包袱(EPMS �
 3. **人选归 user_roles,不新建"指派"页面**——Access Control → User Roles 的主/副角色已能表达「谁是 GM」,与 `role_management` 的 `*_user_id` 完全重复。
 4. **部门路由三件套(Dept→GM/OPM、Department Directors、Department Supervisors)保留,但迁出 EPMS**——它们是**组织结构级**全局设置,放业务模块下不合理,应在 Portal(UniOps)Admin 下。
 5. **`temp_assignments`(临时代班)砍掉**——有表/UI/API 但审批引擎从不读,配了不生效(生产数据为空);留着只会让人以为它 work。
+6. **审批岗位副角色全局唯一**(2026-07-15 计划期补):`role_management` 的 `*_user_id` 是**单值**,而 `user_roles` 是**多对多**——审批引擎的 `_resolve_gm_or_opm` 要派任务给**一个人**(`task.assignee_id` 单值),多人挂 `gm` 就不知派给谁。故 **`gm`/`opm`/`vendor_manager`/`finance_manager`/`procurement_manager` 五个岗位角色全局只能一人持有**(DB 部分唯一索引 + 保存时 409);`finance_bp` 本就是列表语义(`finance_bp_user_ids`),**不受此约束**。这符合业务事实(公司只有一个 GM)。
 
 ## 3. 拆解:三样东西各回各家
 
@@ -37,6 +38,8 @@ EPMS `company_config.role_management` + `dept_*` 三件套是历史包袱(EPMS �
 | `temp_assignments` 表 + UI + API + `TEMP_ROLE_OPTIONS` | **删除** | 死功能 |
 
 ## 4. 数据模型(approval-api,与各服务同库)
+
+**前提(计划期核实)**:approval-api **没有 alembic**——它现有模型全是只读镜像,自己不拥有任何表;`migrate-prod.sh` 的服务列表也不含它。③需给它加迁移机制(照 budget-api 模板:`alembic/env.py` + `version_table="alembic_version_approval"`,同库独立版本表)并把 approval-api 加进 `migrate-prod.sh`。
 
 ```
 approval_dept_routing(
@@ -52,13 +55,25 @@ approval_backups(
   updated_by uuid, updated_at timestamptz
 )
 ```
+
+identity 侧(决策 6 的落地)保证五个岗位角色各只一人。**注意跨两表**:岗位可能来自 `users.role`(主)或 `user_roles`(副),故:
+
+```sql
+-- 兜底:管住副角色侧
+CREATE UNIQUE INDEX uq_user_roles_singleton_post ON user_roles (role_code)
+  WHERE role_code IN ('gm','opm','vendor_manager','finance_manager','procurement_manager');
+```
+`PUT /authz/users/{id}/roles` 的**校验必须查两边**(`users.role` ∪ `user_roles`):若该岗已被他人持有(无论作为主角色还是副角色)→ **409**,错误信息点名持有者。DB 索引只是兜底(管不住"甲主角色=gm、乙副角色=gm"的情形)。
+
+**dev 实测现状(佐证)**:被指派的 4 人主角色分别是 `dept_manager`×3、`warehouse_staff`×1,**无人主角色是这五个岗位角色**;Farshid 一人兼 `opm`+`finance_manager`,PM test 兼 `procurement_manager`+`finance_bp`(多副角色是刚需);GM/OPM **互为备份**。
 三个 JSONB 合成一张按部门的行表——**部门是天然主键**,三件套本来就是同一部门的三个属性。`dept_supervisor_enabled` 缺省语义为 true(现 JSONB 只显式记 false 的部门),迁移时只有显式 false 的部门写 false,其余部门要么建行为 true、要么不建行(读取端 `.get(dept, True)`);**实现取「为每个已知部门建行」**,让 UI 能列全并显式管理。
 
 ## 5. 读取方式:同库只读镜像,不走 HTTP
 
 **关键事实(计划期核实)**:所有服务共享同一物理库(`postgres:5432/epms`)。因此:
 
-- **approval-api**:路由从自己的表读;人选从 `user_roles` 读(只读镜像)。**不再读 `company_config`** → 斩断 approval→epms 的错误归属(改为「approval 拥有审批数据,别人读它」)。
+- **approval-api**:路由从自己的表读;人选从 `users.role` ∪ `user_roles` 读(只读镜像)。**不再读 `company_config`** → 斩断 approval→epms 的错误归属(改为「approval 拥有审批数据,别人读它」)。
+  - **改造手法(最小风险)**:`crud/workflow.py` 的 getter(`get_role_management`、`get_dept_gm_opm_mapping` 等)**保持返回形状不变**,只换数据来源——从新表 + user_roles 拼出与旧 JSONB **同形状**的 dict(`{"gm_user_id": ..., "finance_bp_user_ids": [...]}`、`{dept_id_str: "gm"|"opm"}`)。这样 `crud/engine.py` 的约 20 处消费点(`_build_role_map`/`_resolve_gm_or_opm`/`_resolve_director`/`_resolve_supervisor`/`_can_act`)**一行都不用改**,平价断言天然成立。
 - **epms `access_scope._effective_role_codes`**:`role_management` → `user_roles`(同库直读)。**一期遗留的「access_scope 拿不到 token」难题就地消失**,epms 的写穿透镜像(`company_config.role_permissions`)从此具备退役条件(实际退役在②期,因 `require_permission` 仍读矩阵)。
 - **finance/expense 的 `can_pay`**:`role_management` → `user_roles` → 语义变成「主角色或副角色是 finance_manager」,**这就是「多角色后端生效」**,②期不必再碰。
 - 零 HTTP、零缓存、零 token 传递——同库拓扑给的红利(与①期 epms→identity 的 HTTP 代理不同,因①期跨的是"服务边界事实源",此处是同库数据读取,依 UniOps 既有镜像模型惯例)。
