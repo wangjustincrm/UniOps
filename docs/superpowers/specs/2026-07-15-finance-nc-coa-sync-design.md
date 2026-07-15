@@ -154,9 +154,91 @@ UI 真值(用户截图):`1230 发出商品`/`1402 在途物资`/`6002 销售折�
 | UniOps 字段 | NC 来源 | 规则 |
 |---|---|---|
 | `account_code` | `BD_ACCASS` → `BD_ACCASOA.pk_accasoa` → `BD_ACCOUNT.code` | 现有 join 链不变 |
-| `dim_code` | `BD_ACCASS.PK_ENTITY` → `BD_ACCASSITEM` | 现有 curated 映射不变,未知名回退为 NC item code 的 slug |
+| `dim_code` | `BD_ACCASSITEM.CODE` → §3.4 映射表 | **改为按 NC item code 映射(不再按名称子串)**,见 §3.4 |
 | `seq` | `BD_ACCASS.ID` | **新增读取**,实测取值 1-7 |
 | `required` | `BD_ACCASS.ISEMPTY` | **新增列 + 新增读取**:`required = (isempty == 'N')`(允许为空=N → 必填);实测 N=187 / Y=18。已用 UI 双向验证(101201 两项「允许为空」未勾 ↔ isempty='N') |
+
+### 3.4 辅助核算项映射(全部 20 项,按 NC item code)
+
+**现有 `NAME_MAP` 按名称子串匹配,实测有真 bug**:`D45 项目类型` 与
+`CRM02 政府拨款项目` 均因含「项目」二字被错映射为 `project`。
+**新实现按 `BD_ACCASSITEM.CODE` 精确映射** —— code 是稳定标识,名称是模糊的。
+
+用户决策:**20 项全部写入 `coa_aux_items`**,展不开的以 `supported:false` 呈现
+(`supported` 由 `account_balance._dimensions()` 判定,见 §3.5)。
+
+| NC code | NC 名称 | dim_code | 英文标签 | 可展开 |
+|---|---|---|---|---|
+| `ra01` | 成本中心 | `cost_center` | Cost Center | ✓ |
+| `0001` | 部门 | `department` | Department | ✓ |
+| `0008` | 收支项目 | `income_expense_item` | Income/Expense Item | ✓ |
+| `0019` | 供应商档案 | `supplier` | Supplier | ✓ |
+| `0017` | 客户档案 | `customer` | Customer | ✓ |
+| `0004` | 客商 | 按 §3.4.1 派生 | — | ✓ / ✗ |
+| `0006` | 物料基本信息 | `item` | Item / Material | ✗ |
+| `0012` | 物料基本分类 | `item_category` | Item Category | ✗ |
+| `0010` | 项目 | `project` | Project | ✗ |
+| `D45` | 项目类型 | `project_type` | Project Type | ✗ |
+| `CRM02` | 政府拨款项目 | `government_grant_project` | Government Grant Project | ✗ |
+| `fa01` | 资产类别 | `asset_category` | Asset Category | ✗ |
+| `D47` | VAT Tax Code and Tax Rate | `tax_code` | VAT Tax Code / Rate | ✗ |
+| `0022` | 银行类别 | `bank_category` | Bank Category | ✗ |
+| `0023` | 银行档案 | `bank` | Bank | ✗ |
+| `0011` | 银行账户 | `bank_account` | Bank Account | ✗ |
+| `0044` | 国家地区 | `country_region` | Country / Region | ✗ |
+| `0002` | 人员档案 | `employee` | Employee | ✗ |
+| `D09` | 销售类型 | `sales_type` | Sales Type | ✗ |
+| `CRM01` | 信用卡号 | `credit_card` | Credit Card | ✗ |
+
+dim_code 尽量复用 `aux_dimension_types` 已登记的 code
+(`cost_center`/`department`/`income_expense_item`/`item`/`project`/`bank_account`/
+`bank_category`/`country_region`/`sales_type`/`partner`),避免第三套命名。
+
+**NC item code 不在表中 → 抛错**(§3.1.1 同一原则:不 slug、不猜)。
+新增辅助核算项应由人决定映射。
+
+#### 3.4.1 `0004 客商` 的派生规则
+
+客商在 NC 中同时涵盖供应商与客户,而我们分 `supplier`/`customer` 两个维度
+(二者共用 `JournalVoucherLine.partner_id`,由 `account_balance._dimensions()` 分别
+解析到 `ErpSupplier` / `NcCustomer`)。实测 23 个科目挂载客商,分布:
+资产 4 / 负债 4 / 权益 1 / 损益 14 —— **仅靠资产·负债两分支无法覆盖**。
+
+派生规则(输入为已映射的 `account_type` 与 `account_code`):
+
+```
+EXCEPTIONS = {"4001", "1511", "1512"}   # 股东 / 被投资单位,既非供应商亦非客户
+if account_code in EXCEPTIONS:  -> "partner"     # 不展开
+elif account_type == "asset":   -> "customer"    # 应收款,对方欠我们
+elif account_type == "liability": -> "supplier"  # 应付款,我们欠对方
+elif account_type == "expense": -> "supplier"    # 含成本(5)与损益借方
+elif account_type == "revenue": -> "customer"    # 损益贷方
+else:                           -> "partner"     # 权益及任何未预见情形,不展开
+```
+
+**例外名单的依据**(用户决策:宁可不展开,也不展错):
+- `4001 实收资本`(权益)—— 对方是股东
+- `1511 长期股权投资` / `1512 长期股权投资减值准备`(资产)—— 对方是被投资单位,
+  按资产分支会误判为 customer
+
+`partner` 复用 `aux_dimension_types` 中已有的 code(Partner (Vendor/Customer)),
+它不在 `_dimensions()` 中,故自然呈现为 `supported:false` —— 即「不展开」。
+
+**冲突已排除**(2026-07-15 实测):无任何科目同时挂载 `0004` 与 `0019`/`0017`,
+故派生出的 `supplier`/`customer` 不会与显式配置的同名维度撞车。
+
+### 3.5 `DIM_LABELS` 需补齐
+
+`account_balance.DIM_LABELS` 现有 7 项(cost_center/department/income_expense_item/
+supplier/customer/employee/project)。§3.4 引入的以下 code 需补充英文标签,
+否则界面显示裸 code:`item`、`item_category`、`project_type`、
+`government_grant_project`、`asset_category`、`tax_code`、`bank_category`、`bank`、
+`bank_account`、`country_region`、`credit_card`、`partner`、`sales_type`。
+
+> **`list_dims` 是并集,不是交集**(2026-07-15 实测,[account_balance.py:196](../../../finance-api/app/crud/account_balance.py#L196)
+> `codes += [c for c in reg if c not in codes]`):`_dimensions()` 的 5 个受支持维度
+> 对每个科目**永远可选**,与 `coa_aux_items` 内容无关。故 `coa_aux_items` 影响的是
+> **展示顺序(seq)与 NC 配置的呈现**,而非展开能力本身。本设计不改变这一行为。
 
 ## 4. 数据模型(finance alembic 0023)
 
@@ -321,6 +403,21 @@ apply 的写入是**单事务、全有或全无**(COA upsert + 辅助核算清�
   断言同步后三者原封不动。这是全设计最易被未来改动破坏之处,必须用测试钉死。
 
 `diff_aux`:新增/删除/无变化;`isempty='N'` → `required=True`,`='Y'` → `False`
+
+`map_aux_item`(§3.4,按 NC item code):
+- `ra01`/`0001`/`0008`/`0019`/`0017` → `cost_center`/`department`/`income_expense_item`/
+  `supplier`/`customer`
+- **回归专项**:`D45`(项目类型)→ `project_type`、`CRM02`(政府拨款项目)→
+  `government_grant_project`,**断言二者都不是 `project`** —— 钉死旧 `NAME_MAP`
+  子串匹配的假阳性
+- 未登记的 item code → 抛错,**断言不回退为 slug**
+
+`derive_party_dim`(§3.4.1),每个分支一个用例:
+- `("112201", "asset")` → `customer`;`("220202", "liability")` → `supplier`
+- `("640202", "expense")` → `supplier`;`("6002", "revenue")` → `customer`
+- `("4001", "equity")` → `partner`(权益兜底)
+- **例外名单**:`("1511", "asset")` → `partner`,**断言不是 `customer`**;
+  `("1512", "asset")` → `partner`
 
 `map_account` 的显式失败(§3.1.1),每条一个用例:
 - `acctype='3'`(或任何未登记编码)→ 抛错,**断言不会静默返回 `asset`**
