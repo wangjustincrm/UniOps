@@ -1,8 +1,10 @@
 """epms authz proxy: pass-through, cache, and fallback when identity is down."""
 import httpx
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.core.authz_client as ac
+from app.crud import config as config_crud
 
 pytestmark = pytest.mark.asyncio
 
@@ -121,3 +123,75 @@ async def test_token_none_skips_identity_and_falls_back(mocker):
     assert result == {"x": {}}
     fetch.assert_not_awaited()
     frozen.assert_awaited_once()
+
+
+# ── F1: PATCH write-through to the local mirror ─────────────────────────────
+
+async def test_patch_writes_through_to_local_mirror(admin_client, mocker, test_engine):
+    """A successful PATCH must persist the same change into the local
+    company_config.role_permissions mirror (not just forward to identity).
+    """
+    mocker.patch.object(ac, "forward", mocker.AsyncMock(return_value=(200, FAKE_MATRIX)))
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        r = await admin_client.patch(
+            "/api/v1/config/role-permissions", json={"auditor": {"view_pr": False}}
+        )
+        assert r.status_code == 200
+        async with factory() as db:
+            cfg = await config_crud.get_or_create(db)
+            effective = config_crud.get_effective_role_permissions(cfg)
+        assert effective["auditor"]["view_pr"] is False
+    finally:
+        # Restore so later tests see the default matrix. Written directly
+        # (not via config_crud.update_role_permissions) to avoid needing a
+        # real users-table actor id for the updated_by FK.
+        from sqlalchemy.orm.attributes import flag_modified
+        async with factory() as db:
+            cfg = await config_crud.get_or_create(db)
+            stored = dict(cfg.role_permissions)
+            stored["auditor"] = {**stored.get("auditor", {}), "view_pr": True}
+            cfg.role_permissions = stored
+            flag_modified(cfg, "role_permissions")
+            await db.commit()
+
+
+async def test_patch_returns_200_when_mirror_write_fails(admin_client, mocker):
+    """A local mirror-write failure must not fail the request — identity already
+    accepted the change, so its 200 + body must still be returned to the caller.
+    """
+    mocker.patch.object(ac, "forward", mocker.AsyncMock(return_value=(200, FAKE_MATRIX)))
+    mocker.patch.object(
+        config_crud, "update_role_permissions",
+        mocker.AsyncMock(side_effect=RuntimeError("mirror db down")),
+    )
+    r = await admin_client.patch(
+        "/api/v1/config/role-permissions", json={"auditor": {"view_pr": False}}
+    )
+    assert r.status_code == 200
+    assert r.json() == FAKE_MATRIX
+
+
+# ── F2: GET /me/permissions outage fallback ─────────────────────────────────
+
+async def test_me_permissions_falls_back_on_request_error(finance_client, mocker):
+    """A transport-level failure (httpx.RequestError) must fall back to the
+    local mirror + the caller's own JWT role, returning 200 — not 502.
+    """
+    mocker.patch.object(
+        ac, "forward", mocker.AsyncMock(side_effect=httpx.ConnectError("down")),
+    )
+    r = await finance_client.get("/api/v1/config/me/permissions")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["roles"] == ["finance_manager"]
+    assert body["permissions"]["view_pa"] is True  # finance_manager default (locked True)
+
+
+async def test_me_permissions_propagates_4xx(finance_client, mocker):
+    """A real 4xx from identity must still propagate — only RequestError falls back."""
+    mocker.patch.object(
+        ac, "forward", mocker.AsyncMock(return_value=(401, {"detail": "Unauthorized"})),
+    )
+    r = await finance_client.get("/api/v1/config/me/permissions")
+    assert r.status_code == 401

@@ -8,7 +8,7 @@
 | 项 | 结论 |
 |---|---|
 | 新迁移 | **identity-api `0002_authz_tables`**(5 张表)。`migrate-prod.sh` 的服务列表已含 identity-api,照常跑即可。finance/epms/vms 无新迁移。 |
-| **新增 seed 步骤(必做)** | 迁移后必须跑一次幂等 seed,把现有权限矩阵从 epms `company_config` JSONB 灌进 identity 表。**不跑的话矩阵是空的**——epms 代理会因 identity 返回空矩阵而让非 admin 失去权限(不是回落,回落只在 identity 不可达时触发)。 |
+| **新增 seed 步骤(必做)** | 迁移后必须跑一次 seed,把现有权限矩阵从 epms `company_config` JSONB 灌进 identity 表。**不跑的话矩阵是空的**——epms 代理会因 identity 返回空矩阵而让非 admin 失去权限(不是回落,回落只在 identity 不可达时触发)。⚠️seed 用 `ON CONFLICT DO NOTHING`——只保护已存在的行,不保护"已被删除"的行:**只在矩阵第一次通过 Portal 编辑之前重跑才安全;一旦有人在 Portal 上做过一次权限收回(改矩阵),此后绝不要再重跑这个 seed**,否则会把那次收回悄悄复活。 |
 | env / compose | **无需改动**。`IDENTITY_API_URL: http://identity-api:8009` 生产 compose 早已存在(epms 一直用 identity 做 auth 转发)。 |
 | Caddyfile | 未改动 → 不需要 `restart edge`。 |
 | 浏览器直连 identity | 不存在。identity 无公网域名,全部经 epms-api 服务端代理 → 不动 DNS/Caddy/CORS。 |
@@ -24,7 +24,7 @@ sudo docker compose -f docker-compose.prod.yml pull
 # 1) 迁移(建 5 张 authz 表)
 sudo ./migrate-prod.sh
 
-# 2) ★ seed(仅本次发布需要;幂等,重跑安全)
+# 2) ★ seed(仅本次发布需要,且只在本次这一次跑;矩阵一旦被 Portal 编辑过就不要再重跑,见上表)
 sudo docker compose -f docker-compose.prod.yml run --rm identity-api python -m scripts.seed_authz
 #    预期输出:seed_authz done: {'granted_inserted': N}   (N>0;重跑时 N=0)
 
@@ -33,7 +33,7 @@ sudo docker compose -f docker-compose.prod.yml --profile edge up -d
 sudo docker compose -f docker-compose.prod.yml ps
 ```
 
-顺序说明:先 migrate 后 seed 再 up。seed 与 up 之间即使有间隙也安全——旧容器仍读冻结 JSONB。
+顺序说明:先 migrate 后 seed 再 up。seed 与 up 之间即使有间隙也安全——旧容器仍读 epms 本地镜像 JSONB。
 
 ## 发布后验证(建议)
 

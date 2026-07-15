@@ -1,4 +1,5 @@
 """Company / Workflow Config endpoints."""
+import logging
 import uuid
 from typing import Annotated
 
@@ -18,6 +19,8 @@ from app.schemas.config import (
 )
 from app.crud.config import BUILT_IN_ROLES, LOCKED_PERMISSIONS, PERMISSION_KEYS
 from app.services.email import send_email
+
+logger = logging.getLogger(__name__)
 
 
 class TestSmtpRequest(BaseModel):
@@ -217,7 +220,19 @@ async def update_role_permissions(
 
     Wraps the legacy epms body {role:{key:bool}} as {"changes": body} before
     forwarding.  Passes through status + detail from identity (409 locked, 422
-    unknown).  On connection failure returns 502.  On success invalidates cache.
+    unknown).  On connection failure returns 502.
+
+    Write-through: once identity accepts the change (200), the same changes are
+    also persisted into the local company_config.role_permissions JSONB via
+    config_crud.update_role_permissions.  epms is the single write choke point
+    (all writes go through this endpoint), so there is no race with another
+    writer.  Identity goes first because it is the source of truth and does
+    the real validation (locked cells, unknown role/permission keys); the local
+    mirror write happens after and is best-effort — it exists to keep the
+    token=None access_scope path (and the outage-fallback path) from serving a
+    matrix that a revocation never reached.  A mirror-write failure must NOT
+    fail the request (the mirror is a cache, not the truth) but is logged at
+    ERROR level so drift is visible.
     """
     try:
         status_code, resp_body = await authz_client.forward(
@@ -226,6 +241,23 @@ async def update_role_permissions(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
     if status_code == 200:
+        try:
+            cfg = await config_crud.get_or_create(db)
+            await config_crud.update_role_permissions(
+                db, cfg, RolePermissionsUpdate(permissions=body), uuid.UUID(user["sub"])
+            )
+            await db.commit()
+        except Exception:
+            # Roll back so the session isn't left with an aborted transaction —
+            # get_session() does one more commit() after this endpoint returns,
+            # and a broken session there would turn this into a 500 even though
+            # we intend to still return identity's 200.
+            await db.rollback()
+            logger.error(
+                "role-permissions PATCH: local mirror write failed after identity "
+                "accepted the change — mirror is now stale until the next successful write",
+                exc_info=True,
+            )
         authz_client.invalidate_cache()
     if status_code not in (200,):
         raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
@@ -266,12 +298,22 @@ async def list_roles(db: SessionDep, _: CurrentUserPayload, token: BearerToken):
 # ── New passthrough endpoints ────────────────────────────────────────────────
 
 @router.get("/me/permissions")
-async def get_my_permissions(_: CurrentUserPayload, token: BearerToken):
-    """Proxy GET /me/permissions from identity."""
+async def get_my_permissions(user: CurrentUserPayload, db: SessionDep, token: BearerToken):
+    """Proxy GET /me/permissions from identity.
+
+    Outage fallback (Spec §4): a connection failure (httpx.RequestError) falls
+    back to the local mirror + the caller's own JWT, synthesizing
+    {"permissions": mirror[role], "roles": [role]} — primary role only, same as
+    pre-branch client behaviour (dropping additional-role visibility under-
+    grants, never over-grants). 4xx/5xx from identity are real errors and must
+    still propagate — only a transport-level failure falls back.
+    """
     try:
         status_code, body = await authz_client.forward("GET", "/me/permissions", token)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
+    except httpx.RequestError:
+        mirror = await authz_client.get_matrix(db, None)
+        role = user.get("role", "")
+        return {"permissions": mirror.get(role, {}), "roles": [role]}
     if status_code != 200:
         raise HTTPException(status_code=status_code, detail=body.get("detail"))
     return body
