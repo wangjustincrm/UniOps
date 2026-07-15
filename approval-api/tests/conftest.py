@@ -16,6 +16,7 @@ from app.models.event import ApprovalEvent
 from app.models.pa import PaymentApplication
 from app.models.posting import PostingEvent, PostingLine
 from app.models.pr import PurchaseRequest
+from app.models.routing import ApprovalBackup, DeptRouting
 from app.models.task import Task
 from app.models.user import User
 
@@ -69,6 +70,8 @@ _ENGINE_TABLES = [
     PurchaseRequest.__table__,
     Task.__table__,
     ApprovalEvent.__table__,
+    DeptRouting.__table__,
+    ApprovalBackup.__table__,
 ]
 
 
