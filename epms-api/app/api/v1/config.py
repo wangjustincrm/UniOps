@@ -2,19 +2,17 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 
-from app.core.deps import CurrentUserPayload, SessionDep, require_permission, require_roles
+from app.core import authz_client
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission, require_roles
 from app.crud import config as config_crud
 from app.schemas.config import (
     ConfigResponse,
     ConfigUpdate,
     TempAssignmentCreate,
     TempAssignmentResponse,
-    CustomRoleCreate,
-    CustomRoleUpdate,
-    CustomRoleResponse,
     RolePermissionsUpdate,
 )
 from app.crud.config import LOCKED_PERMISSIONS, PERMISSION_KEYS
@@ -169,66 +167,125 @@ async def delete_temp_assignment(
 # ── Role Permissions endpoints ───────────────────────────────────────────────
 
 @router.get("/locked-permissions")
-async def get_locked_permissions(_: CurrentUserPayload) -> dict:
-    """Return the locked permissions map (all authenticated users can read)."""
+async def get_locked_permissions(_: CurrentUserPayload, token: BearerToken) -> dict:
+    """Return the locked permissions map.
+
+    Proxies GET /authz/defs from identity and transforms permissions[].locked_for
+    into the legacy {role: [keys]} shape.  Falls back to the local LOCKED_PERMISSIONS
+    constant when identity is unreachable.
+    """
+    try:
+        status_code, body = await authz_client.forward("GET", "/authz/defs", token)
+        if status_code == 200:
+            result: dict[str, list[str]] = {}
+            for perm in body.get("permissions", []):
+                for role in perm.get("locked_for", []):
+                    result.setdefault(role, []).append(perm["key"])
+            return result
+    except Exception:
+        pass
+    # Fallback: local constant
     return {role: list(perms) for role, perms in LOCKED_PERMISSIONS.items()}
 
 
 @router.get("/permission-keys")
 async def get_permission_keys(_: CurrentUserPayload) -> list[str]:
-    """Return the ordered list of permission column keys."""
+    """Return the ordered list of permission column keys (local constant, always available)."""
     return PERMISSION_KEYS
 
 
 @router.get("/role-permissions")
-async def get_role_permissions(db: SessionDep, _: CurrentUserPayload) -> dict:
-    """Return the effective permission matrix (merged with defaults)."""
-    cfg = await config_crud.get_or_create(db)
-    return config_crud.get_effective_role_permissions(cfg)
+async def get_role_permissions(db: SessionDep, _: CurrentUserPayload, token: BearerToken) -> dict:
+    """Return the effective permission matrix from identity (60 s cached); fallback = frozen JSONB."""
+    return await authz_client.get_matrix(db, token)
 
 
-@router.patch("/role-permissions", response_model=dict)
+@router.patch("/role-permissions")
 async def update_role_permissions(
-    body: RolePermissionsUpdate, db: SessionDep, user: AdminDep
+    body: dict, db: SessionDep, user: AdminDep, token: BearerToken
 ):
-    """Update permission matrix cells (system_admin only)."""
-    cfg = await config_crud.get_or_create(db)
-    await config_crud.update_role_permissions(db, cfg, body, uuid.UUID(user["sub"]))
-    await db.commit()
-    await db.refresh(cfg)
-    return config_crud.get_effective_role_permissions(cfg)
+    """Proxy PATCH to identity authz hub (system_admin belt-and-braces guard kept).
+
+    Wraps the legacy epms body {role:{key:bool}} as {"changes": body} before
+    forwarding.  Passes through status + detail from identity (409 locked, 422
+    unknown).  On connection failure returns 502.  On success invalidates cache.
+    """
+    try:
+        status_code, resp_body = await authz_client.forward(
+            "PATCH", "/authz/matrix", token, json={"changes": body}
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
+    if status_code == 200:
+        authz_client.invalidate_cache()
+    if status_code not in (200,):
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
 
 
-# ── Custom Role endpoints ────────────────────────────────────────────────────
+# ── Roles endpoints ──────────────────────────────────────────────────────────
 
 @router.get("/roles", response_model=list[dict])
-async def list_roles(db: SessionDep, _: CurrentUserPayload):
-    """List all roles (built-in + custom)."""
+async def list_roles(db: SessionDep, _: CurrentUserPayload, token: BearerToken):
+    """List all roles from identity defs; falls back to local list_all_roles."""
+    try:
+        status_code, body = await authz_client.forward("GET", "/authz/defs", token)
+        if status_code == 200:
+            # Map identity role shape to legacy list_all_roles shape:
+            # {code, label, sort, is_active} → {code, name, description, is_active, is_builtin}
+            from app.crud.config import BUILT_IN_ROLES
+            return [
+                {
+                    "code": r["code"],
+                    "name": r.get("label", r["code"]),
+                    "description": "",
+                    "is_active": r.get("is_active", True),
+                    "is_builtin": r["code"] in BUILT_IN_ROLES,
+                }
+                for r in body.get("roles", [])
+            ]
+    except Exception:
+        pass
+    # Fallback: local config
     cfg = await config_crud.get_or_create(db)
     return config_crud.list_all_roles(cfg)
 
 
-@router.post("/roles", response_model=dict, status_code=201)
-async def create_role(body: CustomRoleCreate, db: SessionDep, _: AdminDep):
-    """Create a new custom role (system_admin only)."""
-    cfg = await config_crud.get_or_create(db)
-    role = await config_crud.create_custom_role(db, cfg, body)
-    await db.commit()
-    return role
+# ── New passthrough endpoints ────────────────────────────────────────────────
+
+@router.get("/me/permissions")
+async def get_my_permissions(_: CurrentUserPayload, token: BearerToken):
+    """Proxy GET /me/permissions from identity."""
+    try:
+        status_code, body = await authz_client.forward("GET", "/me/permissions", token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    return body
 
 
-@router.patch("/roles/{role_code}", response_model=dict)
-async def update_role(role_code: str, body: CustomRoleUpdate, db: SessionDep, _: AdminDep):
-    """Update a custom role (system_admin only)."""
-    cfg = await config_crud.get_or_create(db)
-    role = await config_crud.update_custom_role(db, cfg, role_code, body)
-    await db.commit()
-    return role
+@router.get("/authz-defs")
+async def get_authz_defs(_: CurrentUserPayload, token: BearerToken):
+    """Proxy GET /authz/defs from identity (full defs: roles + permissions)."""
+    try:
+        status_code, body = await authz_client.forward("GET", "/authz/defs", token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    return body
 
 
-@router.delete("/roles/{role_code}", status_code=204)
-async def delete_role(role_code: str, db: SessionDep, _: AdminDep):
-    """Delete a custom role (system_admin only)."""
-    cfg = await config_crud.get_or_create(db)
-    await config_crud.delete_custom_role(db, cfg, role_code)
-    await db.commit()
+@router.put("/users/{user_id}/roles", status_code=204)
+async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: BearerToken):
+    """Proxy PUT /authz/users/{id}/roles to identity (system_admin only)."""
+    try:
+        status_code, resp_body = await authz_client.forward(
+            "PUT", f"/authz/users/{user_id}/roles", token, json=body
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
+    if status_code not in (200, 204):
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return Response(status_code=204)

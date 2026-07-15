@@ -160,17 +160,17 @@ async def _effective_permissions(
 ) -> dict[str, bool]:
     """Union of all permissions across the user's active roles.
 
-    Reads the effective role-permission matrix from CompanyConfig (merged with
-    defaults via get_effective_role_permissions) and ORs the perms together for
-    every role the user holds. A permission is granted if ANY active role has it.
+    Reads the effective role-permission matrix from the identity authz hub
+    (via authz_client.get_matrix, 60 s cached).  No HTTP token is available in
+    this pure-DB call chain, so token=None is passed — authz_client falls back
+    to the frozen company_config JSONB immediately (identical behaviour to
+    pre-Task-3).  A permission is granted if ANY active role has it.
     """
-    from app.crud.config import get_effective_role_permissions, PERMISSION_KEYS
+    from app.core import authz_client
+    from app.crud.config import PERMISSION_KEYS
 
     codes = await _effective_role_codes(db, base_role, user_id)
-    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    if cfg is None:
-        return {k: False for k in PERMISSION_KEYS}
-    matrix = get_effective_role_permissions(cfg)
+    matrix = await authz_client.get_matrix(db, None)
     merged: dict[str, bool] = {k: False for k in PERMISSION_KEYS}
     for code in codes:
         role_perms = matrix.get(code, {})
