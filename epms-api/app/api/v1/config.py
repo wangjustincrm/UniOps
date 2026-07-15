@@ -289,6 +289,18 @@ async def get_authz_defs(_: CurrentUserPayload, token: BearerToken):
     return body
 
 
+@router.get("/user-roles")
+async def get_user_roles(_: CurrentUserPayload, token: BearerToken):
+    """Proxy GET /authz/user-roles from identity (every user's additional roles)."""
+    try:
+        status_code, body = await authz_client.forward("GET", "/authz/user-roles", token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    return body
+
+
 @router.put("/users/{user_id}/roles", status_code=204)
 async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: BearerToken):
     """Proxy PUT /authz/users/{id}/roles to identity (system_admin only)."""

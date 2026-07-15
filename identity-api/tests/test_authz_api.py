@@ -13,13 +13,13 @@ BASE = "/identity/v1"
 
 @pytest.fixture
 async def seeded(db_session):
+    # Add the role_permissions and custom_roles columns that seed_authz expects
+    # (they exist in the physical epms table but not in CompanyConfig model)
+    # This is a test-only workaround; production epms table has these columns
     await db_session.execute(sa.text(
-        "DROP TABLE IF EXISTS company_config"))
+        "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS role_permissions jsonb DEFAULT '{}'::jsonb"))
     await db_session.execute(sa.text(
-        "CREATE TABLE IF NOT EXISTS company_config "
-        "(role_permissions jsonb default '{}'::jsonb, custom_roles jsonb default '[]'::jsonb)"))
-    await db_session.execute(sa.text(
-        "INSERT INTO company_config DEFAULT VALUES"))
+        "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS custom_roles jsonb DEFAULT '[]'::jsonb"))
     await seed_authz(db_session)
     await db_session.commit()
     yield
@@ -78,6 +78,29 @@ async def test_me_permissions_union(seeded, db_session):
     assert body["roles"] == ["warehouse_staff", "ap_clerk"]
     assert body["permissions"]["view_gr"] is True       # from primary
     assert body["permissions"]["view_invoice"] is True  # from additional (union)
+
+
+async def test_get_user_roles_requires_admin(seeded):
+    async with _client("requester") as c:
+        r = await c.get(f"{BASE}/authz/user-roles")
+    assert r.status_code == 403
+
+
+async def test_get_user_roles_maps_by_user(seeded, db_session):
+    uid = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role, is_active, mfa_enabled, must_change_password, notification_channel, erp_imported) "
+        "VALUES (:i, :e, 'x', 'T3', 'requester', true, false, false, 'email_only', false)"),
+        {"i": str(uid), "e": f"{uid}@t.co"})
+    await db_session.execute(sa.text(
+        "INSERT INTO user_roles(user_id, role_code) VALUES (:i, 'cfo'), (:i, 'auditor')"),
+        {"i": str(uid)})
+    await db_session.commit()
+    async with _client() as c:
+        r = await c.get(f"{BASE}/authz/user-roles")
+    assert r.status_code == 200
+    body = r.json()["user_roles"]
+    assert body[str(uid)] == ["auditor", "cfo"]
 
 
 async def test_put_user_roles_transactional(seeded, db_session):

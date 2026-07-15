@@ -65,6 +65,14 @@ function useAuthzMatrix() {
   })
 }
 
+/** user_id (string UUID) → additional role codes. From GET /config/user-roles. */
+function useUserRoles() {
+  return useQuery<{ user_roles: Record<string, string[]> }>({
+    queryKey: ['authz-user-roles'],
+    queryFn: () => epmsApi.get<{ user_roles: Record<string, string[]> }>('/config/user-roles'),
+  })
+}
+
 /** Fetch every user, paging until exhausted. Never rely on the default page_size=20. */
 function useAllUsers() {
   return useQuery<ApiUser[]>({
@@ -380,6 +388,7 @@ function UserRolesTab() {
   const qc = useQueryClient()
   const defsQ = useAuthzDefs()
   const usersQ = useAllUsers()
+  const userRolesQ = useUserRoles()
   const [filter, setFilter] = useState('')
   const [edits, setEdits] = useState<Record<string, RowEdit>>({})
   const [saving, setSaving] = useState<Record<string, boolean>>({})
@@ -390,7 +399,8 @@ function UserRolesTab() {
     [defsQ.data],
   )
 
-  const rowFor = (u: ApiUser): RowEdit => edits[u.id] ?? { primary: u.role, additional: [], touched: false }
+  const rowFor = (u: ApiUser): RowEdit =>
+    edits[u.id] ?? { primary: u.role, additional: userRolesQ.data?.user_roles[u.id] ?? [], touched: false }
 
   const setPrimary = (u: ApiUser, primary: string) => {
     setEdits((prev) => {
@@ -422,6 +432,7 @@ function UserRolesTab() {
         return next
       })
       qc.invalidateQueries({ queryKey: ['authz-all-users'] })
+      qc.invalidateQueries({ queryKey: ['authz-user-roles'] })
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Save failed'
       setRowMsg((m) => ({ ...m, [u.id]: { ok: false, msg } }))
@@ -437,18 +448,13 @@ function UserRolesTab() {
     return all.filter((u) => u.full_name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
   }, [usersQ.data, filter])
 
-  if (defsQ.isLoading || usersQ.isLoading) return <LoadingBlock />
-  if (defsQ.isError || usersQ.isError) {
+  if (defsQ.isLoading || usersQ.isLoading || userRolesQ.isLoading) return <LoadingBlock />
+  if (defsQ.isError || usersQ.isError || userRolesQ.isError) {
     return <ErrorBlock message="Failed to load users. Please refresh and try again." />
   }
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-xs text-neutral-400">
-        Additional-role checkboxes reflect only changes made in this session — the API has no endpoint to read a
-        user's existing additional roles, so re-saving a row you haven't edited may clear roles assigned elsewhere.
-      </p>
-
       <div className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 max-w-xs">
         <Search className="h-4 w-4 shrink-0 text-neutral-400" />
         <input

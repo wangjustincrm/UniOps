@@ -45,6 +45,19 @@ async def test_patch_502_when_identity_down(admin_client, mocker):
     assert r.status_code == 502
 
 
+# ── GET /user-roles passthrough ─────────────────────────────────────────────
+
+async def test_get_user_roles_proxies_identity(admin_client, mocker):
+    fake_body = {"user_roles": {"11111111-1111-1111-1111-111111111111": ["auditor", "cfo"]}}
+    fwd = mocker.patch.object(
+        ac, "forward", mocker.AsyncMock(return_value=(200, fake_body)))
+    r = await admin_client.get("/api/v1/config/user-roles")
+    assert r.status_code == 200
+    assert r.json() == fake_body
+    assert fwd.await_args.args[0] == "GET"
+    assert fwd.await_args.args[1] == "/authz/user-roles"
+
+
 async def test_custom_role_crud_removed(admin_client):
     r = await admin_client.post("/api/v1/config/roles", json={"code": "x", "label": "X"})
     assert r.status_code == 405

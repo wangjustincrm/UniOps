@@ -109,6 +109,25 @@ async def my_permissions(db: SessionDep, user: CurrentUserPayload) -> dict:
     return {"permissions": result, "roles": ([u.role] + sorted(additional))}
 
 
+@router.get("/authz/user-roles")
+async def get_user_roles(db: SessionDep, user: CurrentUserPayload) -> dict:
+    """Return every user's ADDITIONAL roles (system_admin only).
+
+    Primary role lives on users.role (already returned by the epms /users
+    list); this only covers the user_roles side table. Used to prefill the
+    Access Control "User Roles" tab so saving a row never silently wipes
+    additional roles the admin didn't intend to touch.
+    """
+    _require_admin(user)
+    rows = (await db.execute(select(UserRole))).scalars().all()
+    out: dict[str, list[str]] = {}
+    for ur in rows:
+        out.setdefault(str(ur.user_id), []).append(ur.role_code)
+    for uid in out:
+        out[uid] = sorted(out[uid])
+    return {"user_roles": out}
+
+
 class UserRolesPut(BaseModel):
     primary: str
     additional: list[str] = []
