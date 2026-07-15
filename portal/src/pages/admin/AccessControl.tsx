@@ -424,7 +424,7 @@ function UserRolesTab() {
     setSaving((s) => ({ ...s, [u.id]: true }))
     setRowMsg((m) => ({ ...m, [u.id]: undefined }))
     try {
-      await epmsApi.put(`/users/${u.id}/roles`, { primary: row.primary, additional: row.additional })
+      await epmsApi.put(`/config/users/${u.id}/roles`, { primary: row.primary, additional: row.additional })
       setRowMsg((m) => ({ ...m, [u.id]: { ok: true, msg: 'Saved' } }))
       setEdits((prev) => {
         const next = { ...prev }
