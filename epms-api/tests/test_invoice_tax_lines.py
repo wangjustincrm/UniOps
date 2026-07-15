@@ -105,9 +105,16 @@ async def test_paid_invoice_locked(admin_client, test_engine):
 
 
 @pytest.mark.asyncio
-async def test_requires_invoice_upload_permission(test_engine):
+async def test_requires_invoice_upload_permission(test_engine, mocker):
     """Gate is the Access Control Matrix (invoice_upload), not hardcoded roles.
-    With no matrix grant, a requester is denied; system_admin always passes."""
+    With no matrix grant, a requester is denied; system_admin always passes.
+
+    The matrix is mocked: it now comes from the identity authz hub over HTTP, so
+    an unmocked run asserts against whatever the live matrix happens to grant
+    (and silently passes wherever identity is unreachable) instead of the gate.
+    """
+    mocker.patch("app.core.authz_client.get_matrix",
+                 return_value={"requester": {"invoice_upload": False}})
     inv_id = await _make_invoice(test_engine)
     async with await _role_client(test_engine, "requester") as c:
         r = await c.put(f"/api/v1/invoices/{inv_id}/tax-lines",
