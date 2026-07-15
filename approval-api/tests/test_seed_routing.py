@@ -166,43 +166,74 @@ async def test_seed_reassigns_post_held_by_wrong_user(engine_db_session):
 
 
 async def test_seed_does_not_touch_non_post_roles(engine_db_session):
-    """Reassignment logic must be scoped to the five singleton post roles only."""
+    """Reassignment logic must be scoped to the five singleton post roles only.
+
+    Exercises an actual reassignment (finance_manager held by the wrong user)
+    alongside an unrelated ap_clerk row, so the assertion fails if reassignment
+    were ever over-broad (e.g. touching every user_roles row, not just the
+    post's own).
+    """
     db = engine_db_session
     await _reset_shadow_tables(db)
-    uid = uuid.uuid4()
-    await db.execute(sa.text(
-        "INSERT INTO users (id, email, hashed_password, full_name, role) "
-        "VALUES (:i, :e, 'x', 'AP Clerk', 'ap_clerk')"), {"i": str(uid), "e": f"{uid}@t.co"})
+    ap_uid = uuid.uuid4()
+    old_uid, new_uid = uuid.uuid4(), uuid.uuid4()
+    for uid, name, role in (
+        (ap_uid, "AP Clerk", "ap_clerk"),
+        (old_uid, "Wrong Holder", "dept_manager"),
+        (new_uid, "Right Holder", "dept_manager"),
+    ):
+        await db.execute(sa.text(
+            "INSERT INTO users (id, email, hashed_password, full_name, role) "
+            "VALUES (:i, :e, 'x', :n, :r)"),
+            {"i": str(uid), "e": f"{uid}@t.co", "n": name, "r": role})
     await db.execute(sa.text(
         "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'ap_clerk')"),
-        {"u": str(uid)})
+        {"u": str(ap_uid)})
+    # Stale singleton-post holder that SHOULD be reassigned.
+    await db.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'finance_manager')"),
+        {"u": str(old_uid)})
     await _fixture_config(db, [], {
-        "role_management": {}, "gm_opm": {}, "director": {}, "supervisor": {}})
+        "role_management": {"finance_manager_user_id": str(new_uid)},
+        "gm_opm": {}, "director": {}, "supervisor": {}})
     await db.flush()
 
     counts = await seed_routing(db)
 
+    # The post reassignment actually happened...
+    assert counts["reassigned"] == 1
+    fm_holder = (await db.execute(sa.text(
+        "SELECT user_id FROM user_roles WHERE role_code='finance_manager'"))).scalar_one()
+    assert str(fm_holder) == str(new_uid)
+    # ...but the unrelated ap_clerk row was left completely untouched.
     n = (await db.execute(sa.text(
         "SELECT count(*) FROM user_roles WHERE user_id=:u AND role_code='ap_clerk'"),
-        {"u": str(uid)})).scalar_one()
+        {"u": str(ap_uid)})).scalar_one()
     assert n == 1
-    assert counts["reassigned"] == 0
 
 
 async def test_finance_bp_allows_multiple_holders(engine_db_session):
     """finance_bp is a list, not a singleton post — multiple holders coexist,
-    with no reassignment logic applied to it.
+    with no reassignment logic applied to it, even when a genuine singleton
+    post reassignment happens in the same run.
     """
     db = engine_db_session
     await _reset_shadow_tables(db)
     bp1, bp2 = uuid.uuid4(), uuid.uuid4()
-    for uid, name in ((bp1, "BP One"), (bp2, "BP Two")):
+    old_uid, new_uid = uuid.uuid4(), uuid.uuid4()
+    for uid, name in ((bp1, "BP One"), (bp2, "BP Two"),
+                      (old_uid, "Wrong Holder"), (new_uid, "Right Holder")):
         await db.execute(sa.text(
             "INSERT INTO users (id, email, hashed_password, full_name, role) "
             "VALUES (:i, :e, 'x', :n, 'dept_manager')"),
             {"i": str(uid), "e": f"{uid}@t.co", "n": name})
+    # Stale singleton-post holder that SHOULD be reassigned this run.
+    await db.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'vendor_manager')"),
+        {"u": str(old_uid)})
     await _fixture_config(db, [], {
-        "role_management": {"finance_bp_user_ids": [str(bp1), str(bp2)]},
+        "role_management": {"finance_bp_user_ids": [str(bp1), str(bp2)],
+                            "vendor_manager_user_id": str(new_uid)},
         "gm_opm": {}, "director": {}, "supervisor": {}})
     await db.flush()
 
@@ -211,4 +242,47 @@ async def test_finance_bp_allows_multiple_holders(engine_db_session):
     holders = {str(r[0]) for r in (await db.execute(sa.text(
         "SELECT user_id FROM user_roles WHERE role_code='finance_bp'"))).all()}
     assert holders == {str(bp1), str(bp2)}
-    assert counts["reassigned"] == 0
+    # Only the singleton post (vendor_manager) was reassigned; finance_bp
+    # holders were never touched by reassignment logic.
+    assert counts["reassigned"] == 1
+    vm_holder = (await db.execute(sa.text(
+        "SELECT user_id FROM user_roles WHERE role_code='vendor_manager'"))).scalar_one()
+    assert str(vm_holder) == str(new_uid)
+
+
+async def test_stale_holder_cleaned_even_when_designated_user_has_post_as_primary_role(
+        engine_db_session):
+    """Finding 1: the skip-before-reassign branch must not leave a stale
+    holder in place. If the designated user's PRIMARY role already IS the
+    post, the seed still must clean up any OTHER user who holds that post as
+    an additional user_roles row — otherwise the singleton post ends up with
+    two holders and Task 4's resolver picks one nondeterministically.
+    """
+    db = engine_db_session
+    await _reset_shadow_tables(db)
+    designated_uid, other_uid = uuid.uuid4(), uuid.uuid4()
+    await db.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role) "
+        "VALUES (:i, :e, 'x', 'Primary GM', 'gm')"),
+        {"i": str(designated_uid), "e": f"{designated_uid}@t.co"})
+    await db.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role) "
+        "VALUES (:i, :e, 'x', 'Stale Holder', 'dept_manager')"),
+        {"i": str(other_uid), "e": f"{other_uid}@t.co"})
+    # Stale additional-role row for a DIFFERENT user than the designated one.
+    await db.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'gm')"),
+        {"u": str(other_uid)})
+    await _fixture_config(db, [], {
+        "role_management": {"gm_user_id": str(designated_uid)},
+        "gm_opm": {}, "director": {}, "supervisor": {}})
+    await db.flush()
+
+    counts = await seed_routing(db)
+
+    assert counts["reassigned"] == 1
+    n = (await db.execute(sa.text(
+        "SELECT count(*) FROM user_roles WHERE role_code='gm'"))).scalar_one()
+    # No holder at all: the stale row was deleted, and no additional row was
+    # created for the designated user since their primary role already covers it.
+    assert n == 0

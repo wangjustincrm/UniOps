@@ -58,10 +58,12 @@ async def seed_routing(session) -> dict:
         if uid:
             post_pairs.append((str(uid), code))
     for uid, code in post_pairs:
-        primary = (await session.execute(sa.text(
-            "SELECT role FROM users WHERE id = :u"), {"u": uid})).scalar_one_or_none()
-        if primary == code:
-            continue
+        # Stale-holder cleanup runs BEFORE the primary-role skip: even when the
+        # designated user's own users.role already satisfies the post, some
+        # OTHER user may still hold an additional user_roles row for this
+        # singleton post (leftover manual testing / prior partial seed). Task 4
+        # resolves the post from users.role UNION user_roles.role_code, so
+        # leaving that stale row in place would give the post two holders.
         existing_uid = (await session.execute(sa.text(
             "SELECT user_id FROM user_roles WHERE role_code = :c"), {"c": code})
             ).scalar_one_or_none()
@@ -80,6 +82,13 @@ async def seed_routing(session) -> dict:
                 "DELETE FROM user_roles WHERE role_code = :c AND user_id = :u"),
                 {"c": code, "u": str(existing_uid)})
             counts["reassigned"] += 1
+
+        primary = (await session.execute(sa.text(
+            "SELECT role FROM users WHERE id = :u"), {"u": uid})).scalar_one_or_none()
+        if primary == code:
+            # Designated user's primary role already carries the post; no
+            # additional user_roles row is needed.
+            continue
         r = await session.execute(sa.text(
             "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :c) "
             "ON CONFLICT (user_id, role_code) DO NOTHING"), {"u": uid, "c": code})
