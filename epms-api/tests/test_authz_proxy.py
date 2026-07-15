@@ -93,3 +93,18 @@ async def test_patch_invalidates_cache(admin_client, mocker):
         "/api/v1/config/role-permissions", json={"auditor": {"view_pr": False}}
     )
     assert ac._cache is None, "Cache should be None after a successful PATCH"
+
+
+# ── Bug fix: token=None must never hit identity on cold cache ───────────────
+
+async def test_token_none_skips_identity_and_falls_back(mocker):
+    """Cold cache + token=None must go straight to frozen JSONB, never call identity."""
+    ac.invalidate_cache()
+    fetch = mocker.patch.object(ac, "_fetch_matrix", mocker.AsyncMock())
+    frozen = mocker.patch.object(
+        ac, "_frozen_fallback", mocker.AsyncMock(return_value={"x": {}})
+    )
+    result = await ac.get_matrix(None, None)
+    assert result == {"x": {}}
+    fetch.assert_not_awaited()
+    frozen.assert_awaited_once()
