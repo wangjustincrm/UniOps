@@ -18,7 +18,7 @@ import app.db.base as db_module
 from app.core.security import create_access_token
 from app.db.base import Base
 from app.main import app
-from app.models import audit, config, sod, user  # noqa: F401
+from app.models import audit, authz, config, sod, user  # noqa: F401
 
 TEST_DB = os.getenv("TEST_IDENTITY_DB", "identity_test")
 TEST_HOST = os.getenv("TEST_PG_HOST", "localhost")

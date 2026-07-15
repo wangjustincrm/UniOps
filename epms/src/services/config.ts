@@ -97,6 +97,12 @@ export type RolePermissions = Record<string, boolean>
 /** role_code → RolePermissions */
 export type RolePermissionMatrix = Record<string, RolePermissions>
 
+/** Current user's effective permissions (primary ∪ additional roles). */
+export interface MyPermissions {
+  permissions: Record<string, boolean>
+  roles: string[]
+}
+
 export interface CustomRole {
   code: string
   name: string
@@ -229,16 +235,11 @@ export const configService = {
   getPermissionKeys: () =>
     api.get<string[]>('/config/permission-keys'),
 
+  // Current user's effective permissions (primary ∪ additional roles).
+  getMyPermissions: () =>
+    api.get<MyPermissions>('/config/me/permissions'),
+
   // Custom roles
   listRoles: () =>
     api.get<CustomRole[]>('/config/roles'),
-
-  createRole: (body: CreateCustomRoleBody) =>
-    api.post<CustomRole>('/config/roles', body),
-
-  updateRole: (code: string, body: UpdateCustomRoleBody) =>
-    api.patch<CustomRole>(`/config/roles/${code}`, body),
-
-  deleteRole: (code: string) =>
-    api.delete<void>(`/config/roles/${code}`),
 }

@@ -8,7 +8,7 @@ import {
   Users, Workflow, Building2, Clock, Bell, Send, CreditCard,
   PiggyBank, PackageCheck, ShieldCheck,
   Plus, Pencil, Trash2, X, Check, Search, ImagePlus, Landmark, KeyRound, Eye, EyeOff, Mail, FileText,
-  UserCog, Calendar, AlertTriangle, Download, Upload, ChevronDown, Layers, Grid3x3, Lock,
+  UserCog, Calendar, AlertTriangle, Download, Upload, ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -16,8 +16,6 @@ import { cn } from '@/lib/utils'
 import { PmsImportPanel } from './PmsImportPanel'
 import {
   useConfig, useUpdateConfig, useCreateTempAssignment, useDeleteTempAssignment,
-  useRolePermissions, useUpdateRolePermissions, useLockedPermissions, usePermissionKeys,
-  useRoles, useCreateRole, useUpdateRole, useDeleteRole,
 } from '@/hooks/useConfig'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '@/hooks/useUsers'
@@ -26,7 +24,7 @@ import {
   type PdfTemplateSettings,
   type WorkflowConfig, type ServiceGrSlaConfig, type GrNotificationSlaConfig,
   type PrepaymentConfig, type CollectionConfig,
-  type RoleManagementConfig, type CustomRole, type RolePermissionMatrix,
+  type RoleManagementConfig,
   type NotificationSettings, type EmailTemplate,
 } from '@/services/config'
 import { ROLE_LABELS } from '@/stores/user.store'
@@ -41,7 +39,7 @@ type Section =
   | 'users' | 'vendor_settings'
   | 'workflows' | 'dept_mapping' | 'dept_director_mapping' | 'dept_supervisor' | 'service_gr_sla' | 'gr_notification_sla'
   | 'prepayment' | 'budget' | 'collection' | 'role_management'
-  | 'custom_roles' | 'access_matrix' | 'notifications' | 'pms_import'
+  | 'notifications' | 'pms_import'
 
 interface NavEntry { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }
 
@@ -63,8 +61,6 @@ const NAV: NavEntry[] = [
   { id: 'budget',              label: 'Budget Config',          icon: PiggyBank },
   { id: 'collection',          label: 'Collection Config',      icon: PackageCheck },
   { id: 'role_management',     label: 'Role Management',        icon: UserCog },
-  { id: 'custom_roles',        label: 'Custom Roles',           icon: Layers },
-  { id: 'access_matrix',       label: 'Access Control Matrix',  icon: Grid3x3 },
   { id: 'notifications',       label: 'Notification Settings',  icon: Bell },
   { id: 'pms_import',          label: 'PMS Data Import',        icon: Upload },
 ]
@@ -2500,393 +2496,6 @@ function NotificationSettingsSection() {
 }
 
 
-// ─── Access Control Matrix ────────────────────────────────────────────────────
-
-const PERMISSION_LABELS: Record<string, string> = {
-  view_pr:        'View PR',
-  view_po:        'View PO',
-  view_gr:        'View GR',
-  view_invoice:   'View Invoice',
-  view_pa:        'View PA',
-  create_pr:      'Create PR',
-  create_gr:      'GR / Receive',
-  invoice_upload: 'Invoice Upload',
-  vendor_master:  'Vendor Master',
-  parts_catalog:  'Parts Catalog',
-  admin_panel:    'Admin Panel',
-  data_maintenance:       'Data Maintenance',
-  view_budget_dashboard:  'Budget Dashboard',
-  view_budget_plans:      'Budget Plans',
-  view_finance:           'Finance Module',
-  view_booking:           'View Booking',
-  manage_meeting_rooms:   'Manage Meeting Rooms',
-}
-
-function AccessControlMatrix() {
-  const { data: matrix, isLoading: matrixLoading } = useRolePermissions()
-  const { data: lockedMap } = useLockedPermissions()
-  const { data: permKeys } = usePermissionKeys()
-  const { data: roles, isLoading: rolesLoading } = useRoles()
-  const updatePerms = useUpdateRolePermissions()
-
-  const [localMatrix, setLocalMatrix] = useState<RolePermissionMatrix>({})
-  const [dirtyRoles, setDirtyRoles] = useState<Set<string>>(new Set())
-  const [savedRoles, setSavedRoles] = useState<Set<string>>(new Set())
-
-  useEffect(() => {
-    if (matrix) setLocalMatrix(matrix)
-  }, [matrix])
-
-  if (matrixLoading || rolesLoading) {
-    return <div className="py-20 text-center text-sm text-neutral-400">Loading permission matrix…</div>
-  }
-
-  const keys = permKeys ?? Object.keys(PERMISSION_LABELS)
-  const locked: Record<string, string[]> = lockedMap ?? {}
-
-  const isLocked = (roleCode: string, permKey: string) =>
-    (locked[roleCode] ?? []).includes(permKey)
-
-  const handleToggle = (roleCode: string, permKey: string) => {
-    if (isLocked(roleCode, permKey)) return
-    setLocalMatrix((prev) => ({
-      ...prev,
-      [roleCode]: { ...prev[roleCode], [permKey]: !prev[roleCode]?.[permKey] },
-    }))
-    setDirtyRoles((prev) => new Set([...prev, roleCode]))
-  }
-
-  const handleSaveRow = (roleCode: string) => {
-    updatePerms.mutate(
-      { permissions: { [roleCode]: localMatrix[roleCode] ?? {} } },
-      {
-        onSuccess: () => {
-          setDirtyRoles((prev) => { const s = new Set(prev); s.delete(roleCode); return s })
-          setSavedRoles((prev) => { const s = new Set([...prev, roleCode]); return s })
-          setTimeout(() => setSavedRoles((prev) => { const s = new Set(prev); s.delete(roleCode); return s }), 2000)
-        },
-      }
-    )
-  }
-
-  const handleResetRow = (roleCode: string) => {
-    if (!matrix) return
-    setLocalMatrix((prev) => ({ ...prev, [roleCode]: matrix[roleCode] ?? {} }))
-    setDirtyRoles((prev) => { const s = new Set(prev); s.delete(roleCode); return s })
-  }
-
-  // Sort: built-in first (in predefined order), then custom alphabetically
-  const BUILTIN_ORDER = [
-    'requester', 'dept_admin', 'dept_manager', 'gm', 'opm',
-    'procurement_officer', 'procurement_manager', 'warehouse_staff',
-    'ap_clerk', 'finance_bp', 'finance_manager', 'vendor_manager',
-    'cfo', 'auditor', 'system_admin',
-  ]
-  const sortedRoles = [...(roles ?? [])].sort((a, b) => {
-    const ai = BUILTIN_ORDER.indexOf(a.code)
-    const bi = BUILTIN_ORDER.indexOf(b.code)
-    if (ai !== -1 && bi !== -1) return ai - bi
-    if (ai !== -1) return -1
-    if (bi !== -1) return 1
-    return a.name.localeCompare(b.name)
-  })
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-neutral-500">
-        Toggle permissions per role. Locked cells (
-        <Lock className="inline h-3 w-3 text-neutral-400" />) are enforced by system rules and cannot be disabled.
-        Save each row individually after changes.
-      </p>
-
-      <div className="overflow-x-auto rounded-xl border border-neutral-200">
-        <table className="min-w-full text-xs">
-          <thead>
-            <tr className="bg-neutral-50 border-b border-neutral-200">
-              <th className="sticky left-0 z-10 bg-neutral-50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 min-w-[160px]">
-                Role
-              </th>
-              {keys.map((k) => (
-                <th key={k} className="px-2 py-3 text-center font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap min-w-[72px]">
-                  {PERMISSION_LABELS[k] ?? k}
-                </th>
-              ))}
-              <th className="px-4 py-3 text-right text-neutral-500 min-w-[100px]">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sortedRoles.map((role, i) => {
-              const perms = localMatrix[role.code] ?? {}
-              const dirty = dirtyRoles.has(role.code)
-              const saved = savedRoles.has(role.code)
-              return (
-                <tr
-                  key={role.code}
-                  className={cn(
-                    'border-b border-neutral-100 last:border-0 transition-colors',
-                    i % 2 === 1 ? 'bg-neutral-50' : 'bg-white',
-                    dirty ? 'bg-warning-50' : '',
-                  )}
-                >
-                  {/* Role name */}
-                  <td className="sticky left-0 z-10 bg-inherit px-4 py-2.5">
-                    <div className="flex flex-col">
-                      <span className="font-medium text-neutral-900">{role.name}</span>
-                      {!role.is_builtin && (
-                        <span className="text-[10px] text-primary-600 font-medium">Custom</span>
-                      )}
-                    </div>
-                  </td>
-                  {/* Permission toggles */}
-                  {keys.map((k) => {
-                    const locked = isLocked(role.code, k)
-                    const enabled = locked ? true : (perms[k] ?? false)
-                    return (
-                      <td key={k} className="px-2 py-2.5 text-center">
-                        {locked ? (
-                          <div className="flex items-center justify-center" title="Locked — cannot be disabled">
-                            <Lock className="h-3.5 w-3.5 text-neutral-400" />
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleToggle(role.code, k)}
-                            className={cn(
-                              'mx-auto flex h-5 w-5 items-center justify-center rounded transition-colors',
-                              enabled
-                                ? 'bg-primary-600 text-white hover:bg-primary-700'
-                                : 'bg-neutral-200 text-neutral-400 hover:bg-neutral-300',
-                            )}
-                            aria-label={`${enabled ? 'Disable' : 'Enable'} ${k} for ${role.name}`}
-                          >
-                            {enabled && <Check className="h-3 w-3" />}
-                          </button>
-                        )}
-                      </td>
-                    )
-                  })}
-                  {/* Row actions */}
-                  <td className="px-4 py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {dirty && (
-                        <>
-                          <button
-                            onClick={() => handleResetRow(role.code)}
-                            className="rounded px-2 py-1 text-[11px] text-neutral-500 hover:bg-neutral-100"
-                          >
-                            Reset
-                          </button>
-                          <button
-                            onClick={() => handleSaveRow(role.code)}
-                            disabled={updatePerms.isPending}
-                            className="rounded bg-primary-600 px-2 py-1 text-[11px] font-medium text-white hover:bg-primary-700 disabled:opacity-50"
-                          >
-                            Save
-                          </button>
-                        </>
-                      )}
-                      {saved && !dirty && (
-                        <span className="text-[11px] text-success-600 font-medium">Saved ✓</span>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <p className="text-xs text-neutral-400">
-        Rows highlighted in amber have unsaved changes. Changes take effect immediately for all users upon save.
-      </p>
-    </div>
-  )
-}
-
-
-// ─── Custom Roles ─────────────────────────────────────────────────────────────
-
-function CustomRolesSection() {
-  const { data: roles, isLoading } = useRoles()
-  const createRole = useCreateRole()
-  const updateRole = useUpdateRole()
-  const deleteRole = useDeleteRole()
-
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ code: '', name: '', description: '' })
-  const [formError, setFormError] = useState('')
-  const [editingCode, setEditingCode] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ name: '', description: '' })
-
-  const customRoles = roles ?? []
-
-  const toSnakeCase = (s: string) =>
-    s.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
-
-  const handleNameChange = (name: string) => {
-    setForm((p) => ({ ...p, name, code: toSnakeCase(name) }))
-    setFormError('')
-  }
-
-  const handleCreate = () => {
-    if (!form.name.trim()) { setFormError('Role name is required'); return }
-    if (!form.code || form.code.length < 3) { setFormError('Role code must be at least 3 characters'); return }
-    createRole.mutate(
-      { code: form.code, name: form.name.trim(), description: form.description.trim() },
-      {
-        onSuccess: () => {
-          setForm({ code: '', name: '', description: '' })
-          setFormError(''); setShowForm(false)
-        },
-        onError: (err: unknown) => {
-          const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to create role'
-          setFormError(msg)
-        },
-      }
-    )
-  }
-
-  const handleStartEdit = (r: CustomRole) => {
-    setEditingCode(r.code)
-    setEditForm({ name: r.name, description: r.description })
-  }
-
-  const handleSaveEdit = (code: string) => {
-    updateRole.mutate(
-      { code, body: { name: editForm.name.trim(), description: editForm.description.trim() } },
-      { onSuccess: () => setEditingCode(null) }
-    )
-  }
-
-  const handleToggleActive = (r: CustomRole) => {
-    updateRole.mutate({ code: r.code, body: { is_active: !r.is_active } })
-  }
-
-  const handleDelete = (code: string) => {
-    if (!confirm(`Delete custom role "${code}"? This cannot be undone.`)) return
-    deleteRole.mutate(code)
-  }
-
-  const inputCls2 = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
-  return (
-    <div className="flex flex-col gap-6 max-w-2xl">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-neutral-500">
-          All roles appear in User Management and the Access Control Matrix. Built-in roles cannot be edited or deleted.
-        </p>
-        <Button size="sm" onClick={() => setShowForm((v) => !v)}>
-          <Plus className="h-4 w-4" />Add Role
-        </Button>
-      </div>
-
-      {showForm && (
-        <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
-          <p className="text-sm font-semibold text-neutral-900">New Custom Role</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700">Role Name <span className="text-danger-600">*</span></label>
-              <input className={inputCls2} placeholder="e.g. Quality Auditor" value={form.name}
-                onChange={(e) => handleNameChange(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium text-neutral-700">Role Code <span className="text-neutral-400">(auto-generated, immutable)</span></label>
-              <input className={cn(inputCls2, 'bg-neutral-100 text-neutral-500 font-mono')} value={form.code} readOnly />
-            </div>
-            <div className="flex flex-col gap-1 sm:col-span-2">
-              <label className="text-xs font-medium text-neutral-700">Description</label>
-              <input className={inputCls2} placeholder="Optional description" value={form.description}
-                onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
-            </div>
-          </div>
-          {formError && <p className="text-xs text-danger-600">{formError}</p>}
-          <div className="flex gap-2">
-            <button onClick={handleCreate} disabled={createRole.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50">
-              <Check className="h-3.5 w-3.5" />Create Role
-            </button>
-            <button onClick={() => { setShowForm(false); setFormError('') }}
-              className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50">Cancel</button>
-          </div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {customRoles.map((r) => (
-            <div key={r.code} className={cn('rounded-xl border bg-white p-4', r.is_active ? 'border-neutral-200' : 'border-neutral-100 opacity-60')}>
-              {editingCode === r.code ? (
-                <div className="flex flex-col gap-3">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-neutral-700">Name</label>
-                      <input className={inputCls2} value={editForm.name}
-                        onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-neutral-700">Description</label>
-                      <input className={inputCls2} value={editForm.description}
-                        onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} />
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleSaveEdit(r.code)} disabled={updateRole.isPending}
-                      className="inline-flex items-center gap-1 rounded-lg bg-primary-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700 disabled:opacity-50">
-                      <Check className="h-3 w-3" />Save
-                    </button>
-                    <button onClick={() => setEditingCode(null)}
-                      className="rounded-lg border border-neutral-300 bg-white px-2.5 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50">Cancel</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex flex-col gap-0.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-neutral-900">{r.name}</span>
-                      <span className="font-mono text-xs text-neutral-400">{r.code}</span>
-                      {r.is_builtin ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
-                          <Lock className="h-2.5 w-2.5" />Built-in
-                        </span>
-                      ) : (
-                        <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                          r.is_active ? 'bg-success-50 text-success-700' : 'bg-neutral-100 text-neutral-500')}>
-                          {r.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      )}
-                    </div>
-                    {r.description && <p className="text-xs text-neutral-500">{r.description}</p>}
-                  </div>
-                  {!r.is_builtin && (
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button onClick={() => handleStartEdit(r)} title="Edit"
-                        className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700">
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button onClick={() => handleToggleActive(r)} title={r.is_active ? 'Deactivate' : 'Activate'}
-                        className="flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700">
-                        {r.is_active ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
-                      <button onClick={() => handleDelete(r.code)} title="Delete"
-                        className="flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:bg-danger-50 hover:text-danger-500">
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-
 // ─── Role Management ──────────────────────────────────────────────────────────
 
 const TEMP_ROLE_OPTIONS: { value: string; label: string }[] = [
@@ -3222,8 +2831,6 @@ export default function AdminPanel() {
       )
       case 'collection':          return <CollectionConfigSection />
       case 'role_management':     return <RoleManagementSection />
-      case 'custom_roles':        return <CustomRolesSection />
-      case 'access_matrix':       return <AccessControlMatrix />
       case 'notifications':       return <MovedToPortal section="Notification Settings" />
       case 'pms_import':          return <PmsImportPanel />
     }

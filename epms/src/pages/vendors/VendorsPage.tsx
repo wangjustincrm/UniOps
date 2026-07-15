@@ -326,13 +326,12 @@ export default function VendorsPage() {
   const importVendors = useImportVendors()
   const { user } = useAuthStore()
   const { data: config } = useConfig()
-  const { data: rolePermissions } = useRolePermissions()
+  const perms = useRolePermissions().data?.permissions
   const vendorCategories = (config as any)?.vendor_categories ?? []
   const enabledCurrencies = config?.enabled_currencies ?? ['CAD', 'USD', 'EUR', 'RMB']
   const importInputRef = useRef<HTMLInputElement>(null)
 
-  const canWrite = user?.role === 'system_admin'
-    || !!(user?.role && rolePermissions?.[user.role]?.vendor_master)
+  const canWrite = user?.role === 'system_admin' || !!perms?.vendor_master
 
   // ── Filters & pagination state ───────────────────────────────────────────────
   const [search, setSearch] = useState('')

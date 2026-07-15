@@ -354,9 +354,8 @@ interface ImportResult { imported: number; errors: number }
 
 export default function PartsListPage() {
   const { user } = useAuthStore()
-  const { data: rolePermissions } = useRolePermissions()
-  const canWrite = user?.role === 'system_admin'
-    || !!(user?.role && rolePermissions?.[user.role]?.parts_catalog)
+  const perms = useRolePermissions().data?.permissions
+  const canWrite = user?.role === 'system_admin' || !!perms?.parts_catalog
 
   const [search, setSearch] = useState('')
   const [catFilter, setCatFilter] = useState('all')

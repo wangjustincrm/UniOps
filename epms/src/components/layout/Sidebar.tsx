@@ -120,12 +120,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const companyLogoUrl = config?.logo_data_url ?? null
   const location = useLocation()
 
-  const { data: rolePermissions } = useRolePermissions()
+  const perms = useRolePermissions().data?.permissions
 
   const isItemVisible = (item: NavItemDef) => {
     if (!user) return false
     if (item.permission) {
-      return user.role === 'system_admin' || !!(rolePermissions?.[user.role]?.[item.permission])
+      return user.role === 'system_admin' || !!perms?.[item.permission]
     }
     if (item.roles) return item.roles.includes(user.role)
     return true

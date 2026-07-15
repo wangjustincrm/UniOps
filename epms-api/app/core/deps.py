@@ -5,7 +5,6 @@ import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
@@ -75,22 +74,23 @@ def require_roles(*roles: str):
 def require_permission(permission: str):
     """
     Check that the current user's role has a specific permission enabled
-    in the company config's role_permissions matrix.
+    in the identity authz matrix (60 s cached; fallback = frozen JSONB).
     system_admin always passes.
 
     Usage:
         async def endpoint(user: Annotated[dict, Depends(require_permission("invoice_upload"))]):
     """
-    async def _check(payload: CurrentUserPayload, db: AsyncSession = Depends(get_session)) -> dict:
+    async def _check(
+        payload: CurrentUserPayload,
+        db: AsyncSession = Depends(get_session),
+        credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    ) -> dict:
         role = payload.get("role", "")
         if role == "system_admin":
             return payload
 
-        from app.models.config import CompanyConfig
-        from app.crud.config import get_effective_role_permissions
-        result = await db.execute(select(CompanyConfig).limit(1))
-        cfg = result.scalar_one_or_none()
-        perms = get_effective_role_permissions(cfg) if cfg else {}
+        from app.core import authz_client
+        perms = await authz_client.get_matrix(db, credentials.credentials)
 
         if not perms.get(role, {}).get(permission, False):
             raise HTTPException(

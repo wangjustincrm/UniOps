@@ -7,14 +7,13 @@
  * drifting apart (the bug where Finance items differed between Home and the
  * budget/finance pages).
  *
- * Finance visibility is gated by the EPMS Access Control Matrix (permission
- * keys, editable in EPMS → Admin Panel → Access Control Matrix), not hardcoded
- * role lists — see `permission` below and useRolePermissions().
+ * Finance visibility is gated by the current user's effective permissions
+ * (primary ∪ additional roles, served by GET /config/me/permissions), not
+ * hardcoded role lists — see `permission` below and useRolePermissions().
  */
 import {
-  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock,
+  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck,
 } from 'lucide-react'
-import type { RolePermissionMatrix } from '@/hooks/useRolePermissions'
 
 export interface NavItemDef {
   label: string
@@ -27,12 +26,12 @@ export interface NavItemDef {
    *  - 'admin' → portal /admin route
    */
   href: string
-  /** Access Control Matrix permission key. Visible when matrix[role][key] is true. */
+  /** Permission key. Visible when perms[key] is true. */
   permission?: string
-  /** Visible when the role has ANY of these matrix permissions (e.g. a module
+  /** Visible when the user has ANY of these permissions (e.g. a module
    *  whose pages span several permission keys). */
   anyPermission?: string[]
-  /** Visible only to system_admin (used for portal-admin pages without a matrix key). */
+  /** Visible only to system_admin (used for portal-admin pages without a permission key). */
   adminOnly?: boolean
 }
 
@@ -66,26 +65,27 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
   {
     title: 'ADMIN',
     items: [
-      { label: 'Admin',            icon: Settings,  href: 'admin',                          adminOnly: true },
-      { label: 'Data Maintenance', icon: Database,  href: 'portal:/admin/data-maintenance', adminOnly: true },
+      { label: 'Admin',            icon: Settings,    href: 'admin',                          adminOnly: true },
+      { label: 'Data Maintenance', icon: Database,    href: 'portal:/admin/data-maintenance', adminOnly: true },
+      { label: 'Access Control',   icon: ShieldCheck, href: 'portal:/admin/access-control',   adminOnly: true },
     ],
   },
 ]
 
-/** Whether a nav item is visible for the given role + permission matrix. */
+/** Whether a nav item is visible for the given role + flat permissions map. */
 export function isNavItemVisible(
   item: NavItemDef,
   userRole: string | null,
-  matrix: RolePermissionMatrix | undefined,
+  perms: Record<string, boolean> | undefined,
 ): boolean {
   // system_admin sees everything.
   if (userRole === 'system_admin') return true
   if (item.adminOnly) return false
   if (item.anyPermission) {
-    return userRole !== null && item.anyPermission.some((p) => !!matrix?.[userRole]?.[p])
+    return item.anyPermission.some((p) => !!perms?.[p])
   }
   if (item.permission) {
-    return userRole !== null && !!matrix?.[userRole]?.[item.permission]
+    return !!perms?.[item.permission]
   }
   return true
 }

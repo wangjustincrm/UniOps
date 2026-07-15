@@ -617,14 +617,14 @@ function RecentActivity({ tasks }: { tasks: UnifiedTask[] }) {
 export default function PortalHome() {
   const auth = useAuthStore()
   const session = buildSession(auth)
-  const { data: matrix } = useRolePermissions()
+  const perms = useRolePermissions().data?.permissions
   const role = auth.user?.role ?? null
   const hasFinanceAccess =
     role === 'system_admin' ||
-    (role !== null && FINANCE_ACCESS_PERMS.some((p) => !!matrix?.[role]?.[p]))
+    FINANCE_ACCESS_PERMS.some((p) => !!perms?.[p])
   const hasBookingAccess =
     role === 'system_admin' ||
-    (role !== null && BOOKING_ACCESS_PERMS.some((p) => !!matrix?.[role]?.[p]))
+    BOOKING_ACCESS_PERMS.some((p) => !!perms?.[p])
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -785,7 +785,7 @@ export default function PortalHome() {
       <PortalSidebar
         activeKey="portal:/"
         epmsHref={epmsHref} oaHref={oaHref} vmsHref={vmsHref} financeHref={financeHref} bookingHref={bookingHref} session={session}
-        userRole={auth.user?.role ?? null} matrix={matrix}
+        userRole={auth.user?.role ?? null} perms={perms}
         mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)}
         collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)}
       />

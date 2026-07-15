@@ -6,6 +6,7 @@ import LoginPage from '@/pages/LoginPage'
 import AdminPanel from '@/pages/admin/AdminPanel'
 import LogoutPage from '@/pages/LogoutPage'
 import DataMaintenance from '@/pages/admin/DataMaintenance'
+import AccessControl from '@/pages/admin/AccessControl'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -36,6 +37,10 @@ export default function App() {
           <Route
             path="/admin/data-maintenance"
             element={<ProtectedRoute><DataMaintenance /></ProtectedRoute>}
+          />
+          <Route
+            path="/admin/access-control"
+            element={<ProtectedRoute><AccessControl /></ProtectedRoute>}
           />
           {/* Public logout route — clears Portal session, no auth guard */}
           <Route path="/logout" element={<LogoutPage />} />

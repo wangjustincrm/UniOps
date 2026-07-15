@@ -53,7 +53,13 @@ async function epmsRequest<T>(method: string, path: string, body?: unknown): Pro
   }
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(extractDetail(errBody.detail, res.status))
+    // Attach the raw `detail` (and status) to the thrown Error so callers that need
+    // structured info (e.g. 409 {"locked":[{role,key}]} from the Access Control
+    // Matrix) can inspect it beyond the flattened message string.
+    const err = new Error(extractDetail(errBody.detail, res.status)) as Error & { detail?: unknown; status?: number }
+    err.detail = errBody.detail
+    err.status = res.status
+    throw err
   }
   if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T
   return res.json()
@@ -125,6 +131,7 @@ export const epmsApi = {
   get:    <T>(path: string)                    => epmsRequest<T>('GET',    path),
   post:   <T>(path: string, body: unknown)     => epmsRequest<T>('POST',   path, body),
   patch:  <T>(path: string, body: unknown)     => epmsRequest<T>('PATCH',  path, body),
+  put:    <T>(path: string, body: unknown)     => epmsRequest<T>('PUT',    path, body),
   delete: <T>(path: string)                    => epmsRequest<T>('DELETE', path),
 }
 
