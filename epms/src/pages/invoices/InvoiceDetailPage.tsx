@@ -93,7 +93,7 @@ export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuthStore()
-  const { data: rolePermissions } = useRolePermissions()
+  const perms = useRolePermissions().data?.permissions
   const deleteInvoice = useDeleteInvoice()
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
@@ -193,7 +193,7 @@ export default function InvoiceDetailPage() {
     setEditLineItems((prev) => prev.filter((_, i) => i !== idx))
 
   const hasInvoiceUpload =
-    user?.role === 'system_admin' || !!(user?.role && rolePermissions?.[user.role]?.invoice_upload)
+    user?.role === 'system_admin' || !!perms?.invoice_upload
 
   const isAp = !!user?.role && MATCH_ROLES.has(user.role)
 

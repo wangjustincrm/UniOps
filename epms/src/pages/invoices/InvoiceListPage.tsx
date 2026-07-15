@@ -907,8 +907,8 @@ function UnmatchedTab() {
   const [assigningInv, setAssigningInv] = useState<ApiInvoice | null>(null)
   const deleteInvoice = useDeleteInvoice()
   const { user } = useAuthStore()
-  const { data: rolePermissions } = useRolePermissions()
-  const canDelete = user?.role === 'system_admin' || !!(user?.role && rolePermissions?.[user.role]?.invoice_upload)
+  const perms = useRolePermissions().data?.permissions
+  const canDelete = user?.role === 'system_admin' || !!perms?.invoice_upload
   const isAp = !!user?.role && MATCH_ROLES.has(user.role)
   const canMatchInvoice = (inv: ApiInvoice) =>
     isAp || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
@@ -1153,8 +1153,8 @@ function AllInvoicesTab() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const deleteInvoice = useDeleteInvoice()
   const { user } = useAuthStore()
-  const { data: rolePermissions } = useRolePermissions()
-  const canDelete = user?.role === 'system_admin' || !!(user?.role && rolePermissions?.[user.role]?.invoice_upload)
+  const perms = useRolePermissions().data?.permissions
+  const canDelete = user?.role === 'system_admin' || !!perms?.invoice_upload
 
   const { data } = useInvoices({
     search: search || undefined,
@@ -1364,14 +1364,13 @@ export default function InvoiceListPage() {
   const { data: allData } = useInvoices()
   const invoices = allData?.items ?? []
   const { user } = useAuthStore()
-  const { data: rolePermissions } = useRolePermissions()
+  const perms = useRolePermissions().data?.permissions
   const navigate = useNavigate()
 
   const [activeTab, setActiveTab] = useState<Tab>('all')
   const [showUpload, setShowUpload] = useState(false)
 
-  const canUpload = user?.role === 'system_admin'
-    || !!(user?.role && rolePermissions?.[user.role]?.invoice_upload)
+  const canUpload = user?.role === 'system_admin' || !!perms?.invoice_upload
 
   const unmatchedCount  = invoices.filter((i) => i.status === 'unmatched').length
   const exceptionCount  = invoices.filter((i) => i.status === 'exception').length

@@ -8,7 +8,6 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { EPMS_URL } from '@/lib/api'
 import { useBranding } from '@/hooks/useBranding'
-import type { RolePermissionMatrix } from '@/hooks/useRolePermissions'
 import {
   PORTAL_NAV_SECTIONS, isNavItemVisible, resolveNavHref,
 } from './navConfig'
@@ -24,7 +23,7 @@ interface PortalSidebarProps {
   /** base64 session for epms:/… sub-route handoff (may be empty). */
   session?: string
   userRole: string | null
-  matrix: RolePermissionMatrix | undefined
+  perms: Record<string, boolean> | undefined
   mobileOpen: boolean
   onClose: () => void
   collapsed: boolean
@@ -33,7 +32,7 @@ interface PortalSidebarProps {
 
 export function PortalSidebar({
   activeKey, epmsHref, oaHref, vmsHref, financeHref, bookingHref, session = '',
-  userRole, matrix, mobileOpen, onClose, collapsed, onToggleCollapse,
+  userRole, perms, mobileOpen, onClose, collapsed, onToggleCollapse,
 }: PortalSidebarProps) {
   const ctx = { epmsHref, oaHref, vmsHref, financeHref, bookingHref, session, epmsUrl: EPMS_URL }
 
@@ -90,7 +89,7 @@ export function PortalSidebar({
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-4">
         {PORTAL_NAV_SECTIONS.map((section, idx) => {
-          const visibleItems = section.items.filter((item) => isNavItemVisible(item, userRole, matrix))
+          const visibleItems = section.items.filter((item) => isNavItemVisible(item, userRole, perms))
           if (visibleItems.length === 0) return null
           return (
             <div key={section.title ?? `s${idx}`} className="mb-4">

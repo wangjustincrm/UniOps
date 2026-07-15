@@ -56,12 +56,10 @@ const NAV: NavSection[] = [
   },
 ]
 
-type RoleMatrix = Record<string, Record<string, boolean>> | undefined
-
 /** Visible when the role is system_admin or holds the item's permission. */
-function isNavItemVisible(item: NavItem, userRole: string | null, matrix: RoleMatrix): boolean {
+function isNavItemVisible(item: NavItem, userRole: string | null, perms: Record<string, boolean> | undefined): boolean {
   if (userRole === 'system_admin') return true
-  if (item.permission) return userRole !== null && !!matrix?.[userRole]?.[item.permission]
+  if (item.permission) return !!perms?.[item.permission]
   return true
 }
 
@@ -77,10 +75,10 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
   const brandLogo = branding?.logo_data_url || null
   const initials = brandName.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || 'FI'
 
-  // Gate items by the Access Control Matrix (EPMS → Admin → Access Control Matrix).
-  const { data: matrix } = useRolePermissions()
+  // Gate items by the current user's effective permissions (GET /config/me/permissions).
+  const perms = useRolePermissions().data?.permissions
   const userRole = useAuthStore((s) => s.user?.role ?? null)
-  const isVisible = (item: NavItem) => isNavItemVisible(item, userRole, matrix)
+  const isVisible = (item: NavItem) => isNavItemVisible(item, userRole, perms)
 
   const navLinkCls = (active: boolean) => cn(
     'flex items-center gap-2.5 rounded-md px-2 py-2.5 text-sm transition-colors min-h-[44px]',
@@ -215,7 +213,8 @@ export default function AppLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const userId = useAuthStore((s) => s.user?.id)
   const userRole = useAuthStore((s) => s.user?.role ?? null)
-  const { data: matrix, isLoading: permsLoading } = useRolePermissions()
+  const { data: myPermissions, isLoading: permsLoading } = useRolePermissions()
+  const perms = myPermissions?.permissions
   const navigate = useNavigate()
   const { pathname } = useLocation()
 
@@ -228,7 +227,7 @@ export default function AppLayout() {
 
   // First nav item the user can access — landing page + pinned home tab. Avoids
   // landing on a page (e.g. Accounts Payable) the user has no permission for.
-  const firstVisible = NAV.flatMap((s) => s.items).find((i) => isNavItemVisible(i, userRole, matrix))
+  const firstVisible = NAV.flatMap((s) => s.items).find((i) => isNavItemVisible(i, userRole, perms))
   const homePath = firstVisible?.href
 
   useEffect(() => {
