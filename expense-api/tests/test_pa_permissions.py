@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 import app.db.base as db_module
 from app.core.config import settings
@@ -84,6 +84,15 @@ async def _add_open_task(pa_id: str, *, user_id: str | None = None, role: str | 
             is_completed=False,
             created_at=datetime.now(timezone.utc),
         ))
+        await db.commit()
+
+
+async def _grant_additional_role(user_id: str, role_code: str) -> None:
+    """Insert an identity user_roles row (ADDITIONAL role, phase 3)."""
+    async with db_module.AsyncSessionLocal() as db:
+        await db.execute(text(
+            "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
+            {"u": user_id, "r": role_code})
         await db.commit()
 
 
@@ -192,6 +201,23 @@ async def test_can_pay_only_on_approved_for_finance(finance_client):
     async with _client_for("requester", str(uuid.uuid4())) as outsider:
         resp = await outsider.get(f"/api/v1/pa/{pa['id']}/permissions")
     assert resp.json()["can_pay"] is False
+
+
+@pytest.mark.asyncio
+async def test_can_pay_via_additional_finance_bp_role():
+    """Phase 3 Task 5: can_pay's finance_bp/finance_manager check now reads
+    identity's user_roles (ADDITIONAL roles), not company_config.role_management.
+    A 'requester' JWT holding the finance_bp additional role can pay an approved PA."""
+    bp_id = str(uuid.uuid4())
+    async with _client_for("requester", str(uuid.uuid4())) as owner:
+        pa = await _make_pa(owner)
+    await _set_pa_status(pa["id"], "approved")
+    await _grant_additional_role(bp_id, "finance_bp")
+
+    async with _client_for("requester", bp_id) as bp:
+        resp = await bp.get(f"/api/v1/pa/{pa['id']}/permissions")
+    assert resp.status_code == 200
+    assert resp.json()["can_pay"] is True
 
 
 @pytest.mark.asyncio

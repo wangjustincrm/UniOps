@@ -5,14 +5,15 @@ THE single implementation of "money goes out": status flip + payment_records
 legacy HTTP entries (epms-api PA action=process, expense-api /pa/{id}/pay and
 /expenses/{id}/pay) forward here.
 
-can_pay: JWT role in _PAY_ROLES, OR a role_management assignment of
-finance_bp / finance_manager (assignments are not JWT roles — see
-company_config.role_management).
+can_pay: JWT role in _PAY_ROLES, OR an ADDITIONAL role of finance_bp /
+finance_manager held in identity's user_roles (same physical DB — phase 3
+retired the old company_config.role_management assignments).
 """
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +40,19 @@ class PaymentPermissionError(Exception):
     pass
 
 
+async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str) -> set[str]:
+    """Primary role + additional roles (identity user_roles, same DB)."""
+    codes = {base_role} if base_role else set()
+    rows = (await db.execute(sa.text(
+        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
+    codes.update(rows)
+    return codes
+
+
 def _user_holds_assignment(rm: dict, user_id: str, role: str) -> bool:
+    """Retained for app/api/v1/coa.py._can_manage (out of Task 5's scope — still
+    reads company_config.role_management). can_pay itself no longer calls this;
+    see _user_role_codes above."""
     if role == "finance_bp":
         return user_id in [str(x) for x in (rm.get("finance_bp_user_ids") or [])]
     if role == "finance_manager":
@@ -79,11 +92,9 @@ def _bank_line(amount: Decimal, currency: str, bank: BankAccount | None,
 async def _check_can_pay(db: AsyncSession, user: dict) -> None:
     if user.get("role") in _PAY_ROLES:
         return
-    user_id = str(user.get("sub", ""))
-    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    rm = (cfg.role_management or {}) if cfg else {}
-    if _user_holds_assignment(rm, user_id, "finance_bp") or \
-       _user_holds_assignment(rm, user_id, "finance_manager"):
+    user_id = uuid.UUID(str(user.get("sub", "")))
+    codes = await _user_role_codes(db, user_id, user.get("role", ""))
+    if "finance_bp" in codes or "finance_manager" in codes:
         return
     raise PaymentPermissionError("Insufficient role to record payment")
 

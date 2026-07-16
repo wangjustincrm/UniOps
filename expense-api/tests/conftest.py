@@ -53,6 +53,14 @@ async def test_engine():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        # `user_roles` is identity-owned (no ORM model here — pa.py's
+        # _user_role_codes reads it directly, same physical DB in prod,
+        # phase-3 Task 5). Shadow it so tests can grant additional roles.
+        from sqlalchemy import text
+        await conn.execute(text("DROP TABLE IF EXISTS user_roles CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
+            " PRIMARY KEY (user_id, role_code))"))
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

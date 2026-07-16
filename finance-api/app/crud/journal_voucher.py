@@ -18,8 +18,9 @@ from app.models.journal_voucher import (
 from app.models.mirrors import SodRule
 from app.services.journal_voucher import next_jv_number
 
-# Finance authority to review/post vouchers. role_management-assignment gating
-# (finance_bp / finance_manager) can layer on later; JWT role is the base gate.
+# Finance authority to review/post vouchers. Additional-role gating (identity
+# user_roles: finance_bp / finance_manager, phase 3) can layer on later, same
+# pattern as payment_execute._user_role_codes; JWT role is the base gate.
 _JV_ROLES = {"finance_manager", "finance_bp", "system_admin"}
 
 

@@ -7,12 +7,12 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
-from app.models.mirrors import CompanyConfig, ExpenseClaim, Invoice, Task
+from app.models.mirrors import ExpenseClaim, Invoice, Task
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
 from app.models.posting import PostingEvent, PostingLine
@@ -176,10 +176,14 @@ async def test_execute_rejects_unauthorized_role(client, db_session):
 
 
 async def test_execute_allows_role_management_assignment(client, db_session):
-    """Finance BP is a role_management assignment, not a JWT role (memory: approval
-    roles are assignments). A 'requester' JWT holding the finance_bp assignment pays."""
+    """Finance BP is an ADDITIONAL role (identity user_roles), not a JWT role
+    (memory: approval roles are assignments). A 'requester' JWT holding the
+    finance_bp additional role pays. Phase 3: sourced from user_roles, not the
+    retired company_config.role_management."""
     payer_id = str(uuid.uuid4())
-    db_session.add(CompanyConfig(role_management={"finance_bp_user_ids": [payer_id]}))
+    await db_session.execute(text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'finance_bp')"),
+        {"u": payer_id})
     pa = _pa()
     db_session.add(pa)
     await db_session.flush()

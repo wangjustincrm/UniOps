@@ -70,6 +70,15 @@ def _migrate():
         Department.__table__, BudgetAccount.__table__, ErpSupplier.__table__,
         ExpenseInvoice.__table__, InvoicePoAllocation.__table__, PurchaseRequest.__table__,
     ])
+    # `user_roles` is identity-owned (no ORM model here — payment_execute's
+    # _user_role_codes reads it directly, same physical DB in prod, phase-3
+    # Task 5). Shadow it so tests can grant additional roles.
+    with eng.connect() as conn:
+        conn.execute(sa.text("DROP TABLE IF EXISTS user_roles CASCADE"))
+        conn.execute(sa.text(
+            "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
+            " PRIMARY KEY (user_id, role_code))"))
+        conn.commit()
     eng.dispose()
     # PaymentApplication mirror needs pa_type for A4 partial-payment logic
 
