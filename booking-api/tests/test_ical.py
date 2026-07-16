@@ -723,3 +723,45 @@ def test_recurrence_id_absent_keeps_rrule():
 
     assert "RRULE:FREQ=WEEKLY" in raw
     assert "RECURRENCE-ID" not in raw
+
+
+def test_series_invite_with_exdates_keeps_rrule():
+    """EXDATE removes individually-cancelled occurrences from the RRULE
+    expansion. Unlike RECURRENCE-ID it MUST coexist with RRULE — without the
+    RRULE there is nothing to subtract from.
+    """
+    booking = _make_booking(rrule="FREQ=WEEKLY;INTERVAL=1;COUNT=4")
+    # 2026-07-15 18:00 UTC == 14:00 EDT — the second occurrence.
+    excluded = datetime(2026, 7, 15, 18, 0, 0, tzinfo=timezone.utc)
+
+    raw = build_event_ics(
+        booking=booking,
+        room=_make_room(),
+        organizer_email="organizer@example.com",
+        attendee_emails=["a@example.com"],
+        method="REQUEST",
+        rrule=booking.rrule,
+        exdates=[excluded],
+    ).decode()
+
+    assert "RRULE:FREQ=WEEKLY" in raw
+    assert "EXDATE;TZID=America/Toronto:20260715T140000" in raw
+
+
+def test_multiple_exdates_share_one_property():
+    """Several exclusions collapse into one comma-separated EXDATE line."""
+    booking = _make_booking(rrule="FREQ=WEEKLY;INTERVAL=1;COUNT=4")
+    ex1 = datetime(2026, 7, 15, 18, 0, 0, tzinfo=timezone.utc)
+    ex2 = datetime(2026, 7, 22, 18, 0, 0, tzinfo=timezone.utc)
+
+    raw = build_event_ics(
+        booking=booking,
+        room=_make_room(),
+        organizer_email="organizer@example.com",
+        attendee_emails=["a@example.com"],
+        method="REQUEST",
+        rrule=booking.rrule,
+        exdates=[ex1, ex2],
+    ).decode()
+
+    assert "EXDATE;TZID=America/Toronto:20260715T140000,20260722T140000" in raw

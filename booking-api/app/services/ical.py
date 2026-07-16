@@ -118,6 +118,7 @@ def build_event_ics(
     rrule: str | None = None,
     organizer_cn: str | None = None,
     recurrence_id: datetime | None = None,
+    exdates: list[datetime] | None = None,
 ) -> bytes:
     """Build a complete VCALENDAR iMIP payload as bytes.
 
@@ -141,6 +142,10 @@ def build_event_ics(
                          suppressed.  Pass the occurrence's scheduled start.
                          RRULE + RECURRENCE-ID together instruct Outlook to act
                          on the WHOLE series — never emit both.
+        exdates:         Occurrence start times to exclude from the RRULE
+                         expansion (occurrences cancelled individually).  Unlike
+                         recurrence_id this COEXISTS with rrule.  Ignored when
+                         rrule is None — there is nothing to subtract from.
 
     Returns:
         UTF-8 encoded iCalendar bytes.
@@ -203,6 +208,12 @@ def build_event_ics(
     # to the entire series, i.e. wipe every attendee's calendar.
     if rrule is not None and recurrence_id is None:
         event.add("rrule", vRecur.from_ical(rrule))
+
+    # EXDATE subtracts individually-cancelled occurrences from the RRULE
+    # expansion. Passing a list yields one comma-separated EXDATE property;
+    # icalendar adds the TZID.
+    if exdates:
+        event.add("exdate", [ex.astimezone(tz) for ex in exdates])
 
     cal.add_component(event)
 
