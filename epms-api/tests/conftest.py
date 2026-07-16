@@ -18,6 +18,148 @@ from app.models.vendor import Vendor
 from app.schemas.auth import RegisterRequest
 
 
+# ── Default permission matrix (mirrors identity's seed_authz.py) ──────────────
+# Source of truth: identity-api/scripts/seed_authz.py (DEFAULTS / LOCKED /
+# ROLE_LABELS / MODULE_BY_KEY / compute_effective). identity-api is a separate
+# service running in its own container — only ./epms-api is bind-mounted into
+# uniops_epms_api (see docker-compose.dev.yml), so identity's script isn't on
+# this process's sys.path and can't be imported directly (it also imports its
+# own `app.db.base`, which would collide with epms's own `app` package).
+# These constants are therefore a hand-copy of the phase-1 defaults and MUST
+# be kept in sync with identity-api/scripts/seed_authz.py if that file's
+# DEFAULTS/LOCKED ever change. Only the 17 phase-1 keys are reproduced here
+# (the ones access_scope's view_pr/view_po/view_gr/view_invoice/view_pa
+# checks — and everything else in MODULE_BY_KEY — actually gate); add
+# phase-2 keys here only if a test comes to depend on one of their defaults.
+_MODULE_BY_KEY = {
+    "view_pr": "epms", "view_po": "epms", "view_gr": "epms",
+    "view_invoice": "epms", "view_pa": "epms", "create_pr": "epms",
+    "create_gr": "epms", "invoice_upload": "epms", "vendor_master": "epms",
+    "parts_catalog": "epms", "admin_panel": "epms", "data_maintenance": "epms",
+    "view_budget_dashboard": "finance", "view_budget_plans": "finance",
+    "view_finance": "finance",
+    "view_booking": "booking", "manage_meeting_rooms": "booking",
+}
+_PERMISSION_KEYS = list(_MODULE_BY_KEY)
+
+_ROLE_LABELS = {  # built-in 17
+    "requester": "Requester", "dept_admin": "Department Admin",
+    "dept_manager": "Department Manager", "supervisor": "Supervisor",
+    "director": "Director", "gm": "General Manager", "opm": "Operations Manager",
+    "procurement_officer": "Procurement Officer",
+    "procurement_manager": "Procurement Manager",
+    "warehouse_staff": "Warehouse Staff", "ap_clerk": "AP Clerk",
+    "finance_bp": "Finance BP", "finance_manager": "Finance Manager",
+    "vendor_manager": "Vendor Manager", "cfo": "CFO", "auditor": "Auditor",
+    "system_admin": "System Admin",
+}
+
+_LOCKED = {
+    "requester": {"view_pr"},
+    "procurement_officer": {"view_pr", "view_po", "view_gr"},
+    "procurement_manager": {"view_pr", "view_po", "view_gr"},
+    "warehouse_staff": {"view_gr"},
+    "ap_clerk": {"view_invoice", "view_pa"},
+    "finance_bp": {"view_pa"},
+    "finance_manager": {"view_pa"},
+    "system_admin": {"admin_panel"},
+}
+
+_VIEW_ALL = {k: True for k in ("view_pr", "view_po", "view_gr", "view_invoice", "view_pa")}
+_FINANCE_ALL = {"view_budget_dashboard": True, "view_budget_plans": True, "view_finance": True}
+_BOOKING = {"view_booking": True}
+_BUDGET_VIEW = {"view_budget_dashboard": True, "view_budget_plans": True}
+
+
+def _p(**kw):
+    base = {k: False for k in _PERMISSION_KEYS}
+    base.update(kw)
+    return base
+
+
+_DEFAULTS = {
+    "requester":           _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
+    "dept_admin":          _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
+    "dept_manager":        _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BUDGET_VIEW, **_BOOKING),
+    "supervisor":          _p(view_pr=True, **_BOOKING),
+    "director":            _p(view_pr=True, view_pa=True, **_BOOKING),
+    "gm":                  _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
+    "opm":                 _p(create_pr=True, create_gr=True, **_VIEW_ALL, **_BOOKING),
+    "procurement_officer": _p(create_gr=True, vendor_master=True, parts_catalog=True, **_VIEW_ALL, **_BOOKING),
+    "procurement_manager": _p(create_gr=True, vendor_master=True, parts_catalog=True, **_VIEW_ALL, **_BOOKING),
+    "warehouse_staff":     _p(create_gr=True, view_gr=True, **_BOOKING),
+    "ap_clerk":            _p(create_gr=True, invoice_upload=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_bp":          _p(create_gr=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_manager":     _p(create_pr=True, create_gr=True, admin_panel=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "vendor_manager":      _p(vendor_master=True, admin_panel=True, **_BOOKING),
+    "cfo":                 _p(**_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "auditor":             _p(**_VIEW_ALL, **_BOOKING),
+    "system_admin":        {k: True for k in _PERMISSION_KEYS},
+}
+
+
+def _effective_default_matrix() -> dict[str, dict[str, bool]]:
+    """role -> {key: bool}: mirrors identity's compute_effective() with an
+    empty `stored` override and no custom roles — i.e. exactly what a
+    freshly-provisioned prod DB looks like right after
+    `python -m scripts.seed_authz` runs with no admin edits yet."""
+    result = {}
+    for role, defaults in _DEFAULTS.items():
+        merged = dict(defaults)
+        for k in _LOCKED.get(role, set()):
+            merged[k] = True
+        result[role] = merged
+    return result
+
+
+async def _seed_default_matrix(conn) -> None:
+    """Insert the DEFAULT permission matrix into role_defs/permission_defs/
+    role_permissions/role_permission_locks — every statement is
+    `ON CONFLICT DO NOTHING` (mirrors identity's real seed_authz.py), so this
+    is safe to call unconditionally before every single test regardless of
+    what state the tables are already in. `conn` may be an engine Connection
+    (session-fixture setup) or an AsyncSession (per-test restore — see
+    `_restore_default_matrix` below); both expose the same
+    `.execute(text(...), params)` interface.
+
+    This must NOT be gated on "table already non-empty ⇒ skip": that was
+    tried and is wrong — test_authz_proxy.py's `authz_factory` fixture
+    blanket-DELETEs these 4 tables for its own clean-slate tests, and the
+    LAST such test in that module (test_me_permissions_ignores_forward_
+    mock_entirely) leaves role_defs with exactly one custom row afterward
+    (not zero), which would fool an emptiness check into thinking the
+    default matrix is already there and skip reseeding — silently starving
+    every later test in the session of the baseline again. Unconditional +
+    ON CONFLICT DO NOTHING sidesteps that: it always ensures every default
+    row exists, cheaply no-ops the ones that already do, and never touches
+    rows outside the default set (e.g. a test's own extra custom role/grant
+    survives untouched alongside it).
+    """
+    for i, (code, label) in enumerate(_ROLE_LABELS.items()):
+        await conn.execute(text(
+            "INSERT INTO role_defs (code, label, sort, is_active) VALUES (:c, :l, :s, true) "
+            "ON CONFLICT (code) DO NOTHING"),
+            {"c": code, "l": label, "s": i})
+    for i, (key, module) in enumerate(_MODULE_BY_KEY.items()):
+        await conn.execute(text(
+            "INSERT INTO permission_defs (key, module, label, sort) VALUES (:k, :m, :l, :s) "
+            "ON CONFLICT (key) DO NOTHING"),
+            {"k": key, "m": module, "l": key.replace("_", " ").title(), "s": i})
+    for role, perms in _effective_default_matrix().items():
+        for key, granted in perms.items():
+            if granted:
+                await conn.execute(text(
+                    "INSERT INTO role_permissions (role_code, permission_key) VALUES (:r, :k) "
+                    "ON CONFLICT DO NOTHING"),
+                    {"r": role, "k": key})
+    for role, keys in _LOCKED.items():
+        for key in keys:
+            await conn.execute(text(
+                "INSERT INTO role_permission_locks (role_code, permission_key) VALUES (:r, :k) "
+                "ON CONFLICT DO NOTHING"),
+                {"r": role, "k": key})
+
+
 # ── Fake mdm-api client ──────────────────────────────────────────────────────────
 # Vendor master is owned by mdm-api (B3 / P1): EPMS forwards supplier writes to
 # mdm /partners. In tests we stand in for mdm by writing the shared
@@ -114,10 +256,75 @@ async def test_engine():
         await conn.execute(text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # role_defs / permission_defs / role_permissions / role_permission_locks
+        # are also identity-owned (no ORM model here) — same physical DB in
+        # prod. The shared uniops_authz package (require_permission,
+        # effective_permissions, user_role_codes) and config.py's
+        # _effective_role_matrix read these directly via raw SQL, so the test
+        # DB needs them too. Seeded below with the same DEFAULT matrix
+        # identity's scripts/seed_authz.py seeds into a freshly-provisioned
+        # prod (see _DEFAULTS/_LOCKED above) — this is what access_scope's
+        # _effective_permissions actually reads for the view_pr/view_po/
+        # view_gr/view_invoice/view_pa checks that gate document visibility,
+        # so pre-existing scoping tests (written before Task 3 moved this off
+        # company_config's JSONB-with-DEFAULT-fallback) keep working
+        # unmodified. Tests may still layer additional grants/locks on top of
+        # this baseline (e.g. test_authz_proxy.py's authz_factory fixture
+        # wipes these 4 tables first to test from a clean slate).
+        for stmt in (
+            "DROP TABLE IF EXISTS role_permission_locks CASCADE",
+            "DROP TABLE IF EXISTS role_permissions CASCADE",
+            "DROP TABLE IF EXISTS permission_defs CASCADE",
+            "DROP TABLE IF EXISTS role_defs CASCADE",
+        ):
+            await conn.execute(text(stmt))
+        await conn.execute(text(
+            "CREATE TABLE role_defs (code varchar(50) PRIMARY KEY, label varchar(100) NOT NULL,"
+            " sort integer NOT NULL DEFAULT 0, is_active boolean NOT NULL DEFAULT true)"))
+        await conn.execute(text(
+            "CREATE TABLE permission_defs (key varchar(64) PRIMARY KEY, module varchar(20) NOT NULL,"
+            " label varchar(120) NOT NULL, sort integer NOT NULL DEFAULT 0)"))
+        await conn.execute(text(
+            "CREATE TABLE role_permissions (role_code varchar(50) NOT NULL,"
+            " permission_key varchar(64) NOT NULL, updated_by uuid,"
+            " updated_at timestamptz NOT NULL DEFAULT now(),"
+            " PRIMARY KEY (role_code, permission_key))"))
+        await conn.execute(text(
+            "CREATE TABLE role_permission_locks (role_code varchar(50) NOT NULL,"
+            " permission_key varchar(64) NOT NULL, PRIMARY KEY (role_code, permission_key))"))
+
+        await _seed_default_matrix(conn)
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+async def _restore_default_matrix(test_engine):
+    """Function-scoped + autouse: re-seeds the DEFAULT permission matrix at
+    the start of every test if a previous test wiped it — a no-op otherwise.
+
+    Why this is needed: role_defs/permission_defs/role_permissions/
+    role_permission_locks are session-scoped tables (created once, not
+    wrapped in a per-test transaction rollback), but test_authz_proxy.py's
+    `authz_factory` fixture blanket-DELETEs all 4 of them to get a clean
+    slate for its own tests — with no matching restore afterward. Left
+    alone, that would leave the tables permanently empty for the rest of the
+    session (order-dependent breakage: test_pr_scoping.py, which runs later
+    alphabetically, would 404/empty-list for every user because
+    access_scope._effective_permissions reads an empty matrix). pytest runs
+    autouse fixtures before explicitly-requested ones in the same scope, so
+    this always seeds BEFORE `authz_factory`'s DELETE runs within a
+    test_authz_proxy.py test — giving that module the empty tables it wants
+    for its own test body — and BEFORE every other test, restoring the
+    baseline any prior test may have wiped.
+    """
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _seed_default_matrix(db)
+        await db.commit()
+    yield
 
 
 @pytest.fixture(scope="session", autouse=True)
