@@ -14,6 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
@@ -130,11 +131,24 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
         }
 
     if role in ("gm", "opm"):
-        # Resolve mapped departments via CompanyConfig (shared DB)
-        from app.models.company_config_mirror import EpmsCompanyConfig
-        cfg = (await db.execute(select(EpmsCompanyConfig).limit(1))).scalar_one_or_none()
-        mapping = cfg.dept_gm_opm_mapping if cfg and cfg.dept_gm_opm_mapping else {}
-        dept_ids = [uuid.UUID(k) for k, v in mapping.items() if v == role]
+        # Resolve mapped departments via approval-api's approval_dept_routing
+        # (same physical DB, read-only — expense-api never writes it;
+        # Portal → Approval Routing is the only writer). This is the single
+        # source of truth for dept routing since the phase-3 migration;
+        # company_config.dept_gm_opm_mapping is a frozen snapshot kept for
+        # rollback (see epms-api/app/core/access_scope.py:_mapped_dept_ids,
+        # the reference implementation this mirrors).
+        #
+        # ★ Semantic change vs the old JSONB: a department with no explicit
+        # mapping had NO entry in dept_gm_opm_mapping, so GM never saw it.
+        # approval_dept_routing instead gives every active department a row,
+        # defaulting to gm_or_opm='gm' when unmapped — so GM now sees those
+        # too. This is intentional: it matches how the approval engine already
+        # routes an unmapped department's approval to GM. Today this changes
+        # nothing (dev/prod: all 12 departments are explicitly mapped).
+        dept_ids = list((await db.execute(sa.text(
+            "SELECT dept_id FROM approval_dept_routing WHERE gm_or_opm = :r"),
+            {"r": role})).scalars().all())
         if dept_ids:
             cc_subq = select(EpmsCostCenter.id).where(
                 EpmsCostCenter.department_id.in_(dept_ids)
