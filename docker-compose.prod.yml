@@ -101,7 +101,7 @@ services:
   mdm-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-mdm-api:${TAG:-latest}
-    build: { context: ./mdm-api }
+    build: { context: ., dockerfile: mdm-api/Dockerfile }
     environment:
       <<: *db-env
       SERVICE_NAME: mdm-stub

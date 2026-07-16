@@ -8,14 +8,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, require_roles
+from app.core.authz import require_permission
+from app.core.deps import CurrentUser
 from app.crud import uom as uom_crud
 from app.db.base import get_db
 from app.schemas.uom import UomCreate, UomListResponse, UomResponse, UomUpdate
 
 router = APIRouter(prefix="/uom", tags=["uom"])
 
-WriteDep = Annotated[dict, Depends(require_roles("system_admin", "finance_manager", "ap_clerk"))]
+WriteDep = Annotated[dict, Depends(require_permission("mdm.finance.write"))]
 
 
 @router.get("", response_model=UomListResponse)

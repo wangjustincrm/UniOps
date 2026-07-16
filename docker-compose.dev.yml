@@ -136,13 +136,14 @@ services:
   mdm-api:
     <<: *python-base
     build:
-      context: ./mdm-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: mdm-api/Dockerfile
     container_name: uniops_mdm_api
     ports:
       - "8002:8002"
     volumes:
       - ./mdm-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
