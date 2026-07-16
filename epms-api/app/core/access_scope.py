@@ -27,7 +27,6 @@ from app.models.po import PurchaseOrder
 from app.models.pa import PaymentApplication
 from app.models.task import Task
 from app.models.user import User
-from app.models.config import CompanyConfig
 
 
 def _open_task_doc_ids(user_id: uuid.UUID, doc_type: str) -> Select:
@@ -129,12 +128,17 @@ async def _effective_role_codes(
     codes.update(rows)
 
     uid_str = str(user_id)
-    # director/supervisor derivation is unrelated to role_management/user_roles —
-    # still sourced from CompanyConfig.dept_director_mapping / User.supervisor_id.
-    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    if cfg is not None:
-        if uid_str in (cfg.dept_director_mapping or {}).values():
-            codes.add("director")
+    # director/supervisor derivation is unrelated to role_management/user_roles.
+    # director now sourced from approval-api's approval_dept_routing.director_user_id
+    # (same physical DB, read-only — epms never writes it), matching _director_dept_ids
+    # above; company_config.dept_director_mapping is a frozen snapshot no longer read
+    # here (nothing writes it anymore since Portal → Approval Routing moved to the
+    # new table — phase 3). supervisor stays on User.supervisor_id.
+    is_director = (await db.execute(sa.text(
+        "SELECT 1 FROM approval_dept_routing WHERE director_user_id = :u LIMIT 1"),
+        {"u": uid_str})).scalar_one_or_none()
+    if is_director is not None:
+        codes.add("director")
     is_supervisor = (await db.execute(
         select(User.id).where(User.supervisor_id == user_id).limit(1)
     )).scalar_one_or_none()

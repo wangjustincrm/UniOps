@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.access_scope import _mapped_dept_ids, _director_dept_ids
+from app.core.access_scope import _mapped_dept_ids, _director_dept_ids, _effective_role_codes
 from app.crud import config as config_crud
 
 
@@ -108,3 +108,28 @@ async def test_empty_mapping_returns_empty_not_error(db):
 
     assert await _mapped_dept_ids(db, "gm") == []
     assert await _director_dept_ids(db, uuid.uuid4()) == []
+
+
+@pytest.mark.asyncio
+async def test_effective_role_codes_includes_director_for_routing_director(db):
+    """正向:approval_dept_routing 里被指派为某部门 director_user_id 的 user ——
+    _effective_role_codes 的结果集须含 'director'。锁住 director 判定的数据源已从
+    冻结的 company_config.dept_director_mapping 切到 approval_dept_routing。"""
+    dept, director_user = uuid.uuid4(), uuid.uuid4()
+    await _set_routing(db, {dept: "gm"}, directors={dept: director_user})
+
+    codes = await _effective_role_codes(db, "requester", director_user)
+
+    assert "director" in codes
+
+
+@pytest.mark.asyncio
+async def test_effective_role_codes_excludes_director_for_non_director(db):
+    """负向:某 user 不是任何部门的 director_user_id —— 结果集不含 'director'
+    (防止实现退化成'谁都是 director')。"""
+    dept, director_user, other_user = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    await _set_routing(db, {dept: "gm"}, directors={dept: director_user})
+
+    codes = await _effective_role_codes(db, "requester", other_user)
+
+    assert "director" not in codes
