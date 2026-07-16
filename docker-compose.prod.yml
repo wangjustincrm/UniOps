@@ -195,7 +195,7 @@ services:
   budget-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-budget-api:${TAG:-latest}
-    build: { context: ./budget-api }
+    build: { context: ., dockerfile: budget-api/Dockerfile }
     environment:
       <<: *db-env
       APP_NAME: Budget API

@@ -292,13 +292,14 @@ services:
   budget-api:
     <<: *python-base
     build:
-      context: ./budget-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: budget-api/Dockerfile
     container_name: uniops_budget_api
     ports:
       - "8007:8007"
     volumes:
       - ./budget-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres

@@ -3,7 +3,8 @@ import uuid
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, status
 
-from app.core.deps import CurrentUserPayload, SessionDep, require_roles
+from app.core.authz import require_permission
+from app.core.deps import CurrentUserPayload, SessionDep
 from app.crud import balance as balance_crud
 from app.crud import opening as opening_crud
 from app.schemas.actual import (
@@ -14,8 +15,6 @@ from app.schemas.actual import (
 from app.schemas.opening import OpeningImportResult, OpeningListResponse
 
 router = APIRouter(tags=["actual"])
-
-_OPENING_WRITE_ROLES = ("finance_manager", "finance_bp")
 
 
 @router.get("/actuals", response_model=ActualsListResponse)
@@ -76,7 +75,7 @@ async def import_opening(
     file: UploadFile,
     cost_center_id: uuid.UUID = Form(...),
     fiscal_year: int = Form(..., ge=2020, le=2100),
-    user: dict = Depends(require_roles(*_OPENING_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.opening.write")),  # noqa: ARG001
 ):
     """Import opening balances from a wide CSV (Account Code + Jan..Dec) scoped to
     one cost center + fiscal year. Re-importing updates existing values."""
