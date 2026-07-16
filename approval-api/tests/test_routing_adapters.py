@@ -67,6 +67,25 @@ async def test_post_from_primary_role_is_included(engine_db_session):
     assert rm["gm_user_id"] == str(uid)
 
 
+async def test_finance_bp_primary_role_alone_is_not_included(engine_db_session):
+    """finance_bp is a multi-holder JOB FUNCTION, not a company-unique post —
+    holding it as a PRIMARY role is not an assignment. Only a curated
+    user_roles row makes someone an approver. This is the exact prod
+    situation (a user with users.role='finance_bp' but no user_roles row for
+    it) and must NOT resolve as a finance_bp approver.
+    """
+    db = engine_db_session
+    await _reset_shadow_tables(db)
+    uid = uuid.uuid4()
+    await db.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role) "
+        "VALUES (:i, :e, 'x', 'Primary Only BP', 'finance_bp')"),
+        {"i": str(uid), "e": f"{uid}@t.co"})
+    await db.flush()
+    rm = await get_role_management(db)
+    assert rm["finance_bp_user_ids"] == []
+
+
 async def test_dept_getters_shape(engine_db_session):
     db = engine_db_session
     await _reset_shadow_tables(db)

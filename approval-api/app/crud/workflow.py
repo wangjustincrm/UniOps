@@ -31,16 +31,33 @@ _POST_CODES = ("gm", "opm", "vendor_manager", "finance_manager", "procurement_ma
 
 
 async def _post_holders(db: AsyncSession) -> dict[str, list[str]]:
-    """code -> [user_id str]. A post can be held as a PRIMARY role (users.role)
-    or an ADDITIONAL role (user_roles) — both count."""
+    """code -> [user_id str].
+
+    The five SINGLETON posts in _POST_CODES (gm/opm/vendor_manager/
+    finance_manager/procurement_manager) are company-unique POSITIONS —
+    identity-api enforces one holder each (migration 0003_post_role_singleton
+    + the cross-table 409 in PUT /authz/users/{id}/roles). If a user's
+    PRIMARY role (users.role) IS the post, they genuinely hold that position,
+    so PRIMARY (users.role) UNION ADDITIONAL (user_roles) both count.
+
+    finance_bp is NOT a singleton post — it's a job FUNCTION many people can
+    carry (that's exactly why identity exempts it from the singleton index),
+    not an assignment. Holding the function is not the same as being the
+    curated, assigned approver: reading users.role for finance_bp would
+    silently promote every person whose primary role happens to be
+    finance_bp into an approver, even if they were never added to the
+    assignment list (real prod case: a user with primary role finance_bp who
+    is not in the assignment must NOT resolve as an approver). So finance_bp
+    holders come from user_roles ONLY.
+    """
     out: dict[str, list[str]] = {}
     rows = (await db.execute(sa.text(
         "SELECT role AS code, id::text AS uid FROM users WHERE role = ANY(:codes) AND is_active "
         "UNION ALL "
         "SELECT ur.role_code, ur.user_id::text FROM user_roles ur "
         " JOIN users u ON u.id = ur.user_id "
-        " WHERE ur.role_code = ANY(:codes) AND u.is_active"),
-        {"codes": list(_POST_CODES) + ["finance_bp"]})).all()
+        " WHERE ur.role_code = ANY(:codes_with_bp) AND u.is_active"),
+        {"codes": list(_POST_CODES), "codes_with_bp": list(_POST_CODES) + ["finance_bp"]})).all()
     for code, uid in rows:
         out.setdefault(code, []).append(uid)
     return out

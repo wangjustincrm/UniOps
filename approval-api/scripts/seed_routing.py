@@ -95,13 +95,17 @@ async def seed_routing(session) -> dict:
         counts["user_roles"] += r.rowcount or 0
 
     # finance_bp is NOT a singleton post (always a list) — plain idempotent
-    # insert, no reassignment logic.
+    # insert, no reassignment logic. Unlike the five singleton posts, we do
+    # NOT skip writing the user_roles row when the assignee's primary role
+    # already equals "finance_bp". Task 4's _post_holders() now reads
+    # finance_bp from user_roles ONLY (never from users.role — holding the
+    # job function is not the same as being the assigned approver), so if we
+    # skipped here, an assigned finance_bp whose primary role also happens to
+    # be finance_bp would get no row at all and silently vanish as an
+    # approver. Prod doesn't hit this today (the one assigned finance_bp's
+    # primary role is dept_manager), but the seed must not depend on that.
     for uid in rm.get("finance_bp_user_ids", []) or []:
         uid = str(uid)
-        primary = (await session.execute(sa.text(
-            "SELECT role FROM users WHERE id = :u"), {"u": uid})).scalar_one_or_none()
-        if primary == "finance_bp":
-            continue
         r = await session.execute(sa.text(
             "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :c) "
             "ON CONFLICT (user_id, role_code) DO NOTHING"), {"u": uid, "c": "finance_bp"})

@@ -250,6 +250,34 @@ async def test_finance_bp_allows_multiple_holders(engine_db_session):
     assert str(vm_holder) == str(new_uid)
 
 
+async def test_finance_bp_row_always_written_even_when_primary_role_matches(
+        engine_db_session):
+    """finance_bp is read from user_roles ONLY (Task 4's _post_holders no
+    longer unions users.role for it), so the seed must NEVER skip writing the
+    user_roles row for an assigned finance_bp — even when that user's PRIMARY
+    role also happens to be 'finance_bp'. Skipping (the singleton posts'
+    behaviour) would make an assigned finance_bp vanish as an approver.
+    """
+    db = engine_db_session
+    await _reset_shadow_tables(db)
+    uid = uuid.uuid4()
+    await db.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role) "
+        "VALUES (:i, :e, 'x', 'Primary BP Assigned', 'finance_bp')"),
+        {"i": str(uid), "e": f"{uid}@t.co"})
+    await _fixture_config(db, [], {
+        "role_management": {"finance_bp_user_ids": [str(uid)]},
+        "gm_opm": {}, "director": {}, "supervisor": {}})
+    await db.flush()
+
+    await seed_routing(db)
+
+    n = (await db.execute(sa.text(
+        "SELECT count(*) FROM user_roles WHERE role_code='finance_bp' AND user_id=:u"),
+        {"u": str(uid)})).scalar_one()
+    assert n == 1
+
+
 async def test_stale_holder_cleaned_even_when_designated_user_has_post_as_primary_role(
         engine_db_session):
     """Finding 1: the skip-before-reassign branch must not leave a stale
