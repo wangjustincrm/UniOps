@@ -6,16 +6,15 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+from uniops_authz import effective_permissions, user_role_codes
 
-from app.core import authz_client
-from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission, require_roles
+from app.core.config import settings
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.crud import config as config_crud
 from app.services import approval_client
-from app.schemas.config import (
-    ConfigResponse,
-    ConfigUpdate,
-    RolePermissionsUpdate,
-)
+from app.schemas.config import ConfigResponse, ConfigUpdate
 from app.crud.config import BUILT_IN_ROLES, LOCKED_PERMISSIONS, PERMISSION_KEYS
 from app.services.email import send_email
 
@@ -39,6 +38,56 @@ class PublicBrandingResponse(BaseModel):
 router = APIRouter(prefix="/config", tags=["config"])
 
 AdminDep = Annotated[dict, Depends(require_permission("admin_panel"))]
+
+
+async def _forward_identity(
+    method: str, path: str, token: str | None, json: dict | None = None
+) -> tuple[int, dict]:
+    """Pass a caller request through to identity using the caller's own Bearer
+    token. This is Phase 2's replacement for the deleted app.core.authz_client
+    module's `forward()` — kept local to config.py since these are the only
+    callers. Still used for the authz endpoints that remain identity's domain
+    (write validation + audit columns, or catalog listings): PATCH
+    /role-permissions, GET /locked-permissions, /roles, /authz-defs,
+    /user-roles, PUT /users/{id}/roles. The matrix READS
+    (GET /role-permissions, GET /me/permissions) migrated to a direct DB read
+    below — see _effective_role_matrix — because identity and epms share one
+    physical database.
+
+    Raises on connection failure (e.g. RuntimeError / httpx.ConnectError);
+    callers should catch and return 502.
+    """
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.request(
+            method,
+            f"{settings.IDENTITY_API_URL}/identity/v1{path}",
+            headers=headers,
+            json=json,
+        )
+        body = r.json() if r.content else {}
+        return r.status_code, body
+
+
+async def _effective_role_matrix(db: AsyncSession) -> dict[str, dict[str, bool]]:
+    """Same {role: {key: bool}} shape as identity's GET /authz/matrix, read
+    directly from identity's authz tables (same physical DB — no HTTP, no
+    token, no dependency on the identity *service* being up; only a DB outage
+    can stop this, and that stops everything anyway).
+
+    Shape is load-bearing: the booking frontend's sidebar still reads this
+    exact endpoint/shape (never migrated to /config/me/permissions).
+    """
+    roles = (await db.execute(text("SELECT code FROM role_defs ORDER BY sort"))).scalars().all()
+    perm_keys = (await db.execute(text("SELECT key FROM permission_defs ORDER BY sort"))).scalars().all()
+    cells = (await db.execute(text(
+        "SELECT role_code, permission_key FROM role_permissions "
+        "UNION "
+        "SELECT role_code, permission_key FROM role_permission_locks"))).all()
+    granted = {(role_code, key) for role_code, key in cells}
+    return {role: {key: (role, key) in granted for key in perm_keys} for role in roles}
 
 
 async def _full_response(db, user_payload: dict) -> ConfigResponse:
@@ -141,7 +190,7 @@ async def get_locked_permissions(_: CurrentUserPayload, token: BearerToken) -> d
     4xx/5xx from identity and transform errors are not swallowed.
     """
     try:
-        status_code, body = await authz_client.forward("GET", "/authz/defs", token)
+        status_code, body = await _forward_identity("GET", "/authz/defs", token)
     except httpx.RequestError:
         return {role: list(perms) for role, perms in LOCKED_PERMISSIONS.items()}
     if status_code != 200:
@@ -161,16 +210,15 @@ async def get_permission_keys(_: CurrentUserPayload) -> list[str]:
 
 
 @router.get("/role-permissions")
-async def get_role_permissions(db: SessionDep, _: CurrentUserPayload, token: BearerToken) -> dict:
-    """Return the effective permission matrix from identity (60 s cached); fallback = frozen JSONB.
+async def get_role_permissions(db: SessionDep, _: CurrentUserPayload) -> dict:
+    """Return the effective permission matrix, read directly from identity's
+    authz tables (same physical DB — no HTTP, no token, no dependency on the
+    identity *service* being up).
 
-    Passes through 4xx/5xx from identity as-is (e.g. 401 invalid token → 401 here).
-    Only falls back to frozen JSONB on network/timeout failures.
+    Shape unchanged: {role: {key: bool}} — the booking frontend still reads
+    this exact endpoint/shape.
     """
-    try:
-        return await authz_client.get_matrix(db, token)
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail=exc.response.text)
+    return await _effective_role_matrix(db)
 
 
 @router.patch("/role-permissions")
@@ -183,43 +231,22 @@ async def update_role_permissions(
     forwarding.  Passes through status + detail from identity (409 locked, 422
     unknown).  On connection failure returns 502.
 
-    Write-through: once identity accepts the change (200), the same changes are
-    also persisted into the local company_config.role_permissions JSONB via
-    config_crud.update_role_permissions.  epms is the single write choke point
-    (all writes go through this endpoint), so there is no race with another
-    writer.  Identity goes first because it is the source of truth and does
-    the real validation (locked cells, unknown role/permission keys); the local
-    mirror write happens after and is best-effort — it exists to keep the
-    token=None access_scope path (and the outage-fallback path) from serving a
-    matrix that a revocation never reached.  A mirror-write failure must NOT
-    fail the request (the mirror is a cache, not the truth) but is logged at
-    ERROR level so drift is visible.
+    Writes still go through identity — it owns lock-cell validation and the
+    audit columns (updated_by/updated_at). Only the READ side of this module
+    became a direct DB read this phase.
+
+    Phase 1's write-through mirror into company_config.role_permissions is
+    retired: nothing reads that JSONB anymore (this endpoint and
+    access_scope/deps now read identity's tables directly), so there is
+    nothing left to keep warm. The column itself is left alone — untouched,
+    just unread.
     """
     try:
-        status_code, resp_body = await authz_client.forward(
+        status_code, resp_body = await _forward_identity(
             "PATCH", "/authz/matrix", token, json={"changes": body}
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
-    if status_code == 200:
-        try:
-            cfg = await config_crud.get_or_create(db)
-            await config_crud.update_role_permissions(
-                db, cfg, RolePermissionsUpdate(permissions=body), uuid.UUID(user["sub"])
-            )
-            await db.commit()
-        except Exception:
-            # Roll back so the session isn't left with an aborted transaction —
-            # get_session() does one more commit() after this endpoint returns,
-            # and a broken session there would turn this into a 500 even though
-            # we intend to still return identity's 200.
-            await db.rollback()
-            logger.error(
-                "role-permissions PATCH: local mirror write failed after identity "
-                "accepted the change — mirror is now stale until the next successful write",
-                exc_info=True,
-            )
-        authz_client.invalidate_cache()
     if status_code not in (200,):
         raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
     return resp_body
@@ -235,7 +262,7 @@ async def list_roles(db: SessionDep, _: CurrentUserPayload, token: BearerToken):
     identity.  Transform errors (KeyError on a malformed response) are not swallowed.
     """
     try:
-        status_code, body = await authz_client.forward("GET", "/authz/defs", token)
+        status_code, body = await _forward_identity("GET", "/authz/defs", token)
     except httpx.RequestError:
         cfg = await config_crud.get_or_create(db)
         return config_crud.list_all_roles(cfg)
@@ -259,32 +286,27 @@ async def list_roles(db: SessionDep, _: CurrentUserPayload, token: BearerToken):
 # ── New passthrough endpoints ────────────────────────────────────────────────
 
 @router.get("/me/permissions")
-async def get_my_permissions(user: CurrentUserPayload, db: SessionDep, token: BearerToken):
-    """Proxy GET /me/permissions from identity.
-
-    Outage fallback (Spec §4): a connection failure (httpx.RequestError) falls
-    back to the local mirror + the caller's own JWT, synthesizing
-    {"permissions": mirror[role], "roles": [role]} — primary role only, same as
-    pre-branch client behaviour (dropping additional-role visibility under-
-    grants, never over-grants). 4xx/5xx from identity are real errors and must
-    still propagate — only a transport-level failure falls back.
+async def get_my_permissions(user: CurrentUserPayload, db: SessionDep):
+    """Effective permissions across all of the caller's roles (base + any
+    additional roles from identity's user_roles), read directly — same
+    physical DB as identity, no HTTP, so this never depends on the identity
+    *service* being up (only a DB outage can stop it, and that stops
+    everything anyway).
     """
-    try:
-        status_code, body = await authz_client.forward("GET", "/me/permissions", token)
-    except httpx.RequestError:
-        mirror = await authz_client.get_matrix(db, None)
-        role = user.get("role", "")
-        return {"permissions": mirror.get(role, {}), "roles": [role]}
-    if status_code != 200:
-        raise HTTPException(status_code=status_code, detail=body.get("detail"))
-    return body
+    uid = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+    perms = await effective_permissions(db, uid, role)
+    codes = await user_role_codes(db, uid, role)
+    additional = sorted(c for c in codes if c != role)
+    roles = ([role] if role else []) + additional
+    return {"permissions": perms, "roles": roles}
 
 
 @router.get("/authz-defs")
 async def get_authz_defs(_: CurrentUserPayload, token: BearerToken):
     """Proxy GET /authz/defs from identity (full defs: roles + permissions)."""
     try:
-        status_code, body = await authz_client.forward("GET", "/authz/defs", token)
+        status_code, body = await _forward_identity("GET", "/authz/defs", token)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
     if status_code != 200:
@@ -296,7 +318,7 @@ async def get_authz_defs(_: CurrentUserPayload, token: BearerToken):
 async def get_user_roles(_: CurrentUserPayload, token: BearerToken):
     """Proxy GET /authz/user-roles from identity (every user's additional roles)."""
     try:
-        status_code, body = await authz_client.forward("GET", "/authz/user-roles", token)
+        status_code, body = await _forward_identity("GET", "/authz/user-roles", token)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
     if status_code != 200:
@@ -308,7 +330,7 @@ async def get_user_roles(_: CurrentUserPayload, token: BearerToken):
 async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: BearerToken):
     """Proxy PUT /authz/users/{id}/roles to identity (system_admin only)."""
     try:
-        status_code, resp_body = await authz_client.forward(
+        status_code, resp_body = await _forward_identity(
             "PUT", f"/authz/users/{user_id}/roles", token, json=body
         )
     except Exception as exc:

@@ -73,30 +73,19 @@ def require_roles(*roles: str):
 
 def require_permission(permission: str):
     """
-    Check that the current user's role has a specific permission enabled
-    in the identity authz matrix (60 s cached; fallback = frozen JSONB).
-    system_admin always passes.
+    Check that the current user's role has a specific permission enabled,
+    reading identity's role_permissions/role_permission_locks directly (same
+    physical DB — no HTTP, no cache). system_admin always passes.
+
+    The real implementation lives in app.core.authz, bound to this service's
+    own get_session/get_current_user_payload dependencies (see there). It is
+    imported lazily here — not at module level — to avoid a circular import:
+    app.core.authz imports get_session/get_current_user_payload FROM this
+    module, so by the time anything actually calls require_permission(key),
+    both modules are guaranteed to be fully loaded.
 
     Usage:
         async def endpoint(user: Annotated[dict, Depends(require_permission("invoice_upload"))]):
     """
-    async def _check(
-        payload: CurrentUserPayload,
-        db: AsyncSession = Depends(get_session),
-        credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    ) -> dict:
-        role = payload.get("role", "")
-        if role == "system_admin":
-            return payload
-
-        from app.core import authz_client
-        perms = await authz_client.get_matrix(db, credentials.credentials)
-
-        if not perms.get(role, {}).get(permission, False):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions",
-            )
-        return payload
-
-    return _check
+    from app.core.authz import require_permission as _require_permission
+    return _require_permission(permission)

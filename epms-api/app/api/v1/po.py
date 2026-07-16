@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from sqlalchemy import select
 
-from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
+from app.core.authz import require_permission
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
@@ -22,8 +23,7 @@ from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/po", tags=["purchase-orders"])
 
-_PO_WRITE_ROLES = ("system_admin", "procurement_officer", "procurement_manager")
-PoWriteDep = Annotated[dict, Depends(require_roles(*_PO_WRITE_ROLES))]
+PoWriteDep = Annotated[dict, Depends(require_permission("epms.po.write"))]
 
 
 @router.get("", response_model=PoListResponse)

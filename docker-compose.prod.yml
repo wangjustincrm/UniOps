@@ -40,7 +40,7 @@ services:
   epms-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-epms-api:${TAG:-latest}
-    build: { context: ./epms-api }
+    build: { context: ., dockerfile: epms-api/Dockerfile }
     environment:
       <<: *db-env
       REDIS_HOST: ${REDIS_HOST}

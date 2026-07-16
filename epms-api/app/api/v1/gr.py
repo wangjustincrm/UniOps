@@ -5,7 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
-from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
+from app.core.authz import require_permission
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
 from app.crud import gr as gr_crud
 from app.crud import po as po_crud
@@ -15,8 +16,7 @@ from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/gr", tags=["goods-receipts"])
 
-_WAREHOUSE_ROLES = ("system_admin", "warehouse_staff", "procurement_officer")
-WarehouseDep = Annotated[dict, Depends(require_roles(*_WAREHOUSE_ROLES))]
+WarehouseDep = Annotated[dict, Depends(require_permission("epms.gr.receive"))]
 
 
 @router.get("", response_model=GrListResponse)

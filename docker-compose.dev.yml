@@ -64,13 +64,14 @@ services:
   epms-api:
     <<: *python-base
     build:
-      context: ./epms-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: epms-api/Dockerfile
     container_name: uniops_epms_api
     ports:
       - "8000:8000"
     volumes:
       - ./epms-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres

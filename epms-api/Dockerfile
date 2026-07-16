@@ -7,10 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY packages/authz /packages/authz
+RUN pip install --no-cache-dir /packages/authz
+
+COPY epms-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY epms-api .
 
 EXPOSE 8000
 

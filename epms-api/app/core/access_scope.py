@@ -175,26 +175,17 @@ async def _effective_permissions(
     base_role: str,
     user_id: uuid.UUID,
 ) -> dict[str, bool]:
-    """Union of all permissions across the user's active roles.
+    """Union of all permissions across the user's roles.
 
-    Reads the effective role-permission matrix from the identity authz hub
-    (via authz_client.get_matrix, 60 s cached).  No HTTP token is available in
-    this pure-DB call chain, so token=None is passed — authz_client falls back
-    to the frozen company_config JSONB immediately (identical behaviour to
-    pre-Task-3).  A permission is granted if ANY active role has it.
+    Reads identity's matrix directly via the shared authz package (same
+    physical DB — no HTTP, no token). Phase 1's authz_client (HTTP + cache +
+    outage fallback + write-through mirror) existed only because this pure-DB
+    call chain had no token to call identity with; that whole apparatus is
+    gone — a DB outage is the only thing that can stop this now, and that
+    stops everything anyway.
     """
-    from app.core import authz_client
-    from app.crud.config import PERMISSION_KEYS
-
-    codes = await _effective_role_codes(db, base_role, user_id)
-    matrix = await authz_client.get_matrix(db, None)
-    merged: dict[str, bool] = {k: False for k in PERMISSION_KEYS}
-    for code in codes:
-        role_perms = matrix.get(code, {})
-        for k in PERMISSION_KEYS:
-            if role_perms.get(k):
-                merged[k] = True
-    return merged
+    from uniops_authz import effective_permissions
+    return await effective_permissions(db, user_id, base_role)
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
