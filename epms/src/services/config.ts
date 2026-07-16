@@ -197,6 +197,11 @@ export const configService = {
   getMyPermissions: () =>
     api.get<MyPermissions>('/config/me/permissions'),
 
+  // Every user's ADDITIONAL roles only (identity user_roles assignments,
+  // no primary role mixed in). Same proxy Portal's Access Control page uses.
+  getUserRoles: () =>
+    api.get<{ user_roles: Record<string, string[]> }>('/config/user-roles'),
+
   // Custom roles
   listRoles: () =>
     api.get<CustomRole[]>('/config/roles'),

@@ -123,6 +123,19 @@ async def test_coa_permissions_resolve_assignments(client, db_session):
     assert r.json() == {"can_manage": True}
 
 
+async def test_coa_primary_role_finance_bp_without_assignment_denied(client):
+    """finance_bp is a job FUNCTION many people hold, not a singleton post —
+    holding it as your PRIMARY role (jwt.role) is not the same as being the
+    curated, assigned approver. A user whose primary role is finance_bp but
+    who has NO user_roles assignment row must be denied COA management."""
+    r = await client.get("/finance/v1/coa/permissions", headers=_h("finance_bp"))
+    assert r.json() == {"can_manage": False}
+
+    r = await client.put("/finance/v1/coa/mappings/budget_account/X",
+                         json={"account_code": "6400"}, headers=_h("finance_bp"))
+    assert r.status_code == 403
+
+
 async def test_account_crud_and_aux_dimensions(client):
     """辅助核算项: create with dims, patch them, reject unknown dims."""
     r = await client.post("/finance/v1/coa", headers=_h(), json={

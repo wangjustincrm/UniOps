@@ -26,16 +26,30 @@ _ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
 
 
 async def _can_manage(db: AsyncSession, user: dict) -> bool:
-    """JWT roles are not the whole story — Finance Manager / Finance BP are
-    ADDITIONAL roles held in identity's user_roles table (same physical DB —
-    phase 3 retired the old company_config.role_management assignments),
-    same resolution as the payment executor's can_pay."""
+    """finance_manager is a company-unique singleton POST (identity enforces
+    one holder) — if it's your PRIMARY role you genuinely hold it, so PRIMARY
+    (jwt.role) UNION ADDITIONAL (user_roles) both qualify.
+
+    finance_bp is NOT a singleton post — it's a job FUNCTION many people
+    carry (identity exempts it from the singleton index for exactly that
+    reason), not an assignment. Reading jwt.role/primary role for finance_bp
+    would silently promote every employee whose primary role happens to be
+    finance_bp into a COA manager, even if they were never added to the
+    assignment list — mirrors approval-api's _post_holders split
+    (workflow.py) for the same doctrine. So finance_bp must resolve from
+    user_roles ONLY, never from the primary role."""
     if user.get("role") in _MANAGE_ROLES:
         return True
     from app.crud.payment_execute import _user_role_codes
     uid = uuid.UUID(str(user.get("sub", "")))
     codes = await _user_role_codes(db, uid, user.get("role", ""))
-    return "finance_manager" in codes or "finance_bp" in codes
+    if "finance_manager" in codes:
+        return True
+    from sqlalchemy import text
+    row = (await db.execute(text(
+        "SELECT 1 FROM user_roles WHERE user_id = :u AND role_code = 'finance_bp'"),
+        {"u": str(uid)})).first()
+    return row is not None
 
 
 async def _require_manage(db: AsyncSession, user: dict) -> None:

@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import Response
 from sqlalchemy import func, or_, select
@@ -38,6 +39,42 @@ AdminDep = Annotated[dict, Depends(require_roles("system_admin"))]
 
 _CSV_HEADERS = ["email", "full_name", "role", "department_code", "is_active", "teams_account"]
 _CSV_IMPORT_HEADERS = _CSV_HEADERS + ["password"]  # password optional on import
+
+# gm/opm/vendor_manager/finance_manager/procurement_manager are company-unique
+# singleton POSTS (identity enforces one holder each — migration
+# 0003_post_role_singleton + the cross-table 409 in PUT /authz/users/{id}/roles).
+# finance_bp is deliberately excluded: it's a job FUNCTION many people hold,
+# so multiple holders are expected and fine.
+_POST_ROLES = frozenset({"gm", "opm", "vendor_manager", "finance_manager", "procurement_manager"})
+
+
+async def _post_conflict(db, role: str, exclude_user_id: uuid.UUID | None = None) -> str | None:
+    """Return the id (str) of another user already holding `role` as a
+    singleton post — as PRIMARY role (users.role) OR ADDITIONAL role
+    (identity's user_roles, same physical DB) — excluding exclude_user_id so
+    re-saving the current holder is idempotent. Mirrors identity-api's
+    authz.py::_post_conflict (same invariant, same physical DB): the
+    partial unique index on user_roles (migration 0003_post_role_singleton)
+    only guards ADDITIONAL-role assignment; a post set as a PRIMARY role via
+    this admin endpoint is otherwise invisible to that invariant.
+
+    Returns None (no conflict) for non-post roles like finance_bp, which may
+    have any number of holders.
+    """
+    if role not in _POST_ROLES:
+        return None
+    params: dict = {"role": role}
+    primary_sql = "SELECT id::text FROM users WHERE role = :role"
+    additional_sql = "SELECT user_id::text FROM user_roles WHERE role_code = :role"
+    if exclude_user_id is not None:
+        params["uid"] = str(exclude_user_id)
+        primary_sql += " AND id != :uid"
+        additional_sql += " AND user_id != :uid"
+    row = (await db.execute(sa.text(primary_sql), params)).first()
+    if row is not None:
+        return row[0]
+    row = (await db.execute(sa.text(additional_sql), params)).first()
+    return row[0] if row is not None else None
 
 
 async def _with_dept_names(db: SessionDep, users: list[User]) -> list[UserAdminResponse]:
@@ -274,6 +311,12 @@ async def create_user(body: UserCreate, db: SessionDep, _: AdminDep):
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Invalid role. Must be one of: {sorted(VALID_ROLES)}",
         )
+    conflict = await _post_conflict(db, body.role)
+    if conflict is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"'{body.role}' is a singleton post already held by user {conflict}",
+        )
     erp_code = (body.erp_person_code or "").strip()
     if not erp_code:
         raise HTTPException(
@@ -310,6 +353,12 @@ async def update_user(user_id: uuid.UUID, body: UserUpdate, db: SessionDep, _: A
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid role. Must be one of: {sorted(VALID_ROLES)}",
+            )
+        conflict = await _post_conflict(db, body.role, exclude_user_id=user.id)
+        if conflict is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"'{body.role}' is a singleton post already held by user {conflict}",
             )
         user.role = body.role
 

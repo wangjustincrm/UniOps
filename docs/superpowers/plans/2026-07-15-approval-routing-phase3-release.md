@@ -7,7 +7,9 @@
 
 | 项 | 结论 |
 |---|---|
-| 新迁移三处 | **approval-api `0001_approval_routing`**(approval-api 有史以来**第一次**拥有自己的表+alembic 设置,独立 `version_table="alembic_version_approval"`;`migrate-prod.sh` 服务列表已加 approval-api,照常跑即可)。**identity-api `0002_authz_tables`(一期,已上生产)+ 本期 `0003_post_role_singleton`**(五岗位跨 `users.role` ∪ `user_roles` 唯一性约束)。**epms-api `z4_drop_temp_assignments`**(删除已死的"代班"功能表)。finance/vms/expense/budget/mdm 无新迁移。 |
+| 新迁移两处 | **approval-api `0001_approval_routing`**(approval-api 有史以来**第一次**拥有自己的表+alembic 设置,独立 `version_table="alembic_version_approval"`;`migrate-prod.sh` 服务列表已加 approval-api,照常跑即可)。**identity-api `0002_authz_tables`(一期,已上生产)+ 本期 `0003_post_role_singleton`**(五岗位跨 `users.role` ∪ `user_roles` 唯一性约束)。**epms-api 本期无迁移**——原计划的 `z4_drop_temp_assignments`(删空表 `temp_assignments`)已从本次发布中**移除**,理由见下方「下个发布」条目。finance/vms/expense/budget/mdm 无新迁移。 |
+| **★ 迁移前 pre-flight 检查(必做)** | identity `0003_post_role_singleton` 的偏索引会在 `user_roles` 里已有重复单例岗位时**直接中止迁移**——Portal → Access Control 从一期起就能编辑岗位,存在这种情况是合理的。迁移前必须先跑:<br>`SELECT role_code, count(*) FROM user_roles WHERE role_code IN ('gm','opm','vendor_manager','finance_manager','procurement_manager') GROUP BY 1 HAVING count(*) > 1;`<br>**预期 0 行**。若有行返回,必须先手工解决冲突(保留一个持有人、删除其余行)再跑 `migrate-prod.sh`。 |
+| **下个发布**:`temp_assignments` 空表待删 | 本期的代码已经完全不读 `temp_assignments`(Task 7 已删 UI/端点/model/schema/测试),但删表的迁移本身被移出本次发布——原因:`epms-api/app/api/v1/config.py::_full_response` 在旧容器仍服务期间读它,若这次连表一起删,`migrate → seed → 平价 → up` 这段窗口内旧容器的 `GET /api/v1/config` 会整体 500(`useConfig` 全站依赖它)。生产该表实测 0 行,晚一个发布再删没有任何数据风险——标准的"先停止读取、下次发布再删表"顺序。下次发布时把 `z4_drop_temp_assignments`(逻辑不变,`drop_table("temp_assignments")`)重新加回来即可。 |
 | **★ 新增 seed 步骤(必做,顺序不可乱)** | 迁移后必须跑 `docker compose -f docker-compose.prod.yml run --rm approval-api python -m scripts.seed_routing`,把 epms `company_config` 四件套 JSONB(`role_management` / `dept_gm_opm_mapping` / `dept_director_mapping` / `dept_supervisor_enabled`)一次性灌进 identity `user_roles`(岗位)+ approval-api 自己的 `approval_dept_routing` / `approval_backups`(部门路由)。**顺序:migrate → seed → 平价脚本 → up。** |
 | **不 seed 的后果(比一期更严重)** | 一期不 seed 是"矩阵为空→非 admin 失去权限"(仍能回落到主角色兜底)。**本期不 seed,approval-api 的 `get_role_management`/`get_dept_gm_opm_mapping`/`get_dept_director_mapping`/`get_dept_supervisor_enabled` 直接返回空字典/空集合 —— 没有任何一步能解析出审批人**:`gm_or_opm`/`director`/`finance_manager` 等角色的 `*_user_id` 全是 `None`,PR/PO/PA 会在第一个非 `dept_manager` 步骤直接卡死(无人能被指派任务、无人能通过鉴权),而 `dept_manager`/`supervisor` 这类不依赖 `role_management` 的步骤仍正常(因为它们读 `users` 表)。**这不是"少数请求 500",是全公司审批流水线冻结**,必须先跑 seed 再放行流量。 |
 | **seed 会重新指派(reassign)** | 若某岗位在 `user_roles` 里当前的持有人与 `role_management` 指定的人不一致(比如生产此前有人手工加过测试用附加角色),seed 会 **DELETE 旧行并重新指派**,并打印 `WARNING: reassigned <role> from <old> (<old_name>) to <new> (<new_name>) — company_config.role_management is authoritative`。**执行迁移的人必须读这些 WARNING 行**——它们代表一次真实的岗位持有人变更,不是噪音。 |
@@ -24,7 +26,29 @@ sudo git pull origin main
 sudo sed -i "s/^TAG=.*/TAG=<新sha>/" .env
 sudo docker compose -f docker-compose.prod.yml pull
 
-# 1) 迁移(approval-api 首次建表 + identity 岗位单例约束 + epms 删代班表)
+# 0) ★ pre-flight(迁移前,identity 0003 的单例约束会因重复而中止迁移)
+#    DB 是外部服务器(${DB_HOST}),不是 compose 里的容器 —— 借 epms-api 容器内已有的
+#    asyncpg 连接跑这条检查,不需要另装 psql 客户端。
+sudo docker compose -f docker-compose.prod.yml run --rm epms-api python -c "
+import asyncio
+from app.db.session import engine
+import sqlalchemy as sa
+
+async def main():
+    async with engine.connect() as conn:
+        rows = (await conn.execute(sa.text(
+            \"SELECT role_code, count(*) FROM user_roles \"
+            \"WHERE role_code IN ('gm','opm','vendor_manager','finance_manager','procurement_manager') \"
+            \"GROUP BY 1 HAVING count(*) > 1\"))).all()
+        print('dup singleton posts:', rows)
+        assert not rows, 'resolve duplicate singleton post holders before migrating'
+
+asyncio.run(main())
+"
+#    预期 dup singleton posts: []。有行必须先手工解决冲突（保留一个持有人、删除其余
+#    user_roles 行）再继续。
+
+# 1) 迁移(approval-api 首次建表 + identity 岗位单例约束;epms 本期无迁移)
 sudo ./migrate-prod.sh
 
 # 2) ★ seed(必做,读 WARNING 行!)
@@ -76,7 +100,7 @@ asyncio.run(main())
 
 - `company_config` 的四件套 JSONB **一行也没被本次迁移写过**(seed 只读它们,不写回)——回退 TAG 后,旧版 approval-api 代码立刻读回这份仍然完好的快照,行为与迁移前一致。
 - 新表(`approval_dept_routing`/`approval_backups`)、`user_roles` 里新增的岗位行留着无害——旧代码根本不读它们。
-- **例外:epms 的 `temp_assignments` 表被本次迁移物理删除**。它的 `downgrade()` 会把表重新建出来,但是**空表**——这个功能本来就是死代码(生产该表迁移前实测 0 行),回滚不会丢失任何真实数据,但如果误以为回滚能恢复"代班"历史记录,那是不存在的(该功能从未被使用)。
+- `epms-api` 本期没有迁移,`temp_assignments` 表原样留在库里(空表,未被本次发布触碰)——回滚没有任何额外影响。
 
 ## 一处刻意保留的例外(不是遗漏)
 

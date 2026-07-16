@@ -12,7 +12,7 @@ import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears } from '@/hooks/useBudget'
-import { useConfig, useRolePermissions } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions, useUserRoles } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
@@ -21,8 +21,17 @@ const currentYear = new Date().getUTCFullYear()
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+// `finance_bp` is deliberately NOT in this set. gm/opm/finance_manager are
+// company-unique singleton POSTS (identity enforces one holder) — holding
+// one as your PRIMARY role (jwt/user.role) means you genuinely are it.
+// finance_bp is a job FUNCTION many people carry (identity exempts it from
+// the singleton index for that reason); reading it off user.role would
+// grant full-access scope to anyone whose primary role happens to be
+// finance_bp even if they were never assigned. See isFinanceBpAssigned
+// below, which resolves finance_bp from the user_roles assignment table
+// only — mirrors approval-api's _post_holders / finance-api's coa.py.
 const FULL_ACCESS_ROLES = new Set([
-  'gm', 'opm', 'finance_manager', 'finance_bp', 'ap_clerk',
+  'gm', 'opm', 'finance_manager', 'ap_clerk',
   'system_admin', 'cfo', 'auditor',
 ])
 
@@ -30,14 +39,17 @@ const FULL_ACCESS_ROLES = new Set([
 // retired) company_config.role_management ids. Migrated to identity's
 // user_roles — anyone holding one of these carries the role code in the
 // permissions role union below. `vendor_manager` was never part of the
-// old check and is intentionally excluded.
+// old check and is intentionally excluded. `finance_bp` is likewise
+// excluded here — it must NOT resolve from myRoles (primary ∪ additional),
+// only from an ADDITIONAL-roles-only assignment check (isFinanceBpAssigned).
 const SPECIAL_ROLE_CODES = new Set([
-  'gm', 'opm', 'finance_manager', 'procurement_manager', 'finance_bp',
+  'gm', 'opm', 'finance_manager', 'procurement_manager',
 ])
 
 export default function BudgetDashboard() {
   const { data: config } = useConfig()
   const { data: myPermissions } = useRolePermissions()
+  const { data: userRolesData } = useUserRoles()
   const { user } = useAuthStore()
   const { data: ccData } = useCostCenters({ active_only: true })
   const yearOptions = useAvailableFiscalYears()
@@ -48,7 +60,12 @@ export default function BudgetDashboard() {
 
   const myRoles = myPermissions?.roles ?? []
   const isSpecialRoleAssignee = myRoles.some((r) => SPECIAL_ROLE_CODES.has(r))
-  const isFullAccess = !!user && (FULL_ACCESS_ROLES.has(user.role) || isSpecialRoleAssignee)
+  // finance_bp resolved from the ADDITIONAL-roles-only assignment table —
+  // never from myRoles/user.role, which mix in the primary role.
+  const isFinanceBpAssigned = !!user &&
+    (userRolesData?.user_roles?.[user.id] ?? []).includes('finance_bp')
+  const isFullAccess = !!user &&
+    (FULL_ACCESS_ROLES.has(user.role) || isSpecialRoleAssignee || isFinanceBpAssigned)
 
   const visibleCCs = isFullAccess
     ? costCenters

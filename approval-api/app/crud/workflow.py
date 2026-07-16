@@ -1,9 +1,12 @@
+import logging
 import uuid
 import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.config import CompanyConfig
 from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_PR = [{"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"}]
 _DEFAULT_PO = [{"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"}]
@@ -51,15 +54,27 @@ async def _post_holders(db: AsyncSession) -> dict[str, list[str]]:
     holders come from user_roles ONLY.
     """
     out: dict[str, list[str]] = {}
+    # ORDER BY makes which holder lands in [0] (get_role_management below)
+    # deterministic when the singleton invariant is broken (2+ holders of a
+    # post) rather than depending on unordered UNION ALL result order.
     rows = (await db.execute(sa.text(
         "SELECT role AS code, id::text AS uid FROM users WHERE role = ANY(:codes) AND is_active "
         "UNION ALL "
         "SELECT ur.role_code, ur.user_id::text FROM user_roles ur "
         " JOIN users u ON u.id = ur.user_id "
-        " WHERE ur.role_code = ANY(:codes_with_bp) AND u.is_active"),
+        " WHERE ur.role_code = ANY(:codes_with_bp) AND u.is_active "
+        "ORDER BY 1, 2"),
         {"codes": list(_POST_CODES), "codes_with_bp": list(_POST_CODES) + ["finance_bp"]})).all()
     for code, uid in rows:
         out.setdefault(code, []).append(uid)
+    for code in _POST_CODES:
+        holders = out.get(code) or []
+        if len(holders) > 1:
+            logger.warning(
+                "Singleton post invariant broken: role '%s' resolves to %d holders "
+                "(expected 1): %s. Routing/actor-can-approve for this post is "
+                "nondeterministic until this is resolved.", code, len(holders), holders,
+            )
     return out
 
 

@@ -171,3 +171,189 @@ which already carries her via the original curated
 ### Commit
 `fix(approval): finance_bp approvers come from the assignment only, not from holding the job function`
 
+## Final-review fixes (2026-07-15)
+
+Three findings from the controller's final review, all confirmed against live
+code/data.
+
+### Status: DONE
+
+### FIX 1 — finance_bp over-grant in two more consumers
+
+**(a) `finance-api/app/api/v1/coa.py::_can_manage`** — the same doctrine as
+`workflow.py::_post_holders`: `finance_manager` (singleton post) may resolve
+from `users.role` ∪ `user_roles`; `finance_bp` (job function) must resolve
+from `user_roles` only. Rewrote `_can_manage` to check `finance_manager` via
+the existing `_user_role_codes` union, then check `finance_bp` with a direct
+`SELECT 1 FROM user_roles WHERE user_id = :u AND role_code = 'finance_bp'`
+query — no longer reads the primary role for finance_bp.
+Added `finance-api/tests/test_coa.py::test_coa_primary_role_finance_bp_without_assignment_denied`
+— a user whose JWT/primary role is `finance_bp` with no `user_roles` row
+gets `can_manage: false` from `GET /coa/permissions` and `403` from a
+mapping-write endpoint. Confirmed it fails against the pre-fix code
+(re-ran before editing: pre-fix code returned `can_manage: true`).
+
+**(b) `epms/src/pages/budget/BudgetDashboard.tsx`** — two separate leaks, both
+fixed:
+  - `FULL_ACCESS_ROLES` included `'finance_bp'` checked directly against
+    `user.role` (the primary role from the auth store) — removed it.
+  - `SPECIAL_ROLE_CODES` included `'finance_bp'` checked against `myRoles`
+    (from `/config/me/permissions`, which is primary ∪ additional) — removed
+    it and added a separate `isFinanceBpAssigned` computed from the
+    ADDITIONAL-roles-only `GET /config/user-roles` proxy (same one Portal's
+    Access Control page uses; returns `{user_roles: {uid: [codes]}}`).
+    `isFullAccess` now ORs in `isFinanceBpAssigned` instead of trusting
+    myRoles/user.role for this code. Added `configService.getUserRoles()`
+    (`epms/src/services/config.ts`) and `useUserRoles()`
+    (`epms/src/hooks/useConfig.ts`) to support it. Comments in the file state
+    why finance_bp is excluded from both role-only sets.
+  - No test harness exists for this component (no epms frontend test runner
+    wired up for pages); verified via `tsc` only, matching the file's
+    existing testing posture.
+
+### FIX 2 — singleton invariant unguarded write path in epms-api
+
+`epms-api/app/api/v1/users.py`: added `_POST_ROLES` (the five singleton
+codes, finance_bp deliberately excluded) and `_post_conflict(db, role,
+exclude_user_id=None)`, mirroring identity-api's `authz.py::_post_conflict`
+query shape (primary-role hit first, then `user_roles` hit), excluding the
+user being edited so re-saving the current holder is idempotent. Wired into
+both `update_user` (PATCH `/users/{id}`) and `create_user` (POST `/users`) —
+both now 409 when the requested role is a singleton post already held by
+someone else. The CSV bulk `/users/import` path also sets `.role` directly
+and was **not** touched — see Concerns.
+
+Tests added to `epms-api/tests/test_user_supervisor_assignment.py` (the file
+already had the admin_client + `_make_user` PATCH-role test harness):
+- `test_patch_role_to_held_singleton_post_rejected_409` — PATCHing a second
+  user to `gm` when one already exists → 409.
+- `test_patch_role_resave_current_holder_is_idempotent` — re-saving the
+  current holder's own post role → 200 (exclude-self works).
+- `test_patch_role_to_finance_bp_allows_multiple_holders` — finance_bp is
+  never guarded → 200 with two primary-role holders.
+- `test_create_user_with_held_singleton_post_rejected_409` — POST `/users`
+  with an already-held singleton role → 409.
+
+Hardening in `approval-api/app/crud/workflow.py::_post_holders`: added
+`ORDER BY 1, 2` to the UNION ALL query (deterministic `[0]` selection in
+`get_role_management` if the invariant is ever broken) and a
+`logger.warning(...)` when any of the five singleton codes resolves to more
+than one holder, naming the role and listing the holder ids.
+
+### FIX 3 — z4_drop_temp_assignments removed from this release
+
+Confirmed the finding: `epms-api/app/api/v1/config.py::_full_response` calls
+`list_temp_assignments`, backing `GET /api/v1/config` (used everywhere via
+`useConfig`) — dropping the table at migrate time while the OLD container
+still serves until `up` would 500 every config request company-wide for the
+whole migrate→seed→parity→up window.
+
+Exact sequence run (dev DB was at `z4` / head going in):
+```
+docker exec uniops_epms_api alembic current      # z4_drop_temp_assignments (head)
+docker exec uniops_epms_api alembic downgrade -1  # -> z3_add_created_by_to_tasks; recreates empty temp_assignments
+rm /c/Project/uniops/epms-api/alembic/versions/z4_drop_temp_assignments.py
+docker exec uniops_epms_api alembic heads          # z3_add_created_by_to_tasks (head) — single head
+docker exec uniops_epms_api alembic upgrade head   # no-op, already at head — clean
+```
+Grepped for other references to `temp_assignments` in epms-api after the
+delete: only the original creation migration
+(`d4e5f6a7b8c9_sprint4_company_config.py`) remains, as expected — all Task 7
+reading-code deletions (UI/endpoints/model/schema/tests) stay in place per
+instructions.
+
+Release notes (`docs/superpowers/plans/2026-07-15-approval-routing-phase3-release.md`)
+updated:
+- Migration count 3 → 2 (approval `0001_approval_routing`, identity
+  `0003_post_role_singleton`); explicit note that epms has no migration this
+  release and z4 was removed.
+- Added a "下个发布" row: `temp_assignments` stays as an empty table, safe to
+  drop next release once this release's code (which already stopped
+  reading it) is live.
+- Added a pre-flight check step (both as prose and as a runnable
+  `docker compose run --rm epms-api python -c "..."` snippet using
+  `app.db.session.engine`, since prod's DB is an external server, not a
+  compose service — no `psql` in the container) for the
+  `user_roles` duplicate-singleton-post query, run and confirmed working
+  against dev (`dup singleton posts: []`).
+- Rewrote the rollback section's `temp_assignments` bullet — it's no longer
+  touched by this release's migration at all.
+
+### Verification (foreground, all run and awaited before this report)
+
+```
+cd /c/Project/uniops/approval-api && TEST_PG_PASSWORD=*** ./.venv/Scripts/python -m pytest tests -q
+```
+```
+39 passed in 20.84s
+```
+
+```
+cd /c/Project/uniops/finance-api && TEST_PG_PASSWORD=*** ./.venv/Scripts/python -m pytest tests/test_coa.py tests/test_payment_execute.py -q
+```
+```
+29 passed in 128.91s
+```
+
+```
+docker exec uniops_epms_api python -m pytest tests/test_admin.py -q
+```
+```
+19 passed in 7.99s
+```
+(the 4 new singleton-guard tests live in `test_user_supervisor_assignment.py`,
+not `test_admin.py`; ran together separately: `25 passed`.)
+
+```
+cd /c/Project/uniops/epms && npx tsc -p tsconfig.app.json --noEmit 2>&1 | grep -c "error TS"
+```
+```
+69
+```
+(baseline, unchanged)
+
+```
+docker exec uniops_approval_api python -m scripts.verify_routing_parity
+```
+```
+PARITY OK (12 depts x 3 doc types)
+```
+
+```
+docker exec uniops_epms_api alembic heads
+```
+```
+z3_add_created_by_to_tasks (head)
+```
+Single head, no z4.
+
+### Concerns
+
+- `epms-api/app/api/v1/users.py`'s CSV bulk-import path (`POST
+  /users/import`) also writes `.role` directly for both new and existing
+  users (lines ~275 and ~290-298) without going through the new
+  `_post_conflict` guard. This wasn't named in the controller's three
+  findings (which called out `update_user` and "the create path" — i.e.
+  `POST /users`, which is now guarded), so it was left untouched to avoid
+  scope creep beyond what was reviewed. It is the same class of gap as FIX 2
+  and should be looked at — a CSV import setting two rows to `gm` would
+  silently arm the same nondeterminism.
+- `finance-api/app/crud/payment_execute.py::_check_can_pay` has the
+  identical shape of bug: `_PAY_ROLES = {"ap_clerk", "finance_manager",
+  "finance_bp", "system_admin"}` is checked against `user.get("role")`
+  (line 81) — a primary-role-only check — before the assignment-based
+  `_user_role_codes` fallback is even consulted, so a primary-role
+  `finance_bp` user without an assignment can already execute payments.
+  Not touched: the controller's FIX 1 named exactly "two consumers" (coa.py
+  and BudgetDashboard.tsx) and `test_payment_execute.py` was listed as an
+  unmodified green baseline in the verify block, so this was treated as
+  out of scope for this pass rather than assumed-broken-and-silently-fixed.
+  Flagging it explicitly here since it's the same doctrine violation.
+- BudgetDashboard.tsx's `isFinanceBpAssigned` now fetches the whole-company
+  `GET /config/user-roles` map (same proxy already used by Portal's Access
+  Control page) just to check one user's membership. Accepted as the
+  correct-per-doctrine option per the task's explicit menu of choices; the
+  endpoint is already used elsewhere and `useUserRoles` sets a 60s
+  `staleTime`, so this is not expected to be a meaningful load concern, but
+  it is a new network call this page did not previously make.
+

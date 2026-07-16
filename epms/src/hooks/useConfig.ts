@@ -36,6 +36,18 @@ export function useRolePermissions() {
   })
 }
 
+/** Every user's ADDITIONAL roles only (identity user_roles assignments) —
+ *  no primary role mixed in. Used to resolve job-function assignments like
+ *  finance_bp, where holding the function as your primary role must NOT
+ *  count (see BudgetDashboard.tsx). */
+export function useUserRoles() {
+  return useQuery({
+    queryKey: ['config-user-roles'],
+    queryFn: () => configService.getUserRoles(),
+    staleTime: 60_000,
+  })
+}
+
 export function useLockedPermissions() {
   return useQuery({
     queryKey: ['locked-permissions'],
