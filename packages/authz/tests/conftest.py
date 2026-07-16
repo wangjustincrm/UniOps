@@ -99,11 +99,10 @@ BASELINE_ROLES = ["finance_bp", "ap_clerk"]
 # themselves. effective_permissions() only returns keys sourced from
 # permission_defs (that's what lets an ungranted key read False instead of
 # being absent) — a key missing from permission_defs never appears in its
-# result at all, so tests asserting `.get(key) is True` need the key
-# pre-registered. test_ungranted_key_is_false_not_missing and
-# test_inactive_additional_role_ignored insert their own permission_defs rows
-# (or don't need one, since they only assert `is not True`) and are
-# unaffected by this baseline.
+# result at all, so tests asserting `.get(key) is True` (or a precise
+# `is False`) need the key pre-registered. test_ungranted_key_is_false_not_missing
+# and test_inactive_additional_role_ignored insert their own permission_defs
+# rows and are unaffected by this baseline.
 BASELINE_PERMISSIONS = ["k.write", "k.locked"]
 
 

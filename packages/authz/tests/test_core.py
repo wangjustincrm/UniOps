@@ -84,8 +84,17 @@ async def test_inactive_additional_role_ignored(authz_db):
     await db.execute(sa.text(
         "INSERT INTO role_permissions (role_code, permission_key) "
         "VALUES ('retired_role', 'k.retired')"))
+    # Register the key itself, same as test_ungranted_key_is_false_not_missing
+    # does for 'k.nope'. effective_permissions() only returns keys sourced
+    # from permission_defs — without this row 'k.retired' is simply absent
+    # from the result dict, and `.get(...) is not True` degenerates to
+    # `None is not True` (vacuously true regardless of whether the
+    # is_active filter on the JOIN actually works).
+    await db.execute(sa.text(
+        "INSERT INTO permission_defs (key, module, label, sort) "
+        "VALUES ('k.retired', 'test', 'Retired', 1)"))
     perms = await effective_permissions(db, uid, "requester")
-    assert perms.get("k.retired") is not True
+    assert perms.get("k.retired") is False
 
 
 async def test_bind_system_admin_short_circuits(authz_db):
