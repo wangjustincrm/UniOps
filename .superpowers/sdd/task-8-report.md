@@ -357,3 +357,15 @@ Single head, no z4.
   `staleTime`, so this is not expected to be a meaningful load concern, but
   it is a new network call this page did not previously make.
 
+
+## CSV/ERP import guard(控制器验证并代提交)
+
+实施代理再次返回无效响应(第 6 次:"wait for the Monitor task"),未验证未提交。代码本身完整正确,由控制器验证后提交。
+
+**覆盖三条绕过路径**:CSV 导入的 update 分支(~275)/create 分支(~293)、ERP 导入(~474) —— 此前 `_post_conflict` 只守 create_user/update_user 两个端点,导入路径直接写 `.role` 完全绕过守卫(守前门敞后门=守卫没做完)。
+**设计**:批量导入按各自既有的错误收集惯例逐行 error/skip(不中断整个文件),消息点名当前持有人;新增 `claimed_posts` 字典处理**同一文件内两行争抢同一岗位**(DB 检查在 flush 前看不到前一行)。
+
+**验证(控制器亲跑)**:
+- `test_user_supervisor_assignment.py` 单独跑 **6 passed**(含 4 个新守卫测试:PATCH 409/自我改保幂等/finance_bp 多持有者放行/create 409)
+- 与 `test_users_import_from_erp.py` 同跑时出现的 10 errors 是**既有的测试顺序污染**(该文件的 `assert 9 >= 12` 密码策略失败在 76 条基线里),非本次引入
+- **epms 全量失败集:72 vs 基线 76,新增为零**,消失的 4 条正是随死功能删除的 temp-assignment 测试

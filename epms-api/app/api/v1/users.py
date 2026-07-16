@@ -243,6 +243,12 @@ async def import_users(
 
     created, updated = 0, 0
     errors: list[str] = []
+    # Track singleton posts claimed by an earlier row IN THIS SAME FILE, keyed
+    # by role -> the email that claimed it. The per-row DB check below only
+    # sees a prior row once it has been flushed; this in-loop set is a second,
+    # explicit guard so two rows in one CSV can never both claim e.g. `gm`
+    # regardless of flush timing.
+    claimed_posts: dict[str, str] = {}
 
     for i, row in enumerate(reader, start=2):
         try:
@@ -269,6 +275,26 @@ async def import_users(
                 continue
 
             existing = await user_crud.get_by_email(db, email)
+
+            if role in _POST_ROLES:
+                claimed_by = claimed_posts.get(role)
+                if claimed_by is not None and claimed_by != email:
+                    errors.append(
+                        f"Row {i} ({email}): '{role}' is a singleton post already "
+                        f"claimed by {claimed_by} earlier in this file"
+                    )
+                    continue
+                conflict = await _post_conflict(
+                    db, role, exclude_user_id=existing.id if existing else None
+                )
+                if conflict is not None:
+                    errors.append(
+                        f"Row {i} ({email}): '{role}' is a singleton post already "
+                        f"held by user {conflict}"
+                    )
+                    continue
+                claimed_posts[role] = email
+
             if existing:
                 if full_name:
                     existing.full_name = full_name
@@ -435,6 +461,11 @@ async def import_users_from_erp(
     bearer = _extract_bearer(authorization)
     created: list[ErpImportCreated] = []
     errors: list[ErpImportError] = []
+    # Same in-loop guard as the CSV importer: this endpoint only ever creates
+    # new users (an existing email is always an error below), so there is no
+    # "current holder" to exclude — but two items in the SAME request can
+    # still both claim a singleton post before either is committed.
+    claimed_posts: dict[str, str] = {}
 
     async with MdmClient(bearer_token=bearer) as mdm:
         for item in body.items:
@@ -465,6 +496,24 @@ async def import_users_from_erp(
             if existing_erp:
                 errors.append(ErpImportError(erp_person_code=item.erp_person_code, reason="already imported"))
                 continue
+
+            if role in _POST_ROLES:
+                claimed_by = claimed_posts.get(role)
+                if claimed_by is not None and claimed_by != item.erp_person_code:
+                    errors.append(ErpImportError(
+                        erp_person_code=item.erp_person_code,
+                        reason=f"'{role}' is a singleton post already claimed by "
+                               f"{claimed_by} earlier in this import",
+                    ))
+                    continue
+                conflict = await _post_conflict(db, role)
+                if conflict is not None:
+                    errors.append(ErpImportError(
+                        erp_person_code=item.erp_person_code,
+                        reason=f"'{role}' is a singleton post already held by user {conflict}",
+                    ))
+                    continue
+                claimed_posts[role] = item.erp_person_code
 
             temp_pw = INITIAL_PASSWORD
             user = User(
