@@ -98,10 +98,14 @@ async def test_mapping_upsert_and_validation(client):
 
 
 async def test_coa_permissions_resolve_assignments(client, db_session):
-    """can_manage = JWT manage roles ∪ ADDITIONAL roles held in identity's
-    user_roles table (same physical DB) — the boss is a 'requester' with an
-    additional finance_bp role, never gate on jwt.role alone. Phase 3: sourced
-    from user_roles, not the retired company_config.role_management."""
+    """can_manage now resolves finance.coa.manage from the Access Control
+    matrix (identity's role_permissions ∪ role_permission_locks) via the
+    shared authz package — not a hardcoded role set. Phase 2 formalizes
+    phase 3's carve-out of finance_bp from COA management: the matrix's
+    seeded default for finance.coa.manage is (system_admin, finance_manager)
+    only, so a finance_bp user_roles ASSIGNMENT no longer grants access on
+    its own — it must be explicitly granted in the matrix (proven below by
+    seeding a role_permissions row for finance_bp)."""
     from sqlalchemy import text
 
     r = await client.get("/finance/v1/coa/permissions", headers=_h("finance_manager"))
@@ -118,8 +122,19 @@ async def test_coa_permissions_resolve_assignments(client, db_session):
     token = jwt.encode({"sub": boss_id, "role": "requester",
                         "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
                        settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-    r = await client.get("/finance/v1/coa/permissions",
-                         headers={"Authorization": f"Bearer {token}"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # finance_bp-via-assignment is NOT enough by itself anymore (the key
+    # deliberate tightening this task makes).
+    r = await client.get("/finance/v1/coa/permissions", headers=headers)
+    assert r.json() == {"can_manage": False}
+
+    # Only an explicit matrix grant for finance_bp turns it on — proving
+    # access is now decided by the Access Control matrix, not by role code.
+    await db_session.execute(text(
+        "INSERT INTO role_permissions (role_code, permission_key) VALUES ('finance_bp', 'finance.coa.manage')"))
+    await db_session.flush()
+    r = await client.get("/finance/v1/coa/permissions", headers=headers)
     assert r.json() == {"can_manage": True}
 
 

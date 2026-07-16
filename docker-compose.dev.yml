@@ -195,13 +195,14 @@ services:
   finance-api:
     <<: *python-base
     build:
-      context: ./finance-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: finance-api/Dockerfile
     container_name: uniops_finance_api
     ports:
       - "8004:8004"
     volumes:
       - ./finance-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres

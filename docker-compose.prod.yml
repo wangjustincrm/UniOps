@@ -142,7 +142,7 @@ services:
   finance-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-finance-api:${TAG:-latest}
-    build: { context: ./finance-api }
+    build: { context: ., dockerfile: finance-api/Dockerfile }
     environment:
       <<: *db-env
       SERVICE_NAME: finance-core

@@ -6,10 +6,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY packages/authz /packages/authz
+RUN pip install --no-cache-dir /packages/authz
+
+COPY finance-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY finance-api .
 
 EXPOSE 8004
 

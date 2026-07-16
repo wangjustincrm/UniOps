@@ -1,8 +1,9 @@
 """Fiscal period management — FIN-GL-002 soft/hard close (Phase 0-B1.7).
 
-Close/reopen requires finance_manager or system_admin. Hard-closed periods
-cannot be reopened from the API (Controller decision per PRD; manual DB
-action with audit trail if ever needed).
+Close/reopen requires the finance.period.close permission (Access Control
+matrix — default granted to finance_manager/system_admin). Hard-closed
+periods cannot be reopened from the API (Controller decision per PRD; manual
+DB action with audit trail if ever needed).
 """
 import re
 import uuid
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import require_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.fiscal_period import HARD_CLOSED, OPEN, SOFT_CLOSED, FiscalPeriod
@@ -20,7 +22,6 @@ from app.models.fiscal_period import HARD_CLOSED, OPEN, SOFT_CLOSED, FiscalPerio
 router = APIRouter(prefix="/periods", tags=["fiscal-periods"])
 
 _PERIOD_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
-_CLOSE_ROLES = {"finance_manager", "system_admin"}
 
 
 class PeriodOut(BaseModel):
@@ -34,11 +35,6 @@ class PeriodOut(BaseModel):
 
 class CloseRequest(BaseModel):
     hard: bool = False
-
-
-def _require_close_role(user: dict) -> None:
-    if user.get("role") not in _CLOSE_ROLES:
-        raise HTTPException(status_code=403, detail="Insufficient role to manage fiscal periods")
 
 
 def _validate_period(period: str) -> None:
@@ -61,10 +57,9 @@ async def list_periods(
 async def close_period(
     period: str,
     body: CloseRequest,
-    user: CurrentUser,
+    user: dict = Depends(require_permission("finance.period.close")),
     db: AsyncSession = Depends(get_db),
 ):
-    _require_close_role(user)
     _validate_period(period)
     row = (await db.execute(
         select(FiscalPeriod).where(FiscalPeriod.period == period)
@@ -86,10 +81,9 @@ async def close_period(
 @router.post("/{period}/reopen", response_model=PeriodOut)
 async def reopen_period(
     period: str,
-    user: CurrentUser,
+    user: dict = Depends(require_permission("finance.period.close")),
     db: AsyncSession = Depends(get_db),
 ):
-    _require_close_role(user)
     _validate_period(period)
     row = (await db.execute(
         select(FiscalPeriod).where(FiscalPeriod.period == period)

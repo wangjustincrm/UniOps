@@ -15,41 +15,37 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import require_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.coa import AccountMapping, AuxDimensionType, ChartOfAccount
 
 router = APIRouter(prefix="/coa", tags=["chart-of-accounts"])
 
-_MANAGE_ROLES = {"system_admin", "finance_manager"}
 _ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
+
+_MANAGE_KEY = "finance.coa.manage"
+_manage_gate = require_permission(_MANAGE_KEY)
 
 
 async def _can_manage(db: AsyncSession, user: dict) -> bool:
-    """finance_manager is a company-unique singleton POST (identity enforces
-    one holder) — if it's your PRIMARY role you genuinely hold it, so PRIMARY
-    (jwt.role) UNION ADDITIONAL (user_roles) both qualify.
+    """Whether `user` holds finance.coa.manage per the Access Control matrix,
+    resolved via the shared authz package instead of a hardcoded role set.
 
-    finance_bp is NOT a singleton post — it's a job FUNCTION many people
-    carry (identity exempts it from the singleton index for exactly that
-    reason), not an assignment. Reading jwt.role/primary role for finance_bp
-    would silently promote every employee whose primary role happens to be
-    finance_bp into a COA manager, even if they were never added to the
-    assignment list — mirrors approval-api's _post_holders split
-    (workflow.py) for the same doctrine. So finance_bp must resolve from
-    user_roles ONLY, never from the primary role."""
-    if user.get("role") in _MANAGE_ROLES:
+    Phase 3 had already carved finance_bp out of COA management when held
+    only via a user_roles ASSIGNMENT (finance_bp is a job function many
+    people carry, not a singleton post, and was never meant to double as the
+    curated approver list for this gate). Phase 2 formalizes that: the
+    finance.coa.manage key's seeded default set is (system_admin,
+    finance_manager) — no finance_bp, whether held as a primary role or an
+    additional user_roles assignment. Grant it in the matrix (or via a
+    finance_manager additional role) for anyone else who should manage the
+    chart of accounts."""
+    try:
+        await _manage_gate(user, db)
         return True
-    from app.crud.payment_execute import _user_role_codes
-    uid = uuid.UUID(str(user.get("sub", "")))
-    codes = await _user_role_codes(db, uid, user.get("role", ""))
-    if "finance_manager" in codes:
-        return True
-    from sqlalchemy import text
-    row = (await db.execute(text(
-        "SELECT 1 FROM user_roles WHERE user_id = :u AND role_code = 'finance_bp'"),
-        {"u": str(uid)})).first()
-    return row is not None
+    except HTTPException:
+        return False
 
 
 async def _require_manage(db: AsyncSession, user: dict) -> None:
