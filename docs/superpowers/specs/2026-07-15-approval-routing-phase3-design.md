@@ -86,6 +86,21 @@ CREATE UNIQUE INDEX uq_user_roles_singleton_post ON user_roles (role_code)
   - **改造手法(最小风险)**:`crud/workflow.py` 的 getter(`get_role_management`、`get_dept_gm_opm_mapping` 等)**保持返回形状不变**,只换数据来源——从新表 + user_roles 拼出与旧 JSONB **同形状**的 dict(`{"gm_user_id": ..., "finance_bp_user_ids": [...]}`、`{dept_id_str: "gm"|"opm"}`)。这样 `crud/engine.py` 的约 20 处消费点(`_build_role_map`/`_resolve_gm_or_opm`/`_resolve_director`/`_resolve_supervisor`/`_can_act`)**一行都不用改**,平价断言天然成立。
 - **epms `access_scope._effective_role_codes`**:`role_management` → `user_roles`(同库直读)。**一期遗留的「access_scope 拿不到 token」难题就地消失**,epms 的写穿透镜像(`company_config.role_permissions`)从此具备退役条件(实际退役在②期,因 `require_permission` 仍读矩阵)。
 - **finance/expense 的 `can_pay`**:`role_management` → `user_roles` → 语义变成「主角色或副角色是 finance_manager」,**这就是「多角色后端生效」**,②期不必再碰。
+
+**⚠️ 消费方全清单(2026-07-15 执行期修正——初版 spec/plan 只点了 4 处,实测共 11 处功能性读取)**:漏掉的部分若不迁,③期删掉 EPMS Role Management 页签后 `role_management` 再无写入口 → 这些点将永远读冻结旧数据,而管理员在 Portal 改 `user_roles` 只对已迁的点生效 = **双源不一致**。完整清单:
+
+| 服务 | 位置 | 语义 |
+|---|---|---|
+| epms | `core/access_scope.py::_effective_role_codes` | 角色并集(文档可见性) |
+| epms | `crud/dashboard.py::_effective_roles` | 角色并集(同名同义) |
+| epms | `crud/task.py`(~176) | 角色并集 |
+| epms | `crud/po.py`(~291)、`crud/pr.py`(~346) | role→user 映射(审批自动跳过) |
+| finance | `crud/payment_execute.py::_check_can_pay` | can_pay |
+| finance | `crud/journal_voucher.py` | JV 权限(实为仅读 JWT role,无需改) |
+| finance | `api/v1/coa.py::_can_manage` | COA 管理授权 |
+| expense | `api/v1/pa.py::can_pay` | can_pay |
+| expense | `api/v1/expenses.py::_can_act_on_claim`(~100) | 角色任务解析(**PA 与报销单共用**;含 `gm_or_opm` 合成角色名) |
+| expense | `api/v1/expenses.py::get_claim_permissions`(~294) | 报销单 can_pay |
 - 零 HTTP、零缓存、零 token 传递——同库拓扑给的红利(与①期 epms→identity 的 HTTP 代理不同,因①期跨的是"服务边界事实源",此处是同库数据读取,依 UniOps 既有镜像模型惯例)。
 
 镜像模型须**忠于物理表**(逐列核对 information_schema,勿套惯例)——见 [[feedback_uniops_mirror_models_match_reality]]。
