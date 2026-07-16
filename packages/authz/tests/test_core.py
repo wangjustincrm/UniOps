@@ -5,7 +5,7 @@ import pytest
 import sqlalchemy as sa
 from fastapi import HTTPException
 
-from uniops_authz import bind, effective_permissions, user_role_codes
+from uniops_authz import bind, effective_permissions, role_matrix, user_role_codes
 
 pytestmark = pytest.mark.asyncio
 
@@ -95,6 +95,38 @@ async def test_inactive_additional_role_ignored(authz_db):
         "VALUES ('k.retired', 'test', 'Retired', 1)"))
     perms = await effective_permissions(db, uid, "requester")
     assert perms.get("k.retired") is False
+
+
+async def test_role_matrix_is_dense(authz_db):
+    """The full role x key boolean grid: every role_defs code (active or not
+    — the config UI this replaces shows inactive roles too, greyed out) x
+    every permission_defs key, True iff granted OR locked, False otherwise.
+    Dense means every cell is present, not just the granted/locked ones."""
+    db = authz_db
+    await db.execute(sa.text(
+        "INSERT INTO role_defs (code, label, sort, is_active) "
+        "VALUES ('requester', 'requester', 0, true)"))
+    await db.execute(sa.text(
+        "INSERT INTO role_defs (code, label, sort, is_active) "
+        "VALUES ('retired_role', 'Retired', 1, false)"))
+    await db.execute(sa.text(
+        "INSERT INTO permission_defs (key, module, label, sort) "
+        "VALUES ('k.extra', 'test', 'Extra', 0)"))
+    await db.execute(sa.text(
+        "INSERT INTO role_permissions (role_code, permission_key) "
+        "VALUES ('requester', 'k.write')"))
+    await db.execute(sa.text(
+        "INSERT INTO role_permission_locks (role_code, permission_key) "
+        "VALUES ('ap_clerk', 'k.locked')"))
+    matrix = await role_matrix(db)
+    assert matrix == {
+        # BASELINE_ROLES (finance_bp, ap_clerk) x BASELINE_PERMISSIONS
+        # (k.write, k.locked) come from the authz_db fixture itself.
+        "finance_bp": {"k.write": False, "k.locked": False, "k.extra": False},
+        "ap_clerk": {"k.write": False, "k.locked": True, "k.extra": False},
+        "requester": {"k.write": True, "k.locked": False, "k.extra": False},
+        "retired_role": {"k.write": False, "k.locked": False, "k.extra": False},
+    }
 
 
 async def test_bind_system_admin_short_circuits(authz_db):

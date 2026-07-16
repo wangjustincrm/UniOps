@@ -33,6 +33,25 @@ async def _effective_matrix(db: AsyncSession) -> dict[str, set[str]]:
     return out
 
 
+async def role_matrix(db: AsyncSession) -> dict[str, dict[str, bool]]:
+    """The full role x key boolean grid: every role_defs code -> every
+    permission_defs key -> whether it's granted (granted UNION locked).
+
+    Dense (every cell present, False when ungranted) — callers that render
+    the whole matrix (e.g. the config UI shape the booking frontend reads)
+    rely on that. `effective_permissions` is the per-user analogue.
+
+    Every role_defs row is included regardless of is_active — the config UI
+    this replaces (epms's GET /config/role-permissions) shows inactive roles
+    too (greyed out), unlike user_role_codes/effective_permissions which
+    correctly exclude inactive roles from a live user's grants.
+    """
+    roles = (await db.execute(text("SELECT code FROM role_defs"))).scalars().all()
+    keys = (await db.execute(text("SELECT key FROM permission_defs"))).scalars().all()
+    granted = await _effective_matrix(db)  # reuse the one private helper
+    return {r: {k: (k in granted.get(r, set())) for k in keys} for r in roles}
+
+
 async def effective_permissions(
     db: AsyncSession, user_id: uuid.UUID, base_role: str
 ) -> dict[str, bool]:

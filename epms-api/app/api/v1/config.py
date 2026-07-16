@@ -6,9 +6,7 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-from uniops_authz import effective_permissions, user_role_codes
+from uniops_authz import effective_permissions, role_matrix, user_role_codes
 
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
@@ -51,8 +49,8 @@ async def _forward_identity(
     /role-permissions, GET /locked-permissions, /roles, /authz-defs,
     /user-roles, PUT /users/{id}/roles. The matrix READS
     (GET /role-permissions, GET /me/permissions) migrated to a direct DB read
-    below — see _effective_role_matrix — because identity and epms share one
-    physical database.
+    below — see uniops_authz.role_matrix — because identity and epms share
+    one physical database.
 
     Raises on connection failure (e.g. RuntimeError / httpx.ConnectError);
     callers should catch and return 502.
@@ -69,25 +67,6 @@ async def _forward_identity(
         )
         body = r.json() if r.content else {}
         return r.status_code, body
-
-
-async def _effective_role_matrix(db: AsyncSession) -> dict[str, dict[str, bool]]:
-    """Same {role: {key: bool}} shape as identity's GET /authz/matrix, read
-    directly from identity's authz tables (same physical DB — no HTTP, no
-    token, no dependency on the identity *service* being up; only a DB outage
-    can stop this, and that stops everything anyway).
-
-    Shape is load-bearing: the booking frontend's sidebar still reads this
-    exact endpoint/shape (never migrated to /config/me/permissions).
-    """
-    roles = (await db.execute(text("SELECT code FROM role_defs ORDER BY sort"))).scalars().all()
-    perm_keys = (await db.execute(text("SELECT key FROM permission_defs ORDER BY sort"))).scalars().all()
-    cells = (await db.execute(text(
-        "SELECT role_code, permission_key FROM role_permissions "
-        "UNION "
-        "SELECT role_code, permission_key FROM role_permission_locks"))).all()
-    granted = {(role_code, key) for role_code, key in cells}
-    return {role: {key: (role, key) in granted for key in perm_keys} for role in roles}
 
 
 async def _full_response(db, user_payload: dict) -> ConfigResponse:
@@ -216,9 +195,10 @@ async def get_role_permissions(db: SessionDep, _: CurrentUserPayload) -> dict:
     identity *service* being up).
 
     Shape unchanged: {role: {key: bool}} — the booking frontend still reads
-    this exact endpoint/shape.
+    this exact endpoint/shape. Delegates to the shared uniops_authz package
+    (role_matrix) so this query lives in exactly one place.
     """
-    return await _effective_role_matrix(db)
+    return await role_matrix(db)
 
 
 @router.patch("/role-permissions")
