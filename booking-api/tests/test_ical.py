@@ -667,3 +667,59 @@ class TestVtimezoneRruleBased:
         assert "DTSTART;TZID=America/Toronto:20260708T090000" in unfolded, (
             f"Expected 09:00 EDT in DTSTART. Raw (unfolded):\n{unfolded}"
         )
+
+
+def test_single_occurrence_cancel_has_recurrence_id_and_no_rrule():
+    """A single-occurrence CANCEL must identify ONE instance via RECURRENCE-ID
+    and must NOT carry RRULE.
+
+    RRULE + RECURRENCE-ID together tell Outlook to cancel the entire series.
+    The absent-RRULE assertion is the safety line of this whole feature: if it
+    lapses, production wipes every attendee's calendar rather than raising.
+    """
+    booking = _make_booking(rrule="FREQ=WEEKLY;INTERVAL=1;COUNT=4")
+    room = _make_room()
+
+    raw = build_event_ics(
+        booking=booking,
+        room=room,
+        organizer_email="organizer@example.com",
+        attendee_emails=["a@example.com"],
+        method="CANCEL",
+        rrule=booking.rrule,
+        recurrence_id=booking.starts_at,
+    ).decode()
+
+    assert "RECURRENCE-ID;TZID=America/Toronto:20260708T140000" in raw
+
+    # Scope the RRULE check to the VEVENT itself. VTIMEZONE unconditionally
+    # emits its own RRULE-based STANDARD/DAYLIGHT observances (FREQ=YEARLY,
+    # required for Outlook Classic DST resolution — see
+    # TestVtimezoneRruleBased) which also match the bare substring "RRULE"
+    # but are unrelated to series recurrence. The property that actually
+    # controls whether Outlook treats this as one instance vs. the whole
+    # series is the VEVENT's own RRULE, which must be absent here.
+    event = _first_event(_parse(raw.encode()))
+    assert event.get("rrule") is None, (
+        "VEVENT must not carry RRULE alongside RECURRENCE-ID — together they "
+        "tell Outlook to act on the entire series"
+    )
+
+    assert "METHOD:CANCEL" in raw
+    assert "STATUS:CANCELLED" in raw
+
+
+def test_recurrence_id_absent_keeps_rrule():
+    """Regression guard: without recurrence_id a series invite still gets RRULE."""
+    booking = _make_booking(rrule="FREQ=WEEKLY;INTERVAL=1;COUNT=4")
+    raw = build_event_ics(
+        booking=booking,
+        room=_make_room(),
+        organizer_email="organizer@example.com",
+        attendee_emails=["a@example.com"],
+        method="REQUEST",
+        rrule=booking.rrule,
+    ).decode()
+
+    assert "RRULE:FREQ=WEEKLY" in raw
+    assert "RECURRENCE-ID" not in raw

@@ -117,6 +117,7 @@ def build_event_ics(
     method: Literal["REQUEST", "CANCEL"],
     rrule: str | None = None,
     organizer_cn: str | None = None,
+    recurrence_id: datetime | None = None,
 ) -> bytes:
     """Build a complete VCALENDAR iMIP payload as bytes.
 
@@ -135,6 +136,11 @@ def build_event_ics(
                          should be built from the FIRST occurrence booking + rrule.
         organizer_cn:    Optional display name for the ORGANIZER CN param.
                          Falls back to organizer_email if not provided.
+        recurrence_id:   When set, this VEVENT is a single-instance exception of
+                         a series: RECURRENCE-ID is emitted and RRULE is
+                         suppressed.  Pass the occurrence's scheduled start.
+                         RRULE + RECURRENCE-ID together instruct Outlook to act
+                         on the WHOLE series — never emit both.
 
     Returns:
         UTF-8 encoded iCalendar bytes.
@@ -187,8 +193,15 @@ def build_event_ics(
     if method == "CANCEL":
         event.add("status", "CANCELLED")
 
-    # RRULE for series invites
-    if rrule is not None:
+    # RECURRENCE-ID marks this VEVENT as ONE instance of the series identified
+    # by UID. Emitted in DISPLAY_TIMEZONE local time; icalendar adds the TZID.
+    if recurrence_id is not None:
+        event.add("recurrence-id", recurrence_id.astimezone(tz))
+
+    # RRULE for series invites — deliberately suppressed for single-instance
+    # exceptions. RRULE alongside RECURRENCE-ID makes Outlook apply the action
+    # to the entire series, i.e. wipe every attendee's calendar.
+    if rrule is not None and recurrence_id is None:
         event.add("rrule", vRecur.from_ical(rrule))
 
     cal.add_component(event)
