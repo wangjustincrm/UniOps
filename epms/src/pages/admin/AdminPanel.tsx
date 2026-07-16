@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type CSSProperties } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { authService } from '@/services/auth'
@@ -36,7 +36,7 @@ import { CURRENCIES } from '@/types'
 type Section =
   | 'company' | 'security' | 'currency' | 'email_templates' | 'pdf_templates'
   | 'users' | 'vendor_settings'
-  | 'workflows' | 'dept_mapping' | 'dept_director_mapping' | 'dept_supervisor' | 'service_gr_sla' | 'gr_notification_sla'
+  | 'workflows' | 'dept_mapping' | 'service_gr_sla' | 'gr_notification_sla'
   | 'prepayment' | 'budget' | 'collection'
   | 'notifications' | 'pms_import'
 
@@ -52,8 +52,6 @@ const NAV: NavEntry[] = [
   { id: 'vendor_settings',    label: 'Vendor Settings',        icon: Building2 },
   { id: 'workflows',           label: 'Approval Workflows',     icon: Workflow },
   { id: 'dept_mapping',          label: 'Dept → GM/OPM Mapping',  icon: Building2 },
-  { id: 'dept_director_mapping', label: 'Department Directors',   icon: Building2 },
-  { id: 'dept_supervisor',       label: 'Department Supervisors', icon: Building2 },
   { id: 'service_gr_sla',        label: 'Service GR SLA',         icon: Clock },
   { id: 'gr_notification_sla', label: 'GR Notification SLA',    icon: Bell },
   { id: 'prepayment',          label: 'Prepayment Config',      icon: CreditCard },
@@ -1867,208 +1865,6 @@ function DeptGmOpmMapping() {
   )
 }
 
-// ─── Department Directors Mapping ────────────────────────────────────────────
-
-// Type-ahead user picker (combobox): input filters the list; click to select.
-function UserCombo({ value, users, onChange, placeholder = 'Search user…', emptyLabel = '— None —' }: {
-  value: string
-  users: { id: string; full_name: string; department_name?: string | null }[]
-  onChange: (id: string) => void
-  placeholder?: string
-  emptyLabel?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const wrapRef = useRef<HTMLDivElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const [menuStyle, setMenuStyle] = useState<CSSProperties>({})
-  const selected = users.find((u) => u.id === value)
-
-  const reposition = () => {
-    const el = wrapRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    const spaceBelow = window.innerHeight - r.bottom
-    const openUp = spaceBelow < 240 && r.top > spaceBelow
-    setMenuStyle({
-      position: 'fixed',
-      left: r.left,
-      width: r.width,
-      ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
-    })
-  }
-
-  useEffect(() => {
-    if (!open) return
-    reposition()
-    const onScroll = () => reposition()
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (wrapRef.current?.contains(t) || menuRef.current?.contains(t)) return
-      setOpen(false)
-    }
-    window.addEventListener('scroll', onScroll, true)
-    window.addEventListener('resize', onScroll)
-    document.addEventListener('mousedown', onDown)
-    return () => {
-      window.removeEventListener('scroll', onScroll, true)
-      window.removeEventListener('resize', onScroll)
-      document.removeEventListener('mousedown', onDown)
-    }
-  }, [open])
-
-  const q = query.trim().toLowerCase()
-  const filtered = q ? users.filter((u) => u.full_name.toLowerCase().includes(q)) : users
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <input
-        value={open ? query : (selected?.full_name ?? '')}
-        onChange={(e) => { setQuery(e.target.value); if (!open) setOpen(true) }}
-        onFocus={() => { setQuery(''); setOpen(true) }}
-        placeholder={placeholder}
-        className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-      />
-      {selected && !open && (
-        <button type="button" onClick={() => onChange('')}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600" aria-label="Clear">
-          <X className="h-4 w-4" />
-        </button>
-      )}
-      {open && createPortal(
-        <div ref={menuRef} style={menuStyle} className="z-50 max-h-56 overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-          <button type="button" onClick={() => { onChange(''); setOpen(false) }}
-            className="block w-full px-3 py-2 text-left text-sm text-neutral-500 hover:bg-neutral-50">{emptyLabel}</button>
-          {filtered.length === 0 && <div className="px-3 py-2 text-sm text-neutral-400">No match</div>}
-          {filtered.map((u) => (
-            <button type="button" key={u.id} onClick={() => { onChange(u.id); setOpen(false) }}
-              className={cn('block w-full px-3 py-2 text-left text-sm hover:bg-neutral-50', u.id === value && 'bg-primary-50 text-primary-700')}>
-              {u.full_name}{u.department_name ? <span className="text-neutral-400"> ({u.department_name})</span> : null}
-            </button>
-          ))}
-        </div>,
-        document.body,
-      )}
-    </div>
-  )
-}
-
-function DeptDirectorMapping() {
-  const { data: config } = useConfig()
-  const updateConfig = useUpdateConfig()
-  const { data: deptData } = useDepartments()
-  const departments = deptData?.items ?? []
-  const { data: usersData } = useUsers()
-  const activeUsers = (usersData?.items ?? []).filter((u) => u.is_active)
-  const [mapping, setMapping] = useState<Record<string, string>>({})
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => { if (config?.dept_director_mapping) setMapping({ ...config.dept_director_mapping }) }, [config?.dept_director_mapping])
-
-  const handleSave = () => {
-    updateConfig.mutate({ dept_director_mapping: mapping })
-    setSaved(true); setTimeout(() => setSaved(false), 2500)
-  }
-
-  return (
-    <div className="flex flex-col gap-6 max-w-2xl">
-      <p className="text-sm text-neutral-500">
-        Directors approve after the Department Manager. Leave blank to skip the Director step for that department.
-      </p>
-
-      <div className="rounded-xl border border-neutral-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="bg-neutral-50 border-b border-neutral-200">
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Department</th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Director</th>
-          </tr></thead>
-          <tbody>
-            {departments.filter((d) => d.is_active).map((dept, i) => (
-              <tr key={dept.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-xs font-semibold text-neutral-600">{dept.code}</span>
-                    <span className="text-sm text-neutral-900">{dept.name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <UserCombo
-                    value={mapping[dept.id] ?? ''}
-                    users={activeUsers}
-                    onChange={(id) => setMapping((p) => ({ ...p, [dept.id]: id }))}
-                    placeholder="Search director…"
-                    emptyLabel="— No director (skip step) —"
-                  />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <SaveBar saved={saved} onSave={handleSave} />
-    </div>
-  )
-}
-
-// ─── Department Supervisors (Supervisor Step per department) ──────────────────
-
-function DeptSupervisorToggle() {
-  const { data: config } = useConfig()
-  const updateConfig = useUpdateConfig()
-  const { data: deptData } = useDepartments()
-  const departments = deptData?.items ?? []
-  const [enabled, setEnabled] = useState<Record<string, boolean>>({})
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => { if (config?.dept_supervisor_enabled) setEnabled({ ...config.dept_supervisor_enabled }) }, [config?.dept_supervisor_enabled])
-
-  const handleSave = () => {
-    updateConfig.mutate({ dept_supervisor_enabled: enabled })
-    setSaved(true); setTimeout(() => setSaved(false), 2500)
-  }
-
-  return (
-    <div className="flex flex-col gap-6 max-w-2xl">
-      <p className="text-sm text-neutral-500">
-        When enabled for a department, PRs route through the assigned Supervisor before the Department Manager.
-        Requires each requester in that department to have a Supervisor set on their user record; requesters
-        without one route straight to the Manager.
-      </p>
-
-      <div className="rounded-xl border border-neutral-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="bg-neutral-50 border-b border-neutral-200">
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Department</th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-32">Supervisor Step</th>
-          </tr></thead>
-          <tbody>
-            {departments.filter((d) => d.is_active).map((dept, i) => (
-              <tr key={dept.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-xs font-semibold text-neutral-600">{dept.code}</span>
-                    <span className="text-sm text-neutral-900">{dept.name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <button type="button" role="switch" aria-checked={!!enabled[dept.id]}
-                    onClick={() => setEnabled((p) => ({ ...p, [dept.id]: !p[dept.id] }))}
-                    className={cn('relative h-6 w-11 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-600 focus:ring-offset-2', enabled[dept.id] ? 'bg-primary-600' : 'bg-neutral-300')}>
-                    <span className={cn('absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform', enabled[dept.id] ? 'translate-x-5' : 'translate-x-0')} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <SaveBar saved={saved} onSave={handleSave} />
-    </div>
-  )
-}
-
 // ─── Service GR SLA ───────────────────────────────────────────────────────────
 
 const DEFAULT_SERVICE_GR_SLA: ServiceGrSlaConfig = { reminder_days: 1, manager_escalation_days: 3, gm_opm_escalation_days: 5, fm_alert_days: 7 }
@@ -2548,8 +2344,6 @@ export default function AdminPanel() {
       case 'users':               return <MovedToPortal section="User Management" />
       case 'workflows':           return <MovedToPortal section="Approval Workflows" />
       case 'dept_mapping':          return <DeptGmOpmMapping />
-      case 'dept_director_mapping': return <DeptDirectorMapping />
-      case 'dept_supervisor':       return <DeptSupervisorToggle />
       case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />
       case 'vendor_settings':     return <VendorSettingsSection />
