@@ -112,6 +112,7 @@ def _build_plain_text(
         "created": "A meeting room has been booked for you.",
         "updated": "Your meeting room booking has been updated.",
         "cancelled": "Your meeting room booking has been cancelled.",
+        "cancelled_occ": "One occurrence of your recurring meeting room booking has been cancelled.",
     }
     action_line = action_map.get(notif_type, f"Notification type: {notif_type}")
 
@@ -292,16 +293,23 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
         # Build subject
         tz = _TZ
         starts_local = booking.starts_at.astimezone(tz)
-        type_label = {"created": "Created", "updated": "Updated", "cancelled": "Cancelled"}.get(
-            log_entry.notif_type, log_entry.notif_type.title()
-        )
+        type_label = {
+            "created": "Created",
+            "updated": "Updated",
+            "cancelled": "Cancelled",
+            "cancelled_occ": "Cancelled",
+        }.get(log_entry.notif_type, log_entry.notif_type.title())
         subject = (
             f"[Booking] {type_label}: {booking.title} "
             f"— {room.name} {starts_local.strftime('%Y-%m-%d %H:%M')}"
         )
 
         # iCAL method
-        ical_method = "CANCEL" if log_entry.notif_type == "cancelled" else "REQUEST"
+        ical_method = (
+            "CANCEL"
+            if log_entry.notif_type in ("cancelled", "cancelled_occ")
+            else "REQUEST"
+        )
 
         # Recipient list from log (already resolved by enqueue)
         to_emails: list[str] = list(log_entry.recipients or [])
@@ -321,16 +329,46 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
         )
         attendee_names = [r[0] for r in attendee_name_rows.all()]
 
-        # Build ICS
-        # rrule: use log's booking rrule field (series bookings carry it)
+        # ── ICS context: series envelope vs. single-instance exception ────────
+        # Every row of a series carries the same rrule, so "which VEVENT is this"
+        # cannot be read off the booking — it comes from the persisted
+        # notif_type. It must be persisted rather than passed as an argument
+        # because scheduler.py retries by re-rendering from the stored log.
+        recurrence_id: datetime | None = None
+        exdates: list[datetime] | None = None
+        ics_rrule: str | None = booking.rrule
+
+        if log_entry.notif_type == "cancelled_occ":
+            # Cancel exactly this instance. build_event_ics suppresses the RRULE
+            # once recurrence_id is set; ics_rrule is cleared here too so the
+            # intent is obvious at the call site.
+            recurrence_id = booking.starts_at
+            ics_rrule = None
+        elif ical_method == "REQUEST" and booking.series_id is not None:
+            # A series invite must exclude occurrences cancelled individually,
+            # or Outlook regenerates them from the RRULE. Derived from the DB
+            # (not passed in) so retries pick up the current state.
+            exdate_rows = await db.execute(
+                select(Booking.starts_at)
+                .where(
+                    Booking.series_id == booking.series_id,
+                    Booking.status == "cancelled",
+                    Booking.starts_at > datetime.now(timezone.utc),
+                )
+                .order_by(Booking.starts_at)
+            )
+            exdates = [row[0] for row in exdate_rows.all()] or None
+
         ics_bytes = build_event_ics(
             booking=booking,
             room=room,
             organizer_email=organizer_email,
             attendee_emails=attendee_emails,
             method=ical_method,
-            rrule=booking.rrule,
+            rrule=ics_rrule,
             organizer_cn=organizer_cn,
+            recurrence_id=recurrence_id,
+            exdates=exdates,
         )
 
         # Build plain text

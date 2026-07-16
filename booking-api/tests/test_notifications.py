@@ -157,6 +157,19 @@ async def _configure_smtp(db_session):
     return config
 
 
+def _extract_ics(msg) -> str:
+    """Return the decoded text/calendar part of a recorded email."""
+    for part in msg.walk():
+        if part.get_content_type() == "text/calendar":
+            payload = part.get_payload(decode=True)
+            return (
+                payload.decode("utf-8", errors="replace")
+                if isinstance(payload, bytes)
+                else str(payload)
+            )
+    raise AssertionError("No text/calendar part in message")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Section 1 — enqueue creates email (happy path)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -831,3 +844,71 @@ class TestSeriesSyncStatusPropagation:
             f"Bystander booking sync_status changed to {bystander.sync_status!r} — "
             "propagation must be scoped to same series_id only"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 9 — Single-occurrence cancellation (cancelled_occ)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSingleOccurrenceNotification:
+    async def test_cancelled_occ_emits_recurrence_id_without_rrule(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """enqueue('cancelled_occ') on a series row must produce a CANCEL that
+        targets ONE instance: RECURRENCE-ID present, RRULE absent.
+
+        The intent has to survive on NotificationLog.notif_type rather than in a
+        call argument — scheduler.py retries by re-rendering from the stored log.
+        """
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+
+        organizer = await make_user(test_engine, role="requester",
+                                    email="occ_cancel@test.com", full_name="Occ Org")
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+        bookings = await _make_series_bookings(db_session, room.id, organizer.id, count=3)
+        second = bookings[1]
+
+        from app.services.notifications import enqueue
+        log = await enqueue(db_session, [second], "cancelled_occ")
+
+        assert log is not None
+        assert log.notif_type == "cancelled_occ"
+        ics = _extract_ics(_SMTPRecorder.instances[0].sent_messages[0])
+        assert "METHOD:CANCEL" in ics
+        assert "RECURRENCE-ID" in ics
+        # Assert on the SERIES rrule specifically, not a bare "RRULE" substring:
+        # the VTIMEZONE component legitimately emits RRULE:FREQ=YEARLY lines for
+        # DST transitions, so `"RRULE" not in ics` can never hold.
+        # _make_series_bookings uses rrule="FREQ=WEEKLY;COUNT=3".
+        assert "RRULE:FREQ=WEEKLY" not in ics, (
+            f"series RRULE present — Outlook would cancel the whole series: {ics[:400]}"
+        )
+
+    async def test_series_request_exdates_cancelled_occurrence(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """A series REQUEST must EXDATE every future occurrence cancelled on its
+        own, or Outlook regenerates it from the RRULE."""
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+
+        organizer = await make_user(test_engine, role="requester",
+                                    email="occ_exdate@test.com", full_name="Exdate Org")
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+        bookings = await _make_series_bookings(db_session, room.id, organizer.id, count=3)
+        second = bookings[1]
+        second.status = "cancelled"
+        await db_session.flush()
+
+        from app.services.notifications import enqueue
+        await enqueue(db_session, [bookings[0]], "updated")
+
+        ics = _extract_ics(_SMTPRecorder.instances[0].sent_messages[0])
+        assert "RRULE:FREQ=WEEKLY" in ics
+        expected = second.starts_at.astimezone(TZ).strftime("%Y%m%dT%H%M%S")
+        assert f"EXDATE;TZID=America/Toronto:{expected}" in ics
