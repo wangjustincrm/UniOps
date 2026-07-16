@@ -874,7 +874,7 @@ git commit -m "feat: role unions read identity user_roles instead of epms role_m
 - Modify: `approval-api/app/main.py`(挂 router,照现有 `include_router` 前缀风格)
 - Create: `portal/src/pages/admin/ApprovalRouting.tsx`
 - Modify: `portal/src/App.tsx`(加 `/admin/approval-routing` 路由)、`portal/src/components/layout/navConfig.tsx:70 附近`(加导航项)
-- Modify: `portal/src/lib/api.ts`(若无 approvalApi 客户端则加,照 epmsApi 模式;env `VITE_APPROVAL_API_URL`,并在 `docker-compose.dev.yml`/`docker-compose.prod.yml` 的 portal-web build args + `Dockerfile` 的 ARG/ENV 补齐——**Dockerfile 漏声明 ARG 会静默丢弃**,见 [[feedback_uniops_dockerfile_missing_build_arg]])
+- Modify: `epms-api/app/api/v1/config.py`(加 `GET/PUT /config/approval-routing` 转发端点)——**执行期修正:浏览器不直连 approval-api**(无公网域名+无 CORS),经 epms 网关,复用已有 `APPROVAL_ENGINE_URL`,零新增 env
 - Test: `approval-api/tests/test_routing_api.py`
 
 **Interfaces:**
@@ -983,7 +983,7 @@ chrome/守卫照 `portal/src/pages/admin/DataMaintenance.tsx` 抄(该 app 无 Po
 
 - [ ] **Step 6: 路由 + 导航 + api 客户端**
 
-App.tsx 加 `<Route path="/admin/approval-routing" element={<ProtectedRoute><ApprovalRouting /></ProtectedRoute>} />`;navConfig 第 70 行邻域加导航项(lucide `GitBranch`);`portal/src/lib/api.ts` 加 `approvalApi`(照 `epmsApi` 的 `epmsRequest` 模式,base = `VITE_APPROVAL_API_URL`),并补 dev/prod compose 的 build args 与 portal Dockerfile 的 `ARG`/`ENV`。
+App.tsx 加 `<Route path="/admin/approval-routing" element={<ProtectedRoute><ApprovalRouting /></ProtectedRoute>} />`;navConfig 第 70 行邻域加导航项(lucide `GitBranch`);页面用现有 `epmsApi` 调 `/config/approval-routing`(**不新建 approvalApi 客户端**——见上方执行期修正)。
 
 - [ ] **Step 7: typecheck + dev 冒烟**
 
@@ -1122,7 +1122,7 @@ cd /c/Project/uniops/epms   && npx tsc -p tsconfig.app.json --noEmit           #
 - **新迁移两处**:approval `0001_approval_routing`(首次!`migrate-prod.sh` 已加 approval-api)、identity `0003_post_role_singleton`、epms drop temp_assignments;
 - **★ seed 必做**:`docker compose -f docker-compose.prod.yml run --rm approval-api python -m scripts.seed_routing`,顺序 migrate → seed → **平价脚本** → up;
 - **不 seed 的后果**:approval 的 getter 会返回空 → **所有审批步骤解析不到审批人**(比一期更严重);
-- 新 env:portal 的 `VITE_APPROVAL_API_URL`(build arg,需重建 portal-web 镜像);
+- **零新增基建**(执行期修正):浏览器**不直连 approval-api**——它无公网域名(`Caddyfile:52`:"approval/identity are server-to-server, no subdomain")且生产 compose 未给它 `ALLOWED_ORIGINS`。Portal 经 **epms-api 转发网关**访问(`GET/PUT /config/approval-routing` → approval `GET/PUT /approval/v1/routing`),复用早已配好的 `APPROVAL_ENGINE_URL`(dev/prod compose 均在)。故本次发布**不需要新 env、不需要 DNS、不需要 Caddy 改动**。原计划的 `VITE_APPROVAL_API_URL` 方案已废弃(见 Task 6 修复轮)。
 - 回滚:四件套 JSONB 未删,回退 TAG 即恢复旧口径(新表留着无害)。
 
 - [ ] **Step 5: Commit**
