@@ -1,4 +1,6 @@
 """Identity service settings — shares DB / JWT secret / Redis with the stack."""
+from urllib.parse import quote
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,6 +28,10 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    # Optional — empty string (default) means unauthenticated, same as before
+    # this field existed. Only set once `requirepass` is actually configured
+    # on the Redis instance (see REDIS_URL below for why empty must stay a no-op).
+    REDIS_PASSWORD: str = ""
 
     # SMTP fallbacks — DB-stored company_config overrides win (same as epms)
     SMTP_HOST: str = "localhost"
@@ -37,7 +43,16 @@ class Settings(BaseSettings):
 
     @property
     def REDIS_URL(self) -> str:
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        # Backward-compat is load-bearing: when REDIS_PASSWORD is unset/empty,
+        # this must produce the exact same unauthenticated URL as before the
+        # field existed (2026-07-15 MFA outage — see comment on the field above).
+        if not self.REDIS_PASSWORD:
+            return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        # quote() escapes @ : / # etc. so a password containing them doesn't
+        # break URL parsing (redis.asyncio.from_url must decode back to the
+        # original password).
+        auth = quote(self.REDIS_PASSWORD, safe="")
+        return f"redis://:{auth}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
 
 settings = Settings()

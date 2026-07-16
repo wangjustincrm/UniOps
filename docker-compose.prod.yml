@@ -46,6 +46,10 @@ services:
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: "6379"
       REDIS_DB: "0"
+      # Optional. Empty (default) = unauthenticated, matching Redis's current
+      # requirepass-less state. Only set once `requirepass` is configured on
+      # the Redis instance (see identity-api/app/core/config.py REDIS_URL).
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       DEBUG: "false"
       ENVIRONMENT: production
       APP_NAME: EPMS API
@@ -128,6 +132,9 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: "6379"
+      # Optional. Empty (default) = unauthenticated, matching Redis's current
+      # requirepass-less state. See app/core/config.py REDIS_URL.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_NAME: identity-api
       PORT: "8009"
     ports: ["8009:8009"]
@@ -173,6 +180,12 @@ services:
     environment:
       <<: *db-env
       REDIS_HOST: ${REDIS_HOST}
+      # NOTE: expense-api's Settings (app/core/config.py) currently has no
+      # REDIS_* fields at all and no redis client anywhere in the service —
+      # this var (like the existing REDIS_HOST above) is inert until/unless
+      # expense-api actually adds Redis usage. Kept for parity with the other
+      # two services that do use Redis.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_NAME: expense-api
       PORT: "8006"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}

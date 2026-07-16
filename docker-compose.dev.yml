@@ -78,6 +78,10 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: "0"
+      # Dev's local Redis container has no requirepass; blank keeps that
+      # unauthenticated behavior. Override in your shell env to test password
+      # handling locally.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       DEBUG: "true"
@@ -180,6 +184,9 @@ services:
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      # Dev's local Redis container has no requirepass; blank keeps that
+      # unauthenticated behavior.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_NAME: identity-api
       PORT: "8009"
     depends_on:
@@ -271,6 +278,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
       REDIS_HOST: redis
+      # NOTE: expense-api has no REDIS_* Settings fields and no redis client
+      # anywhere in the service — inert until/unless expense-api adds Redis
+      # usage. Kept for parity with the other two services.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       JWT_ALGORITHM: HS256
       SERVICE_NAME: expense-api
