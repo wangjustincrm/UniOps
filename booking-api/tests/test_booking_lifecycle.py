@@ -751,6 +751,134 @@ class TestCancelBooking:
             )
             assert occ_result.scalar_one().status == "cancelled"
 
+    async def test_single_occurrence_cancel_logs_notif_type_cancelled_occ(
+        self, requester, admin, db_session
+    ):
+        """series=false on a series member must enqueue notif_type='cancelled_occ'
+        (RECURRENCE-ID CANCEL, no RRULE) — NOT 'cancelled' (which would wipe the
+        whole series in Outlook). Paired with the standalone test below so a
+        swap of the two literals falsifies at least one of them."""
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series = await _create_series(
+            req_client, room["id"], _dt(10), _dt(11), count=3,
+        )
+        target = series["bookings"][0]
+
+        resp = await req_client.post(
+            f"/api/v1/bookings/{target['id']}/cancel", params={"series": "false"}
+        )
+        assert resp.status_code == 200, resp.text
+
+        from sqlalchemy import select
+        from app.models.notification import NotificationLog
+
+        result = await db_session.execute(
+            select(NotificationLog).where(
+                NotificationLog.booking_id == uuid.UUID(target["id"]),
+                NotificationLog.notif_type.in_(("cancelled_occ", "cancelled")),
+            )
+        )
+        logs = result.scalars().all()
+        assert len(logs) == 1, f"Expected 1 cancel-related notification log, got {len(logs)}"
+        assert logs[0].notif_type == "cancelled_occ", (
+            f"Series-member single cancel must log 'cancelled_occ', got {logs[0].notif_type!r}"
+        )
+
+    async def test_standalone_cancel_logs_notif_type_cancelled(
+        self, requester, admin, db_session
+    ):
+        """series=false on a standalone (non-series) booking must enqueue
+        notif_type='cancelled' (whole-VEVENT CANCEL) — NOT 'cancelled_occ'.
+        Paired with the series-member test above: swapping the two literals in
+        production code makes exactly one of this pair fail."""
+        _, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        booking = await _create_booking(req_client, room["id"], _dt(10, 0), _dt(11, 0))
+        assert booking["series_id"] is None  # sanity: standalone
+
+        resp = await req_client.post(f"/api/v1/bookings/{booking['id']}/cancel")
+        assert resp.status_code == 200, resp.text
+
+        from sqlalchemy import select
+        from app.models.notification import NotificationLog
+
+        result = await db_session.execute(
+            select(NotificationLog).where(
+                NotificationLog.booking_id == uuid.UUID(booking["id"]),
+                NotificationLog.notif_type.in_(("cancelled_occ", "cancelled")),
+            )
+        )
+        logs = result.scalars().all()
+        assert len(logs) == 1, f"Expected 1 cancel-related notification log, got {len(logs)}"
+        assert logs[0].notif_type == "cancelled", (
+            f"Standalone booking cancel must log 'cancelled', got {logs[0].notif_type!r}"
+        )
+
+    async def test_single_occurrence_cancel_bumps_ical_sequence(
+        self, requester, admin, db_session
+    ):
+        """series=false on a series member must increment that row's
+        ical_sequence by exactly 1 (a RECURRENCE-ID CANCEL needs its own bumped
+        SEQUENCE, independent of the series master)."""
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series = await _create_series(
+            req_client, room["id"], _dt(10), _dt(11), count=3,
+        )
+        target = series["bookings"][0]
+        initial_seq = target["ical_sequence"]
+
+        resp = await req_client.post(
+            f"/api/v1/bookings/{target['id']}/cancel", params={"series": "false"}
+        )
+        assert resp.status_code == 200, resp.text
+
+        from sqlalchemy import select
+        from app.models.booking import Booking as BookingModel
+
+        result = await db_session.execute(
+            select(BookingModel).where(BookingModel.id == uuid.UUID(target["id"]))
+        )
+        row = result.scalar_one()
+        assert row.ical_sequence == initial_seq + 1, (
+            f"Expected ical_sequence to bump by 1 ({initial_seq} -> {initial_seq + 1}), "
+            f"got {row.ical_sequence}"
+        )
+
+    async def test_standalone_cancel_does_not_bump_ical_sequence(
+        self, requester, admin, db_session
+    ):
+        """series=false on a standalone booking must NOT bump ical_sequence —
+        only series-member single-occurrence cancels do."""
+        _, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        booking = await _create_booking(req_client, room["id"], _dt(10, 0), _dt(11, 0))
+        initial_seq = booking["ical_sequence"]
+
+        resp = await req_client.post(f"/api/v1/bookings/{booking['id']}/cancel")
+        assert resp.status_code == 200, resp.text
+
+        from sqlalchemy import select
+        from app.models.booking import Booking as BookingModel
+
+        result = await db_session.execute(
+            select(BookingModel).where(BookingModel.id == uuid.UUID(booking["id"]))
+        )
+        row = result.scalar_one()
+        assert row.ical_sequence == initial_seq, (
+            f"Standalone cancel must NOT bump ical_sequence (expected {initial_seq}), "
+            f"got {row.ical_sequence}"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Section 4: GET /admin/bookings
