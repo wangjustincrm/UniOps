@@ -11,7 +11,7 @@ Test coverage (per task-8-brief):
   - PATCH bumps sequence + sync_status pending + audit update row
   - series member PATCH → 400 series_member_immutable
   - single cancel frees slot (re-book same window succeeds)
-  - series member single-cancel → 400 series_member_use_series_cancel
+  - series member single-cancel → 200, cancels that occurrence alone (Task 4)
   - series=true cancels only future confirmed occurrences (seed one past occurrence)
     + ONE notification
   - started meeting PATCH by organizer → 403, by admin → 200
@@ -442,8 +442,10 @@ class TestCancelBooking:
         second = await req_client.post(f"/api/v1/bookings/{booking['id']}/cancel")
         assert second.status_code == 400, second.text
 
-    async def test_series_member_single_cancel_returns_400(self, requester, admin):
-        """POST /bookings/{id}/cancel (series=false) on a series member → 400."""
+    async def test_series_member_single_cancel_returns_200(self, requester, admin):
+        """POST /bookings/{id}/cancel (series=false) on a series member cancels
+        that occurrence alone (Task 4: single-occurrence cancel). Formerly this
+        400'd; that guard is gone."""
         _, req_client = requester
         _, adm_client = admin
 
@@ -456,8 +458,8 @@ class TestCancelBooking:
             f"/api/v1/bookings/{first_member['id']}/cancel",
             params={"series": "false"},
         )
-        assert resp.status_code == 400, resp.text
-        assert "series_member_use_series_cancel" in resp.text
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"cancelled": 1}
 
     async def test_series_cancel_cancels_only_future_occurrences(
         self, requester, admin, db_session
@@ -633,6 +635,121 @@ class TestCancelBooking:
         )
         audit = result.scalar_one_or_none()
         assert audit is not None, "Expected audit row with action='force_cancel'"
+
+    async def test_cancel_single_occurrence_leaves_siblings_confirmed(
+        self, requester, admin, db_session
+    ):
+        """series=false on a series member cancels exactly that occurrence.
+
+        The sibling assertion is the point of the test — a regression here
+        silently cancels the whole series in the database.
+        """
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series = await _create_series(
+            req_client, room["id"], _dt(10), _dt(11), count=3,
+        )
+        occurrences = series["bookings"]
+        target_id = occurrences[1]["id"]
+
+        resp = await req_client.post(f"/api/v1/bookings/{target_id}/cancel?series=false")
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"cancelled": 1}
+
+        from sqlalchemy import select
+        from app.models.booking import Booking as BookingModel
+
+        target_result = await db_session.execute(
+            select(BookingModel).where(BookingModel.id == uuid.UUID(target_id))
+        )
+        assert target_result.scalar_one().status == "cancelled"
+
+        for sibling in (occurrences[0], occurrences[2]):
+            sib_result = await db_session.execute(
+                select(BookingModel).where(BookingModel.id == uuid.UUID(sibling["id"]))
+            )
+            assert sib_result.scalar_one().status == "confirmed"
+
+    async def test_cancel_single_occurrence_rejects_past_occurrence(
+        self, requester, admin, db_session
+    ):
+        """A started/finished occurrence must not be cancellable — otherwise an
+        admin could 'cancel' yesterday's meeting and mail every attendee."""
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series_id = uuid.uuid4()
+        past = await _insert_booking_raw(
+            db_session, room["id"],
+            _dt(10, days_ahead=-7), _dt(11, days_ahead=-7),
+            organizer_id=organizer.id,
+            series_id=series_id,
+            rrule="FREQ=WEEKLY;COUNT=2",
+        )
+
+        resp = await req_client.post(f"/api/v1/bookings/{past.id}/cancel?series=false")
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "occurrence_already_started"
+        await db_session.refresh(past)
+        assert past.status == "confirmed"
+
+    async def test_cancel_single_occurrence_frees_the_room_slot(
+        self, requester, admin
+    ):
+        """The cancelled slot becomes bookable again — availability counts
+        confirmed rows only, so a new booking at that exact time must succeed."""
+        _, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series = await _create_series(
+            req_client, room["id"], _dt(10), _dt(11), count=3,
+        )
+        target = series["bookings"][1]
+
+        await req_client.post(f"/api/v1/bookings/{target['id']}/cancel?series=false")
+
+        resp = await req_client.post("/api/v1/bookings", json={
+            "room_id": room["id"],
+            "title": "Reclaiming the freed slot",
+            "starts_at": target["starts_at"],
+            "ends_at": target["ends_at"],
+        })
+        assert resp.status_code == 201, resp.text
+
+    async def test_cancel_series_still_cancels_all_future_occurrences(
+        self, requester, admin, db_session
+    ):
+        """Regression: series=true keeps its existing meaning."""
+        _, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series = await _create_series(
+            req_client, room["id"], _dt(10), _dt(11), count=3,
+        )
+        occurrences = series["bookings"]
+
+        resp = await req_client.post(
+            f"/api/v1/bookings/{occurrences[0]['id']}/cancel?series=true"
+        )
+
+        assert resp.status_code == 200, resp.text
+        assert resp.json() == {"cancelled": 3}
+
+        from sqlalchemy import select
+        from app.models.booking import Booking as BookingModel
+
+        for occ in occurrences:
+            occ_result = await db_session.execute(
+                select(BookingModel).where(BookingModel.id == uuid.UUID(occ["id"]))
+            )
+            assert occ_result.scalar_one().status == "cancelled"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

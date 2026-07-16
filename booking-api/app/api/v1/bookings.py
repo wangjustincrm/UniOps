@@ -1251,7 +1251,10 @@ async def cancel_booking(
     Query params:
         series: if True, cancel all future confirmed occurrences of the series.
                 Requires the target booking to be a series member.
-                If False (default), single booking only — series members are blocked.
+                If False (default), cancel only the target booking.  For a series
+                member this is a single-occurrence exception: siblings are kept
+                and the invite carries RECURRENCE-ID (no RRULE) so Outlook drops
+                only this instance.
 
     Returns: {"cancelled": n}
     """
@@ -1326,22 +1329,33 @@ async def cancel_booking(
         return {"cancelled": cancelled_count}
 
     else:
-        # series=false: single booking cancel
-        # Block single-cancel of a series member
-        if booking.series_id is not None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="series_member_use_series_cancel",
-            )
-
+        # series=false: cancel exactly one booking.
+        # For a series member this is a single-occurrence exception — the row is
+        # cancelled alone and the invite carries RECURRENCE-ID without an RRULE
+        # (see notifications.send_notification), so Outlook drops only this
+        # instance.
         if booking.status != "confirmed":
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot cancel booking with status '{booking.status}'",
             )
 
+        # The series branch only ever cancels occurrences with starts_at > now.
+        # The single branch must match for series members, otherwise an admin
+        # could cancel an occurrence that already happened and mail every
+        # attendee about it.
+        if booking.series_id is not None and booking.starts_at <= now:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="occurrence_already_started",
+            )
+
         booking.status = "cancelled"
         booking.sync_status = "pending"
+        if booking.series_id is not None:
+            # A RECURRENCE-ID instance carries its own SEQUENCE, independent of
+            # the series master, so the row's own value is the right basis.
+            booking.ical_sequence += 1
 
         audit_action = "force_cancel" if (actor_id != booking.organizer_id and is_admin) else "cancel"
         audit = BookingAuditLog(
@@ -1354,8 +1368,11 @@ async def cancel_booking(
         db.add(audit)
         await db.flush()
 
+        # A series member cancels one instance ('cancelled_occ' → RECURRENCE-ID);
+        # a standalone booking cancels the whole event.
+        notif_type = "cancelled_occ" if booking.series_id is not None else "cancelled"
         try:
-            await enqueue(db, [booking], "cancelled")
+            await enqueue(db, [booking], notif_type)
         except Exception:
             logger.exception(
                 "enqueue failed for cancel of booking %s — suppressed", booking.id
