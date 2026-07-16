@@ -26,7 +26,7 @@ from app.models.audit import BookingAuditLog
 from app.models.booking import Booking as BookingModel
 from app.models.notification import NotificationLog
 from app.models.room import MeetingRoom
-from tests.conftest import authed_client, make_token, make_user
+from tests.conftest import authed_client, make_token, make_user, grant_matrix_permission
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -526,9 +526,6 @@ class TestSeriesEditAuth:
         self, requester, admin, db_session, test_engine
     ):
         """A user with manage_meeting_rooms via the matrix can edit another user's series."""
-        import uuid as _uuid
-        from app.models.company_config_mirror import CompanyConfig
-
         organizer, req_client = requester
         _, adm_client = admin
 
@@ -540,14 +537,10 @@ class TestSeriesEditAuth:
             organizer_id=organizer.id, series_id=series_id, calendar_uid=uid,
         )
 
-        # Grant manage_meeting_rooms to a procurement_manager
+        # Grant manage_meeting_rooms to a procurement_manager via the shared
+        # Access Control Matrix (identity's role_permissions table).
         matrix_admin = await make_user(test_engine, role="procurement_manager")
-        cfg = CompanyConfig(
-            id=_uuid.uuid4(),
-            role_permissions={"procurement_manager": {"manage_meeting_rooms": True, "view_booking": True}},
-        )
-        db_session.add(cfg)
-        await db_session.flush()
+        await grant_matrix_permission(db_session, "procurement_manager", "manage_meeting_rooms")
 
         matrix_token = make_token(matrix_admin.id, matrix_admin.role)
         async with authed_client(matrix_token, session=db_session) as matrix_client:

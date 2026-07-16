@@ -367,13 +367,14 @@ services:
   booking-api:
     <<: *python-base
     build:
-      context: ./booking-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: booking-api/Dockerfile
     container_name: uniops_booking_api
     ports:
       - "8010:8010"
     volumes:
       - ./booking-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres

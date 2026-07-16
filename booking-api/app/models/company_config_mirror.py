@@ -4,12 +4,16 @@ booking-api does NOT own this table — epms-api is the writer of record and
 owns its schema and migrations.  Registering the mirror with `Base.metadata`
 here lets booking-api:
 
-  1. Query `role_permissions` (JSONB) in `permissions._load_matrix()` to
-     enforce the shared Access Control Matrix.
-  2. Query SMTP columns in `_load_smtp_config()` as a fallback when
+  1. Query SMTP columns in `_load_smtp_config()` as a fallback when
      booking_config.smtp_settings is not set.
-  3. In tests, have `Base.metadata.create_all()` materialise the table so
-     both consumers above can execute without a savepoint guard or bare except.
+  2. In tests, have `Base.metadata.create_all()` materialise the table so
+     that consumer can execute without a savepoint guard or bare except.
+
+`role_permissions` (JSONB) on this table is now dead weight for booking-api:
+the Access Control Matrix gate (app/core/permissions.py) reads identity's
+role_permissions / role_permission_locks tables directly via the shared
+uniops_authz package, not this column. Kept here only because the physical
+column is NOT NULL and this mirror must stay truthful to the real table shape.
 
 The booking-api Alembic migrations DO NOT create or alter this table; it must
 already exist (in production: created by epms-api migrations).

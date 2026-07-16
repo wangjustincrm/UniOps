@@ -245,7 +245,7 @@ services:
   booking-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-booking-api:${TAG:-latest}
-    build: { context: ./booking-api }
+    build: { context: ., dockerfile: booking-api/Dockerfile }
     environment:
       <<: *db-env
       APP_NAME: Booking API

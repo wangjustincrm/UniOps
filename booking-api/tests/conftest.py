@@ -51,6 +51,16 @@ def pytest_collection_modifyitems(items):
 
 # ── Test engine ─────────────────────────────────────────────────────────────-
 
+# Built-in roles (epms-api app/crud/config.py BUILT_IN_ROLES) — used to seed
+# the shadow role_defs / role_permissions tables below.
+BUILT_IN_ROLES = (
+    "requester", "dept_admin", "dept_manager", "supervisor", "director",
+    "gm", "opm", "procurement_officer", "procurement_manager",
+    "warehouse_staff", "ap_clerk", "finance_bp", "finance_manager",
+    "vendor_manager", "cfo", "auditor", "system_admin",
+)
+
+
 @pytest.fixture(scope="session")
 async def test_engine():
     """Drop + recreate every table at the start of the session.
@@ -59,6 +69,18 @@ async def test_engine():
     no_double_booking exclusion constraint, which are SQL-only constructs
     that Base.metadata.create_all() cannot generate.  This mirrors what the
     Alembic migration does in production.
+
+    We also shadow identity-api's authz hub tables (role_defs /
+    permission_defs / role_permissions / role_permission_locks / user_roles —
+    see identity-api/alembic/versions/0002_authz_tables.py) here. booking-api
+    does not own these tables, but the shared uniops_authz package
+    (app/core/authz.py, app/core/permissions.py) reads them directly via raw
+    SQL against the same physical DB in production, so the test DB needs them
+    too. Seeded with view_booking granted to every built-in role (matching
+    identity-api/scripts/seed_authz.py's DEFAULTS `_BOOKING = {"view_booking":
+    True}` applied to every role) — manage_meeting_rooms is matrix-only
+    (no blanket default); individual tests grant it via
+    `grant_matrix_permission()` below.
     """
     engine = create_async_engine(_TEST_DB_URL, echo=False)
     async with engine.begin() as conn:
@@ -95,10 +117,75 @@ async def test_engine():
             )
         )
 
+        # ── Shadow identity's authz hub tables ──────────────────────────────
+        for stmt in (
+            "DROP TABLE IF EXISTS role_permission_locks CASCADE",
+            "DROP TABLE IF EXISTS role_permissions CASCADE",
+            "DROP TABLE IF EXISTS permission_defs CASCADE",
+            "DROP TABLE IF EXISTS role_defs CASCADE",
+            "DROP TABLE IF EXISTS user_roles CASCADE",
+        ):
+            await conn.execute(sqlalchemy.text(stmt))
+        await conn.execute(sqlalchemy.text(
+            "CREATE TABLE role_defs (code varchar(50) PRIMARY KEY, label varchar(100) NOT NULL,"
+            " sort integer NOT NULL DEFAULT 0, is_active boolean NOT NULL DEFAULT true)"
+        ))
+        await conn.execute(sqlalchemy.text(
+            "CREATE TABLE permission_defs (key varchar(64) PRIMARY KEY, module varchar(20) NOT NULL,"
+            " label varchar(120) NOT NULL, sort integer NOT NULL DEFAULT 0)"
+        ))
+        await conn.execute(sqlalchemy.text(
+            "CREATE TABLE role_permissions (role_code varchar(50) NOT NULL,"
+            " permission_key varchar(64) NOT NULL, updated_by uuid,"
+            " updated_at timestamptz NOT NULL DEFAULT now(),"
+            " PRIMARY KEY (role_code, permission_key))"
+        ))
+        await conn.execute(sqlalchemy.text(
+            "CREATE TABLE role_permission_locks (role_code varchar(50) NOT NULL,"
+            " permission_key varchar(64) NOT NULL, PRIMARY KEY (role_code, permission_key))"
+        ))
+        await conn.execute(sqlalchemy.text(
+            "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
+            " PRIMARY KEY (user_id, role_code))"
+        ))
+
+        for i, code in enumerate(BUILT_IN_ROLES):
+            await conn.execute(sqlalchemy.text(
+                "INSERT INTO role_defs (code, label, sort) VALUES (:c, :c, :s)"
+            ), {"c": code, "s": i})
+        for i, key in enumerate(("view_booking", "manage_meeting_rooms")):
+            await conn.execute(sqlalchemy.text(
+                "INSERT INTO permission_defs (key, module, label, sort) VALUES (:k, 'booking', :k, :s)"
+            ), {"k": key, "s": i})
+        for code in BUILT_IN_ROLES:
+            await conn.execute(sqlalchemy.text(
+                "INSERT INTO role_permissions (role_code, permission_key) VALUES (:r, 'view_booking')"
+            ), {"r": code})
+
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
+
+
+async def grant_matrix_permission(db_session: AsyncSession, role: str, key: str) -> None:
+    """Grant `key` to `role` in the shared Access Control Matrix.
+
+    Inserts into the (shadowed) identity role_permissions table the same way
+    an admin's Portal edit would — the row lives on `db_session`'s savepoint,
+    so it rolls back automatically at test teardown like everything else.
+    Replaces the old company_config.role_permissions JSONB seeding helpers
+    (`_seed_matrix_admin_config` / `_seed_matrix_admin_config_typed`) now that
+    the gate reads identity's tables, not company_config.
+    """
+    await db_session.execute(
+        sqlalchemy.text(
+            "INSERT INTO role_permissions (role_code, permission_key) "
+            "VALUES (:r, :k) ON CONFLICT DO NOTHING"
+        ),
+        {"r": role, "k": key},
+    )
+    await db_session.flush()
 
 
 @pytest.fixture(scope="session", autouse=True)

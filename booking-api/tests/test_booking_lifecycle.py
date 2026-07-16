@@ -26,7 +26,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tests.conftest import make_token, authed_client, make_user
+from tests.conftest import make_token, authed_client, make_user, grant_matrix_permission
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -852,36 +852,16 @@ class TestAdminBookingsExport:
 # Section 6: Matrix-admin regression tests (Finding 1)
 #
 # A user whose JWT *role* is NOT system_admin but whose role is granted
-# manage_meeting_rooms=true in company_config.role_permissions must be able to:
+# manage_meeting_rooms=true in the shared Access Control Matrix (identity's
+# role_permissions table, read via the uniops_authz package) must be able to:
 #   (a) force-cancel another user's booking → 200, audit action force_cancel
 #   (b) PATCH another user's booking → 200
 # A plain requester (no matrix grant) must still get 404.
+#
+# Matrix grants are seeded via conftest.grant_matrix_permission() — see that
+# helper's docstring for why this replaced the old company_config-based
+# seeding (this gate no longer reads company_config at all).
 # ─────────────────────────────────────────────────────────────────────────────
-
-async def _seed_matrix_admin_config(db_session, role: str) -> None:
-    """Insert (or upsert) a company_config row granting manage_meeting_rooms to role."""
-    from sqlalchemy import text
-    await db_session.execute(
-        text(
-            "INSERT INTO company_config (id, role_permissions) "
-            "VALUES (gen_random_uuid(), :perms) "
-            "ON CONFLICT DO NOTHING"
-        ),
-        {"perms": f'{{"{ role }": {{"manage_meeting_rooms": true, "view_booking": true}}}}'},
-    )
-    await db_session.flush()
-
-
-async def _seed_matrix_admin_config_typed(db_session, role: str) -> None:
-    """Insert a company_config row granting manage_meeting_rooms to role (using ORM)."""
-    import uuid as _uuid
-    from app.models.company_config_mirror import CompanyConfig
-    cfg = CompanyConfig(
-        id=_uuid.uuid4(),
-        role_permissions={role: {"manage_meeting_rooms": True, "view_booking": True}},
-    )
-    db_session.add(cfg)
-    await db_session.flush()
 
 
 class TestMatrixAdminOverride:
@@ -899,7 +879,7 @@ class TestMatrixAdminOverride:
         matrix_admin_token = make_token(matrix_admin_user.id, matrix_admin_user.role)
 
         # Seed the matrix: procurement_manager gets manage_meeting_rooms=true
-        await _seed_matrix_admin_config_typed(db_session, "procurement_manager")
+        await grant_matrix_permission(db_session, "procurement_manager", "manage_meeting_rooms")
 
         async with authed_client(matrix_admin_token, session=db_session) as matrix_admin_client:
             # The matrix admin needs a room — use system_admin to create it
@@ -946,7 +926,7 @@ class TestMatrixAdminOverride:
         matrix_admin_token = make_token(matrix_admin_user.id, matrix_admin_user.role)
 
         # Seed the matrix
-        await _seed_matrix_admin_config_typed(db_session, "procurement_manager")
+        await grant_matrix_permission(db_session, "procurement_manager", "manage_meeting_rooms")
 
         sys_admin_user = await make_user(test_engine, role="system_admin")
         sys_admin_token = make_token(sys_admin_user.id, sys_admin_user.role)
