@@ -8,7 +8,7 @@ import {
   Users, Workflow, Building2, Clock, Bell, Send, CreditCard,
   PiggyBank, PackageCheck, ShieldCheck,
   Plus, Pencil, Trash2, X, Check, Search, ImagePlus, Landmark, KeyRound, Eye, EyeOff, Mail, FileText,
-  AlertTriangle, Download, Upload, ChevronDown,
+  Download, Upload, ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -36,7 +36,7 @@ import { CURRENCIES } from '@/types'
 type Section =
   | 'company' | 'security' | 'currency' | 'email_templates' | 'pdf_templates'
   | 'users' | 'vendor_settings'
-  | 'workflows' | 'dept_mapping' | 'service_gr_sla' | 'gr_notification_sla'
+  | 'workflows' | 'service_gr_sla' | 'gr_notification_sla'
   | 'prepayment' | 'budget' | 'collection'
   | 'notifications' | 'pms_import'
 
@@ -51,7 +51,6 @@ const NAV: NavEntry[] = [
   { id: 'users',               label: 'User Management',        icon: Users },
   { id: 'vendor_settings',    label: 'Vendor Settings',        icon: Building2 },
   { id: 'workflows',           label: 'Approval Workflows',     icon: Workflow },
-  { id: 'dept_mapping',          label: 'Dept → GM/OPM Mapping',  icon: Building2 },
   { id: 'service_gr_sla',        label: 'Service GR SLA',         icon: Clock },
   { id: 'gr_notification_sla', label: 'GR Notification SLA',    icon: Bell },
   { id: 'prepayment',          label: 'Prepayment Config',      icon: CreditCard },
@@ -1776,95 +1775,6 @@ function ApprovalWorkflows() {
   )
 }
 
-// ─── Dept → GM/OPM Mapping ───────────────────────────────────────────────────
-
-function DeptGmOpmMapping() {
-  const { data: config } = useConfig()
-  const updateConfig = useUpdateConfig()
-  const { data: deptData } = useDepartments()
-  const departments = deptData?.items ?? []
-  const [mapping, setMapping] = useState<Record<string, 'gm' | 'opm'>>({})
-  const [saved, setSaved] = useState(false)
-
-  useEffect(() => { if (config?.dept_gm_opm_mapping) setMapping({ ...config.dept_gm_opm_mapping }) }, [config?.dept_gm_opm_mapping])
-
-  const handleSave = () => {
-    updateConfig.mutate({ dept_gm_opm_mapping: mapping })
-    setSaved(true); setTimeout(() => setSaved(false), 2500)
-  }
-
-  const gmDepts = departments.filter((d) => d.is_active && mapping[d.id] === 'gm')
-  const opmDepts = departments.filter((d) => d.is_active && mapping[d.id] === 'opm')
-  const unmapped = departments.filter((d) => d.is_active && !mapping[d.id])
-
-  return (
-    <div className="flex flex-col gap-6 max-w-2xl">
-      <p className="text-sm text-neutral-500">
-        Each active department must be assigned to either <strong>General Manager (GM)</strong> or <strong>Operations Manager (OPM)</strong> scope.
-        This determines which approver is assigned for PR, PO, and PA escalations from that department.
-      </p>
-
-      {unmapped.length > 0 && (
-        <div className="flex items-start gap-2 rounded-lg bg-warning-50 border border-warning-200 px-4 py-3">
-          <AlertTriangle className="h-4 w-4 text-warning-600 mt-0.5 shrink-0" />
-          <p className="text-xs text-warning-700"><strong>{unmapped.length} department(s)</strong> have no scope assigned. PRs and POs from these departments cannot be submitted until a scope is set.</p>
-        </div>
-      )}
-
-      <div className="rounded-xl border border-neutral-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead><tr className="bg-neutral-50 border-b border-neutral-200">
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Department</th>
-            <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 w-36">Scope</th>
-          </tr></thead>
-          <tbody>
-            {departments.filter((d) => d.is_active).map((dept, i) => (
-              <tr key={dept.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-md bg-neutral-100 px-2 py-0.5 font-mono text-xs font-semibold text-neutral-600">{dept.code}</span>
-                    <span className="text-sm text-neutral-900">{dept.name}</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-3">
-                    {(['gm', 'opm'] as const).map((scope) => (
-                      <label key={scope} className={cn('flex items-center gap-1.5 cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium border transition-colors',
-                        mapping[dept.id] === scope ? 'border-primary-300 bg-primary-50 text-primary-700' : 'border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300')}>
-                        <input type="radio" checked={mapping[dept.id] === scope} onChange={() => setMapping((p) => ({ ...p, [dept.id]: scope }))} className="accent-primary-600 h-3 w-3" />
-                        {scope.toUpperCase()}
-                      </label>
-                    ))}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        {[
-          { label: 'GM Scope', depts: gmDepts, color: 'bg-primary-50 border-primary-200 text-primary-700' },
-          { label: 'OPM Scope', depts: opmDepts, color: 'bg-success-50 border-success-200 text-success-700' },
-        ].map(({ label, depts, color }) => (
-          <div key={label} className={cn('rounded-xl border p-4', color)}>
-            <p className="text-xs font-semibold uppercase tracking-wide mb-2">{label} ({depts.length})</p>
-            {depts.length === 0 ? <p className="text-xs opacity-60">None assigned</p> : (
-              <div className="flex flex-wrap gap-1.5">
-                {depts.map((d) => <span key={d.id} className="rounded-md bg-white/70 px-2 py-0.5 text-xs font-medium">{d.name}</span>)}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <SaveBar saved={saved} onSave={handleSave} />
-    </div>
-  )
-}
-
 // ─── Service GR SLA ───────────────────────────────────────────────────────────
 
 const DEFAULT_SERVICE_GR_SLA: ServiceGrSlaConfig = { reminder_days: 1, manager_escalation_days: 3, gm_opm_escalation_days: 5, fm_alert_days: 7 }
@@ -2343,7 +2253,6 @@ export default function AdminPanel() {
       case 'pdf_templates':       return <PdfTemplates />
       case 'users':               return <MovedToPortal section="User Management" />
       case 'workflows':           return <MovedToPortal section="Approval Workflows" />
-      case 'dept_mapping':          return <DeptGmOpmMapping />
       case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />
       case 'vendor_settings':     return <VendorSettingsSection />

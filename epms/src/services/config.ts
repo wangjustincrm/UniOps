@@ -142,7 +142,6 @@ export interface CompanyConfig {
     pa: PdfTemplateSettings
   }
   workflow_config: WorkflowConfig
-  dept_gm_opm_mapping: Record<string, 'gm' | 'opm'>
   dept_supervisor_enabled: Record<string, boolean>
   service_gr_sla: ServiceGrSlaConfig
   gr_notification_sla: GrNotificationSlaConfig

@@ -116,15 +116,6 @@ async def test_update_workflow_defs(admin_client):
 
 
 @pytest.mark.asyncio
-async def test_update_dept_mapping(admin_client):
-    r = await admin_client.patch(CONFIG_URL, json={
-        "dept_gm_opm_mapping": {"dept-1": "gm", "dept-2": "opm"},
-    })
-    assert r.status_code == 200
-    assert r.json()["dept_gm_opm_mapping"]["dept-1"] == "gm"
-
-
-@pytest.mark.asyncio
 async def test_update_sla_configs(admin_client):
     r = await admin_client.patch(CONFIG_URL, json={
         "service_gr_sla": {"reminder_days": 2, "manager_escalation_days": 4,
