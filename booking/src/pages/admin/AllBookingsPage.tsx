@@ -93,7 +93,7 @@ function ForceCancelDialog({ booking, onConfirm, onClose, isPending }: ForceCanc
         <h2 className="text-base font-semibold text-neutral-900">Force Cancel Booking</h2>
         <p className="text-sm text-neutral-600">
           {isSeries
-            ? `"${booking.title}" is part of a recurring series. Cancel the entire series?`
+            ? `"${booking.title}" booked by ${booking.organizer_name} is part of a recurring series. Cancel only this occurrence, or the whole series?`
             : `Cancel "${booking.title}" booked by ${booking.organizer_name}? This cannot be undone.`}
         </p>
         <div className="flex justify-end gap-2 pt-1">

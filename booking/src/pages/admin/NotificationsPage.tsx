@@ -42,6 +42,10 @@ const STATUS_STYLE: Record<string, string> = {
   retrying: 'bg-amber-50  text-amber-700  ring-amber-200',
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  cancelled_occ: 'cancelled occurrence',
+}
+
 function NotifStatusBadge({ status }: { status: string }) {
   const style = STATUS_STYLE[status] ?? 'bg-neutral-100 text-neutral-500 ring-neutral-200'
   const label = status.charAt(0).toUpperCase() + status.slice(1)
@@ -69,7 +73,7 @@ function NotifRow({ log, resendingId, onResend }: RowProps) {
   const { display: recipDisp, full: recipFull } = truncateRecipients(log.recipients)
   const errorTrunc = log.error && log.error.length > 80 ? log.error.slice(0, 80) + '…' : log.error
   const isResending = resendingId === log.id
-  const typeFmt = log.notif_type.replace(/_/g, ' ')
+  const typeFmt = TYPE_LABELS[log.notif_type] ?? log.notif_type.replace(/_/g, ' ')
 
   const tdCls = 'px-3 py-3 text-sm'
 

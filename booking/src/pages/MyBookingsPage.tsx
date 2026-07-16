@@ -111,7 +111,7 @@ function CancelDialog({ booking, onConfirm, onClose, isPending }: CancelDialogPr
         <h2 className="text-base font-semibold text-neutral-900">Cancel booking</h2>
         <p className="text-sm text-neutral-600">
           {isSeries
-            ? 'This is part of a recurring series. Cancel the entire series? Past and in-progress occurrences are kept.'
+            ? `"${booking.title}" is part of a recurring series. Cancel only this occurrence, or the whole series? Cancelling the series keeps past and in-progress occurrences.`
             : `Are you sure you want to cancel "${booking.title}"? This cannot be undone.`}
         </p>
         <div className="flex justify-end gap-2 pt-1">
@@ -123,6 +123,16 @@ function CancelDialog({ booking, onConfirm, onClose, isPending }: CancelDialogPr
           >
             Keep
           </button>
+          {isSeries && (
+            <button
+              type="button"
+              onClick={() => onConfirm(false)}
+              disabled={isPending}
+              className="rounded-md border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+            >
+              This occurrence
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onConfirm(isSeries)}
