@@ -20,6 +20,8 @@
 - ③:`docker compose -f docker-compose.prod.yml run --rm approval-api python -m scripts.seed_routing`
 - ②:`docker compose -f docker-compose.prod.yml run --rm identity-api python -m scripts.seed_phase2_keys`
 
+**⚠️ `seed_phase2_keys` 何时可以重跑**:该脚本对 `role_permissions` 用 `ON CONFLICT DO NOTHING`(幂等,只插入缺失行,不删除)。**只要有人已经在 Portal → Access Control 上编辑过这 12 个键中任意一格(包括取消勾选/撤销授权),就不要再重跑这个 seed**——重跑不会覆盖已存在的行,但对**已被管理员删除**的授权行毫无记忆,`ON CONFLICT DO NOTHING` 只防止重复插入,不防止把该行插回去;凡是 seed 脚本里 `PHASE2_DEFAULTS` 列出的 role×key 组合,重跑都会把它**复活**,悄悄撤销管理员做过的收紧编辑。与 ③ `seed_routing` 的同类警告(见 `2026-07-15-approval-routing-phase3-release.md` "seed 何时可以重跑" 一行)同理。
+
 **app server 执行顺序**:
 ```bash
 cd /opt/uniops
@@ -57,7 +59,9 @@ sudo docker compose -f docker-compose.prod.yml ps
 
 ## ★ 镜像必须全部重建(build context 变了)
 
-②把 6 个后端服务的 build context 从 `./xxx-api` 提到仓库根 `.`(为 `COPY packages/authz`)。**必须 build+push 全部 15 个镜像的 `:<sha>`**(本就是铁律,见 [[reference_uniops_prod_release_workflow]]);共享包是 `COPY` 进镜像的,不重建就没有包。
+②把 5 个后端服务(epms/finance/budget/mdm + booking)的 build context 从 `./xxx-api` 提到仓库根 `.`(为 `COPY packages/authz`)。**必须 build+push 全部 15 个镜像的 `:<sha>`**(本就是铁律,见 [[reference_uniops_prod_release_workflow]]);共享包是 `COPY` 进镜像的,不重建就没有包。
+
+**角色并集是一次真实的权限扩大,不只是「同一个门换个牌子」**:旧的硬编码 `require_roles(...)` 只认 JWT 里的**主角色**;`require_permission(...)` 认**主角色 ∪ identity `user_roles` 里的附加角色**。这意味着给某人在 Access Control → User Roles 里加一个**附加角色**,现在会**真的**让他在后端拿到那个角色对应的全部矩阵授权(不再只是前端 UI 显示层面的角色)——`identity-api/scripts/verify_gate_parity.py` 的平价断言是**按角色**逐格核对(matrix cell 层面),看不出"某个具体用户因为多了一个附加角色而多拿到了权限"这类用户级别的扩权;发布后如果某人权限变化超出预期,先看他是否有附加角色,而不是怀疑矩阵本身出错。
 
 ⚠️ **dev 教训(避免生产误操作)**:改了 Dockerfile/build context 后,dev 里必须 `docker compose build <svc>` **再 `up -d`**(重建容器换镜像),`docker restart` 只重启进程不换镜像 → `import uniops_authz` 失败。生产 `pull` + `up -d` 天然重建变化的容器,无此问题。
 
@@ -86,4 +90,7 @@ sudo docker compose -f docker-compose.prod.yml ps
 # 简版:Portal→Access Control 勾掉/勾上 epms.po.write,对应 procurement_officer 的建 PO 立即随之变化
 # ③:Portal→Approval Routing 渲染;Access Control→User Roles 可存;EPMS Admin 无 Role Management 页签
 # 平价:两个脚本都 OK(见上)
+# ★ Portal→Access Control 打开矩阵页,应看到 29 个键(含 budget/mdm 分组),
+#   不是旧的 12 个 epms-only 键——分组缺失/键数不对说明前端还在读旧的
+#   passthrough 或矩阵 seed 没有覆盖到 budget.*/mdm.* 键。
 ```

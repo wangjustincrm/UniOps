@@ -34,7 +34,15 @@ any of these keys also gets checked (old=False, new must also be False).
 This is a one-shot acceptance tool for the phase-2 cutover, not a unit
 test -- it has no test double of the database; its correctness is
 demonstrated by running it against the real seeded dev DB and getting
-GATE PARITY OK. Safe to re-run any time (read-only).
+GATE PARITY OK. It is read-only and safe to re-run any time -- but ONLY
+UNTIL the first intentional matrix edit. PHASE2_DEFAULTS above is a frozen
+snapshot of the admission sets at cutover; once an admin edits any of
+these 12 keys via Portal -> Access Control (e.g. grants finance.coa.manage
+to a new role), this script will legitimately print PARITY FAILED /
+DIFF lines for that role x key -- that is the intended, correct
+consequence of a deliberate matrix change, NOT a regression. Do not
+reflexively treat a post-cutover DIFF here as a bug to roll back; first
+check whether it lines up with a real Access Control edit.
 
 Run inside the identity container:
     docker exec uniops_identity_api python -m scripts.verify_gate_parity
