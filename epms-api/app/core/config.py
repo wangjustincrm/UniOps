@@ -61,6 +61,10 @@ class Settings(BaseSettings):
 
     @property
     def REDIS_URL(self) -> str:
+        # ⚠️ 这份逻辑在 identity-api/app/core/config.py 有一份同样的拷贝 —— 改这里必须同时改那里。
+        # (2026-07-16 的教训:identity 的 email.py 是 epms 的拷贝,epms 修了 TLS 分流而拷贝没跟上,
+        #  结果同一台邮件服务器 epms 发得出、identity 发不出,查了很久。拷贝会漂移。)
+        #
         # Backward-compat is load-bearing: when REDIS_PASSWORD is unset/empty,
         # this must produce the exact same unauthenticated URL as before the
         # field existed (2026-07-15 MFA outage — see comment on the field above).
