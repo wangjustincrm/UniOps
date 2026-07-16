@@ -30,9 +30,22 @@ sudo sed -i "s/^TAG=.*/TAG=<新sha>/" .env
 sudo docker compose -f docker-compose.prod.yml pull
 
 # 1) 迁移前预检(③的岗位单例索引会因 user_roles 已有重复岗位而中断迁移)
-sudo docker compose -f docker-compose.prod.yml exec -T postgres psql -U epms -d epms -c \
- "SELECT role_code,count(*) FROM user_roles WHERE role_code IN ('gm','opm','vendor_manager','finance_manager','procurement_manager') GROUP BY 1 HAVING count(*)>1;"
-#    须 0 行;非 0 先清重复再继续
+#    ⚠️ 生产 postgres 是外部库(${DB_HOST}=10.10.50.20),不在 compose 栈里,
+#    所以不能用 `compose exec postgres` —— 用连着同一个库的 identity 容器跑:
+sudo docker compose -f docker-compose.prod.yml run --rm identity-api python -c "
+import asyncio
+from sqlalchemy import text
+from app.db.base import AsyncSessionLocal
+async def main():
+    async with AsyncSessionLocal() as db:
+        rows = (await db.execute(text(
+            \"SELECT role_code, count(*) FROM user_roles \"
+            \"WHERE role_code IN ('gm','opm','vendor_manager','finance_manager','procurement_manager') \"
+            \"GROUP BY 1 HAVING count(*) > 1\"))).all()
+        print('DUPLICATES:', rows if rows else 'none (0 rows) — OK to migrate')
+asyncio.run(main())
+"
+#    期望 'none (0 rows) — OK to migrate';非空先清重复再继续
 
 # 2) 迁移
 sudo ./migrate-prod.sh
