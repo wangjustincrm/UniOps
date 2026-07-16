@@ -765,3 +765,33 @@ def test_multiple_exdates_share_one_property():
     ).decode()
 
     assert "EXDATE;TZID=America/Toronto:20260715T140000,20260722T140000" in raw
+
+
+def test_exdates_suppressed_when_recurrence_id_suppresses_rrule():
+    """EXDATE only means something alongside the RRULE it subtracts from.
+
+    When recurrence_id is set, RRULE is suppressed (single-instance exception
+    invite). If a caller also passed exdates in that shape, EXDATE must be
+    suppressed too — otherwise it would be an orphaned, meaningless property
+    on a VEVENT with no RRULE to subtract from.
+    """
+    booking = _make_booking(rrule="FREQ=WEEKLY;INTERVAL=1;COUNT=4")
+    excluded = datetime(2026, 7, 15, 18, 0, 0, tzinfo=timezone.utc)
+
+    ics = build_event_ics(
+        booking=booking,
+        room=_make_room(),
+        organizer_email="organizer@example.com",
+        attendee_emails=["a@example.com"],
+        method="CANCEL",
+        rrule=booking.rrule,
+        recurrence_id=booking.starts_at,
+        exdates=[excluded],
+    )
+
+    event = _first_event(_parse(ics))
+    assert event.get("rrule") is None, "RRULE must stay suppressed alongside RECURRENCE-ID"
+    assert event.get("exdate") is None, (
+        "EXDATE must be suppressed when RRULE is not emitted — it has nothing "
+        "to subtract from"
+    )

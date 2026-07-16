@@ -144,8 +144,10 @@ def build_event_ics(
                          on the WHOLE series — never emit both.
         exdates:         Occurrence start times to exclude from the RRULE
                          expansion (occurrences cancelled individually).  Unlike
-                         recurrence_id this COEXISTS with rrule.  Ignored when
-                         rrule is None — there is nothing to subtract from.
+                         recurrence_id this COEXISTS with rrule.  Ignored unless
+                         the RRULE is actually emitted (rrule is not None AND
+                         recurrence_id is None) — there is nothing to subtract
+                         from otherwise.
 
     Returns:
         UTF-8 encoded iCalendar bytes.
@@ -206,13 +208,15 @@ def build_event_ics(
     # RRULE for series invites — deliberately suppressed for single-instance
     # exceptions. RRULE alongside RECURRENCE-ID makes Outlook apply the action
     # to the entire series, i.e. wipe every attendee's calendar.
-    if rrule is not None and recurrence_id is None:
+    emits_rrule = rrule is not None and recurrence_id is None
+    if emits_rrule:
         event.add("rrule", vRecur.from_ical(rrule))
 
     # EXDATE subtracts individually-cancelled occurrences from the RRULE
-    # expansion. Passing a list yields one comma-separated EXDATE property;
+    # expansion, so it only means something alongside the RRULE it subtracts
+    # from. Passing a list yields one comma-separated EXDATE property;
     # icalendar adds the TZID.
-    if exdates:
+    if exdates and emits_rrule:
         event.add("exdate", [ex.astimezone(tz) for ex in exdates])
 
     cal.add_component(event)
