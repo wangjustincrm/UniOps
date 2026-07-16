@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowLeft, Lock, Loader2, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Lock, Loader2, Search, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -122,38 +122,33 @@ export default function AccessControl() {
   }
 
   return (
-    <div className="flex flex-col gap-5 p-6">
-      <Link
-        to="/"
-        className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to UniOps
-      </Link>
-      <div>
-        <h1 className="text-lg font-semibold">Access Control</h1>
-        <p className="text-sm text-neutral-500">
-          Manage the role permission matrix and per-user role assignments across every module.
-        </p>
-      </div>
+    <PortalPageLayout activeKey="portal:/admin/access-control" title="Access Control">
+      <div className="flex flex-col gap-5">
+        <div>
+          <h1 className="text-lg font-semibold">Access Control</h1>
+          <p className="text-sm text-neutral-500">
+            Manage the role permission matrix and per-user role assignments across every module.
+          </p>
+        </div>
 
-      <div className="flex gap-1 border-b border-neutral-200">
-        {(['matrix', 'users'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
-              tab === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500 hover:text-neutral-700',
-            )}
-          >
-            {t === 'matrix' ? 'Permission Matrix' : 'User Roles'}
-          </button>
-        ))}
-      </div>
+        <div className="flex gap-1 border-b border-neutral-200">
+          {(['matrix', 'users'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={cn(
+                '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+                tab === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-neutral-500 hover:text-neutral-700',
+              )}
+            >
+              {t === 'matrix' ? 'Permission Matrix' : 'User Roles'}
+            </button>
+          ))}
+        </div>
 
-      {tab === 'matrix' ? <PermissionMatrixTab /> : <UserRolesTab />}
-    </div>
+        {tab === 'matrix' ? <PermissionMatrixTab /> : <UserRolesTab />}
+      </div>
+    </PortalPageLayout>
   )
 }
 
