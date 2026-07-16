@@ -1,6 +1,6 @@
 # Import all model modules here so that Alembic env.py can discover them.
 from app.models.approval import ApprovalEvent  # noqa: F401
-from app.models.config import CompanyConfig, TempAssignment  # noqa: F401
+from app.models.config import CompanyConfig  # noqa: F401
 # NOTE: BudgetAccount / BudgetL1 moved to budget-api (:8007). No mirror in epms-api.
 from app.models.cost_center import CostCenter  # noqa: F401
 from app.models.department import Department  # noqa: F401

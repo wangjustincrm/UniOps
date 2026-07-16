@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   configService,
   type UpdateConfigBody,
-  type CreateTempAssignmentBody,
 } from '@/services/config'
 
 export function useConfig() {
@@ -18,29 +17,6 @@ export function useUpdateConfig() {
 
   return useMutation({
     mutationFn: (body: UpdateConfigBody) => configService.update(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config'] })
-    },
-  })
-}
-
-export function useCreateTempAssignment() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (body: CreateTempAssignmentBody) =>
-      configService.createTempAssignment(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config'] })
-    },
-  })
-}
-
-export function useDeleteTempAssignment() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (id: string) => configService.deleteTempAssignment(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['config'] })
     },

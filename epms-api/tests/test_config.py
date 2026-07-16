@@ -2,7 +2,6 @@
 import pytest
 
 CONFIG_URL = "/api/v1/config"
-TA_URL = "/api/v1/config/temp-assignments"
 
 
 # ── GET config ───────────────────────────────────────────────────────────────
@@ -158,97 +157,6 @@ async def test_partial_update_preserves_other_fields(admin_client):
     data = r.json()
     assert data["name"] == "PreserveTest Corp"   # still preserved
     assert data["tagline"] == "New tagline"
-
-
-# ── Temp Assignments ─────────────────────────────────────────────────────────
-
-@pytest.mark.asyncio
-async def test_list_temp_assignments_empty(admin_client):
-    """Temp assignments list is accessible to all authenticated users."""
-    r = await admin_client.get(TA_URL)
-    assert r.status_code == 200
-    assert isinstance(r.json(), list)
-
-
-@pytest.mark.asyncio
-async def test_create_temp_assignment_with_real_user(admin_client):
-    """Create a temp assignment delegating GM to admin user."""
-    from app.core.security import create_access_token
-    from app.schemas.auth import RegisterRequest
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-    # Get the admin's own user ID from token — easier: just create via PATCH + read back
-    # Simpler: create a real user via the users API, then create temp assignment
-    users_r = await admin_client.get("/api/v1/users")
-    assert users_r.status_code == 200
-    users = users_r.json()
-    assert len(users) >= 1
-    target_user_id = users[0]["id"]
-
-    r = await admin_client.post(TA_URL, json={
-        "delegate_user_id": target_user_id,
-        "role_key": "gm",
-        "start_date": "2026-04-01",
-        "end_date": "2026-04-15",
-    })
-    assert r.status_code == 201
-    data = r.json()
-    assert data["role_key"] == "gm"
-    assert data["delegate_user_id"] == target_user_id
-
-    # List returns it
-    list_r = await admin_client.get(TA_URL)
-    assert list_r.status_code == 200
-    assert any(ta["id"] == data["id"] for ta in list_r.json())
-
-    # Delete it
-    del_r = await admin_client.delete(f"{TA_URL}/{data['id']}")
-    assert del_r.status_code == 204
-
-    # No longer in list
-    list_r2 = await admin_client.get(TA_URL)
-    assert not any(ta["id"] == data["id"] for ta in list_r2.json())
-
-
-@pytest.mark.asyncio
-async def test_temp_assignment_invalid_dates(admin_client):
-    users_r = await admin_client.get("/api/v1/users")
-    target_user_id = users_r.json()[0]["id"]
-    r = await admin_client.post(TA_URL, json={
-        "delegate_user_id": target_user_id,
-        "role_key": "opm",
-        "start_date": "2026-04-15",
-        "end_date": "2026-04-01",   # end before start
-    })
-    assert r.status_code == 422
-
-
-@pytest.mark.asyncio
-async def test_delete_nonexistent_temp_assignment(admin_client):
-    import uuid
-    r = await admin_client.delete(f"{TA_URL}/{uuid.uuid4()}")
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_temp_assignment_non_admin_forbidden(finance_client):
-    import uuid
-    r = await finance_client.post(TA_URL, json={
-        "delegate_user_id": str(uuid.uuid4()),
-        "role_key": "gm",
-        "start_date": "2026-04-01",
-        "end_date": "2026-04-15",
-    })
-    assert r.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_config_includes_temp_assignments(admin_client):
-    """GET /config should embed current temp_assignments."""
-    r = await admin_client.get(CONFIG_URL)
-    assert r.status_code == 200
-    assert "temp_assignments" in r.json()
-    assert isinstance(r.json()["temp_assignments"], list)
 
 
 # ── Per-module taglines ──────────────────────────────────────────────────────

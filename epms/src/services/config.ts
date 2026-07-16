@@ -67,15 +67,6 @@ export interface WorkflowNodeDef {
   role: string
 }
 
-export interface TempAssignment {
-  id: string
-  delegate_user_id: string
-  role_key: string
-  start_date: string
-  end_date: string
-  created_at: string
-}
-
 export interface RoleManagementConfig {
   gm_user_id: string | null
   gm_backup_user_id: string | null
@@ -88,7 +79,6 @@ export interface RoleManagementConfig {
   vendor_manager_user_id: string | null
   vendor_manager_backup_user_id: string | null
   finance_bp_user_ids: string[]
-  temp_assignments: TempAssignment[]
 }
 
 /** permission_key → bool for one role */
@@ -175,7 +165,6 @@ export interface CompanyConfig {
   budget_admin_config: BudgetAdminConfig
   collection_config: CollectionConfig
   role_management: RoleManagementConfig
-  temp_assignments: TempAssignment[]
   workflow_defs: {
     pr: WorkflowNodeDef[]
     po: WorkflowNodeDef[]
@@ -197,27 +186,11 @@ export interface EmailTemplate {
 
 export type UpdateConfigBody = Partial<CompanyConfig>
 
-export interface CreateTempAssignmentBody {
-  delegate_user_id: string
-  role_key: string
-  start_date: string
-  end_date: string
-}
-
 export const configService = {
   get: () => api.get<CompanyConfig>('/config'),
 
   update: (body: UpdateConfigBody) =>
     api.patch<CompanyConfig>('/config', body),
-
-  listTempAssignments: () =>
-    api.get<TempAssignment[]>('/config/temp-assignments'),
-
-  createTempAssignment: (body: CreateTempAssignmentBody) =>
-    api.post<TempAssignment>('/config/temp-assignments', body),
-
-  deleteTempAssignment: (id: string) =>
-    api.delete<void>(`/config/temp-assignments/${id}`),
 
   testSmtp: (to: string, kind: 'task' | 'po' = 'task') =>
     api.post<{ message: string }>('/config/test-smtp', { to, kind }),

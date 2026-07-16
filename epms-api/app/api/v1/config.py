@@ -14,8 +14,6 @@ from app.services import approval_client
 from app.schemas.config import (
     ConfigResponse,
     ConfigUpdate,
-    TempAssignmentCreate,
-    TempAssignmentResponse,
     RolePermissionsUpdate,
 )
 from app.crud.config import BUILT_IN_ROLES, LOCKED_PERMISSIONS, PERMISSION_KEYS
@@ -44,14 +42,8 @@ AdminDep = Annotated[dict, Depends(require_permission("admin_panel"))]
 
 
 async def _full_response(db, user_payload: dict) -> ConfigResponse:
-    """Build a ConfigResponse with embedded temp_assignments."""
     cfg = await config_crud.get_or_create(db)
-    temp_assignments = await config_crud.list_temp_assignments(db)
-    response = ConfigResponse.model_validate(cfg)
-    response.temp_assignments = [
-        TempAssignmentResponse.model_validate(ta) for ta in temp_assignments
-    ]
-    return response
+    return ConfigResponse.model_validate(cfg)
 
 
 # ── Config endpoints ─────────────────────────────────────────────────────────
@@ -135,38 +127,6 @@ async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep):
     await config_crud.update(db, cfg, body, uuid.UUID(user["sub"]))
     await db.commit()
     return await _full_response(db, user)
-
-
-# ── Temp Assignment endpoints ────────────────────────────────────────────────
-
-@router.get("/temp-assignments", response_model=list[TempAssignmentResponse])
-async def list_temp_assignments(db: SessionDep, _: CurrentUserPayload):
-    return await config_crud.list_temp_assignments(db)
-
-
-@router.post("/temp-assignments", response_model=TempAssignmentResponse, status_code=201)
-async def create_temp_assignment(
-    body: TempAssignmentCreate, db: SessionDep, user: AdminDep
-):
-    """Create a temporary role assignment (system_admin only)."""
-    if body.end_date < body.start_date:
-        raise HTTPException(status_code=422, detail="end_date must be >= start_date")
-    ta = await config_crud.create_temp_assignment(db, body, uuid.UUID(user["sub"]))
-    await db.commit()
-    await db.refresh(ta)
-    return TempAssignmentResponse.model_validate(ta)
-
-
-@router.delete("/temp-assignments/{assignment_id}", status_code=204)
-async def delete_temp_assignment(
-    assignment_id: uuid.UUID, db: SessionDep, _: AdminDep
-):
-    """Delete a temporary assignment (system_admin only)."""
-    ta = await config_crud.get_temp_assignment(db, assignment_id)
-    if ta is None:
-        raise HTTPException(status_code=404, detail="Temp assignment not found")
-    await config_crud.delete_temp_assignment(db, ta)
-    await db.commit()
 
 
 # ── Role Permissions endpoints ───────────────────────────────────────────────

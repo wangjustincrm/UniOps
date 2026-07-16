@@ -1,8 +1,8 @@
-"""Pydantic schemas for Company Config and Temp Assignments."""
+"""Pydantic schemas for Company Config."""
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -76,20 +76,6 @@ class CollectionConfig(BaseModel):
     fm_alert_days: int = 7
 
 
-class RoleManagementConfig(BaseModel):
-    gm_user_id: str | None = None
-    gm_backup_user_id: str | None = None
-    opm_user_id: str | None = None
-    opm_backup_user_id: str | None = None
-    finance_manager_user_id: str | None = None
-    finance_manager_backup_user_id: str | None = None
-    procurement_manager_user_id: str | None = None
-    procurement_manager_backup_user_id: str | None = None
-    vendor_manager_user_id: str | None = None
-    vendor_manager_backup_user_id: str | None = None
-    finance_bp_user_ids: list[str] = []
-
-
 class WorkflowNodeDef(BaseModel):
     id: str
     label: str
@@ -128,27 +114,6 @@ class CustomRoleResponse(BaseModel):
 class RolePermissionsUpdate(BaseModel):
     """Map of role_code → {permission_key: bool}.  Only supplied roles/perms are updated."""
     permissions: dict[str, dict[str, bool]]
-
-
-# ── TempAssignment ──────────────────────────────────────────────────────────
-
-class TempAssignmentCreate(BaseModel):
-    delegate_user_id: uuid.UUID
-    role_key: str
-    start_date: date
-    end_date: date
-
-
-class TempAssignmentResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: uuid.UUID
-    delegate_user_id: uuid.UUID
-    role_key: str
-    start_date: date
-    end_date: date
-    created_by: uuid.UUID
-    created_at: datetime
 
 
 # ── Main config ─────────────────────────────────────────────────────────────
@@ -263,5 +228,3 @@ class ConfigResponse(BaseModel):
 
     updated_at: datetime
     updated_by: uuid.UUID | None
-
-    temp_assignments: list[TempAssignmentResponse] = []
