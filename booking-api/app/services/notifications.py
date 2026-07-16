@@ -269,7 +269,12 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
             log_entry.sent_at = datetime.now(timezone.utc)
             log_entry.error = "smtp_not_configured (logged only)"
             booking.sync_status = "sent"
-            await _propagate_series_sync_status(db, booking, "sent")
+            # cancelled_occ's invite covers exactly ONE booking row, not the
+            # series — propagating would falsely stamp siblings that never
+            # got their own notification (e.g. a prior failed series update)
+            # as synced. Only created/updated/cancelled cover the whole series.
+            if log_entry.notif_type != "cancelled_occ":
+                await _propagate_series_sync_status(db, booking, "sent")
             return True
 
         # Resolve organizer
@@ -399,7 +404,10 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
         log_entry.status = "sent"
         log_entry.sent_at = datetime.now(timezone.utc)
         booking.sync_status = "sent"
-        await _propagate_series_sync_status(db, booking, "sent")
+        # cancelled_occ's invite covers exactly ONE booking row, not the
+        # series — see the log-only branch above for the full rationale.
+        if log_entry.notif_type != "cancelled_occ":
+            await _propagate_series_sync_status(db, booking, "sent")
         log.info(
             "Notification sent for booking %s (type=%s, to=%s)",
             booking.id, log_entry.notif_type, to_emails,
@@ -420,7 +428,10 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
             bk = booking_result2.scalar_one_or_none()
             if bk is not None:
                 bk.sync_status = "failed"
-                await _propagate_series_sync_status(db, bk, "failed")
+                # cancelled_occ's invite covers exactly ONE booking row, not
+                # the series — see the log-only branch above for rationale.
+                if log_entry.notif_type != "cancelled_occ":
+                    await _propagate_series_sync_status(db, bk, "failed")
         except Exception:  # noqa: BLE001
             pass
         return False

@@ -912,3 +912,180 @@ class TestSingleOccurrenceNotification:
         assert "RRULE:FREQ=WEEKLY" in ics
         expected = second.starts_at.astimezone(TZ).strftime("%Y%m%dT%H%M%S")
         assert f"EXDATE;TZID=America/Toronto:{expected}" in ics
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 10 — cancelled_occ must NOT propagate sync_status to siblings
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestCancelledOccSyncStatusNotPropagated:
+    async def test_cancelled_occ_leaves_siblings_untouched_but_updates_target(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """cancelled_occ's notification describes exactly ONE booking row.
+        Siblings must NOT be stamped sync_status — otherwise an admin dashboard
+        can report a series as fully synced when an earlier series update never
+        reached some occurrences (the review's verified failure scenario).
+
+        Falsifiability: the sibling class below proves plain 'cancelled' still
+        propagates to the whole series as before — so this isn't a case where
+        propagation broke entirely, only the cancelled_occ carve-out.
+        """
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+
+        organizer = await make_user(test_engine, role="requester",
+                                    email="occ_nosync@test.com", full_name="Occ NoSync Org")
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+        bookings = await _make_series_bookings(db_session, room.id, organizer.id, count=3)
+        first, second, third = bookings
+
+        # Simulate a prior series update that failed to reach Outlook: every
+        # sibling sits at a known non-'sent' sync_status.
+        for bk in bookings:
+            bk.sync_status = "failed"
+        await db_session.flush()
+
+        from app.services.notifications import enqueue
+        log = await enqueue(db_session, [second], "cancelled_occ")
+
+        assert log is not None
+        assert log.status == "sent", f"Expected sent, got {log.status}: {log.error}"
+
+        await db_session.flush()
+        await db_session.refresh(first)
+        await db_session.refresh(second)
+        await db_session.refresh(third)
+
+        # The cancelled occurrence's own row IS updated.
+        assert second.sync_status == "sent", (
+            f"Target occurrence sync_status={second.sync_status!r}, expected 'sent'"
+        )
+        # Untouched siblings must remain exactly as they were — NOT 'sent'.
+        assert first.sync_status == "failed", (
+            f"Sibling #1 sync_status={first.sync_status!r} was overwritten by a "
+            "cancelled_occ notification that never reached it — admin dashboard "
+            "would falsely report it synced"
+        )
+        assert third.sync_status == "failed", (
+            f"Sibling #3 sync_status={third.sync_status!r} was overwritten by a "
+            "cancelled_occ notification that never reached it — admin dashboard "
+            "would falsely report it synced"
+        )
+
+    async def test_plain_cancelled_still_propagates_to_whole_series(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """Control case: unlike cancelled_occ, a whole-series 'cancelled'
+        notification must still stamp every confirmed sibling — this is what
+        makes the cancelled_occ carve-out above falsifiable rather than a
+        no-op that would pass even if propagation broke entirely."""
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+
+        organizer = await make_user(test_engine, role="requester",
+                                    email="series_cancel@test.com", full_name="Series Cancel Org")
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+        bookings = await _make_series_bookings(db_session, room.id, organizer.id, count=3)
+        for bk in bookings:
+            bk.sync_status = "failed"
+        await db_session.flush()
+
+        from app.services.notifications import enqueue
+        log = await enqueue(db_session, [bookings[0]], "cancelled")
+
+        assert log is not None
+        assert log.status == "sent", f"Expected sent, got {log.status}: {log.error}"
+
+        await db_session.flush()
+        for bk in bookings:
+            await db_session.refresh(bk)
+            assert bk.sync_status == "sent", (
+                f"Sibling {bk.id} sync_status={bk.sync_status!r}, expected 'sent' — "
+                "whole-series 'cancelled' must still propagate to every sibling"
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 11 — scheduler retry of a failed cancelled_occ log
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSchedulerRetriesCancelledOcc:
+    async def test_scheduler_retry_rerenders_cancelled_occ_not_whole_series(
+        self, test_engine, db_session, monkeypatch
+    ):
+        """The whole reason notif_type='cancelled_occ' is persisted on the log
+        (rather than passed as a call argument) is that scheduler.py retries
+        by RE-RENDERING the ICS from the stored log. This is the one
+        load-bearing path with no test before this fix: a refactor that swaps
+        the persisted intent for a transient flag ("just use 'cancelled' and
+        pass a flag") could silently reintroduce a whole-calendar-wipe on
+        retry with a green suite.
+
+        Flow: enqueue cancelled_occ while SMTP is down (log lands failed) →
+        backdate the log past the backoff gate → SMTP recovers → scheduler
+        tick → the re-rendered ICS must still carry METHOD:CANCEL +
+        RECURRENCE-ID and must NOT carry the series RRULE.
+        """
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPFailRecorder)
+
+        organizer = await make_user(test_engine, role="requester",
+                                    email="occ_sched_retry@test.com", full_name="Occ Sched Retry Org")
+        room = await _make_room(db_session)
+        await _configure_smtp(db_session)
+        bookings = await _make_series_bookings(db_session, room.id, organizer.id, count=3)
+        second = bookings[1]
+
+        from app.services.notifications import enqueue
+        log = await enqueue(db_session, [second], "cancelled_occ")
+
+        assert log is not None
+        assert log.notif_type == "cancelled_occ"
+        assert log.status == "failed", f"Expected failed on first attempt, got {log.status}"
+
+        # Backdate created_at so the scheduler's backoff gate (5min * 2^retry_count,
+        # retry_count=0 here) is satisfied. Same pattern as
+        # TestSchedulerTick.test_scheduler_tick_retries_failed_log_and_marks_sent.
+        from sqlalchemy import text
+        old_time = datetime.now(timezone.utc) - timedelta(hours=1)
+        await db_session.execute(
+            text("UPDATE booking_notification_log SET created_at = :t WHERE id = :id"),
+            {"t": old_time, "id": log.id},
+        )
+        await db_session.flush()
+        await db_session.refresh(log)
+
+        # SMTP recovers for the retry.
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+
+        from app.services.scheduler import _run_tick_with_session
+        await _run_tick_with_session(db_session)
+
+        await db_session.refresh(log)
+        assert log.status == "sent", f"Expected sent after retry, got {log.status}: {log.error}"
+        assert log.notif_type == "cancelled_occ", (
+            "notif_type must survive the retry unchanged — it is what tells "
+            "the re-render which VEVENT shape to build"
+        )
+
+        assert len(_SMTPRecorder.instances) == 1
+        recorder = _SMTPRecorder.instances[0]
+        assert len(recorder.sent_messages) == 1
+        ics = _extract_ics(recorder.sent_messages[0])
+
+        assert "METHOD:CANCEL" in ics
+        assert "RECURRENCE-ID" in ics
+        # Assert on the SERIES rrule specifically, not a bare "RRULE" substring
+        # — VTIMEZONE legitimately emits RRULE:FREQ=YEARLY for DST transitions,
+        # so `"RRULE" not in ics` is unsatisfiable by construction.
+        assert "RRULE:FREQ=WEEKLY" not in ics, (
+            f"series RRULE present on scheduler retry — Outlook would wipe "
+            f"the whole series: {ics[:400]}"
+        )

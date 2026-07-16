@@ -92,8 +92,12 @@ async def _run_tick_with_session(db: AsyncSession) -> None:
             booking = bk_result.scalar_one_or_none()
             if booking is not None:
                 booking.sync_status = "compensating"
-                from app.services.notifications import _propagate_series_sync_status
-                await _propagate_series_sync_status(db, booking, "compensating")
+                # cancelled_occ's invite covers exactly ONE booking row, not
+                # the series (see notifications.py send_notification for the
+                # full rationale) — do not stamp siblings mid-retry either.
+                if log_entry.notif_type != "cancelled_occ":
+                    from app.services.notifications import _propagate_series_sync_status
+                    await _propagate_series_sync_status(db, booking, "compensating")
 
         # Increment retry count before attempt
         log_entry.retry_count += 1
