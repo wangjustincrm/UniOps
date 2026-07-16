@@ -760,30 +760,47 @@ async def update_booking_series(
     actor_id = uuid.UUID(current_user["sub"])
     is_admin = await is_booking_admin(current_user, db)
 
-    # ── Fetch all confirmed occurrences of the series ─────────────────────────
+    # ── Fetch ALL occurrences of the series, any status ───────────────────────
+    # Individually-cancelled occurrences are fetched for two reasons:
+    #   1. their times must follow series edits, so EXDATE keeps matching the
+    #      instants Outlook computes from the RRULE;
+    #   2. they are where the EXDATE list comes from (see notifications.py).
+    # They must NOT take part in authorization, 404 / room resolution, conflict
+    # checks or the returned count — confirmed_series_bookings owns all of that,
+    # unchanged.
     series_result = await db.execute(
         select(Booking)
-        .where(
-            Booking.series_id == series_id,
-            Booking.status == "confirmed",
-        )
+        .where(Booking.series_id == series_id)
         .order_by(Booking.starts_at)
     )
     all_series_bookings = list(series_result.scalars().all())
+    confirmed_series_bookings = [
+        b for b in all_series_bookings if b.status == "confirmed"
+    ]
 
-    if not all_series_bookings:
-        # No confirmed bookings with this series_id → treat as not found
+    if not confirmed_series_bookings:
+        # No confirmed bookings with this series_id → treat as not found.
+        # Keyed on confirmed rows, not all rows: a series whose occurrences were
+        # every one cancelled must still read as "not found", exactly as before.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
 
     # Authorization: must be organizer of the series or admin
     # (anti-probing: return 404 not 403)
-    organizer_id = all_series_bookings[0].organizer_id
+    organizer_id = confirmed_series_bookings[0].organizer_id
     if actor_id != organizer_id and not is_admin:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Series not found")
 
-    # ── Target rows: future confirmed only ────────────────────────────────────
+    # ── Target rows ───────────────────────────────────────────────────────────
+    # future_bookings keeps its old meaning (future + confirmed) and its old
+    # responsibilities: series_fully_started, room resolution, conflict checks,
+    # the invite anchor and the returned count.
     now = datetime.now(tz)
-    future_bookings = [b for b in all_series_bookings if b.starts_at > now]
+    future_bookings = [b for b in confirmed_series_bookings if b.starts_at > now]
+    # Cancelled future occurrences only follow the new times and feed EXDATE.
+    future_cancelled = [
+        b for b in all_series_bookings
+        if b.status == "cancelled" and b.starts_at > now
+    ]
 
     if not future_bookings:
         raise HTTPException(
@@ -885,20 +902,28 @@ async def update_booking_series(
 
     # ── Compute new windows for each future occurrence ────────────────────────
     series_ids_set = {b.id for b in all_series_bookings}
-    occurrence_windows: list[tuple[Booking, datetime, datetime]] = []
 
-    for b in future_bookings:
-        if body.start_time is not None:
-            local_date = b.starts_at.astimezone(tz).date()
-            new_starts = datetime(local_date.year, local_date.month, local_date.day,
-                                  new_start_h, new_start_m, tzinfo=tz)
-            new_ends = datetime(local_date.year, local_date.month, local_date.day,
-                                new_end_h, new_end_m, tzinfo=tz)
-        else:
-            new_starts = b.starts_at
-            new_ends = b.ends_at
+    def _new_window(b: Booking) -> tuple[Booking, datetime, datetime]:
+        """Return (booking, new_starts, new_ends) for one occurrence.
 
-        occurrence_windows.append((b, new_starts, new_ends))
+        The occurrence keeps its own date and takes the series' new time of day.
+        """
+        if body.start_time is None:
+            return (b, b.starts_at, b.ends_at)
+        local_date = b.starts_at.astimezone(tz).date()
+        return (
+            b,
+            datetime(local_date.year, local_date.month, local_date.day,
+                     new_start_h, new_start_m, tzinfo=tz),
+            datetime(local_date.year, local_date.month, local_date.day,
+                     new_end_h, new_end_m, tzinfo=tz),
+        )
+
+    occurrence_windows = [_new_window(b) for b in future_bookings]
+    # Cancelled occurrences are deliberately absent from the conflict check
+    # below — a cancelled occurrence does not occupy the room, so testing it
+    # against real bookings would reject valid edits.
+    cancelled_windows = [_new_window(b) for b in future_cancelled]
 
     # ── Conflict check: exclude ALL series members ────────────────────────────
     all_conflict_rows: list[Booking] = []
@@ -950,7 +975,10 @@ async def update_booking_series(
     new_sequence = max(b.ical_sequence for b in all_series_bookings) + 1
 
     try:
-        for b, new_starts, new_ends in occurrence_windows:
+        # Cancelled occurrences are updated alongside confirmed ones. The loop
+        # never touches b.status, so they stay cancelled while their times track
+        # the series — which is what keeps EXDATE aligned.
+        for b, new_starts, new_ends in occurrence_windows + cancelled_windows:
             before_snapshot = {
                 "id": str(b.id),
                 "room_id": str(b.room_id),

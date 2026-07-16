@@ -27,6 +27,7 @@ from app.models.booking import Booking as BookingModel
 from app.models.notification import NotificationLog
 from app.models.room import MeetingRoom
 from tests.conftest import authed_client, make_token, make_user, grant_matrix_permission
+from tests.test_notifications import _SMTPRecorder, _configure_smtp, _extract_ics
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -785,3 +786,155 @@ class TestSeriesEditRegressions:
         assert "not bookable" in resp.json().get("detail", "").lower() or "not 'available'" in resp.json().get("detail", ""), (
             f"Expected 'not bookable' error, got: {resp.json()}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 8: series edits keep individually-cancelled occurrences aligned
+#
+# Deviations from the brief's test snippets (brief used a bare `client`
+# fixture and `GET /bookings/{id}`, neither of which exist in this codebase):
+#   - `client` (conftest) is UNAUTHENTICATED — these tests use `requester` /
+#     `admin` like the rest of this file (see TestSeriesEditTimeChange).
+#   - There is no `GET /bookings/{id}` route (only /mine and /day exist) —
+#     cancelled-row state is read back via db_session queries instead.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSeriesEditWithCancelledOccurrence:
+    async def test_cancelled_occurrence_follows_new_times_and_stays_cancelled(
+        self, requester, admin, db_session
+    ):
+        """A cancelled occurrence tracks the series' new times but stays cancelled.
+
+        The alignment is what makes EXDATE correct: EXDATE has to match the
+        instant Outlook computes from the new RRULE, so a cancelled row's
+        starts_at must move with the series.
+        """
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series = await _create_series(req_client, room["id"], _dt(8, 30), _dt(9, 0), count=3)
+        occurrences = series["bookings"]
+        cancelled_id = occurrences[1]["id"]
+        series_id = occurrences[0]["series_id"]
+
+        cancel_resp = await req_client.post(f"/api/v1/bookings/{cancelled_id}/cancel?series=false")
+        assert cancel_resp.status_code == 200, cancel_resp.text
+
+        resp = await req_client.patch(
+            f"/api/v1/bookings/series/{series_id}",
+            json={"start_time": "09:00", "end_time": "09:30"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        result = await db_session.execute(
+            select(BookingModel).where(BookingModel.id == uuid.UUID(cancelled_id))
+        )
+        row = result.scalar_one()
+        assert row.status == "cancelled"
+        local = row.starts_at.astimezone(TZ)
+        assert (local.hour, local.minute) == (9, 0), (
+            f"Expected cancelled row to follow the series to 09:00, got {local}"
+        )
+
+    async def test_series_edit_invite_exdates_the_updated_time(
+        self, requester, admin, db_session, monkeypatch
+    ):
+        """The series invite excludes the cancelled occurrence at its UPDATED
+        time. The original time would not match any instance of the new RRULE,
+        so the occurrence would reappear on every attendee's calendar."""
+        import smtplib
+        _SMTPRecorder.instances.clear()
+        monkeypatch.setattr(smtplib, "SMTP", _SMTPRecorder)
+        await _configure_smtp(db_session)
+
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series = await _create_series(req_client, room["id"], _dt(8, 30), _dt(9, 0), count=3)
+        occurrences = series["bookings"]
+        cancelled_id = occurrences[1]["id"]
+        series_id = occurrences[0]["series_id"]
+
+        cancel_resp = await req_client.post(f"/api/v1/bookings/{cancelled_id}/cancel?series=false")
+        assert cancel_resp.status_code == 200, cancel_resp.text
+
+        resp = await req_client.patch(
+            f"/api/v1/bookings/series/{series_id}",
+            json={"start_time": "09:00", "end_time": "09:30"},
+        )
+        assert resp.status_code == 200, resp.text
+
+        result = await db_session.execute(
+            select(BookingModel).where(BookingModel.id == uuid.UUID(cancelled_id))
+        )
+        row = result.scalar_one()
+        expected = row.starts_at.astimezone(TZ).strftime("%Y%m%dT%H%M%S")
+        assert expected.endswith("T090000"), "cancelled row did not follow the edit"
+
+        assert len(_SMTPRecorder.instances) >= 1, "expected SMTP to be invoked for the series edit"
+        ics = _extract_ics(_SMTPRecorder.instances[-1].sent_messages[-1])
+        assert "RRULE:FREQ=WEEKLY" in ics, "series invite must carry the (new) RRULE"
+        assert f"EXDATE;TZID=America/Toronto:{expected}" in ics
+
+    async def test_series_edit_404s_for_unknown_series(self, requester):
+        """Guard: widening the fetch must not turn 404 into 200."""
+        _, req_client = requester
+        resp = await req_client.patch(
+            f"/api/v1/bookings/series/{uuid.uuid4()}",
+            json={"title": "Nope"},
+        )
+        assert resp.status_code == 404
+
+    async def test_series_edit_400s_when_all_future_occurrences_cancelled(
+        self, requester, admin, db_session
+    ):
+        """Guard: a series with one past confirmed occurrence (so
+        confirmed_series_bookings is non-empty and the series is not
+        "unknown") but every FUTURE occurrence individually cancelled must
+        still report series_fully_started (400) — the widened fetch must not
+        let cancelled future rows count as editable targets.
+
+        Deviation from the brief: the brief's literal test cancelled every
+        occurrence of a series with NO past row, which empties
+        confirmed_series_bookings entirely and hits the (correct, and
+        already-tested) 404 "unknown series" path instead of 400. This
+        version keeps one past confirmed row untouched — via
+        _insert_booking_raw, matching TestSeriesFullyStarted's own pattern —
+        so the test actually exercises the future_bookings vs. future_cancelled
+        split described in the brief's Step 4.
+        """
+        organizer, req_client = requester
+        _, adm_client = admin
+
+        room = await _create_room(adm_client)
+        series_id = uuid.uuid4()
+        rrule = "FREQ=WEEKLY;COUNT=3"
+        uid = f"series-{uuid.uuid4()}@test"
+
+        # Past confirmed occurrence — keeps confirmed_series_bookings non-empty
+        # (organizer resolution + the "unknown series" 404 check pass).
+        past_start = datetime.now(TZ) - timedelta(days=3)
+        past_end = past_start + timedelta(hours=1)
+        await _insert_booking_raw(
+            db_session, room["id"], past_start, past_end,
+            organizer_id=organizer.id, series_id=series_id, rrule=rrule,
+            calendar_uid=uid, status="confirmed",
+        )
+
+        # Two future occurrences, both already individually cancelled.
+        for days in (7, 14):
+            await _insert_booking_raw(
+                db_session, room["id"], _dt(10, 0, days), _dt(11, 0, days),
+                organizer_id=organizer.id, series_id=series_id, rrule=rrule,
+                calendar_uid=uid, status="cancelled",
+            )
+
+        resp = await req_client.patch(
+            f"/api/v1/bookings/series/{series_id}",
+            json={"title": "Nope"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "series_fully_started"
