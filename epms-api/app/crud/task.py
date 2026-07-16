@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
@@ -169,31 +168,16 @@ async def _all_roles_for_user(db: AsyncSession, base_role: str, user_id: uuid.UU
 
     The JWT carries only the user's single base role (User.role). Special roles
     (procurement_manager, gm, opm, finance_manager, vendor_manager, finance_bp) are
-    assigned via Role Management config — they are NOT reflected in User.role.
+    ADDITIONAL roles held in identity's user_roles table (same physical DB —
+    phase 3 retired the old company_config.role_management assignments).
     Approval tasks for those steps are role-broadcast (assigned_user_id=NULL,
     assigned_role="procurement_manager"), so a dept_manager who is also the
     configured procurement_manager would miss those tasks without this expansion.
+
+    Delegates to access_scope's shared union helper.
     """
-    roles: set[str] = {base_role}
-    cfg_row = await db.execute(select(CompanyConfig).limit(1))
-    cfg = cfg_row.scalar_one_or_none()
-    if not cfg or not cfg.role_management:
-        return roles
-    rm: dict = cfg.role_management
-    uid_str = str(user_id)
-    single_role_fields = {
-        "gm":                   rm.get("gm_user_id"),
-        "opm":                  rm.get("opm_user_id"),
-        "finance_manager":      rm.get("finance_manager_user_id"),
-        "procurement_manager":  rm.get("procurement_manager_user_id"),
-        "vendor_manager":       rm.get("vendor_manager_user_id"),
-    }
-    for special_role, assigned_uid in single_role_fields.items():
-        if assigned_uid and assigned_uid == uid_str:
-            roles.add(special_role)
-    if uid_str in rm.get("finance_bp_user_ids", []):
-        roles.add("finance_bp")
-    return roles
+    from app.core.access_scope import _effective_role_codes
+    return await _effective_role_codes(db, base_role, user_id)
 
 
 async def get_for_role(

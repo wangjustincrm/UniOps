@@ -40,7 +40,7 @@ services:
   epms-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-epms-api:${TAG:-latest}
-    build: { context: ./epms-api }
+    build: { context: ., dockerfile: epms-api/Dockerfile }
     environment:
       <<: *db-env
       REDIS_HOST: ${REDIS_HOST}
@@ -101,7 +101,7 @@ services:
   mdm-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-mdm-api:${TAG:-latest}
-    build: { context: ./mdm-api }
+    build: { context: ., dockerfile: mdm-api/Dockerfile }
     environment:
       <<: *db-env
       SERVICE_NAME: mdm-stub
@@ -142,7 +142,7 @@ services:
   finance-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-finance-api:${TAG:-latest}
-    build: { context: ./finance-api }
+    build: { context: ., dockerfile: finance-api/Dockerfile }
     environment:
       <<: *db-env
       SERVICE_NAME: finance-core
@@ -195,7 +195,7 @@ services:
   budget-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-budget-api:${TAG:-latest}
-    build: { context: ./budget-api }
+    build: { context: ., dockerfile: budget-api/Dockerfile }
     environment:
       <<: *db-env
       APP_NAME: Budget API
@@ -245,7 +245,7 @@ services:
   booking-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-booking-api:${TAG:-latest}
-    build: { context: ./booking-api }
+    build: { context: ., dockerfile: booking-api/Dockerfile }
     environment:
       <<: *db-env
       APP_NAME: Booking API

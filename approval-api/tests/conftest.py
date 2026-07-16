@@ -16,6 +16,7 @@ from app.models.event import ApprovalEvent
 from app.models.pa import PaymentApplication
 from app.models.posting import PostingEvent, PostingLine
 from app.models.pr import PurchaseRequest
+from app.models.routing import ApprovalBackup, DeptRouting
 from app.models.task import Task
 from app.models.user import User
 
@@ -69,6 +70,8 @@ _ENGINE_TABLES = [
     PurchaseRequest.__table__,
     Task.__table__,
     ApprovalEvent.__table__,
+    DeptRouting.__table__,
+    ApprovalBackup.__table__,
 ]
 
 
@@ -86,6 +89,18 @@ def _build_engine_schema():
     from app.db.base import Base
     Base.metadata.drop_all(eng, tables=_ENGINE_TABLES)
     Base.metadata.create_all(eng, tables=_ENGINE_TABLES)
+    # `user_roles` is identity-owned (no ORM model here — see
+    # tests/test_seed_routing.py's shadow-table idiom); the engine now reads it
+    # unconditionally on every execute_action call (app.crud.workflow.
+    # get_role_management, Task 4), so every engine test needs the table to at
+    # least exist. Rebuilt empty on each call; tests that care about its rows
+    # (test_routing_adapters.py, test_seed_routing.py) drop/recreate it locally
+    # with the columns they need.
+    with eng.begin() as conn:
+        conn.execute(sa.text("DROP TABLE IF EXISTS user_roles CASCADE"))
+        conn.execute(sa.text(
+            "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
+            " PRIMARY KEY (user_id, role_code))"))
     eng.dispose()
 
 

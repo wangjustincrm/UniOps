@@ -67,30 +67,6 @@ export interface WorkflowNodeDef {
   role: string
 }
 
-export interface TempAssignment {
-  id: string
-  delegate_user_id: string
-  role_key: string
-  start_date: string
-  end_date: string
-  created_at: string
-}
-
-export interface RoleManagementConfig {
-  gm_user_id: string | null
-  gm_backup_user_id: string | null
-  opm_user_id: string | null
-  opm_backup_user_id: string | null
-  finance_manager_user_id: string | null
-  finance_manager_backup_user_id: string | null
-  procurement_manager_user_id: string | null
-  procurement_manager_backup_user_id: string | null
-  vendor_manager_user_id: string | null
-  vendor_manager_backup_user_id: string | null
-  finance_bp_user_ids: string[]
-  temp_assignments: TempAssignment[]
-}
-
 /** permission_key → bool for one role */
 export type RolePermissions = Record<string, boolean>
 
@@ -174,8 +150,6 @@ export interface CompanyConfig {
   prepayment_config: PrepaymentConfig
   budget_admin_config: BudgetAdminConfig
   collection_config: CollectionConfig
-  role_management: RoleManagementConfig
-  temp_assignments: TempAssignment[]
   workflow_defs: {
     pr: WorkflowNodeDef[]
     po: WorkflowNodeDef[]
@@ -197,27 +171,11 @@ export interface EmailTemplate {
 
 export type UpdateConfigBody = Partial<CompanyConfig>
 
-export interface CreateTempAssignmentBody {
-  delegate_user_id: string
-  role_key: string
-  start_date: string
-  end_date: string
-}
-
 export const configService = {
   get: () => api.get<CompanyConfig>('/config'),
 
   update: (body: UpdateConfigBody) =>
     api.patch<CompanyConfig>('/config', body),
-
-  listTempAssignments: () =>
-    api.get<TempAssignment[]>('/config/temp-assignments'),
-
-  createTempAssignment: (body: CreateTempAssignmentBody) =>
-    api.post<TempAssignment>('/config/temp-assignments', body),
-
-  deleteTempAssignment: (id: string) =>
-    api.delete<void>(`/config/temp-assignments/${id}`),
 
   testSmtp: (to: string, kind: 'task' | 'po' = 'task') =>
     api.post<{ message: string }>('/config/test-smtp', { to, kind }),
@@ -238,6 +196,21 @@ export const configService = {
   // Current user's effective permissions (primary ∪ additional roles).
   getMyPermissions: () =>
     api.get<MyPermissions>('/config/me/permissions'),
+
+  // Every user's ADDITIONAL roles only (identity user_roles assignments,
+  // no primary role mixed in). Same proxy Portal's Access Control page uses.
+  // ADMIN-ONLY (proxies identity's system_admin-gated /authz/user-roles) —
+  // do not call this from a page a non-admin viewer can reach; use
+  // getMyAssignedRoles below for a self-scoped, ungated read.
+  getUserRoles: () =>
+    api.get<{ user_roles: Record<string, string[]> }>('/config/user-roles'),
+
+  // The caller's OWN additional roles only — no admin gate (same-DB read
+  // scoped to the JWT sub by construction). Use this instead of
+  // getUserRoles() whenever the caller only needs to resolve their own
+  // role assignment (e.g. BudgetDashboard's isFinanceBpAssigned).
+  getMyAssignedRoles: () =>
+    api.get<{ role_codes: string[] }>('/config/me/assigned-roles'),
 
   // Custom roles
   listRoles: () =>

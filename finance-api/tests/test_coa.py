@@ -98,9 +98,15 @@ async def test_mapping_upsert_and_validation(client):
 
 
 async def test_coa_permissions_resolve_assignments(client, db_session):
-    """can_manage = JWT manage roles ∪ role_management assignments — the boss
-    is a 'requester' with assignments, never gate on jwt.role alone."""
-    from app.models.mirrors import CompanyConfig
+    """can_manage now resolves finance.coa.manage from the Access Control
+    matrix (identity's role_permissions ∪ role_permission_locks) via the
+    shared authz package — not a hardcoded role set. Phase 2 formalizes
+    phase 3's carve-out of finance_bp from COA management: the matrix's
+    seeded default for finance.coa.manage is (system_admin, finance_manager)
+    only, so a finance_bp user_roles ASSIGNMENT no longer grants access on
+    its own — it must be explicitly granted in the matrix (proven below by
+    seeding a role_permissions row for finance_bp)."""
+    from sqlalchemy import text
 
     r = await client.get("/finance/v1/coa/permissions", headers=_h("finance_manager"))
     assert r.json() == {"can_manage": True}
@@ -109,14 +115,40 @@ async def test_coa_permissions_resolve_assignments(client, db_session):
     assert r.json() == {"can_manage": False}
 
     boss_id = str(uuid.uuid4())
-    db_session.add(CompanyConfig(role_management={"finance_bp_user_ids": [boss_id]}))
+    await db_session.execute(text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'finance_bp')"),
+        {"u": boss_id})
     await db_session.flush()
     token = jwt.encode({"sub": boss_id, "role": "requester",
                         "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
                        settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
-    r = await client.get("/finance/v1/coa/permissions",
-                         headers={"Authorization": f"Bearer {token}"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # finance_bp-via-assignment is NOT enough by itself anymore (the key
+    # deliberate tightening this task makes).
+    r = await client.get("/finance/v1/coa/permissions", headers=headers)
+    assert r.json() == {"can_manage": False}
+
+    # Only an explicit matrix grant for finance_bp turns it on — proving
+    # access is now decided by the Access Control matrix, not by role code.
+    await db_session.execute(text(
+        "INSERT INTO role_permissions (role_code, permission_key) VALUES ('finance_bp', 'finance.coa.manage')"))
+    await db_session.flush()
+    r = await client.get("/finance/v1/coa/permissions", headers=headers)
     assert r.json() == {"can_manage": True}
+
+
+async def test_coa_primary_role_finance_bp_without_assignment_denied(client):
+    """finance_bp is a job FUNCTION many people hold, not a singleton post —
+    holding it as your PRIMARY role (jwt.role) is not the same as being the
+    curated, assigned approver. A user whose primary role is finance_bp but
+    who has NO user_roles assignment row must be denied COA management."""
+    r = await client.get("/finance/v1/coa/permissions", headers=_h("finance_bp"))
+    assert r.json() == {"can_manage": False}
+
+    r = await client.put("/finance/v1/coa/mappings/budget_account/X",
+                         json={"account_code": "6400"}, headers=_h("finance_bp"))
+    assert r.status_code == 403
 
 
 async def test_account_crud_and_aux_dimensions(client):

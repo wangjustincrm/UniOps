@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 import app.db.base as db_module
 from app.core.config import settings
@@ -87,6 +87,15 @@ async def _add_open_task(pa_id: str, *, user_id: str | None = None, role: str | 
         await db.commit()
 
 
+async def _grant_additional_role(user_id: str, role_code: str) -> None:
+    """Insert an identity user_roles row (ADDITIONAL role, phase 3)."""
+    async with db_module.AsyncSessionLocal() as db:
+        await db.execute(text(
+            "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
+            {"u": user_id, "r": role_code})
+        await db.commit()
+
+
 async def _set_role_management(rm: dict) -> None:
     async with db_module.AsyncSessionLocal() as db:
         existing = (await db.execute(select(EpmsCompanyConfig))).scalars().all()
@@ -136,19 +145,50 @@ async def test_assigned_task_user_can_approve():
 
 
 @pytest.mark.asyncio
-async def test_role_task_resolved_via_role_management():
+async def test_role_task_resolved_via_user_roles():
     """An open role-based task (assigned_user_id NULL, assigned_role=finance_bp) is
-    resolved against company_config.role_management.finance_bp_user_ids."""
+    resolved against identity's user_roles (ADDITIONAL roles, phase 3) — the retired
+    company_config.role_management is no longer read for this path."""
     bp_id = str(uuid.uuid4())
     async with _client_for("requester", str(uuid.uuid4())) as owner:
         pa = await _make_pa(owner)
     await _set_pa_status(pa["id"], "in_review")
     await _add_open_task(pa["id"], role="finance_bp")
-    await _set_role_management({"finance_bp_user_ids": [bp_id]})
+    await _grant_additional_role(bp_id, "finance_bp")
     async with _client_for("requester", bp_id) as bp:
         resp = await bp.get(f"/api/v1/pa/{pa['id']}/permissions")
     assert resp.status_code == 200
     assert resp.json()["can_approve"] is True
+
+
+@pytest.mark.asyncio
+async def test_gm_or_opm_synthetic_role_task_resolved_via_either_role():
+    """assigned_role='gm_or_opm' is a synthetic role name (not a real role_code) —
+    a task carrying it must be satisfied by a user holding EITHER the 'gm' or the
+    'opm' additional role, not a literal 'gm_or_opm' role_code."""
+    gm_id = str(uuid.uuid4())
+    opm_id = str(uuid.uuid4())
+    async with _client_for("requester", str(uuid.uuid4())) as owner:
+        pa = await _make_pa(owner)
+    await _set_pa_status(pa["id"], "in_review")
+    await _add_open_task(pa["id"], role="gm_or_opm")
+    await _grant_additional_role(gm_id, "gm")
+    await _grant_additional_role(opm_id, "opm")
+
+    async with _client_for("requester", gm_id) as gm:
+        resp = await gm.get(f"/api/v1/pa/{pa['id']}/permissions")
+    assert resp.status_code == 200
+    assert resp.json()["can_approve"] is True
+
+    async with _client_for("requester", opm_id) as opm:
+        resp = await opm.get(f"/api/v1/pa/{pa['id']}/permissions")
+    assert resp.status_code == 200
+    assert resp.json()["can_approve"] is True
+
+    async with _client_for("requester", str(uuid.uuid4())) as outsider:
+        resp = await outsider.get(f"/api/v1/pa/{pa['id']}/permissions")
+    assert resp.status_code == 200
+    assert resp.json()["can_approve"] is False
 
 
 @pytest.mark.asyncio
@@ -192,6 +232,23 @@ async def test_can_pay_only_on_approved_for_finance(finance_client):
     async with _client_for("requester", str(uuid.uuid4())) as outsider:
         resp = await outsider.get(f"/api/v1/pa/{pa['id']}/permissions")
     assert resp.json()["can_pay"] is False
+
+
+@pytest.mark.asyncio
+async def test_can_pay_via_additional_finance_bp_role():
+    """Phase 3 Task 5: can_pay's finance_bp/finance_manager check now reads
+    identity's user_roles (ADDITIONAL roles), not company_config.role_management.
+    A 'requester' JWT holding the finance_bp additional role can pay an approved PA."""
+    bp_id = str(uuid.uuid4())
+    async with _client_for("requester", str(uuid.uuid4())) as owner:
+        pa = await _make_pa(owner)
+    await _set_pa_status(pa["id"], "approved")
+    await _grant_additional_role(bp_id, "finance_bp")
+
+    async with _client_for("requester", bp_id) as bp:
+        resp = await bp.get(f"/api/v1/pa/{pa['id']}/permissions")
+    assert resp.status_code == 200
+    assert resp.json()["can_pay"] is True
 
 
 @pytest.mark.asyncio

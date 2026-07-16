@@ -64,13 +64,14 @@ services:
   epms-api:
     <<: *python-base
     build:
-      context: ./epms-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: epms-api/Dockerfile
     container_name: uniops_epms_api
     ports:
       - "8000:8000"
     volumes:
       - ./epms-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
@@ -135,13 +136,14 @@ services:
   mdm-api:
     <<: *python-base
     build:
-      context: ./mdm-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: mdm-api/Dockerfile
     container_name: uniops_mdm_api
     ports:
       - "8002:8002"
     volumes:
       - ./mdm-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
@@ -194,13 +196,14 @@ services:
   finance-api:
     <<: *python-base
     build:
-      context: ./finance-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: finance-api/Dockerfile
     container_name: uniops_finance_api
     ports:
       - "8004:8004"
     volumes:
       - ./finance-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
@@ -290,13 +293,14 @@ services:
   budget-api:
     <<: *python-base
     build:
-      context: ./budget-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: budget-api/Dockerfile
     container_name: uniops_budget_api
     ports:
       - "8007:8007"
     volumes:
       - ./budget-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
@@ -363,13 +367,14 @@ services:
   booking-api:
     <<: *python-base
     build:
-      context: ./booking-api
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: booking-api/Dockerfile
     container_name: uniops_booking_api
     ports:
       - "8010:8010"
     volumes:
       - ./booking-api:/app
+      - ./packages/authz:/packages/authz
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres

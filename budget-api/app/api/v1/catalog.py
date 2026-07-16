@@ -3,6 +3,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 
+from app.core.authz import require_permission
 from app.core.deps import CurrentUserPayload, SessionDep, require_roles
 from app.crud import catalog as catalog_crud
 from app.schemas.catalog import (
@@ -12,8 +13,6 @@ from app.schemas.catalog import (
 )
 
 router = APIRouter(tags=["catalog"])
-
-_WRITE_ROLES = ("system_admin", "finance_manager", "finance_bp")
 
 
 # ── L1 ────────────────────────────────────────────────────────────────────────
@@ -44,7 +43,7 @@ async def get_l1(
 @router.post("/l1", response_model=BudgetL1Response, status_code=status.HTTP_201_CREATED)
 async def create_l1(
     payload: BudgetL1Create, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),
+    user: dict = Depends(require_permission("budget.catalog.write")),
 ):
     actor_id = uuid.UUID(user["sub"])
     l1 = await catalog_crud.create_l1(db, payload, actor_id)
@@ -54,7 +53,7 @@ async def create_l1(
 @router.patch("/l1/{l1_id}", response_model=BudgetL1Response)
 async def update_l1(
     l1_id: uuid.UUID, payload: BudgetL1Update, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),
+    user: dict = Depends(require_permission("budget.catalog.write")),
 ):
     l1 = await catalog_crud.get_l1(db, l1_id)
     if l1 is None:
@@ -67,7 +66,7 @@ async def update_l1(
 @router.delete("/l1/{l1_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_l1(
     l1_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.catalog.write")),
 ):
     l1 = await catalog_crud.get_l1(db, l1_id)
     if l1 is None:
@@ -103,7 +102,7 @@ async def get_account(
 @router.post("/accounts", response_model=BudgetAccountResponse, status_code=status.HTTP_201_CREATED)
 async def create_account(
     payload: BudgetAccountCreate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),
+    user: dict = Depends(require_permission("budget.catalog.write")),
 ):
     actor_id = uuid.UUID(user["sub"])
     acct = await catalog_crud.create_account(db, payload, actor_id)
@@ -113,7 +112,7 @@ async def create_account(
 @router.patch("/accounts/{account_id}", response_model=BudgetAccountResponse)
 async def update_account(
     account_id: uuid.UUID, payload: BudgetAccountUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),
+    user: dict = Depends(require_permission("budget.catalog.write")),
 ):
     acct = await catalog_crud.get_account(db, account_id)
     if acct is None:
@@ -126,7 +125,7 @@ async def update_account(
 @router.delete("/accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
     account_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.catalog.write")),
 ):
     acct = await catalog_crud.get_account(db, account_id)
     if acct is None:

@@ -2,7 +2,9 @@
 import uuid
 from typing import Annotated
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud import pa as pa_crud
@@ -13,6 +15,16 @@ from app.services import finance_client, finance_sync
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/pa", tags=["payment-applications"])
+
+
+async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str) -> set[str]:
+    """Primary role + additional roles (identity user_roles, same DB). Replaces
+    the retired company_config.role_management assignments (phase 3) for can_pay."""
+    codes = {base_role} if base_role else set()
+    rows = (await db.execute(sa.text(
+        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
+    codes.update(rows)
+    return codes
 
 
 class ApprovalEventOut(BaseModel):
@@ -230,14 +242,10 @@ class PaPermissions(BaseModel):
 @router.get("/{pa_id}/permissions", response_model=PaPermissions)
 async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     """Whether the current user may act on this PA — resolved server-side against the
-    shared tasks table + role_management (same contract as the expense-claim endpoint),
-    since approval roles (Finance BP, etc.) are assignments, not JWT role claims."""
-    from app.api.v1.expenses import (
-        _CAN_PAY,
-        _can_act_on_claim,
-        _get_company_config,
-        _user_holds_role,
-    )
+    shared tasks table (same contract as the expense-claim endpoint) plus the user's
+    role union (JWT base role ∪ identity user_roles additional roles), since approval
+    roles (Finance BP, etc.) are assignments, not JWT role claims."""
+    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim
 
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
@@ -255,13 +263,12 @@ async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUser
 
     can_pay = False
     if pa.status == "approved":
-        cfg = await _get_company_config(db)
-        rm = (cfg.role_management or {}) if cfg else {}
+        codes = await _user_role_codes(db, user_id, role)
         can_pay = (
             is_admin
             or role in _CAN_PAY
-            or _user_holds_role(rm, user_id, "finance_bp")
-            or _user_holds_role(rm, user_id, "finance_manager")
+            or "finance_bp" in codes
+            or "finance_manager" in codes
         )
 
     return PaPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)
@@ -333,8 +340,9 @@ async def record_payment(
     if not pa:
         raise HTTPException(status_code=404, detail="PA not found")
     # Phase 0-B1.5: forward to finance-api's unified payment executor — it
-    # owns can_pay (incl. role_management assignments), the status flip,
-    # payment_records (bank reference finally persisted) and the posting event.
+    # owns can_pay (incl. additional-role assignments via identity user_roles),
+    # the status flip, payment_records (bank reference finally persisted) and
+    # the posting event.
     try:
         await finance_client.execute_payment(
             doc_kind="pa_dir" if pa.po_id is None else "pa",

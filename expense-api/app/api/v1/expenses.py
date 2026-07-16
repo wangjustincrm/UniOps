@@ -2,6 +2,7 @@
 import uuid
 from typing import Annotated
 
+import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
@@ -70,45 +71,72 @@ async def _get_workflow_defs(db) -> dict:
     return (cfg.workflow_defs or {}) if cfg else {}
 
 
-def _user_holds_role(rm: dict, user_id: uuid.UUID, role: str) -> bool:
-    """Does user_id hold the given approval role per company_config.role_management?
-    These roles are assignments (not JWT role claims), e.g. Finance BP is a user list."""
-    uid = str(user_id)
-    role = (role or "").lower()
-    if role == "finance_bp":
-        return uid in [str(x) for x in (rm.get("finance_bp_user_ids") or [])]
-    if role == "finance_manager":
-        return uid in [str(x) for x in [rm.get("finance_manager_user_id")] if x]
-    if role in ("gm_or_opm", "gm", "opm"):
-        ids = [rm.get("gm_user_id"), rm.get("opm_user_id"),
-               rm.get("gm_backup_user_id"), rm.get("opm_backup_user_id")]
-        return uid in [str(x) for x in ids if x]
-    if role == "procurement_manager":
-        return uid == str(rm.get("procurement_manager_user_id") or "")
-    if role == "vendor_manager":
-        return uid == str(rm.get("vendor_manager_user_id") or "")
-    return False
+async def _user_role_codes(db, user_id: uuid.UUID, base_role: str) -> set[str]:
+    """Primary role + additional roles (identity user_roles, same DB). Replaces
+    the retired company_config.role_management assignments (phase 3)."""
+    codes = {base_role} if base_role else set()
+    rows = (await db.execute(sa.text(
+        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
+    codes.update(rows)
+    return codes
 
 
-async def _can_act_on_claim(db, claim, user_id: uuid.UUID) -> bool:
+async def _can_act_on_claim(db, claim, user_id: uuid.UUID, role: str | None = None) -> bool:
     """Authoritative check: is the user the assigned approver for the claim's current
     open step? Reads the shared `tasks` table (written by approval-api) and resolves
-    role-based tasks (assigned_user_id NULL) via role_management."""
+    role-based tasks (assigned_user_id NULL) against the user's role union — JWT base
+    role (if provided; otherwise looked up from `users.role`) plus any ADDITIONAL
+    roles in identity's user_roles (same DB, phase 3 — replaces the retired
+    company_config.role_management assignments).
+
+    `assigned_role == "gm_or_opm"` is a synthetic name (not a real role_code): it is
+    satisfied by a user holding EITHER the 'gm' or the 'opm' role.
+
+    NOTE: pa.py imports this too — it is load-bearing for both expense claims and PAs.
+    """
     from sqlalchemy import select as sa_select
     from app.models.task_mirror import TaskMirror
-    cfg = await _get_company_config(db)
-    rm = (cfg.role_management or {}) if cfg else {}
     open_tasks = list((await db.execute(
         sa_select(TaskMirror).where(
             TaskMirror.document_id == claim.id,
             TaskMirror.is_completed.is_(False),
         )
     )).scalars().all())
+    if not open_tasks:
+        return False
+
+    codes: set[str] | None = None
+
+    async def _codes() -> set[str]:
+        nonlocal codes
+        if codes is None:
+            base_role = role
+            if base_role is None:
+                # Best-effort — no `users` mirror model exists in this service (see
+                # get_approval_status below for the same raw-SQL pattern). A savepoint
+                # keeps a missing/failed lookup from poisoning the outer transaction —
+                # it just means the additional-role union has no base role in it.
+                base_role = ""
+                try:
+                    async with db.begin_nested():
+                        base_role = (await db.execute(sa.text(
+                            "SELECT role FROM users WHERE id = :u"), {"u": str(user_id)})).scalar_one_or_none() or ""
+                except Exception:
+                    base_role = ""
+            codes = await _user_role_codes(db, user_id, base_role)
+        return codes
+
     for t in open_tasks:
         if t.assigned_user_id is not None and t.assigned_user_id == user_id:
             return True
-        if t.assigned_user_id is None and t.assigned_role and _user_holds_role(rm, user_id, t.assigned_role):
-            return True
+        if t.assigned_user_id is None and t.assigned_role:
+            assigned = t.assigned_role.lower()
+            held = await _codes()
+            if assigned == "gm_or_opm":
+                if "gm" in held or "opm" in held:
+                    return True
+            elif assigned in held:
+                return True
     return False
 
 
@@ -273,8 +301,9 @@ class ClaimPermissions(BaseModel):
 @router.get("/{claim_id}/permissions", response_model=ClaimPermissions)
 async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     """Whether the current user may act on this claim — resolved server-side against the
-    shared tasks table + role_management, since approval roles (Finance BP, etc.) are
-    assignments, not JWT role claims."""
+    shared tasks table plus the user's role union (JWT base role ∪ identity user_roles
+    additional roles), since approval roles (Finance BP, etc.) are assignments, not JWT
+    role claims."""
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
@@ -286,17 +315,16 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
 
     can_approve = False
     if claim.status in ("submitted", "in_review") and not is_owner:
-        can_approve = is_admin or await _can_act_on_claim(db, claim, user_id)
+        can_approve = is_admin or await _can_act_on_claim(db, claim, user_id, role)
 
     can_pay = False
     if claim.status == "approved":
-        cfg = await _get_company_config(db)
-        rm = (cfg.role_management or {}) if cfg else {}
+        codes = await _user_role_codes(db, user_id, role)
         can_pay = (
             is_admin
             or role in _CAN_PAY
-            or _user_holds_role(rm, user_id, "finance_bp")
-            or _user_holds_role(rm, user_id, "finance_manager")
+            or "finance_bp" in codes
+            or "finance_manager" in codes
         )
 
     return ClaimPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)

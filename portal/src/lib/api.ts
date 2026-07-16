@@ -13,10 +13,10 @@ function extractDetail(detail: unknown, status: number): string {
   return `HTTP ${status}`
 }
 
-const EPMS_API   = (import.meta.env.VITE_EPMS_API_URL   as string | undefined) || 'http://localhost:8000'
-const OA_API     = (import.meta.env.VITE_OA_API_URL     as string | undefined) || 'http://localhost:8006'
-const BUDGET_API = (import.meta.env.VITE_BUDGET_API_URL as string | undefined) || 'http://localhost:8007'
-const MDM_API    = (import.meta.env.VITE_MDM_API_URL    as string | undefined) || 'http://localhost:8002'
+const EPMS_API     = (import.meta.env.VITE_EPMS_API_URL     as string | undefined) || 'http://localhost:8000'
+const OA_API       = (import.meta.env.VITE_OA_API_URL       as string | undefined) || 'http://localhost:8006'
+const BUDGET_API   = (import.meta.env.VITE_BUDGET_API_URL   as string | undefined) || 'http://localhost:8007'
+const MDM_API      = (import.meta.env.VITE_MDM_API_URL      as string | undefined) || 'http://localhost:8002'
 
 function getToken(): string | null {
   try {

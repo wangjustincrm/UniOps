@@ -8,14 +8,14 @@ import {
   Users, Workflow, Building2, Clock, Bell, Send, CreditCard,
   PiggyBank, PackageCheck, ShieldCheck,
   Plus, Pencil, Trash2, X, Check, Search, ImagePlus, Landmark, KeyRound, Eye, EyeOff, Mail, FileText,
-  UserCog, Calendar, AlertTriangle, Download, Upload, ChevronDown,
+  AlertTriangle, Download, Upload, ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { PmsImportPanel } from './PmsImportPanel'
 import {
-  useConfig, useUpdateConfig, useCreateTempAssignment, useDeleteTempAssignment,
+  useConfig, useUpdateConfig,
 } from '@/hooks/useConfig'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '@/hooks/useUsers'
@@ -24,7 +24,6 @@ import {
   type PdfTemplateSettings,
   type WorkflowConfig, type ServiceGrSlaConfig, type GrNotificationSlaConfig,
   type PrepaymentConfig, type CollectionConfig,
-  type RoleManagementConfig,
   type NotificationSettings, type EmailTemplate,
 } from '@/services/config'
 import { ROLE_LABELS } from '@/stores/user.store'
@@ -38,7 +37,7 @@ type Section =
   | 'company' | 'security' | 'currency' | 'email_templates' | 'pdf_templates'
   | 'users' | 'vendor_settings'
   | 'workflows' | 'dept_mapping' | 'dept_director_mapping' | 'dept_supervisor' | 'service_gr_sla' | 'gr_notification_sla'
-  | 'prepayment' | 'budget' | 'collection' | 'role_management'
+  | 'prepayment' | 'budget' | 'collection'
   | 'notifications' | 'pms_import'
 
 interface NavEntry { id: Section; label: string; icon: React.ComponentType<{ className?: string }> }
@@ -60,7 +59,6 @@ const NAV: NavEntry[] = [
   { id: 'prepayment',          label: 'Prepayment Config',      icon: CreditCard },
   { id: 'budget',              label: 'Budget Config',          icon: PiggyBank },
   { id: 'collection',          label: 'Collection Config',      icon: PackageCheck },
-  { id: 'role_management',     label: 'Role Management',        icon: UserCog },
   { id: 'notifications',       label: 'Notification Settings',  icon: Bell },
   { id: 'pms_import',          label: 'PMS Data Import',        icon: Upload },
 ]
@@ -2496,271 +2494,6 @@ function NotificationSettingsSection() {
 }
 
 
-// ─── Role Management ──────────────────────────────────────────────────────────
-
-const TEMP_ROLE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'gm', label: 'General Manager (GM)' },
-  { value: 'opm', label: 'Operations Manager (OPM)' },
-  { value: 'dept_manager', label: 'Department Manager' },
-  { value: 'finance_bp', label: 'Finance BP' },
-  { value: 'finance_manager', label: 'Finance Manager' },
-  { value: 'supply_chain_manager', label: 'Supply Chain Manager' },
-]
-
-const DEFAULT_ROLE_MANAGEMENT_CONFIG: RoleManagementConfig = {
-  gm_user_id: null,
-  gm_backup_user_id: null,
-  opm_user_id: null,
-  opm_backup_user_id: null,
-  finance_manager_user_id: null,
-  finance_manager_backup_user_id: null,
-  procurement_manager_user_id: null,
-  procurement_manager_backup_user_id: null,
-  vendor_manager_user_id: null,
-  vendor_manager_backup_user_id: null,
-  finance_bp_user_ids: [],
-  temp_assignments: [],
-}
-
-function RoleManagementSection() {
-  const { data: config } = useConfig()
-  const updateConfig = useUpdateConfig()
-  const createTempAssignment = useCreateTempAssignment()
-  const deleteTempAssignment = useDeleteTempAssignment()
-  const { data: userData } = useUsers()
-  const users = userData?.items ?? []
-  const [rm, setRm] = useState<RoleManagementConfig>(DEFAULT_ROLE_MANAGEMENT_CONFIG)
-  const [saved, setSaved] = useState(false)
-  const [showTempForm, setShowTempForm] = useState(false)
-  const [tempForm, setTempForm] = useState({ delegate_user_id: '', role_key: 'gm', start_date: '', end_date: '' })
-  const [tempFormError, setTempFormError] = useState('')
-
-  useEffect(() => {
-    if (config?.role_management) {
-      setRm({ ...config.role_management, temp_assignments: config.temp_assignments ?? [] })
-    }
-  }, [config?.role_management, config?.temp_assignments])
-
-  const activeUsers = users.filter((u) => u.is_active)
-  const userName = (id: string | null) => id ? (users.find((u) => u.id === id)?.full_name ?? '— Unknown —') : '— Not assigned —'
-
-  const handleSaveRoles = () => {
-    updateConfig.mutate({ role_management: rm })
-    setSaved(true); setTimeout(() => setSaved(false), 2500)
-  }
-
-  const handleAddFinanceBp = (userId: string) => {
-    if (!userId || rm.finance_bp_user_ids.includes(userId)) return
-    setRm((p) => ({ ...p, finance_bp_user_ids: [...p.finance_bp_user_ids, userId] }))
-  }
-
-  const handleAddTemp = () => {
-    if (!tempForm.delegate_user_id) { setTempFormError('Select a delegate user'); return }
-    if (!tempForm.start_date || !tempForm.end_date) { setTempFormError('Start and end dates are required'); return }
-    if (tempForm.start_date > tempForm.end_date) { setTempFormError('End date must be after start date'); return }
-    createTempAssignment.mutate({ delegate_user_id: tempForm.delegate_user_id, role_key: tempForm.role_key, start_date: tempForm.start_date, end_date: tempForm.end_date })
-    setTempForm({ delegate_user_id: '', role_key: 'gm', start_date: '', end_date: '' })
-    setTempFormError(''); setShowTempForm(false)
-  }
-
-  const today = new Date().toISOString().slice(0, 10)
-  const isExpired = (endDate: string) => endDate < today
-
-  const selCls = 'h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
-
-  return (
-    <div className="flex flex-col gap-8 max-w-2xl">
-
-      {/* GM & OPM assignment */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">GM & OPM Assignment</h3>
-        <p className="text-sm text-neutral-500">Exactly one active user must be assigned to each role. Optional backup user activated during absence.</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {[
-            { label: 'General Manager (GM)', key: 'gm_user_id' as const, backupKey: 'gm_backup_user_id' as const },
-            { label: 'Operations Manager (OPM)', key: 'opm_user_id' as const, backupKey: 'opm_backup_user_id' as const },
-          ].map(({ label, key, backupKey }) => (
-            <div key={key} className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 flex flex-col gap-3">
-              <p className="text-sm font-semibold text-neutral-900">{label}</p>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">Primary User <span className="text-danger-600">*</span></label>
-                <select className={selCls} value={rm[key] ?? ''} onChange={(e) => setRm((p) => ({ ...p, [key]: e.target.value || null }))}>
-                  <option value="">— Not assigned —</option>
-                  {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">Absence Backup</label>
-                <select className={selCls} value={rm[backupKey] ?? ''} onChange={(e) => setRm((p) => ({ ...p, [backupKey]: e.target.value || null }))}>
-                  <option value="">— No backup —</option>
-                  {activeUsers.filter((u) => u.id !== rm[key]).map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-                </select>
-              </div>
-              <div className={cn('rounded-lg px-3 py-2 text-xs font-medium', rm[key] ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700')}>
-                {rm[key] ? `✓ ${userName(rm[key])}` : '⚠ Not assigned — PRs cannot be escalated'}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Finance Manager / Procurement Manager / Vendor Manager */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Department Head Assignment</h3>
-        <p className="text-sm text-neutral-500">Assign primary and backup users for each department head role. Backup is activated during absence.</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {[
-            { label: 'Finance Manager', key: 'finance_manager_user_id' as const, backupKey: 'finance_manager_backup_user_id' as const },
-            { label: 'Procurement Manager', key: 'procurement_manager_user_id' as const, backupKey: 'procurement_manager_backup_user_id' as const },
-            { label: 'Vendor Manager', key: 'vendor_manager_user_id' as const, backupKey: 'vendor_manager_backup_user_id' as const },
-          ].map(({ label, key, backupKey }) => (
-            <div key={key} className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 flex flex-col gap-3">
-              <p className="text-sm font-semibold text-neutral-900">{label}</p>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">Primary User</label>
-                <select className={selCls} value={rm[key] ?? ''} onChange={(e) => setRm((p) => ({ ...p, [key]: e.target.value || null }))}>
-                  <option value="">— Not assigned —</option>
-                  {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">Absence Backup</label>
-                <select className={selCls} value={rm[backupKey] ?? ''} onChange={(e) => setRm((p) => ({ ...p, [backupKey]: e.target.value || null }))}>
-                  <option value="">— No backup —</option>
-                  {activeUsers.filter((u) => u.id !== rm[key]).map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-                </select>
-              </div>
-              <div className={cn('rounded-lg px-3 py-2 text-xs font-medium', rm[key] ? 'bg-success-50 text-success-700' : 'bg-neutral-100 text-neutral-500')}>
-                {rm[key] ? `✓ ${userName(rm[key])}` : '○ Not assigned'}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Finance BP */}
-      <section className="flex flex-col gap-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Finance BP Assignment</h3>
-        <p className="text-sm text-neutral-500">Finance BPs validate GL coding, budget, and tax in the PA approval chain. Multiple users can hold this role.</p>
-        <div className="flex gap-2">
-          <select className={cn(selCls, 'flex-1')} defaultValue="" onChange={(e) => { handleAddFinanceBp(e.target.value); e.target.value = '' }}>
-            <option value="">Add Finance BP user…</option>
-            {activeUsers.filter((u) => !rm.finance_bp_user_ids.includes(u.id)).map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-          </select>
-        </div>
-        {rm.finance_bp_user_ids.length === 0 ? (
-          <p className="text-sm text-neutral-400 italic">No Finance BP users assigned yet.</p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {rm.finance_bp_user_ids.map((uid) => {
-              const u = users.find((x) => x.id === uid)
-              return (
-                <div key={uid} className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-4 py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-100 text-xs font-semibold text-primary-700">{u?.full_name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase() ?? '??'}</div>
-                    <div><p className="text-sm font-medium text-neutral-900">{u?.full_name ?? uid}</p><p className="text-xs text-neutral-500">{u?.department_name}</p></div>
-                  </div>
-                  <button onClick={() => setRm((p) => ({ ...p, finance_bp_user_ids: p.finance_bp_user_ids.filter((x) => x !== uid) }))} className="flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:text-danger-500 hover:bg-danger-50"><Trash2 className="h-3.5 w-3.5" /></button>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      <SaveBar saved={saved} onSave={handleSaveRoles} label="Save Role Assignments" />
-
-      {/* Temporary Assignments */}
-      <section className="flex flex-col gap-4 pt-6 border-t border-neutral-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Temporary Role Assignments</h3>
-            <p className="text-sm text-neutral-500 mt-1">Assign a delegate to cover any approval role during absence. Auto-expires on the end date.</p>
-          </div>
-          <Button size="sm" onClick={() => setShowTempForm((v) => !v)}><Plus className="h-4 w-4" />Add Assignment</Button>
-        </div>
-
-        {showTempForm && (
-          <div className="rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
-            <p className="text-sm font-semibold text-neutral-900">New Temporary Assignment</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">Delegate User <span className="text-danger-600">*</span></label>
-                <select className={selCls} value={tempForm.delegate_user_id} onChange={(e) => { setTempForm((p) => ({ ...p, delegate_user_id: e.target.value })); setTempFormError('') }}>
-                  <option value="">— Select user —</option>
-                  {activeUsers.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.department_name})</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">Role Being Covered <span className="text-danger-600">*</span></label>
-                <select className={selCls} value={tempForm.role_key} onChange={(e) => setTempForm((p) => ({ ...p, role_key: e.target.value }))}>
-                  {TEMP_ROLE_OPTIONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">Start Date <span className="text-danger-600">*</span></label>
-                <input type="date" value={tempForm.start_date} onChange={(e) => { setTempForm((p) => ({ ...p, start_date: e.target.value })); setTempFormError('') }}
-                  className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">End Date <span className="text-danger-600">*</span></label>
-                <input type="date" value={tempForm.end_date} onChange={(e) => { setTempForm((p) => ({ ...p, end_date: e.target.value })); setTempFormError('') }}
-                  className="h-10 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
-              </div>
-            </div>
-            {tempFormError && <p className="text-xs text-danger-600">{tempFormError}</p>}
-            <div className="flex gap-2">
-              <button onClick={handleAddTemp} className="inline-flex items-center gap-1.5 rounded-lg bg-primary-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-700"><Check className="h-3.5 w-3.5" />Create Assignment</button>
-              <button onClick={() => { setShowTempForm(false); setTempFormError('') }} className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-600 hover:bg-neutral-50">Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {rm.temp_assignments.length === 0 ? (
-          <div className="rounded-xl border border-neutral-200 bg-neutral-50 py-10 text-center">
-            <Calendar className="h-8 w-8 text-neutral-300 mx-auto mb-2" />
-            <p className="text-sm text-neutral-400">No temporary assignments</p>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-neutral-200 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead><tr className="bg-neutral-50 border-b border-neutral-200">
-                {['Delegate', 'Role Covered', 'Start', 'End', 'Status', ''].map((h, i) => (
-                  <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {rm.temp_assignments.map((a, i) => {
-                  const u = users.find((x) => x.id === a.delegate_user_id)
-                  const expired = isExpired(a.end_date)
-                  const active = !expired && a.start_date <= today
-                  return (
-                    <tr key={a.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
-                      <td className="px-4 py-3 font-medium text-neutral-900">{u?.full_name ?? a.delegate_user_id}</td>
-                      <td className="px-4 py-3 text-neutral-600">{TEMP_ROLE_OPTIONS.find((r) => r.value === a.role_key)?.label ?? a.role_key}</td>
-                      <td className="px-4 py-3 text-neutral-500 text-xs font-mono">{a.start_date}</td>
-                      <td className="px-4 py-3 text-neutral-500 text-xs font-mono">{a.end_date}</td>
-                      <td className="px-4 py-3">
-                        <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
-                          expired ? 'bg-neutral-100 text-neutral-500' : active ? 'bg-success-50 text-success-700' : 'bg-primary-50 text-primary-700')}>
-                          {expired ? 'Expired' : active ? '● Active' : 'Scheduled'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <button onClick={() => deleteTempAssignment.mutate(a.id)} className="flex h-7 w-7 items-center justify-center rounded text-neutral-300 hover:text-danger-500 hover:bg-danger-50 ml-auto"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-    </div>
-  )
-}
-
 // ─── Main Admin Panel page ────────────────────────────────────────────────────
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
@@ -2830,7 +2563,6 @@ export default function AdminPanel() {
         />
       )
       case 'collection':          return <CollectionConfigSection />
-      case 'role_management':     return <RoleManagementSection />
       case 'notifications':       return <MovedToPortal section="Notification Settings" />
       case 'pms_import':          return <PmsImportPanel />
     }

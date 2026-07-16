@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from uniops_authz import has_permission
 
 from app.models.fiscal_period import OPEN, FiscalPeriod
 from app.models.journal_voucher import (
@@ -18,9 +19,15 @@ from app.models.journal_voucher import (
 from app.models.mirrors import SodRule
 from app.services.journal_voucher import next_jv_number
 
-# Finance authority to review/post vouchers. role_management-assignment gating
-# (finance_bp / finance_manager) can layer on later; JWT role is the base gate.
-_JV_ROLES = {"finance_manager", "finance_bp", "system_admin"}
+# Finance authority to review/post vouchers, gated on the finance.jv.post
+# permission (Access Control matrix — default granted to finance_manager /
+# finance_bp / system_admin, same admission set the old hardcoded _JV_ROLES
+# had). This is a crud-layer check (not an endpoint), so it can't take a
+# FastAPI Depends(require_permission(...)) — it calls the shared authz
+# package's has_permission() directly instead, which carries the same
+# system_admin short-circuit require_permission() has (unlike
+# effective_permissions(), which has none).
+_JV_PERMISSION = "finance.jv.post"
 
 
 class JvStateError(ValueError):
@@ -31,8 +38,9 @@ class JvPermissionError(Exception):
     """Caller lacks the role, or SoD forbids the action."""
 
 
-def _require_role(user: dict) -> None:
-    if user.get("role") not in _JV_ROLES:
+async def _require_role(db: AsyncSession, user: dict) -> None:
+    uid = uuid.UUID(str(user.get("sub", "")))
+    if not await has_permission(db, uid, user.get("role", ""), _JV_PERMISSION):
         raise JvPermissionError("Insufficient role for journal-voucher action")
 
 
@@ -59,7 +67,7 @@ async def _require(db: AsyncSession, jv_id: uuid.UUID, expect_status: str) -> Jo
 
 async def review(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
     jv = await _require(db, jv_id, DRAFT)
-    _require_role(user)
+    await _require_role(db, user)
     if await _sod_self_review_enabled(db) and str(user["sub"]) == str(jv.prepared_by):
         raise JvPermissionError("SoD (jv_self_review): reviewer cannot be the preparer")
     jv.status = REVIEWED
@@ -71,7 +79,7 @@ async def review(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVouch
 
 async def unreview(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
     jv = await _require(db, jv_id, REVIEWED)
-    _require_role(user)
+    await _require_role(db, user)
     jv.status = DRAFT
     jv.reviewed_by = None
     jv.reviewed_at = None
@@ -89,7 +97,7 @@ async def _require_period_open(db: AsyncSession, period: str) -> None:
 
 async def post(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
     jv = await _require(db, jv_id, REVIEWED)
-    _require_role(user)
+    await _require_role(db, user)
     await _require_period_open(db, jv.fiscal_period)
     jv.status = POSTED
     jv.posted_by = uuid.UUID(user["sub"])
@@ -100,7 +108,7 @@ async def post(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher
 
 async def unpost(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
     jv = await _require(db, jv_id, POSTED)
-    _require_role(user)
+    await _require_role(db, user)
     await _require_period_open(db, jv.fiscal_period)
     jv.status = REVIEWED
     jv.posted_by = None
@@ -117,7 +125,7 @@ async def reverse(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVouc
     """红冲: create a posted red (negated) voucher that offsets the original, and
     mark the original `reversed`. Both stay for audit. Period must be open."""
     jv = await _require(db, jv_id, POSTED)
-    _require_role(user)
+    await _require_role(db, user)
     await _require_period_open(db, jv.fiscal_period)
 
     now = datetime.now(timezone.utc)

@@ -44,13 +44,12 @@ async def _seed_pr_and_cfg(db, *, over_budget: bool, over_budget_mode: str = "fm
     db.add(pr)
     await db.flush()
 
+    # role_management/dept_* JSONB retired from this mirror (Task 4) — this test
+    # only exercises build_effective_workflow, which reads workflow_defs +
+    # budget_admin_config, so those fields never need seeding here.
     cfg = CompanyConfig(
         id=uuid.uuid4(),
         workflow_defs={},          # use defaults → [supervisor, dept_manager, director, gm_or_opm]
-        role_management={},
-        dept_gm_opm_mapping={},
-        dept_director_mapping={},
-        dept_supervisor_enabled={},
         budget_admin_config={"over_budget_mode": over_budget_mode},
     )
     db.add(cfg)

@@ -1,4 +1,4 @@
-"""CRUD operations for Company Config and Temp Assignments."""
+"""CRUD operations for Company Config."""
 import uuid
 
 from fastapi import HTTPException
@@ -6,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.models.config import CompanyConfig, TempAssignment
+from app.models.config import CompanyConfig
 from app.schemas.config import (
-    ConfigUpdate, TempAssignmentCreate,
+    ConfigUpdate,
     CustomRoleCreate, CustomRoleUpdate, RolePermissionsUpdate,
 )
 
@@ -352,45 +352,6 @@ async def update(
     await db.flush()
     await db.refresh(cfg)
     return cfg
-
-
-# ── TempAssignment CRUD ──────────────────────────────────────────────────────
-
-async def list_temp_assignments(db: AsyncSession) -> list[TempAssignment]:
-    result = await db.execute(
-        select(TempAssignment).order_by(TempAssignment.start_date)
-    )
-    return list(result.scalars().all())
-
-
-async def get_temp_assignment(
-    db: AsyncSession, assignment_id: uuid.UUID
-) -> TempAssignment | None:
-    result = await db.execute(
-        select(TempAssignment).where(TempAssignment.id == assignment_id)
-    )
-    return result.scalar_one_or_none()
-
-
-async def create_temp_assignment(
-    db: AsyncSession, payload: TempAssignmentCreate, created_by: uuid.UUID
-) -> TempAssignment:
-    ta = TempAssignment(
-        delegate_user_id=payload.delegate_user_id,
-        role_key=payload.role_key,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        created_by=created_by,
-    )
-    db.add(ta)
-    await db.flush()
-    await db.refresh(ta)
-    return ta
-
-
-async def delete_temp_assignment(db: AsyncSession, ta: TempAssignment) -> None:
-    await db.delete(ta)
-    await db.flush()
 
 
 # ── Role Permissions CRUD ────────────────────────────────────────────────────

@@ -12,7 +12,7 @@
  * hardcoded role lists — see `permission` below and useRolePermissions().
  */
 import {
-  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck,
+  Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
 } from 'lucide-react'
 
 export interface NavItemDef {
@@ -68,6 +68,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'Admin',            icon: Settings,    href: 'admin',                          adminOnly: true },
       { label: 'Data Maintenance', icon: Database,    href: 'portal:/admin/data-maintenance', adminOnly: true },
       { label: 'Access Control',   icon: ShieldCheck, href: 'portal:/admin/access-control',   adminOnly: true },
+      { label: 'Approval Routing', icon: GitBranch,   href: 'portal:/admin/approval-routing', adminOnly: true },
     ],
   },
 ]

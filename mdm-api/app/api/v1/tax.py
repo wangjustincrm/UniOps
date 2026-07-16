@@ -16,7 +16,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, require_roles
+from app.core.authz import require_permission
+from app.core.deps import CurrentUser
 from app.crud import tax as tax_crud
 from app.crud.tax import TaxDeterminationError
 from app.db.base import get_db
@@ -24,7 +25,7 @@ from app.schemas.tax import TaxCodeCreate, TaxCodeOut, TaxCodeUpdate, TaxDetermi
 
 router = APIRouter(prefix="/tax", tags=["tax"])
 
-WriteDep = Annotated[dict, Depends(require_roles("system_admin", "finance_manager", "ap_clerk"))]
+WriteDep = Annotated[dict, Depends(require_permission("mdm.finance.write"))]
 
 
 @router.get("/codes", response_model=list[TaxCodeOut])

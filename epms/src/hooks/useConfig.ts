@@ -2,7 +2,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   configService,
   type UpdateConfigBody,
-  type CreateTempAssignmentBody,
 } from '@/services/config'
 
 export function useConfig() {
@@ -24,29 +23,6 @@ export function useUpdateConfig() {
   })
 }
 
-export function useCreateTempAssignment() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (body: CreateTempAssignmentBody) =>
-      configService.createTempAssignment(body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config'] })
-    },
-  })
-}
-
-export function useDeleteTempAssignment() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (id: string) => configService.deleteTempAssignment(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['config'] })
-    },
-  })
-}
-
 // ── Role Permissions ──────────────────────────────────────────────────────────
 
 /** Current user's effective permissions (primary ∪ additional roles),
@@ -57,6 +33,31 @@ export function useRolePermissions() {
     queryFn: () => configService.getMyPermissions(),
     staleTime: 60_000,
     retry: 1,
+  })
+}
+
+/** Every user's ADDITIONAL roles only (identity user_roles assignments) —
+ *  no primary role mixed in. ADMIN-ONLY (proxies identity's system_admin-
+ *  gated /authz/user-roles) — only usable on admin-gated pages (e.g. Access
+ *  Control). For a non-admin viewer resolving their OWN assignment, use
+ *  useMyAssignedRoles instead (see BudgetDashboard.tsx). */
+export function useUserRoles() {
+  return useQuery({
+    queryKey: ['config-user-roles'],
+    queryFn: () => configService.getUserRoles(),
+    staleTime: 60_000,
+  })
+}
+
+/** The caller's OWN additional roles only — no admin gate, safe for any
+ *  authenticated viewer. Used to resolve job-function assignments like
+ *  finance_bp, where holding the function as your primary role must NOT
+ *  count (see BudgetDashboard.tsx). */
+export function useMyAssignedRoles() {
+  return useQuery({
+    queryKey: ['config-me-assigned-roles'],
+    queryFn: () => configService.getMyAssignedRoles(),
+    staleTime: 60_000,
   })
 }
 

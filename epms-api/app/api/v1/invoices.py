@@ -6,7 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
-from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission, require_roles
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.core.access_scope import build_scope
 from app.crud import invoice as invoice_crud
 from app.crud import vendor as vendor_crud
@@ -33,8 +33,12 @@ from app.services import tax_prefill
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
+# Kept for business logic (visibility / task-assignment fallback below) — NOT
+# the gate anymore. `ApDep` migrated to the shared authz package
+# (epms.invoice.match); this tuple still answers "is this caller AP staff
+# regardless of an open task assignment" at lines using `_AP_ROLES` below.
 _AP_ROLES = ("system_admin", "ap_clerk", "finance_manager", "finance_bp")
-ApDep = Annotated[dict, Depends(require_roles(*_AP_ROLES))]
+ApDep = Annotated[dict, Depends(require_permission("epms.invoice.match"))]
 InvoiceUploadDep = Annotated[dict, Depends(require_permission("invoice_upload"))]
 
 

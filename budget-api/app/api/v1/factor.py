@@ -3,7 +3,8 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.core.deps import CurrentUserPayload, SessionDep, require_roles
+from app.core.authz import require_permission
+from app.core.deps import CurrentUserPayload, SessionDep
 from app.crud import catalog as catalog_crud
 from app.crud import factor as factor_crud
 from app.crud import settings as settings_crud
@@ -16,8 +17,6 @@ from app.schemas.factor import (
 )
 
 router = APIRouter(tags=["factor"])
-
-_WRITE_ROLES = ("system_admin", "finance_manager", "finance_bp")
 
 
 @router.get("/accounts/{account_id}/factors", response_model=list[FactorResponse])
@@ -37,7 +36,7 @@ async def list_factors(
 )
 async def create_factor(
     account_id: uuid.UUID, payload: FactorCreate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     acct = await catalog_crud.get_account(db, account_id)
     if acct is None:
@@ -60,7 +59,7 @@ async def create_factor(
 )
 async def create_factor_from_template(
     account_id: uuid.UUID, payload: FactorFromTemplate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     """Create a per-Account factor by cloning a Factor Library template.
 
@@ -86,7 +85,7 @@ async def create_factor_from_template(
 @router.patch("/factors/{factor_id}", response_model=FactorResponse)
 async def update_factor(
     factor_id: uuid.UUID, payload: FactorUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     factor = await factor_crud.get_factor(db, factor_id)
     if factor is None:
@@ -98,7 +97,7 @@ async def update_factor(
 @router.delete("/factors/{factor_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_factor(
     factor_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.catalog.write")),
 ):
     factor = await factor_crud.get_factor(db, factor_id)
     if factor is None:
@@ -112,7 +111,7 @@ async def delete_factor(
 )
 async def create_factor_value(
     factor_id: uuid.UUID, payload: FactorValueCreate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     v = await factor_crud.create_factor_value(db, factor_id, payload)
     return FactorValueResponse.model_validate(v)
@@ -121,7 +120,7 @@ async def create_factor_value(
 @router.patch("/factor-values/{value_id}", response_model=FactorValueResponse)
 async def update_factor_value(
     value_id: uuid.UUID, payload: FactorValueUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     v = await factor_crud.get_factor_value(db, value_id)
     if v is None:
@@ -133,7 +132,7 @@ async def update_factor_value(
 @router.delete("/factor-values/{value_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_factor_value(
     value_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.catalog.write")),
 ):
     v = await factor_crud.get_factor_value(db, value_id)
     if v is None:
@@ -167,7 +166,7 @@ async def get_factor_template(
 )
 async def create_factor_template(
     payload: FactorTemplateCreate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     t = await factor_crud.create_template(db, payload)
     return FactorTemplateResponse.model_validate(t)
@@ -176,7 +175,7 @@ async def create_factor_template(
 @router.patch("/factor-templates/{template_id}", response_model=FactorTemplateResponse)
 async def update_factor_template(
     template_id: uuid.UUID, payload: FactorTemplateUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     t = await factor_crud.get_template(db, template_id)
     if t is None:
@@ -188,7 +187,7 @@ async def update_factor_template(
 @router.delete("/factor-templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_factor_template(
     template_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.catalog.write")),
 ):
     t = await factor_crud.get_template(db, template_id)
     if t is None:
@@ -202,7 +201,7 @@ async def delete_factor_template(
 )
 async def create_factor_template_value(
     template_id: uuid.UUID, payload: FactorTemplateValueCreate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     v = await factor_crud.create_template_value(db, template_id, payload)
     return FactorTemplateValueResponse.model_validate(v)
@@ -213,7 +212,7 @@ async def create_factor_template_value(
 )
 async def update_factor_template_value(
     value_id: uuid.UUID, payload: FactorTemplateValueUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.catalog.write")),  # noqa: ARG001
 ):
     v = await factor_crud.get_template_value(db, value_id)
     if v is None:
@@ -227,7 +226,7 @@ async def update_factor_template_value(
 )
 async def delete_factor_template_value(
     value_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.catalog.write")),
 ):
     v = await factor_crud.get_template_value(db, value_id)
     if v is None:

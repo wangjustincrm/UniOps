@@ -5,7 +5,8 @@ import uuid
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, UploadFile, status
 
-from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
+from app.core.authz import require_permission
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import plan as plan_crud
 from app.schemas.plan import (
     BaselineResponse, BreakdownCreate, BreakdownResponse, BreakdownUpdate,
@@ -19,8 +20,6 @@ from app.services.plan_aggregator import build_plan_grid
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["plan"])
-
-_WRITE_ROLES = ("system_admin", "finance_manager", "finance_bp", "dept_manager")
 
 
 @router.get("/plans", response_model=list[PlanResponse])
@@ -57,7 +56,7 @@ async def list_versions(
 @router.post("/plans", response_model=PlanResponse, status_code=status.HTTP_201_CREATED)
 async def create_plan(
     payload: PlanCreate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),
+    user: dict = Depends(require_permission("budget.plan.write")),
 ):
     actor_id = uuid.UUID(user["sub"])
     plan = await plan_crud.create_plan(db, payload, actor_id)
@@ -77,7 +76,7 @@ async def get_plan_grid(
 @router.delete("/plans/{plan_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_plan(
     plan_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.plan.write")),
 ):
     """Delete a draft plan. CASCADE removes lines + breakdowns.
 
@@ -101,7 +100,7 @@ async def delete_plan(
 @router.patch("/plans/{plan_id}", response_model=PlanResponse)
 async def update_plan(
     plan_id: uuid.UUID, payload: PlanUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.plan.write")),  # noqa: ARG001
 ):
     plan = await plan_crud.get_plan(db, plan_id)
     if plan is None:
@@ -117,7 +116,7 @@ async def update_plan(
 async def update_plan_line(
     plan_id: uuid.UUID, account_id: uuid.UUID, month: int,
     payload: PlanLineUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.plan.write")),  # noqa: ARG001
 ):
     plan = await plan_crud.get_plan(db, plan_id)
     if plan is None:
@@ -150,7 +149,7 @@ async def list_breakdowns_for_cell(
 async def create_breakdown(
     plan_id: uuid.UUID, account_id: uuid.UUID, month: int,
     payload: BreakdownCreate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.plan.write")),  # noqa: ARG001
 ):
     plan = await plan_crud.get_plan(db, plan_id)
     if plan is None:
@@ -166,7 +165,7 @@ async def create_breakdown(
 async def replace_breakdowns_for_cell(
     plan_id: uuid.UUID, account_id: uuid.UUID, month: int,
     payload: BulkBreakdownReplaceRequest, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.plan.write")),  # noqa: ARG001
 ):
     """Atomic bulk-replace of all breakdowns for one (line) cell.
 
@@ -212,7 +211,7 @@ async def get_baseline_for_cell(
 @router.patch("/breakdowns/{breakdown_id}", response_model=BreakdownResponse)
 async def update_breakdown(
     breakdown_id: uuid.UUID, payload: BreakdownUpdate, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.plan.write")),  # noqa: ARG001
 ):
     bd = await plan_crud.get_breakdown(db, breakdown_id)
     if bd is None:
@@ -231,7 +230,7 @@ async def update_breakdown(
 @router.delete("/breakdowns/{breakdown_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_breakdown(
     breakdown_id: uuid.UUID, db: SessionDep,
-    _: dict = Depends(require_roles(*_WRITE_ROLES)),
+    _: dict = Depends(require_permission("budget.plan.write")),
 ):
     bd = await plan_crud.get_breakdown(db, breakdown_id)
     if bd is None:
@@ -287,7 +286,7 @@ async def plan_action(
 @router.post("/plans/{plan_id}/copy-from-prev", response_model=dict)
 async def copy_from_prev(
     plan_id: uuid.UUID, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),
+    user: dict = Depends(require_permission("budget.plan.write")),
 ):
     plan = await plan_crud.get_plan(db, plan_id)
     if plan is None:
@@ -303,7 +302,7 @@ async def copy_from_prev(
 )
 async def revise_plan(
     plan_id: uuid.UUID, payload: PlanReviseRequest, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),
+    user: dict = Depends(require_permission("budget.plan.write")),
 ):
     """Create a new draft revision of an approved + current plan.
 
@@ -344,7 +343,7 @@ async def export_plan(
 )
 async def import_plan(
     plan_id: uuid.UUID, file: UploadFile, db: SessionDep,
-    user: dict = Depends(require_roles(*_WRITE_ROLES)),  # noqa: ARG001
+    user: dict = Depends(require_permission("budget.plan.write")),  # noqa: ARG001
 ):
     """Bulk-update plan_line amounts from CSV. Plan must be draft or returned."""
     plan = await plan_crud.get_plan(db, plan_id)

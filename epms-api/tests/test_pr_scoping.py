@@ -5,6 +5,7 @@ the PRs each role should see.
 """
 import uuid
 import pytest
+import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -263,6 +264,35 @@ async def test_director_sees_mapped_dept_prs(test_engine):
         resp = await c.get(f"/api/v1/pr/{pr_id_other_dept}")
         assert resp.status_code == 404, (
             f"Director saw PR from unmapped dept (status={resp.status_code})"
+        )
+
+
+@pytest.mark.asyncio
+async def test_additional_role_widens_scope(test_engine, admin_client):
+    """Phase 3 Task 5: `_effective_role_codes` now unions the JWT base role with
+    ADDITIONAL roles read straight from identity's `user_roles` table (same
+    physical DB), replacing the retired `company_config.role_management`
+    assignments. A 'requester' (own-PRs-only scope) holding an ADDITIONAL
+    finance_manager role must get the same unrestricted view a primary
+    finance_manager gets (PL-004) — proving the union is read from user_roles,
+    not the old JSONB."""
+    r = await admin_client.post("/api/v1/pr", json=_PR_BASE)
+    assert r.status_code == 201, r.text
+
+    uid, tok = await _make_user(test_engine, "requester")
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await db.execute(sa.text(
+            "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'finance_manager')"),
+            {"u": uid})
+        await db.commit()
+
+    async with _authed_client(tok) as c:
+        resp = await c.get("/api/v1/pr")
+        assert resp.status_code == 200
+        assert resp.json()["total"] >= 1, (
+            "requester holding an ADDITIONAL finance_manager role (user_roles) "
+            "should see all PRs, same as PL-004 for a primary finance_manager"
         )
 
 

@@ -1,56 +1,39 @@
-"""Permission checks against the shared EPMS Access Control Matrix.
+"""Permission checks against the shared Access Control Matrix.
 
-booking-api reads `company_config.role_permissions` (JSONB) straight from the
-shared DB — same read-only raw-SQL approach vms-api uses for SMTP config.
-Stored values win; keys missing from a role's stored dict (configs predating
-this module) fall back to the local defaults below. system_admin always passes.
+booking-api reads identity's role_permissions / role_permission_locks tables
+directly via the shared uniops_authz package — same physical DB, no HTTP —
+exactly like epms/finance/budget/mdm (see app/core/authz.py). Role union
+(primary role ∪ additional user_roles); system_admin always short-circuits.
+
+Behaviour change from the old company_config.role_permissions gate this
+replaces: that gate was PRIMARY-role-only with a local `_DEFAULTS` fallback
+for keys missing from the stored matrix. This package does role UNION
+(primary ∪ additional roles) and has NO fallback — view_booking /
+manage_meeting_rooms have had seeded matrix rows since phase 1, so the only
+intended behavioural delta is the union broadening, consistent with every
+other migrated service.
 """
+import uuid
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends
+from uniops_authz import has_permission as _has_permission
 
+from app.core.authz import require_permission
 from app.core.deps import CurrentUserPayload, SessionDep
-
-_DEFAULTS = {"view_booking": True, "manage_meeting_rooms": False}
-
-
-def has_permission(role: str, key: str, stored_matrix: dict) -> bool:
-    if role == "system_admin":
-        return True
-    role_perms = stored_matrix.get(role) or {}
-    if key in role_perms:
-        return bool(role_perms[key])
-    return _DEFAULTS.get(key, False)
-
-
-async def _load_matrix(db: AsyncSession) -> dict:
-    row = (
-        await db.execute(text("SELECT role_permissions FROM company_config LIMIT 1"))
-    ).scalar_one_or_none()
-    return row if isinstance(row, dict) else {}
-
-
-def require_perm(key: str):
-    async def _check(payload: CurrentUserPayload, db: SessionDep) -> dict:
-        matrix = await _load_matrix(db)
-        if not has_permission(payload.get("role", ""), key, matrix):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
-        return payload
-    return _check
 
 
 async def is_booking_admin(payload: CurrentUserPayload, db: SessionDep) -> bool:
     """Return True if the caller holds the manage_meeting_rooms permission.
 
-    Resolves via the Access Control Matrix (company_config.role_permissions) so
-    that matrix-granted admins (e.g. procurement_manager with manage_meeting_rooms=true)
-    are treated the same as system_admin.  Single matrix load per request.
+    Crud-layer check (not an endpoint dependency, so it can't take a FastAPI
+    Depends(require_permission(...))) — calls the shared authz package's
+    has_permission() directly, which carries the same system_admin
+    short-circuit and role-union semantics require_permission() enforces.
     """
-    matrix = await _load_matrix(db)
-    return has_permission(payload.get("role", ""), "manage_meeting_rooms", matrix)
+    uid = uuid.UUID(str(payload.get("sub", "")))
+    return await _has_permission(db, uid, payload.get("role", ""), "manage_meeting_rooms")
 
 
-CurrentUser = Annotated[dict, Depends(require_perm("view_booking"))]
-AdminUser = Annotated[dict, Depends(require_perm("manage_meeting_rooms"))]
+CurrentUser = Annotated[dict, Depends(require_permission("view_booking"))]
+AdminUser = Annotated[dict, Depends(require_permission("manage_meeting_rooms"))]

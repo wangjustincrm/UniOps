@@ -98,25 +98,12 @@ async def _over_budget_count(
 # ── Pending approvals (PRs + POs + PAs in submitted/in_review) ───────────────
 
 async def _effective_roles(db: AsyncSession, role: str, user_id: uuid.UUID) -> set[str]:
-    """Expand base JWT role with any special roles from Role Management config."""
-    roles: set[str] = {role}
-    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    if not cfg or not cfg.role_management:
-        return roles
-    rm: dict = cfg.role_management
-    uid = str(user_id)
-    for special, assigned in {
-        "gm": rm.get("gm_user_id"),
-        "opm": rm.get("opm_user_id"),
-        "finance_manager": rm.get("finance_manager_user_id"),
-        "procurement_manager": rm.get("procurement_manager_user_id"),
-        "vendor_manager": rm.get("vendor_manager_user_id"),
-    }.items():
-        if assigned == uid:
-            roles.add(special)
-    if uid in rm.get("finance_bp_user_ids", []):
-        roles.add("finance_bp")
-    return roles
+    """Expand base JWT role with any ADDITIONAL roles held via identity's
+    user_roles table (same physical DB). Delegates to access_scope's shared
+    union helper — replaces the retired company_config.role_management
+    assignments (phase 3)."""
+    from app.core.access_scope import _effective_role_codes
+    return await _effective_role_codes(db, role, user_id)
 
 
 def _task_subq(doc_type: str, task_type: str, user_id: uuid.UUID, effective_roles: set[str]):

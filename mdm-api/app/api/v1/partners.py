@@ -11,7 +11,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, require_roles
+from app.core.authz import require_permission
+from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.business_partner import BusinessPartner
 from app.schemas.business_partner import (
@@ -20,9 +21,7 @@ from app.schemas.business_partner import (
 
 router = APIRouter(prefix="/partners", tags=["business-partners"])
 
-PartnerWriteDep = Annotated[dict, Depends(
-    require_roles("system_admin", "vendor_manager", "finance_manager")
-)]
+PartnerWriteDep = Annotated[dict, Depends(require_permission("mdm.vendor.write"))]
 
 
 @router.get("", response_model=PartnerListResponse)

@@ -8,7 +8,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, require_roles
+from app.core.authz import require_permission
+from app.core.deps import CurrentUser
 from app.crud import department as dept_crud
 from app.db.base import get_db
 from app.schemas.department import (
@@ -20,7 +21,7 @@ from app.schemas.department import (
 
 router = APIRouter(prefix="/departments", tags=["departments"])
 
-WriteDep = Annotated[dict, Depends(require_roles("system_admin", "finance_manager", "ap_clerk"))]
+WriteDep = Annotated[dict, Depends(require_permission("mdm.finance.write"))]
 
 
 @router.get("", response_model=DepartmentListResponse)

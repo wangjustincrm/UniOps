@@ -123,3 +123,69 @@ async def test_put_user_roles_transactional(seeded, db_session):
         "SELECT role_code FROM user_roles WHERE user_id=:i ORDER BY role_code"),
         {"i": str(uid)})).scalars().all()
     assert add == ["cfo", "vendor_manager"]
+
+
+POST_ROLES = ("gm", "opm", "vendor_manager", "finance_manager", "procurement_manager")
+
+
+async def test_post_role_singleton_conflicts(seeded, db_session):
+    """gm/opm/... may be held by exactly one user — as primary OR additional."""
+    a, b = uuid.uuid4(), uuid.uuid4()
+    for i, uid in enumerate((a, b)):
+        await db_session.execute(sa.text(
+            "INSERT INTO users (id, email, hashed_password, full_name, role, is_active, mfa_enabled, must_change_password, notification_channel, erp_imported) "
+            "VALUES (:i, :e, 'x', 'U', 'requester', true, false, false, 'email_only', false)"), {"i": str(uid), "e": f"{uid}@t.co"})
+    await db_session.commit()
+    async with _client() as c:
+        r1 = await c.put(f"{BASE}/authz/users/{a}/roles",
+                         json={"primary": "requester", "additional": ["gm"]})
+        assert r1.status_code == 204
+        # second user cannot also hold gm
+        r2 = await c.put(f"{BASE}/authz/users/{b}/roles",
+                         json={"primary": "requester", "additional": ["gm"]})
+        assert r2.status_code == 409
+        assert r2.json()["detail"]["conflict"]["role"] == "gm"
+        assert r2.json()["detail"]["conflict"]["held_by"] == str(a)
+        # finance_bp is NOT a singleton — both may hold it
+        assert (await c.put(f"{BASE}/authz/users/{a}/roles",
+                            json={"primary": "requester", "additional": ["finance_bp"]})).status_code == 204
+        assert (await c.put(f"{BASE}/authz/users/{b}/roles",
+                            json={"primary": "requester", "additional": ["finance_bp"]})).status_code == 204
+
+
+async def test_post_role_singleton_checks_primary_role_too(seeded, db_session):
+    """A post held as someone's PRIMARY role also blocks it as another's additional."""
+    a, b = uuid.uuid4(), uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role, is_active, mfa_enabled, must_change_password, notification_channel, erp_imported) "
+        "VALUES (:i, :e, 'x', 'Primary GM', 'gm', true, false, false, 'email_only', false)"), {"i": str(a), "e": f"{a}@t.co"})
+    await db_session.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role, is_active, mfa_enabled, must_change_password, notification_channel, erp_imported) "
+        "VALUES (:i, :e, 'x', 'Other', 'requester', true, false, false, 'email_only', false)"), {"i": str(b), "e": f"{b}@t.co"})
+    await db_session.commit()
+    async with _client() as c:
+        r = await c.put(f"{BASE}/authz/users/{b}/roles",
+                        json={"primary": "requester", "additional": ["gm"]})
+    assert r.status_code == 409
+    assert r.json()["detail"]["conflict"]["held_by"] == str(a)
+    # cleanup: `a`'s primary role was set via raw SQL (bypassing the API), so
+    # nothing else releases its permanent claim on 'gm' — this test DB/engine
+    # is session-scoped with no reset between tests, so a stale claim here
+    # would 409 every later test that touches 'gm'.
+    await db_session.execute(sa.text("DELETE FROM users WHERE id IN (:a, :b)"),
+                             {"a": str(a), "b": str(b)})
+    await db_session.commit()
+
+
+async def test_setting_own_post_again_is_idempotent(seeded, db_session):
+    """Re-saving the same user's own post must not 409 against itself."""
+    a = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO users (id, email, hashed_password, full_name, role, is_active, mfa_enabled, must_change_password, notification_channel, erp_imported) "
+        "VALUES (:i, :e, 'x', 'U', 'requester', true, false, false, 'email_only', false)"), {"i": str(a), "e": f"{a}@t.co"})
+    await db_session.commit()
+    async with _client() as c:
+        assert (await c.put(f"{BASE}/authz/users/{a}/roles",
+                            json={"primary": "requester", "additional": ["gm"]})).status_code == 204
+        assert (await c.put(f"{BASE}/authz/users/{a}/roles",
+                            json={"primary": "requester", "additional": ["gm", "finance_bp"]})).status_code == 204

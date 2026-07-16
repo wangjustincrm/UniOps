@@ -133,6 +133,25 @@ class UserRolesPut(BaseModel):
     additional: list[str] = []
 
 
+_POST_ROLES = frozenset({"gm", "opm", "vendor_manager", "finance_manager", "procurement_manager"})
+
+
+async def _post_conflict(db, user_id: uuid.UUID, wanted: set[str]) -> dict | None:
+    """A post role may be held by exactly one user — as primary OR additional."""
+    posts = wanted & _POST_ROLES
+    if not posts:
+        return None
+    holder = (await db.execute(select(User.id, User.role).where(
+        User.role.in_(posts), User.id != user_id))).first()
+    if holder is not None:
+        return {"role": holder[1], "held_by": str(holder[0])}
+    row = (await db.execute(select(UserRole.role_code, UserRole.user_id).where(
+        UserRole.role_code.in_(posts), UserRole.user_id != user_id))).first()
+    if row is not None:
+        return {"role": row[0], "held_by": str(row[1])}
+    return None
+
+
 @router.put("/authz/users/{user_id}/roles", status_code=204)
 async def put_user_roles(user_id: uuid.UUID, body: UserRolesPut,
                          db: SessionDep, user: CurrentUserPayload) -> None:
@@ -146,6 +165,9 @@ async def put_user_roles(user_id: uuid.UUID, body: UserRolesPut,
     bad = [c for c in body.additional if c not in codes]
     if bad:
         raise HTTPException(status_code=422, detail=f"Unknown roles {bad}")
+    conflict = await _post_conflict(db, user_id, {body.primary, *body.additional})
+    if conflict is not None:
+        raise HTTPException(status_code=409, detail={"conflict": conflict})
     u.role = body.primary
     await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
     for code in set(body.additional) - {body.primary}:

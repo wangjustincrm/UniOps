@@ -12,7 +12,7 @@ import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears } from '@/hooks/useBudget'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions, useMyAssignedRoles } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
@@ -21,13 +21,35 @@ const currentYear = new Date().getUTCFullYear()
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+// `finance_bp` is deliberately NOT in this set. gm/opm/finance_manager are
+// company-unique singleton POSTS (identity enforces one holder) — holding
+// one as your PRIMARY role (jwt/user.role) means you genuinely are it.
+// finance_bp is a job FUNCTION many people carry (identity exempts it from
+// the singleton index for that reason); reading it off user.role would
+// grant full-access scope to anyone whose primary role happens to be
+// finance_bp even if they were never assigned. See isFinanceBpAssigned
+// below, which resolves finance_bp from the user_roles assignment table
+// only — mirrors approval-api's _post_holders / finance-api's coa.py.
 const FULL_ACCESS_ROLES = new Set([
-  'gm', 'opm', 'finance_manager', 'finance_bp', 'ap_clerk',
+  'gm', 'opm', 'finance_manager', 'ap_clerk',
   'system_admin', 'cfo', 'auditor',
+])
+
+// Post-holder role codes that previously gated full access via the (now
+// retired) company_config.role_management ids. Migrated to identity's
+// user_roles — anyone holding one of these carries the role code in the
+// permissions role union below. `vendor_manager` was never part of the
+// old check and is intentionally excluded. `finance_bp` is likewise
+// excluded here — it must NOT resolve from myRoles (primary ∪ additional),
+// only from an ADDITIONAL-roles-only assignment check (isFinanceBpAssigned).
+const SPECIAL_ROLE_CODES = new Set([
+  'gm', 'opm', 'finance_manager', 'procurement_manager',
 ])
 
 export default function BudgetDashboard() {
   const { data: config } = useConfig()
+  const { data: myPermissions } = useRolePermissions()
+  const { data: myAssignedRoles } = useMyAssignedRoles()
   const { user } = useAuthStore()
   const { data: ccData } = useCostCenters({ active_only: true })
   const yearOptions = useAvailableFiscalYears()
@@ -36,15 +58,16 @@ export default function BudgetDashboard() {
   const yellowThreshold = config?.budget_admin_config?.yellow_threshold_pct ?? 80
   const redThreshold    = config?.budget_admin_config?.red_threshold_pct ?? 100
 
-  const rm = config?.role_management
-  const isSpecialRoleAssignee = !!user && !!rm && (
-    user.id === rm.gm_user_id || user.id === rm.gm_backup_user_id ||
-    user.id === rm.opm_user_id || user.id === rm.opm_backup_user_id ||
-    user.id === rm.finance_manager_user_id || user.id === rm.finance_manager_backup_user_id ||
-    user.id === rm.procurement_manager_user_id || user.id === rm.procurement_manager_backup_user_id ||
-    (rm.finance_bp_user_ids ?? []).includes(user.id)
-  )
-  const isFullAccess = !!user && (FULL_ACCESS_ROLES.has(user.role) || isSpecialRoleAssignee)
+  const myRoles = myPermissions?.roles ?? []
+  const isSpecialRoleAssignee = myRoles.some((r) => SPECIAL_ROLE_CODES.has(r))
+  // finance_bp resolved from the ADDITIONAL-roles-only assignment table —
+  // never from myRoles/user.role, which mix in the primary role. Uses the
+  // self-scoped /config/me/assigned-roles (no admin gate), NOT the admin-only
+  // /config/user-roles proxy every viewer used to hit and get 403 from.
+  const isFinanceBpAssigned = !!user &&
+    (myAssignedRoles?.role_codes ?? []).includes('finance_bp')
+  const isFullAccess = !!user &&
+    (FULL_ACCESS_ROLES.has(user.role) || isSpecialRoleAssignee || isFinanceBpAssigned)
 
   const visibleCCs = isFullAccess
     ? costCenters

@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from sqlalchemy import select
 
-from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
+from app.core.authz import require_permission
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
@@ -26,8 +27,7 @@ from app.schemas.pr import ApprovalEventResponse
 
 router = APIRouter(prefix="/pa", tags=["payment-applications"])
 
-_PA_WRITE_ROLES = ("system_admin", "finance_bp", "finance_manager", "ap_clerk", "requester")
-PaWriteDep = Annotated[dict, Depends(require_roles(*_PA_WRITE_ROLES))]
+PaWriteDep = Annotated[dict, Depends(require_permission("epms.pa.write"))]
 
 
 @router.get("", response_model=PaListResponse)

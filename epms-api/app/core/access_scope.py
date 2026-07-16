@@ -9,12 +9,14 @@ Visibility rules:
 
 Multi-role users: the JWT carries only the user's single base role. Special roles
 (procurement_manager, gm, opm, finance_manager, vendor_manager, finance_bp) are
-secondary assignments in CompanyConfig.role_management. If a user holds ANY
+ADDITIONAL roles held in identity's user_roles table (same physical DB — phase 3
+retired the old CompanyConfig.role_management assignments). If a user holds ANY
 unrestricted special role, they get unrestricted scope regardless of their base role.
 """
 import uuid
 from typing import Optional
 
+import sqlalchemy as sa
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
@@ -106,32 +108,19 @@ async def _effective_role_codes(
 ) -> set[str]:
     """Return the full set of active role codes for a user.
 
-    Starts with the JWT base role, then adds any special-role assignments from
-    CompanyConfig.role_management (gm, opm, finance_manager, procurement_manager,
-    vendor_manager, finance_bp).
+    The JWT base role plus any ADDITIONAL roles from identity's user_roles
+    (same physical DB — read directly, no HTTP). Replaces the retired
+    company_config.role_management assignments (phase 3).
     """
     codes: set[str] = {base_role} if base_role else set()
-    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    rows = (await db.execute(sa.text(
+        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
+    codes.update(rows)
+
     uid_str = str(user_id)
-
-    # role_management-based special roles (gm, opm, finance_manager, etc.)
-    if cfg and cfg.role_management:
-        rm: dict = cfg.role_management
-        single_role_fields = {
-            "gm":                  rm.get("gm_user_id"),
-            "opm":                 rm.get("opm_user_id"),
-            "finance_manager":     rm.get("finance_manager_user_id"),
-            "procurement_manager": rm.get("procurement_manager_user_id"),
-            "vendor_manager":      rm.get("vendor_manager_user_id"),
-        }
-        for special_role, assigned_uid in single_role_fields.items():
-            if assigned_uid == uid_str:
-                codes.add(special_role)
-        if uid_str in rm.get("finance_bp_user_ids", []):
-            codes.add("finance_bp")
-
-    # director/supervisor derivation runs whenever cfg exists, regardless of
-    # whether role_management is populated.
+    # director/supervisor derivation is unrelated to role_management/user_roles —
+    # still sourced from CompanyConfig.dept_director_mapping / User.supervisor_id.
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
     if cfg is not None:
         if uid_str in (cfg.dept_director_mapping or {}).values():
             codes.add("director")
@@ -141,6 +130,34 @@ async def _effective_role_codes(
     if is_supervisor is not None:
         codes.add("supervisor")
     return codes
+
+
+_POST_CODES = ("gm", "opm", "finance_manager", "procurement_manager", "vendor_manager", "finance_bp")
+
+
+async def role_holder_ids(
+    db: AsyncSession,
+    codes: tuple[str, ...] = _POST_CODES,
+) -> dict[str, set[uuid.UUID]]:
+    """code -> set of active user ids holding that role.
+
+    A post can be held as a PRIMARY role (users.role) or an ADDITIONAL role
+    (identity's user_roles, same physical DB) — both count. Mirrors
+    approval-api's workflow._post_holders pattern. Used by po.py/pr.py's
+    approval auto-skip logic (replaces the retired single
+    company_config.role_management.<role>_user_id fields — phase 3).
+    """
+    rows = (await db.execute(sa.text(
+        "SELECT role AS code, id::text AS uid FROM users WHERE role = ANY(:codes) AND is_active "
+        "UNION ALL "
+        "SELECT ur.role_code, ur.user_id::text FROM user_roles ur "
+        " JOIN users u ON u.id = ur.user_id "
+        " WHERE ur.role_code = ANY(:codes) AND u.is_active"),
+        {"codes": list(codes)})).all()
+    out: dict[str, set[uuid.UUID]] = {}
+    for code, uid in rows:
+        out.setdefault(code, set()).add(uuid.UUID(uid))
+    return out
 
 
 async def _has_unrestricted_special_role(
@@ -158,26 +175,17 @@ async def _effective_permissions(
     base_role: str,
     user_id: uuid.UUID,
 ) -> dict[str, bool]:
-    """Union of all permissions across the user's active roles.
+    """Union of all permissions across the user's roles.
 
-    Reads the effective role-permission matrix from the identity authz hub
-    (via authz_client.get_matrix, 60 s cached).  No HTTP token is available in
-    this pure-DB call chain, so token=None is passed — authz_client falls back
-    to the frozen company_config JSONB immediately (identical behaviour to
-    pre-Task-3).  A permission is granted if ANY active role has it.
+    Reads identity's matrix directly via the shared authz package (same
+    physical DB — no HTTP, no token). Phase 1's authz_client (HTTP + cache +
+    outage fallback + write-through mirror) existed only because this pure-DB
+    call chain had no token to call identity with; that whole apparatus is
+    gone — a DB outage is the only thing that can stop this now, and that
+    stops everything anyway.
     """
-    from app.core import authz_client
-    from app.crud.config import PERMISSION_KEYS
-
-    codes = await _effective_role_codes(db, base_role, user_id)
-    matrix = await authz_client.get_matrix(db, None)
-    merged: dict[str, bool] = {k: False for k in PERMISSION_KEYS}
-    for code in codes:
-        role_perms = matrix.get(code, {})
-        for k in PERMISSION_KEYS:
-            if role_perms.get(k):
-                merged[k] = True
-    return merged
+    from uniops_authz import effective_permissions
+    return await effective_permissions(db, user_id, base_role)
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
@@ -188,9 +196,10 @@ async def visible_pr_subquery(
 ) -> Optional[Select]:
     """Return a scalar subquery of visible PR ids, or None (= no filter = all).
 
-    Multi-role users: if the user holds any unrestricted special role via Role
-    Management (e.g. base=dept_manager but also procurement_manager), they get
-    unrestricted scope (None) regardless of their base role.
+    Multi-role users: if the user holds any unrestricted special role via an
+    ADDITIONAL role in identity's user_roles (e.g. base=dept_manager but also
+    procurement_manager), they get unrestricted scope (None) regardless of
+    their base role.
     """
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])

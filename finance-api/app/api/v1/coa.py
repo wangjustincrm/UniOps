@@ -15,29 +15,37 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import require_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.coa import AccountMapping, AuxDimensionType, ChartOfAccount
 
 router = APIRouter(prefix="/coa", tags=["chart-of-accounts"])
 
-_MANAGE_ROLES = {"system_admin", "finance_manager"}
 _ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
+
+_MANAGE_KEY = "finance.coa.manage"
+_manage_gate = require_permission(_MANAGE_KEY)
 
 
 async def _can_manage(db: AsyncSession, user: dict) -> bool:
-    """JWT roles are not the whole story — Finance Manager / Finance BP are
-    role_management ASSIGNMENTS (same resolution as the payment executor)."""
-    if user.get("role") in _MANAGE_ROLES:
+    """Whether `user` holds finance.coa.manage per the Access Control matrix,
+    resolved via the shared authz package instead of a hardcoded role set.
+
+    Phase 3 had already carved finance_bp out of COA management when held
+    only via a user_roles ASSIGNMENT (finance_bp is a job function many
+    people carry, not a singleton post, and was never meant to double as the
+    curated approver list for this gate). Phase 2 formalizes that: the
+    finance.coa.manage key's seeded default set is (system_admin,
+    finance_manager) — no finance_bp, whether held as a primary role or an
+    additional user_roles assignment. Grant it in the matrix (or via a
+    finance_manager additional role) for anyone else who should manage the
+    chart of accounts."""
+    try:
+        await _manage_gate(user, db)
         return True
-    from app.crud.payment_execute import _user_holds_assignment
-    from app.models.mirrors import CompanyConfig
-    from sqlalchemy import select as _select
-    cfg = (await db.execute(_select(CompanyConfig).limit(1))).scalar_one_or_none()
-    rm = (cfg.role_management or {}) if cfg else {}
-    uid = str(user.get("sub", ""))
-    return (_user_holds_assignment(rm, uid, "finance_manager")
-            or _user_holds_assignment(rm, uid, "finance_bp"))
+    except HTTPException:
+        return False
 
 
 async def _require_manage(db: AsyncSession, user: dict) -> None:
@@ -183,8 +191,9 @@ async def coa_permissions(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Server-side capability resolution (JWT roles ∪ role_management
-    assignments) — the UI gates its write actions on this, never on jwt.role."""
+    """Server-side capability resolution (JWT roles ∪ ADDITIONAL roles held in
+    identity's user_roles) — the UI gates its write actions on this, never on
+    jwt.role."""
     return CoaPermissions(can_manage=await _can_manage(db, user))
 
 
