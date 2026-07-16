@@ -56,6 +56,12 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "epms.po.write":        ("system_admin", "procurement_officer", "procurement_manager"),
     "epms.pa.write":        ("system_admin", "finance_bp", "finance_manager", "ap_clerk", "requester"),
     "epms.gr.receive":      ("system_admin", "warehouse_staff", "procurement_officer"),
+    # NOTE: this is the phase-2 TARGET set (matrix-decides). coa.py still carries
+    # a finance_bp-via-assignment branch (phase-3 legacy) that Task 5 removes; until
+    # Task 5 runs, the running code admits one more path than this tuple. Parity here
+    # is against the post-Task-5 target, by design (user decision: COA access is
+    # decided in the Access Control matrix, not hardcoded). A finance.coa.manage DIFF
+    # AFTER Task 5 lands would be a real regression.
     "finance.coa.manage":   ("system_admin", "finance_manager"),
     "finance.period.close": ("system_admin", "finance_manager"),
     "finance.jv.post":      ("system_admin", "finance_manager", "finance_bp"),
