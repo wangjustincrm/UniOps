@@ -311,6 +311,7 @@ services:
         VITE_VMS_API_URL: ${VMS_API_URL}
         VITE_BUDGET_API_URL: ${BUDGET_API_URL}
         VITE_MDM_API_URL: ${MDM_API_URL}
+        VITE_FINANCE_API_URL: ${FINANCE_API_URL}
     ports: ["5174:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
