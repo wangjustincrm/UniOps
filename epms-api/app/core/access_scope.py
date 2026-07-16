@@ -132,6 +132,34 @@ async def _effective_role_codes(
     return codes
 
 
+_POST_CODES = ("gm", "opm", "finance_manager", "procurement_manager", "vendor_manager", "finance_bp")
+
+
+async def role_holder_ids(
+    db: AsyncSession,
+    codes: tuple[str, ...] = _POST_CODES,
+) -> dict[str, set[uuid.UUID]]:
+    """code -> set of active user ids holding that role.
+
+    A post can be held as a PRIMARY role (users.role) or an ADDITIONAL role
+    (identity's user_roles, same physical DB) — both count. Mirrors
+    approval-api's workflow._post_holders pattern. Used by po.py/pr.py's
+    approval auto-skip logic (replaces the retired single
+    company_config.role_management.<role>_user_id fields — phase 3).
+    """
+    rows = (await db.execute(sa.text(
+        "SELECT role AS code, id::text AS uid FROM users WHERE role = ANY(:codes) AND is_active "
+        "UNION ALL "
+        "SELECT ur.role_code, ur.user_id::text FROM user_roles ur "
+        " JOIN users u ON u.id = ur.user_id "
+        " WHERE ur.role_code = ANY(:codes) AND u.is_active"),
+        {"codes": list(codes)})).all()
+    out: dict[str, set[uuid.UUID]] = {}
+    for code, uid in rows:
+        out.setdefault(code, set()).add(uuid.UUID(uid))
+    return out
+
+
 async def _has_unrestricted_special_role(
     db: AsyncSession,
     base_role: str,

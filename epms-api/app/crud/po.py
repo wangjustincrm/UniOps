@@ -13,7 +13,6 @@ from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.config import RoleManagementConfig
 from app.schemas.po import PO_WORKFLOW, PlaceOrderRequest, PoActionRequest, PoCreate, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
 
@@ -286,24 +285,15 @@ async def action(
         recorded_role = workflow[step]["role"] if step < len(workflow) else actor_role
         await _complete_tasks(db, "po", po.id)
 
-        # Build role → assigned user_id mapping for auto-skip logic
-        cfg = await _get_config(db)
-        role_mgmt_raw = cfg.role_management if cfg else {}
-        rm = RoleManagementConfig.model_validate(role_mgmt_raw) if role_mgmt_raw else RoleManagementConfig()
-        role_to_user: dict[str, uuid.UUID | None] = {
-            "gm":                   uuid.UUID(rm.gm_user_id) if rm.gm_user_id else None,
-            "opm":                  uuid.UUID(rm.opm_user_id) if rm.opm_user_id else None,
-            "finance_manager":      uuid.UUID(rm.finance_manager_user_id) if rm.finance_manager_user_id else None,
-            "procurement_manager":  uuid.UUID(rm.procurement_manager_user_id) if rm.procurement_manager_user_id else None,
-            "vendor_manager":       uuid.UUID(rm.vendor_manager_user_id) if rm.vendor_manager_user_id else None,
-        }
-        finance_bp_ids: set[uuid.UUID] = {uuid.UUID(uid) for uid in rm.finance_bp_user_ids}
+        # Build role → holder-set mapping for auto-skip logic. A post can be
+        # held via PRIMARY role (users.role) OR an ADDITIONAL role (identity's
+        # user_roles, same physical DB) — phase 3 retired the old single
+        # company_config.role_management.<role>_user_id fields.
+        from app.core.access_scope import role_holder_ids
+        role_holders = await role_holder_ids(db)
 
         def _actor_holds_role_po(role: str) -> bool:
-            if role == "finance_bp":
-                return actor_id in finance_bp_ids
-            assigned = role_to_user.get(role)
-            return assigned is not None and assigned == actor_id
+            return actor_id in role_holders.get(role, set())
 
         next_step = step + 1
         # Auto-skip any consecutive steps where the same actor holds the assigned role.

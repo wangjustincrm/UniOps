@@ -1,5 +1,6 @@
 """Purchase Order endpoint tests."""
 import pytest
+import sqlalchemy as sa
 
 URL = "/api/v1/po"
 VENDOR_URL = "/api/v1/vendors"
@@ -199,3 +200,78 @@ async def test_tasks_created_on_pr_submit(admin_client):
     tasks = resp.json()
     pr_tasks = [t for t in tasks if t["document_id"] == pr["id"]]
     assert any(t["type"] == "approve_pr" for t in pr_tasks)
+
+
+# ── Approval auto-skip (crud-level) ─────────────────────────────────────────────
+# The HTTP /action endpoint forwards approve/submit/etc to approval-api's engine
+# (which owns the live workflow — already migrated off role_management in Task
+# 5). epms-api/crud/po.py keeps its own copy of the auto-skip logic; this test
+# exercises it directly to prove it now resolves role holders from identity's
+# user_roles ∪ users.role, not the retired company_config.role_management
+# single *_user_id fields (phase 3).
+
+@pytest.mark.asyncio
+async def test_po_approve_auto_skips_step_held_by_same_actor(test_engine):
+    import uuid
+    from sqlalchemy import select as _select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud import po as po_crud
+    from app.crud import user as user_crud
+    from app.models.approval import ApprovalEvent
+    from app.models.config import CompanyConfig
+    from app.models.po import PurchaseOrder
+    from app.models.vendor import Vendor
+    from app.schemas.auth import RegisterRequest
+    from app.schemas.po import PoActionRequest
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        # Pin a 2-step "po" workflow on the shared singleton config row
+        # (other tests, e.g. test_config.py::test_update_workflow_defs, may
+        # have already overwritten it with a different shape — don't rely on
+        # the hardcoded PO_WORKFLOW fallback still being in effect).
+        cfg = (await db.execute(_select(CompanyConfig).limit(1))).scalar_one_or_none()
+        po_workflow_defs = [
+            {"id": "po-step-0", "role": "procurement_manager", "label": "Procurement Manager"},
+            {"id": "po-step-1", "role": "finance_manager", "label": "Finance Manager"},
+        ]
+        if cfg is None:
+            db.add(CompanyConfig(role_permissions={}, custom_roles=[], workflow_defs={"po": po_workflow_defs}))
+        else:
+            cfg.workflow_defs = {**(cfg.workflow_defs or {}), "po": po_workflow_defs}
+        await db.commit()
+
+        # Actor's PRIMARY role IS "finance_manager" — PO workflow step 1. No
+        # user_roles row is written for this (the phase-3 seed deliberately
+        # skips it when the primary role already covers the post) — proving
+        # role_holder_ids() unions users.role, not just user_roles.
+        actor = await user_crud.create(db, RegisterRequest(
+            email=f"po-autoskip-{uuid.uuid4().hex[:6]}@t.com", password="TestPass1!",
+            full_name="Auto Skip FM", role="finance_manager"))
+        vendor = Vendor(code=f"V-{uuid.uuid4().hex[:6]}", name="Auto Skip Vendor",
+                        category="Services", contact_name="C", contact_email="c@autoskip.test")
+        db.add(vendor)
+        await db.commit()
+        await db.refresh(vendor)
+
+        po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:6]}", title="Auto Skip PO", type=2,
+                           vendor_id=vendor.id, vendor_name=vendor.name, created_by=actor.id,
+                           status="submitted", approval_step_idx=0)
+        db.add(po)
+        await db.commit()
+        await db.refresh(po)
+
+        result = await po_crud.action(
+            db, po, PoActionRequest(action="approve"), actor_id=actor.id, actor_role=actor.role)
+        await db.commit()
+
+        # step 0 (procurement_manager) is the explicit approve; step 1
+        # (finance_manager) auto-skips because the actor also holds it.
+        assert result.status == "approved"
+
+        events = (await db.execute(
+            sa.select(ApprovalEvent).where(ApprovalEvent.document_id == po.id).order_by(ApprovalEvent.step_idx)
+        )).scalars().all()
+        assert [e.action for e in events] == ["approve", "approve"]
+        assert events[1].comment == "Auto-approved (same approver holds both roles)"
+        assert events[1].actor_role == "finance_manager"

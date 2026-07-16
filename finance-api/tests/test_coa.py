@@ -98,9 +98,11 @@ async def test_mapping_upsert_and_validation(client):
 
 
 async def test_coa_permissions_resolve_assignments(client, db_session):
-    """can_manage = JWT manage roles ∪ role_management assignments — the boss
-    is a 'requester' with assignments, never gate on jwt.role alone."""
-    from app.models.mirrors import CompanyConfig
+    """can_manage = JWT manage roles ∪ ADDITIONAL roles held in identity's
+    user_roles table (same physical DB) — the boss is a 'requester' with an
+    additional finance_bp role, never gate on jwt.role alone. Phase 3: sourced
+    from user_roles, not the retired company_config.role_management."""
+    from sqlalchemy import text
 
     r = await client.get("/finance/v1/coa/permissions", headers=_h("finance_manager"))
     assert r.json() == {"can_manage": True}
@@ -109,7 +111,9 @@ async def test_coa_permissions_resolve_assignments(client, db_session):
     assert r.json() == {"can_manage": False}
 
     boss_id = str(uuid.uuid4())
-    db_session.add(CompanyConfig(role_management={"finance_bp_user_ids": [boss_id]}))
+    await db_session.execute(text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'finance_bp')"),
+        {"u": boss_id})
     await db_session.flush()
     token = jwt.encode({"sub": boss_id, "role": "requester",
                         "exp": datetime.now(timezone.utc) + timedelta(hours=1)},

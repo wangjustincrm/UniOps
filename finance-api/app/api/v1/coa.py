@@ -27,17 +27,15 @@ _ACCOUNT_TYPES = {"asset", "liability", "equity", "revenue", "expense"}
 
 async def _can_manage(db: AsyncSession, user: dict) -> bool:
     """JWT roles are not the whole story — Finance Manager / Finance BP are
-    role_management ASSIGNMENTS (same resolution as the payment executor)."""
+    ADDITIONAL roles held in identity's user_roles table (same physical DB —
+    phase 3 retired the old company_config.role_management assignments),
+    same resolution as the payment executor's can_pay."""
     if user.get("role") in _MANAGE_ROLES:
         return True
-    from app.crud.payment_execute import _user_holds_assignment
-    from app.models.mirrors import CompanyConfig
-    from sqlalchemy import select as _select
-    cfg = (await db.execute(_select(CompanyConfig).limit(1))).scalar_one_or_none()
-    rm = (cfg.role_management or {}) if cfg else {}
-    uid = str(user.get("sub", ""))
-    return (_user_holds_assignment(rm, uid, "finance_manager")
-            or _user_holds_assignment(rm, uid, "finance_bp"))
+    from app.crud.payment_execute import _user_role_codes
+    uid = uuid.UUID(str(user.get("sub", "")))
+    codes = await _user_role_codes(db, uid, user.get("role", ""))
+    return "finance_manager" in codes or "finance_bp" in codes
 
 
 async def _require_manage(db: AsyncSession, user: dict) -> None:
@@ -183,8 +181,9 @@ async def coa_permissions(
     user: CurrentUser,
     db: AsyncSession = Depends(get_db),
 ):
-    """Server-side capability resolution (JWT roles ∪ role_management
-    assignments) — the UI gates its write actions on this, never on jwt.role."""
+    """Server-side capability resolution (JWT roles ∪ ADDITIONAL roles held in
+    identity's user_roles) — the UI gates its write actions on this, never on
+    jwt.role."""
     return CoaPermissions(can_manage=await _can_manage(db, user))
 
 

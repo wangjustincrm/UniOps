@@ -49,18 +49,6 @@ async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str)
     return codes
 
 
-def _user_holds_assignment(rm: dict, user_id: str, role: str) -> bool:
-    """Retained for app/api/v1/coa.py._can_manage (out of Task 5's scope — still
-    reads company_config.role_management). can_pay itself no longer calls this;
-    see _user_role_codes above."""
-    if role == "finance_bp":
-        return user_id in [str(x) for x in (rm.get("finance_bp_user_ids") or [])]
-    if role == "finance_manager":
-        ids = [rm.get("finance_manager_user_id"), rm.get("finance_manager_backup_user_id")]
-        return user_id in [str(x) for x in ids if x]
-    return False
-
-
 async def _resolve_bank(db: AsyncSession, bank_account_id: uuid.UUID | None,
                         currency: str) -> BankAccount | None:
     """Validate the chosen funding bank: must exist and match the payment
