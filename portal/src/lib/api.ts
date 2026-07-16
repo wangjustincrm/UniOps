@@ -13,10 +13,11 @@ function extractDetail(detail: unknown, status: number): string {
   return `HTTP ${status}`
 }
 
-const EPMS_API   = (import.meta.env.VITE_EPMS_API_URL   as string | undefined) || 'http://localhost:8000'
-const OA_API     = (import.meta.env.VITE_OA_API_URL     as string | undefined) || 'http://localhost:8006'
-const BUDGET_API = (import.meta.env.VITE_BUDGET_API_URL as string | undefined) || 'http://localhost:8007'
-const MDM_API    = (import.meta.env.VITE_MDM_API_URL    as string | undefined) || 'http://localhost:8002'
+const EPMS_API     = (import.meta.env.VITE_EPMS_API_URL     as string | undefined) || 'http://localhost:8000'
+const OA_API       = (import.meta.env.VITE_OA_API_URL       as string | undefined) || 'http://localhost:8006'
+const BUDGET_API   = (import.meta.env.VITE_BUDGET_API_URL   as string | undefined) || 'http://localhost:8007'
+const MDM_API      = (import.meta.env.VITE_MDM_API_URL      as string | undefined) || 'http://localhost:8002'
+const APPROVAL_API = (import.meta.env.VITE_APPROVAL_API_URL as string | undefined) || 'http://localhost:8003'
 
 function getToken(): string | null {
   try {
@@ -125,6 +126,29 @@ export const mdmApi = {
   post:   <T>(path: string, body?: unknown)  => mdmRequest<T>('POST',   path, body),
   patch:  <T>(path: string, body?: unknown)  => mdmRequest<T>('PATCH',  path, body),
   delete: <T>(path: string)                  => mdmRequest<T>('DELETE', path),
+}
+
+async function approvalRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${APPROVAL_API}/approval/v1${path}`, {
+    method,
+    headers: authHeaders(!!body),
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (res.status === 401 && getToken()) {
+    globalSignOut()
+    throw new Error('Session expired. Please log in again.')
+  }
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(extractDetail(errBody.detail, res.status))
+  }
+  if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T
+  return res.json()
+}
+
+export const approvalApi = {
+  get:  <T>(path: string)                => approvalRequest<T>('GET', path),
+  put:  <T>(path: string, body: unknown) => approvalRequest<T>('PUT', path, body),
 }
 
 export const epmsApi = {
