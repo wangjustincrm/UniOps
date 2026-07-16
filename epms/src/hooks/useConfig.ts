@@ -37,13 +37,26 @@ export function useRolePermissions() {
 }
 
 /** Every user's ADDITIONAL roles only (identity user_roles assignments) —
- *  no primary role mixed in. Used to resolve job-function assignments like
- *  finance_bp, where holding the function as your primary role must NOT
- *  count (see BudgetDashboard.tsx). */
+ *  no primary role mixed in. ADMIN-ONLY (proxies identity's system_admin-
+ *  gated /authz/user-roles) — only usable on admin-gated pages (e.g. Access
+ *  Control). For a non-admin viewer resolving their OWN assignment, use
+ *  useMyAssignedRoles instead (see BudgetDashboard.tsx). */
 export function useUserRoles() {
   return useQuery({
     queryKey: ['config-user-roles'],
     queryFn: () => configService.getUserRoles(),
+    staleTime: 60_000,
+  })
+}
+
+/** The caller's OWN additional roles only — no admin gate, safe for any
+ *  authenticated viewer. Used to resolve job-function assignments like
+ *  finance_bp, where holding the function as your primary role must NOT
+ *  count (see BudgetDashboard.tsx). */
+export function useMyAssignedRoles() {
+  return useQuery({
+    queryKey: ['config-me-assigned-roles'],
+    queryFn: () => configService.getMyAssignedRoles(),
     staleTime: 60_000,
   })
 }

@@ -199,8 +199,18 @@ export const configService = {
 
   // Every user's ADDITIONAL roles only (identity user_roles assignments,
   // no primary role mixed in). Same proxy Portal's Access Control page uses.
+  // ADMIN-ONLY (proxies identity's system_admin-gated /authz/user-roles) —
+  // do not call this from a page a non-admin viewer can reach; use
+  // getMyAssignedRoles below for a self-scoped, ungated read.
   getUserRoles: () =>
     api.get<{ user_roles: Record<string, string[]> }>('/config/user-roles'),
+
+  // The caller's OWN additional roles only — no admin gate (same-DB read
+  // scoped to the JWT sub by construction). Use this instead of
+  // getUserRoles() whenever the caller only needs to resolve their own
+  // role assignment (e.g. BudgetDashboard's isFinanceBpAssigned).
+  getMyAssignedRoles: () =>
+    api.get<{ role_codes: string[] }>('/config/me/assigned-roles'),
 
   // Custom roles
   listRoles: () =>

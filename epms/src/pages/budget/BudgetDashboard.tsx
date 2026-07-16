@@ -12,7 +12,7 @@ import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears } from '@/hooks/useBudget'
-import { useConfig, useRolePermissions, useUserRoles } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions, useMyAssignedRoles } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
@@ -49,7 +49,7 @@ const SPECIAL_ROLE_CODES = new Set([
 export default function BudgetDashboard() {
   const { data: config } = useConfig()
   const { data: myPermissions } = useRolePermissions()
-  const { data: userRolesData } = useUserRoles()
+  const { data: myAssignedRoles } = useMyAssignedRoles()
   const { user } = useAuthStore()
   const { data: ccData } = useCostCenters({ active_only: true })
   const yearOptions = useAvailableFiscalYears()
@@ -61,9 +61,11 @@ export default function BudgetDashboard() {
   const myRoles = myPermissions?.roles ?? []
   const isSpecialRoleAssignee = myRoles.some((r) => SPECIAL_ROLE_CODES.has(r))
   // finance_bp resolved from the ADDITIONAL-roles-only assignment table —
-  // never from myRoles/user.role, which mix in the primary role.
+  // never from myRoles/user.role, which mix in the primary role. Uses the
+  // self-scoped /config/me/assigned-roles (no admin gate), NOT the admin-only
+  // /config/user-roles proxy every viewer used to hit and get 403 from.
   const isFinanceBpAssigned = !!user &&
-    (userRolesData?.user_roles?.[user.id] ?? []).includes('finance_bp')
+    (myAssignedRoles?.role_codes ?? []).includes('finance_bp')
   const isFullAccess = !!user &&
     (FULL_ACCESS_ROLES.has(user.role) || isSpecialRoleAssignee || isFinanceBpAssigned)
 

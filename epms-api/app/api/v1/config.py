@@ -6,6 +6,7 @@ from typing import Annotated
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
+from sqlalchemy import text
 from uniops_authz import effective_permissions, role_matrix, user_role_codes
 
 from app.core.config import settings
@@ -280,6 +281,26 @@ async def get_my_permissions(user: CurrentUserPayload, db: SessionDep):
     additional = sorted(c for c in codes if c != role)
     roles = ([role] if role else []) + additional
     return {"permissions": perms, "roles": roles}
+
+
+@router.get("/me/assigned-roles")
+async def get_my_assigned_roles(user: CurrentUserPayload, db: SessionDep):
+    """The caller's own ADDITIONAL roles only (identity user_roles rows for
+    this user's JWT sub) — no primary role mixed in, no admin gate.
+
+    GET /config/user-roles (below) proxies identity's system_admin-only
+    /authz/user-roles (every user's roles, for the admin Access Control UI).
+    Callers that only need to resolve THEIR OWN function-assignment (e.g.
+    BudgetDashboard's isFinanceBpAssigned) were hitting that admin endpoint
+    and eating a 403 on every load for non-admin viewers. This is a same-DB
+    direct read scoped to `user_id = :me` by construction — safe for any
+    authenticated caller, since it can only ever return the caller's own rows.
+    """
+    uid = uuid.UUID(user["sub"])
+    rows = (await db.execute(
+        text("SELECT role_code FROM user_roles WHERE user_id = :me"), {"me": str(uid)}
+    )).scalars().all()
+    return {"role_codes": list(rows)}
 
 
 @router.get("/authz-defs")
