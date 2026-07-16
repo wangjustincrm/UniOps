@@ -156,9 +156,15 @@ class ConfigUpdate(BaseModel):
     pdf_templates: dict[str, Any] | None = None
 
     workflow_config: dict[str, Any] | None = None
-    dept_gm_opm_mapping: dict[str, str] | None = None
-    dept_supervisor_enabled: dict[str, bool] | None = None
-    dept_director_mapping: dict[str, str] | None = None
+    # dept_gm_opm_mapping / dept_supervisor_enabled / dept_director_mapping
+    # write paths all retired now (2026-07-16, approval routing phase 3 Task
+    # 3b): expense-api's invoice_list.py — the last live consumer of
+    # dept_gm_opm_mapping — switched to approval-api's approval_dept_routing
+    # in b2f7dc8, so nothing reads any of these three JSONBs anymore outside
+    # epms-api's own frozen-snapshot comments and the PMS import tool's
+    # reconstruct.py snapshot read. Columns + read schema (ConfigResponse)
+    # kept for rollback / reconstruct.py per Global Constraints — just no
+    # longer writable via the admin API.
     service_gr_sla: dict[str, Any] | None = None
     gr_notification_sla: dict[str, Any] | None = None
     prepayment_config: dict[str, Any] | None = None

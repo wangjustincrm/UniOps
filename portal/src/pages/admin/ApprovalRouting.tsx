@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -105,24 +105,19 @@ export default function ApprovalRouting() {
   }
 
   return (
-    <div className="flex flex-col gap-5 p-6">
-      <Link
-        to="/"
-        className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to UniOps
-      </Link>
-      <div>
-        <h1 className="text-lg font-semibold">Approval Routing</h1>
-        <p className="text-sm text-neutral-500">
-          Configure which post (GM or OPM) approves each department, that department's director,
-          whether its supervisor layer is on, and the GM/OPM backup approvers.
-        </p>
-      </div>
+    <PortalPageLayout activeKey="portal:/admin/approval-routing">
+      <div className="flex flex-col gap-5">
+        <div>
+          <h1 className="text-lg font-semibold">Approval Routing</h1>
+          <p className="text-sm text-neutral-500">
+            Configure which post (GM or OPM) approves each department, that department's director,
+            whether its supervisor layer is on, and the GM/OPM backup approvers.
+          </p>
+        </div>
 
-      <ApprovalRoutingBody />
-    </div>
+        <ApprovalRoutingBody />
+      </div>
+    </PortalPageLayout>
   )
 }
 

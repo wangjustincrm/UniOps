@@ -56,6 +56,10 @@ async function request<T>(system: string, method: string, path: string, body?: u
       ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    // A stuck/unreachable host (e.g. a build-time fallback that silently
+    // pointed at localhost) must not hang forever — Promise.allSettled in
+    // entities() only skips a system if its request actually settles.
+    signal: AbortSignal.timeout(15000),
   })
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({ detail: res.statusText }))

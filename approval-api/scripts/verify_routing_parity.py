@@ -69,22 +69,30 @@ async def _old_readings(session) -> tuple[dict, dict, dict, dict]:
 _SKIP = object()  # roles never sourced from company_config (e.g. dept_manager)
 
 
-def _resolve(role: str, dept_id: str, rm: dict, gm_opm: dict, director: dict, supervisor: dict):
+def _resolve(role: str, dept_id: str, rm: dict, gm_opm: dict, director: dict,
+             supervisor: dict, active_ids: set[str]):
     """Resolve one workflow step's role to a comparable value for `dept_id`.
 
     Mirrors app/crud/engine.py's _build_role_map / _resolve_director /
-    _resolve_supervisor, minus the per-user active-user check (both old and
-    new getters feed the same users table, so that check can't diverge).
+    _resolve_supervisor — INCLUDING the per-user is_active filter (engine.py's
+    _active_user_id). The NEW getters already exclude inactive holders in SQL
+    (workflow.py JOINs `AND u.is_active`); the OLD side must apply the same
+    filter, or a deactivated assignee (e.g. a retired/test account still named
+    in company_config.role_management) shows old=<uid> new=None — a false DIFF,
+    since the live engine never routes to an inactive user either.
     """
+    def _active(uid):
+        return uid if uid and str(uid) in active_ids else None
+
     if role == "gm_or_opm":
         code = gm_opm.get(dept_id, "gm")
-        return rm.get(f"{code}_user_id")
+        return _active(rm.get(f"{code}_user_id"))
     if role in _POST_ROLES:
-        return rm.get(f"{role}_user_id")
+        return _active(rm.get(f"{role}_user_id"))
     if role == "finance_bp":
-        return sorted(rm.get("finance_bp_user_ids") or [])
+        return sorted(u for u in (rm.get("finance_bp_user_ids") or []) if str(u) in active_ids)
     if role == "director":
-        return director.get(dept_id)
+        return _active(director.get(dept_id))
     if role == "supervisor":
         return bool(supervisor.get(dept_id, False))
     return _SKIP
@@ -101,16 +109,21 @@ async def main() -> int:
         dept_rows = (await session.execute(sa.text(
             "SELECT id::text, code FROM departments WHERE is_active ORDER BY code"))).all()
 
+        # OLD side must apply the same is_active filter the live engine does
+        # (engine.py::_active_user_id) — see _resolve's docstring.
+        active_ids = set((await session.execute(sa.text(
+            "SELECT id::text FROM users WHERE is_active"))).scalars().all())
+
         diffs: list[tuple[str, str, str, object, object]] = []
         for dept_id, code in dept_rows:
             for doc_type in _DOC_TYPES:
                 steps = await get_workflow(session, doc_type)
                 for step in steps:
                     role = step.get("role")
-                    old_val = _resolve(role, dept_id, old_rm, old_gm_opm, old_director, old_supervisor)
+                    old_val = _resolve(role, dept_id, old_rm, old_gm_opm, old_director, old_supervisor, active_ids)
                     if old_val is _SKIP:
                         continue
-                    new_val = _resolve(role, dept_id, new_rm, new_gm_opm, new_director, new_supervisor)
+                    new_val = _resolve(role, dept_id, new_rm, new_gm_opm, new_director, new_supervisor, active_ids)
                     if old_val != new_val:
                         diffs.append((code, doc_type, role, old_val, new_val))
 
