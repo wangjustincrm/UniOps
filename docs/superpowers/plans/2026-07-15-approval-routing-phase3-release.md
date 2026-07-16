@@ -82,13 +82,23 @@ asyncio.run(main())
 
 `epms-api/scripts/import_pms/reconstruct.py` 仍然直接读 `company_config.role_management` / `dept_gm_opm_mapping`(代码里有注释钉死原因):它用于为 PMS 时代的历史单据重建审批人归属,那些单据的年代早于本次迁移,用**当时冻结的 JSONB 快照**推断审批人比用"现在"的 `user_roles`/`approval_dept_routing`(可能已经被后续人事变动改写)更准确。**未来若要清理 `company_config` 这四个字段(它们现在已无其他任何读者),必须先重新指向这个脚本,否则历史单据重建会读到空字典。**
 
-## 验收阶段发现、需要用户知晓的一处行为变化(非 bug,已核实为既定设计)
+## 验收阶段抓到的一处真实越权(已修复)
 
-平价脚本(见下)在 dev 上跑出 12 条 `DIFF`,全部集中在 `doc=pa step=finance_bp`:旧 `company_config.role_management.finance_bp_user_ids` 只列出 1 人,新口径(`app/crud/workflow.py::get_role_management`)额外多出 1 人。追查后确认是 Task 4 设计里**本来就有意为之**的行为(`_post_holders` 对所有岗位——包括 `finance_bp`——统一按 `users.role`(主角色)∪ `user_roles`(附加角色)取并集,docstring 明写"A post can be held as a PRIMARY role or an ADDITIONAL role — both count",spec 文档 2026-07-15-approval-routing-phase3.md 第 713 行的查询就是这么写的,并且被 Task 4 的测试套件依赖验证过)。
+平价脚本首跑在 dev 报出 **12 条 `DIFF`**,全部集中在 `doc=pa step=finance_bp`。追查确认这是**真实的权限扩大,不是既定设计**:
 
-dev 上具体触发原因:用户 Yuping Huang 的**主角色**(`users.role`)本来就是 `finance_bp`(2026-06-30 设置,与本分支无关),但从未被手工加进 `company_config.role_management.finance_bp_user_ids` 这个人工维护的列表。迁移前,她无法审批 PA 的 Finance BP 步骤;迁移后,只要她的主角色是 `finance_bp`,她就自动获得该步骤的审批资格——这是一次**只增不减**的权限扩大(不是收紧),而且从业务角度看是自洽的(主角色即 Finance BP,理应能审批 Finance BP 步骤)。
+- 旧口径:PA 的 Finance BP 审批人 = `company_config.role_management.finance_bp_user_ids` 这个**人工维护的指派名单**(生产只有 1 人:PM test)。
+- 出问题的新口径:`_post_holders` 对**所有**岗位统一取 `users.role`(主角色) ∪ `user_roles`(附加角色) —— 于是 **Yuping Huang**(主角色 `users.role='finance_bp'`,2026-06-30 设置,从未被指派进那个名单)凭空获得了**全部 PA** 的 Finance BP 审批权。
 
-**这不是本次发布引入的缺陷**,是 Task 4 既有设计的自然结果,只是在本期(Task 8)才第一次被端到端验证覆盖到(此前 Task 3 只对五个单例岗位做过逐项核对,`finance_bp` 是非单例的列表型岗位,未被纳入过往的核对范围)。**建议生产发布前**,对照生产库里所有主角色为 `finance_bp` 的用户与旧 `company_config.role_management.finance_bp_user_ids` 列表,确认这批"新增"的审批人是预期内的(即:他们本来就该是 Finance BP,只是旧列表没同步维护),而不是意外泄漏。
+**这违反本期「零行为变化」铁律**,已修复(commit `e8f5225`),修法是把一个真实的语义区分写进代码:
+
+| 岗位 | 性质 | 取值口径 |
+|---|---|---|
+| `gm` / `opm` / `vendor_manager` / `finance_manager` / `procurement_manager` | **公司唯一职位**(identity 强制单例:迁移 `0003_post_role_singleton` + `PUT /authz/users/{id}/roles` 跨表 409) | `users.role` ∪ `user_roles` —— 主角色即身份,你是 GM 就是 GM |
+| `finance_bp` | **多人可有的职能角色**(identity 明确豁免单例约束) | **只认 `user_roles` 指派** —— 持有职能 ≠ 被指派为审批人 |
+
+`seed_routing` 相应对 `finance_bp` 去掉了 `primary == code` 的跳过逻辑(否则被指派人的主角色恰好也是 `finance_bp` 时会丢行);五个单例岗位的跳过/改派逻辑未动。
+
+**为什么单元测试照不出来**:engine 一行未改、四个服务零回归、所有套件全绿——每一层单独看都"正确"。只有拿新旧两套口径逐个部门 × 单据类型对撞,这个越权才现形。这正是平价脚本存在的意义。
 
 ## 平价断言脚本
 
@@ -98,4 +108,10 @@ dev 上具体触发原因:用户 Yuping Huang 的**主角色**(`users.role`)本�
 docker exec uniops_approval_api python -m scripts.verify_routing_parity
 ```
 
-dev 实测:`PARITY FAILED: 12 divergence(s)`,全部为上一节所述的 `finance_bp` 已知行为差异(逐条人工核实,非其余 4 项迁移——`gm`/`opm`/`vendor_manager`/`finance_manager`/`procurement_manager`/`director`/`supervisor_enabled`/`gm_or_opm` 解析——的回归;这些项目在全部 12 部门 x 3 单据类型上零差异)。
+dev 实测(修复后,控制器独立复跑确认):
+
+```
+PARITY OK (12 depts x 3 doc types)
+```
+
+**生产发布时这里必须是 `PARITY OK`。任何 `DIFF` 都意味着真实的审批人解析偏差 —— 不要放行,把输出贴出来查清。**(尤其:若再次出现 `step=finance_bp` 的 DIFF,那不是"已知现象",是回归。)
