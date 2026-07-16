@@ -1218,13 +1218,16 @@ In `NotificationsPage.tsx`, replace `:72`:
 with:
 
 ```tsx
-  const TYPE_LABELS: Record<string, string> = {
-    cancelled_occ: 'cancelled occurrence',
-  }
   const typeFmt = TYPE_LABELS[log.notif_type] ?? log.notif_type.replace(/_/g, ' ')
 ```
 
-Hoist `TYPE_LABELS` to module scope alongside the file's other constant maps rather than rebuilding it on every render.
+and declare the map at **module scope**, alongside the file's other constant maps (not inside the component — it must not be rebuilt on every render):
+
+```tsx
+const TYPE_LABELS: Record<string, string> = {
+  cancelled_occ: 'cancelled occurrence',
+}
+```
 
 - [ ] **Step 4: Typecheck**
 
