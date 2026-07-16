@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from uniops_authz import effective_permissions
+from uniops_authz import has_permission
 
 from app.models.fiscal_period import OPEN, FiscalPeriod
 from app.models.journal_voucher import (
@@ -24,7 +24,9 @@ from app.services.journal_voucher import next_jv_number
 # finance_bp / system_admin, same admission set the old hardcoded _JV_ROLES
 # had). This is a crud-layer check (not an endpoint), so it can't take a
 # FastAPI Depends(require_permission(...)) — it calls the shared authz
-# package's effective_permissions() directly instead.
+# package's has_permission() directly instead, which carries the same
+# system_admin short-circuit require_permission() has (unlike
+# effective_permissions(), which has none).
 _JV_PERMISSION = "finance.jv.post"
 
 
@@ -38,8 +40,7 @@ class JvPermissionError(Exception):
 
 async def _require_role(db: AsyncSession, user: dict) -> None:
     uid = uuid.UUID(str(user.get("sub", "")))
-    perms = await effective_permissions(db, uid, user.get("role", ""))
-    if not perms.get(_JV_PERMISSION, False):
+    if not await has_permission(db, uid, user.get("role", ""), _JV_PERMISSION):
         raise JvPermissionError("Insufficient role for journal-voucher action")
 
 

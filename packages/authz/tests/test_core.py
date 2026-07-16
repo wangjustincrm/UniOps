@@ -5,7 +5,9 @@ import pytest
 import sqlalchemy as sa
 from fastapi import HTTPException
 
-from uniops_authz import bind, effective_permissions, role_matrix, user_role_codes
+from uniops_authz import (
+    bind, effective_permissions, has_permission, role_matrix, user_role_codes,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -162,3 +164,32 @@ async def test_bind_permits_when_role_has_permission(authz_db):
     payload = {"role": "requester", "sub": str(uid)}
     result = await check(payload=payload, db=db)
     assert result is payload
+
+
+async def test_has_permission_system_admin_short_circuits_with_no_grant_row(authz_db):
+    """The important case: system_admin must be admitted even when there is
+    ZERO matching role_permissions/role_permission_locks row for the key —
+    proving has_permission() short-circuits exactly like require_permission()
+    rather than falling through to effective_permissions() (which has no
+    such short-circuit and would return False here)."""
+    db = authz_db
+    uid = await _mk_user(db, "system_admin")
+    result = await has_permission(db, uid, "system_admin", "totally.ungranted.key")
+    assert result is True
+
+
+async def test_has_permission_non_admin_with_grant_is_true(authz_db):
+    db = authz_db
+    uid = await _mk_user(db, "requester")
+    await db.execute(sa.text(
+        "INSERT INTO role_permissions (role_code, permission_key) "
+        "VALUES ('requester', 'k.allowed')"))
+    result = await has_permission(db, uid, "requester", "k.allowed")
+    assert result is True
+
+
+async def test_has_permission_non_admin_without_grant_is_false(authz_db):
+    db = authz_db
+    uid = await _mk_user(db, "requester")
+    result = await has_permission(db, uid, "requester", "k.missing")
+    assert result is False

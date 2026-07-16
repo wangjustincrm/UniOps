@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from uniops_authz import effective_permissions
+from uniops_authz import has_permission
 
 from app.core.deps import CurrentUser
 from app.crud import journal_voucher as crud
@@ -67,10 +67,12 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
 @router.get("/permissions")
 async def jv_permissions(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """UI capability gate — same finance.jv.post permission the lifecycle
-    actions enforce (app.crud.journal_voucher._require_role)."""
+    actions enforce (app.crud.journal_voucher._require_role), via the same
+    has_permission() primitive so system_admin is reported as `can_act`
+    regardless of whether a grant row exists for the key."""
     uid = uuid.UUID(str(user.get("sub", "")))
-    perms = await effective_permissions(db, uid, user.get("role", ""))
-    return {"can_act": perms.get("finance.jv.post", False)}
+    can_act = await has_permission(db, uid, user.get("role", ""), "finance.jv.post")
+    return {"can_act": can_act}
 
 
 @router.get("/{jv_id}")

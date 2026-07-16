@@ -12,6 +12,7 @@ not notice.
 from uniops_authz.core import (  # noqa: F401
     bind,
     effective_permissions,
+    has_permission,
     role_matrix,
     user_role_codes,
 )

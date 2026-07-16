@@ -69,6 +69,22 @@ async def effective_permissions(
     return {k: (k in granted) for k in keys}
 
 
+async def has_permission(db: AsyncSession, user_id: uuid.UUID, base_role: str, key: str) -> bool:
+    """Boolean gate for non-endpoint (crud-layer) callers.
+
+    Identical admission semantics to require_permission(): system_admin
+    short-circuits, otherwise the user's role union (primary ∪ user_roles)
+    must have `key` in the effective matrix (granted ∪ locked). Use this in
+    crud functions where a FastAPI Depends() doesn't fit — do NOT hand-roll
+    the short-circuit against effective_permissions(), which omits it.
+    """
+    if base_role == "system_admin":
+        return True
+    codes = await user_role_codes(db, user_id, base_role)
+    matrix = await _effective_matrix(db)
+    return any(key in matrix.get(c, set()) for c in codes)
+
+
 # NOTE: the gate itself (require_permission) cannot live at module level —
 # each service wires in its OWN get_db / token-payload dependencies, whose
 # names differ across services. It is produced by bind() — see below.
