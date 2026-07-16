@@ -62,6 +62,34 @@ async def delegate_action(
     return resp.json()
 
 
+async def forward(method: str, path: str, token: str | None, json=None) -> tuple[int, dict]:
+    """Pass a caller request through to the Approval Engine using the caller's own Bearer token.
+
+    Used by the /config/approval-routing proxy (Phase 3): approval-api has no
+    browser-facing subdomain (see Caddyfile — it's server-to-server only), so
+    epms-api is the gateway, mirroring how authz_client.forward gateways
+    identity. No authz logic is re-implemented here — approval-api's own
+    /routing handlers gate PUT to system_admin and own all 422 validation;
+    this just passes status + body through unchanged.
+
+    Raises on connection failure (e.g. httpx.ConnectError); callers should
+    catch and return 502 — this is a write-capable admin surface, so an
+    outage must surface as an error, never a stale-data fallback.
+    """
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.request(
+            method,
+            f"{settings.APPROVAL_ENGINE_URL}{path}",
+            headers=headers,
+            json=json,
+        )
+        body = r.json() if r.content else {}
+        return r.status_code, body
+
+
 async def get_workflow_steps(doc_type: str, doc_id: str, bearer_token: str) -> list[dict]:
     """
     Call GET /approval/v1/approvals/{doc_type}/{doc_id}/workflow-steps on the Approval Engine.

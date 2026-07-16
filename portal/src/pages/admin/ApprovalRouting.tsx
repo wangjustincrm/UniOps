@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { ArrowLeft, AlertCircle, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '@/store/auth'
-import { approvalApi, epmsApi } from '@/lib/api'
+import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -42,7 +42,7 @@ interface UserListResponse {
   total: number
 }
 
-/** Error thrown by approvalApi/epmsApi carries the raw `detail` payload (see lib/api.ts). */
+/** Error thrown by epmsApi carries the raw `detail` payload (see lib/api.ts). */
 type ApiError = Error & { detail?: unknown; status?: number }
 
 const USERS_PAGE_SIZE = 200
@@ -52,7 +52,9 @@ const USERS_PAGE_SIZE = 200
 function useRouting() {
   return useQuery<RoutingResponse>({
     queryKey: ['approval-routing'],
-    queryFn: () => approvalApi.get<RoutingResponse>('/routing'),
+    // Reached via epms-api's server-side gateway, not a browser-direct call —
+    // approval-api is server-to-server only (no browser subdomain/CORS).
+    queryFn: () => epmsApi.get<RoutingResponse>('/config/approval-routing'),
   })
 }
 
@@ -140,7 +142,7 @@ function ApprovalRoutingBody() {
   const [error, setError] = useState('')
 
   const save = useMutation<RoutingResponse, ApiError, RoutingResponse>({
-    mutationFn: (body) => approvalApi.put<RoutingResponse>('/routing', body),
+    mutationFn: (body) => epmsApi.put<RoutingResponse>('/config/approval-routing', body),
     onSuccess: (data) => {
       qc.setQueryData(['approval-routing'], data)
       setDeptEdits({})

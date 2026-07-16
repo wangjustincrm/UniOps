@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.core import authz_client
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission, require_roles
 from app.crud import config as config_crud
+from app.services import approval_client
 from app.schemas.config import (
     ConfigResponse,
     ConfigUpdate,
@@ -355,3 +356,43 @@ async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: Bea
     if status_code not in (200, 204):
         raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
     return Response(status_code=204)
+
+
+# ── Approval routing passthrough (Phase 3) ──────────────────────────────────
+#
+# approval-api is server-to-server only (Caddyfile: "Browser-facing APIs
+# (approval/identity are server-to-server, no subdomain)") — there is no
+# public hostname/CORS wiring for the browser to reach it directly. epms-api
+# is the gateway, exactly as Phase 1 did for identity via authz_client. No
+# authz logic is duplicated here: approval-api's own /routing handlers gate
+# PUT to system_admin and own all 422 validation. This is a write-capable
+# admin surface (not a read cache), so a connection failure must surface as
+# a 502 — no fallback to stale data.
+
+@router.get("/approval-routing")
+async def get_approval_routing(_: CurrentUserPayload, token: BearerToken):
+    """Proxy GET /approval/v1/routing from the Approval Engine."""
+    try:
+        status_code, body = await approval_client.forward("GET", "/routing", token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    return body
+
+
+@router.put("/approval-routing")
+async def put_approval_routing(body: dict, _: CurrentUserPayload, token: BearerToken):
+    """Proxy PUT /approval/v1/routing to the Approval Engine.
+
+    approval-api enforces system_admin on this write itself (403) and owns
+    all validation (422 on unknown/inactive dept_id, bad gm_or_opm, unknown
+    backup role) — both pass through untouched.
+    """
+    try:
+        status_code, resp_body = await approval_client.forward("PUT", "/routing", token, json=body)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
