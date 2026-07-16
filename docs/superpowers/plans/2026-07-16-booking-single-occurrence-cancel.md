@@ -365,7 +365,13 @@ class TestSingleOccurrenceNotification:
         ics = _extract_ics(_SMTPRecorder.instances[0].sent_messages[0])
         assert "METHOD:CANCEL" in ics
         assert "RECURRENCE-ID" in ics
-        assert "RRULE" not in ics, f"RRULE would cancel the whole series: {ics[:400]}"
+        # Assert on the SERIES rrule specifically, not a bare "RRULE" substring:
+        # the VTIMEZONE component legitimately emits RRULE:FREQ=YEARLY lines for
+        # DST transitions, so `"RRULE" not in ics` can never hold.
+        # _make_series_bookings uses rrule="FREQ=WEEKLY;COUNT=3".
+        assert "RRULE:FREQ=WEEKLY" not in ics, (
+            f"series RRULE present — Outlook would cancel the whole series: {ics[:400]}"
+        )
 
     async def test_series_request_exdates_cancelled_occurrence(
         self, test_engine, db_session, monkeypatch
