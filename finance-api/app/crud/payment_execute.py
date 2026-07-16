@@ -22,7 +22,7 @@ _ZERO = Decimal("0")
 from app.models.coa import AccountMapping
 from app.models.fiscal_period import OPEN, FiscalPeriod
 from app.models.mirrors import (
-    CompanyConfig, ExpenseApprovalEvent, ExpenseClaim, ExpenseLineItem,
+    ExpenseApprovalEvent, ExpenseClaim, ExpenseLineItem,
     ExpenseTripItem, Invoice, SodRule, Task, User,
 )
 from app.models.ap_invoice import ApInvoice
