@@ -228,12 +228,30 @@ async def test_director_sees_mapped_dept_prs(test_engine):
     # Create a director user (base role "director")
     uid_dir, tok_dir = await _make_user(test_engine, "director")
 
-    # Map dept_d to director in CompanyConfig.dept_director_mapping
+    # Map dept_d to director via approval_dept_routing.director_user_id — phase-3
+    # Task 2 moved _director_dept_ids off CompanyConfig.dept_director_mapping onto
+    # approval-api's approval_dept_routing table (same physical DB, read-only from
+    # epms). approval_dept_routing is owned by approval-api's own alembic head, so
+    # epms_test won't have it by default — CREATE TABLE IF NOT EXISTS here (schema
+    # copied from approval-api/alembic/versions/0001_approval_routing.py) so this
+    # test is self-sufficient even when run in isolation from
+    # test_access_scope_dept.py (whose fixture also creates this table).
     async with factory() as db:
-        cfg = await config_crud.get_or_create(db)
-        cfg.dept_director_mapping = {dept_d: uid_dir}
-        from sqlalchemy.orm.attributes import flag_modified
-        flag_modified(cfg, "dept_director_mapping")
+        await db.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',"
+            " director_user_id uuid NULL,"
+            " supervisor_enabled boolean NOT NULL DEFAULT false,"
+            " updated_by uuid NULL,"
+            " updated_at timestamptz NOT NULL DEFAULT now()"
+            ")"
+        ))
+        await db.execute(sa.text("DELETE FROM approval_dept_routing WHERE dept_id = :d"), {"d": dept_d})
+        await db.execute(sa.text(
+            "INSERT INTO approval_dept_routing (dept_id, gm_or_opm, director_user_id, supervisor_enabled) "
+            "VALUES (:d, 'gm', :dir, false)"),
+            {"d": dept_d, "dir": uid_dir})
         await db.commit()
 
     # Create a requester in dept_d and one in dept_other

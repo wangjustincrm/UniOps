@@ -17,7 +17,7 @@ import uuid
 from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
@@ -82,23 +82,34 @@ async def _dept_cc_subq(dept_ids: list[uuid.UUID]):
 
 
 async def _mapped_dept_ids(db: AsyncSession, role: str) -> list[uuid.UUID]:
-    """Return department IDs mapped to this GM/OPM role via CompanyConfig."""
-    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    if not cfg or not cfg.dept_gm_opm_mapping:
-        return []
-    return [
-        uuid.UUID(dept_id)
-        for dept_id, mapped_role in cfg.dept_gm_opm_mapping.items()
-        if mapped_role == role
-    ]
+    """Return department IDs whose gm_or_opm step routes to this role.
+
+    Reads approval-api's approval_dept_routing (same physical DB, read-only —
+    epms never writes it; Portal → Approval Routing is the only writer). This is
+    the single source of truth for dept routing since the phase-3 migration;
+    company_config.dept_gm_opm_mapping is a frozen snapshot kept for rollback.
+
+    NOTE: a department with no explicit mapping still has a routing row with the
+    default gm_or_opm='gm', so GM sees it — matching how the engine already
+    routes such a department's approval to GM.
+    """
+    rows = (await db.execute(
+        text("SELECT dept_id FROM approval_dept_routing WHERE gm_or_opm = :r"),
+        {"r": role},
+    )).scalars().all()
+    return list(rows)
 
 
 async def _director_dept_ids(db: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]:
-    """Return department IDs for which this user is the mapped director."""
-    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    if not cfg or not cfg.dept_director_mapping:
-        return []
-    return [uuid.UUID(d) for d, u in cfg.dept_director_mapping.items() if u == str(user_id)]
+    """Return department IDs for which this user is the mapped director.
+
+    Same source/ownership rules as _mapped_dept_ids above.
+    """
+    rows = (await db.execute(
+        text("SELECT dept_id FROM approval_dept_routing WHERE director_user_id = :u"),
+        {"u": str(user_id)},
+    )).scalars().all()
+    return list(rows)
 
 
 async def _effective_role_codes(
