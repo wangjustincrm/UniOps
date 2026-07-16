@@ -560,7 +560,7 @@ async def create_booking(
     # with real sending, a transient notification error is logged and swallowed —
     # the booking is already committed at this point.
     try:
-        await enqueue(db, bookings, "created", rrule=rrule)
+        await enqueue(db, bookings, "created")
     except Exception:
         logger.exception(
             "enqueue failed for booking(s) %s — notification suppressed, booking committed",
@@ -1054,9 +1054,8 @@ async def update_booking_series(
     # Outlook rewrites past occurrences too on series updates — the DB keeps
     # historical rows unchanged. This is the accepted tradeoff for series edits.
     first_future = future_bookings[0]
-    series_rrule = first_future.rrule
     try:
-        await enqueue(db, [first_future], "updated", rrule=series_rrule)
+        await enqueue(db, [first_future], "updated")
     except Exception:
         logger.exception(
             "enqueue failed for series edit of series_id %s — suppressed",
@@ -1345,9 +1344,8 @@ async def cancel_booking(
         # ONE notification covers the entire VEVENT cancellation
         if future_bookings:
             first_future = min(future_bookings, key=lambda b: b.starts_at)
-            series_rrule = first_future.rrule
             try:
-                await enqueue(db, [first_future], "cancelled", rrule=series_rrule)
+                await enqueue(db, [first_future], "cancelled")
             except Exception:
                 logger.exception(
                     "enqueue failed for series cancel of series_id %s — suppressed",

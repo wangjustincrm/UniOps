@@ -742,7 +742,7 @@ class TestSeriesSyncStatusPropagation:
         anchor = bookings[0]
 
         from app.services.notifications import enqueue
-        log = await enqueue(db_session, [anchor], "created", rrule=anchor.rrule)
+        log = await enqueue(db_session, [anchor], "created")
 
         assert log is not None
         assert log.status == "sent", f"Expected log.status=sent, got {log.status}"
@@ -776,7 +776,7 @@ class TestSeriesSyncStatusPropagation:
         anchor = bookings[0]
 
         from app.services.notifications import enqueue
-        log = await enqueue(db_session, [anchor], "created", rrule=anchor.rrule)
+        log = await enqueue(db_session, [anchor], "created")
 
         assert log is not None
         assert log.status == "failed", f"Expected log.status=failed, got {log.status}"

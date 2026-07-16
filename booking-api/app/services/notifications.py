@@ -432,13 +432,13 @@ async def enqueue(
     db: AsyncSession,
     bookings: list[Booking],
     notif_type: str,
-    *,
-    rrule: str | None = None,
 ) -> NotificationLog | None:
     """Resolve recipients, insert a pending NotificationLog, attempt immediate send.
 
-    For series bookings, pass the first occurrence + rrule; a single notification
-    email covers the whole series (one RRULE VEVENT).
+    For series bookings, pass the first occurrence; one notification email covers
+    the whole series (one RRULE VEVENT).  The RRULE is read from booking.rrule and
+    the VEVENT shape (series envelope vs. RECURRENCE-ID exception) is decided by
+    notif_type in send_notification.
 
     Recipients (organizer + current attendees + room_admin_emails) are resolved
     at enqueue() time and frozen in NotificationLog.recipients.  Retry and resend
