@@ -124,6 +124,18 @@ class _Recon:
     async def prime(self) -> None:
         cfg = (await self.db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
         self.wf = (cfg.workflow_defs if cfg else {}) or {}
+        # DELIBERATE EXEMPTION from the phase-3 retirement of role_management /
+        # dept_gm_opm_mapping (every live consumer now reads identity's user_roles
+        # and approval_dept_routing instead — see the phase-3 design doc).
+        #
+        # This reconstructor infers who approved PMS-era documents that carry no
+        # actor of their own. Those JSONB columns are kept precisely as a frozen
+        # snapshot of who held each post back then, which is closer to the truth
+        # for historical events than today's live assignments would be. It is an
+        # offline repair tool, never on a request path.
+        #
+        # => Do NOT drop company_config.role_management / dept_gm_opm_mapping
+        #    without first re-pointing or retiring this script.
         self.rm = (cfg.role_management if cfg else {}) or {}
         self.dept_gm_opm = (cfg.dept_gm_opm_mapping if cfg else {}) or {}
 

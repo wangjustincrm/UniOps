@@ -16,7 +16,6 @@ from app.models.pr import PurchaseRequest
 from app.models.pa_attachment import PaAttachment
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.config import RoleManagementConfig
 from app.schemas.pa import PA_WORKFLOW, PaActionRequest, PaCreate, PaUpdate
 from app.schemas.pr import ApprovalEventResponse
 from app.services.pdf_pa import generate_pa_pdf

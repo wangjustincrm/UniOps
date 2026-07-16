@@ -101,6 +101,10 @@ CREATE UNIQUE INDEX uq_user_roles_singleton_post ON user_roles (role_code)
 | expense | `api/v1/pa.py::can_pay` | can_pay |
 | expense | `api/v1/expenses.py::_can_act_on_claim`(~100) | 角色任务解析(**PA 与报销单共用**;含 `gm_or_opm` 合成角色名) |
 | expense | `api/v1/expenses.py::get_claim_permissions`(~294) | 报销单 can_pay |
+
+**故意豁免(不迁,已在代码内加注释钉死)**:`epms-api/scripts/import_pms/reconstruct.py`(~127)读 `role_management` + `dept_gm_opm_mapping` 推断 **PMS 时代**历史单据的审批 actor(那些单据自身无 actor 记录)。保留的 JSONB 正是「当年谁在岗」的冻结快照,对重建**历史**事件比今天的实时指派更贴近真相;且它是离线修复工具,不在请求路径。**代价:因此不能说「四件套无人再读」——删这两列前必须先改造或退休该脚本**(代码内注释已写明)。
+
+**已验证无害的丢弃**:`coa.py::_can_manage` 原经 `_user_holds_assignment` 还检查 `finance_manager_backup_user_id`,新实现不再检查。实测生产 `role_management` 仅 9 个键(`gm_user_id`/`opm_user_id`/`gm_backup_user_id`/`opm_backup_user_id`/`finance_bp_user_ids`/`finance_manager_user_id`/`procurement_manager_user_id`/`vendor_manager_user_id`/`temp_assignments`)——**根本不存在 `finance_manager_backup_user_id`**,该分支从未生效,故非行为变化(同 `dept_supervisor_enabled` 的验证方法:用数据说话,不靠假设)。
 - 零 HTTP、零缓存、零 token 传递——同库拓扑给的红利(与①期 epms→identity 的 HTTP 代理不同,因①期跨的是"服务边界事实源",此处是同库数据读取,依 UniOps 既有镜像模型惯例)。
 
 镜像模型须**忠于物理表**(逐列核对 information_schema,勿套惯例)——见 [[feedback_uniops_mirror_models_match_reality]]。
