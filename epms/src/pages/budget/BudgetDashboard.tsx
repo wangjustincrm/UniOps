@@ -12,7 +12,7 @@ import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears } from '@/hooks/useBudget'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
@@ -26,8 +26,18 @@ const FULL_ACCESS_ROLES = new Set([
   'system_admin', 'cfo', 'auditor',
 ])
 
+// Post-holder role codes that previously gated full access via the (now
+// retired) company_config.role_management ids. Migrated to identity's
+// user_roles — anyone holding one of these carries the role code in the
+// permissions role union below. `vendor_manager` was never part of the
+// old check and is intentionally excluded.
+const SPECIAL_ROLE_CODES = new Set([
+  'gm', 'opm', 'finance_manager', 'procurement_manager', 'finance_bp',
+])
+
 export default function BudgetDashboard() {
   const { data: config } = useConfig()
+  const { data: myPermissions } = useRolePermissions()
   const { user } = useAuthStore()
   const { data: ccData } = useCostCenters({ active_only: true })
   const yearOptions = useAvailableFiscalYears()
@@ -36,14 +46,8 @@ export default function BudgetDashboard() {
   const yellowThreshold = config?.budget_admin_config?.yellow_threshold_pct ?? 80
   const redThreshold    = config?.budget_admin_config?.red_threshold_pct ?? 100
 
-  const rm = config?.role_management
-  const isSpecialRoleAssignee = !!user && !!rm && (
-    user.id === rm.gm_user_id || user.id === rm.gm_backup_user_id ||
-    user.id === rm.opm_user_id || user.id === rm.opm_backup_user_id ||
-    user.id === rm.finance_manager_user_id || user.id === rm.finance_manager_backup_user_id ||
-    user.id === rm.procurement_manager_user_id || user.id === rm.procurement_manager_backup_user_id ||
-    (rm.finance_bp_user_ids ?? []).includes(user.id)
-  )
+  const myRoles = myPermissions?.roles ?? []
+  const isSpecialRoleAssignee = myRoles.some((r) => SPECIAL_ROLE_CODES.has(r))
   const isFullAccess = !!user && (FULL_ACCESS_ROLES.has(user.role) || isSpecialRoleAssignee)
 
   const visibleCCs = isFullAccess

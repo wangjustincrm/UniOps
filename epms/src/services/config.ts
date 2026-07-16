@@ -67,20 +67,6 @@ export interface WorkflowNodeDef {
   role: string
 }
 
-export interface RoleManagementConfig {
-  gm_user_id: string | null
-  gm_backup_user_id: string | null
-  opm_user_id: string | null
-  opm_backup_user_id: string | null
-  finance_manager_user_id: string | null
-  finance_manager_backup_user_id: string | null
-  procurement_manager_user_id: string | null
-  procurement_manager_backup_user_id: string | null
-  vendor_manager_user_id: string | null
-  vendor_manager_backup_user_id: string | null
-  finance_bp_user_ids: string[]
-}
-
 /** permission_key → bool for one role */
 export type RolePermissions = Record<string, boolean>
 
@@ -164,7 +150,6 @@ export interface CompanyConfig {
   prepayment_config: PrepaymentConfig
   budget_admin_config: BudgetAdminConfig
   collection_config: CollectionConfig
-  role_management: RoleManagementConfig
   workflow_defs: {
     pr: WorkflowNodeDef[]
     po: WorkflowNodeDef[]
