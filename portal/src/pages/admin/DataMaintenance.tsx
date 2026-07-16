@@ -25,7 +25,7 @@ export default function DataMaintenance() {
   const systems = Array.from(new Set((entities ?? []).map((e) => e.system)))
 
   return (
-    <PortalPageLayout activeKey="portal:/admin/data-maintenance" title="Data Maintenance">
+    <PortalPageLayout activeKey="portal:/admin/data-maintenance">
       <div className="flex flex-col gap-5">
         <div>
           <h1 className="text-lg font-semibold">Data Maintenance</h1>

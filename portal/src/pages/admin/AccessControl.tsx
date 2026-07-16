@@ -122,7 +122,7 @@ export default function AccessControl() {
   }
 
   return (
-    <PortalPageLayout activeKey="portal:/admin/access-control" title="Access Control">
+    <PortalPageLayout activeKey="portal:/admin/access-control">
       <div className="flex flex-col gap-5">
         <div>
           <h1 className="text-lg font-semibold">Access Control</h1>

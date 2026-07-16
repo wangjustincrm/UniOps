@@ -105,7 +105,7 @@ export default function ApprovalRouting() {
   }
 
   return (
-    <PortalPageLayout activeKey="portal:/admin/approval-routing" title="Approval Routing">
+    <PortalPageLayout activeKey="portal:/admin/approval-routing">
       <div className="flex flex-col gap-5">
         <div>
           <h1 className="text-lg font-semibold">Approval Routing</h1>
