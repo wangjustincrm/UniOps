@@ -1820,6 +1820,209 @@ that coa_aux_items is the source of truth."
 
 ---
 
+### Task 7: `account_balance` 新增 `partner` 维度(supplier ∪ customer)
+
+**Files:**
+- Modify: `finance-api/app/crud/account_balance.py`
+- Test: `finance-api/tests/test_account_balance.py`(追加)
+
+**Interfaces:**
+- Consumes: 无(独立于 nc_coa_sync 服务;`DIM_LABELS["partner"]` 由 Task 2 已加好)
+- Produces: `_dimensions()` 多一个 `partner` 键;`expand_by_dims` 支持展开它
+
+**为什么**(spec §3.4.1/§3.4.2):NC 的 `0004 客商` 同时涵盖供应商与客户,同步把它**直接**
+映射为 `partner`(不再按科目性质派生 —— 那套规则已被实测推翻两次)。但 `partner` 目前
+**不在 `_dimensions()` 里**,所以它是 `supported:false`、展不开。本任务让它可展开。
+
+**可行性已实测**:`journal_voucher_lines.partner_id` **本就是并集** —— voucher 同步的
+`_resolve_dims` 做 `uni_sup.get(sup) or uni_cust.get(cust)` 写进同一列,并把 `partner_name`
+反规范化写在行上。dev 实测:`erp_suppliers` 1148 / `nc_customers` 81、**两表 id 重叠 0**、
+56,291 行有 partner_id(990 个 id 解析为 supplier、31 个为 customer、
+**627 个两边都查不到**:`Alloc Vendor` 730 行、`Assign Vendor` 578 行 …)。
+那 627 个是主数据行已不存在的往来方 —— **现有 supplier/customer 维度对它们同样显示空**,
+但 `partner_name` 就在行上,partner 维度可回退取用。
+
+> ⚠️ 现有 `_dimensions()` 的元组是 `(column, model, code_attr, name_attr)` ——
+> **一个 dim 一个 model**。partner 要合并两个 model,且二者属性名不同
+> (`erp_supplier_code`/`supplier_name` vs `code`/`name`),故需把查找从
+> 「id → model 行」改成「id → (code, name)」。这是本任务唯一的结构改动。
+
+- [ ] **Step 1: 先读懂既有测试的造数方式**
+
+```bash
+grep -n "async def test_\|expand_by_dims\|partner_id" finance-api/tests/test_account_balance.py | head -20
+```
+
+找一个已有的 `expand_by_dims` 用例,**照抄它的 JV/line setup**。不要新造 helper。
+
+- [ ] **Step 2: 写失败的测试**
+
+追加到 `finance-api/tests/test_account_balance.py`,用 Step 1 看到的 setup 填实:
+
+```python
+async def test_partner_dim_is_supported(db_session):
+    from app.crud.account_balance import _dimensions
+    assert "partner" in _dimensions()
+
+
+async def test_partner_dim_resolves_supplier_and_customer_together(db_session):
+    # partner = supplier ∪ customer: both masters resolve through the one
+    # partner_id column, each row carrying its own master's code/name.
+    # setup: one line whose partner_id is a real erp_suppliers.id, one whose
+    # partner_id is a real nc_customers.id, same account + period.
+    out = await expand_by_dims(db_session, account_code=ACCT, period=PERIOD,
+                               dims=["partner"])
+    names = {k["name"] for r in out["rows"] for k in r["keys"]}
+    assert names == {SUPPLIER_NAME, CUSTOMER_NAME}
+
+
+async def test_partner_dim_falls_back_to_line_name_when_master_is_gone(db_session):
+    # 627 partner_ids in dev resolve against neither master — their master row
+    # is gone. The name is denormalized on the line; use it rather than blank.
+    # setup: one line with partner_id = a uuid in neither master,
+    #        partner_name = "Ghost Vendor"
+    out = await expand_by_dims(db_session, account_code=ACCT, period=PERIOD,
+                               dims=["partner"])
+    key = out["rows"][0]["keys"][0]
+    assert key["name"] == "Ghost Vendor"      # not None
+    assert key["code"] is None                # no master row -> no code
+```
+
+- [ ] **Step 3: 跑测试确认失败**
+
+```bash
+cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
+TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
+  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_account_balance.py -v
+```
+
+Expected: FAIL —— `"partner" not in _dimensions()` / `BadDims`
+
+- [ ] **Step 4: 实现 —— `_dimensions()` 加 partner**
+
+```python
+def _dimensions():
+    """dim_code -> (jv_lines column, master model, code attr, name attr).
+
+    supplier/customer share the partner_id column — coa_aux_items keeps them
+    apart per account (AP accounts carry suppliers, AR customers). `partner` is
+    the union of both: NC's 客商 (BD_ACCASS 0004) does not say which one it is,
+    and the voucher sync already folds supplier-or-customer into this very
+    column (_resolve_dims), so the union is what the column actually holds.
+    Its master is resolved in _resolve_dim, not here — hence the Nones.
+    """
+    from app.models.mirrors import BudgetAccount, CostCenter, Department, ErpSupplier
+    from app.models.nc_customer import NcCustomer
+    return {
+        "cost_center": (JournalVoucherLine.cost_center_id, CostCenter, "code", "name"),
+        "department": (JournalVoucherLine.department_id, Department, "code", "name"),
+        "income_expense_item": (JournalVoucherLine.income_expense_item_id, BudgetAccount, "code", "name"),
+        "supplier": (JournalVoucherLine.partner_id, ErpSupplier, "erp_supplier_code", "supplier_name"),
+        "customer": (JournalVoucherLine.partner_id, NcCustomer, "code", "name"),
+        "partner": (JournalVoucherLine.partner_id, None, None, None),   # union — see _resolve_dim
+    }
+```
+
+- [ ] **Step 5: 新增 `_resolve_dim`(放在 `_dimensions` 之后)**
+
+```python
+async def _resolve_dim(db: AsyncSession, dim: str, ids: set, reg: dict) -> dict:
+    """id -> (code, name) for one dimension.
+
+    `partner` unions suppliers and customers — their ids never collide (separate
+    tables, separate UUID pks; measured 0 overlap). Ids in neither master fall
+    back to the line's own denormalized partner_name: those parties' master rows
+    are gone, and a name beats a blank.
+    """
+    if not ids:
+        return {}
+    if dim != "partner":
+        _, model, code_attr, name_attr = reg[dim]
+        rows = (await db.execute(select(model).where(model.id.in_(ids)))).scalars()
+        return {r.id: (getattr(r, code_attr), getattr(r, name_attr)) for r in rows}
+
+    from app.models.mirrors import ErpSupplier
+    from app.models.nc_customer import NcCustomer
+    out: dict = {}
+    for model, code_attr, name_attr in (
+            (ErpSupplier, "erp_supplier_code", "supplier_name"),
+            (NcCustomer, "code", "name")):
+        for r in (await db.execute(select(model).where(model.id.in_(ids)))).scalars():
+            out[r.id] = (getattr(r, code_attr), getattr(r, name_attr))
+    missing = ids - set(out)
+    if missing:
+        rows = (await db.execute(
+            select(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name)
+            .where(JournalVoucherLine.partner_id.in_(missing)).distinct())).all()
+        for pid, pname in rows:
+            out.setdefault(pid, (None, pname))
+    return out
+```
+
+- [ ] **Step 6: `expand_by_dims` 改用它(只改这两处,其余不动)**
+
+把「批量加载」与「取值」两段替换为:
+
+```python
+    # batch-load per dimension: id -> (code, name)
+    lookups: dict[str, dict] = {}
+    for i, d in enumerate(dims):
+        ids = {row[i] for row in raw if row[i] is not None}
+        lookups[d] = await _resolve_dim(db, d, ids, reg)
+
+    rows = []
+    for row in raw:
+        keys = []
+        for i, d in enumerate(dims):
+            vid = row[i]
+            code, name = lookups[d].get(vid, (None, None))
+            keys.append({"dim_code": d, "id": str(vid) if vid else None,
+                         "code": code, "name": name})
+        rows.append({"keys": keys, "amount": _s(_net(row[len(dims)], row[len(dims) + 1]))})
+```
+
+- [ ] **Step 7: 跑测试确认通过**
+
+```bash
+cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
+TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
+  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_account_balance.py -v
+```
+
+Expected: 全部 passed(既有用例 + 你的 3 个新用例)。
+**既有用例数不得减少** —— 它们覆盖 cost_center/department/supplier/customer 的解析,
+正是本次结构改动的回归网。
+
+- [ ] **Step 8: 跑全量 finance 套件**
+
+```bash
+cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
+TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
+  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/ -q
+```
+
+Expected: 与改动前一致。若有 `test_account_balance.py` 之外的失败,先在 base commit 上
+复现再判断是否与本改动有关,并说明是哪种。
+
+- [ ] **Step 9: Commit**
+
+```bash
+cd /c/Project/uniops/.worktrees/nc-coa-sync
+git add finance-api/app/crud/account_balance.py finance-api/tests/test_account_balance.py
+git commit -m "feat(finance): partner dimension = suppliers union customers
+
+NC's 客商 does not say whether a party is a vendor or a customer, and the
+voucher sync already folds both into one partner_id column, so the union is what
+that column holds. Ids whose master row is gone fall back to the line's
+denormalized partner_name rather than rendering blank — more than the
+supplier/customer dims manage today."
+```
+
+---
+
 ## 收尾:端到端验证(非 Task,但必做)
 
 计划全部完成后,**在 dev 上真跑一次**,拿正面证据而非「测试过了」:
