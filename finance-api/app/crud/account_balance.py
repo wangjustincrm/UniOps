@@ -25,6 +25,51 @@ async def _coa_map(db: AsyncSession) -> dict:
     return {a.code: a for a in rows}
 
 
+def _children_index(coa_map: dict) -> dict:
+    """parent_code -> [child code] (leaves absent). The COA tree link is
+    parent_code only — never inferred from code-prefix."""
+    idx: dict[str, list[str]] = {}
+    for code, acct in coa_map.items():
+        if acct.parent_code:
+            idx.setdefault(acct.parent_code, []).append(code)
+    return idx
+
+
+def _descendants(children_idx: dict, code: str) -> set:
+    """{code} ∪ all transitive children. Cycle-guarded so a self/looping
+    parent_code cannot infinite-loop."""
+    seen: set[str] = set()
+    stack = [code]
+    while stack:
+        c = stack.pop()
+        if c in seen:
+            continue
+        seen.add(c)
+        stack.extend(children_idx.get(c, ()))
+    return seen
+
+
+def _level(coa_map: dict, code: str) -> int:
+    """Depth from the tree root (0 = root or orphan). Walks parent_code up,
+    cycle-guarded."""
+    depth = 0
+    seen: set[str] = set()
+    cur = code
+    while True:
+        acct = coa_map.get(cur)
+        if acct is None or not acct.parent_code or cur in seen:
+            return depth
+        seen.add(cur)
+        cur = acct.parent_code
+        depth += 1
+
+
+async def _subtree_codes(db: AsyncSession, account_code: str) -> set:
+    """{account_code} ∪ all descendant account codes. Leaf/orphan -> {self}."""
+    coa = await _coa_map(db)
+    return _descendants(_children_index(coa), account_code)
+
+
 async def account_balance(db: AsyncSession, period: str) -> dict:
     """Opening (cumulative posted before `period`) + period movement + closing,
     per account, in local (CAD) amounts. Mirrors gl.trial_balance's shape but

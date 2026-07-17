@@ -515,3 +515,66 @@ async def test_partner_dim_orphan_name_fallback_is_deterministic(db_session):
     key2 = out2["rows"][0]["keys"][0]
     assert key1["name"] == "Best Buy"          # alphabetically first of the two
     assert key2["name"] == "Best Buy"          # stable across repeated calls
+
+
+# ── non-leaf rollup: tree helpers (Task 1) ────────────────────────────────────
+from types import SimpleNamespace
+from app.crud.account_balance import (
+    _children_index, _descendants, _level, _subtree_codes)
+
+
+def _tree(*pairs):
+    # pairs of (code, parent_code) -> {code: obj with .parent_code}
+    return {code: SimpleNamespace(parent_code=parent) for code, parent in pairs}
+
+
+def test_children_index_inverts_parent_code():
+    coa = _tree(("6601", None), ("660101", "6601"), ("660102", "6601"))
+    idx = _children_index(coa)
+    assert sorted(idx["6601"]) == ["660101", "660102"]
+    assert "660101" not in idx           # leaves have no children entry
+
+
+def test_descendants_includes_self_and_all_levels():
+    coa = _tree(("A", None), ("A1", "A"), ("A1a", "A1"), ("B", None))
+    idx = _children_index(coa)
+    assert _descendants(idx, "A") == {"A", "A1", "A1a"}
+    assert _descendants(idx, "A1") == {"A1", "A1a"}
+    assert _descendants(idx, "A1a") == {"A1a"}   # leaf -> just self
+    assert _descendants(idx, "Z") == {"Z"}       # orphan not in tree -> just self
+
+
+def test_descendants_cycle_guard_terminates():
+    # a self/looping parent_code must not infinite-loop
+    coa = _tree(("X", "Y"), ("Y", "X"))
+    idx = _children_index(coa)
+    assert _descendants(idx, "X") == {"X", "Y"}
+
+
+def test_level_counts_depth_from_root():
+    coa = _tree(("6601", None), ("660101", "6601"), ("66010101", "660101"))
+    assert _level(coa, "6601") == 0
+    assert _level(coa, "660101") == 1
+    assert _level(coa, "66010101") == 2
+    assert _level(coa, "orphan") == 0            # not in coa -> root level
+
+
+def test_level_cycle_guard_terminates():
+    coa = _tree(("X", "Y"), ("Y", "X"))
+    assert _level(coa, "X") <= 2                 # returns, doesn't hang
+
+
+async def test_subtree_codes_from_db(db_session):
+    from app.models.coa import ChartOfAccount
+    db_session.add_all([
+        ChartOfAccount(code="6601", name="Selling", account_type="expense",
+                       normal_balance="debit", is_postable=False, parent_code=None),
+        ChartOfAccount(code="660101", name="Selling(fix)", account_type="expense",
+                       normal_balance="debit", is_postable=True, parent_code="6601"),
+        ChartOfAccount(code="660102", name="Selling(var)", account_type="expense",
+                       normal_balance="debit", is_postable=True, parent_code="6601"),
+    ])
+    await db_session.flush()
+    assert await _subtree_codes(db_session, "6601") == {"6601", "660101", "660102"}
+    assert await _subtree_codes(db_session, "660101") == {"660101"}   # leaf
+    assert await _subtree_codes(db_session, "9999") == {"9999"}       # orphan
