@@ -81,3 +81,6 @@ class CoaAuxItem(UUIDPrimaryKey, TimestampMixin, Base):
     account_code: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     dim_code: Mapped[str] = mapped_column(String(40), nullable=False)
     seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # NC BD_ACCASS.ISEMPTY 取反:允许为空=N → 必填
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False,
+                                           server_default="false")
