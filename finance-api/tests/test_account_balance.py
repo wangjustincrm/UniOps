@@ -127,8 +127,8 @@ async def test_expand_single_dim_matches_old_behavior(db_session):
     await jv_crud.backfill_posted_jvs(db_session)
     exp = await ab.expand_by_dims(db_session, "5101", "2026-07", ["cost_center"])
     by = {r["keys"][0]["code"]: r for r in exp["rows"]}
-    assert by["MOH-01"]["amount"] == "100.00"
-    assert by["MOH-02"]["amount"] == "50.00"
+    assert by["MOH-01"]["closing"] == "100.00"
+    assert by["MOH-02"]["closing"] == "50.00"
     assert by["MOH-01"]["keys"][0]["dim_code"] == "cost_center"
 
 
@@ -218,7 +218,7 @@ async def test_expand_two_dims_and_none_group(db_session):
     exp = await ab.expand_by_dims(db_session, "5101", "2026-07",
                                   ["cost_center", "income_expense_item"])
     assert len(exp["rows"]) == 2
-    rows = {tuple((k["dim_code"], k["code"]) for k in r["keys"]): r["amount"]
+    rows = {tuple((k["dim_code"], k["code"]) for k in r["keys"]): r["closing"]
             for r in exp["rows"]}
     assert rows[(("cost_center", "MOH-01"), ("income_expense_item", "CRM004"))] == "100.00"
     assert rows[(("cost_center", "MOH-01"), ("income_expense_item", None))] == "40.00"
@@ -226,6 +226,55 @@ async def test_expand_two_dims_and_none_group(db_session):
     named = next(r for r in exp["rows"]
                  if r["keys"][1]["code"] == "CRM004")
     assert named["keys"][1]["name"] == "Depreciation"
+
+
+async def _credit_dim_event(db, account, amount, dept_id=None, period="2026-07"):
+    """Same shape as _posted_dim_event but credits `account` (paired debit on
+    5000) — used to seed a credit-side balance on the account under test."""
+    occurred = datetime(int(period[:4]), int(period[5:7]), 15, tzinfo=timezone.utc)
+    line = {"line_role": "accounts_payable", "account_code": account,
+            "credit": Decimal(amount), "currency": "CAD"}
+    if dept_id:
+        line["department_id"] = dept_id
+    await emit_event(
+        db, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+        occurred_at=occurred, prepared_by=uuid.uuid4(),
+        lines=[{"line_role": "purchase_expense", "account_code": "5000",
+                "debit": Decimal(amount), "currency": "CAD"}, line])
+
+
+async def test_expand_returns_four_columns_reconciling_with_parent(db_session):
+    # dept A: prior period (opening) debit 100; this period debit 30, credit 50
+    # dept B: no movement this period, but a prior-period credit 40 (opening -40)
+    # -> dept B must still appear (union of opening-keys and movement-keys), and
+    #    children's closing must sum to the parent account row's closing.
+    ACCT, PERIOD = "5101", "2026-07"
+    dept_a, dept_b = uuid.uuid4(), uuid.uuid4()
+    db_session.add_all([
+        Department(id=dept_a, code="A", name="Dept A"),
+        Department(id=dept_b, code="B", name="Dept B"),
+    ])
+    await db_session.flush()
+
+    await _posted_dim_event(db_session, ACCT, "100.00", dept_id=dept_a, period="2026-06")
+    await _posted_dim_event(db_session, ACCT, "30.00", dept_id=dept_a, period=PERIOD)
+    await _credit_dim_event(db_session, ACCT, "50.00", dept_id=dept_a, period=PERIOD)
+    await _credit_dim_event(db_session, ACCT, "40.00", dept_id=dept_b, period="2026-06")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    out = await ab.expand_by_dims(db_session, account_code=ACCT, period=PERIOD, dims=["department"])
+    by = {r["keys"][0]["code"]: r for r in out["rows"]}
+    assert by["A"]["opening"] == "100.00"
+    assert by["A"]["period_debit"] == "30.00" and by["A"]["period_credit"] == "50.00"
+    assert by["A"]["closing"] == "80.00"          # 100 + 30 - 50
+    # dept B: nets to zero this period but has an opening balance -> still appears
+    assert "B" in by and by["B"]["closing"] == "-40.00"
+
+    # children reconcile with the parent account row, column for column
+    ab_report = await ab.account_balance(db_session, PERIOD)
+    parent = next(r for r in ab_report["rows"] if r["account_code"] == ACCT)
+    assert sum(Decimal(r["closing"]) for r in out["rows"]) == Decimal(parent["closing"])
 
 
 async def test_expand_rejects_unknown_dim(db_session):
@@ -280,7 +329,7 @@ async def test_expand_endpoint_dims_param(client, db_session):
         "/finance/v1/gl/account-balance/5101/expand?period=2026-07&dims=cost_center",
         headers=_h())
     assert r.status_code == 200, r.text
-    assert r.json()["rows"][0]["amount"] == "60.00"
+    assert r.json()["rows"][0]["closing"] == "60.00"
     r422 = await client.get(
         "/finance/v1/gl/account-balance/5101/expand?period=2026-07&dims=bananas",
         headers=_h())

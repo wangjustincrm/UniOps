@@ -31,7 +31,10 @@ interface AbResp {
 }
 interface DimOption { dim_code: string; label: string; supported: boolean }
 interface ExpandKey { dim_code: string; id: string | null; code: string | null; name: string | null }
-interface ExpandResp { account_code: string; period: string; dims: string[]; rows: { keys: ExpandKey[]; amount: string }[] }
+interface ExpandResp {
+  account_code: string; period: string; dims: string[]
+  rows: { keys: ExpandKey[]; opening: string; period_debit: string; period_credit: string; closing: string }[]
+}
 
 function money(v: string) {
   const n = Number(v)
@@ -271,7 +274,12 @@ function DimExpansion({ accountCode, accountName, period, dims, onDrill }: {
           <tr key={ri} className="border-t border-neutral-100 bg-neutral-50/60 text-xs">
             <td />
             <td colSpan={2} className="px-3 py-1.5 pl-8 text-neutral-600">{label}</td>
-            <td colSpan={4} className="px-3 py-1.5 text-right font-mono">{money(row.amount)}</td>
+            <td className="px-3 py-1.5 text-right font-mono">{money(row.opening)}</td>
+            <td className="px-3 py-1.5 text-right font-mono">{money(row.period_debit)}</td>
+            <td className="px-3 py-1.5 text-right font-mono">{money(row.period_credit)}</td>
+            <td className="px-3 py-1.5 text-right font-mono">
+              {Number(row.closing) === 0 ? <span className="text-neutral-400">Balanced</span> : money(row.closing)}
+            </td>
             <td className="px-3 py-1.5 text-right">
               <button className={linkBtn}
                       onClick={() => onDrill({

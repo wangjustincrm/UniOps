@@ -203,35 +203,49 @@ def _check_dims(dims: list[str]) -> dict:
 
 async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
                          dims: list[str]) -> dict:
-    """② dynamic expansion: GROUP BY the chosen dimension columns (all promoted
-    columns — no KV join), resolve each id to code/name via its mirror."""
+    """② dynamic expansion, per NC's aux-item balance report: opening (cumulative
+    before `period`) + this-period gross debit/credit + closing, grouped by the
+    chosen dimension columns. _net is d-c and linear, so children reconcile with
+    the parent account row column for column (spec §3)."""
     reg = _check_dims(dims)
     cols = [reg[d][0] for d in dims]
-    q = (select(*cols,
-                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
-                func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
-         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
-         .where(JournalVoucher.status == POSTED,
-                JournalVoucher.fiscal_period == period,
-                JournalVoucherLine.account_code == account_code)
-         .group_by(*cols))
-    raw = (await db.execute(q)).all()
 
-    # batch-load per dimension: id -> (code, name)
+    async def grouped(where):
+        q = (select(*cols,
+                    func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+                    func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
+             .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+             .where(JournalVoucher.status == POSTED,
+                    JournalVoucherLine.account_code == account_code, where)
+             .group_by(*cols))
+        # key = the dimension-id tuple; value = (debit, credit)
+        return {tuple(r[:len(dims)]): (r[len(dims)], r[len(dims) + 1])
+                for r in (await db.execute(q)).all()}
+
+    opening = await grouped(JournalVoucher.fiscal_period < period)
+    movement = await grouped(JournalVoucher.fiscal_period == period)
+    all_keys = set(opening) | set(movement)     # 本期冲平但有期初的组也要出现
+
+    # batch-load id -> (code, name) per dimension over the union of keys
     lookups: dict[str, dict] = {}
     for i, d in enumerate(dims):
-        ids = {row[i] for row in raw if row[i] is not None}
+        ids = {k[i] for k in all_keys if k[i] is not None}
         lookups[d] = await _resolve_dim(db, d, ids, reg)
 
     rows = []
-    for row in raw:
+    for key in all_keys:
+        od, oc = opening.get(key, (0, 0))
+        md, mc = movement.get(key, (0, 0))
         keys = []
         for i, d in enumerate(dims):
-            vid = row[i]
+            vid = key[i]
             code, name = lookups[d].get(vid, (None, None))
             keys.append({"dim_code": d, "id": str(vid) if vid else None,
                          "code": code, "name": name})
-        rows.append({"keys": keys, "amount": _s(_net(row[len(dims)], row[len(dims) + 1]))})
+        rows.append({"keys": keys,
+                     "opening": _s(_net(od, oc)),
+                     "period_debit": _s(md), "period_credit": _s(mc),
+                     "closing": _s(_net(od, oc) + _net(md, mc))})
     rows.sort(key=lambda r: tuple(k["code"] or "￿" for k in r["keys"]))
     return {"account_code": account_code, "period": period, "dims": dims, "rows": rows}
 
