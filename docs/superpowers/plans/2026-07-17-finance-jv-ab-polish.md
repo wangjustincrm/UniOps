@@ -56,27 +56,27 @@
 - Test: `finance-api/tests/test_journal_voucher.py`(追加)
 
 **Interfaces:**
-- Produces: `GET /finance/v1/jv?sort=<col>&dir=<asc|desc>`;白名单 `_SORTABLE`(供 Task 2 追加 `source_subsystem`)
+- Produces: `GET /finance/v1/journal-vouchers?sort=<col>&dir=<asc|desc>`;白名单 `_SORTABLE`(供 Task 2 追加 `source_subsystem`)
 
 - [ ] **Step 1: 写失败的测试**
 
-追加到 `finance-api/tests/test_journal_voucher.py`(先读该文件现有 list 测试的 client/JWT 夹具照用):
+追加到 `finance-api/tests/test_jv_api.py`(HTTP/list 夹具 client/_h/_draft_jv 在这;test_journal_voucher.py 无 HTTP 夹具)(先读该文件现有 list 测试的 client/JWT 夹具照用):
 
 ```python
 async def test_list_sort_by_jv_number_asc(client, db_session):
     from sqlalchemy import text
     # 造两张不同 jv_number 的 posted 凭证 (照该文件既有 _pg/seed 风格填实)
     await _seed_two_vouchers(db_session, ("JV-202601-0001", "JV-202601-0002"))
-    r = await client.get("/finance/v1/jv?sort=jv_number&dir=asc", headers=_h())
+    r = await client.get("/finance/v1/journal-vouchers?sort=jv_number&dir=asc", headers=_h())
     nums = [i["jv_number"] for i in r.json()["items"]]
     assert nums == sorted(nums)          # 升序
 
 async def test_list_sort_rejects_unknown_column(client):
-    r = await client.get("/finance/v1/jv?sort=id;drop", headers=_h())
+    r = await client.get("/finance/v1/journal-vouchers?sort=id;drop", headers=_h())
     assert r.status_code == 422          # 白名单外 -> 拒绝
 
 async def test_list_default_sort_is_date_desc(client, db_session):
-    r = await client.get("/finance/v1/jv", headers=_h())
+    r = await client.get("/finance/v1/journal-vouchers", headers=_h())
     assert r.status_code == 200          # 无 sort 参数仍按 voucher_date desc
 ```
 
@@ -88,7 +88,7 @@ async def test_list_default_sort_is_date_desc(client, db_session):
 cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
 TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
   DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_journal_voucher.py -k sort -v
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_jv_api.py -k sort -v
 ```
 Expected: FAIL(`sort=id;drop` 现在被忽略而非 422)
 
@@ -134,7 +134,7 @@ _SORTABLE = {
 cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
 TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
   DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_journal_voucher.py -v
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_jv_api.py -v
 ```
 Expected: 全绿(既有 + 3 新)
 
@@ -225,7 +225,7 @@ def test_transform_maps_and_strips_subsystem():
     assert vs2[0]["source_subsystem"] is None
 ```
 
-追加到 `finance-api/tests/test_journal_voucher.py`:
+追加到 `finance-api/tests/test_jv_api.py`(纯函数测试放这也可,与 API 测试同文件):
 
 ```python
 def test_subsystem_label_maps_known_and_falls_back():
@@ -242,7 +242,7 @@ def test_subsystem_label_maps_known_and_falls_back():
 cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
 TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
   DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_sync.py::test_transform_maps_and_strips_subsystem tests/test_journal_voucher.py::test_subsystem_label_maps_known_and_falls_back -v
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_sync.py::test_transform_maps_and_strips_subsystem tests/test_jv_api.py::test_subsystem_label_maps_known_and_falls_back -v
 ```
 Expected: FAIL(`_mini_extract` 无 `pk_system` 参数 / 无 `_subsystem_label`)
 
@@ -360,7 +360,7 @@ def _subsystem_label(code: str | None) -> str | None:
 cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
 TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
   DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_sync.py tests/test_journal_voucher.py -q
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_sync.py tests/test_jv_api.py -q
 ```
 Expected: 全绿(含 2 新)
 
@@ -425,7 +425,7 @@ cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
 cd /c/Project/uniops/.worktrees/nc-coa-sync
 git add finance-api/app/models/journal_voucher.py finance-api/alembic/versions/0024_jv_source_subsystem.py \
         finance-api/app/services/nc_sync.py finance-api/app/api/v1/journal_voucher.py \
-        finance-api/tests/test_nc_sync.py finance-api/tests/test_journal_voucher.py \
+        finance-api/tests/test_nc_sync.py finance-api/tests/test_jv_api.py \
         finance/src/pages/finance/JvDetailModal.tsx finance/src/pages/finance/JournalVouchersPage.tsx
 git commit -m "feat(finance): import and show NC's System (GL/AP/AR/...) column
 
