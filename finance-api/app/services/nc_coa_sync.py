@@ -42,7 +42,6 @@ AUX_ITEM_MAP = {
     "0002": "employee", "D09": "sales_type", "CRM01": "credit_card",
 }
 
-PARTY_ITEM = "0004"                     # 客商
 # Neither a supplier nor a customer: 4001 实收资本 is a shareholder,
 # 1511/1512 长期股权投资 an investee. Resolve to the unexpandable `partner`
 # rather than forcing them into customer (user decision 2026-07-15).

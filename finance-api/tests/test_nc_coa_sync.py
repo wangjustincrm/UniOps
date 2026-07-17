@@ -166,6 +166,14 @@ def test_map_account_rejects_unknown_uom_pk():
     with pytest.raises(NcMappingError):
         map_account(_row(unit_pk="NOSUCH"), **_lookups())
 
+def test_map_account_rejects_unknown_acctype_pk():
+    with pytest.raises(NcMappingError):
+        map_account(_row(acctype_pk="NOSUCH"), **_lookups())
+
+def test_map_account_rejects_unknown_currency_pk():
+    with pytest.raises(NcMappingError):
+        map_account(_row(currency_pk="NOSUCH"), **_lookups())
+
 def test_map_account_rejects_missing_accasoa_row():
     # endflag 为 None = ACCASOA 行缺失;不得降级为按 pid 推断
     with pytest.raises(NcMappingError):
