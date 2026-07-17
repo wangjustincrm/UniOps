@@ -17,12 +17,13 @@ import { Navigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertCircle, BookOpenCheck, Check, Download, Loader2, Pencil, Plus,
-  Search, Trash2, Upload, X,
+  RefreshCw, Search, Trash2, Upload, X,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload, financeUpload } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { CoaSyncModal, type CoaSyncStatus } from './CoaSyncModal'
 
 const ACCOUNT_TYPES = ['asset', 'liability', 'equity', 'revenue', 'expense'] as const
 const TYPE_LABEL: Record<string, string> = {
@@ -94,15 +95,10 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
 
   const set = (patch: Partial<AccountForm>) => setForm((f) => ({ ...f, ...patch }))
   const auxOf = (code: string) => form.aux_dimensions.find((d) => d.code === code)
-  /** off → optional → required → off */
-  const cycleAux = (code: string) => {
-    const cur = auxOf(code)
-    let next: AuxDim[]
-    if (!cur) next = [...form.aux_dimensions, { code, required: false }]
-    else if (!cur.required) next = form.aux_dimensions.map((d) => d.code === code ? { ...d, required: true } : d)
-    else next = form.aux_dimensions.filter((d) => d.code !== code)
-    set({ aux_dimensions: next })
-  }
+  // Aux dimensions come from NC via coa_aux_items (the single source of truth
+  // since 2026-07-15); hand-edits here would be silently overwritten on the
+  // next NC Sync, so the picker below is display-only. The aux_dimensions
+  // column and its API stay put — retiring them is a separate cleanup (§12).
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -207,16 +203,17 @@ function AccountModal({ initial, isNew, auxTypes, onClose }: {
           <div className="mb-2 text-sm font-medium text-neutral-700">
             Auxiliary Dimensions
             <span className="ml-2 font-normal text-neutral-400">
-              click to cycle: off → optional → required
+              read-only — managed by NC Sync
             </span>
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             {auxTypes.map((d) => {
               const state = auxOf(d.code)
               return (
-                <button key={d.code} type="button" onClick={() => cycleAux(d.code)}
+                <button key={d.code} type="button" disabled
+                        title="Managed by NC Sync — read-only"
                         className={cn(
-                          'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm',
+                          'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm cursor-not-allowed opacity-70',
                           !state && 'border-neutral-200 text-neutral-500 hover:bg-neutral-50',
                           state && !state.required && 'border-primary-600/40 bg-primary-50 text-primary-700',
                           state?.required && 'border-[#085E5E] bg-[#085E5E] text-white',
@@ -337,6 +334,11 @@ function MappingsTab({ accounts, canManage }: { accounts: Account[]; canManage: 
 export default function CoaConfigPage() {
   const { user } = useAuthStore()
   const qc = useQueryClient()
+  const [showCoaSync, setShowCoaSync] = useState(false)
+  const { data: ncStatus } = useQuery({
+    queryKey: ['coa-sync-status'],
+    queryFn: () => financeApi.get<CoaSyncStatus>('/coa-sync/status'),
+  })
   const [tab, setTab] = useState<'accounts' | 'mappings' | 'aux'>('accounts')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -413,6 +415,12 @@ export default function CoaConfigPage() {
       activeKey="portal:/finance/coa"
       title="Chart of Accounts"
       subtitle="Accounts, auxiliary dimensions, and account mappings — export/import CSV to manage the chart wholesale"
+      headerActions={ncStatus?.configured && ncStatus?.can_sync ? (
+        <button onClick={() => setShowCoaSync(true)}
+                className="flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+          <RefreshCw className="h-4 w-4" /> NC Sync
+        </button>
+      ) : undefined}
     >
       <div className="mx-auto max-w-6xl">
         <div className="mb-4 flex items-center gap-2">
@@ -579,6 +587,11 @@ export default function CoaConfigPage() {
       {editing && (
         <AccountModal initial={editing.form} isNew={editing.isNew} auxTypes={auxTypes}
                       onClose={() => setEditing(null)} />
+      )}
+
+      {showCoaSync && (
+        <CoaSyncModal onClose={() => setShowCoaSync(false)}
+                      onSynced={() => window.location.reload()} />
       )}
     </PortalChromeLayout>
   )
