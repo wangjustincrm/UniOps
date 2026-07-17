@@ -262,7 +262,7 @@ def test_diff_aux_seq_change_is_a_replacement():
 # ── fetch_coa_from_nc + build + apply ────────────────────────────────────────
 import os
 import psycopg2
-from app.services.nc_coa_sync import NcCoaExtract, apply, build
+from app.services.nc_coa_sync import AuxDiff, NcCoaExtract, apply, build
 
 _TEST_DSN = (f"host={os.getenv('TEST_PG_HOST', 'localhost')} "
              f"port={os.getenv('TEST_PG_PORT', '5432')} "
@@ -284,7 +284,7 @@ def _extract(**over):
                    "name2_soa": "Accumulated depreciation",
                    "name_acct": "累计折旧", "name2_acct": "~"}],
         aux=[{"account_code": "1602", "nc_item_code": "0002", "seq": 1, "isempty": "N"}],
-        pk2code={"P1": "1602"}, uom={}, ccy={"C1": "CAD"}, acctype={"AT1": "1"})
+        pk2code={"P1": "1602"}, uom={}, ccy={"C1": "CAD"}, acctype={"AT1": 1})
     for k, v in over.items():
         setattr(e, k, v)
     return e
@@ -359,6 +359,45 @@ async def test_apply_is_idempotent(db_session):
     d2 = diff(accounts, db_rows)
     assert d2.to_insert == [] and d2.to_update == [] and d2.to_deactivate == []
     assert d2.unchanged == 1
+
+async def test_apply_audits_the_failure_and_zeroes_counts(db_session):
+    # The audit row lives on its own connection precisely so a rolled-back sync
+    # still leaves a record — the case that matters most and the one the shared
+    # transaction would have swallowed.
+    _pg("delete from chart_of_accounts")
+    _pg("delete from coa_aux_items")
+    _pg("delete from coa_sync_runs")
+    accounts, aux = build(_extract())
+    accounts[0]["code"] = "X" * 11          # chart_of_accounts.code is String(10)
+    d = diff(accounts, [])
+    with pytest.raises(Exception):
+        apply(d, aux, diff_aux(aux, []), _TEST_DSN, uuid.uuid4())
+    assert _pg("select count(*) from chart_of_accounts")[0][0] == 0   # rolled back
+    row = _pg("select error, accounts_inserted, accounts_updated, "
+              "accounts_deactivated, aux_items_inserted, aux_items_deleted "
+              "from coa_sync_runs")
+    assert len(row) == 1                     # the audit row survived the rollback
+    assert row[0][0] is not None             # error recorded
+    assert row[0][1:] == (0, 0, 0, 0, 0)     # counts zeroed on failure
+
+
+async def test_apply_refuses_empty_aux_rows(db_session):
+    # aux_rows and aux_diff are independent params: aux_diff.to_delete non-empty
+    # + aux_rows empty would otherwise run `delete from coa_aux_items` and then
+    # an execute_values([]) that emits no INSERT — silently wiping the table.
+    _pg("delete from chart_of_accounts")
+    _pg("delete from coa_aux_items")
+    _pg("delete from coa_sync_runs")
+    accounts, aux = build(_extract())
+    d = diff(accounts, [])
+    apply(d, aux, diff_aux(aux, []), _TEST_DSN, uuid.uuid4())   # seed one aux row
+    assert _pg("select count(*) from coa_aux_items")[0][0] == 1
+
+    bogus_aux_diff = AuxDiff(to_delete=[aux[0]])
+    with pytest.raises(NcMappingError, match="no aux rows"):
+        apply(d, [], bogus_aux_diff, _TEST_DSN, uuid.uuid4())
+    assert _pg("select count(*) from coa_aux_items")[0][0] == 1   # untouched
+
 
 async def test_apply_preserves_uniops_metadata_on_update(db_session):
     _pg("delete from chart_of_accounts"); _pg("delete from coa_aux_items")

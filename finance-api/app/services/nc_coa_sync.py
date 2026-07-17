@@ -225,6 +225,10 @@ class NcCoaExtract:
 def fetch_coa_from_nc() -> NcCoaExtract:
     """Live NC read (oracledb, read-only). Blocking — call via run_in_executor."""
     import oracledb
+    # Process-global: the voucher sync sets this too. Set it explicitly so our
+    # NUMBER columns (BD_ACCTYPE.CODE, balanorient) don't depend on whether a
+    # JV sync ran first in this process.
+    oracledb.defaults.fetch_decimals = False
     dsn = oracledb.makedsn(settings.nc_host, settings.nc_port,
                            service_name=settings.nc_service)
     con = oracledb.connect(user=settings.nc_user, password=settings.nc_password, dsn=dsn)
@@ -325,6 +329,8 @@ def apply(coa_diff: CoaDiff, aux_rows: list[dict], aux_diff: AuxDiff,
     """Single transaction, all-or-nothing. The audit row is committed SEPARATELY
     afterwards — inside the same transaction a rollback would take the failure
     record with it, exactly when it is most needed."""
+    if not aux_rows:
+        raise NcMappingError("apply called with no aux rows; refusing to wipe coa_aux_items")
     started_at = datetime.now(timezone.utc)
     counts = {"accounts_inserted": len(coa_diff.to_insert),
               "accounts_updated": len(coa_diff.to_update),
