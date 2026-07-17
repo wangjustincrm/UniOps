@@ -1774,32 +1774,35 @@ import { CoaSyncModal, type CoaSyncStatus } from './CoaSyncModal'
 **不要删除 `aux_dimensions` 列、`coa.py` 的校验或 CSV 导入导出** —— 退役是独立清理任务
 (spec §12)。只让编辑器不再改它。
 
-**3a.** 第 97-105 行的 `cycleAux`(注释为 `/** off → optional → required → off */`)
-整体替换为:
+**3a.** **删除**第 97-105 行的整个 `cycleAux` 函数(注释为
+`/** off → optional → required → off */` 的那个),并在其位置留下说明:
 
 ```tsx
   // Aux dimensions come from NC via coa_aux_items (the single source of truth
   // since 2026-07-15); hand-edits here would be silently overwritten on the
-  // next NC Sync, so the picker is display-only. The aux_dimensions column and
-  // its API stay put — retiring them is a separate cleanup (spec §12).
-  const cycleAux = (_code: string) => { /* read-only */ }
+  // next NC Sync, so the picker below is display-only. The aux_dimensions
+  // column and its API stay put — retiring them is a separate cleanup (§12).
 ```
 
 `auxOf`(第 96 行)**保留不动** —— 第 215 行仍用它读取展示状态。
 
-**3b.** 第 217 行的按钮加 `disabled` 与 title,并保留既有 `className` 的 `cn(...)` 结构,
+**3b.** 第 217 行的按钮:**删除 `onClick`**(disabled 的按钮不会触发它,留着就是死代码),
+加 `disabled` 与 title,并保留既有 `className` 的 `cn(...)` 结构,
 仅在首个字符串里追加只读样式:
 
 ```tsx
                 <button key={d.code} type="button" disabled
                         title="Managed by NC Sync — read-only"
-                        onClick={() => cycleAux(d.code)}
                         className={cn(
                           'flex items-center justify-between rounded-lg border px-2.5 py-1.5 text-sm cursor-not-allowed opacity-70',
 ```
 
-> `cycleAux` 保留为空函数而非删除 `onClick`,是为了让第 217 行的改动最小、
-> 且未来恢复可编辑只需还原一个函数体。
+> 删 `cycleAux` 而非留空函数(2026-07-16 决策):空函数 + 未使用参数 +
+> disabled 按钮上永不触发的 onClick = 三重死代码。将来要恢复可编辑,
+> 重新加回 handler 的改动量与填回函数体一样小。
+>
+> ⚠️ 删掉 `cycleAux` 后如果 `cn` 或某个 import 变成未使用,**一并清理** ——
+> Step 4 的 tsc 会报出来。
 
 - [ ] **Step 4: typecheck**
 
