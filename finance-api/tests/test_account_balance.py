@@ -427,3 +427,36 @@ async def test_partner_dim_falls_back_to_line_name_when_master_is_gone(db_sessio
     key = out["rows"][0]["keys"][0]
     assert key["name"] == "Ghost Vendor"      # not None
     assert key["code"] is None                # no master row -> no code
+
+
+async def test_partner_dim_orphan_name_fallback_is_deterministic(db_session):
+    # Measured in dev data: one orphaned partner_id is denormalized under two
+    # different partner_name values across jv_lines ("Jassbhatia Solutions" on
+    # one line, "Best Buy" on another) -- NC data noise, not a bug. Without an
+    # ORDER BY the resolved name would depend on DB row-return order and could
+    # flip between runs. Assert it's pinned to the alphabetically-first name
+    # and stable across repeated calls.
+    ghost = uuid.uuid4()
+
+    async def _ev(amount, pname):
+        occurred = datetime(2026, 7, 15, tzinfo=timezone.utc)
+        await emit_event(
+            db_session, source_service="finance", source_doc_type="ap_invoice",
+            source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+            occurred_at=occurred, prepared_by=uuid.uuid4(),
+            lines=[{"line_role": "purchase_expense", "account_code": "5000",
+                    "debit": Decimal(amount), "currency": "CAD"},
+                   {"line_role": "accounts_payable", "account_code": "2202",
+                    "credit": Decimal(amount), "currency": "CAD",
+                    "partner_id": ghost, "partner_name": pname}])
+
+    await _ev("50.00", "Jassbhatia Solutions")
+    await _ev("30.00", "Best Buy")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    out1 = await ab.expand_by_dims(db_session, "2202", "2026-07", ["partner"])
+    out2 = await ab.expand_by_dims(db_session, "2202", "2026-07", ["partner"])
+    key1 = out1["rows"][0]["keys"][0]
+    key2 = out2["rows"][0]["keys"][0]
+    assert key1["name"] == "Best Buy"          # alphabetically first of the two
+    assert key2["name"] == "Best Buy"          # stable across repeated calls

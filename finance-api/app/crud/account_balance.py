@@ -156,9 +156,18 @@ async def _resolve_dim(db: AsyncSession, dim: str, ids: set, reg: dict) -> dict:
             out[r.id] = (getattr(r, code_attr), getattr(r, name_attr))
     missing = ids - set(out)
     if missing:
+        # Measured in dev data: one orphaned partner_id (no master row on either
+        # side) is denormalized under two different partner_name values across
+        # jv_lines (e.g. "Jassbhatia Solutions" on one line, "Best Buy" on
+        # another) — NC data noise, not a bug here. Without an ORDER BY,
+        # .distinct() + setdefault would pick whichever row the DB happened to
+        # return first, making the resolved name nondeterministic across runs.
+        # Order by (partner_id, partner_name) so the pick is stable — this does
+        # not make it "correct", there is no correct name for these ids.
         rows = (await db.execute(
             select(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name)
-            .where(JournalVoucherLine.partner_id.in_(missing)).distinct())).all()
+            .where(JournalVoucherLine.partner_id.in_(missing)).distinct()
+            .order_by(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name))).all()
         for pid, pname in rows:
             out.setdefault(pid, (None, pname))
     return out
@@ -168,10 +177,10 @@ DIM_LABELS = {
     # expandable (see _dimensions())
     "cost_center": "Cost Center", "department": "Department",
     "income_expense_item": "Income/Expense Item", "supplier": "Supplier",
-    "customer": "Customer",
+    "customer": "Customer", "partner": "Partner (Vendor/Customer)",
     # carried from NC BD_ACCASS but not expandable — jv_lines has no column for
     # them (spec §3.4). Listed so "NC configured it, we can't expand it" is visible.
-    "partner": "Partner (Vendor/Customer)", "employee": "Employee",
+    "employee": "Employee",
     "project": "Project", "project_type": "Project Type",
     "government_grant_project": "Government Grant Project",
     "item": "Item / Material", "item_category": "Item Category",
