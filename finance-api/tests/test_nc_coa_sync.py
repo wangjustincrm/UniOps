@@ -502,6 +502,37 @@ async def test_preview_writes_nothing(client, monkeypatch):
     # 正面证据:预览之后库里一行没有
     assert _pg("select count(*) from chart_of_accounts")[0][0] == 0
 
+async def test_preview_warns_when_deactivation_referenced_by_mapping(client, monkeypatch):
+    # spec §8.2: retiring an account that a posting mapping still points at
+    # must surface a warning before confirm — preview only, never blocks.
+    from app.api.v1 import nc_coa_sync as api_mod
+    _configure_nc(monkeypatch)
+    _pg("delete from account_mappings")
+    _pg("delete from chart_of_accounts")
+    # 2000 is not among NC's returned accounts (_extract() only yields 1602),
+    # so it lands in to_deactivate; it must start active or diff skips it.
+    _pg("insert into chart_of_accounts (id, code, name, account_type, normal_balance, "
+        " is_postable, parent_code, quantity_accounting, default_uom, default_currency, "
+        " is_off_balance, is_active, aux_dimensions, created_at, updated_at) "
+        "values (gen_random_uuid(), '2000', 'Old Payable', 'liability', 'credit', "
+        " true, null, false, null, null, false, true, '[]'::jsonb, now(), now())")
+    _pg("insert into account_mappings (id, mapping_type, source_code, account_code) "
+        "values (gen_random_uuid(), 'line_role', 'accounts_payable', '2000')")
+    monkeypatch.setattr(api_mod, "_fetch", lambda: _extract())
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("system_admin"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["accounts"]["to_deactivate"] == 1
+    assert [d["code"] for d in body["accounts"]["deactivations"]] == ["2000"]
+    assert len(body["referenced_by_mappings"]) == 1
+    m = body["referenced_by_mappings"][0]
+    assert m["account_code"] == "2000"
+    assert m["mapping_type"] == "line_role"
+    assert m["source_code"] == "accounts_payable"
+    # preview is read-only: seeded rows unchanged, deactivation not applied
+    assert _pg("select is_active from chart_of_accounts where code='2000'")[0][0] is True
+    assert _pg("select count(*) from account_mappings where account_code='2000'")[0][0] == 1
+
 async def test_apply_requires_coa_manage_permission(client, monkeypatch):
     _configure_nc(monkeypatch)
     r = await client.post("/finance/v1/coa-sync/apply", headers=_h("requester"))
