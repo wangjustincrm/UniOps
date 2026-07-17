@@ -316,4 +316,4 @@ state).
 
 ### Commit
 
-`b199f31` — `test(finance): cover acctype/currency raise paths, drop dead PARTY_ITEM constant`
+`81d725a` — `test(finance): cover acctype/currency raise paths, drop dead PARTY_ITEM constant`
