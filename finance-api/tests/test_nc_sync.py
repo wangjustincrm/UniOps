@@ -61,7 +61,11 @@ def _mini_extract(tallydate="2026-07-11 09:00:00", pk_system="GL"):
     )
 
 
-def test_transform_maps_dims_and_nets_sides():
+def test_transform_nets_only_both_positive_line():
+    # §14.7: a genuinely both-POSITIVE line (dr=150, cr=50) is the one case we
+    # still net (to satisfy ck_jv_lines_one_side, which forbids orig_debit>0 AND
+    # orig_credit>0). Red/one-sided lines are kept signed — see
+    # test_transform_keeps_red_entries_signed.
     from decimal import Decimal
     from app.services.nc_sync import transform
     cc_id, dept_id, ba_id = object(), object(), object()
@@ -74,7 +78,8 @@ def test_transform_maps_dims_and_nets_sides():
     assert len(vouchers) == 1 and vouchers[0]["jv_number"] == "JV-202607-0012"
     assert vouchers[0]["nc_pk"] == "NCPK1"
     l1 = next(l for l in lines if l[2] == 1)
-    assert (l1[5], l1[6]) == (Decimal("100"), Decimal("0"))   # netted to debit
+    assert (l1[5], l1[6]) == (Decimal("100"), Decimal("0"))   # both-positive -> netted
+    assert (l1[7], l1[8]) == (Decimal("100"), Decimal("0"))   # local likewise
     assert l1[11] is cc_id and l1[12] is dept_id
     assert l1[13] is ba_id            # promoted income/expense item column
     assert len(dims) == 1 and dims[0][2] == "income_expense_item" and dims[0][3] is ba_id
@@ -82,6 +87,33 @@ def test_transform_maps_dims_and_nets_sides():
     l2 = next(l for l in lines if l[2] == 2)
     assert l2[14] is sup_id and l2[15] == "ACME Supplies"
     assert l1[14] is None                     # no partner aux on line 1
+
+
+def test_transform_keeps_red_entries_signed():
+    # §14.7: NC 红字 = negative amount in its ORIGINAL column. A red credit
+    # (creditamount < 0) must stay a negative credit — NOT flip to a positive
+    # debit — so gross 借/贷 发生额 match NC's signed-per-column sums. Net
+    # (dr-cr) is unchanged, so closing balances are unaffected.
+    from decimal import Decimal
+    from app.services.nc_sync import NcExtract, _tallied, transform
+    e = NcExtract(
+        ccy={"CADPK": "CAD"}, aux={},
+        vouchers=[("NCPK9", "2026", "06", 7, "red reversal",
+                   "2026-06-10 09:00:00", "2026-06-11 08:00:00",
+                   "2026-06-11 09:00:00", "GL")],
+        details=[
+            # a red credit: creditamount = -100 (localcredit = -100)
+            ("NCPK9", 1, "660101", 0, -100, 0, -100, "CADPK", 1, "", None),
+            # its balancing normal debit
+            ("NCPK9", 2, "660101", 0, 100, 0, 100, "CADPK", 1, "", None),
+        ],
+        max_creationtime="2026-06-11 08:00:00", tallied={"NCPK9"})
+    _, lines, _, _ = transform(e, {}, {}, {}, {}, {}, set())
+    red = next(l for l in lines if l[2] == 1)
+    # local_debit (l[7]) stays 0, local_credit (l[8]) stays the signed -100 —
+    # NOT flipped to (debit=100, credit=0).
+    assert (red[7], red[8]) == (Decimal("0"), Decimal("-100"))
+    assert (red[5], red[6]) == (Decimal("0"), Decimal("-100"))   # orig too
 
 
 def test_transform_skips_existing_and_counts_unmapped():

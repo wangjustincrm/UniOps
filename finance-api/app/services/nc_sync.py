@@ -137,9 +137,26 @@ def _d(v) -> Decimal:
     return Decimal(str(v)) if v is not None else Decimal("0")
 
 
-def _net_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
-    n = dr - cr
-    return (n, Decimal("0")) if n >= 0 else (Decimal("0"), -n)
+def _orig_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
+    """Keep an NC line on its ORIGINAL column, sign preserved (§14.7).
+
+    NC records 红字 (reversals) as a NEGATIVE amount in its own column, and its
+    科目余额表 sums each column signed (negatives net in-column). Storing the
+    amounts as-is makes our 本期发生额 match NC. The earlier `_net_side` collapsed
+    every line to one side by net (dr-cr), which FLIPPED a red credit into a
+    positive debit and inflated gross 发生额 (measured: 660101 971,338 vs NC
+    579,026). Net (dr-cr) is identical either way, so closing balances never
+    change.
+
+    The ONLY case we still net is a genuinely both-POSITIVE line — `ck_jv_lines_
+    one_side` forbids orig_debit>0 AND orig_credit>0. Exactly 1 such line exists
+    in the CRM book (2 with any both-nonzero), so netting it is negligible and
+    keeps the go-forward one-sided invariant intact. Reds never trigger this
+    (they are ≤ 0), so they are always kept signed."""
+    if dr > 0 and cr > 0:
+        n = dr - cr
+        return (n, Decimal("0")) if n >= 0 else (Decimal("0"), -n)
+    return (dr, cr)
 
 
 def _resolve_dims(assid, aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust):
@@ -199,8 +216,8 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
         jid = pk2id.get(pk)
         if jid is None:
             continue
-        odr, ocr = _net_side(_d(dr), _d(cr))
-        ldr_, lcr_ = _net_side(_d(ldr), _d(lcr))
+        odr, ocr = _orig_side(_d(dr), _d(cr))
+        ldr_, lcr_ = _orig_side(_d(ldr), _d(lcr))
         cc_id, dept_id, io_code, ba_id, partner_id, partner_name, had_hint = _resolve_dims(
             assid, extract.aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust)
         if had_hint and cc_id is None:
