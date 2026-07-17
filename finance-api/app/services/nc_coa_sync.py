@@ -66,7 +66,10 @@ def map_normal_balance(balanorient: int) -> str:
 
 
 def map_account_type(acctype_code: str, balanorient: int) -> str:
-    code = (acctype_code or "").strip()
+    # BD_ACCTYPE.CODE is an Oracle NUMBER column, so oracledb hands us an int
+    # (e.g. 1), not a str. Coerce rather than assume — .strip() on an int
+    # raises AttributeError, which is exactly what real syncs hit.
+    code = str(acctype_code).strip()
     if code == "6":                     # 损益: credit = revenue, debit = expense
         return "revenue" if map_normal_balance(balanorient) == "credit" else "expense"
     try:

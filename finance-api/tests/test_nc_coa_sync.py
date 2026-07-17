@@ -74,6 +74,13 @@ def test_account_type_rejects_unregistered_code():
     with pytest.raises(NcMappingError):
         map_account_type("3", 0)
 
+def test_account_type_accepts_int_code_from_oracle():
+    # BD_ACCTYPE.CODE is a NUMBER column: oracledb hands us int, not str.
+    # Fixtures used to fake it as str, so the whole suite passed while every
+    # real sync raised AttributeError on the first account.
+    assert map_account_type(1, 0) == "asset"
+    assert map_account_type(6, 1) == "revenue"
+
 # ── aux item:按 NC code 精确映射,不再按名称子串 ────────────────────────────
 def test_aux_item_maps_supported_dims():
     assert map_aux_item("ra01") == "cost_center"
@@ -102,7 +109,7 @@ def _lookups():
     return {
         "uom": {"UOMPK": "KGM"},
         "ccy": {"CCYPK": "CAD"},
-        "acctype": {"ATPK1": "1", "ATPK6": "6"},
+        "acctype": {"ATPK1": 1, "ATPK6": 6},
         "pk2code": {"PARENTPK": "1230"},
     }
 
