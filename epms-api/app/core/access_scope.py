@@ -88,12 +88,27 @@ async def _mapped_dept_ids(db: AsyncSession, role: str) -> list[uuid.UUID]:
     the single source of truth for dept routing since the phase-3 migration;
     company_config.dept_gm_opm_mapping is a frozen snapshot kept for rollback.
 
-    NOTE: a department with no explicit mapping still has a routing row with the
-    default gm_or_opm='gm', so GM sees it — matching how the engine already
-    routes such a department's approval to GM.
+    A department with NO routing row at all (e.g. one mdm-api just created —
+    nothing writes approval_dept_routing for it; only seed_routing.py at seed
+    time and Portal's PUT /routing ever insert rows) is treated as if it were
+    'gm', via COALESCE. This matches the approval engine's own fallback
+    (approval-api/app/crud/engine.py: `dept_gm_opm.get(str(dept_id), "gm")`,
+    used at the PR/PO/PA routing steps) — a department with no row is routed to
+    GM for approval, so GM must also be able to see it here. Before this fix
+    the query read approval_dept_routing alone (no departments join), so a
+    dept with no row was invisible to GM despite the engine routing its
+    approval there — a new-department blind spot for GM.
+
+    ⚠️ SIBLING COPY: expense-api/app/api/v1/invoice_list.py's gm/opm dept_ids
+    block (~line 130) is a structural copy of this query — this file is the
+    "reference implementation" its own comment names. If you change this
+    query's semantics, change that one too (this codebase has been bitten
+    before by a sibling copy drifting out of sync — see identity's email.py).
     """
-    rows = (await db.execute(
-        text("SELECT dept_id FROM approval_dept_routing WHERE gm_or_opm = :r"),
+    rows = (await db.execute(text(
+        "SELECT d.id FROM departments d "
+        "LEFT JOIN approval_dept_routing r ON r.dept_id = d.id "
+        "WHERE d.is_active AND COALESCE(r.gm_or_opm, 'gm') = :r"),
         {"r": role},
     )).scalars().all()
     return list(rows)

@@ -141,13 +141,26 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
         #
         # ★ Semantic change vs the old JSONB: a department with no explicit
         # mapping had NO entry in dept_gm_opm_mapping, so GM never saw it.
-        # approval_dept_routing instead gives every active department a row,
-        # defaulting to gm_or_opm='gm' when unmapped — so GM now sees those
-        # too. This is intentional: it matches how the approval engine already
-        # routes an unmapped department's approval to GM. Today this changes
-        # nothing (dev/prod: all 12 departments are explicitly mapped).
+        # A department with NO approval_dept_routing row at all (e.g. one
+        # mdm-api just created — nothing writes this table for it; only
+        # seed_routing.py at seed time and Portal's PUT /routing ever insert
+        # rows) is treated as if it were 'gm', via COALESCE. This matches the
+        # approval engine's own fallback (approval-api/app/crud/engine.py:
+        # `dept_gm_opm.get(str(dept_id), "gm")`), so GM must also see it here
+        # — otherwise a brand-new department's invoices are routed to GM for
+        # approval but invisible to GM in this list (no task-chain fallback on
+        # this endpoint, unlike epms-api's PR/PO/PA scoping — so this gap was
+        # worse here: GM couldn't see the invoice at all).
+        #
+        # ⚠️ SIBLING COPY: epms-api/app/core/access_scope.py's _mapped_dept_ids
+        # is the reference implementation this mirrors. If you change this
+        # query's semantics, change that one too (this codebase has been
+        # bitten before by a sibling copy drifting out of sync — see
+        # identity's email.py).
         dept_ids = list((await db.execute(sa.text(
-            "SELECT dept_id FROM approval_dept_routing WHERE gm_or_opm = :r"),
+            "SELECT d.id FROM departments d "
+            "LEFT JOIN approval_dept_routing r ON r.dept_id = d.id "
+            "WHERE d.is_active AND COALESCE(r.gm_or_opm, 'gm') = :r"),
             {"r": role})).scalars().all())
         if dept_ids:
             cc_subq = select(EpmsCostCenter.id).where(

@@ -46,6 +46,14 @@ async def routing_db(test_engine):
     expense_test has no such table by default. Create it here with
     CREATE TABLE IF NOT EXISTS (schema copied from
     approval-api/alembic/versions/0001_approval_routing.py).
+
+    Also shadows epms-api's `departments` table (id + is_active only — all the
+    dept_ids query needs): invoice_list.py's gm/opm branch now LEFT JOINs the
+    real `departments` table (mirroring epms-api/app/core/access_scope.py's
+    _mapped_dept_ids fix) so it can see departments with NO routing row at
+    all. expense_test is its own database (not the shared epms physical DB),
+    so it has no `departments` table unless we shadow it here too — same
+    reasoning as the approval_dept_routing shadow above.
     """
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
@@ -59,13 +67,35 @@ async def routing_db(test_engine):
             " updated_at timestamptz NOT NULL DEFAULT now()"
             ")"
         ))
+        await session.execute(text(
+            "CREATE TABLE IF NOT EXISTS departments ("
+            " id uuid PRIMARY KEY,"
+            " is_active boolean NOT NULL DEFAULT true"
+            ")"
+        ))
         await session.execute(text("DELETE FROM approval_dept_routing"))
+        await session.execute(text("DELETE FROM departments"))
         await session.commit()
         yield session
 
 
+async def _make_dept(db, dept_id: uuid.UUID, is_active: bool = True) -> None:
+    """Ensure a real (shadow) departments row exists for dept_id.
+
+    Needed because the gm/opm dept_ids query now drives FROM departments —
+    a dept_id with no matching row there can never appear in the result,
+    regardless of approval_dept_routing content.
+    """
+    await db.execute(text(
+        "INSERT INTO departments (id, is_active) VALUES (:d, :a) "
+        "ON CONFLICT (id) DO UPDATE SET is_active = EXCLUDED.is_active"),
+        {"d": str(dept_id), "a": is_active})
+    await db.commit()
+
+
 async def _set_routing(db, rows: dict[uuid.UUID, str]) -> None:
     for dept_id, code in rows.items():
+        await _make_dept(db, dept_id)   # dept_ids query now joins departments
         await db.execute(text(
             "INSERT INTO approval_dept_routing (dept_id, gm_or_opm) VALUES (:d, :g) "
             "ON CONFLICT (dept_id) DO UPDATE SET gm_or_opm = EXCLUDED.gm_or_opm"),
@@ -129,3 +159,28 @@ async def test_gm_does_not_see_invoice_from_dept_mapped_to_opm(routing_db):
         resp = await gm.get("/api/v1/invoices/all")
     assert resp.status_code == 200
     assert str(inv_id) not in _ids(resp.json())
+
+
+@pytest.mark.asyncio
+async def test_gm_sees_invoice_from_dept_with_no_routing_row(routing_db):
+    """★ 无 routing 行的部门(mdm-api 建的新部门就是这种状态 —— 没有人写
+    approval_dept_routing)。COALESCE 默认 'gm' 生效,GM 应该看得见;OPM 不该。
+
+    这锁住 2026-07-16 controller brief 指出的缺口:此前 dept_ids 只读
+    approval_dept_routing 本身(无 departments 表),新部门没有行 → GM 完全看
+    不到该部门的发票(比 epms 侧更严重 —— epms 还有 task-chain 兜底,expense
+    这条路径没有)。
+    """
+    dept_id = uuid.uuid4()
+    await _make_dept(routing_db, dept_id)   # active department, deliberately NO routing row
+    inv_id = await _make_epms_invoice_chain(routing_db, dept_id)
+
+    async with _client_for("gm", str(uuid.uuid4())) as gm:
+        resp = await gm.get("/api/v1/invoices/all")
+    assert resp.status_code == 200
+    assert str(inv_id) in _ids(resp.json())
+
+    async with _client_for("opm", str(uuid.uuid4())) as opm:
+        resp2 = await opm.get("/api/v1/invoices/all")
+    assert resp2.status_code == 200
+    assert str(inv_id) not in _ids(resp2.json())

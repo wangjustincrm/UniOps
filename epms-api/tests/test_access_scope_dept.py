@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.access_scope import _mapped_dept_ids, _director_dept_ids, _effective_role_codes
 from app.crud import config as config_crud
+from app.models.department import Department
 
 
 @pytest.fixture
@@ -32,6 +33,17 @@ async def db(test_engine):
     approval-api/alembic/versions/0001_approval_routing.py) so this file's
     tests can seed routing rows without depending on approval-api's migrations
     running against the shared test DB.
+
+    `_mapped_dept_ids` now drives its query FROM the real `departments` table
+    (LEFT JOIN approval_dept_routing) so it can see departments that have NO
+    routing row at all (COALESCE default). That means every test in this file
+    needs real `departments` rows, not bare uuid.uuid4()s. `departments` is a
+    real, session-wide table shared with every other test module (test_engine
+    is session-scoped, no per-test rollback) — this file happens to be first
+    alphabetically in tests/, so it always runs before test_po_pa_filters.py /
+    test_pr*.py, which are the only other modules that insert real Department
+    rows. We still defensively wipe it here so this file's own tests stay
+    mutually isolated regardless of run order/subset.
     """
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
@@ -46,8 +58,23 @@ async def db(test_engine):
             " updated_at timestamptz NOT NULL DEFAULT now()"
             ")"
         ))
+        await session.execute(text("DELETE FROM departments"))
         await session.commit()
         yield session
+
+
+async def _make_dept(db, is_active: bool = True) -> uuid.UUID:
+    """Insert a real, active-by-default department row and return its id.
+
+    Needed because _mapped_dept_ids now LEFT JOINs the real `departments`
+    table — a department with no matching row there can never appear in its
+    results, regardless of approval_dept_routing content.
+    """
+    dept = Department(code=f"D{uuid.uuid4().hex[:6].upper()}", name="Test Dept", is_active=is_active)
+    db.add(dept)
+    await db.commit()
+    await db.refresh(dept)
+    return dept.id
 
 
 async def _set_routing(db, rows: dict[uuid.UUID, str], directors: dict[uuid.UUID, uuid.UUID] | None = None):
@@ -64,7 +91,7 @@ async def _set_routing(db, rows: dict[uuid.UUID, str], directors: dict[uuid.UUID
 
 @pytest.mark.asyncio
 async def test_mapped_dept_ids_returns_only_depts_mapped_to_that_role(db):
-    gm_dept, opm_dept = uuid.uuid4(), uuid.uuid4()
+    gm_dept, opm_dept = await _make_dept(db), await _make_dept(db)
     await _set_routing(db, {gm_dept: "gm", opm_dept: "opm"})
 
     assert await _mapped_dept_ids(db, "gm") == [gm_dept]
@@ -72,23 +99,30 @@ async def test_mapped_dept_ids_returns_only_depts_mapped_to_that_role(db):
 
 
 @pytest.mark.asyncio
-async def test_dept_with_default_gm_row_is_visible_to_gm(db):
-    """★ 相对旧 JSONB 的有意语义变化。
+async def test_dept_with_no_routing_row_defaults_to_gm(db):
+    """★ 相对旧 JSONB 的有意语义变化 —— 且是真的测"无行"的情况。
 
     旧:未列在 dept_gm_opm_mapping 里的部门,GM 看不见。
-    新:approval_dept_routing 给每个部门都有行,未配置的取默认 'gm' → GM 看得见。
-    这与审批路由一致(engine 的 gm_opm.get(dept, 'gm') 本就把它派给 GM 审),
-    旧代码"GM 要审却看不见"才是 bug。此测试锁住新语义,防止它被无意改回。
+    新:approval_dept_routing 不是每个部门都有行(mdm-api 建的新部门不会有人去写
+    这张表);_mapped_dept_ids 现在 LEFT JOIN departments,对没有 routing 行的
+    部门 COALESCE 成默认 'gm' → GM 看得见。这与审批路由一致(engine.py 的
+    dept_gm_opm.get(dept, 'gm') 本就把它派给 GM 审),旧代码"GM 要审却看不见"
+    才是 bug。
+
+    2026-07-16 controller 自查纠错:此前这条测试名叫
+    test_dept_with_default_gm_row_is_visible_to_gm,却显式插了一行
+    gm_or_opm='gm',和上面的正向测试完全同义反复,根本没有覆盖"无行"这条路径。
+    这里改成不插任何 routing 行,才是真的测 COALESCE 默认生效。
     """
-    default_dept = uuid.uuid4()
-    await _set_routing(db, {default_dept: "gm"})   # seed_routing 对未配置部门就是写 'gm'
+    default_dept = await _make_dept(db)   # active department, deliberately NO routing row
     assert default_dept in await _mapped_dept_ids(db, "gm")
+    assert default_dept not in await _mapped_dept_ids(db, "opm")
 
 
 @pytest.mark.asyncio
 async def test_opm_dept_not_visible_to_gm(db):
     """负向:映射给 OPM 的部门,GM 不该看见(防止实现退化成'返回所有部门')。"""
-    opm_dept = uuid.uuid4()
+    opm_dept = await _make_dept(db)
     await _set_routing(db, {opm_dept: "opm"})
     assert await _mapped_dept_ids(db, "gm") == []
 
