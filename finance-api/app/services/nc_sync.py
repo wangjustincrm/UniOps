@@ -110,6 +110,21 @@ def _tallied(tallydate) -> bool:
     return bool(tallydate) and tallydate.strip() not in ("", "~")
 
 
+def _max_creationtime(values) -> str | None:
+    """max() over a batch of raw CREATIONTIME values, ignoring the same
+    Oracle CHAR(19) blank/sentinel padding _tallied() guards against.
+
+    creationtime drives the incremental watermark (watermark_to feeds the
+    next run's `creationtime >= :wm` filter). '~' + 18 spaces is truthy and
+    sorts above every real timestamp (0x7E > any digit), so a naive
+    max(v for v in values if v) would let one poisoned row set the watermark
+    to the sentinel forever — every later incremental then matches nothing
+    and the sync silently imports zero rows, with no error to notice.
+    """
+    cleaned = [v for v in values if v and v.strip() not in ("", "~")]
+    return max(cleaned, default=None)
+
+
 def _d(v) -> Decimal:
     return Decimal(str(v)) if v is not None else Decimal("0")
 
@@ -255,7 +270,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         else:
             cur.execute(vq, b=PK_BOOK)
         vouchers = list(cur.fetchall())
-        max_ct = max((v[6] for v in vouchers if v[6]), default=None)
+        max_ct = _max_creationtime(v[6] for v in vouchers)
 
         # Status backfill feed: the whole book's tally facts, deliberately NOT
         # watermark-limited. A voucher created in June and tallied in July keeps
@@ -483,7 +498,9 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 template="(%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, dims_inserted=min(i + _CHUNK, len(dims)))
 
-        _sync_statuses(cur, extract.tallied)
+        n_posted, n_draft = _sync_statuses(cur, extract.tallied)
+        logger.info("nc_sync run %s: status backfill flipped %d to posted, %d to draft",
+                    run_id, n_posted, n_draft)
 
         # superseded-run guard: if sweeper already marked us abandoned, do not commit.
         cur.execute("select status from nc_sync_runs where id = %s for update", (run_id,))

@@ -180,7 +180,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
 
             {canAct && (
               <div className="mt-4 flex justify-end gap-2 border-t border-neutral-100 pt-3">
-                {v.status === 'draft' && (
+                {v.status === 'draft' && !v.nc_source_pk && (
                   <button onClick={() => act('review')} disabled={!!busy} className={primaryBtn}>
                     {busy === 'review' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Review
                   </button>
@@ -195,7 +195,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                     </button>
                   </>
                 )}
-                {v.status === 'posted' && (
+                {v.status === 'posted' && !v.nc_source_pk && (
                   <>
                     <button onClick={() => act('unpost')} disabled={!!busy} className={secondaryBtn}>
                       {busy === 'unpost' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />} Unpost

@@ -116,6 +116,10 @@ async def post(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher
 
 async def unpost(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
     jv = await _require(db, jv_id, POSTED)
+    if jv.nc_source_pk is not None:
+        raise JvPermissionError(
+            "This voucher mirrors NC's tally status and cannot be posted or "
+            "reviewed here — it follows NC (spec §14.4.2)")
     await _require_role(db, user)
     await _require_period_open(db, jv.fiscal_period)
     jv.status = REVIEWED
@@ -133,6 +137,10 @@ async def reverse(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVouc
     """红冲: create a posted red (negated) voucher that offsets the original, and
     mark the original `reversed`. Both stay for audit. Period must be open."""
     jv = await _require(db, jv_id, POSTED)
+    if jv.nc_source_pk is not None:
+        raise JvPermissionError(
+            "This voucher mirrors NC's tally status and cannot be posted or "
+            "reviewed here — it follows NC (spec §14.4.2)")
     await _require_role(db, user)
     await _require_period_open(db, jv.fiscal_period)
 

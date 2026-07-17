@@ -90,6 +90,34 @@ async def test_post_rejects_nc_sourced_jv(db_session):
         await jv_crud.post(db_session, jv.id, _user())
 
 
+async def test_unpost_rejects_nc_sourced_jv(db_session):
+    # spec §14.4.2: unpost() requires POSTED — exactly the status every
+    # NC-tallied voucher carries, so this verb is fully reachable on NC
+    # imports and must not let a human bounce it back to reviewed.
+    jv = JournalVoucher(
+        jv_number="JV-202607-9003", voucher_word="JV",
+        voucher_date=date(2026, 7, 1), fiscal_period="2026-07",
+        summary="nc posted", status="posted", nc_source_pk="NCPK3")
+    db_session.add(jv)
+    await db_session.flush()
+    with pytest.raises(jv_crud.JvPermissionError):
+        await jv_crud.unpost(db_session, jv.id, _user())
+
+
+async def test_reverse_rejects_nc_sourced_jv(db_session):
+    # spec §14.4.2: reverse() also requires POSTED. Reversing an NC voucher
+    # would leave a dangling red entry the next sync flips the original back
+    # to posted on top of, silently netting the GL entry to zero.
+    jv = JournalVoucher(
+        jv_number="JV-202607-9004", voucher_word="JV",
+        voucher_date=date(2026, 7, 1), fiscal_period="2026-07",
+        summary="nc posted", status="posted", nc_source_pk="NCPK4")
+    db_session.add(jv)
+    await db_session.flush()
+    with pytest.raises(jv_crud.JvPermissionError):
+        await jv_crud.reverse(db_session, jv.id, _user())
+
+
 async def test_unreview_moves_reviewed_to_draft(db_session):
     jv = await _draft_jv(db_session, uuid.uuid4())
     await jv_crud.review(db_session, jv.id, _user())

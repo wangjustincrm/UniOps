@@ -41,7 +41,7 @@ def test_nc_configured_all_or_nothing(monkeypatch):
 
 
 def _mini_extract(tallydate="2026-07-11 09:00:00"):
-    from app.services.nc_sync import NcExtract
+    from app.services.nc_sync import NcExtract, _tallied
     # voucher 1: line 1 both-sided w/ cc+ioitem aux; line 2 payable w/ supplier aux
     return NcExtract(
         ccy={"CADPK": "CAD"},
@@ -54,7 +54,10 @@ def _mini_extract(tallydate="2026-07-11 09:00:00"):
             ("NCPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "payable", "ASS2"),
         ],
         max_creationtime="2026-07-11 08:00:00",
-        tallied={"NCPK1"} if tallydate and tallydate != "~" else set(),
+        # Use the real _tallied() rather than a hand-rolled comparison — a
+        # fixture that re-implements the padding check with clean values
+        # can't catch the padding bug it's meant to guard against.
+        tallied={"NCPK1"} if _tallied(tallydate) else set(),
     )
 
 
@@ -108,6 +111,17 @@ def test_tallied_handles_oracle_char_padding():
     assert _tallied(None) is False
     assert _tallied("") is False
     assert _tallied("2026-07-15 10:30:00") is True
+
+
+def test_max_creationtime_ignores_padded_sentinel():
+    """max_ct (watermark_to) is the same CHAR(19) padding bug _tallied guards
+    against, one line away: '~' + 18 spaces is truthy and sorts above every
+    real timestamp, so a naive max() would poison the watermark forever and
+    silently stop the incremental sync from importing anything ever again."""
+    from app.services.nc_sync import _max_creationtime
+    values = ["2026-07-10 09:00:00", "~" + " " * 18, "2026-07-15 10:30:00", None, ""]
+    assert _max_creationtime(values) == "2026-07-15 10:30:00"
+    assert _max_creationtime(["~" + " " * 18, "~", " " * 19, None, ""]) is None
 
 
 def test_transform_marks_untallied_vouchers_draft():
@@ -183,6 +197,53 @@ async def test_start_run_incremental_inserts_and_sets_watermark(db_session):
     rows2 = _pg("select status, vouchers_inserted, watermark_from, watermark_to "
                 "from nc_sync_runs where id = %s", (run2,))
     assert rows2[0] == ("success", 0, "2026-07-11 08:00:00", "2026-07-11 08:00:00")
+
+
+async def test_sync_statuses_flips_draft_to_posted_when_tally_appears(db_session):
+    """_sync_statuses must re-check every previously-imported voucher's tally
+    fact independently of whether it's touched by this run's transform —
+    an already-imported pk is skip_pks'd, so this is the ONLY path that can
+    ever bring it from draft to posted after the fact (spec §14.4.1).
+
+    _mini_extract ties `tallied` to the same `tallydate` that drives status,
+    so DB state and tally fact always agree by construction in every other
+    test — the UPDATE branch never runs. Here we vary `tallied` independently
+    via dataclasses.replace to force disagreement."""
+    from dataclasses import replace
+    from app.services import nc_sync
+
+    base = _mini_extract(tallydate=None)  # imports as draft; tallied=set()
+    nc_sync.start_run("incremental", uuid.uuid4(),
+                      fetch=lambda wm: base, pg_dsn=_TEST_DSN)
+    assert _pg("select status from journal_vouchers "
+               "where nc_source_pk = 'NCPK1'")[0][0] == "draft"
+
+    # Second (incremental) run: NCPK1 is already imported so transform skips
+    # it entirely — but NC's tally fact now says it's tallied.
+    retallied = replace(base, tallied={"NCPK1"})
+    nc_sync.start_run("incremental", uuid.uuid4(),
+                      fetch=lambda wm: retallied, pg_dsn=_TEST_DSN)
+    assert _pg("select status from journal_vouchers "
+               "where nc_source_pk = 'NCPK1'")[0][0] == "posted"
+
+
+async def test_sync_statuses_flips_posted_to_draft_when_tally_disappears(db_session):
+    """Reverse direction of the above: stored posted, tally fact now says not
+    tallied (e.g. NC un-tallied/voided it) -> must flip back to draft."""
+    from dataclasses import replace
+    from app.services import nc_sync
+
+    base = _mini_extract()  # default tallydate -> imports as posted; tallied={"NCPK1"}
+    nc_sync.start_run("incremental", uuid.uuid4(),
+                      fetch=lambda wm: base, pg_dsn=_TEST_DSN)
+    assert _pg("select status from journal_vouchers "
+               "where nc_source_pk = 'NCPK1'")[0][0] == "posted"
+
+    untallied = replace(base, tallied=set())
+    nc_sync.start_run("incremental", uuid.uuid4(),
+                      fetch=lambda wm: untallied, pg_dsn=_TEST_DSN)
+    assert _pg("select status from journal_vouchers "
+               "where nc_source_pk = 'NCPK1'")[0][0] == "draft"
 
 
 async def test_full_clears_and_reloads(db_session):
