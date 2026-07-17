@@ -161,13 +161,14 @@ def _net(d, c) -> Decimal:
 
 
 async def _by_cost_center(db: AsyncSession, account_code: str, period: str):
+    subtree = await _subtree_codes(db, account_code)
     q = (select(JournalVoucherLine.cost_center_id,
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
                 func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period == period,
-                JournalVoucherLine.account_code == account_code)
+                JournalVoucherLine.account_code.in_(subtree))
          .group_by(JournalVoucherLine.cost_center_id))
     return (await db.execute(q)).all()
 
@@ -278,6 +279,7 @@ async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
     the parent account row column for column (spec §3)."""
     reg = _check_dims(dims)
     cols = [reg[d][0] for d in dims]
+    subtree = await _subtree_codes(db, account_code)
 
     async def grouped(where):
         q = (select(*cols,
@@ -285,7 +287,7 @@ async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
                     func.coalesce(func.sum(JournalVoucherLine.local_credit), 0))
              .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
              .where(JournalVoucher.status == POSTED,
-                    JournalVoucherLine.account_code == account_code, where)
+                    JournalVoucherLine.account_code.in_(subtree), where)
              .group_by(*cols))
         # key = the dimension-id tuple; value = (debit, credit)
         return {tuple(r[:len(dims)]): (r[len(dims)], r[len(dims) + 1])
@@ -365,13 +367,17 @@ async def budget_actual(db: AsyncSession, period: str) -> dict:
 
 async def account_vouchers(db: AsyncSession, account_code: str, period: str,
                            dims_values: dict | None = None) -> dict:
-    """③ drill-down: posted JV lines for an account, optionally filtered by a
-    dimension-value combo ({dim_code: uuid | None}; None = IS NULL)."""
+    """③ drill-down: posted JV lines for an account (rolled over its
+    {self ∪ descendants} subtree), optionally filtered by a dimension-value
+    combo ({dim_code: uuid | None}; None = IS NULL). Each row carries its own
+    account_code/name so a header drill shows which child a line belongs to."""
+    subtree = await _subtree_codes(db, account_code)
+    coa = await _coa_map(db)
     q = (select(JournalVoucherLine, JournalVoucher)
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period == period,
-                JournalVoucherLine.account_code == account_code)
+                JournalVoucherLine.account_code.in_(subtree))
          .order_by(JournalVoucher.voucher_date))
     if dims_values:
         reg = _check_dims(list(dims_values.keys()))
@@ -380,9 +386,12 @@ async def account_vouchers(db: AsyncSession, account_code: str, period: str,
             q = q.where(col.is_(None) if v is None else col == v)
     rows = []
     for ln, jv in (await db.execute(q)).all():
+        acct = coa.get(ln.account_code)
         rows.append({
             "jv_id": str(jv.id), "jv_number": jv.jv_number,
             "voucher_date": jv.voucher_date.isoformat(),
+            "account_code": ln.account_code,
+            "account_name": acct.name if acct else None,
             "summary": ln.summary or jv.summary,
             "local_debit": str(ln.local_debit), "local_credit": str(ln.local_credit),
             "cost_center_id": str(ln.cost_center_id) if ln.cost_center_id else None,

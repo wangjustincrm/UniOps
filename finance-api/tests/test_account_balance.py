@@ -634,3 +634,41 @@ async def test_account_balance_leaf_only_unchanged(db_session):
     assert by["5000"]["opening"] == "100.00"
     assert by["5000"]["closing"] == "140.00"
     assert by["5000"]["is_postable"] is True and by["5000"]["level"] == 0
+
+
+# ── non-leaf rollup: expand / drill / budget-actual (Task 3) ───────────────────
+async def test_expand_rolls_up_header_by_dim(db_session):
+    await _coa_selling_tree(db_session)
+    cc = await _cc(db_session, "MKT-01", "Marketing")
+    await _posted_cc_event(db_session, "660101", cc, "100.00")
+    await _posted_cc_event(db_session, "660102", cc, "40.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    exp = await ab.expand_by_dims(db_session, "6601", "2026-07", ["cost_center"])
+    by = {r["keys"][0]["code"]: r for r in exp["rows"]}
+    assert by["MKT-01"]["closing"] == "140.00"        # both children aggregated
+    # leaf still isolates its own
+    exp_leaf = await ab.expand_by_dims(db_session, "660101", "2026-07", ["cost_center"])
+    assert {r["keys"][0]["code"]: r["closing"] for r in exp_leaf["rows"]} == {"MKT-01": "100.00"}
+
+
+async def test_vouchers_header_drill_tags_child_account(db_session):
+    await _coa_selling_tree(db_session)
+    await _posted_dim_event(db_session, "660101", "100.00", period="2026-07")
+    await _posted_dim_event(db_session, "660102", "40.00", period="2026-07")
+    await jv_crud.backfill_posted_jvs(db_session)
+    v = await ab.account_vouchers(db_session, "6601", "2026-07")
+    codes = sorted(r["account_code"] for r in v["rows"])
+    assert codes == ["660101", "660102"]
+    names = {r["account_code"]: r["account_name"] for r in v["rows"]}
+    assert names["660101"] == "Selling(fix)"
+
+
+async def test_budget_actual_rolls_up_header(db_session):
+    await _coa_selling_tree(db_session)               # 6601 is a BUDGET_ACTUAL account
+    cc = await _cc(db_session, "SELL-01", "Sales")
+    await _posted_cc_event(db_session, "660101", cc, "70.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    ba = await ab.budget_actual(db_session, "2026-07")
+    rows = [r for r in ba["rows"] if r["account_code"] == "6601"]
+    assert len(rows) == 1
+    assert rows[0]["category"] == "SELL" and rows[0]["actual"] == "70.00"
