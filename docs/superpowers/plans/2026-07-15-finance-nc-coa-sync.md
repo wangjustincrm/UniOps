@@ -8,7 +8,7 @@
 
 **Architecture:** 同步执行(无后台 worker/无进度表/无轮询) —— 360 科目 + 205 辅助核算行,
 读取约 1-2 秒。`POST /coa-sync/preview` 只读返回差异,`POST /coa-sync/apply` **重新读 NC、
-重新算差异**后单事务写入。核心是三个纯函数(`map_account` / `diff` / `derive_party_dim`),
+重新算差异**后单事务写入。核心是两个纯函数(`map_account` / `diff`),
 零 I/O、可穷举测试。阻塞的 oracledb 读一律 `run_in_executor`。
 
 **Tech Stack:** FastAPI + SQLAlchemy(async) + alembic / oracledb 2.5.1(读 NC) +
@@ -21,6 +21,14 @@ psycopg2(写本库) / pytest + pytest-asyncio / React + TanStack Query
 
 ## Global Constraints
 
+- **科目表 = CRM0001 `1001A1100000003CGN3F`(加拿大皇家妙克)**,**不是** root
+  `1001A1100000003CG6GD`(飞鹤加拿大_根科目表)。2026-07-17 实测:凭证同步已对账的
+  `PK_BOOK` 下 315,539 条 GL_DETAIL 行**全部**属于 CRM0001。科目定义在 root 并被继承,
+  但**每科目表的属性(启用/末级/名称/辅助核算)一律取 CRM0001 的 `BD_ACCASOA`**;
+  判断启用用 **`soa.enablestate = 2`**,不是 `a.enablestate`(两者差 10 个科目)。
+  详见 spec §2.0。
+- **辅助核算 join = `soa.pk_accasoa = a.pk_accasoa`**,**不是** `pk_coveraccasoa`。
+  后者拿 NC UI 真值实测返回空(spec §2.0.1)。老脚本 `aux_items_import.py` join 错了列。
 - **权限门禁 = `finance.coa.manage`**(2026-07-16 修订,spec §1.2):经
   `from app.core.authz import require_permission` —— **不要**硬编码
   `user.get("role") == "system_admin"`。authz ②期已确立「COA 谁能改由矩阵决定,
@@ -267,7 +275,6 @@ described but no importer ever populated."
   - `map_account_type(acctype_code: str, balanorient: int) -> str`
   - `map_normal_balance(balanorient: int) -> str`
   - `map_aux_item(nc_item_code: str) -> str`
-  - `derive_party_dim(account_code: str, account_type: str) -> str`
   - `map_account(row: dict, uom: dict, ccy: dict, acctype: dict, pk2code: dict) -> dict`
   - 异常类 `NcMappingError(ValueError)`
 
@@ -279,7 +286,7 @@ described but no importer ever populated."
 import pytest
 
 from app.services.nc_coa_sync import (
-    NcMappingError, clean, derive_party_dim, map_account, map_account_type,
+    NcMappingError, clean, map_account, map_account_type,
     map_aux_item, map_normal_balance,
 )
 
@@ -333,22 +340,6 @@ def test_aux_item_regression_project_substring_false_positives():
 def test_aux_item_rejects_unregistered_code():
     with pytest.raises(NcMappingError):
         map_aux_item("ZZ99")                          # 不 slug、不猜
-
-# ── 客商派生 ────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("code,atype,expected", [
-    ("112201", "asset", "customer"),      # 应收非关联单位款
-    ("220202", "liability", "supplier"),  # 应付关联单位款
-    ("640202", "expense", "supplier"),    # 劳务成本
-    ("6002", "revenue", "customer"),      # 销售折扣
-    ("4001", "equity", "partner"),        # 实收资本 = 股东
-])
-def test_derive_party_dim(code, atype, expected):
-    assert derive_party_dim(code, atype) == expected
-
-def test_derive_party_dim_exceptions_never_become_customer():
-    # 1511/1512 对方是被投资单位,按资产分支会误判为 customer
-    assert derive_party_dim("1511", "asset") == "partner"
-    assert derive_party_dim("1512", "asset") == "partner"
 
 # ── map_account 整合 ────────────────────────────────────────────────────────
 def _lookups():
@@ -445,7 +436,7 @@ from app.services.nc_sync import nc_configured  # same NC_* env gate
 
 __all__ = ["nc_configured"]
 
-CHART = "1001A1100000003CG6GD"          # Canada Royal Milk 根科目表
+CHART = "1001A1100000003CGN3F"          # CRM0001 加拿大皇家妙克 — 凭证所在的科目表(spec §2.0)
 TILDE = "~"                             # NC's empty sentinel — NOT null
 
 
@@ -463,19 +454,13 @@ ACCOUNT_TYPE_BY_NC = {"1": "asset", "2": "liability", "4": "equity", "5": "expen
 AUX_ITEM_MAP = {
     "ra01": "cost_center", "0001": "department", "0008": "income_expense_item",
     "0019": "supplier", "0017": "customer",
-    "0004": "__party__",                # derived per account — see derive_party_dim
+    "0004": "partner",                  # 客商 = vendors ∪ customers (spec §3.4.1)
     "0006": "item", "0012": "item_category", "0010": "project",
     "D45": "project_type", "CRM02": "government_grant_project",
     "fa01": "asset_category", "D47": "tax_code", "0022": "bank_category",
     "0023": "bank", "0011": "bank_account", "0044": "country_region",
     "0002": "employee", "D09": "sales_type", "CRM01": "credit_card",
 }
-
-PARTY_ITEM = "0004"                     # 客商
-# Neither a supplier nor a customer: 4001 实收资本 is a shareholder,
-# 1511/1512 长期股权投资 an investee. Resolve to the unexpandable `partner`
-# rather than forcing them into customer (user decision 2026-07-15).
-PARTY_EXCEPTIONS = {"4001", "1511", "1512"}
 
 # The columns the sync owns. Everything else on chart_of_accounts is UniOps'
 # and must never appear in an UPDATE (spec §3.1/§3.2).
@@ -520,24 +505,6 @@ def map_aux_item(nc_item_code: str) -> str:
         raise NcMappingError(
             f"unregistered BD_ACCASSITEM.code {code!r}; add it to AUX_ITEM_MAP"
         ) from None
-
-
-def derive_party_dim(account_code: str, account_type: str) -> str:
-    """客商 (0004) covers vendors and customers; we keep them apart. Decide from
-    the account's nature. `partner` is not in account_balance._dimensions(), so
-    it surfaces as supported:false — i.e. not expandable, which beats expanding
-    it wrongly."""
-    if account_code in PARTY_EXCEPTIONS:
-        return "partner"
-    if account_type == "asset":
-        return "customer"               # receivables — they owe us
-    if account_type == "liability":
-        return "supplier"               # payables — we owe them
-    if account_type == "expense":
-        return "supplier"               # cost (5) and P&L debit
-    if account_type == "revenue":
-        return "customer"               # P&L credit
-    return "partner"                    # equity and anything unforeseen
 
 
 def map_account(row: dict, *, uom: dict, ccy: dict, acctype: dict,
@@ -866,8 +833,12 @@ out of an UPDATE."
 - Modify: `finance-api/app/services/nc_coa_sync.py`(追加)
 - Test: `finance-api/tests/test_nc_coa_sync.py`(追加)
 
+> ⚠️ **改 `CHART` 常量**:当前是 root `1001A1100000003CG6GD`,必须改成
+> **CRM0001 `1001A1100000003CGN3F`**(加拿大皇家妙克)。见 Global Constraints 与 spec §2.0。
+> 注释同步改为 `# CRM0001 加拿大皇家妙克 — 凭证所在的科目表(spec §2.0)`。
+
 **Interfaces:**
-- Consumes: Task 2/3 全部
+- Consumes: Task 2/3 全部(注意:`derive_party_dim` 已删除,`0004` 直接映射为 `partner`)
 - Produces:
   - `@dataclass NcCoaExtract`: `accounts: list[dict]`、`aux: list[dict]`、
     `pk2code: dict`、`uom: dict`、`ccy: dict`、`acctype: dict`
@@ -918,12 +889,28 @@ def test_build_maps_accounts_and_aux():
     assert aux == [{"account_code": "1602", "dim_code": "employee",
                     "seq": 1, "required": True}]          # isempty=N -> required
 
-def test_build_derives_party_dim_for_kes():
+def test_build_maps_party_item_straight_to_partner():
+    # 0004 客商 -> partner, no per-account derivation (spec §3.4.1)
     e = _extract(aux=[{"account_code": "1602", "nc_item_code": "0004",
                        "seq": 1, "isempty": "Y"}])
     _, aux = build(e)
-    assert aux[0]["dim_code"] == "customer"               # 资产类 -> customer
+    assert aux[0]["dim_code"] == "partner"
     assert aux[0]["required"] is False                    # isempty=Y -> 可空
+
+def test_build_rejects_aux_for_unknown_account():
+    # coa_aux_items has no FK — an orphan would land silently
+    e = _extract(aux=[{"account_code": "9999", "nc_item_code": "0002",
+                       "seq": 1, "isempty": "N"}])
+    with pytest.raises(NcMappingError, match="unknown account"):
+        build(e)
+
+def test_build_rejects_unexpected_isempty():
+    # required must not silently default — an unexpected value would turn a
+    # mandatory dimension optional (global constraint: no fallback defaults)
+    e = _extract(aux=[{"account_code": "1602", "nc_item_code": "0002",
+                       "seq": 1, "isempty": "~"}])
+    with pytest.raises(NcMappingError, match="ISEMPTY"):
+        build(e)
 
 def test_build_refuses_zero_accounts():
     # 零行守卫:否则「未返回即停用」会把整表 360 科目全部停用
@@ -1035,29 +1022,34 @@ def fetch_coa_from_nc() -> NcCoaExtract:
         cur.execute("select pk_acctype, code from NCSC.BD_ACCTYPE")
         acctype = {pk: code for pk, code in cur.fetchall()}
 
-        # BD_ACCASOA is the per-chart authoritative record: it covers names
-        # 348/360 vs BD_ACCOUNT.name2's 184, and endflag only exists there.
+        # Accounts are DEFINED in the root chart and inherited; they are
+        # ENABLED and CONFIGURED per chart via BD_ACCASOA (one account can carry
+        # up to 19 of them). So join BD_ACCASOA on OUR chart and read enablement
+        # from it — a.enablestate is the root's answer and would admit 10
+        # accounts CRM0001 has actually retired. endflag/name live only on ACCASOA.
         cur.execute(
             "select a.pk_account, a.code, a.pid, a.pk_acctype, a.balanorient, "
             "       a.unit, a.currency, a.outflag, soa.endflag, "
             "       soa.name, soa.name2, a.name, a.name2 "
             "from NCSC.BD_ACCOUNT a "
             "join NCSC.BD_ACCASOA soa on soa.pk_account = a.pk_account "
-            "  and soa.pk_accchart = a.pk_accchart "
-            "where a.pk_accchart = :c and a.enablestate = 2", c=CHART)
+            "where soa.pk_accchart = :c and soa.enablestate = 2", c=CHART)
         accounts = [{"pk": r[0], "code": r[1], "pid": r[2], "acctype_pk": r[3],
                      "balanorient": r[4], "unit_pk": r[5], "currency_pk": r[6],
                      "outflag": r[7], "endflag": r[8], "name_soa": r[9],
                      "name2_soa": r[10], "name_acct": r[11], "name2_acct": r[12]}
                     for r in cur.fetchall()]
 
+        # Join pk_accasoa, NOT pk_coveraccasoa: the latter returns nothing for
+        # 101201/1402 against the NC UI (spec §2.0.1). Scope to OUR chart's
+        # ACCASOA rows and its enablement, mirroring the accounts query.
         cur.execute(
             "select acc.code, item.code, a.id, a.isempty "
             "from NCSC.BD_ACCASS a "
-            "join NCSC.BD_ACCASOA soa on soa.pk_accasoa = a.pk_coveraccasoa "
+            "join NCSC.BD_ACCASOA soa on soa.pk_accasoa = a.pk_accasoa "
             "join NCSC.BD_ACCOUNT acc on acc.pk_account = soa.pk_account "
             "join NCSC.BD_ACCASSITEM item on item.pk_accassitem = a.pk_entity "
-            "where acc.pk_accchart = :c", c=CHART)
+            "where soa.pk_accchart = :c and soa.enablestate = 2", c=CHART)
         aux = [{"account_code": r[0], "nc_item_code": r[1], "seq": int(r[2]),
                 "isempty": r[3]} for r in cur.fetchall()]
     finally:
@@ -1080,22 +1072,22 @@ def build(extract: NcCoaExtract) -> tuple[list[dict], list[dict]]:
     accounts = [map_account(r, uom=extract.uom, ccy=extract.ccy,
                             acctype=extract.acctype, pk2code=extract.pk2code)
                 for r in extract.accounts]
-    type_by_code = {a["code"]: a["account_type"] for a in accounts}
+    known = {a["code"] for a in accounts}
 
-    aux, seen = [], set()
+    aux = []
     for r in extract.aux:
         acct = r["account_code"].strip()
-        dim = map_aux_item(r["nc_item_code"])
-        if dim == "__party__":
-            atype = type_by_code.get(acct)
-            if atype is None:
-                raise NcMappingError(f"aux row for unknown account {acct}")
-            dim = derive_party_dim(acct, atype)
-        key = (acct, dim)
-        if key in seen:            # two NC items can land on one dim; keep the first
-            continue
-        seen.add(key)
-        aux.append({"account_code": acct, "dim_code": dim, "seq": r["seq"],
+        # An aux row outside our account set means the two queries disagree about
+        # the chart — a bug, not data to paper over. coa_aux_items has no FK, so
+        # it would otherwise land silently as an orphan.
+        if acct not in known:
+            raise NcMappingError(f"aux row references unknown account {acct}")
+        if r["isempty"] not in ("Y", "N"):
+            raise NcMappingError(
+                f"account {acct}: unexpected BD_ACCASS.ISEMPTY {r['isempty']!r}")
+        aux.append({"account_code": acct,
+                    "dim_code": map_aux_item(r["nc_item_code"]),
+                    "seq": r["seq"],
                     "required": r["isempty"] == "N"})
     return accounts, aux
 
