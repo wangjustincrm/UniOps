@@ -25,6 +25,10 @@ def _hdr(jv: JournalVoucher) -> dict:
         "id": str(jv.id), "jv_number": jv.jv_number, "voucher_word": jv.voucher_word,
         "voucher_date": jv.voucher_date.isoformat(), "fiscal_period": jv.fiscal_period,
         "summary": jv.summary, "status": jv.status,
+        # In the header (not just the detail) so the list can tell NC mirrors
+        # apart: their status follows NC's tally and the crud verbs reject any
+        # hand-change, so offering them for batch review/post only ever 4xxs.
+        "nc_source_pk": jv.nc_source_pk,
         "source_doc_type": jv.source_doc_type,
         "source_doc_id": str(jv.source_doc_id) if jv.source_doc_id else None,
         "source_doc_number": jv.source_doc_number,
@@ -119,7 +123,7 @@ async def get_voucher(jv_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depen
         return dt.isoformat() if dt else None
 
     voucher = _hdr(jv) | {
-        "source_service": jv.source_service, "nc_source_pk": jv.nc_source_pk,
+        "source_service": jv.source_service,
         "prepared_by_name": _name(jv.prepared_by), "prepared_at": _iso(jv.prepared_at),
         "reviewed_by_name": _name(jv.reviewed_by), "reviewed_at": _iso(jv.reviewed_at),
         "posted_by_name": _name(jv.posted_by), "posted_at": _iso(jv.posted_at),

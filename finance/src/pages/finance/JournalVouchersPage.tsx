@@ -83,12 +83,17 @@ export default function JournalVouchersPage() {
   const toggle = (id: string) => setSelected((p) => {
     const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n
   })
-  const selectable = items.filter((v) => v.status === 'draft' || v.status === 'reviewed')
+  // NC mirrors are excluded: their status follows NC's tally and the backend
+  // rejects any hand-change, so batching them in would only ever fail. The 271
+  // vouchers NC has not tallied yet arrive here as drafts and would otherwise
+  // look like the obvious thing to select.
+  const selectable = items.filter((v) => !v.nc_source_pk
+    && (v.status === 'draft' || v.status === 'reviewed'))
   const allSelected = selectable.length > 0 && selectable.every((v) => selected.has(v.id))
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(selectable.map((v) => v.id)))
 
   const runBatch = async (action: 'review' | 'post') => {
-    const eligible = items.filter((v) => selected.has(v.id) &&
+    const eligible = items.filter((v) => selected.has(v.id) && !v.nc_source_pk &&
       (action === 'review' ? v.status === 'draft' : v.status === 'reviewed'))
     if (eligible.length === 0) return flash('err', `No selected ${action === 'review' ? 'draft' : 'reviewed'} vouchers`)
     setBusy(action)
