@@ -63,6 +63,8 @@ class JournalVoucher(UUIDPrimaryKey, TimestampMixin, Base):
 
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     nc_source_pk: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # NC GL_VOUCHER.PK_SYSTEM (GL/AP/AR/FA/CM/IA/EGL/OT/PLCF); null for go-forward JVs.
+    source_subsystem: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
 class JournalVoucherLine(UUIDPrimaryKey, TimestampMixin, Base):

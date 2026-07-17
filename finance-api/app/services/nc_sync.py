@@ -62,7 +62,7 @@ class NcExtract:
     ccy: dict           # pk_currtype -> currency code
     aux: dict           # freevalueid -> (dept_code, cc_code, io_code, sup_code, cust_code)
     vouchers: list      # (pk, year, period, num, explanation, prepareddate, creationtime,
-                        #  tallydate)
+                        #  tallydate, pk_system)
     details: list       # (pk_voucher, detailindex, accountcode, dr, cr, ldr, lcr,
                         #  pk_currtype, excrate1, explanation, assid)
     max_creationtime: str | None
@@ -125,6 +125,14 @@ def _max_creationtime(values) -> str | None:
     return max(cleaned, default=None)
 
 
+def _strip_char(v: str | None) -> str | None:
+    """Strip an Oracle CHAR(n) value, treating both '' and the '~' blank
+    sentinel (same one _tallied()/_max_creationtime() guard against on
+    TALLYDATE/CREATIONTIME) as absent. Used for PK_SYSTEM."""
+    s = (v or "").strip()
+    return s if s not in ("", "~") else None
+
+
 def _d(v) -> Decimal:
     return Decimal(str(v)) if v is not None else Decimal("0")
 
@@ -163,7 +171,7 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
     """NC rows -> (voucher dicts, line tuples, dim tuples, unmapped_cc count).
     Skips vouchers whose pk is in skip_pks (incremental pk-dedup)."""
     pk2id, vouchers = {}, []
-    for pk, year, period, num, expl, pdate, _ctime, tallydate in extract.vouchers:
+    for pk, year, period, num, expl, pdate, _ctime, tallydate, pk_system in extract.vouchers:
         if pk in skip_pks:
             continue
         jid = uuid.uuid4()
@@ -180,6 +188,10 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             # the GL and Account Balance both read status == POSTED only, so an
             # un-tallied voucher must not colour reports (spec §14.4).
             "status": "posted" if _tallied(tallydate) else "draft",
+            # NC PK_SYSTEM is CHAR (space-padded); an empty one comes back as the
+            # same '~' blank-sentinel _tallied() strips off TALLYDATE. Store the
+            # stripped raw code, or None for blank/sentinel.
+            "source_subsystem": _strip_char(pk_system),
         })
 
     lines, dims, unmapped = [], [], 0
@@ -262,7 +274,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         # Discarded (作废) vouchers are not ledger entries. Measured 2026-07-17:
         # exactly one on this book ($4,298.52) — it had been importing as posted.
         vq = ("select pk_voucher, year, period, num, explanation, prepareddate, "
-              "creationtime, tallydate from NCSC.GL_VOUCHER "
+              "creationtime, tallydate, pk_system from NCSC.GL_VOUCHER "
               "where pk_accountingbook = :b "
               "  and (discardflag is null or discardflag <> 'Y')")
         if watermark:
@@ -468,17 +480,17 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
 
         v_rows = [(v["id"], v["jv_number"], "JV", v["vdate"], v["period"], v["summary"],
-                   v["status"], "nc", "nc_voucher", v["jv_number"], v["nc_pk"],
+                   v["status"], "nc", "nc_voucher", v["jv_number"], v["nc_pk"], v["source_subsystem"],
                    *(tot.get(v["id"], [Decimal("0")] * 4))) for v in vouchers]
         for i in range(0, len(v_rows), _CHUNK):
             execute_values(cur,
                 "insert into journal_vouchers "
                 "(id, jv_number, voucher_word, voucher_date, fiscal_period, summary, status, "
-                " source_service, source_doc_type, source_doc_number, nc_source_pk, "
+                " source_service, source_doc_type, source_doc_number, nc_source_pk, source_subsystem, "
                 " total_debit, total_credit, total_local_debit, total_local_credit, "
                 " created_at, updated_at) values %s",
                 v_rows[i:i + _CHUNK],
-                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, vouchers_inserted=min(i + _CHUNK, len(v_rows)))
         for i in range(0, len(lines), _CHUNK):
             execute_values(cur,

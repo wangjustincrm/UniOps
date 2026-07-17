@@ -40,7 +40,7 @@ def test_nc_configured_all_or_nothing(monkeypatch):
     assert nc_sync.nc_configured() is False
 
 
-def _mini_extract(tallydate="2026-07-11 09:00:00"):
+def _mini_extract(tallydate="2026-07-11 09:00:00", pk_system="GL"):
     from app.services.nc_sync import NcExtract, _tallied
     # voucher 1: line 1 both-sided w/ cc+ioitem aux; line 2 payable w/ supplier aux
     return NcExtract(
@@ -48,7 +48,7 @@ def _mini_extract(tallydate="2026-07-11 09:00:00"):
         aux={"ASS1": ("0104", "E01", "CRM004", "", ""),
              "ASS2": ("", "", "", "SUP01", "")},
         vouchers=[("NCPK1", "2026", "07", 12, "test voucher",
-                   "2026-07-10 09:00:00", "2026-07-11 08:00:00", tallydate)],
+                   "2026-07-10 09:00:00", "2026-07-11 08:00:00", tallydate, pk_system)],
         details=[
             ("NCPK1", 1, "5101", 150, 50, 150, 50, "CADPK", 1, "expense", "ASS1"),
             ("NCPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "payable", "ASS2"),
@@ -389,6 +389,17 @@ async def test_status_sweeps_stale_running_row(client, monkeypatch):
     assert r.status_code == 200
     assert r.json()["current_run"] is None
     assert _pg("select status, error from nc_sync_runs where id = %s", (rid,))[0] == ("failed", "abandoned")
+
+
+def test_transform_maps_and_strips_subsystem():
+    # PK_SYSTEM is CHAR(padded); store the stripped raw code, empty -> None
+    from app.services.nc_sync import transform
+    e = _mini_extract(pk_system="GL                  ")   # 空格补位
+    vs, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
+    assert vs[0]["source_subsystem"] == "GL"
+    e2 = _mini_extract(pk_system="~")
+    vs2, _, _, _ = transform(e2, {}, {}, {}, {}, {}, set())
+    assert vs2[0]["source_subsystem"] is None
 
 
 def test_resolve_aux_type_pks_validates_constants():

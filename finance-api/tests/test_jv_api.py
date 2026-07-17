@@ -79,6 +79,14 @@ async def test_review_endpoint_forbidden_for_non_finance(client, db_session):
     assert r.status_code == 403
 
 
+def test_subsystem_label_maps_known_and_falls_back():
+    from app.api.v1.journal_voucher import _subsystem_label
+    assert _subsystem_label("GL") == "General Ledger"
+    assert _subsystem_label("PLCF") == "Gain/Loss Carry-Forward"
+    assert _subsystem_label("OT") == "OT"        # 未登记 -> 回退原码,不猜
+    assert _subsystem_label(None) is None
+
+
 async def test_post_batch_endpoint(client, db_session):
     jv = await _draft_jv(db_session)
     await client.post(f"/finance/v1/journal-vouchers/{jv.id}/review", headers=_h())

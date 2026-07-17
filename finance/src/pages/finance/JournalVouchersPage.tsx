@@ -21,6 +21,11 @@ const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral
 
 const PAGE_SIZE = 50
 const STATUSES = ['', 'draft', 'reviewed', 'posted', 'reversed'] as const
+const SUBSYSTEMS = [
+  ['GL', 'General Ledger'], ['AP', 'Accounts Payable'], ['AR', 'Accounts Receivable'],
+  ['FA', 'Fixed Assets'], ['CM', 'Cash Management'], ['IA', 'Inventory Accounting'],
+  ['EGL', 'Exchange Gain/Loss'], ['PLCF', 'Gain/Loss Carry-Forward'], ['OT', 'OT'],
+] as const
 
 interface JvList { total: number; items: JvHeader[] }
 
@@ -35,6 +40,7 @@ export default function JournalVouchersPage() {
   const qc = useQueryClient()
   const [period, setPeriod] = useState(thisMonth())
   const [status, setStatus] = useState('')
+  const [subsystem, setSubsystem] = useState('')
   const [q, setQ] = useState('')
   const [qInput, setQInput] = useState('')
   const [page, setPage] = useState(0)
@@ -59,10 +65,11 @@ export default function JournalVouchersPage() {
     const p = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
     if (period) p.set('period', period)
     if (status) p.set('status', status)
+    if (subsystem) p.set('source_subsystem', subsystem)
     if (q) p.set('q', q)
     p.set('sort', sort.col); p.set('dir', sort.dir)
     return p.toString()
-  }, [period, status, q, page, sort])
+  }, [period, status, subsystem, q, page, sort])
 
   const list = useQuery({
     queryKey: ['jv-list', params, sort],
@@ -137,6 +144,11 @@ export default function JournalVouchersPage() {
           <select value={status} onChange={(e) => { setStatus(e.target.value); resetPage() }} className={inputCls}>
             {STATUSES.map((s) => <option key={s} value={s}>{s ? s[0].toUpperCase() + s.slice(1) : 'All statuses'}</option>)}
           </select>
+          <select value={subsystem} onChange={(e) => { setPage(0); setSubsystem(e.target.value) }}
+                  className={inputCls}>
+            <option value="">All systems</option>
+            {SUBSYSTEMS.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          </select>
           <form className="flex items-center gap-1" onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
             <input value={qInput} onChange={(e) => setQInput(e.target.value)}
                    placeholder="Voucher no. / summary…" className={cn(inputCls, 'w-56')} />
@@ -186,6 +198,9 @@ export default function JournalVouchersPage() {
                       Summary{sort.col === 'summary' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
                     <th className="px-3 py-2 w-32">Source</th>
+                    <th className="px-3 py-2 w-32 cursor-pointer select-none" onClick={() => toggleSort('source_subsystem')}>
+                      System{sort.col === 'source_subsystem' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
                     <th className="px-3 py-2 w-32 text-right cursor-pointer select-none" onClick={() => toggleSort('total_debit')}>
                       Debit (CAD){sort.col === 'total_debit' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                     </th>
@@ -196,7 +211,7 @@ export default function JournalVouchersPage() {
                 </thead>
                 <tbody>
                   {items.length === 0 && (
-                    <tr><td colSpan={canAct ? 7 : 6} className="px-3 py-6 text-center text-neutral-400">No vouchers match the filters.</td></tr>
+                    <tr><td colSpan={canAct ? 8 : 7} className="px-3 py-6 text-center text-neutral-400">No vouchers match the filters.</td></tr>
                   )}
                   {items.map((v, i) => (
                     <tr key={v.id} onClick={() => setDetailId(v.id)}
@@ -214,6 +229,7 @@ export default function JournalVouchersPage() {
                       <td className="px-3 py-2 text-xs text-neutral-500">
                         {v.source_doc_type ? `${v.source_doc_type} · ${v.source_doc_number ?? ''}` : '—'}
                       </td>
+                      <td className="px-3 py-2 text-neutral-600">{v.source_subsystem_label ?? '—'}</td>
                       <td className="px-3 py-2 text-right font-mono">{money(v.total_local_debit)}</td>
                       <td className="px-3 py-2"><JvStatusBadge status={v.status} /></td>
                     </tr>

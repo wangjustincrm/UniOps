@@ -31,6 +31,7 @@ export interface JvHeader {
   reviewed_by_name?: string | null; reviewed_at?: string | null
   posted_by_name?: string | null; posted_at?: string | null
   nc_source_pk?: string | null
+  source_subsystem?: string | null; source_subsystem_label?: string | null
 }
 interface JvLine {
   line_no: number; account_code: string | null; account_name: string | null

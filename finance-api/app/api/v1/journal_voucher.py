@@ -22,7 +22,22 @@ _SORTABLE = {
     "summary": JournalVoucher.summary,
     "total_debit": JournalVoucher.total_debit,
     "status": JournalVoucher.status,
+    "source_subsystem": JournalVoucher.source_subsystem,
 }
+
+_SUBSYSTEM_LABELS = {
+    "GL": "General Ledger", "AP": "Accounts Payable", "AR": "Accounts Receivable",
+    "FA": "Fixed Assets", "CM": "Cash Management", "IA": "Inventory Accounting",
+    "EGL": "Exchange Gain/Loss", "PLCF": "Gain/Loss Carry-Forward",
+    # OT and any future NC code fall back to the raw code — a human names the map,
+    # code doesn't guess (spec §2.4).
+}
+
+
+def _subsystem_label(code: str | None) -> str | None:
+    if code is None:
+        return None
+    return _SUBSYSTEM_LABELS.get(code, code)
 
 
 class IdsIn(BaseModel):
@@ -38,6 +53,8 @@ def _hdr(jv: JournalVoucher) -> dict:
         # apart: their status follows NC's tally and the crud verbs reject any
         # hand-change, so offering them for batch review/post only ever 4xxs.
         "nc_source_pk": jv.nc_source_pk,
+        "source_subsystem": jv.source_subsystem,
+        "source_subsystem_label": _subsystem_label(jv.source_subsystem),
         "source_doc_type": jv.source_doc_type,
         "source_doc_id": str(jv.source_doc_id) if jv.source_doc_id else None,
         "source_doc_number": jv.source_doc_number,
@@ -54,6 +71,7 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         period: str | None = Query(default=None),
                         status: str | None = Query(default=None),
                         source_doc_type: str | None = Query(default=None),
+                        source_subsystem: str | None = Query(default=None),
                         q: str | None = Query(default=None),
                         limit: int = Query(default=50, le=200),
                         offset: int = Query(default=0, ge=0),
@@ -66,6 +84,8 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
         base = base.where(JournalVoucher.status == status)
     if source_doc_type:
         base = base.where(JournalVoucher.source_doc_type == source_doc_type)
+    if source_subsystem:
+        base = base.where(JournalVoucher.source_subsystem == source_subsystem)
     if q:
         like = f"%{q}%"
         base = base.where(or_(JournalVoucher.jv_number.ilike(like),
