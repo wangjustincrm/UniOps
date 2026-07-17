@@ -178,3 +178,86 @@ def test_map_account_rejects_missing_accasoa_row():
     # endflag 为 None = ACCASOA 行缺失;不得降级为按 pid 推断
     with pytest.raises(NcMappingError):
         map_account(_row(endflag=None), **_lookups())
+
+
+# ── diff ──────────────────────────────────────────────────────────────────
+from app.services.nc_coa_sync import diff, diff_aux
+
+def _nc(code="1001", **over):
+    base = {"code": code, "name": "Cash", "account_type": "asset",
+            "normal_balance": "debit", "is_postable": True, "parent_code": None,
+            "quantity_accounting": False, "default_uom": None,
+            "default_currency": "CAD", "is_off_balance": False}
+    base.update(over)
+    return base
+
+def _db(code="1001", is_active=True, **over):
+    d = _nc(code, **over)
+    d["is_active"] = is_active
+    return d
+
+def test_diff_inserts_new_accounts():
+    d = diff([_nc("9999")], [])
+    assert [r["code"] for r in d.to_insert] == ["9999"]
+    assert d.to_update == [] and d.to_deactivate == [] and d.unchanged == 0
+
+def test_diff_reports_unchanged_without_operations():
+    d = diff([_nc()], [_db()])
+    assert d.unchanged == 1
+    assert d.to_insert == [] and d.to_update == [] and d.to_deactivate == []
+
+def test_diff_updates_with_before_after():
+    d = diff([_nc(normal_balance="credit")], [_db(normal_balance="debit")])
+    assert len(d.to_update) == 1
+    assert d.to_update[0]["changes"]["normal_balance"] == ("debit", "credit")
+    assert d.to_update[0]["reactivated"] is False
+
+def test_diff_deactivates_accounts_missing_from_nc():
+    d = diff([], [_db("2000")])
+    assert [r["code"] for r in d.to_deactivate] == ["2000"]
+
+def test_diff_ignores_already_inactive_accounts():
+    d = diff([], [_db("2000", is_active=False)])
+    assert d.to_deactivate == []          # 已停用的不再重复停用
+
+def test_diff_reactivation_lands_in_update():
+    d = diff([_nc()], [_db(is_active=False)])
+    assert d.to_deactivate == []
+    assert len(d.to_update) == 1
+    assert d.to_update[0]["reactivated"] is True
+
+def test_diff_reactivation_plus_rename_appears_once():
+    # 三桶互斥:既改名又重新启用的科目只出现一次
+    d = diff([_nc(name="Petty Cash")], [_db(name="Cash", is_active=False)])
+    assert len(d.to_update) == 1
+    u = d.to_update[0]
+    assert u["reactivated"] is True
+    assert u["changes"]["name"] == ("Cash", "Petty Cash")
+
+def test_diff_never_touches_uniops_owned_fields():
+    # 字段所有权:同步不得把 aux_dimensions/subtype/effective_from 纳入变更
+    db_row = _db()
+    db_row.update({"subtype": "cash", "aux_dimensions": [{"code": "employee"}],
+                   "effective_from": "2020-01-01"})
+    d = diff([_nc(name="Renamed")], [db_row])
+    changed = set(d.to_update[0]["changes"])
+    assert changed == {"name"}
+    assert not changed & {"subtype", "aux_dimensions", "effective_from"}
+
+# ── aux ─────────────────────────────────────────────────────────────────────
+def _aux(account_code="1001", dim_code="employee", seq=1, required=True):
+    return {"account_code": account_code, "dim_code": dim_code,
+            "seq": seq, "required": required}
+
+def test_diff_aux_inserts_and_deletes():
+    d = diff_aux([_aux(dim_code="employee")], [_aux(dim_code="project")])
+    assert [r["dim_code"] for r in d.to_insert] == ["employee"]
+    assert [r["dim_code"] for r in d.to_delete] == ["project"]
+
+def test_diff_aux_unchanged():
+    d = diff_aux([_aux()], [_aux()])
+    assert d.unchanged == 1 and d.to_insert == [] and d.to_delete == []
+
+def test_diff_aux_seq_change_is_a_replacement():
+    d = diff_aux([_aux(seq=2)], [_aux(seq=1)])
+    assert len(d.to_insert) == 1 and len(d.to_delete) == 1

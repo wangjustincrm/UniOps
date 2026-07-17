@@ -157,3 +157,65 @@ def map_account(row: dict, *, uom: dict, ccy: dict, acctype: dict,
         "default_currency": default_currency,
         "is_off_balance": row.get("outflag") == "Y",
     }
+
+
+@dataclass
+class CoaDiff:
+    to_insert: list = field(default_factory=list)
+    to_update: list = field(default_factory=list)
+    to_deactivate: list = field(default_factory=list)
+    unchanged: int = 0
+
+
+@dataclass
+class AuxDiff:
+    to_insert: list = field(default_factory=list)
+    to_delete: list = field(default_factory=list)
+    unchanged: int = 0
+
+
+def diff(nc_accounts: list[dict], db_accounts: list[dict]) -> CoaDiff:
+    """Pure. Three mutually exclusive buckets + a count.
+
+    Reactivation is NOT its own bucket: is_active false->true is a field change
+    like any other, so it rides in to_update with reactivated=True. An account
+    that was both renamed and re-enabled appears exactly once.
+    """
+    by_code = {a["code"]: a for a in db_accounts}
+    out = CoaDiff()
+    for nc in nc_accounts:
+        cur = by_code.get(nc["code"])
+        if cur is None:
+            out.to_insert.append(nc)
+            continue
+        # Only NC_OWNED_FIELDS are ever compared — UniOps' own columns
+        # (subtype/aux_dimensions/effective_*/...) must not enter an UPDATE.
+        changes = {f: (cur.get(f), nc[f]) for f in NC_OWNED_FIELDS
+                   if cur.get(f) != nc[f]}
+        reactivated = cur.get("is_active") is False
+        if changes or reactivated:
+            out.to_update.append({"code": nc["code"], "changes": changes,
+                                  "reactivated": reactivated, "values": nc})
+        else:
+            out.unchanged += 1
+    nc_codes = {a["code"] for a in nc_accounts}
+    for cur in db_accounts:
+        if cur["code"] not in nc_codes and cur.get("is_active") is not False:
+            out.to_deactivate.append({"code": cur["code"], "name": cur.get("name")})
+    return out
+
+
+def _aux_key(r: dict) -> tuple:
+    return (r["account_code"], r["dim_code"], r["seq"], r["required"])
+
+
+def diff_aux(nc_aux: list[dict], db_aux: list[dict]) -> AuxDiff:
+    """Pure. coa_aux_items is a plain NC projection with no UniOps-side data and
+    nothing referencing it, so any difference is a replace (spec §5)."""
+    nc_keys = {_aux_key(r): r for r in nc_aux}
+    db_keys = {_aux_key(r): r for r in db_aux}
+    out = AuxDiff()
+    out.to_insert = [r for k, r in nc_keys.items() if k not in db_keys]
+    out.to_delete = [r for k, r in db_keys.items() if k not in nc_keys]
+    out.unchanged = len(set(nc_keys) & set(db_keys))
+    return out
