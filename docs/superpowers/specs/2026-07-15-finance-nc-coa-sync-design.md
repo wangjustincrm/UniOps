@@ -34,8 +34,15 @@ COA、辅助核算、voucher 必须同源。
   不收编 `customers_import.py`。
 - **删除语义 = 停用,不删**:NC 未返回的科目置 `is_active=false`,永不 DELETE。
 - **确认模型 = 先预览再应用**:预览展示差异,admin 确认后才写库。
-- **权限 = 仅 `system_admin`**(JWT role),预览与应用同门禁。
-  COA 页现有 `_require_manage` 不变、不受影响。
+- **权限 = `finance.coa.manage`**(Access Control 矩阵键),预览与应用同门禁。
+  **2026-07-16 修订**:原定「仅 `system_admin`(JWT role)」,对齐 voucher NC Sync。
+  期间 authz ②期落地(main `f7e23d8`),确立「**COA 谁能改由矩阵决定,不改代码**」,
+  COA 页全部写操作(新增/改/删/CSV 导入)已改走 `require_permission("finance.coa.manage")`,
+  默认授予 (system_admin, finance_manager)。
+  **理由**:`POST /coa/import` 上传 CSV 即可整表覆盖 COA,与本同步破坏力相同 ——
+  同步的数据源还是 NC 而非人工 CSV,反而更安全。若同步独用 system_admin,
+  则 finance_manager 传个 CSV 就能达成同样效果、点同步却 403:**同样的破坏力两套门禁**,
+  且严的那套绕得过。故复用同一把锁,零新增权限键。想让谁同步,在 Portal 勾。
 - **架构 = 同步执行**:无后台 worker、无进度表、无轮询。
 - **辅助核算真相源 = `coa_aux_items`**:给它加 `required` 列、填 `seq`;
   `aux_dimensions` JSONB 不再人工维护,COA 页编辑器降为只读,列留在原地待后续清理。
@@ -313,7 +320,8 @@ COA 混合所有权且被历史数据引用,辅助核算不是。
 | `POST /coa-sync/preview` | 只读,返回 CoaDiff + AuxDiff。零写入 |
 | `POST /coa-sync/apply` | 执行,返回实际计数 |
 
-三者均 `system_admin` 门禁。阻塞的 oracledb 读一律
+三者均 `finance.coa.manage` 门禁(经 `app.core.authz.require_permission`,
+与 COA 页写操作同一把锁)。阻塞的 oracledb 读一律
 `await loop.run_in_executor(None, fetch_coa_from_nc)`,不卡事件循环。
 
 ### 7.1 apply 重新读取,不用快照
@@ -354,7 +362,7 @@ NC 返回 0 个科目直接拒绝(503)。账簿 pk 配错或 NC 侧异常返回�
 
 | 情形 | 响应 | 写库 |
 |---|---|---|
-| 非 `system_admin` | 403 | 无 |
+| 无 `finance.coa.manage` 权限 | 403 | 无 |
 | `nc_configured()` 为假 | 503 `"NC connection is not configured"`(与 voucher trigger 同句) | 无 |
 | NC 连不上 / oracledb 报错 | 503 带原始错误信息 | 无 |
 | NC 返回 0 科目 或 0 辅助核算行 | 503 | 无 |
@@ -427,7 +435,7 @@ apply 的写入是**单事务、全有或全无**(COA upsert + 辅助核算清�
 
 **第二层:API 测试**(照 `tests/test_nc_sync.py` 现成的 `_fetch` monkeypatch 缝)
 
-- 403(非 system_admin)、503(未配置)、503(NC 零科目)、503(NC 零辅助核算行)
+- 403(无 `finance.coa.manage`)、503(未配置)、503(NC 零科目)、503(NC 零辅助核算行)
 - **断言 preview 之后库中一行未变**(不能只看它返回了 diff 就算通过)
 - **幂等**:连跑两次 apply,第二次应全为 no-op。此条同时抓 upsert 写错
   与 `is_active` 推断写反两类 bug

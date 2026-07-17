@@ -2,8 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 给 Finance 加一个 `system_admin` 专用的 COA + 辅助核算同步接口(预览→应用),
-用 NC 的事实替换现有导入器的推断,顺带修复 18 个方向记反 + 29 个数量核算错误的存量科目。
+**Goal:** 给 Finance 加一个由 `finance.coa.manage` 权限门禁的 COA + 辅助核算同步接口
+(预览→应用),用 NC 的事实替换现有导入器的推断,顺带修复 18 个方向记反 + 29 个数量核算
+错误的存量科目。
 
 **Architecture:** 同步执行(无后台 worker/无进度表/无轮询) —— 360 科目 + 205 辅助核算行,
 读取约 1-2 秒。`POST /coa-sync/preview` 只读返回差异,`POST /coa-sync/apply` **重新读 NC、
@@ -20,6 +21,11 @@ psycopg2(写本库) / pytest + pytest-asyncio / React + TanStack Query
 
 ## Global Constraints
 
+- **权限门禁 = `finance.coa.manage`**(2026-07-16 修订,spec §1.2):经
+  `from app.core.authz import require_permission` —— **不要**硬编码
+  `user.get("role") == "system_admin"`。authz ②期已确立「COA 谁能改由矩阵决定,
+  不改代码」,COA 页 CSV 导入用的就是这把锁;同步与之破坏力相同,必须同锁。
+  (voucher 的 `nc_sync.py` 仍是硬编码 system_admin —— **那是未迁的存量,别照抄**。)
 - **NC 是事实来源,不得推断**:遇到未登记的取值一律抛错,**禁止兜底默认值**。
   现有 `coa_import.py` 的 `return "asset"` 兜底正是 18 个方向记反的成因模式(spec §3.1.1)。
 - **`~` 是 NC 的空值哨兵**,不是 NULL。`unit`/`currency`/`pid`/`name*` 全部需 `~` 清洗。
@@ -1213,6 +1219,12 @@ empty read (a mistyped chart pk looks identical) would retire all 360 accounts."
 - Produces: `GET /finance/v1/coa-sync/status`、`POST /finance/v1/coa-sync/preview`、
   `POST /finance/v1/coa-sync/apply`;测试缝 `_fetch`、`_worker_dsn`
 
+> **权限(2026-07-16 修订)**:三个端点均用 `finance.coa.manage`,写法照抄
+> [coa.py:27-53](../../../finance-api/app/api/v1/coa.py#L27-L53) 的 `_manage_gate`/
+> `_can_manage` 模式。**测试库的权限矩阵 conftest 已 seed 好**
+> (`tests/conftest.py:77-139`,按 `seed_phase2_keys.py` 的默认值),
+> 所以 `_h("finance_manager")` 直接能过、`_h("requester")` 直接 403,**无需额外造数据**。
+
 - [ ] **Step 1: 写失败的测试**
 
 追加到 `finance-api/tests/test_nc_coa_sync.py`:
@@ -1228,12 +1240,12 @@ from app.core.config import settings as app_settings
 from app.db.base import get_db
 from app.main import app
 
-def _token(role="system_admin", sub=None):
+def _token(role="finance_manager", sub=None):
     return jwt.encode({"sub": str(sub or uuid.uuid4()), "role": role,
                        "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
                       app_settings.jwt_secret_key, algorithm=app_settings.jwt_algorithm)
 
-def _h(role="system_admin"):
+def _h(role="finance_manager"):
     return {"Authorization": f"Bearer {_token(role)}"}
 
 @pytest_asyncio.fixture
@@ -1249,29 +1261,43 @@ def _configure_nc(monkeypatch):
     for f in ("nc_host", "nc_service", "nc_user", "nc_password"):
         monkeypatch.setattr(app_settings, f, "x")
 
+# 权限矩阵由 conftest 按 seed_phase2_keys.py 的默认值 seed:
+# finance.coa.manage = (system_admin, finance_manager)
 async def test_status_shape(client, monkeypatch):
     _configure_nc(monkeypatch)
-    r = await client.get("/finance/v1/coa-sync/status", headers=_h())
+    r = await client.get("/finance/v1/coa-sync/status", headers=_h("system_admin"))
     assert r.status_code == 200
     assert r.json()["configured"] is True and r.json()["can_sync"] is True
-    r2 = await client.get("/finance/v1/coa-sync/status", headers=_h(role="finance_manager"))
-    assert r2.json()["can_sync"] is False
+    # finance_manager 持有 finance.coa.manage —— 与 COA 页 CSV 导入同一把锁
+    r2 = await client.get("/finance/v1/coa-sync/status", headers=_h("finance_manager"))
+    assert r2.json()["can_sync"] is True
+    r3 = await client.get("/finance/v1/coa-sync/status", headers=_h("requester"))
+    assert r3.json()["can_sync"] is False
 
-async def test_preview_requires_system_admin(client, monkeypatch):
+async def test_preview_requires_coa_manage_permission(client, monkeypatch):
     _configure_nc(monkeypatch)
-    r = await client.post("/finance/v1/coa-sync/preview", headers=_h(role="finance_manager"))
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("requester"))
     assert r.status_code == 403
+
+async def test_preview_allows_finance_manager(client, monkeypatch):
+    # 回归:CSV 导入这条路 finance_manager 本就能整表覆盖 COA,
+    # 同步不得比它严 —— 否则同样的破坏力两套门禁,且严的那套绕得过
+    from app.api.v1 import nc_coa_sync as api_mod
+    _configure_nc(monkeypatch)
+    monkeypatch.setattr(api_mod, "_fetch", lambda: _extract())
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("finance_manager"))
+    assert r.status_code == 200
 
 async def test_preview_503_when_not_configured(client, monkeypatch):
     monkeypatch.setattr(app_settings, "nc_password", None)
-    r = await client.post("/finance/v1/coa-sync/preview", headers=_h())
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("system_admin"))
     assert r.status_code == 503
 
 async def test_preview_503_on_zero_rows(client, monkeypatch):
     from app.api.v1 import nc_coa_sync as api_mod
     _configure_nc(monkeypatch)
     monkeypatch.setattr(api_mod, "_fetch", lambda: _extract(accounts=[]))
-    r = await client.post("/finance/v1/coa-sync/preview", headers=_h())
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("system_admin"))
     assert r.status_code == 503
 
 async def test_preview_writes_nothing(client, monkeypatch):
@@ -1279,12 +1305,17 @@ async def test_preview_writes_nothing(client, monkeypatch):
     _configure_nc(monkeypatch)
     _pg("delete from chart_of_accounts")
     monkeypatch.setattr(api_mod, "_fetch", lambda: _extract())
-    r = await client.post("/finance/v1/coa-sync/preview", headers=_h())
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("system_admin"))
     assert r.status_code == 200
     body = r.json()
     assert body["accounts"]["to_insert"] == 1
     # 正面证据:预览之后库里一行没有
     assert _pg("select count(*) from chart_of_accounts")[0][0] == 0
+
+async def test_apply_requires_coa_manage_permission(client, monkeypatch):
+    _configure_nc(monkeypatch)
+    r = await client.post("/finance/v1/coa-sync/apply", headers=_h("requester"))
+    assert r.status_code == 403
 
 async def test_apply_writes_and_reports_counts(client, monkeypatch):
     from app.api.v1 import nc_coa_sync as api_mod
@@ -1292,7 +1323,7 @@ async def test_apply_writes_and_reports_counts(client, monkeypatch):
     _pg("delete from chart_of_accounts"); _pg("delete from coa_aux_items")
     monkeypatch.setattr(api_mod, "_fetch", lambda: _extract())
     monkeypatch.setattr(api_mod, "_worker_dsn", lambda: _TEST_DSN)
-    r = await client.post("/finance/v1/coa-sync/apply", headers=_h())
+    r = await client.post("/finance/v1/coa-sync/apply", headers=_h("system_admin"))
     assert r.status_code == 200, r.text
     assert r.json()["accounts_inserted"] == 1
     assert _pg("select normal_balance from chart_of_accounts where code='1602'")[0][0] == "credit"
@@ -1310,11 +1341,16 @@ Expected: FAIL —— 404 / ModuleNotFoundError
 - [ ] **Step 3: 写 `app/api/v1/nc_coa_sync.py`**
 
 ```python
-"""NC65 COA + aux sync — preview/apply (system_admin only).
+"""NC65 COA + aux sync — preview/apply, gated on finance.coa.manage.
 
 Synchronous by design: 360 accounts + 205 aux rows read in ~1-2s. The voucher
 sync's worker/run-table/polling machinery exists for volume this does not have,
 and preview->confirm already needs two calls.
+
+Same lock as the COA page's writes (including CSV import, which can overwrite
+the whole chart): the blast radius is identical and this sync's source is NC
+rather than a hand-edited spreadsheet. A stricter gate here would only mean
+finance_manager reaches the same end via CSV while the sync button 403s.
 """
 import asyncio
 
@@ -1322,6 +1358,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import require_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.coa import ChartOfAccount, CoaAuxItem
@@ -1334,10 +1371,22 @@ router = APIRouter(prefix="/coa-sync", tags=["coa-sync"])
 _fetch = svc.fetch_coa_from_nc
 _worker_dsn = svc._pg_dsn
 
+_MANAGE_KEY = "finance.coa.manage"          # same key coa.py gates its writes on
+_manage_gate = require_permission(_MANAGE_KEY)
 
-def _require_admin(user: dict) -> None:
-    if user.get("role") != "system_admin":
-        raise HTTPException(status_code=403, detail="system_admin only")
+
+async def _can_manage(db: AsyncSession, user: dict) -> bool:
+    try:
+        await _manage_gate(user, db)
+        return True
+    except HTTPException:
+        return False
+
+
+async def _require_manage(db: AsyncSession, user: dict) -> None:
+    if not await _can_manage(db, user):
+        raise HTTPException(status_code=403,
+                            detail="Insufficient permission to sync the chart of accounts")
 
 
 def _require_configured() -> None:
@@ -1372,7 +1421,7 @@ async def status(user: CurrentUser, db: AsyncSession = Depends(get_db)):
                              .order_by(CoaSyncRun.started_at.desc()).limit(1))
             ).scalars().first()
     return {
-        "can_sync": user.get("role") == "system_admin",
+        "can_sync": await _can_manage(db, user),
         "configured": svc.nc_configured(),
         "last_run": None if last is None else {
             "id": str(last.id),
@@ -1390,7 +1439,7 @@ async def status(user: CurrentUser, db: AsyncSession = Depends(get_db)):
 
 @router.post("/preview")
 async def preview(user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    _require_admin(user)
+    await _require_manage(db, user)
     _require_configured()
     nc_accounts, nc_aux = await _build_or_503()
     db_accounts, db_aux = await _read_db_state(db)
@@ -1424,7 +1473,7 @@ async def preview(user: CurrentUser, db: AsyncSession = Depends(get_db)):
 
 @router.post("/apply")
 async def apply(user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    _require_admin(user)
+    await _require_manage(db, user)
     _require_configured()
     # Re-read NC and recompute: never let the client tell the server what to write.
     nc_accounts, nc_aux = await _build_or_503()
