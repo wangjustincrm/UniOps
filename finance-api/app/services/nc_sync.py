@@ -97,6 +97,19 @@ def resolve_aux_type_pks(items) -> dict:
     return out
 
 
+def _tallied(tallydate) -> bool:
+    """Has NC posted this voucher to its ledger?
+
+    GL_VOUCHER.TALLYDATE is CHAR(19), so Oracle space-pads it: an empty one comes
+    back as '~' + 18 spaces, NOT '~'. Comparing it raw reports every voucher as
+    tallied — which silently made this whole draft/posted split a no-op and left
+    $1.73M of un-tallied entries in the GL. SQL hides it (Oracle pads the literal
+    too, so `tallydate = '~'` matches), and so do fixtures, which hand over clean
+    values. Only real Oracle shows it. Strip before deciding.
+    """
+    return bool(tallydate) and tallydate.strip() not in ("", "~")
+
+
 def _d(v) -> Decimal:
     return Decimal(str(v)) if v is not None else Decimal("0")
 
@@ -151,7 +164,7 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             # NC's TALLYDATE empty = not yet posted to NC's ledger. Mirror that:
             # the GL and Account Balance both read status == POSTED only, so an
             # un-tallied voucher must not colour reports (spec §14.4).
-            "status": "posted" if (tallydate and tallydate != "~") else "draft",
+            "status": "posted" if _tallied(tallydate) else "draft",
         })
 
     lines, dims, unmapped = [], [], 0
@@ -251,7 +264,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         cur.execute("select pk_voucher, tallydate from NCSC.GL_VOUCHER "
                     "where pk_accountingbook = :b "
                     "  and (discardflag is null or discardflag <> 'Y')", b=PK_BOOK)
-        tallied = {pk for pk, td in cur if td and td != "~"}
+        tallied = {pk for pk, td in cur if _tallied(td)}
 
         # details: fetch the whole book; transform() filters by pk2id membership.
         cur.execute(

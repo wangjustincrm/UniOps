@@ -95,6 +95,21 @@ def test_transform_skips_existing_and_counts_unmapped():
     assert len(l2) == 1 and l2[0][11] is None and unmapped2 == 1
 
 
+def test_tallied_handles_oracle_char_padding():
+    """GL_VOUCHER.TALLYDATE is CHAR(19): Oracle space-pads it, so an empty one
+    arrives as '~' + 18 spaces, not '~'. Comparing raw called every voucher
+    tallied and made the whole draft/posted split a no-op — $1.73M of un-tallied
+    entries stayed in the GL. SQL hides it (Oracle pads the literal too) and so do
+    fixtures; only real Oracle shows it. Measured: 39,706 tallied of 39,977."""
+    from app.services.nc_sync import _tallied
+    assert _tallied("~" + " " * 18) is False       # what Oracle actually sends
+    assert _tallied("~") is False
+    assert _tallied(" " * 19) is False
+    assert _tallied(None) is False
+    assert _tallied("") is False
+    assert _tallied("2026-07-15 10:30:00") is True
+
+
 def test_transform_marks_untallied_vouchers_draft():
     # NC's TALLYDATE empty = not yet posted to NC's ledger. status was hardcoded
     # "posted", which put $1.73M of un-tallied entries (incl. future periods) into
