@@ -244,11 +244,13 @@ async def _credit_dim_event(db, account, amount, dept_id=None, period="2026-07")
                 "debit": Decimal(amount), "currency": "CAD"}, line])
 
 
-async def test_expand_returns_four_columns_reconciling_with_parent(db_session):
-    # dept A: prior period (opening) debit 100; this period debit 30, credit 50
-    # dept B: no movement this period, but a prior-period credit 40 (opening -40)
-    # -> dept B must still appear (union of opening-keys and movement-keys), and
-    #    children's closing must sum to the parent account row's closing.
+async def test_expand_shows_only_dims_with_this_period_movement(db_session):
+    # Monthly view (user decision 2026-07-17): the expansion lists only dimensions
+    # that MOVED this period. A dimension with only a carried-forward opening and
+    # no current-period line does NOT appear — otherwise its row shows a balance
+    # but its (per-period) Vouchers drill is empty, which reads as broken.
+    # dept A: prior debit 100 (opening); this period debit 30, credit 50 -> appears
+    # dept B: only a prior-period credit 40, no this-period line -> excluded
     ACCT, PERIOD = "5101", "2026-07"
     dept_a, dept_b = uuid.uuid4(), uuid.uuid4()
     db_session.add_all([
@@ -265,16 +267,20 @@ async def test_expand_returns_four_columns_reconciling_with_parent(db_session):
 
     out = await ab.expand_by_dims(db_session, account_code=ACCT, period=PERIOD, dims=["department"])
     by = {r["keys"][0]["code"]: r for r in out["rows"]}
+    # dept A moved this period -> appears, still with its carried opening + closing
     assert by["A"]["opening"] == "100.00"
     assert by["A"]["period_debit"] == "30.00" and by["A"]["period_credit"] == "50.00"
     assert by["A"]["closing"] == "80.00"          # 100 + 30 - 50
-    # dept B: nets to zero this period but has an opening balance -> still appears
-    assert "B" in by and by["B"]["closing"] == "-40.00"
+    # dept B had no this-period movement -> excluded (this is the fix)
+    assert "B" not in by
 
-    # children reconcile with the parent account row, column for column
+    # Reconciliation is on THIS PERIOD's movement (the monthly view): the shown
+    # children's period debit/credit sum to the parent account row's period
+    # debit/credit.
     ab_report = await ab.account_balance(db_session, PERIOD)
     parent = next(r for r in ab_report["rows"] if r["account_code"] == ACCT)
-    assert sum(Decimal(r["closing"]) for r in out["rows"]) == Decimal(parent["closing"])
+    assert sum(Decimal(r["period_debit"]) for r in out["rows"]) == Decimal(parent["period_debit"])
+    assert sum(Decimal(r["period_credit"]) for r in out["rows"]) == Decimal(parent["period_credit"])
 
 
 async def test_expand_rejects_unknown_dim(db_session):

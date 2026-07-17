@@ -224,7 +224,12 @@ async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
 
     opening = await grouped(JournalVoucher.fiscal_period < period)
     movement = await grouped(JournalVoucher.fiscal_period == period)
-    all_keys = set(opening) | set(movement)     # 本期冲平但有期初的组也要出现
+    # Monthly view (user 2026-07-17): only dimensions that MOVED this period. A
+    # dimension with just a carried-forward opening and no current-period line is
+    # excluded — otherwise its row shows a balance but the (per-period) Vouchers
+    # drill is empty, which reads as broken. Its opening still shows for dims that
+    # did move, so an active dimension's opening/closing are intact.
+    all_keys = set(movement)
 
     # batch-load id -> (code, name) per dimension over the union of keys
     lookups: dict[str, dict] = {}
