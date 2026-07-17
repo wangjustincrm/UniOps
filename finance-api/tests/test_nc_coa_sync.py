@@ -37,7 +37,7 @@ async def test_coa_aux_item_required_defaults_false(db_session):
 import pytest
 
 from app.services.nc_coa_sync import (
-    NcMappingError, clean, derive_party_dim, map_account, map_account_type,
+    NcMappingError, clean, map_account, map_account_type,
     map_aux_item, map_normal_balance,
 )
 
@@ -92,21 +92,10 @@ def test_aux_item_rejects_unregistered_code():
     with pytest.raises(NcMappingError):
         map_aux_item("ZZ99")                          # 不 slug、不猜
 
-# ── 客商派生 ────────────────────────────────────────────────────────────────
-@pytest.mark.parametrize("code,atype,expected", [
-    ("112201", "asset", "customer"),      # 应收非关联单位款
-    ("220202", "liability", "supplier"),  # 应付关联单位款
-    ("640202", "expense", "supplier"),    # 劳务成本
-    ("6002", "revenue", "customer"),      # 销售折扣
-    ("4001", "equity", "partner"),        # 实收资本 = 股东
-])
-def test_derive_party_dim(code, atype, expected):
-    assert derive_party_dim(code, atype) == expected
-
-def test_derive_party_dim_exceptions_never_become_customer():
-    # 1511/1512 对方是被投资单位,按资产分支会误判为 customer
-    assert derive_party_dim("1511", "asset") == "partner"
-    assert derive_party_dim("1512", "asset") == "partner"
+def test_aux_item_maps_party_to_partner_without_deriving():
+    # 0004 客商 covers vendors and customers; it maps to one `partner` dim
+    # rather than being derived per account (the old rule contradicted the data)
+    assert map_aux_item("0004") == "partner"
 
 # ── map_account 整合 ────────────────────────────────────────────────────────
 def _lookups():

@@ -34,18 +34,13 @@ ACCOUNT_TYPE_BY_NC = {"1": "asset", "2": "liability", "4": "equity", "5": "expen
 AUX_ITEM_MAP = {
     "ra01": "cost_center", "0001": "department", "0008": "income_expense_item",
     "0019": "supplier", "0017": "customer",
-    "0004": "__party__",                # derived per account — see derive_party_dim
+    "0004": "partner",                  # 客商 = vendors ∪ customers (see spec §3.4.1)
     "0006": "item", "0012": "item_category", "0010": "project",
     "D45": "project_type", "CRM02": "government_grant_project",
     "fa01": "asset_category", "D47": "tax_code", "0022": "bank_category",
     "0023": "bank", "0011": "bank_account", "0044": "country_region",
     "0002": "employee", "D09": "sales_type", "CRM01": "credit_card",
 }
-
-# Neither a supplier nor a customer: 4001 实收资本 is a shareholder,
-# 1511/1512 长期股权投资 an investee. Resolve to the unexpandable `partner`
-# rather than forcing them into customer (user decision 2026-07-15).
-PARTY_EXCEPTIONS = {"4001", "1511", "1512"}
 
 # The columns the sync owns. Everything else on chart_of_accounts is UniOps'
 # and must never appear in an UPDATE (spec §3.1/§3.2).
@@ -90,24 +85,6 @@ def map_aux_item(nc_item_code: str) -> str:
         raise NcMappingError(
             f"unregistered BD_ACCASSITEM.code {code!r}; add it to AUX_ITEM_MAP"
         ) from None
-
-
-def derive_party_dim(account_code: str, account_type: str) -> str:
-    """客商 (0004) covers vendors and customers; we keep them apart. Decide from
-    the account's nature. `partner` is not in account_balance._dimensions(), so
-    it surfaces as supported:false — i.e. not expandable, which beats expanding
-    it wrongly."""
-    if account_code in PARTY_EXCEPTIONS:
-        return "partner"
-    if account_type == "asset":
-        return "customer"               # receivables — they owe us
-    if account_type == "liability":
-        return "supplier"               # payables — we owe them
-    if account_type == "expense":
-        return "supplier"               # cost (5) and P&L debit
-    if account_type == "revenue":
-        return "customer"               # P&L credit
-    return "partner"                    # equity and anything unforeseen
 
 
 def map_account(row: dict, *, uom: dict, ccy: dict, acctype: dict,
