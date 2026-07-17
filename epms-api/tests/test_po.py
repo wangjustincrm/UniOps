@@ -242,6 +242,97 @@ async def test_backfill_create_po_task_for_approved_pr_without_po(test_engine):
         assert len(again) == 1, "backfill must not create duplicate create_po tasks"
 
 
+@pytest.mark.asyncio
+async def test_backfill_create_po_respects_date_floor(test_engine):
+    """Old imported PRs (created before the backfill floor) must NOT get a Create
+    PO task — years of PMS history shouldn't resurface as live inbox work."""
+    import uuid
+    from datetime import datetime, timezone
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud import task as task_crud
+    from app.crud import user as user_crud
+    from app.models.pr import PurchaseRequest
+    from app.schemas.auth import RegisterRequest
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        officer = await user_crud.create(db, RegisterRequest(
+            email=f"po-floor-{uuid.uuid4().hex[:6]}@t.com", password="TestPass1!",
+            full_name="Floor Officer", role="procurement_officer"))
+        old_pr = PurchaseRequest(
+            number=f"PR-OLD-{uuid.uuid4().hex[:6]}", title="Ancient imported PR", type=2,
+            status="approved", amount=Decimal("50.00"), created_by=officer.id, po_id=None,
+            created_at=datetime(2025, 3, 1, tzinfo=timezone.utc))
+        db.add(old_pr)
+        await db.commit()
+
+        tasks = await task_crud.get_for_role(db, "procurement_officer", officer.id)
+        await db.commit()
+        assert not any(t.type == "create_po" and t.document_id == old_pr.id for t in tasks), \
+            "PR created before the floor must not get a create_po task"
+
+
+@pytest.mark.asyncio
+async def test_backfill_create_pa_task_for_payable_po_with_matched_invoice(test_engine):
+    """Payable PO whose matched invoice was imported (pre-matched, bypassing the
+    live hook) must surface a Create PA task for the PR requester."""
+    import uuid
+    from datetime import date, datetime, timezone
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud import task as task_crud
+    from app.crud import user as user_crud
+    from app.models.invoice import Invoice
+    from app.models.po import PurchaseOrder
+    from app.models.pr import PurchaseRequest
+    from app.models.vendor import Vendor
+    from app.schemas.auth import RegisterRequest
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await user_crud.create(db, RegisterRequest(
+            email=f"pa-req-{uuid.uuid4().hex[:6]}@t.com", password="TestPass1!",
+            full_name="PA Requester", role="requester"))
+        vendor = Vendor(code=f"V-{uuid.uuid4().hex[:6]}", name="PA Vendor", category="Services",
+                        contact_name="C", contact_email="c@pa.test")
+        db.add(vendor)
+        await db.commit()
+        await db.refresh(vendor)
+
+        pr = PurchaseRequest(number=f"PR-{uuid.uuid4().hex[:6]}", title="PA PR", type=2,
+                             status="approved", amount=Decimal("100.00"), created_by=requester.id)
+        db.add(pr)
+        await db.commit()
+        await db.refresh(pr)
+
+        po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:6]}", title="PA PO", type=2,
+                           vendor_id=vendor.id, vendor_name=vendor.name, created_by=requester.id,
+                           pr_id=pr.id, status="issued", total=Decimal("113.00"), approval_step_idx=2)
+        db.add(po)
+        await db.commit()
+        await db.refresh(po)
+        pr.po_id = po.id  # reflect the real PR->PO link so create_po doesn't also fire
+        await db.commit()
+
+        inv = Invoice(internal_ref=f"IVN-{uuid.uuid4().hex[:6]}", vendor_invoice_number="V-INV-1",
+                      vendor_id=vendor.id, vendor_name=vendor.name, amount=Decimal("100.00"),
+                      total_amount=Decimal("113.00"), invoice_date=date(2026, 7, 1),
+                      due_date=date(2026, 7, 31), status="matched", po_id=po.id,
+                      uploaded_by=requester.id, created_at=datetime(2026, 7, 7, tzinfo=timezone.utc))
+        db.add(inv)
+        await db.commit()
+
+        tasks = await task_crud.get_for_role(db, "requester", requester.id)
+        await db.commit()
+        create_pa = [t for t in tasks if t.type == "create_pa" and t.document_id == po.id]
+        assert len(create_pa) == 1, "payable PO with a matched invoice must get one Create PA task"
+        assert create_pa[0].assigned_user_id == requester.id
+
+        tasks2 = await task_crud.get_for_role(db, "requester", requester.id)
+        await db.commit()
+        again = [t for t in tasks2 if t.type == "create_pa" and t.document_id == po.id]
+        assert len(again) == 1, "backfill must not duplicate create_pa tasks"
+
+
 # ── Approval auto-skip (crud-level) ─────────────────────────────────────────────
 # The HTTP /action endpoint forwards approve/submit/etc to approval-api's engine
 # (which owns the live workflow — already migrated off role_management in Task
