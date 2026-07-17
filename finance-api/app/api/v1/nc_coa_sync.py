@@ -1,8 +1,9 @@
 """NC65 COA + aux sync — preview/apply, gated on finance.coa.manage.
 
-Synchronous by design: 360 accounts + 205 aux rows read in ~1-2s. The voucher
-sync's worker/run-table/polling machinery exists for volume this does not have,
-and preview->confirm already needs two calls.
+Synchronous by design: 350 accounts + 234 aux rows read in ~1-2s (measured
+against the live NC box). The voucher sync's worker/run-table/polling machinery
+exists for volume this does not have, and preview->confirm already needs two
+calls anyway.
 
 Same lock as the COA page's writes (including CSV import, which can overwrite
 the whole chart): the blast radius is identical and this sync's source is NC

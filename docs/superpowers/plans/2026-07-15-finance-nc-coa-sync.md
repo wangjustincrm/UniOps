@@ -6,7 +6,7 @@
 (预览→应用),用 NC 的事实替换现有导入器的推断,顺带修复 18 个方向记反 + 29 个数量核算
 错误的存量科目。
 
-**Architecture:** 同步执行(无后台 worker/无进度表/无轮询) —— 360 科目 + 205 辅助核算行,
+**Architecture:** 同步执行(无后台 worker/无进度表/无轮询) —— 350 科目 + 234 辅助核算行,
 读取约 1-2 秒。`POST /coa-sync/preview` 只读返回差异,`POST /coa-sync/apply` **重新读 NC、
 重新算差异**后单事务写入。核心是两个纯函数(`map_account` / `diff`),
 零 I/O、可穷举测试。阻塞的 oracledb 读一律 `run_in_executor`。
@@ -1335,9 +1335,10 @@ Expected: FAIL —— 404 / ModuleNotFoundError
 ```python
 """NC65 COA + aux sync — preview/apply, gated on finance.coa.manage.
 
-Synchronous by design: 360 accounts + 205 aux rows read in ~1-2s. The voucher
-sync's worker/run-table/polling machinery exists for volume this does not have,
-and preview->confirm already needs two calls.
+Synchronous by design: 350 accounts + 234 aux rows read in ~1-2s (measured
+against the live NC box). The voucher sync's worker/run-table/polling machinery
+exists for volume this does not have, and preview->confirm already needs two
+calls anyway.
 
 Same lock as the COA page's writes (including CSV import, which can overwrite
 the whole chart): the blast radius is identical and this sync's source is NC
@@ -2033,8 +2034,12 @@ cd /c/Project/uniops
 docker compose -f docker-compose.dev.yml exec finance-api alembic upgrade head
 
 # 2. 预览(dev 前端点 NC Sync → Preview),预期看到:
-#    Updated ≈ 47+(18 个 normal_balance debit→credit + 29 个 quantity_accounting)
-#    并在明细里能看到 1602 累计折旧 normal_balance: debit → credit
+#    Deactivated = 10  (dev 现有 360 个是按 ROOT 口径导的; CRM0001 只启用 350 ——
+#                       PST paid / PST Collected / 折扣 / 存货冲销 / NR 税 ... )
+#    Updated 里应含: 18 个 normal_balance debit→credit + 29 个 quantity_accounting
+#                    + 172 个 default_currency + 30 个 default_uom 从空变有值
+#    明细里能看到 1602 累计折旧 normal_balance: debit → credit
+#    并在「将被停用」清单里逐个看到那 10 个科目(交财务复核用, spec §13)
 
 # 3. Apply 后核对(正面证据)
 docker exec uniops_postgres psql -U epms -d epms -c "
@@ -2044,15 +2049,33 @@ select count(*) filter (where normal_balance='credit'
                      '1713','190102')) as contra_assets_now_credit,
        count(*) filter (where quantity_accounting) as qty_accounting_now,
        count(*) filter (where default_currency is not null) as currency_filled,
-       count(*) filter (where default_uom is not null) as uom_filled
+       count(*) filter (where default_uom is not null) as uom_filled,
+       count(*) filter (where is_active) as active_accounts,
+       count(*) filter (where not is_active) as inactive_accounts
 from chart_of_accounts;"
-# 预期: contra_assets_now_credit=17, qty_accounting_now=30,
-#       currency_filled=181, uom_filled=30
+# 预期(CRM0001 口径, 均已实连 NC 实测):
+#   contra_assets_now_credit=17  (修复前为 0 —— 17 个全存成了 debit)
+#   qty_accounting_now=30        (修复前为 1 —— 旧规则只蒙对 6002)
+#   currency_filled=172, uom_filled=30   (修复前均为 0)
+#   active_accounts=350, inactive=10     (ROOT 多出来的 10 个被停用, 非删除)
 
 docker exec uniops_postgres psql -U epms -d epms -c "
 select count(*) as aux_rows, count(*) filter (where required) as required_rows,
-       min(seq) as seq_min, max(seq) as seq_max from coa_aux_items;"
-# 预期: aux_rows≈205, required_rows≈187, seq_min=1, seq_max=7 (不再恒为 0)
+       min(seq) as seq_min, max(seq) as seq_max,
+       count(*) filter (where dim_code='partner') as partner_rows
+from coa_aux_items;"
+# 预期(CRM0001 口径, 已实连 NC 实测): aux_rows=234, required_rows=200,
+#   seq_min=1, seq_max=7, partner_rows=41
+# 对照修复前: 100 行 / seq 1-4(老脚本按 SELECT 顺序编的计数器, 非 NC 序号)
+#             / required 列此前根本不存在
+
+# 4. partner 维度可展开了吗(Task 7 的意义所在)
+docker exec uniops_postgres psql -U epms -d epms -c "
+select code, name from chart_of_accounts
+where code in (select account_code from coa_aux_items where dim_code='partner')
+order by code limit 5;"
+# 然后在 Account Balance 页对其中一个科目按 Partner 展开 —— 应能出数,
+# 且主数据已不存在的往来方(如 Alloc Vendor)显示行上的 partner_name 而非空白
 ```
 
 **上生产前**:把 preview 的改动清单交财务复核(spec §13)—— 这批改动会改变

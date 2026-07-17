@@ -135,7 +135,7 @@ CRM0001 实测基线:**350 个启用科目**(`soa.enablestate=2`),acctype 分布
 | `default_currency` 全空 | **172** 可填 | 未读 `CURRENCY`(需 join `BD_CURRTYPE` 取 code) |
 | `default_uom` 全空 | **30** 可填 | 未读 `UNIT`(需 join `BD_MEASDOC` 取 code) |
 | **辅助核算 join 错列** | 全部 | join 了 `pk_coveraccasoa`(§2.0.1),UI 真值实测返回空 |
-| `coa_aux_items.seq` 恒为 0 | 234 行 | 未读 `BD_ACCASS.ID`(真值 1-7) |
+| `coa_aux_items.seq` 是**合成的**,非 NC 序号 | 234 行 | 老脚本用 `len([r for r in rows if r[0]==acct])+1` 按 SELECT 返回顺序**编出**一个 1..N 计数器(dev 实测取值 1-4),而 NC 的真值在 `BD_ACCASS.ID`(取值 1-7)。**顺序是任意的,不反映 NC 配置的序号** —— 2026-07-17 更正:此前本行误称「恒为 0」,实测 100/100 行 seq>0 |
 | `aux_dimensions.required` 从未填充 | 234 行 | 未读 `BD_ACCASS.ISEMPTY`(200 必填 / 34 可空) |
 
 17 个备抵科目(CRM0001 与 root 相同):`1231`、`123101`~`123104`、`1471`、`1512`、
