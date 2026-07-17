@@ -15,6 +15,7 @@ function money(v: string | null | undefined) {
 
 interface VoucherRow {
   jv_id: string; jv_number: string; voucher_date: string; summary: string | null
+  account_code: string; account_name: string | null
   local_debit: string; local_credit: string; cost_center_id: string | null
   source_doc_type: string | null; source_doc_id: string | null; source_doc_number: string | null
 }
@@ -53,6 +54,7 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title, o
                 <tr>
                   <th className="px-3 py-2 w-24">Date</th>
                   <th className="px-3 py-2 w-36">Voucher</th>
+                  <th className="px-3 py-2 w-40">Account</th>
                   <th className="px-3 py-2">Summary</th>
                   <th className="px-3 py-2 w-28 text-right">Debit</th>
                   <th className="px-3 py-2 w-28 text-right">Credit</th>
@@ -60,7 +62,7 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title, o
               </thead>
               <tbody>
                 {(data?.rows ?? []).length === 0 && (
-                  <tr><td colSpan={5} className="px-3 py-6 text-center text-neutral-400">No vouchers.</td></tr>
+                  <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">No vouchers.</td></tr>
                 )}
                 {(data?.rows ?? []).map((r, i) => (
                   <tr key={`${r.jv_id}-${i}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
@@ -70,6 +72,9 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title, o
                               className="font-mono text-xs text-[#085E5E] hover:underline">
                         {r.jv_number}
                       </button>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-neutral-600">
+                      {r.account_code}{r.account_name ? ` · ${r.account_name}` : ''}
                     </td>
                     <td className="px-3 py-2 text-neutral-700">{r.summary || '—'}</td>
                     <td className="px-3 py-2 text-right font-mono">{money(r.local_debit)}</td>

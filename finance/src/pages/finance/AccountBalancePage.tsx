@@ -22,6 +22,7 @@ const linkBtn = 'text-xs font-medium text-[#085E5E] hover:underline'
 
 interface AbRow {
   account_code: string; account_name: string; account_type: string | null
+  is_postable: boolean; level: number
   opening: string; period_debit: string; period_credit: string; closing: string
 }
 interface AbResp {
@@ -130,8 +131,9 @@ export default function AccountBalancePage() {
                           {expanded[r.account_code] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </button>
                       </td>
-                      <td className="px-3 py-2 font-mono text-xs">{r.account_code}</td>
-                      <td className="px-3 py-2">{r.account_name}</td>
+                      <td className={cn('px-3 py-2 font-mono text-xs', !r.is_postable && 'font-semibold')}>{r.account_code}</td>
+                      <td className={cn('px-3 py-2', !r.is_postable && 'font-semibold')}
+                          style={{ paddingLeft: `${12 + r.level * 18}px` }}>{r.account_name}</td>
                       <td className="px-3 py-2 text-right font-mono text-neutral-500">{money(r.opening)}</td>
                       <td className="px-3 py-2 text-right font-mono">{money(r.period_debit)}</td>
                       <td className="px-3 py-2 text-right font-mono">{money(r.period_credit)}</td>
