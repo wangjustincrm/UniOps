@@ -106,6 +106,26 @@ async def test_list_pagination_and_search(client, db_session):
     assert str(a.id) in ids and str(b.id) not in ids
 
 
+async def test_list_sort_by_jv_number_asc(client, db_session):
+    a = await _draft_jv(db_session)
+    b = await _draft_jv(db_session)
+    r = await client.get("/finance/v1/journal-vouchers?sort=jv_number&dir=asc", headers=_h())
+    assert r.status_code == 200
+    nums = [row["jv_number"] for row in r.json()["items"]]
+    assert {a.jv_number, b.jv_number} <= set(nums)
+    assert nums == sorted(nums)          # 升序
+
+
+async def test_list_sort_rejects_unknown_column(client, db_session):
+    r = await client.get("/finance/v1/journal-vouchers?sort=id;drop", headers=_h())
+    assert r.status_code == 422          # 白名单外 -> 拒绝
+
+
+async def test_list_default_sort_is_date_desc(client, db_session):
+    r = await client.get("/finance/v1/journal-vouchers", headers=_h())
+    assert r.status_code == 200          # 无 sort 参数仍按 voucher_date desc
+
+
 async def test_jv_permissions_endpoint(client, db_session):
     r = await client.get("/finance/v1/journal-vouchers/permissions", headers=_h())
     assert r.status_code == 200          # not 422 — route must sit above /{jv_id}

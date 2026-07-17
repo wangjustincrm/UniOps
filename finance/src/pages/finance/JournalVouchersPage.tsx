@@ -38,6 +38,7 @@ export default function JournalVouchersPage() {
   const [q, setQ] = useState('')
   const [qInput, setQInput] = useState('')
   const [page, setPage] = useState(0)
+  const [sort, setSort] = useState<{ col: string; dir: 'asc' | 'desc' }>({ col: 'voucher_date', dir: 'desc' })
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [detailId, setDetailId] = useState<string | null>(null)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
@@ -59,11 +60,12 @@ export default function JournalVouchersPage() {
     if (period) p.set('period', period)
     if (status) p.set('status', status)
     if (q) p.set('q', q)
+    p.set('sort', sort.col); p.set('dir', sort.dir)
     return p.toString()
-  }, [period, status, q, page])
+  }, [period, status, q, page, sort])
 
   const list = useQuery({
-    queryKey: ['jv-list', params],
+    queryKey: ['jv-list', params, sort],
     queryFn: () => financeApi.get<JvList>(`/journal-vouchers?${params}`),
   })
   const items = list.data?.items ?? []
@@ -79,6 +81,10 @@ export default function JournalVouchersPage() {
   }
   const resetPage = () => { setPage(0); setSelected(new Set()) }
   const gotoPage = (n: number) => { setPage(n); setSelected(new Set()) }
+  const toggleSort = (col: string) => {
+    setPage(0)
+    setSort((s) => s.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'desc' })
+  }
 
   const toggle = (id: string) => setSelected((p) => {
     const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n
@@ -170,12 +176,22 @@ export default function JournalVouchersPage() {
                         <input type="checkbox" checked={allSelected} onChange={toggleAll} />
                       </th>
                     )}
-                    <th className="px-3 py-2 w-36">Voucher No.</th>
-                    <th className="px-3 py-2 w-24">Date</th>
-                    <th className="px-3 py-2">Summary</th>
+                    <th className="px-3 py-2 w-36 cursor-pointer select-none" onClick={() => toggleSort('jv_number')}>
+                      Voucher No.{sort.col === 'jv_number' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                    <th className="px-3 py-2 w-24 cursor-pointer select-none" onClick={() => toggleSort('voucher_date')}>
+                      Date{sort.col === 'voucher_date' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                    <th className="px-3 py-2 cursor-pointer select-none" onClick={() => toggleSort('summary')}>
+                      Summary{sort.col === 'summary' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
                     <th className="px-3 py-2 w-32">Source</th>
-                    <th className="px-3 py-2 w-32 text-right">Debit (CAD)</th>
-                    <th className="px-3 py-2 w-24">Status</th>
+                    <th className="px-3 py-2 w-32 text-right cursor-pointer select-none" onClick={() => toggleSort('total_debit')}>
+                      Debit (CAD){sort.col === 'total_debit' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
+                    <th className="px-3 py-2 w-24 cursor-pointer select-none" onClick={() => toggleSort('status')}>
+                      Status{sort.col === 'status' ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

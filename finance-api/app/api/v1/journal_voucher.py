@@ -15,6 +15,15 @@ from app.models.journal_voucher import JournalVoucher, JournalVoucherLine
 
 router = APIRouter(prefix="/journal-vouchers", tags=["journal-vouchers"])
 
+# sort 参数直接进 order_by,故只接受白名单列 (SQL 注入边界)。source_subsystem 由 Task 2 加。
+_SORTABLE = {
+    "voucher_date": JournalVoucher.voucher_date,
+    "jv_number": JournalVoucher.jv_number,
+    "summary": JournalVoucher.summary,
+    "total_debit": JournalVoucher.total_debit,
+    "status": JournalVoucher.status,
+}
+
 
 class IdsIn(BaseModel):
     ids: list[uuid.UUID]
@@ -47,7 +56,9 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         source_doc_type: str | None = Query(default=None),
                         q: str | None = Query(default=None),
                         limit: int = Query(default=50, le=200),
-                        offset: int = Query(default=0, ge=0)):
+                        offset: int = Query(default=0, ge=0),
+                        sort: str = Query(default="voucher_date"),
+                        dir: str = Query(default="desc")):
     base = select(JournalVoucher)
     if period:
         base = base.where(JournalVoucher.fiscal_period == period)
@@ -61,9 +72,12 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                               JournalVoucher.summary.ilike(like)))
     total = (await db.execute(
         select(func.count()).select_from(base.subquery()))).scalar_one()
+    if sort not in _SORTABLE:
+        raise HTTPException(status_code=422, detail=f"unknown sort column {sort!r}")
+    col = _SORTABLE[sort]
+    col = col.asc() if dir == "asc" else col.desc()
     rows = (await db.execute(
-        base.order_by(JournalVoucher.voucher_date.desc(),
-                      JournalVoucher.jv_number.desc())
+        base.order_by(col, JournalVoucher.jv_number.desc())   # jv_number 作稳定次级键
         .offset(offset).limit(limit))).scalars().all()
     return {"total": total, "items": [_hdr(jv) for jv in rows]}
 
