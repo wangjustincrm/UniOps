@@ -2024,6 +2024,283 @@ supplier/customer dims manage today."
 
 ---
 
+### Task 8: 凭证同步(`nc_sync.py`)四修 —— spec §14
+
+**Files:**
+- Modify: `finance-api/app/services/nc_sync.py`
+- Modify: `finance-api/app/crud/journal_voucher.py`(§14.4.2 守卫)
+- Test: `finance-api/tests/test_nc_sync.py`(追加)
+
+**Interfaces:**
+- Consumes: 无(独立于 nc_coa_sync)
+- Produces: `NcExtract` 多两个字段;`transform` 的 voucher dict 多 `status`
+
+> ⚠️ **`nc_sync.py` 是已对账 0 差异的生产代码**(2026-07-11..13 与 NC 逐科目净额对平)。
+> **只做 §14 这四处,别顺手重构**。`resolve_aux_type_pks` 的「常量对不上就抛错」已经是
+> 对的,别动。`_net_side`/`_resolve_dims` 的算法字节不动。
+
+**四处修复(全部经 2026-07-17 实连 NC 实测,数字写在 spec §14)**
+
+- [ ] **Step 1: 写失败的测试**
+
+追加到 `finance-api/tests/test_nc_sync.py`。**先读该文件的 `_mini_extract()`** —— 你要改它的
+voucher 元组(加 tallydate),既有测试都依赖它:
+
+```python
+def test_transform_marks_untallied_vouchers_draft():
+    # NC's TALLYDATE empty = not yet posted to NC's ledger. status was hardcoded
+    # "posted", which put $1.73M of un-tallied entries (incl. future periods) into
+    # reports that filter on status == POSTED (spec §14.4).
+    from app.services.nc_sync import transform
+    e = _mini_extract()                      # its voucher has a tallydate
+    vs, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
+    assert vs[0]["status"] == "posted"
+    e2 = _mini_extract(tallydate=None)       # not tallied in NC
+    vs2, _, _, _ = transform(e2, {}, {}, {}, {}, {}, set())
+    assert vs2[0]["status"] == "draft"
+
+
+def test_transform_rejects_unknown_currency():
+    # ccy.get(curr, "CAD") silently defaulted — same class as coa_import's
+    # `return "asset"`. USD/CNY/EUR/GBP are real on this book (spec §14.3).
+    from app.services.nc_sync import NcSyncError, transform
+    e = _mini_extract()
+    e.ccy = {}                               # currency pk resolves to nothing
+    with pytest.raises(NcSyncError):
+        transform(e, {}, {}, {}, {}, {}, set())
+
+
+def test_cc_by_dept_covers_the_four_measured_codes():
+    # 956 lines lost their cost centre to exactly these 4 dept codes
+    # (404+274+163+115). 0106/0104 were already reachable via CC_BY_CODE —
+    # the dept fallback simply missed them (spec §14.2).
+    from app.services.nc_sync import CC_BY_DEPT
+    assert CC_BY_DEPT["0106"] == "MOH-0106-E01"
+    assert CC_BY_DEPT["0104"] == "MOH-0104-P01"
+    assert CC_BY_DEPT["0102"] == "GA-0107"
+    assert CC_BY_DEPT["0108"] == "RD-0109"
+```
+
+- [ ] **Step 2: 跑测试确认失败**
+
+```bash
+cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
+TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
+  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_sync.py -v
+```
+
+Expected: FAIL(KeyError / 无 status 键 / 无 NcSyncError)
+
+- [ ] **Step 3: §14.2 —— `CC_BY_DEPT` 补 4 个部门码**
+
+```python
+CC_BY_DEPT = {
+    "0100": "GA-0100", "0101": "GA-0101", "0103": "GA-0103",
+    "0105": "GA-0105", "0107": "GA-0107", "0109": "RD-0109",
+    "0110": "SELL-0110", "0111": "SELL-0111", "0112": "SELL-0112", "0113": "SELL-0113",
+    # 2026-07-17: these four were missing, costing exactly the 956 lines that
+    # unmapped_cc_count had been reporting all along (404+274+163+115).
+    # 0106/0104 were an outright oversight — CC_BY_CODE already routes
+    # E01-E07/ENG -> MOH-0106-E01 and P01-P03/PD -> MOH-0104-*, so only the
+    # dept-only path lost them.
+    "0106": "MOH-0106-E01", "0104": "MOH-0104-P01",
+    # 0102 (named "Purchasing(NOT USE)") and 0108 have no obvious EPMS
+    # counterpart. These two targets are the USER'S call (2026-07-17), not
+    # inferred — do not "improve" them from the code's side.
+    "0102": "GA-0107", "0108": "RD-0109",
+}
+```
+
+- [ ] **Step 4: §14.3 —— 币种查不到即抛错**
+
+模块顶部加异常(放在 `nc_configured` 之前):
+
+```python
+class NcSyncError(ValueError):
+    """An NC value we refuse to guess about. Aborts the run."""
+```
+
+`transform` 的行循环里,把 `extract.ccy.get(curr, "CAD")` 换成:
+
+```python
+        ccy_code = extract.ccy.get(curr)
+        if ccy_code is None:
+            raise NcSyncError(f"voucher line {pk}/{idx}: currency pk {curr!r} not in "
+                              f"BD_CURRTYPE — refusing to default it to CAD")
+```
+并在 `lines.append(...)` 里用 `ccy_code` 取代原来的 `extract.ccy.get(curr, "CAD")`。
+
+- [ ] **Step 5: §14.4 —— 未记账 → draft**
+
+`NcExtract` 加两个字段:
+
+```python
+@dataclass
+class NcExtract:
+    """Raw NC reads, pre-transform. Tests inject a fake one."""
+    ccy: dict           # pk_currtype -> currency code
+    aux: dict           # freevalueid -> (dept_code, cc_code, io_code, sup_code, cust_code)
+    vouchers: list      # (pk, year, period, num, explanation, prepareddate, creationtime,
+                        #  tallydate)
+    details: list       # (pk_voucher, detailindex, accountcode, dr, cr, ldr, lcr,
+                        #  pk_currtype, excrate1, explanation, assid)
+    max_creationtime: str | None
+    tallied: set        # EVERY tallied pk in the book (NOT watermark-limited) —
+                        # drives the status backfill, see _sync_statuses
+```
+
+`transform` 的 voucher 循环解包多一个 `tallydate`,并写入 status:
+
+```python
+    for pk, year, period, num, expl, pdate, _ctime, tallydate in extract.vouchers:
+        ...
+        vouchers.append({
+            ...
+            "summary": (expl or "")[:255], "nc_pk": pk,
+            # NC's TALLYDATE empty = not yet posted to NC's ledger. Mirror that:
+            # the GL and Account Balance both read status == POSTED only, so an
+            # un-tallied voucher must not colour reports (spec §14.4).
+            "status": "posted" if (tallydate and tallydate != "~") else "draft",
+        })
+```
+
+`fetch_from_nc` 的 voucher 查询:加 discardflag 过滤(§14.1)、取 tallydate、
+并额外拉一次**不受水位限制**的全量 tally 事实:
+
+```python
+        # Discarded (作废) vouchers are not ledger entries. Measured 2026-07-17:
+        # exactly one on this book ($4,298.52) — it had been importing as posted.
+        vq = ("select pk_voucher, year, period, num, explanation, prepareddate, "
+              "creationtime, tallydate from NCSC.GL_VOUCHER "
+              "where pk_accountingbook = :b "
+              "  and (discardflag is null or discardflag <> 'Y')")
+        if watermark:
+            cur.execute(vq + " and creationtime >= :wm", b=PK_BOOK, wm=watermark)
+        else:
+            cur.execute(vq, b=PK_BOOK)
+        vouchers = list(cur.fetchall())
+        max_ct = max((v[6] for v in vouchers if v[6]), default=None)
+
+        # Status backfill feed: the whole book's tally facts, deliberately NOT
+        # watermark-limited. A voucher created in June and tallied in July keeps
+        # its June creationtime, so the watermark would never bring it back and
+        # it would sit at draft forever (spec §14.4.1). Two columns x ~40k rows.
+        cur.execute("select pk_voucher, tallydate from NCSC.GL_VOUCHER "
+                    "where pk_accountingbook = :b "
+                    "  and (discardflag is null or discardflag <> 'Y')", b=PK_BOOK)
+        tallied = {pk for pk, td in cur if td and td != "~"}
+```
+`return NcExtract(...)` 加 `tallied=tallied`。
+
+- [ ] **Step 6: §14.4.1 —— 状态回填(diff-then-apply,与 COA 同构)**
+
+`_run_worker` 里 `v_rows` 改用每张凭证自己的 status:
+
+```python
+        v_rows = [(v["id"], v["jv_number"], "JV", v["vdate"], v["period"], v["summary"],
+                   v["status"], "nc", "nc_voucher", v["jv_number"], v["nc_pk"],
+                   *(tot.get(v["id"], [Decimal("0")] * 4))) for v in vouchers]
+```
+
+在 voucher/line/dim 全部插入之后、`con.commit()` 之前,加回填(新函数,放模块内):
+
+```python
+def _sync_statuses(cur, tallied: set) -> tuple[int, int]:
+    """Align every NC-sourced voucher's status with NC's tally fact.
+
+    Incremental skips pks it has already imported and its watermark is on
+    creationtime, so a voucher tallied AFTER import never returns through that
+    path — without this it would sit at draft forever. Diff first and update only
+    what actually changed (usually nothing), same shape as the COA sync.
+    """
+    cur.execute("select nc_source_pk, status from journal_vouchers "
+                "where nc_source_pk is not null")
+    current = dict(cur.fetchall())
+    to_posted = [pk for pk, st in current.items() if pk in tallied and st != "posted"]
+    to_draft = [pk for pk, st in current.items() if pk not in tallied and st != "draft"]
+    if to_posted:
+        cur.execute("update journal_vouchers set status = 'posted', updated_at = now() "
+                    "where nc_source_pk = any(%s)", (to_posted,))
+    if to_draft:
+        cur.execute("update journal_vouchers set status = 'draft', updated_at = now() "
+                    "where nc_source_pk = any(%s)", (to_draft,))
+    return len(to_posted), len(to_draft)
+```
+在 `_run_worker` 内调用(紧接 dims 插入之后):
+
+```python
+        _sync_statuses(cur, extract.tallied)
+```
+> ⚠️ `extract` 在 `_run_worker` 里的变量名照实际改;若该函数没有 extract 引用,
+> 从 `fetch(...)` 的返回值取。**先读 `_run_worker` 全文再动手**。
+
+- [ ] **Step 7: §14.4.2 —— NC 来源的 JV 禁止人工改状态**
+
+`finance-api/app/crud/journal_voucher.py`,`review()` 与 `post()` 各加一句守卫,
+紧跟各自的 `_require(...)` 之后:
+
+```python
+    if jv.nc_source_pk is not None:
+        raise JvPermissionError(
+            "This voucher mirrors NC's tally status and cannot be posted or "
+            "reviewed here — it follows NC (spec §14.4.2)")
+```
+> 用该文件既有的异常类(`JvPermissionError`);**先确认它的名字与构造**。
+> 加一个测试:对 `nc_source_pk` 非空的 draft 凭证调 `review()` 必须抛错。
+
+- [ ] **Step 8: 跑测试**
+
+```bash
+cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
+TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
+  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_sync.py tests/test_journal_voucher.py -v
+```
+既有用例数**不得减少** —— `test_nc_sync.py` 是那次 0 差异对账的回归网。
+`_mini_extract()` 改了元组,所有依赖它的既有用例必须仍绿。
+
+- [ ] **Step 9: 全量 finance 套件**
+
+```bash
+cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
+TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
+  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
+  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/ -q
+```
+基线 264 passed(约 15 分钟,**前台跑,不要后台** —— 后台跑会与其它测试抢
+`finance_test` 库并互相 DROP SCHEMA)。有 `test_nc_sync.py` 之外的失败,
+先在 base commit 复现再判断归属。
+
+- [ ] **Step 10: Commit**
+
+```bash
+cd /c/Project/uniops/.worktrees/nc-coa-sync
+git add finance-api/app/services/nc_sync.py finance-api/app/crud/journal_voucher.py \
+        finance-api/tests/test_nc_sync.py finance-api/tests/test_journal_voucher.py
+git commit -m "fix(finance): voucher sync — discarded, un-tallied, currency, cost centres
+
+Auditing the voucher sync the same way as the COA one found the book itself was
+right all along (all 315,539 lines sit in CRM0001) but four things were not.
+
+Discarded vouchers were never filtered, so one 作废 entry (\$4,298.52) sat in the
+ledger as posted. Currency silently defaulted to CAD when a pk did not resolve —
+harmless today since all five resolve, but USD alone carries 27,624 lines, so a
+new NC currency would quietly become CAD. CC_BY_DEPT was missing four dept codes,
+which is exactly the 956 lines unmapped_cc_count had been reporting all along
+(404+274+163+115); 0106/0104 were plainly an oversight since CC_BY_CODE already
+routes their cost-centre codes, while 0102/0108 are the user's call, not inferred.
+
+The largest was status: it was hardcoded posted, so 272 un-tallied vouchers worth
+\$1.73M — ten of them in periods that have not happened yet — were colouring the
+GL and Account Balance, both of which read status == POSTED. They now mirror NC's
+TALLYDATE. That needs the backfill too: incremental skips pks it has imported and
+its watermark is on creationtime, so a voucher tallied after import would never
+return and would sit at draft forever."
+```
+
+---
+
 ## 收尾:端到端验证(非 Task,但必做)
 
 计划全部完成后,**在 dev 上真跑一次**,拿正面证据而非「测试过了」:
