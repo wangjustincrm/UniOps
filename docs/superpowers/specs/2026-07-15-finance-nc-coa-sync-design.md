@@ -51,11 +51,57 @@ COA、辅助核算、voucher 必须同源。
 ### 1.3 为什么不照搬 voucher 的形状
 
 `nc_sync_runs` + 后台线程 + 30 分钟 stale 清扫 + 前端轮询,全部因凭证量大、跑得久而存在。
-COA 仅 360 行、辅助核算 205 行,读取约 1-2 秒。且「预览 → 确认」本就需要两次调用,
+COA 仅 350 行、辅助核算 234 行,读取约 1-2 秒。且「预览 → 确认」本就需要两次调用,
 同步返回比轮询自然。同理**不**把 `nc_sync_runs` 泛化成 `kind` + JSONB 计数:
 那要动刚在生产验证通过的 voucher 同步,为尚不存在的需求承担回归风险。
 
 ## 2. NC 复核结论(2026-07-15 实测)
+
+### 2.0 ⚠️ 科目表用错了(2026-07-17 修订,推翻本设计的原始前提)
+
+**原 spec 与现有 `coa_import.py` 都用 `CHART = 1001A1100000003CG6GD`,并称其为
+「Canada Royal Milk 的科目表」。这是错的** —— 它是 `0005_0005 飞鹤加拿大_根科目表`。
+Canada Royal Milk 是**另一张表**:
+
+| pk_accchart | code | name |
+|---|---|---|
+| `1001A1100000003CG6GD` | `0005_0005` | 飞鹤加拿大_根科目表 ← 原 spec 用的 |
+| **`1001A1100000003CGN3F`** | **`CRM0001`** | **加拿大皇家妙克 ← 正确** |
+| `1001A1100000003CGMUM` | `CRM001` | 飞鹤加拿大 |
+
+**决定性证据**:`nc_sync.py` 的 `PK_BOOK = 1001A1100000003CGCBX`(已对账 0 差异的
+凭证同步)下,**全部 315,539 条 `GL_DETAIL` 行的科目都属于 CRM0001,root 一条也没有**。
+凭证记在 CRM0001,COA 就必须是 CRM0001 的,否则回到本设计要解决的原始问题。
+
+**NC 的模型**:科目**定义**在 root(`BD_ACCOUNT.pk_accchart` = 创建科目表),
+但在各账簿的科目表里**分别启用并配置**(`BD_ACCASOA`,每 chart 一行 —— 实测单个科目
+最多有 19 行 ACCASOA)。故:
+
+> **账户集取 `BD_ACCOUNT`;启用状态、末级标志、科目名、辅助核算 —— 一律取
+> CRM0001 的 `BD_ACCASOA`。判断启用用 `soa.enablestate = 2`,不是 `a.enablestate`。**
+
+实测后果:root 启用但 **CRM0001 已停用(enablestate=3)的科目有 10 个** ——
+`221110`、`22250301 PST paid`、`22250302 PST Collected`、`22250399 PST Others`、
+`222505 应交房产税`、`60010203 折扣`、`640106 存货冲销`、`660305 NR 税`、
+`660306 资产税`、`660307 担保费用`。用 root 口径会把这 10 个当启用科目灌进来。
+
+**用户已确认改用 CRM0001**(2026-07-17)。
+
+### 2.0.1 ⚠️ 辅助核算 join 错了列
+
+`BD_ACCASS` 同时有 `PK_ACCASOA` 与 `PK_COVERACCASOA` 两列。
+现有 `aux_items_import.py`(及原 plan,照抄自它)join 的是 `pk_coveraccasoa` ——
+**拿用户提供的 NC UI 截图当真值实测,该 join 返回空**:
+
+| 科目 | NC UI 真值 | join `pk_coveraccasoa` | join `pk_accasoa` |
+|---|---|---|---|
+| `101201` | 序1 `0022` 银行类别、序2 `0011` 银行账户 | **空** ✗ | `[0022 1 N, 0011 2 N]` ✓ |
+| `1402` | 序1 `0006` 物料基本信息 | **空** ✗ | `[0006 1 N]` ✓ |
+| `6002` | 序1 `0004` 客商、序2 `0006`(允许为空☑) | 空 ✗ | `[0004 1 N, 0006 2 Y]` ✓ |
+
+> **正确 join = `soa.pk_accasoa = a.pk_accasoa`**,并以 `soa.pk_accchart = CRM0001`
+> + `soa.enablestate = 2` 过滤。三个科目全部逐项吻合(含 6002「允许为空」勾选
+> ↔ `isempty='Y'`)。
 
 ### 2.1 数据字典不可信,以实例为准
 
@@ -74,16 +120,27 @@ NC 用字符串 `~` 表示空,而非 NULL。`count(col)` 会把 `~` 计为有值
 排除 `~` 后再算。现有 `coa_import.py` 已知此事(`_clean(v) = v if v and v != "~" else None`),
 新实现必须对 **`unit` / `currency` / `pid` / `name*`** 一律做 `~` 清洗。
 
-### 2.3 存量缺陷实测(本地 dev 库,360 科目)
+### 2.3 存量缺陷实测(2026-07-17 按 CRM0001 口径重算)
+
+CRM0001 实测基线:**350 个启用科目**(`soa.enablestate=2`),acctype 分布
+1:94 / 2:95 / 4:24 / 5:35 / 6:102,`endflag` Y=296 / N=54,辅助核算 **234 行**
+(`isempty` N=200 / Y=34,`seq` 取值 1-7,20 个不同辅助核算项,
+`(account,item)` 重复数 **0**)。
 
 | 缺陷 | 科目数 | 根因 |
 |---|---|---|
-| `normal_balance` 记反 | **18** | 按编码前缀猜,未读 `BD_ACCOUNT.BALANORIENT`(NC 360/360 有值) |
-| `quantity_accounting` 错 | **29** | 读了 `QUANTITY` 列,而真正判据是 `UNIT` 是否有真实值 |
-| `default_currency` 全空 | 181 可填 | 未读 `CURRENCY`(需 join `BD_CURRTYPE` 取 code) |
-| `default_uom` 全空 | 30 可填 | 未读 `UNIT`(需 join `BD_MEASDOC` 取 code) |
-| `coa_aux_items.seq` 恒为 0 | 205 行 | 未读 `BD_ACCASS.ID`(真值 1-7) |
-| `aux_dimensions.required` 从未填充 | 205 行 | 未读 `BD_ACCASS.ISEMPTY`(187 必填 / 18 可空) |
+| **科目表用错** | **10 个多余** | 用 root 而非 CRM0001 → 10 个 CRM 已停用的科目被当启用(§2.0) |
+| `normal_balance` 记反 | **18** | 按编码前缀猜,未读 `BALANORIENT`(CRM0001 350/350 有值):17 个备抵科目(1 开头却贷方)+ 1 个成本类贷方 |
+| `quantity_accounting` 错 | **29** | 读了 `QUANTITY` 列,而真正判据是 `UNIT` 是否有真实值(30 个有真实 unit,旧规则只蒙对 6002 一个) |
+| `default_currency` 全空 | **172** 可填 | 未读 `CURRENCY`(需 join `BD_CURRTYPE` 取 code) |
+| `default_uom` 全空 | **30** 可填 | 未读 `UNIT`(需 join `BD_MEASDOC` 取 code) |
+| **辅助核算 join 错列** | 全部 | join 了 `pk_coveraccasoa`(§2.0.1),UI 真值实测返回空 |
+| `coa_aux_items.seq` 恒为 0 | 234 行 | 未读 `BD_ACCASS.ID`(真值 1-7) |
+| `aux_dimensions.required` 从未填充 | 234 行 | 未读 `BD_ACCASS.ISEMPTY`(200 必填 / 34 可空) |
+
+17 个备抵科目(CRM0001 与 root 相同):`1231`、`123101`~`123104`、`1471`、`1512`、
+`1602`、`1603`、`1607`、`1608`、`1620`、`1621`、`1702`、`1703`、`1713`、`190102` ——
+累计折旧、累计摊销、各类坏账/减值准备、政府资助固定资产及其折旧。
 
 18 个方向记反的科目全部是备抵科目,NC `name2` 自证:
 累计折旧 Accumulated depreciation、累计摊销 Accumulated amortization、
@@ -118,10 +175,10 @@ UI 真值(用户截图):`1230 发出商品`/`1402 在途物资`/`6002 销售折�
 | UniOps 字段 | NC 来源 | 规则 |
 |---|---|---|
 | `code` | `BD_ACCOUNT.CODE` | 主键 |
-| `name` | `BD_ACCASOA.NAME2` → `.NAME` → `BD_ACCOUNT.NAME2` → `.NAME` → `code` | `~` 清洗后回退链(ACCASOA 覆盖 348/360,BD_ACCOUNT.NAME2 仅 184) |
+| `name` | `BD_ACCASOA.NAME2` → `.NAME` → `BD_ACCOUNT.NAME2` → `.NAME` → `code` | `~` 清洗后回退链;ACCASOA(CRM0001 的那行)覆盖率远高于 `BD_ACCOUNT.NAME2` |
 | `account_type` | `BD_ACCTYPE.CODE` + `BD_ACCOUNT.BALANORIENT` | 1=asset,2=liability,4=equity,5=expense(成本),**6(损益)按 balanorient 拆:1(贷)=revenue、0(借)=expense** |
 | `normal_balance` | `BD_ACCOUNT.BALANORIENT` | 0=debit,1=credit(**事实,非推断**) |
-| `is_postable` | `BD_ACCASOA.ENDFLAG` | ='Y'(实测与 pid 推断 100% 一致:54 父 / 306 末级) |
+| `is_postable` | `BD_ACCASOA.ENDFLAG`(CRM0001 那行) | ='Y'(CRM0001 实测 Y=296 末级 / N=54 父) |
 | `parent_code` | `BD_ACCOUNT.PID` → pk2code | `~` = 顶层 → NULL |
 | `quantity_accounting` | `BD_ACCOUNT.UNIT` | 有真实值(非 `~`)= true(见 §2.4) |
 | `default_uom` | `BD_MEASDOC.CODE` via `BD_ACCOUNT.UNIT` | join 取 code(KGM/MTQ/LTR/EA/°);`~` → NULL |
@@ -138,8 +195,8 @@ UI 真值(用户截图):`1230 发出商品`/`1402 在途物资`/`6002 销售折�
   (实测本账簿仅这 5 类;NC 若新增科目类型,应由人决定映射,而非代码默认。)
 - `BALANORIENT` ∉ {0,1} → 抛错。
 - `BD_ACCASOA` 行缺失 → 抛错。`is_postable`(ENDFLAG)与 `name` 均依赖它;
-  实测本账簿 `BD_ACCOUNT`(enablestate=2)与 `BD_ACCASOA` 均为 360 行、严格一一对应,
-  故缺失即属异常,不得降级为「按 pid 推断叶子」之类的兜底。
+  CRM0001 口径下 350 个启用科目各有且仅有一行 ACCASOA(join 已按 `soa.pk_accchart`
+  约束,见 §2.0),故缺失即属异常,不得降级为「按 pid 推断叶子」之类的兜底。
 - `BD_MEASDOC` / `BD_CURRTYPE` 查不到对应 pk → 抛错(而非把 UUID 原样写进 code 列)。
 
 失败即整次同步中止、一行不写(§9 单事务)。**宁可拒绝同步,也不写入猜测值** ——
@@ -149,7 +206,7 @@ UI 真值(用户截图):`1230 发出商品`/`1402 在途物资`/`6002 销售折�
 
 | UniOps 字段 | 原因(实测) |
 |---|---|
-| `mnemonic` | `REMCODE` 在 NC **全空**(BD_ACCOUNT 0/360,BD_ACCASOA 1/360) |
+| `mnemonic` | `REMCODE` 在 NC **全空**(实测 BD_ACCOUNT 0 条有值,BD_ACCASOA 仅 1 条) |
 | `cash_flow_category` | 疑似来源 `CASHTYPE` **语义不符**:NC 是「现金分类」(0=其它/1=现金科目/2=银行科目/3=现金等价物,用于标记哪些科目属现金及等价物),我们是现金流量表类别 |
 | `effective_from` / `effective_to` | **NC 无对应列**;UI 有「生效日期」栏但实测全为 `0000-00-00`,无数据 |
 | `subtype` | UniOps 自有概念,NC 无对应 |
@@ -181,7 +238,7 @@ UI 真值(用户截图):`1230 发出商品`/`1402 在途物资`/`6002 销售折�
 | `0008` | 收支项目 | `income_expense_item` | Income/Expense Item | ✓ |
 | `0019` | 供应商档案 | `supplier` | Supplier | ✓ |
 | `0017` | 客户档案 | `customer` | Customer | ✓ |
-| `0004` | 客商 | 按 §3.4.1 派生 | — | ✓ / ✗ |
+| `0004` | 客商 | `partner` | Partner (Vendor/Customer) | ✓(见 §3.4.1) |
 | `0006` | 物料基本信息 | `item` | Item / Material | ✗ |
 | `0012` | 物料基本分类 | `item_category` | Item Category | ✗ |
 | `0010` | 项目 | `project` | Project | ✗ |
@@ -204,35 +261,58 @@ dim_code 尽量复用 `aux_dimension_types` 已登记的 code
 **NC item code 不在表中 → 抛错**(§3.1.1 同一原则:不 slug、不猜)。
 新增辅助核算项应由人决定映射。
 
-#### 3.4.1 `0004 客商` 的派生规则
+#### 3.4.1 `0004 客商` = `partner` 维度(2026-07-17 重做,取代原「派生规则」)
 
-客商在 NC 中同时涵盖供应商与客户,而我们分 `supplier`/`customer` 两个维度
-(二者共用 `JournalVoucherLine.partner_id`,由 `account_balance._dimensions()` 分别
-解析到 `ErpSupplier` / `NcCustomer`)。实测 23 个科目挂载客商,分布:
-资产 4 / 负债 4 / 权益 1 / 损益 14 —— **仅靠资产·负债两分支无法覆盖**。
+**原设计**:客商在 NC 中同时涵盖供应商与客户,而我们分 `supplier`/`customer` 两个维度,
+故按科目性质**派生**(资产→customer、负债→supplier、损益按方向拆…),并为语义硬伤
+科目维护例外名单。**该设计已废弃** —— 它两次被实测推翻:
 
-派生规则(输入为已映射的 `account_type` 与 `account_code`):
+1. 例外名单 `{4001, 1511, 1512}` 在 CRM0001 口径下不完整:客商科目从 23 个增至 41 个,
+   新增的包含整个 `1511/151101/151102/151103` 长期股权投资子树,以及 `1131 应收股利`、
+   `1132 应收利息`、`6111 投资收益` —— 对方全是被投资单位,按规则会误判为 customer。
+2. 规则本身就错:`660101 销售费用(fix)` 是损益借方 → 规则给 supplier,
+   但用户指出销售费用的对方是**客户**。同为损益借方的 `640202 劳务成本` 却确实是
+   supplier。同一分支两个科目,语义相反 —— **方向推不出往来方性质**。
+3. `660101` 同时挂 `0004` 与 `0019 供应商档案`,派生出的 supplier 与显式 supplier
+   **撞车**(违反 `uq_coa_aux_items_acct_dim`),而「first wins」依赖 SELECT 顺序。
 
-```
-EXCEPTIONS = {"4001", "1511", "1512"}   # 股东 / 被投资单位,既非供应商亦非客户
-if account_code in EXCEPTIONS:  -> "partner"     # 不展开
-elif account_type == "asset":   -> "customer"    # 应收款,对方欠我们
-elif account_type == "liability": -> "supplier"  # 应付款,我们欠对方
-elif account_type == "expense": -> "supplier"    # 含成本(5)与损益借方
-elif account_type == "revenue": -> "customer"    # 损益贷方
-else:                           -> "partner"     # 权益及任何未预见情形,不展开
-```
+**新设计(用户提出)**:不派生 —— 把 `partner` 做成**真维度**,主数据 = 供应商集 ∪ 客户集。
 
-**例外名单的依据**(用户决策:宁可不展开,也不展错):
-- `4001 实收资本`(权益)—— 对方是股东
-- `1511 长期股权投资` / `1512 长期股权投资减值准备`(资产)—— 对方是被投资单位,
-  按资产分支会误判为 customer
+> `AUX_ITEM_MAP["0004"] = "partner"`,直接映射。
+> **`derive_party_dim` / `PARTY_EXCEPTIONS` / `__party__` 哨兵全部删除。**
 
-`partner` 复用 `aux_dimension_types` 中已有的 code(Partner (Vendor/Customer)),
-它不在 `_dimensions()` 中,故自然呈现为 `supported:false` —— 即「不展开」。
+这样:NC 说是客商就是客商,零推断;例外名单不再需要(投资类/实收资本照常显示 partner,
+展开后就是真实往来方);撞车消失(`0004→partner` 与 `0019→supplier` 是不同维度,
+660101 两个都保留、各自展开)。
 
-**冲突已排除**(2026-07-15 实测):无任何科目同时挂载 `0004` 与 `0019`/`0017`,
-故派生出的 `supplier`/`customer` 不会与显式配置的同名维度撞车。
+**可行性已实测**:`nc_sync._resolve_dims` **早已把两者归一**——
+`hit = uni_sup.get(sup) or uni_cust.get(cust)` → 单个 `partner_id` 列,
+且把 `partner_name` 反规范化写在 `journal_voucher_lines` 行上。客商库在数据里本已存在,
+只是没有任何东西把它暴露出来。
+
+| 实测(dev 库) | 值 |
+|---|---|
+| `erp_suppliers` / `nc_customers` | 1148 / 81 |
+| 两表 id 重叠 | **0**(union 安全) |
+| `journal_voucher_lines` 有 `partner_id` 的行 | 56,291 |
+| `partner_id` 能解析为 supplier / customer | 990 / 31 |
+| **两边都查不到(孤儿)** | **627** |
+
+孤儿是主数据行已不存在的往来方(`Alloc Vendor` 730 行、`Assign Vendor` 578 行、
+`SPS Commerce`…)。**这是既有问题**:今天的 `supplier`/`customer` 维度对它们同样显示空。
+但因 `partner_name` 就在行上,partner 维度可回退取用 —— 反而比现有维度更完整。
+
+### 3.4.2 `account_balance` 新增 `partner` 维度
+
+`_dimensions()` 增加一项:`partner` → `JournalVoucherLine.partner_id`,
+主数据解析 = `ErpSupplier ∪ NcCustomer`(按 id;实测零重叠)。
+`expand_by_dims` 的查找需合并两张表的结果;**主数据查不到时回退到该行的
+`partner_name`**(`code=None`,`name=partner_name`),覆盖上述 627 个孤儿。
+
+`DIM_LABELS["partner"] = "Partner (Vendor/Customer)"` 已在 §3.5 中。
+
+**这是本设计范围的一次有意扩张**:它替换掉的是一套已被实测推翻两次的推断规则,
+且使 41 个挂客商的科目真正可展开 —— 正是本设计的初衷(凭证导入后按辅助核算展开)。
 
 ### 3.5 `DIM_LABELS` 需补齐
 
@@ -336,7 +416,7 @@ apply **不接受前端回传的预览快照,服务端也不存快照**:永远�
 ### 8.1 NC 零行守卫
 
 NC 返回 0 个科目直接拒绝(503)。账簿 pk 配错或 NC 侧异常返回空集时,
-按「未返回即停用」的规则会把整个 360 科目全部停用。零行时一行不写。
+按「未返回即停用」的规则会把整个 350 科目全部停用。零行时一行不写。
 辅助核算同理:`BD_ACCASS` 返回 0 行时拒绝(否则清表后无数据回填)。
 
 ### 8.2 停用引用警告
@@ -415,17 +495,18 @@ apply 的写入是**单事务、全有或全无**(COA upsert + 辅助核算清�
 `map_aux_item`(§3.4,按 NC item code):
 - `ra01`/`0001`/`0008`/`0019`/`0017` → `cost_center`/`department`/`income_expense_item`/
   `supplier`/`customer`
+- `0004`(客商)→ `partner`,**直接映射,无派生**(§3.4.1)
 - **回归专项**:`D45`(项目类型)→ `project_type`、`CRM02`(政府拨款项目)→
   `government_grant_project`,**断言二者都不是 `project`** —— 钉死旧 `NAME_MAP`
   子串匹配的假阳性
 - 未登记的 item code → 抛错,**断言不回退为 slug**
 
-`derive_party_dim`(§3.4.1),每个分支一个用例:
-- `("112201", "asset")` → `customer`;`("220202", "liability")` → `supplier`
-- `("640202", "expense")` → `supplier`;`("6002", "revenue")` → `customer`
-- `("4001", "equity")` → `partner`(权益兜底)
-- **例外名单**:`("1511", "asset")` → `partner`,**断言不是 `customer`**;
-  `("1512", "asset")` → `partner`
+`partner` 维度解析(§3.4.2,`account_balance`):
+- `partner_id` 命中 `ErpSupplier` → 取 `erp_supplier_code` / `supplier_name`
+- `partner_id` 命中 `NcCustomer` → 取 `code` / `name`
+- **两边都查不到** → `code=None`、`name=` 该行的 `partner_name`
+  (覆盖实测 627 个孤儿,如 `Alloc Vendor`;**断言不是空**)
+- 同一次展开里 supplier 与 customer 混合出现 → 各自解析正确(union 不串)
 
 `map_account` 的显式失败(§3.1.1),每条一个用例:
 - `acctype='3'`(或任何未登记编码)→ 抛错,**断言不会静默返回 `asset`**
