@@ -672,3 +672,60 @@ async def test_budget_actual_rolls_up_header(db_session):
     rows = [r for r in ba["rows"] if r["account_code"] == "6601"]
     assert len(rows) == 1
     assert rows[0]["category"] == "SELL" and rows[0]["actual"] == "70.00"
+
+
+# ── final-review hardening: header with own direct lines / 3-level rollup ─────
+
+async def test_account_balance_header_with_own_direct_lines(db_session):
+    # Real-data case: 6601 is a header (is_postable=False) but ALSO carries its
+    # own direct posted lines (not just via children). Self-inclusion in the
+    # subtree means 6601's rolled row must fold in its own line too, while the
+    # grand total (the DIRECT per-line partition) still counts each posted line
+    # exactly once — never double-counting the header's own line against itself,
+    # and never counting header+children as if they were separate postings.
+    await _coa_selling_tree(db_session)
+    await _posted_dim_event(db_session, "6601", "50.00", period="2026-07")     # header's own line
+    await _posted_dim_event(db_session, "660101", "100.00", period="2026-07")
+    await _posted_dim_event(db_session, "660102", "40.00", period="2026-07")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    bal = await ab.account_balance(db_session, "2026-07")
+    by = {r["account_code"]: r for r in bal["rows"]}
+    # header rolls up self + both children: 50 + 100 + 40
+    assert by["6601"]["period_debit"] == "190.00"
+    # children show only their own direct line, unaffected by the header's line
+    assert by["660101"]["period_debit"] == "100.00"
+    assert by["660102"]["period_debit"] == "40.00"
+    # grand total counts each posted debit once: 50 + 100 + 40 = 190, not 380
+    # (header+children double-counted) and not 240 (header's own line dropped)
+    assert bal["totals"]["period_debit"] == "190.00"
+    assert bal["balanced"] is True
+
+
+async def test_account_balance_three_level_rollup(db_session):
+    # Rollup must traverse ALL levels, not just one hop. Fresh codes (9700 /
+    # 970101 / 97010101) avoid clashing with both _coa_selling_tree's 6601
+    # subtree and the 0005 migration's seeded COA (which only spans 1000-6990;
+    # see also test_subtree_codes_from_db's use of 9999 as an unseeded code).
+    from app.models.coa import ChartOfAccount
+    db_session.add_all([
+        ChartOfAccount(code="9700", name="Grandparent", account_type="expense",
+                       normal_balance="debit", is_postable=False, parent_code=None),
+        ChartOfAccount(code="970101", name="Parent", account_type="expense",
+                       normal_balance="debit", is_postable=False, parent_code="9700"),
+        ChartOfAccount(code="97010101", name="Leaf", account_type="expense",
+                       normal_balance="debit", is_postable=True, parent_code="970101"),
+    ])
+    await db_session.flush()
+    await _posted_dim_event(db_session, "97010101", "75.00", period="2026-07")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    bal = await ab.account_balance(db_session, "2026-07")
+    by = {r["account_code"]: r for r in bal["rows"]}
+    # rollup traverses both levels above the leaf
+    assert by["9700"]["period_debit"] == "75.00" and by["9700"]["level"] == 0
+    assert by["970101"]["period_debit"] == "75.00" and by["970101"]["level"] == 1
+    assert by["97010101"]["period_debit"] == "75.00" and by["97010101"]["level"] == 2
+    # still a single posted line -> no double-counting up the 3-level chain
+    assert bal["totals"]["period_debit"] == "75.00"
+    assert bal["balanced"] is True
