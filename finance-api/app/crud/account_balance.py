@@ -125,9 +125,20 @@ def _dimensions():
 
 
 DIM_LABELS = {
+    # expandable (see _dimensions())
     "cost_center": "Cost Center", "department": "Department",
     "income_expense_item": "Income/Expense Item", "supplier": "Supplier",
-    "customer": "Customer", "employee": "Employee", "project": "Project",
+    "customer": "Customer",
+    # carried from NC BD_ACCASS but not expandable — jv_lines has no column for
+    # them (spec §3.4). Listed so "NC configured it, we can't expand it" is visible.
+    "partner": "Partner (Vendor/Customer)", "employee": "Employee",
+    "project": "Project", "project_type": "Project Type",
+    "government_grant_project": "Government Grant Project",
+    "item": "Item / Material", "item_category": "Item Category",
+    "asset_category": "Asset Category", "tax_code": "VAT Tax Code / Rate",
+    "bank": "Bank", "bank_account": "Bank Account",
+    "bank_category": "Bank Category", "country_region": "Country / Region",
+    "sales_type": "Sales Type", "credit_card": "Credit Card",
 }
 
 
