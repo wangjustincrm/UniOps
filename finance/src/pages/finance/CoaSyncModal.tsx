@@ -43,8 +43,8 @@ export function CoaSyncModal({ onClose, onSynced }:
     setBusy('preview'); setErr(null)
     try {
       setPreview(await financeApi.post<Preview>('/coa-sync/preview', {}))
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail ?? String(e))
+    } catch (e) {
+      setErr((e as Error).message)
     } finally { setBusy(null) }
   }
 
@@ -54,8 +54,8 @@ export function CoaSyncModal({ onClose, onSynced }:
       setResult(await financeApi.post<ApplyResult>('/coa-sync/apply', {}))
       qc.invalidateQueries({ queryKey: ['coa'] })
       onSynced()
-    } catch (e: any) {
-      setErr(e?.response?.data?.detail ?? String(e))
+    } catch (e) {
+      setErr((e as Error).message)
     } finally { setBusy(null) }
   }
 
@@ -120,6 +120,29 @@ export function CoaSyncModal({ onClose, onSynced }:
                       )))}
                   </tbody>
                 </table>
+              </div>
+            )}
+
+            {preview.accounts.deactivations.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-1 text-xs font-medium text-neutral-600">
+                  Accounts to be deactivated (not deleted — historical postings keep resolving):
+                </p>
+                <div className="max-h-64 overflow-y-auto rounded-lg border border-neutral-200">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-neutral-50 text-neutral-600">
+                      <tr><th className="p-2">Code</th><th className="p-2">Name</th></tr>
+                    </thead>
+                    <tbody>
+                      {preview.accounts.deactivations.map((d) => (
+                        <tr key={d.code} className="border-t border-neutral-100">
+                          <td className="p-2 font-mono">{d.code}</td>
+                          <td className="p-2">{d.name}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
