@@ -90,6 +90,21 @@ async def _set_routing(db, rows: dict[uuid.UUID, str], directors: dict[uuid.UUID
 
 
 @pytest.mark.asyncio
+async def test_inactive_dept_stays_visible_to_gm(db):
+    """停用部门的在途单据,GM 必须仍然看得见 —— 别给这个查询加 d.is_active 过滤。
+
+    旧的 JSONB 实现和 engine.py 的 .get(dept, "gm") 都不看部门停用状态。加上
+    d.is_active 会让「部门重组已停用、但 PO/发票还没结清」这种真实场景里的单据
+    对 GM 凭空消失(expense-api 那侧更严重,它没有 task-chain 兜底)。
+    宁可让 GM 多看见已停用部门的遗留单据(旧代码一直如此,无害)。
+    """
+    inactive_dept = await _make_dept(db, is_active=False)
+    await _set_routing(db, {inactive_dept: "gm"})
+
+    assert inactive_dept in await _mapped_dept_ids(db, "gm")
+
+
+@pytest.mark.asyncio
 async def test_mapped_dept_ids_returns_only_depts_mapped_to_that_role(db):
     gm_dept, opm_dept = await _make_dept(db), await _make_dept(db)
     await _set_routing(db, {gm_dept: "gm", opm_dept: "opm"})

@@ -105,10 +105,15 @@ async def _mapped_dept_ids(db: AsyncSession, role: str) -> list[uuid.UUID]:
     query's semantics, change that one too (this codebase has been bitten
     before by a sibling copy drifting out of sync — see identity's email.py).
     """
+    # 不过滤 d.is_active —— 这是有意的,别"顺手补上":
+    # 旧的 JSONB 实现和 engine.py 的 .get(dept, "gm") 都不看部门是否停用。
+    # 加上它会让**停用部门的在途单据对 GM 消失**(部门重组但 PO/发票未结时会真的发生),
+    # 而 expense-api 那侧没有 task-chain 兜底,GM 会完全瞎掉。宁可让 GM 多看见已停用
+    # 部门的遗留单据(旧代码一直如此,无害),也不要让他看不见还需要他处理的单据。
     rows = (await db.execute(text(
         "SELECT d.id FROM departments d "
         "LEFT JOIN approval_dept_routing r ON r.dept_id = d.id "
-        "WHERE d.is_active AND COALESCE(r.gm_or_opm, 'gm') = :r"),
+        "WHERE COALESCE(r.gm_or_opm, 'gm') = :r"),
         {"r": role},
     )).scalars().all()
     return list(rows)

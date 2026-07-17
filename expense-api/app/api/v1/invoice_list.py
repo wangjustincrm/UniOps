@@ -157,10 +157,13 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
         # query's semantics, change that one too (this codebase has been
         # bitten before by a sibling copy drifting out of sync — see
         # identity's email.py).
+        # 不过滤 d.is_active —— 有意为之,与 epms 的 _mapped_dept_ids 保持一致:
+        # 旧实现与 engine 的 .get(dept,"gm") 都不看停用状态;加上它会让停用部门的
+        # 在途发票对 GM 消失,而这里没有 task-chain 兜底,GM 会完全看不到。
         dept_ids = list((await db.execute(sa.text(
             "SELECT d.id FROM departments d "
             "LEFT JOIN approval_dept_routing r ON r.dept_id = d.id "
-            "WHERE d.is_active AND COALESCE(r.gm_or_opm, 'gm') = :r"),
+            "WHERE COALESCE(r.gm_or_opm, 'gm') = :r"),
             {"r": role})).scalars().all())
         if dept_ids:
             cc_subq = select(EpmsCostCenter.id).where(
