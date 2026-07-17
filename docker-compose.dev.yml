@@ -440,6 +440,7 @@ services:
       VITE_PORTAL_URL: http://localhost:5174
       VITE_BUDGET_API_URL: http://localhost:8007
       VITE_MDM_API_URL: http://localhost:8002
+      VITE_FINANCE_API_URL: http://localhost:8004
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5173"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5173"]
@@ -529,6 +530,7 @@ services:
       VITE_EPMS_URL: http://localhost:5173
       VITE_EPMS_API_URL: http://localhost:8000
       VITE_BUDGET_API_URL: http://localhost:8007
+      VITE_FINANCE_API_URL: http://localhost:8004
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5175"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5175"]

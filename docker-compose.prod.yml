@@ -299,6 +299,7 @@ services:
         VITE_BUDGET_API_URL: ${BUDGET_API_URL}
         VITE_MDM_API_URL: ${MDM_API_URL}
         VITE_EXPENSE_API_URL: ${OA_API_URL}
+        VITE_FINANCE_API_URL: ${FINANCE_API_URL}
     ports: ["5173:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
@@ -345,6 +346,7 @@ services:
         VITE_EPMS_URL: ${EPMS_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_BUDGET_API_URL: ${BUDGET_API_URL}
+        VITE_FINANCE_API_URL: ${FINANCE_API_URL}
     ports: ["5175:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
