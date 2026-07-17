@@ -49,6 +49,26 @@ async def _draft_jv(db):
         JournalVoucher.posting_event_id == ev_id))).scalar_one()
 
 
+async def test_debit_column_sorts_by_the_CAD_amount_it_displays(client, db_session):
+    """The list's "Debit (CAD)" column shows total_local_debit; sorting it must
+    order by that same column, not the original-currency total_debit — else a
+    multi-currency book's visible column is non-monotonic. Craft two vouchers
+    whose original and CAD totals rank oppositely and assert CAD order wins."""
+    from sqlalchemy import update
+    a = await _draft_jv(db_session)
+    b = await _draft_jv(db_session)
+    # a: orig 200 / CAD 100 ; b: orig 100 / CAD 150 -> opposite rankings
+    await db_session.execute(update(JournalVoucher).where(JournalVoucher.id == a.id)
+        .values(total_debit=Decimal("200.00"), total_local_debit=Decimal("100.00")))
+    await db_session.execute(update(JournalVoucher).where(JournalVoucher.id == b.id)
+        .values(total_debit=Decimal("100.00"), total_local_debit=Decimal("150.00")))
+    await db_session.flush()
+    r = await client.get("/finance/v1/journal-vouchers?sort=total_debit&dir=asc", headers=_h())
+    order = [row["id"] for row in r.json()["items"]]
+    # by CAD (correct): a(100) before b(150); by orig (bug): b(100) before a(200)
+    assert order.index(str(a.id)) < order.index(str(b.id))
+
+
 async def test_list_and_get_detail(client, db_session):
     jv = await _draft_jv(db_session)
     r = await client.get("/finance/v1/journal-vouchers", headers=_h())

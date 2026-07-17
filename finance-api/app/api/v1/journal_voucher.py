@@ -20,7 +20,10 @@ _SORTABLE = {
     "voucher_date": JournalVoucher.voucher_date,
     "jv_number": JournalVoucher.jv_number,
     "summary": JournalVoucher.summary,
-    "total_debit": JournalVoucher.total_debit,
+    # The list's "Debit (CAD)" column displays total_local_debit, so sort on the
+    # SAME column — sorting the original-currency total_debit would make the
+    # visible CAD column non-monotonic for a multi-currency book (27k USD lines).
+    "total_debit": JournalVoucher.total_local_debit,
     "status": JournalVoucher.status,
     "source_subsystem": JournalVoucher.source_subsystem,
 }
