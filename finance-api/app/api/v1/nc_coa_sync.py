@@ -75,23 +75,30 @@ async def _build_or_503():
 
 @router.get("/status")
 async def status(user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    last = (await db.execute(select(CoaSyncRun)
-                             .order_by(CoaSyncRun.started_at.desc()).limit(1))
-            ).scalars().first()
+    can_sync = await _can_manage(db, user)
+    last_run = None
+    if can_sync:
+        last = (await db.execute(select(CoaSyncRun)
+                                 .order_by(CoaSyncRun.started_at.desc()).limit(1))
+                ).scalars().first()
+        if last is not None:
+            last_run = {
+                "id": str(last.id),
+                "started_at": last.started_at.isoformat() if last.started_at else None,
+                "finished_at": last.finished_at.isoformat() if last.finished_at else None,
+                "accounts_inserted": last.accounts_inserted,
+                "accounts_updated": last.accounts_updated,
+                "accounts_deactivated": last.accounts_deactivated,
+                "aux_items_inserted": last.aux_items_inserted,
+                "aux_items_deleted": last.aux_items_deleted,
+                "error": last.error,
+            }
     return {
-        "can_sync": await _can_manage(db, user),
+        "can_sync": can_sync,
         "configured": svc.nc_configured(),
-        "last_run": None if last is None else {
-            "id": str(last.id),
-            "started_at": last.started_at.isoformat() if last.started_at else None,
-            "finished_at": last.finished_at.isoformat() if last.finished_at else None,
-            "accounts_inserted": last.accounts_inserted,
-            "accounts_updated": last.accounts_updated,
-            "accounts_deactivated": last.accounts_deactivated,
-            "aux_items_inserted": last.aux_items_inserted,
-            "aux_items_deleted": last.aux_items_deleted,
-            "error": last.error,
-        },
+        # last_run can carry Oracle/DSN error text — only the caller who can
+        # actually trigger a sync gets to see it (spec: gate on can_sync).
+        "last_run": last_run,
     }
 
 

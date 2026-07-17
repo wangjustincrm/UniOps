@@ -1,6 +1,6 @@
 /**
  * COA sync — preview then apply. Two states, no polling: the sync is
- * synchronous (360 accounts read in ~1-2s), so preview returns the diff
+ * synchronous (350 accounts read in ~1-2s), so preview returns the diff
  * directly and apply returns the counts.
  */
 import { useState } from 'react'
@@ -53,7 +53,6 @@ export function CoaSyncModal({ onClose, onSynced }:
     try {
       setResult(await financeApi.post<ApplyResult>('/coa-sync/apply', {}))
       qc.invalidateQueries({ queryKey: ['coa'] })
-      onSynced()
     } catch (e) {
       setErr((e as Error).message)
     } finally { setBusy(null) }
@@ -164,7 +163,7 @@ export function CoaSyncModal({ onClose, onSynced }:
               −{result.aux_items_deleted}.
             </div>
             <div className="flex justify-end">
-              <button className={`${btn} bg-[#085E5E] text-white`} onClick={onClose}>Close</button>
+              <button className={`${btn} bg-[#085E5E] text-white`} onClick={onSynced}>Close</button>
             </div>
           </>
         )}

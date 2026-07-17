@@ -95,8 +95,9 @@ def map_account(row: dict, *, uom: dict, ccy: dict, acctype: dict,
     """One raw NC row (BD_ACCOUNT joined to BD_ACCASOA) -> chart_of_accounts dict."""
     code = row["code"].strip()
 
-    # endflag lives on BD_ACCASOA. Missing row = anomaly (measured 360 == 360),
-    # and both is_postable and name depend on it — do not degrade to pid-inference.
+    # endflag lives on BD_ACCASOA. Missing row = anomaly — BD_ACCOUNT and
+    # BD_ACCASOA must agree for every one of CRM0001's 350 accounts — and
+    # both is_postable and name depend on it — do not degrade to pid-inference.
     if row.get("endflag") is None:
         raise NcMappingError(f"account {code}: BD_ACCASOA row missing")
 
@@ -120,6 +121,12 @@ def map_account(row: dict, *, uom: dict, ccy: dict, acctype: dict,
             raise NcMappingError(f"account {code}: BD_CURRTYPE pk {ccy_pk!r} not found")
 
     pid = clean(row.get("pid"))
+    parent_code = None
+    if pid is not None:
+        parent_code = pk2code.get(pid)
+        if parent_code is None:
+            raise NcMappingError(f"account {code}: parent pk {pid!r} not found")
+
     name = (clean(row.get("name2_soa")) or clean(row.get("name_soa"))
             or clean(row.get("name2_acct")) or clean(row.get("name_acct")) or code)
 
@@ -129,7 +136,7 @@ def map_account(row: dict, *, uom: dict, ccy: dict, acctype: dict,
         "account_type": account_type,
         "normal_balance": map_normal_balance(row["balanorient"]),
         "is_postable": row["endflag"] == "Y",
-        "parent_code": pk2code.get(pid) if pid else None,
+        "parent_code": parent_code,
         # 数量核算 is driven by UNIT, not the QUANTITY column — proven by an
         # exhaustive two-table column diff against the NC UI (spec §2.4).
         "quantity_accounting": unit_pk is not None,
@@ -281,7 +288,7 @@ def fetch_coa_from_nc() -> NcCoaExtract:
 def build(extract: NcCoaExtract) -> tuple[list[dict], list[dict]]:
     """Map + guard. Raises rather than returning anything we'd have to guess at."""
     # Zero-row guards: with "absent from NC = deactivate", an empty read would
-    # deactivate the entire 360-account chart. A wrong chart pk looks exactly
+    # deactivate the entire 350-account chart. A wrong chart pk looks exactly
     # like this.
     if not extract.accounts:
         raise NcMappingError("NC returned no accounts; refusing to deactivate the chart")

@@ -162,6 +162,12 @@ def test_map_account_rejects_unknown_uom_pk():
     with pytest.raises(NcMappingError):
         map_account(_row(unit_pk="NOSUCH"), **_lookups())
 
+def test_map_account_rejects_unresolvable_parent():
+    # A pid that resolves to nothing must raise, not silently orphan the account
+    # as top-level — same rule as the uom/ccy pks two lines up.
+    with pytest.raises(NcMappingError):
+        map_account(_row(pid="NOSUCH"), **_lookups())
+
 def test_map_account_rejects_unknown_acctype_pk():
     with pytest.raises(NcMappingError):
         map_account(_row(acctype_pk="NOSUCH"), **_lookups())
@@ -360,6 +366,33 @@ async def test_apply_is_idempotent(db_session):
     assert d2.to_insert == [] and d2.to_update == [] and d2.to_deactivate == []
     assert d2.unchanged == 1
 
+async def test_apply_deactivates_accounts_missing_from_nc(db_session):
+    # nc_coa_sync.py:357-359 (the deactivate UPDATE) was never exercised —
+    # every prior apply test used diff(accounts, []), so to_deactivate was
+    # always empty. Seed an active account NC does not return (_extract()
+    # only yields 1602) and confirm the row is deactivated, never deleted.
+    _pg("delete from chart_of_accounts")
+    _pg("delete from coa_aux_items")
+    _pg("delete from coa_sync_runs")
+    _pg("insert into chart_of_accounts (id, code, name, account_type, normal_balance, "
+        " is_postable, parent_code, quantity_accounting, default_uom, default_currency, "
+        " is_off_balance, is_active, aux_dimensions, created_at, updated_at) "
+        "values (gen_random_uuid(), '2000', 'Old Payable', 'liability', 'credit', "
+        " true, null, false, null, null, false, true, '[]'::jsonb, now(), now())")
+    accounts, aux = build(_extract())
+    db_accounts = [{"code": "2000", "name": "Old Payable", "account_type": "liability",
+                    "normal_balance": "credit", "is_postable": True, "parent_code": None,
+                    "quantity_accounting": False, "default_uom": None,
+                    "default_currency": None, "is_off_balance": False, "is_active": True}]
+    d = diff(accounts, db_accounts)
+    assert [r["code"] for r in d.to_deactivate] == ["2000"]     # sanity: bucket is populated
+    counts = apply(d, aux, diff_aux(aux, []), _TEST_DSN, uuid.uuid4())
+    assert counts["accounts_deactivated"] == 1
+    row = _pg("select is_active, name from chart_of_accounts where code='2000'")
+    assert len(row) == 1                       # still present — deactivate, never delete
+    assert row[0] == (False, "Old Payable")    # deactivated; other fields (name) untouched
+
+
 async def test_apply_audits_the_failure_and_zeroes_counts(db_session):
     # The audit row lives on its own connection precisely so a rolled-back sync
     # still leaves a record — the case that matters most and the one the shared
@@ -463,6 +496,27 @@ async def test_status_shape(client, monkeypatch):
     assert r2.json()["can_sync"] is True
     r3 = await client.get("/finance/v1/coa-sync/status", headers=_h("requester"))
     assert r3.json()["can_sync"] is False
+
+async def test_status_hides_last_run_error_text_from_unprivileged_users(client, monkeypatch):
+    # last_run can carry raw Oracle/DSN error text (see _write_audit's `error`
+    # column) — a requester must not be able to read it just by hitting
+    # /status. The frontend never renders last_run (only configured/can_sync),
+    # so gating it costs the UI nothing.
+    _configure_nc(monkeypatch)
+    _pg("delete from coa_sync_runs")
+    _pg("insert into coa_sync_runs (id, started_by, started_at, finished_at, "
+        " accounts_inserted, accounts_updated, accounts_deactivated, "
+        " aux_items_inserted, aux_items_deleted, error, created_at, updated_at) "
+        "values (gen_random_uuid(), gen_random_uuid(), now(), now(), "
+        " 0, 0, 0, 0, 0, 'ORA-12154: TNS: could not resolve', now(), now())")
+    r_admin = await client.get("/finance/v1/coa-sync/status", headers=_h("system_admin"))
+    assert r_admin.json()["last_run"] is not None
+    assert r_admin.json()["last_run"]["error"] == "ORA-12154: TNS: could not resolve"
+    r_mgr = await client.get("/finance/v1/coa-sync/status", headers=_h("finance_manager"))
+    assert r_mgr.json()["last_run"] is not None
+    r_req = await client.get("/finance/v1/coa-sync/status", headers=_h("requester"))
+    assert r_req.json()["can_sync"] is False
+    assert r_req.json()["last_run"] is None
 
 async def test_preview_requires_coa_manage_permission(client, monkeypatch):
     _configure_nc(monkeypatch)

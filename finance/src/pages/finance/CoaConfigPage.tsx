@@ -591,7 +591,7 @@ export default function CoaConfigPage() {
 
       {showCoaSync && (
         <CoaSyncModal onClose={() => setShowCoaSync(false)}
-                      onSynced={() => window.location.reload()} />
+                      onSynced={() => setShowCoaSync(false)} />
       )}
     </PortalChromeLayout>
   )
