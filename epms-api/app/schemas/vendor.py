@@ -13,8 +13,11 @@ class VendorCreate(BaseModel):
     erp_id: str | None = Field(default=None, max_length=100)
     name: str = Field(min_length=1, max_length=255)
     category: str = Field(min_length=1, max_length=100)
-    contact_name: str = Field(min_length=1, max_length=255)
-    contact_email: str = Field(min_length=1, max_length=255)
+    # Contact is optional in the UI (no required-field marker); allow empty so
+    # a vendor can be saved with only POID/name/category. Matches VendorCsvRow
+    # and mdm PartnerBase, both of which default these to "".
+    contact_name: str = Field(default="", max_length=255)
+    contact_email: str = Field(default="", max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
     payment_terms: str = Field(default="net30", max_length=20)

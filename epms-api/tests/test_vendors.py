@@ -42,6 +42,20 @@ async def test_create_vendor(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_create_vendor_without_contact(admin_client):
+    """Contact name/email are optional in the UI — omitting them (or sending
+    empty strings) must still create the vendor, not 422. Regression: the
+    schema required min_length=1, so vendors saved without a contact silently
+    failed while the frontend swallowed the error."""
+    resp = await admin_client.post(
+        URL,
+        json=_payload(code="VND-NOCONTACT-01", contact_name="", contact_email=""),
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["code"] == "VND-NOCONTACT-01"
+
+
+@pytest.mark.asyncio
 async def test_create_vendor_duplicate_code(admin_client):
     await _create(admin_client, code="VND-DUP-01")
     # mdm (the owner) enforces exact-code uniqueness

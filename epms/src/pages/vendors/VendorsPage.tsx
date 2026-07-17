@@ -94,9 +94,11 @@ interface VendorFormProps {
   errors: Partial<Record<keyof VendorFormData, string>>
   categories: string[]
   currencies: string[]
+  saveError?: string | null
+  saving?: boolean
 }
 
-function VendorForm({ form, onChange, onSave, onCancel, title, errors, categories, currencies }: VendorFormProps) {
+function VendorForm({ form, onChange, onSave, onCancel, title, errors, categories, currencies, saveError, saving }: VendorFormProps) {
   const set = (k: keyof VendorFormData, v: string | boolean) =>
     onChange({ ...form, [k]: v })
 
@@ -301,13 +303,19 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         </div>
       </div>
 
+      {saveError && (
+        <div className="mt-4 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          {saveError}
+        </div>
+      )}
+
       <div className="mt-4 flex justify-end gap-2 border-t border-primary-200 pt-4">
-        <Button variant="secondary" size="sm" onClick={onCancel}>
+        <Button variant="secondary" size="sm" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
-        <Button size="sm" onClick={onSave}>
+        <Button size="sm" onClick={onSave} disabled={saving}>
           <Check className="h-3.5 w-3.5" />
-          Save Vendor
+          {saving ? 'Saving…' : 'Save Vendor'}
         </Button>
       </div>
       </div>
@@ -343,6 +351,7 @@ export default function VendorsPage() {
   const [mode, setMode] = useState<'none' | 'add' | { edit: string }>('none')
   const [formData, setFormData] = useState<VendorFormData>(BLANK_FORM)
   const [formErrors, setFormErrors] = useState<Partial<Record<keyof VendorFormData, string>>>({})
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [importResult, setImportResult] = useState<VendorImportResult | null>(null)
   const [importError, setImportError] = useState<string | null>(null)
@@ -382,7 +391,8 @@ export default function VendorsPage() {
   }
 
   // ── Stats (from full list via separate unfilitered query) ───────────────────
-  const { data: allData } = useVendors({ page: 1, page_size: 1 })
+  // page_size must satisfy the API's ge=5 floor; total is independent of it.
+  const { data: allData } = useVendors({ page: 1, page_size: 5 })
   const totalVendors = allData?.total ?? 0
 
   const filtered = vendors
@@ -403,6 +413,7 @@ export default function VendorsPage() {
   const openAdd = () => {
     setFormData({ ...BLANK_FORM })
     setFormErrors({})
+    setSaveError(null)
     setMode('add')
     setDeleteConfirm(null)
   }
@@ -410,12 +421,17 @@ export default function VendorsPage() {
   const openEdit = (vendor: ApiVendor) => {
     setFormData(vendorToForm(vendor))
     setFormErrors({})
+    setSaveError(null)
     setMode({ edit: vendor.id })
     setDeleteConfirm(null)
   }
 
+  const asMessage = (err: unknown) =>
+    err instanceof Error ? err.message : 'Failed to save vendor'
+
   const handleSave = () => {
     if (!validate(formData)) return
+    setSaveError(null)
     if (mode === 'add') {
       const body: CreateVendorBody = {
         code: formData.code.trim(),
@@ -432,8 +448,12 @@ export default function VendorsPage() {
         notes: formData.notes.trim() || undefined,
         is_active: formData.active,
       }
-      createVendor.mutate(body)
+      createVendor.mutate(body, {
+        onSuccess: () => setMode('none'),
+        onError: (err) => setSaveError(asMessage(err)),
+      })
     } else if (typeof mode === 'object' && 'edit' in mode) {
+      const editId = mode.edit
       const body: UpdateVendorBody = {
         code: formData.code.trim(),
         erp_id: formData.erpId.trim() || undefined,
@@ -449,9 +469,11 @@ export default function VendorsPage() {
         notes: formData.notes.trim() || undefined,
         is_active: formData.active,
       }
-      updateVendor.mutate({ id: mode.edit, body })
+      updateVendor.mutate({ id: editId, body }, {
+        onSuccess: () => setMode('none'),
+        onError: (err) => setSaveError(asMessage(err)),
+      })
     }
-    setMode('none')
   }
 
   const TABS: { key: typeof activeTab; label: string }[] = [
@@ -603,9 +625,11 @@ export default function VendorsPage() {
           errors={formErrors}
           onChange={setFormData}
           onSave={handleSave}
-          onCancel={() => setMode('none')}
+          onCancel={() => { setMode('none'); setSaveError(null) }}
           categories={vendorCategories}
           currencies={enabledCurrencies}
+          saveError={saveError}
+          saving={createVendor.isPending || updateVendor.isPending}
         />
       )}
 
