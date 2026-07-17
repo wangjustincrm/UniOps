@@ -417,3 +417,103 @@ async def test_apply_preserves_uniops_metadata_on_update(db_session):
     assert got[0] == "Accumulated depreciation"        # NC 字段被覆盖
     assert got[1] == "cash"                            # UniOps 字段原封不动
     assert got[2] == [{"code": "employee", "required": True}]
+
+
+# ── API: status/preview/apply ────────────────────────────────────────────────
+from datetime import timedelta
+
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from jose import jwt
+
+from app.core.config import settings as app_settings
+from app.db.base import get_db
+from app.main import app
+
+def _token(role="finance_manager", sub=None):
+    return jwt.encode({"sub": str(sub or uuid.uuid4()), "role": role,
+                       "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                      app_settings.jwt_secret_key, algorithm=app_settings.jwt_algorithm)
+
+def _h(role="finance_manager"):
+    return {"Authorization": f"Bearer {_token(role)}"}
+
+@pytest_asyncio.fixture
+async def client(db_session):
+    async def _override_get_db():
+        yield db_session
+    app.dependency_overrides[get_db] = _override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+
+def _configure_nc(monkeypatch):
+    for f in ("nc_host", "nc_service", "nc_user", "nc_password"):
+        monkeypatch.setattr(app_settings, f, "x")
+
+# 权限矩阵由 conftest 按 seed_phase2_keys.py 的默认值 seed:
+# finance.coa.manage = (system_admin, finance_manager)
+async def test_status_shape(client, monkeypatch):
+    _configure_nc(monkeypatch)
+    r = await client.get("/finance/v1/coa-sync/status", headers=_h("system_admin"))
+    assert r.status_code == 200
+    assert r.json()["configured"] is True and r.json()["can_sync"] is True
+    # finance_manager 持有 finance.coa.manage —— 与 COA 页 CSV 导入同一把锁
+    r2 = await client.get("/finance/v1/coa-sync/status", headers=_h("finance_manager"))
+    assert r2.json()["can_sync"] is True
+    r3 = await client.get("/finance/v1/coa-sync/status", headers=_h("requester"))
+    assert r3.json()["can_sync"] is False
+
+async def test_preview_requires_coa_manage_permission(client, monkeypatch):
+    _configure_nc(monkeypatch)
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("requester"))
+    assert r.status_code == 403
+
+async def test_preview_allows_finance_manager(client, monkeypatch):
+    # 回归:CSV 导入这条路 finance_manager 本就能整表覆盖 COA,
+    # 同步不得比它严 —— 否则同样的破坏力两套门禁,且严的那套绕得过
+    from app.api.v1 import nc_coa_sync as api_mod
+    _configure_nc(monkeypatch)
+    monkeypatch.setattr(api_mod, "_fetch", lambda: _extract())
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("finance_manager"))
+    assert r.status_code == 200
+
+async def test_preview_503_when_not_configured(client, monkeypatch):
+    monkeypatch.setattr(app_settings, "nc_password", None)
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("system_admin"))
+    assert r.status_code == 503
+
+async def test_preview_503_on_zero_rows(client, monkeypatch):
+    from app.api.v1 import nc_coa_sync as api_mod
+    _configure_nc(monkeypatch)
+    monkeypatch.setattr(api_mod, "_fetch", lambda: _extract(accounts=[]))
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("system_admin"))
+    assert r.status_code == 503
+
+async def test_preview_writes_nothing(client, monkeypatch):
+    from app.api.v1 import nc_coa_sync as api_mod
+    _configure_nc(monkeypatch)
+    _pg("delete from chart_of_accounts")
+    monkeypatch.setattr(api_mod, "_fetch", lambda: _extract())
+    r = await client.post("/finance/v1/coa-sync/preview", headers=_h("system_admin"))
+    assert r.status_code == 200
+    body = r.json()
+    assert body["accounts"]["to_insert"] == 1
+    # 正面证据:预览之后库里一行没有
+    assert _pg("select count(*) from chart_of_accounts")[0][0] == 0
+
+async def test_apply_requires_coa_manage_permission(client, monkeypatch):
+    _configure_nc(monkeypatch)
+    r = await client.post("/finance/v1/coa-sync/apply", headers=_h("requester"))
+    assert r.status_code == 403
+
+async def test_apply_writes_and_reports_counts(client, monkeypatch):
+    from app.api.v1 import nc_coa_sync as api_mod
+    _configure_nc(monkeypatch)
+    _pg("delete from chart_of_accounts"); _pg("delete from coa_aux_items")
+    monkeypatch.setattr(api_mod, "_fetch", lambda: _extract())
+    monkeypatch.setattr(api_mod, "_worker_dsn", lambda: _TEST_DSN)
+    r = await client.post("/finance/v1/coa-sync/apply", headers=_h("system_admin"))
+    assert r.status_code == 200, r.text
+    assert r.json()["accounts_inserted"] == 1
+    assert _pg("select normal_balance from chart_of_accounts where code='1602'")[0][0] == "credit"
