@@ -40,7 +40,7 @@ def test_nc_configured_all_or_nothing(monkeypatch):
     assert nc_sync.nc_configured() is False
 
 
-def _mini_extract():
+def _mini_extract(tallydate="2026-07-11 09:00:00"):
     from app.services.nc_sync import NcExtract
     # voucher 1: line 1 both-sided w/ cc+ioitem aux; line 2 payable w/ supplier aux
     return NcExtract(
@@ -48,12 +48,13 @@ def _mini_extract():
         aux={"ASS1": ("0104", "E01", "CRM004", "", ""),
              "ASS2": ("", "", "", "SUP01", "")},
         vouchers=[("NCPK1", "2026", "07", 12, "test voucher",
-                   "2026-07-10 09:00:00", "2026-07-11 08:00:00")],
+                   "2026-07-10 09:00:00", "2026-07-11 08:00:00", tallydate)],
         details=[
             ("NCPK1", 1, "5101", 150, 50, 150, 50, "CADPK", 1, "expense", "ASS1"),
             ("NCPK1", 2, "2202", 0, 100, 0, 100, "CADPK", 1, "payable", "ASS2"),
         ],
         max_creationtime="2026-07-11 08:00:00",
+        tallied={"NCPK1"} if tallydate and tallydate != "~" else set(),
     )
 
 
@@ -89,9 +90,43 @@ def test_transform_skips_existing_and_counts_unmapped():
     # unknown cc code -> unmapped counted (line still produced, cc_id None)
     ex2 = NcExtract(ccy=ex.ccy, aux={"ASS1": ("", "ZZZ", "", "", "")},
                     vouchers=ex.vouchers, details=ex.details[:1],
-                    max_creationtime=ex.max_creationtime)
+                    max_creationtime=ex.max_creationtime, tallied=ex.tallied)
     v2, l2, _, unmapped2 = transform(ex2, {}, {}, {}, uni_sup={}, uni_cust={}, skip_pks=set())
     assert len(l2) == 1 and l2[0][11] is None and unmapped2 == 1
+
+
+def test_transform_marks_untallied_vouchers_draft():
+    # NC's TALLYDATE empty = not yet posted to NC's ledger. status was hardcoded
+    # "posted", which put $1.73M of un-tallied entries (incl. future periods) into
+    # reports that filter on status == POSTED (spec §14.4).
+    from app.services.nc_sync import transform
+    e = _mini_extract()                      # its voucher has a tallydate
+    vs, _, _, _ = transform(e, {}, {}, {}, {}, {}, set())
+    assert vs[0]["status"] == "posted"
+    e2 = _mini_extract(tallydate=None)       # not tallied in NC
+    vs2, _, _, _ = transform(e2, {}, {}, {}, {}, {}, set())
+    assert vs2[0]["status"] == "draft"
+
+
+def test_transform_rejects_unknown_currency():
+    # ccy.get(curr, "CAD") silently defaulted — same class as coa_import's
+    # `return "asset"`. USD/CNY/EUR/GBP are real on this book (spec §14.3).
+    from app.services.nc_sync import NcSyncError, transform
+    e = _mini_extract()
+    e.ccy = {}                               # currency pk resolves to nothing
+    with pytest.raises(NcSyncError):
+        transform(e, {}, {}, {}, {}, {}, set())
+
+
+def test_cc_by_dept_covers_the_four_measured_codes():
+    # 956 lines lost their cost centre to exactly these 4 dept codes
+    # (404+274+163+115). 0106/0104 were already reachable via CC_BY_CODE —
+    # the dept fallback simply missed them (spec §14.2).
+    from app.services.nc_sync import CC_BY_DEPT
+    assert CC_BY_DEPT["0106"] == "MOH-0106-E01"
+    assert CC_BY_DEPT["0104"] == "MOH-0104-P01"
+    assert CC_BY_DEPT["0102"] == "GA-0107"
+    assert CC_BY_DEPT["0108"] == "RD-0109"
 
 
 # ── worker tests (psycopg2 direct, finance_test DB) ──────────────────────────

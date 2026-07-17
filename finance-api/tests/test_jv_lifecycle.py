@@ -1,6 +1,6 @@
 """JV lifecycle crud — Plan 2."""
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -64,6 +64,30 @@ async def test_review_rejects_non_draft(db_session):
     await jv_crud.review(db_session, jv.id, _user())
     with pytest.raises(jv_crud.JvStateError):
         await jv_crud.review(db_session, jv.id, _user())  # already reviewed
+
+
+async def test_review_rejects_nc_sourced_jv(db_session):
+    # spec §14.4.2: an NC-imported voucher mirrors NC's tally status and must
+    # not be hand-reviewed — otherwise the next sync silently reverts it.
+    jv = JournalVoucher(
+        jv_number="JV-202607-9001", voucher_word="JV",
+        voucher_date=date(2026, 7, 1), fiscal_period="2026-07",
+        summary="nc draft", status="draft", nc_source_pk="NCPK1")
+    db_session.add(jv)
+    await db_session.flush()
+    with pytest.raises(jv_crud.JvPermissionError):
+        await jv_crud.review(db_session, jv.id, _user())
+
+
+async def test_post_rejects_nc_sourced_jv(db_session):
+    jv = JournalVoucher(
+        jv_number="JV-202607-9002", voucher_word="JV",
+        voucher_date=date(2026, 7, 1), fiscal_period="2026-07",
+        summary="nc reviewed", status="reviewed", nc_source_pk="NCPK2")
+    db_session.add(jv)
+    await db_session.flush()
+    with pytest.raises(jv_crud.JvPermissionError):
+        await jv_crud.post(db_session, jv.id, _user())
 
 
 async def test_unreview_moves_reviewed_to_draft(db_session):

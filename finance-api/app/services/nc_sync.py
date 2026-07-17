@@ -35,7 +35,21 @@ CC_BY_DEPT = {
     "0100": "GA-0100", "0101": "GA-0101", "0103": "GA-0103",
     "0105": "GA-0105", "0107": "GA-0107", "0109": "RD-0109",
     "0110": "SELL-0110", "0111": "SELL-0111", "0112": "SELL-0112", "0113": "SELL-0113",
+    # 2026-07-17: these four were missing, costing exactly the 956 lines that
+    # unmapped_cc_count had been reporting all along (404+274+163+115).
+    # 0106/0104 were an outright oversight — CC_BY_CODE already routes
+    # E01-E07/ENG -> MOH-0106-E01 and P01-P03/PD -> MOH-0104-*, so only the
+    # dept-only path lost them.
+    "0106": "MOH-0106-E01", "0104": "MOH-0104-P01",
+    # 0102 (named "Purchasing(NOT USE)") and 0108 have no obvious EPMS
+    # counterpart. These two targets are the USER'S call (2026-07-17), not
+    # inferred — do not "improve" them from the code's side.
+    "0102": "GA-0107", "0108": "RD-0109",
 }
+
+
+class NcSyncError(ValueError):
+    """An NC value we refuse to guess about. Aborts the run."""
 
 
 def nc_configured() -> bool:
@@ -47,10 +61,13 @@ class NcExtract:
     """Raw NC reads, pre-transform. Tests inject a fake one."""
     ccy: dict           # pk_currtype -> currency code
     aux: dict           # freevalueid -> (dept_code, cc_code, io_code, sup_code, cust_code)
-    vouchers: list      # (pk, year, period, num, explanation, prepareddate, creationtime)
+    vouchers: list      # (pk, year, period, num, explanation, prepareddate, creationtime,
+                        #  tallydate)
     details: list       # (pk_voucher, detailindex, accountcode, dr, cr, ldr, lcr,
                         #  pk_currtype, excrate1, explanation, assid)
     max_creationtime: str | None
+    tallied: set        # EVERY tallied pk in the book (NOT watermark-limited) —
+                        # drives the status backfill, see _sync_statuses
 
 
 _AUX_NAME_SLOTS = {
@@ -118,7 +135,7 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
     """NC rows -> (voucher dicts, line tuples, dim tuples, unmapped_cc count).
     Skips vouchers whose pk is in skip_pks (incremental pk-dedup)."""
     pk2id, vouchers = {}, []
-    for pk, year, period, num, expl, pdate, _ctime in extract.vouchers:
+    for pk, year, period, num, expl, pdate, _ctime, tallydate in extract.vouchers:
         if pk in skip_pks:
             continue
         jid = uuid.uuid4()
@@ -131,6 +148,10 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             "id": jid, "jv_number": f"JV-{year}{period}-{num_i:04d}",
             "period": f"{year}-{period}", "vdate": vdate,
             "summary": (expl or "")[:255], "nc_pk": pk,
+            # NC's TALLYDATE empty = not yet posted to NC's ledger. Mirror that:
+            # the GL and Account Balance both read status == POSTED only, so an
+            # un-tallied voucher must not colour reports (spec §14.4).
+            "status": "posted" if (tallydate and tallydate != "~") else "draft",
         })
 
     lines, dims, unmapped = [], [], 0
@@ -144,11 +165,15 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             assid, extract.aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust)
         if had_hint and cc_id is None:
             unmapped += 1
+        ccy_code = extract.ccy.get(curr)
+        if ccy_code is None:
+            raise NcSyncError(f"voucher line {pk}/{idx}: currency pk {curr!r} not in "
+                              f"BD_CURRTYPE — refusing to default it to CAD")
         lid = uuid.uuid4()
         lines.append((
             lid, jid, int(idx or 0), (acct or "").strip() or None,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
-            extract.ccy.get(curr, "CAD"), _d(rate) if rate else Decimal("1"),
+            ccy_code, _d(rate) if rate else Decimal("1"),
             cc_id, dept_id, ba_id, partner_id, partner_name))
         if io_code:
             dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
@@ -206,14 +231,27 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
                     custcode = cust_codes.get(vpk, "")
             aux[fid] = (dcode, ccode, iocode, supcode, custcode)
 
+        # Discarded (作废) vouchers are not ledger entries. Measured 2026-07-17:
+        # exactly one on this book ($4,298.52) — it had been importing as posted.
         vq = ("select pk_voucher, year, period, num, explanation, prepareddate, "
-              "creationtime from NCSC.GL_VOUCHER where pk_accountingbook = :b")
+              "creationtime, tallydate from NCSC.GL_VOUCHER "
+              "where pk_accountingbook = :b "
+              "  and (discardflag is null or discardflag <> 'Y')")
         if watermark:
             cur.execute(vq + " and creationtime >= :wm", b=PK_BOOK, wm=watermark)
         else:
             cur.execute(vq, b=PK_BOOK)
         vouchers = list(cur.fetchall())
         max_ct = max((v[6] for v in vouchers if v[6]), default=None)
+
+        # Status backfill feed: the whole book's tally facts, deliberately NOT
+        # watermark-limited. A voucher created in June and tallied in July keeps
+        # its June creationtime, so the watermark would never bring it back and
+        # it would sit at draft forever (spec §14.4.1). Two columns x ~40k rows.
+        cur.execute("select pk_voucher, tallydate from NCSC.GL_VOUCHER "
+                    "where pk_accountingbook = :b "
+                    "  and (discardflag is null or discardflag <> 'Y')", b=PK_BOOK)
+        tallied = {pk for pk, td in cur if td and td != "~"}
 
         # details: fetch the whole book; transform() filters by pk2id membership.
         cur.execute(
@@ -224,7 +262,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
     finally:
         con.close()
     return NcExtract(ccy=ccy, aux=aux, vouchers=vouchers, details=details,
-                     max_creationtime=max_ct)
+                     max_creationtime=max_ct, tallied=tallied)
 
 
 # ── run lifecycle (worker) ─────────────────────────────────────────────────────────
@@ -263,6 +301,28 @@ def _mark(dsn, run_id, **fields):
     cur.execute(f"update nc_sync_runs set {sets}, updated_at = now() where id = %s",
                 (*fields.values(), run_id))
     con.close()
+
+
+def _sync_statuses(cur, tallied: set) -> tuple[int, int]:
+    """Align every NC-sourced voucher's status with NC's tally fact.
+
+    Incremental skips pks it has already imported and its watermark is on
+    creationtime, so a voucher tallied AFTER import never returns through that
+    path — without this it would sit at draft forever. Diff first and update only
+    what actually changed (usually nothing), same shape as the COA sync.
+    """
+    cur.execute("select nc_source_pk, status from journal_vouchers "
+                "where nc_source_pk is not null")
+    current = dict(cur.fetchall())
+    to_posted = [pk for pk, st in current.items() if pk in tallied and st != "posted"]
+    to_draft = [pk for pk, st in current.items() if pk not in tallied and st != "draft"]
+    if to_posted:
+        cur.execute("update journal_vouchers set status = 'posted', updated_at = now() "
+                    "where nc_source_pk = any(%s)", (to_posted,))
+    if to_draft:
+        cur.execute("update journal_vouchers set status = 'draft', updated_at = now() "
+                    "where nc_source_pk = any(%s)", (to_draft,))
+    return len(to_posted), len(to_draft)
 
 
 def _mark_terminal(dsn, run_id, **fields):
@@ -380,7 +440,7 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
 
         v_rows = [(v["id"], v["jv_number"], "JV", v["vdate"], v["period"], v["summary"],
-                   "posted", "nc", "nc_voucher", v["jv_number"], v["nc_pk"],
+                   v["status"], "nc", "nc_voucher", v["jv_number"], v["nc_pk"],
                    *(tot.get(v["id"], [Decimal("0")] * 4))) for v in vouchers]
         for i in range(0, len(v_rows), _CHUNK):
             execute_values(cur,
@@ -409,6 +469,8 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 dims[i:i + _CHUNK],
                 template="(%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, dims_inserted=min(i + _CHUNK, len(dims)))
+
+        _sync_statuses(cur, extract.tallied)
 
         # superseded-run guard: if sweeper already marked us abandoned, do not commit.
         cur.execute("select status from nc_sync_runs where id = %s for update", (run_id,))

@@ -67,6 +67,10 @@ async def _require(db: AsyncSession, jv_id: uuid.UUID, expect_status: str) -> Jo
 
 async def review(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
     jv = await _require(db, jv_id, DRAFT)
+    if jv.nc_source_pk is not None:
+        raise JvPermissionError(
+            "This voucher mirrors NC's tally status and cannot be posted or "
+            "reviewed here — it follows NC (spec §14.4.2)")
     await _require_role(db, user)
     if await _sod_self_review_enabled(db) and str(user["sub"]) == str(jv.prepared_by):
         raise JvPermissionError("SoD (jv_self_review): reviewer cannot be the preparer")
@@ -97,6 +101,10 @@ async def _require_period_open(db: AsyncSession, period: str) -> None:
 
 async def post(db: AsyncSession, jv_id: uuid.UUID, user: dict) -> JournalVoucher:
     jv = await _require(db, jv_id, REVIEWED)
+    if jv.nc_source_pk is not None:
+        raise JvPermissionError(
+            "This voucher mirrors NC's tally status and cannot be posted or "
+            "reviewed here — it follows NC (spec §14.4.2)")
     await _require_role(db, user)
     await _require_period_open(db, jv.fiscal_period)
     jv.status = POSTED
