@@ -1,4 +1,6 @@
 """Purchase Order endpoint tests."""
+from decimal import Decimal
+
 import pytest
 import sqlalchemy as sa
 
@@ -200,6 +202,44 @@ async def test_tasks_created_on_pr_submit(admin_client):
     tasks = resp.json()
     pr_tasks = [t for t in tasks if t["document_id"] == pr["id"]]
     assert any(t["type"] == "approve_pr" for t in pr_tasks)
+
+
+@pytest.mark.asyncio
+async def test_backfill_create_po_task_for_approved_pr_without_po(test_engine):
+    """PMS-imported PRs land 'approved' without going through the engine hook
+    that raises the Create PO task, so procurement never saw them (unlike
+    place_order, which was already backfilled). get_for_role must synthesize a
+    create_po task for any approved PR that still has no PO."""
+    import uuid
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud import task as task_crud
+    from app.crud import user as user_crud
+    from app.models.pr import PurchaseRequest
+    from app.schemas.auth import RegisterRequest
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        officer = await user_crud.create(db, RegisterRequest(
+            email=f"po-officer-{uuid.uuid4().hex[:6]}@t.com", password="TestPass1!",
+            full_name="Purchasing Officer", role="procurement_officer"))
+        pr = PurchaseRequest(
+            number=f"PR-{uuid.uuid4().hex[:6]}", title="Imported approved PR", type=2,
+            status="approved", amount=Decimal("100.00"), created_by=officer.id, po_id=None)
+        db.add(pr)
+        await db.commit()
+
+        tasks = await task_crud.get_for_role(db, "procurement_officer", officer.id)
+        await db.commit()
+
+        create_po = [t for t in tasks if t.type == "create_po" and t.document_id == pr.id]
+        assert len(create_po) == 1, "approved PR without a PO must surface one Create PO task"
+        assert create_po[0].assigned_role == "procurement_officer"
+
+        # Idempotent: a second call must not duplicate the task
+        tasks2 = await task_crud.get_for_role(db, "procurement_officer", officer.id)
+        await db.commit()
+        again = [t for t in tasks2 if t.type == "create_po" and t.document_id == pr.id]
+        assert len(again) == 1, "backfill must not create duplicate create_po tasks"
 
 
 # ── Approval auto-skip (crud-level) ─────────────────────────────────────────────
