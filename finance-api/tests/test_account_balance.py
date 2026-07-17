@@ -578,3 +578,59 @@ async def test_subtree_codes_from_db(db_session):
     assert await _subtree_codes(db_session, "6601") == {"6601", "660101", "660102"}
     assert await _subtree_codes(db_session, "660101") == {"660101"}   # leaf
     assert await _subtree_codes(db_session, "9999") == {"9999"}       # orphan
+
+
+# ── non-leaf rollup: main report (Task 2) ─────────────────────────────────────
+async def _coa_selling_tree(db):
+    from app.models.coa import ChartOfAccount
+    db.add_all([
+        ChartOfAccount(code="6601", name="Selling expenses", account_type="expense",
+                       normal_balance="debit", is_postable=False, parent_code=None),
+        ChartOfAccount(code="660101", name="Selling(fix)", account_type="expense",
+                       normal_balance="debit", is_postable=True, parent_code="6601"),
+        ChartOfAccount(code="660102", name="Selling(var)", account_type="expense",
+                       normal_balance="debit", is_postable=True, parent_code="6601"),
+    ])
+    await db.flush()
+
+
+async def test_account_balance_rolls_up_header(db_session):
+    await _coa_selling_tree(db_session)
+    await _posted_dim_event(db_session, "660101", "100.00", period="2026-07")
+    await _posted_dim_event(db_session, "660102", "40.00", period="2026-07")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    bal = await ab.account_balance(db_session, "2026-07")
+    by = {r["account_code"]: r for r in bal["rows"]}
+    # header 6601 aggregates its two children (100 + 40)
+    assert by["6601"]["period_debit"] == "140.00"
+    assert by["6601"]["closing"] == "140.00"
+    assert by["6601"]["is_postable"] is False and by["6601"]["level"] == 0
+    # leaves unchanged, one level deeper
+    assert by["660101"]["period_debit"] == "100.00" and by["660101"]["level"] == 1
+    assert by["660102"]["period_debit"] == "40.00"
+
+
+async def test_account_balance_totals_not_double_counted(db_session):
+    # THE anti-double-count guarantee: the header row shows 140, but the grand
+    # total counts each posted line once (140), not header+children (280).
+    await _coa_selling_tree(db_session)
+    await _posted_dim_event(db_session, "660101", "100.00", period="2026-07")
+    await _posted_dim_event(db_session, "660102", "40.00", period="2026-07")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    bal = await ab.account_balance(db_session, "2026-07")
+    assert bal["totals"]["period_debit"] == "140.00"     # not 280.00
+    assert bal["balanced"] is True                       # 140 dr (children) == 140 cr (2000)
+
+
+async def test_account_balance_leaf_only_unchanged(db_session):
+    # orphan codes (not in COA) behave as leaves exactly as before rollup
+    await _posted_event(db_session, "2026-06", amount="100.00")
+    await _posted_event(db_session, "2026-07", amount="40.00")
+    await jv_crud.backfill_posted_jvs(db_session)
+    bal = await ab.account_balance(db_session, "2026-07")
+    by = {r["account_code"]: r for r in bal["rows"]}
+    assert by["5000"]["opening"] == "100.00"
+    assert by["5000"]["closing"] == "140.00"
+    assert by["5000"]["is_postable"] is True and by["5000"]["level"] == 0

@@ -72,9 +72,12 @@ async def _subtree_codes(db: AsyncSession, account_code: str) -> set:
 
 async def account_balance(db: AsyncSession, period: str) -> dict:
     """Opening (cumulative posted before `period`) + period movement + closing,
-    per account, in local (CAD) amounts. Mirrors gl.trial_balance's shape but
-    sourced from posted JV lines."""
+    per account, in local (CAD) amounts. Non-leaf (header) accounts aggregate
+    their whole {self ∪ descendants} subtree (NC科目余额表 parity); leaves are
+    unchanged. Totals stay from the DIRECT per-line partition so rollup never
+    double-counts."""
     coa = await _coa_map(db)
+    children = _children_index(coa)
 
     async def sums(where):
         q = (select(JournalVoucherLine.account_code,
@@ -88,24 +91,45 @@ async def account_balance(db: AsyncSession, period: str) -> dict:
     opening = await sums(JournalVoucher.fiscal_period < period)
     movement = await sums(JournalVoucher.fiscal_period == period)
 
-    codes = sorted(set(opening) | set(movement), key=lambda c: (c is None, c or ""))
+    active = set(opening) | set(movement)               # codes with a direct line
+    all_codes = set(coa) | active
+    subtree = {code: _descendants(children, code) for code in all_codes}
+
+    def roll(direct, code):
+        d = c = _ZERO
+        for s in subtree[code]:
+            sd, sc = direct.get(s, (_ZERO, _ZERO))
+            d += sd; c += sc
+        return d, c
+
+    # show an account iff its subtree contains any direct line (self or descendant)
+    shown = [c for c in all_codes if subtree[c] & active]
+    shown.sort(key=lambda c: (c is None, c or ""))
+
     rows = []
-    tot_dr = tot_cr = tot_close = _ZERO
-    for code in codes:
-        od, oc = opening.get(code, (_ZERO, _ZERO))
-        md, mc = movement.get(code, (_ZERO, _ZERO))
+    for code in shown:
+        od, oc = roll(opening, code)
+        md, mc = roll(movement, code)
         open_bal = od - oc
-        close_bal = open_bal + md - mc
         acct = coa.get(code)
         rows.append({
             "account_code": code or "(unmapped)",
             "account_name": acct.name if acct else "(unmapped)",
             "account_type": acct.account_type if acct else None,
+            "is_postable": acct.is_postable if acct else True,
+            "level": _level(coa, code) if code else 0,
             "opening": _s(open_bal),
             "period_debit": _s(md), "period_credit": _s(mc),
-            "closing": _s(close_bal),
+            "closing": _s(open_bal + md - mc),
         })
-        tot_dr += md; tot_cr += mc; tot_close += close_bal
+
+    # totals from the DIRECT partition (each line once) — NOT from rolled rows
+    tot_dr = tot_cr = tot_close = _ZERO
+    for code in active:
+        od, oc = opening.get(code, (_ZERO, _ZERO))
+        md, mc = movement.get(code, (_ZERO, _ZERO))
+        tot_dr += md; tot_cr += mc
+        tot_close += (od - oc) + (md - mc)
     return {
         "period": period, "rows": rows,
         "totals": {"period_debit": _s(tot_dr), "period_credit": _s(tot_cr),
