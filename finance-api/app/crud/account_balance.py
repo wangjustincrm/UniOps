@@ -111,8 +111,14 @@ class BadDims(ValueError):
 
 def _dimensions():
     """dim_code -> (jv_lines column, master model, code attr, name attr).
+
     supplier/customer share the partner_id column — coa_aux_items keeps them
-    apart per account (AP accounts carry suppliers, AR customers)."""
+    apart per account (AP accounts carry suppliers, AR customers). `partner` is
+    the union of both: NC's 客商 (BD_ACCASS 0004) does not say which one it is,
+    and the voucher sync already folds supplier-or-customer into this very
+    column (_resolve_dims), so the union is what the column actually holds.
+    Its master is resolved in _resolve_dim, not here — hence the Nones.
+    """
     from app.models.mirrors import BudgetAccount, CostCenter, Department, ErpSupplier
     from app.models.nc_customer import NcCustomer
     return {
@@ -121,7 +127,41 @@ def _dimensions():
         "income_expense_item": (JournalVoucherLine.income_expense_item_id, BudgetAccount, "code", "name"),
         "supplier": (JournalVoucherLine.partner_id, ErpSupplier, "erp_supplier_code", "supplier_name"),
         "customer": (JournalVoucherLine.partner_id, NcCustomer, "code", "name"),
+        "partner": (JournalVoucherLine.partner_id, None, None, None),   # union — see _resolve_dim
     }
+
+
+async def _resolve_dim(db: AsyncSession, dim: str, ids: set, reg: dict) -> dict:
+    """id -> (code, name) for one dimension.
+
+    `partner` unions suppliers and customers — their ids never collide (separate
+    tables, separate UUID pks; measured 0 overlap). Ids in neither master fall
+    back to the line's own denormalized partner_name: those parties' master rows
+    are gone, and a name beats a blank.
+    """
+    if not ids:
+        return {}
+    if dim != "partner":
+        _, model, code_attr, name_attr = reg[dim]
+        rows = (await db.execute(select(model).where(model.id.in_(ids)))).scalars()
+        return {r.id: (getattr(r, code_attr), getattr(r, name_attr)) for r in rows}
+
+    from app.models.mirrors import ErpSupplier
+    from app.models.nc_customer import NcCustomer
+    out: dict = {}
+    for model, code_attr, name_attr in (
+            (ErpSupplier, "erp_supplier_code", "supplier_name"),
+            (NcCustomer, "code", "name")):
+        for r in (await db.execute(select(model).where(model.id.in_(ids)))).scalars():
+            out[r.id] = (getattr(r, code_attr), getattr(r, name_attr))
+    missing = ids - set(out)
+    if missing:
+        rows = (await db.execute(
+            select(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name)
+            .where(JournalVoucherLine.partner_id.in_(missing)).distinct())).all()
+        for pid, pname in rows:
+            out.setdefault(pid, (None, pname))
+    return out
 
 
 DIM_LABELS = {
@@ -168,24 +208,20 @@ async def expand_by_dims(db: AsyncSession, account_code: str, period: str,
          .group_by(*cols))
     raw = (await db.execute(q)).all()
 
-    # batch-load mirror rows per dimension
+    # batch-load per dimension: id -> (code, name)
     lookups: dict[str, dict] = {}
     for i, d in enumerate(dims):
         ids = {row[i] for row in raw if row[i] is not None}
-        model = reg[d][1]
-        lookups[d] = ({r.id: r for r in (await db.execute(
-            select(model).where(model.id.in_(ids)))).scalars()} if ids else {})
+        lookups[d] = await _resolve_dim(db, d, ids, reg)
 
     rows = []
     for row in raw:
         keys = []
         for i, d in enumerate(dims):
             vid = row[i]
-            m = lookups[d].get(vid)
-            _, _, code_attr, name_attr = reg[d]
+            code, name = lookups[d].get(vid, (None, None))
             keys.append({"dim_code": d, "id": str(vid) if vid else None,
-                         "code": getattr(m, code_attr) if m else None,
-                         "name": getattr(m, name_attr) if m else None})
+                         "code": code, "name": name})
         rows.append({"keys": keys, "amount": _s(_net(row[len(dims)], row[len(dims) + 1]))})
     rows.sort(key=lambda r: tuple(k["code"] or "￿" for k in r["keys"]))
     return {"account_code": account_code, "period": period, "dims": dims, "rows": rows}

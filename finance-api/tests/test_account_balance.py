@@ -264,13 +264,12 @@ async def test_dims_endpoint_config_and_fallback(client, db_session):
     r = await client.get("/finance/v1/gl/account-balance/5101/dims", headers=_h())
     dims = r.json()["dims"]
     assert [d["dim_code"] for d in dims] == [
-        "cost_center", "supplier", "department", "income_expense_item", "customer"]
-    assert dims[0]["supported"] is True and dims[1]["supported"] is True
-    assert dims[2]["supported"] is True and dims[3]["supported"] is True and dims[4]["supported"] is True
+        "cost_center", "supplier", "department", "income_expense_item", "customer", "partner"]
+    assert all(d["supported"] is True for d in dims)
     # unconfigured account falls back to the full supported registry
     r2 = await client.get("/finance/v1/gl/account-balance/9999/dims", headers=_h())
     assert {d["dim_code"] for d in r2.json()["dims"]} == {
-        "cost_center", "department", "income_expense_item", "supplier", "customer"}
+        "cost_center", "department", "income_expense_item", "supplier", "customer", "partner"}
 
 
 async def test_expand_endpoint_dims_param(client, db_session):
@@ -369,3 +368,62 @@ async def test_expand_by_supplier_and_customer(db_session):
 
     exp_c = await ab.expand_by_dims(db_session, "2202", "2026-07", ["customer"])
     assert str(cust_id) not in {r["keys"][0]["id"] for r in exp_c["rows"]}  # no data yet
+
+
+# ── partner dim = supplier ∪ customer (Task 7) ─────────────────────────────────
+
+async def test_partner_dim_is_supported(db_session):
+    from app.crud.account_balance import _dimensions
+    assert "partner" in _dimensions()
+
+
+async def test_partner_dim_resolves_supplier_and_customer_together(db_session):
+    # partner = supplier ∪ customer: both masters resolve through the one
+    # partner_id column, each row carrying its own master's code/name.
+    from app.models.mirrors import ErpSupplier
+    from app.models.nc_customer import NcCustomer
+    sup_id, cust_id = uuid.uuid4(), uuid.uuid4()
+    db_session.add(ErpSupplier(id=sup_id, erp_supplier_code="S001", supplier_name="ACME"))
+    db_session.add(NcCustomer(id=cust_id, code="CRM027", name="Debang", is_active=True))
+    await db_session.flush()
+
+    async def _ev(amount, pid):
+        occurred = datetime(2026, 7, 15, tzinfo=timezone.utc)
+        await emit_event(
+            db_session, source_service="finance", source_doc_type="ap_invoice",
+            source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+            occurred_at=occurred, prepared_by=uuid.uuid4(),
+            lines=[{"line_role": "purchase_expense", "account_code": "5000",
+                    "debit": Decimal(amount), "currency": "CAD"},
+                   {"line_role": "accounts_payable", "account_code": "2202",
+                    "credit": Decimal(amount), "currency": "CAD", "partner_id": pid}])
+
+    await _ev("100.00", sup_id)
+    await _ev("40.00", cust_id)
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    out = await ab.expand_by_dims(db_session, "2202", "2026-07", ["partner"])
+    names = {k["name"] for r in out["rows"] for k in r["keys"]}
+    assert names == {"ACME", "Debang"}
+
+
+async def test_partner_dim_falls_back_to_line_name_when_master_is_gone(db_session):
+    # 627 partner_ids in dev resolve against neither master — their master row
+    # is gone. The name is denormalized on the line; use it rather than blank.
+    ghost = uuid.uuid4()
+    occurred = datetime(2026, 7, 15, tzinfo=timezone.utc)
+    await emit_event(
+        db_session, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+        occurred_at=occurred, prepared_by=uuid.uuid4(),
+        lines=[{"line_role": "purchase_expense", "account_code": "5000",
+                "debit": Decimal("77.00"), "currency": "CAD"},
+               {"line_role": "accounts_payable", "account_code": "2202",
+                "credit": Decimal("77.00"), "currency": "CAD",
+                "partner_id": ghost, "partner_name": "Ghost Vendor"}])
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    out = await ab.expand_by_dims(db_session, "2202", "2026-07", ["partner"])
+    key = out["rows"][0]["keys"][0]
+    assert key["name"] == "Ghost Vendor"      # not None
+    assert key["code"] is None                # no master row -> no code
