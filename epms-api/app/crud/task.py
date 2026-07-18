@@ -6,10 +6,18 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
+
+# Import-reconstruction backfills only synthesize follow-on tasks for reasonably
+# recent documents. PMS carries years of history; without a floor the backfills
+# would resurrect ancient imported docs as live inbox work. 2026-06-01 is the
+# cutoff (roughly when EPMS became the system of record); every month from then
+# on is included, so this stays correct as time moves forward.
+_BACKFILL_MIN_CREATED = datetime(2026, 6, 1, tzinfo=timezone.utc)
 
 
 async def _complete_stale_create_pa_tasks(db: AsyncSession) -> None:
@@ -86,12 +94,58 @@ async def _complete_stale_create_po_tasks(db: AsyncSession) -> None:
     await db.flush()
 
 
+async def _backfill_create_po_tasks(db: AsyncSession) -> None:
+    """Create create_po tasks for approved PRs that still have no PO.
+
+    The live flow raises this task in the approval engine's _post_approve_pr
+    when a PR becomes fully approved. PMS-imported PRs land in 'approved' state
+    without going through that engine hook, so they never got a Create PO task —
+    unlike place_order, which _backfill_place_order_tasks already covers. This
+    is the symmetric safety net so the purchasing office actually sees the work.
+
+    Scope: status='approved' AND po_id IS NULL (a PR with a PO needs no task;
+    _complete_stale_create_po_tasks completes any that slipped through).
+    """
+    approved_prs_q = select(PurchaseRequest).where(
+        PurchaseRequest.status == "approved",
+        PurchaseRequest.po_id.is_(None),
+        PurchaseRequest.created_at >= _BACKFILL_MIN_CREATED,
+    )
+    approved_prs = (await db.execute(approved_prs_q)).scalars().all()
+    if not approved_prs:
+        return
+
+    pr_ids_with_task_q = select(Task.document_id).where(
+        Task.type == "create_po",
+        Task.is_completed.is_(False),
+        Task.document_type == "pr",
+    )
+    pr_ids_with_task = set((await db.execute(pr_ids_with_task_q)).scalars().all())
+
+    for pr in approved_prs:
+        if pr.id not in pr_ids_with_task:
+            db.add(Task(
+                type="create_po",
+                priority="normal",
+                document_type="pr",
+                document_id=pr.id,
+                document_number=pr.number,
+                assigned_role="procurement_officer",
+                title=f"Create PO: {pr.number} — {pr.title}",
+                description=f"PR {pr.number} has been fully approved. Please create a Purchase Order.",
+                amount=pr.amount,
+                vendor=pr.vendor_name,
+            ))
+    await db.flush()
+
+
 async def _backfill_place_order_tasks(db: AsyncSession) -> None:
     """Create place_order tasks for approved POs that have no such open task yet."""
     # Find approved POs that haven't been placed
     approved_pos_q = select(PurchaseOrder).where(
         PurchaseOrder.status == "approved",
         PurchaseOrder.place_order_method.is_(None),
+        PurchaseOrder.created_at >= _BACKFILL_MIN_CREATED,
     )
     approved_pos = (await db.execute(approved_pos_q)).scalars().all()
     if not approved_pos:
@@ -119,6 +173,66 @@ async def _backfill_place_order_tasks(db: AsyncSession) -> None:
                 amount=po.total,
                 vendor=po.vendor_name,
             ))
+    await db.flush()
+
+
+async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
+    """Create create_pa tasks for payable POs whose matched invoices await a PA.
+
+    The live flow raises this when an invoice is matched to a PO (see
+    api/v1/invoices.py). PMS-imported invoices are pre-matched in bulk without
+    that hook, so payable POs never prompted the requester to raise the Payment
+    Application. Scope tightly — most historical matched invoices sit on
+    closed/cancelled POs that must NOT get a task:
+      - PO status still payable (issued / partially_received / fully_received),
+      - has a matched invoice created >= the backfill floor,
+      - no PA exists for the PO yet,
+      - no open create_pa task already.
+    Assigns to the PR requester (PO->PR->created_by, else PO.created_by), the
+    same assignee the live task uses.
+    """
+    pos_with_pa = select(PaymentApplication.po_id).where(PaymentApplication.po_id.is_not(None))
+    pos_with_open_task = select(Task.document_id).where(
+        Task.type == "create_pa",
+        Task.is_completed.is_(False),
+        Task.document_type == "po",
+    )
+    recent_matched_pos = select(Invoice.po_id).where(
+        Invoice.status == "matched",
+        Invoice.po_id.is_not(None),
+        Invoice.created_at >= _BACKFILL_MIN_CREATED,
+    )
+    candidates_q = select(PurchaseOrder).where(
+        PurchaseOrder.status.in_(("issued", "partially_received", "fully_received")),
+        PurchaseOrder.id.in_(recent_matched_pos),
+        PurchaseOrder.id.not_in(pos_with_pa),
+        PurchaseOrder.id.not_in(pos_with_open_task),
+    )
+    pos = (await db.execute(candidates_q)).scalars().all()
+    if not pos:
+        return
+
+    for po in pos:
+        requester_id = None
+        if po.pr_id:
+            requester_id = (await db.execute(
+                select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
+            )).scalar_one_or_none()
+        if requester_id is None:
+            requester_id = po.created_by
+        db.add(Task(
+            type="create_pa",
+            priority="normal",
+            document_type="po",
+            document_id=po.id,
+            document_number=po.number,
+            assigned_role="requester",
+            assigned_user_id=requester_id,
+            title=f"Create Payment Application for {po.number}",
+            description=f"Invoices matched to PO {po.number} await a Payment Application.",
+            amount=po.total,
+            vendor=po.vendor_name,
+        ))
     await db.flush()
 
 
@@ -198,7 +312,9 @@ async def get_for_role(
     await _complete_stale_create_po_tasks(db)
     await _complete_stale_create_pa_tasks(db)
     await _complete_stale_create_prepayment_pa_tasks(db)
+    await _backfill_create_po_tasks(db)
     await _backfill_place_order_tasks(db)
+    await _backfill_create_pa_tasks(db)
     await _backfill_prepayment_pa_tasks(db)
 
     q = select(Task)
