@@ -34,3 +34,32 @@ def _rows_from_xlsx(path: str) -> list[dict]:
             "uniops_cc_code": str(uni_cc).strip(),
         })
     return out
+
+
+async def load_cc_map(db) -> list[dict]:
+    """All mapping rows as plain dicts (small table; caller caches per run)."""
+    from sqlalchemy import select
+
+    from app.models.cc_map import BudgetActualCcMap
+    rows = (await db.execute(select(BudgetActualCcMap))).scalars().all()
+    return [{"account_code": r.account_code, "dept_code": r.dept_code,
+             "nc_cc_code": r.nc_cc_code, "uniops_cc_code": r.uniops_cc_code}
+            for r in rows]
+
+
+def resolve_uniops_cc(rows, account_code, dept_code, nc_cc_code):
+    """(account, dept, nc_cc) exact -> (account, dept, ALL) -> (account, ALL, ALL) -> None.
+
+    None = unmapped: the (account, dept, cc) combo is not a valid budget bucket
+    (e.g. engineering dept 0106 in 6602) -> surfaces as an exception downstream."""
+    dept = dept_code or ""
+    cc = nc_cc_code or ""
+    idx = {(r["account_code"], r["dept_code"], r["nc_cc_code"]): r["uniops_cc_code"]
+           for r in rows}
+    for key in ((account_code, dept, cc),
+                (account_code, dept, "ALL"),
+                (account_code, "ALL", "ALL")):
+        hit = idx.get(key)
+        if hit:
+            return hit
+    return None
