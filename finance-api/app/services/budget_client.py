@@ -136,3 +136,17 @@ async def resolve_account_id(
 def current_month_year() -> tuple[int, int]:
     now = datetime.now(timezone.utc)
     return now.year, now.month
+
+
+async def fetch_plan_lines(fiscal_year: int, month: int) -> dict:
+    """(cost_center_id, account_id) -> Decimal budget from current approved plans.
+    account_id == the JV line's income_expense_item_id (shared budget_accounts),
+    so the predreal grid joins budget↔actual directly on this key."""
+    import uuid
+    from decimal import Decimal
+    url = f"{settings.budget_api_url}/api/v1/plan-lines"
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.get(url, params={"fiscal_year": fiscal_year, "month": month})
+        r.raise_for_status()
+    return {(uuid.UUID(x["cost_center_id"]), uuid.UUID(x["account_id"])): Decimal(x["amount"])
+            for x in r.json()}

@@ -107,6 +107,25 @@ async def get_current_plan(
 get_plan_by_cc_year = get_current_plan
 
 
+async def current_plan_lines(
+    db: AsyncSession, fiscal_year: int, month: int,
+) -> list[tuple]:
+    """(cost_center_id, account_id, amount) for every CURRENT APPROVED plan's
+    lines in this (fiscal_year, month), across all cost centers. Feeds finance's
+    predreal budget column (joined on cost_center_id + account_id = income-expense)."""
+    q = (
+        select(BudgetPlan.cost_center_id, BudgetPlanLine.account_id, BudgetPlanLine.amount)
+        .join(BudgetPlanLine, BudgetPlanLine.plan_id == BudgetPlan.id)
+        .where(
+            BudgetPlan.fiscal_year == fiscal_year,
+            BudgetPlan.is_current.is_(True),
+            BudgetPlan.status == "approved",
+            BudgetPlanLine.month == month,
+        )
+    )
+    return list((await db.execute(q)).all())
+
+
 async def get_approved_plan(
     db: AsyncSession, cost_center_id: uuid.UUID, fiscal_year: int,
 ) -> BudgetPlan | None:
