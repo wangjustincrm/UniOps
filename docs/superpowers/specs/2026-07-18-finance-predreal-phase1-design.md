@@ -83,15 +83,22 @@
 
 `nc_sync.py::_resolve_dims` 现在 `epms = CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)` —— **不看科目**,和 §1 account-aware 映射冲突(`6602+0106` 被静默记进 MOH 而非报异常;`0108→RD-0109` 已被用户表推翻)。
 
-### 2.2 改法
+### 2.2 改法(HYBRID —— 2026-07-18 实测修正,见 §2.4)
 
-- `_resolve_dims` 增入参 `account_code`(NC 明细行的科目;当前循环 `for pk, idx, acct, ... in extract.details` 的 `acct`)与 `cc_map_rows`;
-- 用 `resolve_uniops_cc(cc_map_rows, acct, dept_code, nc_cc_code)` 取代 `CC_BY_CODE/CC_BY_DEPT`(NC 成本中心/部门 code 从 `aux` 取,现有 `d, c, io, sup, cust = aux.get(assid, ...)`);
-- 未命中 → `cc_id = None` 且计入 `unmapped`(现有机制保留);
-- **删除** `CC_BY_CODE` / `CC_BY_DEPT` 两个硬编码字典;
-- **额外存原始 NC 成本中心 code**:`journal_voucher_lines` 加列 `nc_cc_code varchar(20)` 可空——日后调映射可**重新映射存量**,不必依赖已解析 `cost_center_id`。
-- `transform` 需把 `account_code` 与 `nc_cc_code` 传下去(line tuple 增一列);`_run_worker` 的 INSERT 带上 `nc_cc_code`。
-- `_run_worker` 启动时加载 `select * from budget_actual_cc_map` 传入 transform。
+**不是**"删掉 CC_BY_* 全量 account-aware"(那样会回归 20k 行,见 §2.4),而是**混合**:
+
+- **仅 5 个预实科目(5101/5301/6601/6602/6603 及其 COA 子树)走 account-aware map**;其它所有科目**保留** `CC_BY_CODE/CC_BY_DEPT` 兜底(约 2 万行余额表/其它科目依赖它,且这些科目没有 account-aware 答案)。
+- `make_category_of(parent_map)`:用 `chart_of_accounts.parent_code` 把某行科目**自底向上**找到它属于哪个预实科目(header),**不用 code 前缀猜**(660303 可能挂 6603 也可能挂 6601)。
+- `_resolve_dims(assid, aux, cc_map_rows, category, ...)`:`category` 非空 → `resolve_uniops_cc(cc_map_rows, category, dept, nc_cc)`(未命中 None → 异常);`category` 为空 → `CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)`(原样)。
+- `transform(..., skip_pks, cc_map_rows=None, category_of=None)`:尾部关键字默认参,**不传时全走兜底**——现有 transform 测试零改动。
+- **额外存原始 NC 成本中心 code**:`journal_voucher_lines` 加列 `nc_cc_code varchar(20)` 可空——日后调映射可重映射存量。line tuple 增一列,`_run_worker` INSERT 带 `nc_cc_code`,`tot` 解包补一个 `_`。
+- `_run_worker` 启动加载 `chart_of_accounts`(建 category_of)+ `budget_actual_cc_map`(cc_map_rows,缺表则 []=预实科目暂无成本中心,须先 import)传入 transform。
+- ⚠️ **部署顺序**:必须**先 import_cc_map 再全量重灌**,否则预实科目全部落成"无成本中心"。
+
+### 2.4 实测发现(2026-07-18,dev DB 68w 行)
+
+- 非预实科目上有 **20,643 行**已带 `cost_center_id`(经 CC_BY_* 兜底)——纯 account-aware 会把它们全清 None,回归 Account Balance 的成本中心展开。→ 必须保留兜底(HYBRID)。
+- 预实行**混用** header 码(5101=25978、6602=14783、6601、5301)和 leaf 码(510101=8239、660101=7058、660303…)→ 必须用 COA 树把 leaf 归到 category,前缀不可靠。
 
 ### 2.3 存量
 

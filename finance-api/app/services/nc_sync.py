@@ -47,6 +47,28 @@ CC_BY_DEPT = {
     "0102": "GA-0107", "0108": "RD-0109",
 }
 
+# The 5 predreal expense categories. Cost centers on lines under these accounts
+# are resolved ACCOUNT-AWARE via budget_actual_cc_map. Every OTHER account keeps
+# the CC_BY_CODE/CC_BY_DEPT fallback above — ~20k balance-sheet/other lines rely
+# on it and there is no account-aware answer for them.
+_PREDREAL_ACCOUNTS = {"5101", "5301", "6601", "6602", "6603"}
+
+
+def make_category_of(parent_map: dict):
+    """account_code -> which of the 5 predreal categories is self-or-ancestor
+    (via chart_of_accounts.parent_code), else None. Walks parents (cycle-guarded).
+    NEVER infers from code-prefix — a 660303 could sit under 6603 OR 6601."""
+    def category_of(code):
+        seen: set = set()
+        cur = code
+        while cur and cur not in seen:
+            if cur in _PREDREAL_ACCOUNTS:
+                return cur
+            seen.add(cur)
+            cur = parent_map.get(cur)
+        return None
+    return category_of
+
 
 class NcSyncError(ValueError):
     """An NC value we refuse to guess about. Aborts the run."""
@@ -159,13 +181,21 @@ def _orig_side(dr: Decimal, cr: Decimal) -> tuple[Decimal, Decimal]:
     return (dr, cr)
 
 
-def _resolve_dims(assid, aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust):
-    """-> (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, had_cc_hint).
-    Supplier wins over customer when both appear (AP accounts carry suppliers,
-    AR customers; a clash is NC data noise). Missing master row -> partner_id
-    None with the NC code kept as partner_name text."""
+def _resolve_dims(assid, aux, cc_map_rows, category, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust):
+    """-> (cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code, had_cc_hint).
+
+    Cost center: for the 5 predreal categories (`category` is the category code)
+    resolve ACCOUNT-AWARE via budget_actual_cc_map — an unmapped combo (e.g.
+    engineering dept 0106 in 6602) returns None and surfaces as an exception. For
+    every other account (`category is None`) keep the account-blind CC_BY_CODE/
+    CC_BY_DEPT fallback. Supplier wins over customer when both appear; a missing
+    master row -> partner_id None with the NC code kept as partner_name text."""
+    from app.services.cc_map_import import resolve_uniops_cc
     d, c, io, sup, cust = aux.get(assid, ("", "", "", "", ""))
-    epms = CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)
+    if category is not None:
+        uni_code = resolve_uniops_cc(cc_map_rows, category, d, c)
+    else:
+        uni_code = CC_BY_CODE.get(c) if c else CC_BY_DEPT.get(d)
     partner_id = partner_name = None
     code = sup or cust
     if code:
@@ -174,19 +204,22 @@ def _resolve_dims(assid, aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust):
             partner_id, partner_name = hit
         else:
             partner_name = code
-    return (uni_cc.get(epms) if epms else None,
+    return (uni_cc.get(uni_code) if uni_code else None,
             uni_dept.get(d) if d else None,
             io or None,
             uni_ba.get(io) if io else None,
             partner_id, partner_name,
+            c or None,
             bool(c or d))
 
 
 def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
-              uni_sup: dict, uni_cust: dict,
-              skip_pks: set) -> tuple[list, list, list, int]:
+              uni_sup: dict, uni_cust: dict, skip_pks: set,
+              cc_map_rows: list | None = None, category_of=None) -> tuple[list, list, list, int]:
     """NC rows -> (voucher dicts, line tuples, dim tuples, unmapped_cc count).
-    Skips vouchers whose pk is in skip_pks (incremental pk-dedup)."""
+    Skips vouchers whose pk is in skip_pks (incremental pk-dedup). `category_of`
+    (from make_category_of) maps a line's account to its predreal category; when
+    it (or cc_map_rows) is absent, cost centers fall back to CC_BY_CODE/CC_BY_DEPT."""
     pk2id, vouchers = {}, []
     for pk, year, period, num, expl, pdate, _ctime, tallydate, pk_system in extract.vouchers:
         if pk in skip_pks:
@@ -218,8 +251,11 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
             continue
         odr, ocr = _orig_side(_d(dr), _d(cr))
         ldr_, lcr_ = _orig_side(_d(ldr), _d(lcr))
-        cc_id, dept_id, io_code, ba_id, partner_id, partner_name, had_hint = _resolve_dims(
-            assid, extract.aux, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust)
+        acct_s = (acct or "").strip() or None
+        category = category_of(acct_s) if category_of else None
+        cc_id, dept_id, io_code, ba_id, partner_id, partner_name, nc_cc_code, had_hint = _resolve_dims(
+            assid, extract.aux, cc_map_rows or [], category,
+            uni_cc, uni_dept, uni_ba, uni_sup, uni_cust)
         if had_hint and cc_id is None:
             unmapped += 1
         ccy_code = extract.ccy.get(curr)
@@ -228,10 +264,10 @@ def transform(extract: NcExtract, uni_cc: dict, uni_dept: dict, uni_ba: dict,
                               f"BD_CURRTYPE — refusing to default it to CAD")
         lid = uuid.uuid4()
         lines.append((
-            lid, jid, int(idx or 0), (acct or "").strip() or None,
+            lid, jid, int(idx or 0), acct_s,
             (expl or "")[:255], odr, ocr, ldr_, lcr_,
             ccy_code, _d(rate) if rate else Decimal("1"),
-            cc_id, dept_id, ba_id, partner_id, partner_name))
+            cc_id, dept_id, ba_id, partner_id, partner_name, nc_cc_code))
         if io_code:
             dims.append((uuid.uuid4(), lid, "income_expense_item", ba_id, io_code))
     return vouchers, lines, dims, unmapped
@@ -482,9 +518,30 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                            "customer lines — check the finance DB schema")
             uni_cust = {}
 
+        # COA tree -> category resolver (leaf line account -> predreal category header)
+        cur.execute("select code, parent_code from chart_of_accounts")
+        category_of = make_category_of({code: parent for code, parent in cur.fetchall()})
+        # budget_actual_cc_map (account-aware CC map); may not exist in minimal DBs
+        try:
+            sp = con.cursor()
+            sp.execute("savepoint _ccmap")
+            sp.execute("select account_code, dept_code, nc_cc_code, uniops_cc_code "
+                       "from budget_actual_cc_map")
+            cc_map_rows = [dict(zip(("account_code", "dept_code", "nc_cc_code", "uniops_cc_code"), r))
+                           for r in sp.fetchall()]
+            sp.execute("release savepoint _ccmap")
+            sp.close()
+        except Exception:  # noqa: BLE001
+            cur.execute("rollback to savepoint _ccmap")
+            cur.execute("release savepoint _ccmap")
+            logger.warning("budget_actual_cc_map not found; predreal accounts have NO cost "
+                           "center until it is imported — run scripts/import_cc_map.py")
+            cc_map_rows = []
+
         skip = existing if mode == "incremental" else set()
         vouchers, lines, dims, unmapped = transform(
-            extract, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, skip)
+            extract, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, skip,
+            cc_map_rows=cc_map_rows, category_of=category_of)
 
         deleted = 0
         if mode == "full":
@@ -492,7 +549,7 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
             deleted = cur.rowcount
 
         tot: dict = {}
-        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _, _, _, _ in lines:
+        for _, jid, _, _, _, dr, crr, ldr, lcr, _, _, _, _, _, _, _, _ in lines:
             t = tot.setdefault(jid, [Decimal("0")] * 4)
             t[0] += dr; t[1] += crr; t[2] += ldr; t[3] += lcr
 
@@ -514,9 +571,9 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 "insert into journal_voucher_lines "
                 "(id, jv_id, line_no, account_code, summary, orig_debit, orig_credit, "
                 " local_debit, local_credit, currency, fx_rate, cost_center_id, department_id, "
-                " income_expense_item_id, partner_id, partner_name, created_at, updated_at) values %s",
+                " income_expense_item_id, partner_id, partner_name, nc_cc_code, created_at, updated_at) values %s",
                 lines[i:i + _CHUNK],
-                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
+                template="(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, lines_inserted=min(i + _CHUNK, len(lines)))
         for i in range(0, len(dims), _CHUNK):
             execute_values(cur,

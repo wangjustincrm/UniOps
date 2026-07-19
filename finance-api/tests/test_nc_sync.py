@@ -190,6 +190,52 @@ def test_cc_by_dept_covers_the_four_measured_codes():
     assert CC_BY_DEPT["0108"] == "RD-0109"
 
 
+def test_transform_account_aware_for_predreal_and_stores_nc_cc():
+    # 510101 is a leaf under 5101 (a predreal category); the map routes 5101/0104/E01.
+    # A 6602 line with dept 0106 is intentionally NOT in the map -> unmapped exception.
+    from app.services.nc_sync import NcExtract, make_category_of, transform
+    category_of = make_category_of({"510101": "5101", "5101": None, "6602": None})
+    cc_map_rows = [{"account_code": "5101", "dept_code": "0104", "nc_cc_code": "E01",
+                    "uniops_cc_code": "MOH-0106-E01"}]
+    cc_id = object()
+    e = NcExtract(
+        ccy={"CADPK": "CAD"},
+        aux={"A1": ("0104", "E01", "", "", ""),
+             "A2": ("0106", "", "", "", "")},
+        vouchers=[("P1", "2026", "07", 1, "x", "2026-07-10 09:00:00",
+                   "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
+        details=[("P1", 1, "510101", 100, 0, 100, 0, "CADPK", 1, "", "A1"),
+                 ("P1", 2, "6602", 50, 0, 50, 0, "CADPK", 1, "", "A2")],
+        max_creationtime="2026-07-11 08:00:00", tallied={"P1"})
+    _, lines, _, unmapped = transform(
+        e, {"MOH-0106-E01": cc_id}, {}, {}, {}, {}, set(),
+        cc_map_rows=cc_map_rows, category_of=category_of)
+    l1 = next(l for l in lines if l[2] == 1)
+    assert l1[11] is cc_id and l1[16] == "E01"   # account-aware hit + raw NC cc stored
+    l2 = next(l for l in lines if l[2] == 2)
+    assert l2[11] is None                          # 6602 + 0106 not in map -> exception
+    assert unmapped == 1
+
+
+def test_transform_non_predreal_keeps_dict_fallback():
+    # a non-predreal account (2202 payable) still resolves via CC_BY_DEPT — the
+    # 20k+ balance-sheet lines must not regress when the map is in play.
+    from app.services.nc_sync import NcExtract, make_category_of, transform
+    category_of = make_category_of({"2202": None})   # not a predreal category
+    cc_id = object()
+    e = NcExtract(
+        ccy={"CADPK": "CAD"},
+        aux={"A1": ("0104", "", "", "", "")},         # dept 0104 -> CC_BY_DEPT
+        vouchers=[("P2", "2026", "07", 1, "x", "2026-07-10 09:00:00",
+                   "2026-07-11 08:00:00", "2026-07-11 09:00:00", "GL")],
+        details=[("P2", 1, "2202", 0, 100, 0, 100, "CADPK", 1, "", "A1")],
+        max_creationtime="2026-07-11 08:00:00", tallied={"P2"})
+    _, lines, _, _ = transform(
+        e, {"MOH-0104-P01": cc_id}, {}, {}, {}, {}, set(),
+        cc_map_rows=[], category_of=category_of)   # CC_BY_DEPT["0104"] == "MOH-0104-P01"
+    assert lines[0][11] is cc_id
+
+
 # ── worker tests (psycopg2 direct, finance_test DB) ──────────────────────────
 
 _TEST_DSN = (f"host={os.getenv('TEST_PG_HOST', 'localhost')} "

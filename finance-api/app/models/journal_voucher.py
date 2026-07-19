@@ -92,6 +92,7 @@ class JournalVoucherLine(UUIDPrimaryKey, TimestampMixin, Base):
     price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
 
     cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    nc_cc_code: Mapped[str | None] = mapped_column(String(20), nullable=True)  # raw NC cost-center code (re-map safety)
     department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     partner_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     partner_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
