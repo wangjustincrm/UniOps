@@ -64,3 +64,22 @@ async def budget_actual(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         period: str = Query(...)):
     """④ Budget Actual: 4 expense accounts' actuals per cost center by category."""
     return await crud.budget_actual(db, period)
+
+
+@router.get("/budget-actual-grid")
+async def budget_actual_grid(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                             period: str = Query(...)):
+    """④b Budget-vs-Actual grid: per (cost center × income-expense item)
+    budget/actual/variance for the 5 categories + Payroll/Depreciation tie-out
+    rows + unmapped exceptions. Budget comes from budget-api; if it is
+    unreachable the grid still renders actuals (budget column 0)."""
+    import logging
+
+    from app.services import budget_client
+    try:
+        budget = await budget_client.fetch_plan_lines(int(period[:4]), int(period[5:7]))
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception(
+            "budget-api plan-lines fetch failed; rendering actuals only")
+        budget = {}
+    return await crud.budget_actual_grid(db, period, budget)

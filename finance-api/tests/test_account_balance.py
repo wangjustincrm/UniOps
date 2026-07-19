@@ -785,3 +785,17 @@ async def test_budget_actual_grid_unmapped_exceptions(db_session):
     assert row["account_code"] == "6602" and row["nc_cc_code"] == "X"
     assert row["income_expense_code"] == "CRM003"
     assert row["actual"] == "77.00" and row["line_count"] == 1
+
+
+async def test_budget_actual_grid_endpoint(client, db_session):
+    # budget-api is unreachable in tests -> the endpoint falls back to budget=0
+    # and still renders the actual-side grid (5 categories + unmapped key).
+    moh = await _cc(db_session, "MOH-0106-E01", "ENG")
+    await _posted_cc_event(db_session, "5101", moh, "42.00", period="2026-07")
+    await jv_crud.backfill_posted_jvs(db_session)
+    r = await client.get("/finance/v1/gl/budget-actual-grid?period=2026-07", headers=_h())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["categories"]) == 5 and "unmapped" in body
+    moh_cat = next(c for c in body["categories"] if c["account_code"] == "5101")
+    assert moh_cat["category_actual_total"] == "42.00"
