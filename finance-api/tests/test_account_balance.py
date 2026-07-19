@@ -764,3 +764,24 @@ async def test_budget_actual_grid_excludes_pd_ties_out_and_merges_budget(db_sess
     d = next(x for x in next(c for c in grid2["categories"] if c["account_code"] == "5101")["detail"]
              if x["income_expense_code"] == "CRM003")
     assert d["budget"] == "1000.00" and d["variance"] == "900.00"
+
+
+async def test_budget_actual_grid_unmapped_exceptions(db_session):
+    from sqlalchemy import text
+    ba = uuid.uuid4()
+    db_session.add(BudgetAccount(id=ba, code="CRM003", name="IT General Fee", is_active=True))
+    await db_session.flush()
+    # a 6602 line with NO cost center (sync account-aware miss) but an NC cc code
+    await _posted_dim_event(db_session, "6602", "77.00", ba_id=ba, period="2026-06")
+    await jv_crud.backfill_posted_jvs(db_session)
+    await db_session.execute(text(
+        "update journal_voucher_lines set nc_cc_code = 'X' "
+        "where account_code = '6602' and cost_center_id is null"))
+    await db_session.flush()
+
+    grid = await ab.budget_actual_grid(db_session, "2026-06", {})
+    assert len(grid["unmapped"]) == 1
+    row = grid["unmapped"][0]
+    assert row["account_code"] == "6602" and row["nc_cc_code"] == "X"
+    assert row["income_expense_code"] == "CRM003"
+    assert row["actual"] == "77.00" and row["line_count"] == 1

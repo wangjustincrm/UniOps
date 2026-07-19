@@ -397,9 +397,29 @@ async def _ba_lines(db: AsyncSession, account_code: str, period: str):
 
 
 async def _ba_unmapped(db: AsyncSession, period: str) -> list:
-    """Exceptions: predreal posted lines that resolved to NO cost center.
-    Implemented in the exceptions-panel task; stubbed empty for now."""
-    return []
+    """Exceptions panel: posted lines in the 5 predreal categories that resolved
+    to NO cost center (account-aware map miss) yet carry an NC cost-center code —
+    the lines a human must fix in NC or add to budget_actual_cc_map."""
+    from app.models.mirrors import BudgetAccount
+    accts: set = set()
+    for a in BUDGET_ACTUAL_ACCOUNTS:
+        accts |= await _subtree_codes(db, a)
+    q = (select(JournalVoucherLine.account_code, JournalVoucherLine.nc_cc_code,
+                BudgetAccount.code, BudgetAccount.name,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0),
+                func.count())
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .outerjoin(BudgetAccount, JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
+         .where(JournalVoucher.status == POSTED,
+                JournalVoucher.fiscal_period == period,
+                JournalVoucherLine.account_code.in_(accts),
+                JournalVoucherLine.cost_center_id.is_(None),
+                JournalVoucherLine.nc_cc_code.isnot(None))
+         .group_by(JournalVoucherLine.account_code, JournalVoucherLine.nc_cc_code,
+                   BudgetAccount.code, BudgetAccount.name))
+    return [{"account_code": ac, "nc_cc_code": nc, "income_expense_code": iec,
+             "income_expense_name": ien, "actual": _s(Decimal(dr)), "line_count": int(n)}
+            for ac, nc, iec, ien, dr, n in (await db.execute(q)).all()]
 
 
 async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict) -> dict:
