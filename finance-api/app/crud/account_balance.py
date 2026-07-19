@@ -445,6 +445,7 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
             detail.append({
                 "cost_center_id": str(cc_id) if cc_id else None,
                 "cost_center_code": cc_code, "cost_center_name": cc_name,
+                "income_expense_item_id": str(ie_id) if ie_id else None,
                 "income_expense_code": ie_code, "income_expense_name": ie_name,
                 "budget": _s(budget), "actual": _s(dr), "variance": _s(budget - dr),
             })
