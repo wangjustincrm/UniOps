@@ -83,3 +83,12 @@ async def budget_actual_grid(_: CurrentUser, db: AsyncSession = Depends(get_db),
             "budget-api plan-lines fetch failed; rendering actuals only")
         budget = {}
     return await crud.budget_actual_grid(db, period, budget)
+
+
+@router.get("/nc-actuals-monthly")
+async def nc_actuals_monthly(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                             fiscal_year: int = Query(...),
+                             cost_center_id: uuid.UUID | None = Query(default=None)):
+    """NC posted actual per (income-expense item × month) for a fiscal year,
+    optionally scoped to a cost center — the EPMS Budget Dashboard's NC-actual line."""
+    return await crud.nc_actuals_monthly(db, fiscal_year, cost_center_id)

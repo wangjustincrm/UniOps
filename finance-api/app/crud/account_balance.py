@@ -463,6 +463,33 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
             "unmapped": await _ba_unmapped(db, period)}
 
 
+async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
+                             cost_center_id=None) -> dict:
+    """NC posted actual per (income_expense_item_id, month) across the 5 predreal
+    category subtrees for `fiscal_year`, optionally scoped to one cost center.
+    Feeds the EPMS Budget Dashboard's NC-actual line (keyed by budget account_id =
+    income_expense_item_id). actual = period gross DEBIT. Returns
+    {account_id: {month:int -> amount:str}}."""
+    accts: set = set()
+    for a in BUDGET_ACTUAL_ACCOUNTS:
+        accts |= await _subtree_codes(db, a)
+    month = func.substr(JournalVoucher.fiscal_period, 6, 2)   # 'MM' -> int in Python
+    q = (select(JournalVoucherLine.income_expense_item_id, month,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .where(JournalVoucher.status == POSTED,
+                JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
+                JournalVoucherLine.account_code.in_(accts),
+                JournalVoucherLine.income_expense_item_id.isnot(None))
+         .group_by(JournalVoucherLine.income_expense_item_id, month))
+    if cost_center_id is not None:
+        q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    out: dict = {}
+    for aid, mm, dr in (await db.execute(q)).all():
+        out.setdefault(str(aid), {})[int(mm)] = _s(Decimal(dr))
+    return {"fiscal_year": fiscal_year, "accounts": out}
+
+
 async def account_vouchers(db: AsyncSession, account_code: str, period: str,
                            dims_values: dict | None = None) -> dict:
     """③ drill-down: posted JV lines for an account (rolled over its

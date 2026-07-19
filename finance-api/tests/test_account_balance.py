@@ -799,3 +799,20 @@ async def test_budget_actual_grid_endpoint(client, db_session):
     assert len(body["categories"]) == 5 and "unmapped" in body
     moh_cat = next(c for c in body["categories"] if c["account_code"] == "5101")
     assert moh_cat["category_actual_total"] == "42.00"
+
+
+async def test_nc_actuals_monthly_by_item_and_month(db_session):
+    cc = await _cc(db_session, "MOH-0106-E01", "ENG")
+    cc2 = await _cc(db_session, "OTHER-CC", "Other")
+    it = uuid.uuid4()
+    db_session.add(BudgetAccount(id=it, code="CRM003", name="IT General Fee", is_active=True))
+    await db_session.flush()
+    await _posted_dim_event(db_session, "5101", "100.00", cc_id=cc, ba_id=it, period="2026-06")
+    await _posted_dim_event(db_session, "5101", "40.00", cc_id=cc, ba_id=it, period="2026-07")
+    await _posted_dim_event(db_session, "5101", "9.00", cc_id=cc2, ba_id=it, period="2026-06")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    res = await ab.nc_actuals_monthly(db_session, 2026)
+    assert res["accounts"][str(it)] == {6: "109.00", 7: "40.00"}   # both cost centers, Jun combined
+    res2 = await ab.nc_actuals_monthly(db_session, 2026, cc)
+    assert res2["accounts"][str(it)] == {6: "100.00", 7: "40.00"}  # scoped to cc
