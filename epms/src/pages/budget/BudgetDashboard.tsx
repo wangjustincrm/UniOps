@@ -11,7 +11,7 @@ import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react
 import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears } from '@/hooks/useBudget'
+import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears, useNcActualsMonthly } from '@/hooks/useBudget'
 import { useConfig, useRolePermissions, useMyAssignedRoles } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -87,6 +87,10 @@ export default function BudgetDashboard() {
   const { data: monthlyData, isLoading: monthlyLoading } = useMonthlyActualsSummary(summaryParams)
   const monthlyAccounts: ApiMonthlyAccountSummary[] = useMemo(() => monthlyData?.accounts ?? [], [monthlyData])
 
+  // NC posted actual (finance-api) per account × month — the third cell line.
+  const { data: ncData } = useNcActualsMonthly(summaryParams)
+  const ncByAccount = useMemo(() => ncData?.accounts ?? {}, [ncData])
+
   const monthlyByL1 = useMemo(() => {
     const groups = new Map<string, { code: string; accounts: ApiMonthlyAccountSummary[] }>()
     for (const a of monthlyAccounts) {
@@ -101,18 +105,21 @@ export default function BudgetDashboard() {
   const monthlyGrandTotals = useMemo(() => {
     const plan: Record<number, number> = {}
     const actual: Record<number, number> = {}
-    for (let m = 1; m <= 12; m++) { plan[m] = 0; actual[m] = 0 }
-    let planYear = 0, actualYear = 0
+    const nc: Record<number, number> = {}
+    for (let m = 1; m <= 12; m++) { plan[m] = 0; actual[m] = 0; nc[m] = 0 }
+    let planYear = 0, actualYear = 0, ncYear = 0
     for (const a of monthlyAccounts) {
       for (let m = 1; m <= 12; m++) {
         plan[m] += Number(a.plan_by_month?.[m] ?? 0)
         actual[m] += Number(a.actual_by_month?.[m] ?? 0)
+        const n = Number(ncByAccount[a.account_id]?.[m] ?? 0)
+        nc[m] += n; ncYear += n
       }
       planYear += Number(a.plan_year)
       actualYear += Number(a.actual_year)
     }
-    return { plan, actual, planYear, actualYear }
-  }, [monthlyAccounts])
+    return { plan, actual, nc, planYear, actualYear, ncYear }
+  }, [monthlyAccounts, ncByAccount])
 
   const totalBudget    = accounts.reduce((s, a) => s + Number(a.annual_budget), 0)
   const totalCommitted = accounts.reduce((s, a) => s + Number(a.committed), 0)
@@ -238,7 +245,8 @@ export default function BudgetDashboard() {
           <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
           <p className="text-xs text-neutral-500 mt-0.5">
             Each cell: <span className="text-neutral-600 font-medium">plan</span> /{' '}
-            <span className="text-primary-700 font-medium">actual</span> · actual over plan shown in red
+            <span className="text-primary-700 font-medium">actual (docs)</span> /{' '}
+            <span className="text-emerald-700 font-medium">NC posted</span> · actual over plan in red
             {ccId === 'all' && <span className="ml-2 text-neutral-400">· Aggregated across cost centers</span>}
           </p>
         </CardHeader>
@@ -274,7 +282,7 @@ export default function BudgetDashboard() {
             </thead>
             <tbody>
               {monthlyByL1.map((g) => (
-                <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} />
+                <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount} />
               ))}
             </tbody>
             <tfoot>
@@ -284,11 +292,11 @@ export default function BudgetDashboard() {
                 </td>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                   <td key={m} className="py-3 px-1.5">
-                    <PlanActualCell plan={monthlyGrandTotals.plan[m]} actual={monthlyGrandTotals.actual[m]} strong />
+                    <PlanActualCell plan={monthlyGrandTotals.plan[m]} actual={monthlyGrandTotals.actual[m]} nc={monthlyGrandTotals.nc[m]} strong />
                   </td>
                 ))}
                 <td className="py-3 px-2 bg-neutral-200/60">
-                  <PlanActualCell plan={monthlyGrandTotals.planYear} actual={monthlyGrandTotals.actualYear} strong />
+                  <PlanActualCell plan={monthlyGrandTotals.planYear} actual={monthlyGrandTotals.actualYear} nc={monthlyGrandTotals.ncYear} strong />
                 </td>
               </tr>
             </tfoot>
@@ -301,7 +309,7 @@ export default function BudgetDashboard() {
 
 // ── Monthly plan/actual cell ──────────────────────────────────────────────────
 
-function PlanActualCell({ plan, actual, strong }: { plan: number; actual: number; strong?: boolean }) {
+function PlanActualCell({ plan, actual, nc, strong }: { plan: number; actual: number; nc?: number; strong?: boolean }) {
   const over = actual > plan && (plan > 0 || actual > 0)
   return (
     <div className="flex flex-col items-end leading-tight font-mono">
@@ -315,30 +323,44 @@ function PlanActualCell({ plan, actual, strong }: { plan: number; actual: number
       )}>
         {actual ? formatCADCompact(actual) : '–'}
       </span>
+      {nc !== undefined && (
+        <span className={cn('text-[11px] whitespace-nowrap text-emerald-700', strong && 'font-semibold')} title="NC posted actual">
+          {nc ? formatCADCompact(nc) : '–'}
+        </span>
+      )}
     </div>
   )
 }
 
 // ── L1 group with expandable monthly rows ─────────────────────────────────────
 
-function MonthlyL1Group({ l1Code, accounts }: { l1Code: string; accounts: ApiMonthlyAccountSummary[] }) {
+function MonthlyL1Group({ l1Code, accounts, ncByAccount }: {
+  l1Code: string; accounts: ApiMonthlyAccountSummary[]
+  ncByAccount: Record<string, Record<number, string>>
+}) {
   const [expanded, setExpanded] = useState(true)
 
   const totals = useMemo(() => {
     const plan: Record<number, number> = {}
     const actual: Record<number, number> = {}
-    for (let m = 1; m <= 12; m++) { plan[m] = 0; actual[m] = 0 }
-    let planYear = 0, actualYear = 0
+    const nc: Record<number, number> = {}
+    for (let m = 1; m <= 12; m++) { plan[m] = 0; actual[m] = 0; nc[m] = 0 }
+    let planYear = 0, actualYear = 0, ncYear = 0
     for (const a of accounts) {
       for (let m = 1; m <= 12; m++) {
         plan[m] += Number(a.plan_by_month?.[m] ?? 0)
         actual[m] += Number(a.actual_by_month?.[m] ?? 0)
+        const n = Number(ncByAccount[a.account_id]?.[m] ?? 0)
+        nc[m] += n; ncYear += n
       }
       planYear += Number(a.plan_year)
       actualYear += Number(a.actual_year)
     }
-    return { plan, actual, planYear, actualYear }
-  }, [accounts])
+    return { plan, actual, nc, planYear, actualYear, ncYear }
+  }, [accounts, ncByAccount])
+
+  const ncYearFor = (accountId: string) =>
+    Object.values(ncByAccount[accountId] ?? {}).reduce((s, v) => s + Number(v), 0)
 
   return (
     <>
@@ -348,11 +370,11 @@ function MonthlyL1Group({ l1Code, accounts }: { l1Code: string; accounts: ApiMon
         </td>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
           <td key={m} className="py-2.5 px-1.5">
-            <PlanActualCell plan={totals.plan[m]} actual={totals.actual[m]} strong />
+            <PlanActualCell plan={totals.plan[m]} actual={totals.actual[m]} nc={totals.nc[m]} strong />
           </td>
         ))}
         <td className="py-2.5 px-2 bg-neutral-100">
-          <PlanActualCell plan={totals.planYear} actual={totals.actualYear} strong />
+          <PlanActualCell plan={totals.planYear} actual={totals.actualYear} nc={totals.ncYear} strong />
         </td>
       </tr>
       {expanded && accounts.map((a) => (
@@ -363,11 +385,12 @@ function MonthlyL1Group({ l1Code, accounts }: { l1Code: string; accounts: ApiMon
           </td>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
             <td key={m} className="py-2 px-1.5">
-              <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)} actual={Number(a.actual_by_month?.[m] ?? 0)} />
+              <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)} actual={Number(a.actual_by_month?.[m] ?? 0)}
+                nc={Number(ncByAccount[a.account_id]?.[m] ?? 0)} />
             </td>
           ))}
           <td className="py-2 px-2 bg-neutral-50">
-            <PlanActualCell plan={Number(a.plan_year)} actual={Number(a.actual_year)} strong />
+            <PlanActualCell plan={Number(a.plan_year)} actual={Number(a.actual_year)} nc={ncYearFor(a.account_id)} strong />
           </td>
         </tr>
       ))}

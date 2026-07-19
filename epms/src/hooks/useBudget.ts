@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { budgetService } from '@/services/budget'
+import { financeApi } from '@/lib/api'
 import { useConfig } from '@/hooks/useConfig'
 import type {
   CreateBudgetL1Body, UpdateBudgetL1Body,
@@ -373,6 +374,23 @@ export function useMonthlyActualsSummary(params: { fiscal_year: number; cost_cen
   return useQuery({
     queryKey: ['budget', 'monthly-actuals-summary', params],
     queryFn: () => budgetService.getMonthlyActualsSummary(params),
+    staleTime: 30_000,
+  })
+}
+
+// NC posted actual (from finance-api) per budget account × month — the third
+// "NC" line in the dashboard's plan/actual cells. account_id -> month -> amount.
+export interface NcActualsMonthly {
+  fiscal_year: number
+  accounts: Record<string, Record<number, string>>
+}
+
+export function useNcActualsMonthly(params: { fiscal_year: number; cost_center_id?: string }) {
+  const qs = new URLSearchParams({ fiscal_year: String(params.fiscal_year) })
+  if (params.cost_center_id) qs.set('cost_center_id', params.cost_center_id)
+  return useQuery({
+    queryKey: ['finance', 'nc-actuals-monthly', params],
+    queryFn: () => financeApi.get<NcActualsMonthly>(`/gl/nc-actuals-monthly?${qs.toString()}`),
     staleTime: 30_000,
   })
 }
