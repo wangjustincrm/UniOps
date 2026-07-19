@@ -729,3 +729,38 @@ async def test_account_balance_three_level_rollup(db_session):
     # still a single posted line -> no double-counting up the 3-level chain
     assert bal["totals"]["period_debit"] == "75.00"
     assert bal["balanced"] is True
+
+
+# ── ④b budget-actual grid (predreal) ─────────────────────────────────────────
+async def test_budget_actual_grid_excludes_pd_ties_out_and_merges_budget(db_session):
+    cc = await _cc(db_session, "MOH-0106-E01", "ENG")
+    it, pay, dep = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    db_session.add_all([
+        BudgetAccount(id=it, code="CRM003", name="IT General Fee", is_active=True),
+        BudgetAccount(id=pay, code="CRM007", name="Payroll", is_active=True),
+        BudgetAccount(id=dep, code="CRM004", name="Depreciation", is_active=True),
+    ])
+    await db_session.flush()
+    await _posted_dim_event(db_session, "5101", "100.00", cc_id=cc, ba_id=it, period="2026-06")
+    await _posted_dim_event(db_session, "5101", "300.00", cc_id=cc, ba_id=pay, period="2026-06")
+    await _posted_dim_event(db_session, "5101", "50.00", cc_id=cc, ba_id=dep, period="2026-06")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    grid = await ab.budget_actual_grid(db_session, "2026-06", {})
+    moh = next(c for c in grid["categories"] if c["account_code"] == "5101")
+    detail = {(d["cost_center_code"], d["income_expense_code"]): d for d in moh["detail"]}
+    assert detail[("MOH-0106-E01", "CRM003")]["actual"] == "100.00"
+    assert all(d["income_expense_code"] not in ("CRM004", "CRM007") for d in moh["detail"])
+    assert moh["payroll_actual"] == "300.00"
+    assert moh["depreciation_actual"] == "50.00"
+    assert moh["category_actual_total"] == "450.00"     # 100 + 300 + 50 == account debit
+    assert moh["tie_ok"] is True
+    # 6603 (财务费用) is now a category, and the exceptions key is present
+    assert any(c["account_code"] == "6603" for c in grid["categories"])
+    assert grid["unmapped"] == []
+
+    # budget_lookup merges in for variance
+    grid2 = await ab.budget_actual_grid(db_session, "2026-06", {(cc, it): Decimal("1000")})
+    d = next(x for x in next(c for c in grid2["categories"] if c["account_code"] == "5101")["detail"]
+             if x["income_expense_code"] == "CRM003")
+    assert d["budget"] == "1000.00" and d["variance"] == "900.00"

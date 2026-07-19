@@ -147,7 +147,14 @@ BUDGET_ACTUAL_ACCOUNTS = {
     "5301": "RD",    # 研发费用 R&D
     "6601": "SELL",  # 销售费用 Selling
     "6602": "GA",    # 管理费用 G&A
+    "6603": "FN",    # 财务费用 Financial expenses
 }
+
+# Income-expense items excluded from the per-cost-center detail: finance tracks
+# Payroll / Depreciation only at the category level, so they roll into
+# category-level tie-out rows instead of being spread over cost centers.
+_PAYROLL_PREFIX = "CRM007"
+_DEPREC_PREFIX = "CRM004"
 
 
 async def _cc_map(db: AsyncSession) -> dict:
@@ -363,6 +370,76 @@ async def budget_actual(db: AsyncSession, period: str) -> dict:
                 "actual": _s(Decimal(d)),
             })
     return {"period": period, "rows": rows}
+
+
+# ── ④b Budget-vs-Actual grid (predreal) ──────────────────────────────────────
+
+async def _ba_lines(db: AsyncSession, account_code: str, period: str):
+    """Posted lines for a category account's subtree in `period`, grouped by
+    (cost_center_id, income_expense_item_id) with the cost-center + budget-account
+    (CRM 收支项目) code/name joined in. Value = period gross DEBIT."""
+    from app.models.mirrors import BudgetAccount, CostCenter
+    subtree = await _subtree_codes(db, account_code)
+    q = (select(JournalVoucherLine.cost_center_id,
+                JournalVoucherLine.income_expense_item_id,
+                CostCenter.code, CostCenter.name,
+                BudgetAccount.code, BudgetAccount.name,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .outerjoin(CostCenter, JournalVoucherLine.cost_center_id == CostCenter.id)
+         .outerjoin(BudgetAccount, JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
+         .where(JournalVoucher.status == POSTED,
+                JournalVoucher.fiscal_period == period,
+                JournalVoucherLine.account_code.in_(subtree))
+         .group_by(JournalVoucherLine.cost_center_id, JournalVoucherLine.income_expense_item_id,
+                   CostCenter.code, CostCenter.name, BudgetAccount.code, BudgetAccount.name))
+    return (await db.execute(q)).all()
+
+
+async def _ba_unmapped(db: AsyncSession, period: str) -> list:
+    """Exceptions: predreal posted lines that resolved to NO cost center.
+    Implemented in the exceptions-panel task; stubbed empty for now."""
+    return []
+
+
+async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict) -> dict:
+    """Budget-vs-Actual grid. Per category (the 5 expense accounts): detail rows
+    per (cost center × income-expense item) with budget/actual/variance, EXCLUDING
+    Payroll(CRM007)/Depreciation(CRM004) which roll into category-level tie-out
+    rows. `budget_lookup`: (cost_center_id, income_expense_item_id) -> Decimal.
+    actual = period gross DEBIT (expense accounts net ~0 via 结转)."""
+    categories = []
+    for acct, category in BUDGET_ACTUAL_ACCOUNTS.items():
+        detail, payroll, deprec, total = [], _ZERO, _ZERO, _ZERO
+        for cc_id, ie_id, cc_code, cc_name, ie_code, ie_name, dr in await _ba_lines(db, acct, period):
+            dr = Decimal(dr)
+            total += dr
+            code = ie_code or ""
+            if code.startswith(_PAYROLL_PREFIX):
+                payroll += dr
+                continue
+            if code.startswith(_DEPREC_PREFIX):
+                deprec += dr
+                continue
+            budget = Decimal(budget_lookup.get((cc_id, ie_id), _ZERO))
+            detail.append({
+                "cost_center_id": str(cc_id) if cc_id else None,
+                "cost_center_code": cc_code, "cost_center_name": cc_name,
+                "income_expense_code": ie_code, "income_expense_name": ie_name,
+                "budget": _s(budget), "actual": _s(dr), "variance": _s(budget - dr),
+            })
+        detail.sort(key=lambda d: (d["cost_center_code"] or "￿",
+                                   d["income_expense_code"] or "￿"))
+        detail_total = sum((Decimal(d["actual"]) for d in detail), _ZERO)
+        categories.append({
+            "account_code": acct, "category": category, "detail": detail,
+            "payroll_actual": _s(payroll), "depreciation_actual": _s(deprec),
+            "detail_actual_total": _s(detail_total),
+            "category_actual_total": _s(total),
+            "tie_ok": (detail_total + payroll + deprec) == total,
+        })
+    return {"period": period, "categories": categories,
+            "unmapped": await _ba_unmapped(db, period)}
 
 
 async def account_vouchers(db: AsyncSession, account_code: str, period: str,
