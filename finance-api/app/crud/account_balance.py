@@ -512,7 +512,10 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
-                JournalVoucherLine.income_expense_item_id == income_expense_item_id))
+                JournalVoucherLine.income_expense_item_id == income_expense_item_id,
+                # actual = debit only; drop pure-credit carry-forward lines (and
+                # thus credit-only partners) so the breakdown isn't cluttered.
+                JournalVoucherLine.local_debit != 0))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
     q = q.group_by(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month)
@@ -550,7 +553,8 @@ async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_y
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period == period,
                 JournalVoucherLine.account_code.in_(accts),
-                JournalVoucherLine.income_expense_item_id == income_expense_item_id)
+                JournalVoucherLine.income_expense_item_id == income_expense_item_id,
+                JournalVoucherLine.local_debit != 0)   # debit-only (drop carry-forward credit)
          .order_by(JournalVoucher.voucher_date))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
