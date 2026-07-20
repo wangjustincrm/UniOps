@@ -99,6 +99,10 @@ export default function BudgetDashboard() {
       }
       groups.get(a.l1_code)!.accounts.push(a)
     }
+    // sort accounts within each group by code (budget-api order isn't guaranteed)
+    for (const g of groups.values()) {
+      g.accounts.sort((a, b) => a.account_code.localeCompare(b.account_code))
+    }
     return Array.from(groups.values()).sort((a, b) => a.code.localeCompare(b.code))
   }, [monthlyAccounts])
 
