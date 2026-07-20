@@ -5,7 +5,7 @@
  * for a selected (cost_center, fiscal_year) scope. Replaces the old
  * /budget/summary aggregation that lived in epms-api.
  */
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react'
 import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
@@ -75,7 +75,6 @@ export default function BudgetDashboard() {
 
   const [fiscalYear, setFiscalYear] = useState<number>(currentYear)
   const [ccId, setCcId] = useState<string>('all')
-  const [expandAccount, setExpandAccount] = useState<ApiMonthlyAccountSummary | null>(null)
 
   const summaryParams = useMemo(() => ({
     fiscal_year: fiscalYear,
@@ -283,7 +282,8 @@ export default function BudgetDashboard() {
             </thead>
             <tbody>
               {monthlyByL1.map((g) => (
-                <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount} onExpandAccount={setExpandAccount} />
+                <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount}
+                  fiscalYear={fiscalYear} costCenterId={ccId !== 'all' ? ccId : undefined} />
               ))}
             </tbody>
             <tfoot>
@@ -304,16 +304,6 @@ export default function BudgetDashboard() {
           </table>
         )}
       </Card>
-
-      {expandAccount && (
-        <PartnerExpandModal
-          account={expandAccount}
-          fiscalYear={fiscalYear}
-          costCenterId={ccId !== 'all' ? ccId : undefined}
-          scopeLabel={scopeLabel}
-          onClose={() => setExpandAccount(null)}
-        />
-      )}
     </div>
   )
 }
@@ -345,12 +335,13 @@ function PlanActualCell({ plan, actual, nc, strong }: { plan: number; actual: nu
 
 // ── L1 group with expandable monthly rows ─────────────────────────────────────
 
-function MonthlyL1Group({ l1Code, accounts, ncByAccount, onExpandAccount }: {
+function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterId }: {
   l1Code: string; accounts: ApiMonthlyAccountSummary[]
   ncByAccount: Record<string, Record<number, string>>
-  onExpandAccount: (a: ApiMonthlyAccountSummary) => void
+  fiscalYear: number; costCenterId?: string
 }) {
   const [expanded, setExpanded] = useState(true)
+  const [expandedAcct, setExpandedAcct] = useState<string | null>(null)
 
   const totals = useMemo(() => {
     const plan: Record<number, number> = {}
@@ -389,122 +380,105 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, onExpandAccount }: {
           <PlanActualCell plan={totals.planYear} actual={totals.actualYear} nc={totals.ncYear} strong />
         </td>
       </tr>
-      {expanded && accounts.map((a) => (
-        <tr key={a.account_id} className="border-b border-neutral-100 hover:bg-primary-50/50">
-          <td className="py-2 px-3">
-            <button type="button" onClick={() => onExpandAccount(a)} className="text-left hover:underline"
-              title="Break down NC actual by vendor/customer">
-              <span className="font-mono text-xs text-neutral-500 mr-2">{a.account_code}</span>
-              <span className="text-xs text-primary-700 break-words">{a.account_name}</span>
-            </button>
-          </td>
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-            <td key={m} className="py-2 px-1.5">
-              <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)} actual={Number(a.actual_by_month?.[m] ?? 0)}
-                nc={Number(ncByAccount[a.account_id]?.[m] ?? 0)} />
-            </td>
-          ))}
-          <td className="py-2 px-2 bg-neutral-50">
-            <PlanActualCell plan={Number(a.plan_year)} actual={Number(a.actual_year)} nc={ncYearFor(a.account_id)} strong />
-          </td>
-        </tr>
-      ))}
+      {expanded && accounts.map((a) => {
+        const isOpen = expandedAcct === a.account_id
+        return (
+          <Fragment key={a.account_id}>
+            <tr className="border-b border-neutral-100 hover:bg-primary-50/50">
+              <td className="py-2 px-3">
+                <button type="button"
+                  onClick={() => setExpandedAcct((id) => (id === a.account_id ? null : a.account_id))}
+                  className="flex items-start gap-1 text-left hover:underline"
+                  title="Break down NC actual by vendor/customer">
+                  <span className="mt-0.5 w-3 shrink-0 text-[10px] text-neutral-400">{isOpen ? '▾' : '▸'}</span>
+                  <span>
+                    <span className="font-mono text-xs text-neutral-500 mr-2">{a.account_code}</span>
+                    <span className="text-xs text-primary-700 break-words">{a.account_name}</span>
+                  </span>
+                </button>
+              </td>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <td key={m} className="py-2 px-1.5">
+                  <PlanActualCell plan={Number(a.plan_by_month?.[m] ?? 0)} actual={Number(a.actual_by_month?.[m] ?? 0)}
+                    nc={Number(ncByAccount[a.account_id]?.[m] ?? 0)} />
+                </td>
+              ))}
+              <td className="py-2 px-2 bg-neutral-50">
+                <PlanActualCell plan={Number(a.plan_year)} actual={Number(a.actual_year)} nc={ncYearFor(a.account_id)} strong />
+              </td>
+            </tr>
+            {isOpen && <PartnerRows account={a} fiscalYear={fiscalYear} costCenterId={costCenterId} />}
+          </Fragment>
+        )
+      })}
     </>
   )
 }
 
-// ── Partner (客商/供应商/客户) breakdown modal ─────────────────────────────────
+// ── Partner (客商/供应商/客户) inline breakdown ────────────────────────────────
 
-function PartnerExpandModal({ account, fiscalYear, costCenterId, scopeLabel, onClose }: {
+function PartnerRows({ account, fiscalYear, costCenterId }: {
   account: ApiMonthlyAccountSummary
   fiscalYear: number
   costCenterId?: string
-  scopeLabel: string
-  onClose: () => void
 }) {
   const { data, isLoading } = useNcPartnerMonthly({
     income_expense_item_id: account.account_id, fiscal_year: fiscalYear, cost_center_id: costCenterId,
   })
   const partners = data?.partners ?? []
-  const [drill, setDrill] = useState<{ partnerId: string | null; partnerName: string | null; month: number } | null>(null)
+  const [voucherKey, setVoucherKey] = useState<string | null>(null)  // `${partnerId}:${month}`
 
+  if (isLoading) {
+    return <tr><td colSpan={14} className="bg-emerald-50/20 py-2 pl-10 pr-3 text-xs text-neutral-400">Loading vendor breakdown…</td></tr>
+  }
+  if (partners.length === 0) {
+    return <tr><td colSpan={14} className="bg-emerald-50/20 py-2 pl-10 pr-3 text-xs text-neutral-400">No NC actuals for this item in the current scope.</td></tr>
+  }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between border-b border-neutral-200 px-5 py-3">
-          <div>
-            <h3 className="text-base font-semibold text-neutral-900">
-              <span className="font-mono text-sm text-neutral-500 mr-2">{account.account_code}</span>
-              {account.account_name}
-            </h3>
-            <p className="text-xs text-neutral-500 mt-0.5">
-              NC posted actual by vendor/customer · FY {fiscalYear} · {scopeLabel}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-2xl leading-none text-neutral-400 hover:text-neutral-700">×</button>
-        </div>
-
-        <div className="overflow-auto">
-          {isLoading ? (
-            <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
-          ) : partners.length === 0 ? (
-            <div className="py-10 text-center text-sm text-neutral-400">No NC actuals for this item in the current scope.</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-neutral-50">
-                <tr className="border-b border-neutral-200 text-xs text-neutral-500">
-                  <th className="px-3 py-2 text-left font-medium">Vendor / Customer</th>
-                  {MONTHS.map((m) => <th key={m} className="px-1.5 py-2 text-right font-medium">{m}</th>)}
-                  <th className="px-3 py-2 text-right font-semibold text-neutral-700 bg-neutral-100">Year</th>
-                </tr>
-              </thead>
-              <tbody>
-                {partners.map((p, i) => (
-                  <tr key={p.partner_id ?? `none-${i}`} className={cn('border-b border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
-                    <td className="px-3 py-2 text-neutral-700">
-                      {p.partner_name || <span className="text-neutral-400">(no vendor)</span>}
-                    </td>
-                    {Array.from({ length: 12 }, (_, k) => k + 1).map((m) => {
-                      const v = Number(p.by_month[m] ?? 0)
-                      return (
-                        <td key={m} className="px-1.5 py-2 text-right font-mono">
-                          {v ? (
-                            <button className="text-emerald-700 hover:underline"
-                              onClick={() => setDrill({ partnerId: p.partner_id, partnerName: p.partner_name, month: m })}>
-                              {formatCADCompact(v)}
-                            </button>
-                          ) : <span className="text-neutral-300">–</span>}
-                        </td>
-                      )
-                    })}
-                    <td className="px-3 py-2 text-right font-mono font-semibold bg-neutral-50">{formatCADCompact(Number(p.year_total))}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-
-        {drill && (
-          <PartnerVoucherPanel
-            account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
-            partnerId={drill.partnerId} partnerName={drill.partnerName} month={drill.month}
-            onClose={() => setDrill(null)}
-          />
-        )}
-      </div>
-    </div>
+    <>
+      {partners.map((p, i) => {
+        const pid = p.partner_id ?? 'none'
+        return (
+          <Fragment key={`${pid}-${i}`}>
+            <tr className="border-b border-neutral-100 bg-emerald-50/20">
+              <td className="py-1.5 pl-10 pr-3 text-xs text-neutral-600 break-words">
+                {p.partner_name || <span className="text-neutral-400">(no vendor)</span>}
+              </td>
+              {Array.from({ length: 12 }, (_, k) => k + 1).map((m) => {
+                const v = Number(p.by_month[m] ?? 0)
+                const key = `${pid}:${m}`
+                return (
+                  <td key={m} className="py-1.5 px-1.5 text-right">
+                    {v ? (
+                      <button className={cn('font-mono text-[11px] hover:underline',
+                        voucherKey === key ? 'font-semibold text-emerald-900' : 'text-emerald-700')}
+                        onClick={() => setVoucherKey((k) => (k === key ? null : key))}>
+                        {formatCADCompact(v)}
+                      </button>
+                    ) : <span className="text-[11px] text-neutral-300">–</span>}
+                  </td>
+                )
+              })}
+              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-50/40">{formatCADCompact(Number(p.year_total))}</td>
+            </tr>
+            {voucherKey && voucherKey.startsWith(`${pid}:`) && (
+              <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
+                partnerId={p.partner_id} partnerName={p.partner_name} month={Number(voucherKey.split(':')[1])} />
+            )}
+          </Fragment>
+        )
+      })}
+    </>
   )
 }
 
-function PartnerVoucherPanel({ account, fiscalYear, costCenterId, partnerId, partnerName, month, onClose }: {
+function VoucherRow({ account, fiscalYear, costCenterId, partnerId, partnerName, month }: {
   account: ApiMonthlyAccountSummary
   fiscalYear: number
   costCenterId?: string
   partnerId: string | null
   partnerName: string | null
   month: number
-  onClose: () => void
 }) {
   const { data, isLoading } = useNcPartnerVouchers({
     income_expense_item_id: account.account_id, fiscal_year: fiscalYear, month,
@@ -512,20 +486,17 @@ function PartnerVoucherPanel({ account, fiscalYear, costCenterId, partnerId, par
   })
   const rows = data?.rows ?? []
   return (
-    <div className="border-t border-neutral-200 bg-neutral-50/60">
-      <div className="flex items-center justify-between px-5 py-2">
-        <span className="text-xs font-semibold text-neutral-700">
+    <tr>
+      <td colSpan={14} className="bg-neutral-50 px-10 py-2">
+        <div className="mb-1 text-[11px] font-semibold text-neutral-600">
           Vouchers · {partnerName || '(no vendor)'} · {MONTHS[month - 1]} {fiscalYear}
-        </span>
-        <button onClick={onClose} className="text-xs text-neutral-500 hover:underline">close</button>
-      </div>
-      <div className="max-h-56 overflow-auto px-5 pb-3">
+        </div>
         {isLoading ? (
-          <div className="py-4 text-center text-xs text-neutral-400">Loading…</div>
+          <div className="text-xs text-neutral-400">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="py-4 text-center text-xs text-neutral-400">No vouchers.</div>
+          <div className="text-xs text-neutral-400">No vouchers.</div>
         ) : (
-          <table className="w-full text-xs">
+          <table className="w-full text-[11px]">
             <thead>
               <tr className="text-neutral-500">
                 <th className="px-2 py-1 text-left font-medium">Date</th>
@@ -548,7 +519,7 @@ function PartnerVoucherPanel({ account, fiscalYear, costCenterId, partnerId, par
             </tbody>
           </table>
         )}
-      </div>
-    </div>
+      </td>
+    </tr>
   )
 }
