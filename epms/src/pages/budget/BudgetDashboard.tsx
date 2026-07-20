@@ -131,8 +131,24 @@ export default function BudgetDashboard() {
   const totalAvailable = totalBudget - totalCommitted - totalSpent
   const totalPct = totalBudget > 0 ? Math.round(((totalCommitted + totalSpent) / totalBudget) * 100) : 0
 
-  const overBudget = accounts.filter((a) => a.utilisation_pct >= redThreshold)
-  const nearBudget = accounts.filter((a) => a.utilisation_pct >= yellowThreshold && a.utilisation_pct < redThreshold)
+  // over-budget alerts judged on NC posted (the final actual): per account,
+  // NC year total vs annual budget.
+  const ncYearByAccount = useMemo(() => {
+    const out: Record<string, number> = {}
+    for (const [aid, months] of Object.entries(ncByAccount)) {
+      out[aid] = Object.values(months).reduce((s, v) => s + Number(v), 0)
+    }
+    return out
+  }, [ncByAccount])
+  const accountsNc = useMemo(() => accounts.map((a) => {
+    const ncYear = ncYearByAccount[a.account_id] ?? 0
+    const budget = Number(a.annual_budget)
+    const nc_util = budget > 0 ? Math.round((ncYear / budget) * 100) : (ncYear > 0 ? 999 : 0)
+    return { account_id: a.account_id, account_code: a.account_code, account_name: a.account_name,
+             nc_util, nc_over: ncYear - budget }
+  }), [accounts, ncYearByAccount])
+  const overBudget = accountsNc.filter((a) => a.nc_util >= redThreshold)
+  const nearBudget = accountsNc.filter((a) => a.nc_util >= yellowThreshold && a.nc_util < redThreshold)
 
   const scopeLabel = ccId === 'all'
     ? (isFullAccess ? 'Company-wide' : 'My Department')
@@ -202,7 +218,7 @@ export default function BudgetDashboard() {
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="h-4 w-4 text-danger-600 shrink-0" />
             <h2 className="text-sm font-semibold text-danger-700">
-              {overBudget.length} account{overBudget.length !== 1 ? 's' : ''} at or over budget
+              {overBudget.length} account{overBudget.length !== 1 ? 's' : ''} over budget (NC posted)
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -211,9 +227,9 @@ export default function BudgetDashboard() {
                 <span className="font-mono font-semibold text-danger-700">{a.account_code}</span>
                 <span className="text-neutral-500 mx-1">·</span>
                 <span className="text-neutral-700">{a.account_name}</span>
-                <span className="ml-2 font-semibold text-danger-600">{a.utilisation_pct}%</span>
+                <span className="ml-2 font-semibold text-danger-600">{a.nc_util}%</span>
                 <div className="text-[10px] text-danger-500 mt-0.5">
-                  Over by {formatAmount(-Number(a.available), 'CAD')}
+                  Over by {formatAmount(a.nc_over, 'CAD')}
                 </div>
               </div>
             ))}
@@ -227,7 +243,7 @@ export default function BudgetDashboard() {
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="h-4 w-4 text-warning-600 shrink-0" />
             <h2 className="text-sm font-semibold text-warning-700">
-              {nearBudget.length} account{nearBudget.length !== 1 ? 's' : ''} approaching budget limit
+              {nearBudget.length} account{nearBudget.length !== 1 ? 's' : ''} approaching budget limit (NC posted)
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -236,7 +252,7 @@ export default function BudgetDashboard() {
                 <span className="font-mono font-semibold text-warning-700">{a.account_code}</span>
                 <span className="text-neutral-500 mx-1">·</span>
                 <span className="text-neutral-700">{a.account_name}</span>
-                <span className="ml-2 font-semibold text-warning-600">{a.utilisation_pct}%</span>
+                <span className="ml-2 font-semibold text-warning-600">{a.nc_util}%</span>
               </div>
             ))}
           </div>
@@ -250,7 +266,7 @@ export default function BudgetDashboard() {
           <p className="text-xs text-neutral-500 mt-0.5">
             Each cell: <span className="text-neutral-600 font-medium">plan</span> /{' '}
             <span className="text-primary-700 font-medium">actual (docs)</span> /{' '}
-            <span className="text-emerald-700 font-medium">NC posted</span> · actual over plan in red
+            <span className="text-emerald-700 font-medium">NC posted</span> · NC over budget in red
             {ccId === 'all' && <span className="ml-2 text-neutral-400">· Aggregated across cost centers</span>}
           </p>
         </CardHeader>
@@ -317,21 +333,22 @@ export default function BudgetDashboard() {
 // ── Monthly plan/actual cell ──────────────────────────────────────────────────
 
 function PlanActualCell({ plan, actual, nc, strong }: { plan: number; actual: number; nc?: number; strong?: boolean }) {
-  const over = actual > plan && (plan > 0 || actual > 0)
+  // over-budget is judged on NC posted (the final actual), not the doc actual
+  const over = nc !== undefined && nc > plan && (plan > 0 || nc > 0)
   return (
     <div className="flex flex-col items-end leading-tight font-mono">
       <span className={cn('text-[11px] whitespace-nowrap text-neutral-500', strong && 'font-semibold text-neutral-600')}>
         {plan ? formatCADCompact(plan) : '–'}
       </span>
-      <span className={cn(
-        'text-[11px] whitespace-nowrap',
-        over ? 'text-danger-600 font-semibold' : 'text-primary-700',
-        strong && 'font-semibold',
-      )}>
+      <span className={cn('text-[11px] whitespace-nowrap text-primary-700', strong && 'font-semibold')}>
         {actual ? formatCADCompact(actual) : '–'}
       </span>
       {nc !== undefined && (
-        <span className={cn('text-[11px] whitespace-nowrap text-emerald-700', strong && 'font-semibold')} title="NC posted actual">
+        <span className={cn(
+          'text-[11px] whitespace-nowrap',
+          over ? 'text-danger-600 font-bold' : 'text-emerald-700',
+          strong && 'font-semibold',
+        )} title="NC posted actual (red = over budget)">
           {nc ? formatCADCompact(nc) : '–'}
         </span>
       )}
