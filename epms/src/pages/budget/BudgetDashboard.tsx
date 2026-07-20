@@ -263,6 +263,7 @@ export default function BudgetDashboard() {
             <Link to="/budget/plans" className="text-primary-600 hover:underline">Create a plan →</Link>
           </div>
         ) : (
+          <div className="max-h-[70vh] overflow-auto">
           <table className="text-sm w-full table-fixed border-collapse">
             <colgroup>
               <col className="w-[15%] min-w-[160px]" />
@@ -270,16 +271,16 @@ export default function BudgetDashboard() {
               <col className="w-[8%]" />
             </colgroup>
             <thead>
-              <tr className="border-b border-neutral-200">
-                <th className="py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
+              <tr>
+                <th className="sticky top-0 z-20 border-b border-neutral-200 bg-white py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
                   Account
                 </th>
                 {MONTHS.map((m) => (
-                  <th key={m} className="py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  <th key={m} className="sticky top-0 z-20 border-b border-neutral-200 bg-white py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
                     {m}
                   </th>
                 ))}
-                <th className="py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-700 bg-neutral-50">
+                <th className="sticky top-0 z-20 border-b border-neutral-200 bg-neutral-50 py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-700">
                   Year
                 </th>
               </tr>
@@ -291,21 +292,22 @@ export default function BudgetDashboard() {
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-neutral-300 bg-neutral-100">
-                <td className="py-3 px-3 text-sm font-bold text-neutral-900 uppercase tracking-wide">
+              <tr>
+                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-300 bg-neutral-100 py-3 px-3 text-sm font-bold text-neutral-900 uppercase tracking-wide">
                   Total
                 </td>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <td key={m} className="py-3 px-1.5">
+                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-neutral-300 bg-neutral-100 py-3 px-1.5">
                     <PlanActualCell plan={monthlyGrandTotals.plan[m]} actual={monthlyGrandTotals.actual[m]} nc={monthlyGrandTotals.nc[m]} strong />
                   </td>
                 ))}
-                <td className="py-3 px-2 bg-neutral-200/60">
+                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-300 bg-neutral-200 py-3 px-2">
                   <PlanActualCell plan={monthlyGrandTotals.planYear} actual={monthlyGrandTotals.actualYear} nc={monthlyGrandTotals.ncYear} strong />
                 </td>
               </tr>
             </tfoot>
           </table>
+          </div>
         )}
       </Card>
     </div>
