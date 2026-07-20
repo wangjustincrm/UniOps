@@ -79,6 +79,16 @@ export default function BudgetDashboard() {
 
   const [fiscalYear, setFiscalYear] = useState<number>(currentYear)
   const [ccId, setCcId] = useState<string>('all')
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+
+  // Click an alert card -> scroll the comparison table to that account's row + flash it.
+  const jumpToAccount = (id: string) => {
+    setHighlightId(id)
+    requestAnimationFrame(() => {
+      document.getElementById(`ba-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    window.setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 2500)
+  }
 
   const summaryParams = useMemo(() => ({
     fiscal_year: fiscalYear,
@@ -230,7 +240,9 @@ export default function BudgetDashboard() {
           </div>
           <div className="flex flex-wrap gap-2">
             {overBudget.map((a) => (
-              <div key={a.account_id} className="rounded-md border border-danger-200 bg-white px-3 py-2 text-xs">
+              <button type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
+                className="rounded-md border border-danger-200 bg-white px-3 py-2 text-xs text-left transition-colors hover:border-danger-400 hover:bg-danger-50"
+                title="Jump to this account in the table">
                 <span className="font-mono font-semibold text-danger-700">{a.account_code}</span>
                 <span className="text-neutral-500 mx-1">·</span>
                 <span className="text-neutral-700">{a.account_name}</span>
@@ -238,7 +250,7 @@ export default function BudgetDashboard() {
                 <div className="text-[10px] text-danger-500 mt-0.5">
                   Over by {formatAmount(a.nc_over, 'CAD')}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -255,12 +267,14 @@ export default function BudgetDashboard() {
           </div>
           <div className="flex flex-wrap gap-2">
             {nearBudget.map((a) => (
-              <div key={a.account_id} className="rounded-md border border-warning-200 bg-white px-3 py-2 text-xs">
+              <button type="button" key={a.account_id} onClick={() => jumpToAccount(a.account_id)}
+                className="rounded-md border border-warning-200 bg-white px-3 py-2 text-xs text-left transition-colors hover:border-warning-400 hover:bg-warning-50"
+                title="Jump to this account in the table">
                 <span className="font-mono font-semibold text-warning-700">{a.account_code}</span>
                 <span className="text-neutral-500 mx-1">·</span>
                 <span className="text-neutral-700">{a.account_name}</span>
                 <span className="ml-2 font-semibold text-warning-600">{a.nc_util}%</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -311,7 +325,7 @@ export default function BudgetDashboard() {
             <tbody>
               {monthlyByL1.map((g) => (
                 <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount}
-                  fiscalYear={fiscalYear} costCenterId={ccId !== 'all' ? ccId : undefined} />
+                  fiscalYear={fiscalYear} costCenterId={ccId !== 'all' ? ccId : undefined} highlightId={highlightId} />
               ))}
             </tbody>
             <tfoot>
@@ -365,10 +379,10 @@ function PlanActualCell({ plan, actual, nc, strong }: { plan: number; actual: nu
 
 // ── L1 group with expandable monthly rows ─────────────────────────────────────
 
-function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterId }: {
+function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterId, highlightId }: {
   l1Code: string; accounts: ApiMonthlyAccountSummary[]
   ncByAccount: Record<string, Record<number, string>>
-  fiscalYear: number; costCenterId?: string
+  fiscalYear: number; costCenterId?: string; highlightId?: string | null
 }) {
   const [expanded, setExpanded] = useState(true)
   const [expandedAcct, setExpandedAcct] = useState<string | null>(null)
@@ -414,7 +428,9 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
         const isOpen = expandedAcct === a.account_id
         return (
           <Fragment key={a.account_id}>
-            <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60">
+            <tr id={`ba-row-${a.account_id}`}
+                className={cn('border-b border-neutral-100 transition-colors hover:bg-primary-50/60',
+                  highlightId === a.account_id ? 'bg-amber-100' : 'bg-white')}>
               <td className="py-2 px-3">
                 <button type="button"
                   onClick={() => setExpandedAcct((id) => (id === a.account_id ? null : a.account_id))}
