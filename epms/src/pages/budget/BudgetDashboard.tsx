@@ -80,15 +80,7 @@ export default function BudgetDashboard() {
   const [fiscalYear, setFiscalYear] = useState<number>(currentYear)
   const [ccId, setCcId] = useState<string>('all')
   const [highlightId, setHighlightId] = useState<string | null>(null)
-
-  // Click an alert card -> scroll the comparison table to that account's row + flash it.
-  const jumpToAccount = (id: string) => {
-    setHighlightId(id)
-    requestAnimationFrame(() => {
-      document.getElementById(`ba-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
-    window.setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 2500)
-  }
+  const [collapsedL1, setCollapsedL1] = useState<Set<string>>(new Set())
 
   const summaryParams = useMemo(() => ({
     fiscal_year: fiscalYear,
@@ -120,6 +112,33 @@ export default function BudgetDashboard() {
     }
     return Array.from(groups.values()).sort((a, b) => a.code.localeCompare(b.code))
   }, [monthlyAccounts])
+
+  // L1 group expand/collapse is controlled by the parent (for expand-all /
+  // collapse-all + auto-expand on alert jump). collapsedL1 holds collapsed codes.
+  const l1ByAccount = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const a of monthlyAccounts) out[a.account_id] = a.l1_code
+    return out
+  }, [monthlyAccounts])
+  const allL1Codes = useMemo(() => monthlyByL1.map((g) => g.code), [monthlyByL1])
+  const expandAll = () => setCollapsedL1(new Set())
+  const collapseAll = () => setCollapsedL1(new Set(allL1Codes))
+  const toggleL1 = (code: string) => setCollapsedL1((s) => {
+    const n = new Set(s)
+    if (n.has(code)) n.delete(code); else n.add(code)
+    return n
+  })
+
+  // Click an alert card -> expand its L1 group, scroll to the row, flash it amber.
+  const jumpToAccount = (id: string) => {
+    const l1 = l1ByAccount[id]
+    if (l1) setCollapsedL1((s) => { const n = new Set(s); n.delete(l1); return n })
+    setHighlightId(id)
+    window.setTimeout(() => {
+      document.getElementById(`ba-row-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 60)
+    window.setTimeout(() => setHighlightId((h) => (h === id ? null : h)), 2600)
+  }
 
   const monthlyGrandTotals = useMemo(() => {
     const plan: Record<number, number> = {}
@@ -283,7 +302,14 @@ export default function BudgetDashboard() {
       {/* Monthly plan-vs-actual grid */}
       <Card className="overflow-hidden">
         <CardHeader>
-          <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
+            <div className="flex items-center gap-2 text-xs">
+              <button type="button" onClick={expandAll} className="text-primary-600 hover:underline">Expand all</button>
+              <span className="text-neutral-300">·</span>
+              <button type="button" onClick={collapseAll} className="text-primary-600 hover:underline">Collapse all</button>
+            </div>
+          </div>
           <p className="text-xs text-neutral-500 mt-0.5">
             Each cell: <span className="text-neutral-600 font-medium">plan</span> /{' '}
             <span className="text-primary-700 font-medium">actual (docs)</span> /{' '}
@@ -325,7 +351,8 @@ export default function BudgetDashboard() {
             <tbody>
               {monthlyByL1.map((g) => (
                 <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount}
-                  fiscalYear={fiscalYear} costCenterId={ccId !== 'all' ? ccId : undefined} highlightId={highlightId} />
+                  fiscalYear={fiscalYear} costCenterId={ccId !== 'all' ? ccId : undefined} highlightId={highlightId}
+                  expanded={!collapsedL1.has(g.code)} onToggle={() => toggleL1(g.code)} />
               ))}
             </tbody>
             <tfoot>
@@ -379,12 +406,12 @@ function PlanActualCell({ plan, actual, nc, strong }: { plan: number; actual: nu
 
 // ── L1 group with expandable monthly rows ─────────────────────────────────────
 
-function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterId, highlightId }: {
+function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterId, highlightId, expanded, onToggle }: {
   l1Code: string; accounts: ApiMonthlyAccountSummary[]
   ncByAccount: Record<string, Record<number, string>>
   fiscalYear: number; costCenterId?: string; highlightId?: string | null
+  expanded: boolean; onToggle: () => void
 }) {
-  const [expanded, setExpanded] = useState(true)
   const [expandedAcct, setExpandedAcct] = useState<string | null>(null)
 
   const totals = useMemo(() => {
@@ -411,9 +438,10 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
 
   return (
     <>
-      <tr className="border-t-2 border-neutral-300 bg-neutral-100 cursor-pointer hover:bg-neutral-200" onClick={() => setExpanded((v) => !v)}>
+      <tr className="border-t-2 border-neutral-300 bg-neutral-100 cursor-pointer hover:bg-neutral-200" onClick={onToggle}>
         <td className="py-2.5 px-3 text-sm font-semibold text-neutral-800">
-          <span className="font-mono text-xs text-neutral-500 mr-1">{l1Code}</span>
+          <span className="mr-1 text-[10px] text-neutral-500">{expanded ? '▾' : '▸'}</span>
+          <span className="font-mono text-xs text-neutral-500">{l1Code}</span>
         </td>
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
           <td key={m} className="py-2.5 px-1.5">
