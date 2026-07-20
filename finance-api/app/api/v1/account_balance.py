@@ -92,3 +92,28 @@ async def nc_actuals_monthly(_: CurrentUser, db: AsyncSession = Depends(get_db),
     """NC posted actual per (income-expense item × month) for a fiscal year,
     optionally scoped to a cost center — the EPMS Budget Dashboard's NC-actual line."""
     return await crud.nc_actuals_monthly(db, fiscal_year, cost_center_id)
+
+
+@router.get("/nc-partner-monthly")
+async def nc_partner_monthly(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                             income_expense_item_id: uuid.UUID = Query(...),
+                             fiscal_year: int = Query(...),
+                             cost_center_id: uuid.UUID | None = Query(default=None)):
+    """Budget Dashboard drill: partner (客商/供应商/客户) × month NC actual for one
+    budget account, cost center already locked by the caller."""
+    return await crud.nc_partner_monthly(db, income_expense_item_id, fiscal_year, cost_center_id)
+
+
+@router.get("/nc-partner-vouchers")
+async def nc_partner_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                              income_expense_item_id: uuid.UUID = Query(...),
+                              fiscal_year: int = Query(...), month: int = Query(...),
+                              cost_center_id: uuid.UUID | None = Query(default=None),
+                              partner_id: str | None = Query(default=None)):
+    """Vouchers behind one (budget account × cost center × partner × month).
+    partner_id='none' => lines with no partner."""
+    pid: object = partner_id
+    if partner_id and partner_id != "none":
+        pid = uuid.UUID(partner_id)
+    return await crud.nc_partner_vouchers(db, income_expense_item_id, fiscal_year,
+                                          month, cost_center_id, pid)

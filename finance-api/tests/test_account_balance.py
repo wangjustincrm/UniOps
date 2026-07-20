@@ -816,3 +816,39 @@ async def test_nc_actuals_monthly_by_item_and_month(db_session):
     assert res["accounts"][str(it)] == {6: "109.00", 7: "40.00"}   # both cost centers, Jun combined
     res2 = await ab.nc_actuals_monthly(db_session, 2026, cc)
     assert res2["accounts"][str(it)] == {6: "100.00", 7: "40.00"}  # scoped to cc
+
+
+async def _posted_partner_event(db, account, amount, *, cc_id, ba_id, partner_id, partner_name, period):
+    occurred = datetime(int(period[:4]), int(period[5:7]), 15, tzinfo=timezone.utc)
+    line = {"line_role": "purchase_expense", "account_code": account,
+            "debit": Decimal(amount), "currency": "CAD", "cost_center_id": cc_id,
+            "partner_id": partner_id, "partner_name": partner_name,
+            "aux": {"income_expense_item": {"value_id": ba_id, "value_text": "X"}}}
+    await emit_event(
+        db, source_service="finance", source_doc_type="ap_invoice",
+        source_doc_id=uuid.uuid4(), source_doc_number="AP-1", event_type="accrual",
+        occurred_at=occurred, prepared_by=uuid.uuid4(),
+        lines=[line, {"line_role": "accounts_payable", "account_code": "2000",
+                      "credit": Decimal(amount), "currency": "CAD"}])
+
+
+async def test_nc_partner_monthly_and_vouchers(db_session):
+    cc = await _cc(db_session, "MOH-0106-E01", "ENG")
+    it = uuid.uuid4()
+    db_session.add(BudgetAccount(id=it, code="CRM003", name="IT General Fee", is_active=True))
+    await db_session.flush()
+    pA, pB = uuid.uuid4(), uuid.uuid4()
+    await _posted_partner_event(db_session, "5101", "100.00", cc_id=cc, ba_id=it, partner_id=pA, partner_name="Acme", period="2026-03")
+    await _posted_partner_event(db_session, "5101", "40.00", cc_id=cc, ba_id=it, partner_id=pA, partner_name="Acme", period="2026-06")
+    await _posted_partner_event(db_session, "5101", "9.00", cc_id=cc, ba_id=it, partner_id=pB, partner_name="Beta", period="2026-03")
+    await jv_crud.backfill_posted_jvs(db_session)
+
+    res = await ab.nc_partner_monthly(db_session, it, 2026, cc)
+    by = {p["partner_name"]: p for p in res["partners"]}
+    assert by["Acme"]["by_month"] == {3: "100.00", 6: "40.00"} and by["Acme"]["year_total"] == "140.00"
+    assert by["Beta"]["by_month"] == {3: "9.00"} and by["Beta"]["year_total"] == "9.00"
+    assert res["partners"][0]["partner_name"] == "Acme"   # sorted desc by year total
+
+    v = await ab.nc_partner_vouchers(db_session, it, 2026, 3, cc, pA)
+    assert len(v["rows"]) == 1
+    assert v["rows"][0]["partner_name"] == "Acme" and v["rows"][0]["local_debit"] == "100.00"

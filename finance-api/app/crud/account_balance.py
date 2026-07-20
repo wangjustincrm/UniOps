@@ -490,6 +490,88 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
     return {"fiscal_year": fiscal_year, "accounts": out}
 
 
+async def _predreal_subtree(db: AsyncSession) -> set:
+    accts: set = set()
+    for a in BUDGET_ACTUAL_ACCOUNTS:
+        accts |= await _subtree_codes(db, a)
+    return accts
+
+
+async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_year: int,
+                             cost_center_id=None) -> dict:
+    """Budget Dashboard drill: for ONE budget account (收支项目) — with cost center
+    already locked by the caller — NC posted actual per partner (客商/供应商/客户)
+    per month across the fiscal year. Rows = partners that appeared that year,
+    sorted by year total desc; cells = monthly gross debit. `partner_id` None =
+    lines with no partner (denormalized name kept)."""
+    accts = await _predreal_subtree(db)
+    month = func.substr(JournalVoucher.fiscal_period, 6, 2)
+    q = (select(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .where(JournalVoucher.status == POSTED,
+                JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
+                JournalVoucherLine.account_code.in_(accts),
+                JournalVoucherLine.income_expense_item_id == income_expense_item_id))
+    if cost_center_id is not None:
+        q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    q = q.group_by(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month)
+
+    agg: dict = {}
+    for pid, pname, mm, dr in (await db.execute(q)).all():
+        key = str(pid) if pid else "__none__"
+        rec = agg.setdefault(key, {"partner_id": str(pid) if pid else None,
+                                   "partner_name": pname, "by_month": {},
+                                   "_total": _ZERO})
+        d = Decimal(dr)
+        rec["by_month"][int(mm)] = _s(d)
+        rec["_total"] += d
+        if pname and not rec["partner_name"]:
+            rec["partner_name"] = pname
+    partners = sorted(agg.values(), key=lambda r: r["_total"], reverse=True)
+    for r in partners:
+        r["year_total"] = _s(r.pop("_total"))
+    return {"fiscal_year": fiscal_year,
+            "income_expense_item_id": str(income_expense_item_id),
+            "cost_center_id": str(cost_center_id) if cost_center_id else None,
+            "partners": partners}
+
+
+async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_year: int,
+                              month: int, cost_center_id=None, partner_id=None) -> dict:
+    """Drill for one (budget account × cost center × partner × month): the posted
+    JV lines behind it. `partner_id='none'` filters lines with no partner."""
+    from app.models.coa import ChartOfAccount
+    period = f"{fiscal_year}-{int(month):02d}"
+    accts = await _predreal_subtree(db)
+    coa = {a.code: a for a in (await db.execute(select(ChartOfAccount))).scalars()}
+    q = (select(JournalVoucherLine, JournalVoucher)
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .where(JournalVoucher.status == POSTED,
+                JournalVoucher.fiscal_period == period,
+                JournalVoucherLine.account_code.in_(accts),
+                JournalVoucherLine.income_expense_item_id == income_expense_item_id)
+         .order_by(JournalVoucher.voucher_date))
+    if cost_center_id is not None:
+        q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    if partner_id == "none":
+        q = q.where(JournalVoucherLine.partner_id.is_(None))
+    elif partner_id is not None:
+        q = q.where(JournalVoucherLine.partner_id == partner_id)
+    rows = []
+    for ln, jv in (await db.execute(q)).all():
+        acct = coa.get(ln.account_code)
+        rows.append({
+            "jv_id": str(jv.id), "jv_number": jv.jv_number,
+            "voucher_date": jv.voucher_date.isoformat(),
+            "account_code": ln.account_code, "account_name": acct.name if acct else None,
+            "summary": ln.summary or jv.summary,
+            "partner_name": ln.partner_name,
+            "local_debit": str(ln.local_debit), "local_credit": str(ln.local_credit),
+        })
+    return {"period": period, "rows": rows}
+
+
 async def account_vouchers(db: AsyncSession, account_code: str, period: str,
                            dims_values: dict | None = None) -> dict:
     """③ drill-down: posted JV lines for an account (rolled over its
