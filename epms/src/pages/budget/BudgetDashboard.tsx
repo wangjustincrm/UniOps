@@ -272,15 +272,15 @@ export default function BudgetDashboard() {
             </colgroup>
             <thead>
               <tr>
-                <th className="sticky top-0 z-20 border-b border-neutral-200 bg-white py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                <th className="sticky top-0 z-20 border-b-2 border-neutral-300 bg-neutral-200 py-2.5 px-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">
                   Account
                 </th>
                 {MONTHS.map((m) => (
-                  <th key={m} className="sticky top-0 z-20 border-b border-neutral-200 bg-white py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                  <th key={m} className="sticky top-0 z-20 border-b-2 border-neutral-300 bg-neutral-200 py-2.5 px-1.5 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
                     {m}
                   </th>
                 ))}
-                <th className="sticky top-0 z-20 border-b border-neutral-200 bg-neutral-50 py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-700">
+                <th className="sticky top-0 z-20 border-b-2 border-neutral-300 bg-neutral-200 py-2.5 px-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-700">
                   Year
                 </th>
               </tr>
@@ -293,15 +293,15 @@ export default function BudgetDashboard() {
             </tbody>
             <tfoot>
               <tr>
-                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-300 bg-neutral-100 py-3 px-3 text-sm font-bold text-neutral-900 uppercase tracking-wide">
+                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-200 py-3 px-3 text-sm font-bold text-neutral-900 uppercase tracking-wide">
                   Total
                 </td>
                 {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-neutral-300 bg-neutral-100 py-3 px-1.5">
+                  <td key={m} className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-200 py-3 px-1.5">
                     <PlanActualCell plan={monthlyGrandTotals.plan[m]} actual={monthlyGrandTotals.actual[m]} nc={monthlyGrandTotals.nc[m]} strong />
                   </td>
                 ))}
-                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-300 bg-neutral-200 py-3 px-2">
+                <td className="sticky bottom-0 z-20 border-t-2 border-neutral-400 bg-neutral-300 py-3 px-2">
                   <PlanActualCell plan={monthlyGrandTotals.planYear} actual={monthlyGrandTotals.actualYear} nc={monthlyGrandTotals.ncYear} strong />
                 </td>
               </tr>
@@ -373,7 +373,7 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
 
   return (
     <>
-      <tr className="border-b border-neutral-200 bg-neutral-50 cursor-pointer hover:bg-neutral-100" onClick={() => setExpanded((v) => !v)}>
+      <tr className="border-t-2 border-neutral-300 bg-neutral-100 cursor-pointer hover:bg-neutral-200" onClick={() => setExpanded((v) => !v)}>
         <td className="py-2.5 px-3 text-sm font-semibold text-neutral-800">
           <span className="font-mono text-xs text-neutral-500 mr-1">{l1Code}</span>
         </td>
@@ -382,7 +382,7 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
             <PlanActualCell plan={totals.plan[m]} actual={totals.actual[m]} nc={totals.nc[m]} strong />
           </td>
         ))}
-        <td className="py-2.5 px-2 bg-neutral-100">
+        <td className="py-2.5 px-2 bg-neutral-200">
           <PlanActualCell plan={totals.planYear} actual={totals.actualYear} nc={totals.ncYear} strong />
         </td>
       </tr>
@@ -390,7 +390,7 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
         const isOpen = expandedAcct === a.account_id
         return (
           <Fragment key={a.account_id}>
-            <tr className="border-b border-neutral-100 hover:bg-primary-50/50">
+            <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60">
               <td className="py-2 px-3">
                 <button type="button"
                   onClick={() => setExpandedAcct((id) => (id === a.account_id ? null : a.account_id))}
@@ -435,10 +435,10 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
   const [voucherKey, setVoucherKey] = useState<string | null>(null)  // `${partnerId}:${month}`
 
   if (isLoading) {
-    return <tr><td colSpan={14} className="bg-emerald-50/20 py-2 pl-10 pr-3 text-xs text-neutral-400">Loading vendor breakdown…</td></tr>
+    return <tr><td colSpan={14} className="bg-emerald-50 py-2 pl-10 pr-3 text-xs text-neutral-400">Loading vendor breakdown…</td></tr>
   }
   if (partners.length === 0) {
-    return <tr><td colSpan={14} className="bg-emerald-50/20 py-2 pl-10 pr-3 text-xs text-neutral-400">No NC actuals for this item in the current scope.</td></tr>
+    return <tr><td colSpan={14} className="bg-emerald-50 py-2 pl-10 pr-3 text-xs text-neutral-400">No NC actuals for this item in the current scope.</td></tr>
   }
   return (
     <>
@@ -446,7 +446,7 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
         const pid = p.partner_id ?? 'none'
         return (
           <Fragment key={`${pid}-${i}`}>
-            <tr className="border-b border-neutral-100 bg-emerald-50/20">
+            <tr className="border-b border-neutral-100 bg-emerald-50">
               <td className="py-1.5 pl-10 pr-3 text-xs text-neutral-600 break-words">
                 {p.partner_name || <span className="text-neutral-400">(no vendor)</span>}
               </td>
@@ -465,7 +465,7 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
                   </td>
                 )
               })}
-              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-50/40">{formatCADCompact(Number(p.year_total))}</td>
+              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-100">{formatCADCompact(Number(p.year_total))}</td>
             </tr>
             {voucherKey && voucherKey.startsWith(`${pid}:`) && (
               <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
@@ -493,7 +493,7 @@ function VoucherRow({ account, fiscalYear, costCenterId, partnerId, partnerName,
   const rows = data?.rows ?? []
   return (
     <tr>
-      <td colSpan={14} className="bg-neutral-50 px-10 py-2">
+      <td colSpan={14} className="border-l-4 border-emerald-400 bg-neutral-100 px-10 py-2">
         <div className="mb-1 text-[11px] font-semibold text-neutral-600">
           Vouchers · {partnerName || '(no vendor)'} · {MONTHS[month - 1]} {fiscalYear}
         </div>
