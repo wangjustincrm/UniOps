@@ -127,9 +127,11 @@ export default function BudgetDashboard() {
 
   const totalBudget    = accounts.reduce((s, a) => s + Number(a.annual_budget), 0)
   const totalCommitted = accounts.reduce((s, a) => s + Number(a.committed), 0)
-  const totalSpent     = accounts.reduce((s, a) => s + Number(a.actual_spent), 0)
-  const totalAvailable = totalBudget - totalCommitted - totalSpent
-  const totalPct = totalBudget > 0 ? Math.round(((totalCommitted + totalSpent) / totalBudget) * 100) : 0
+  // Actual Spent follows NC posted (the final actual), not doc-side actual_spent.
+  const totalNcSpent = Object.values(ncByAccount).reduce(
+    (s, months) => s + Object.values(months).reduce((t, v) => t + Number(v), 0), 0)
+  const totalAvailable = totalBudget - totalCommitted - totalNcSpent
+  const totalPct = totalBudget > 0 ? Math.round(((totalCommitted + totalNcSpent) / totalBudget) * 100) : 0
 
   // over-budget alerts judged on NC posted (the final actual): per account,
   // NC year total vs annual budget.
@@ -200,7 +202,7 @@ export default function BudgetDashboard() {
           {[
             { label: 'Total Annual Budget', value: formatCADCompact(totalBudget), sub: 'Approved plan' },
             { label: 'Total Committed',     value: formatCADCompact(totalCommitted), sub: 'PA in-flight' },
-            { label: 'Total Actual Spent',  value: formatCADCompact(totalSpent), sub: 'Paid & booked' },
+            { label: 'Total Actual Spent',  value: formatCADCompact(totalNcSpent), sub: 'NC posted' },
             { label: 'Total Available',     value: formatCADCompact(totalAvailable), sub: `${totalPct}% utilised`, alert: totalAvailable < 0 },
           ].map((s) => (
             <Card key={s.label} className={cn('p-4', s.alert && 'ring-1 ring-danger-200')}>
