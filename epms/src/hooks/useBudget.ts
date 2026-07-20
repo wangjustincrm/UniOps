@@ -395,6 +395,63 @@ export function useNcActualsMonthly(params: { fiscal_year: number; cost_center_i
   })
 }
 
+// Budget Dashboard drill: NC actual for one budget account (cost center locked),
+// broken down by partner (客商/供应商/客户) × month.
+export interface PartnerMonthly {
+  fiscal_year: number
+  income_expense_item_id: string
+  cost_center_id: string | null
+  partners: {
+    partner_id: string | null; partner_name: string | null
+    by_month: Record<number, string>; year_total: string
+  }[]
+}
+
+export function useNcPartnerMonthly(params: {
+  income_expense_item_id: string; fiscal_year: number; cost_center_id?: string; enabled?: boolean
+}) {
+  const qs = new URLSearchParams({
+    income_expense_item_id: params.income_expense_item_id,
+    fiscal_year: String(params.fiscal_year),
+  })
+  if (params.cost_center_id) qs.set('cost_center_id', params.cost_center_id)
+  return useQuery({
+    queryKey: ['finance', 'nc-partner-monthly', params],
+    queryFn: () => financeApi.get<PartnerMonthly>(`/gl/nc-partner-monthly?${qs.toString()}`),
+    enabled: params.enabled ?? true,
+    staleTime: 30_000,
+  })
+}
+
+export interface PartnerVouchers {
+  period: string
+  rows: {
+    jv_id: string; jv_number: string; voucher_date: string
+    account_code: string; account_name: string | null
+    summary: string | null; partner_name: string | null
+    local_debit: string; local_credit: string
+  }[]
+}
+
+export function useNcPartnerVouchers(params: {
+  income_expense_item_id: string; fiscal_year: number; month: number
+  cost_center_id?: string; partner_id?: string; enabled?: boolean
+}) {
+  const qs = new URLSearchParams({
+    income_expense_item_id: params.income_expense_item_id,
+    fiscal_year: String(params.fiscal_year),
+    month: String(params.month),
+  })
+  if (params.cost_center_id) qs.set('cost_center_id', params.cost_center_id)
+  if (params.partner_id) qs.set('partner_id', params.partner_id)
+  return useQuery({
+    queryKey: ['finance', 'nc-partner-vouchers', params],
+    queryFn: () => financeApi.get<PartnerVouchers>(`/gl/nc-partner-vouchers?${qs.toString()}`),
+    enabled: params.enabled ?? true,
+    staleTime: 30_000,
+  })
+}
+
 export function useBalance(params: {
   cost_center_id: string; fiscal_year: number;
   account_code?: string; account_id?: string;

@@ -11,7 +11,7 @@ import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react
 import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears, useNcActualsMonthly } from '@/hooks/useBudget'
+import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears, useNcActualsMonthly, useNcPartnerMonthly, useNcPartnerVouchers } from '@/hooks/useBudget'
 import { useConfig, useRolePermissions, useMyAssignedRoles } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -75,6 +75,7 @@ export default function BudgetDashboard() {
 
   const [fiscalYear, setFiscalYear] = useState<number>(currentYear)
   const [ccId, setCcId] = useState<string>('all')
+  const [expandAccount, setExpandAccount] = useState<ApiMonthlyAccountSummary | null>(null)
 
   const summaryParams = useMemo(() => ({
     fiscal_year: fiscalYear,
@@ -282,7 +283,7 @@ export default function BudgetDashboard() {
             </thead>
             <tbody>
               {monthlyByL1.map((g) => (
-                <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount} />
+                <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount} onExpandAccount={setExpandAccount} />
               ))}
             </tbody>
             <tfoot>
@@ -303,6 +304,16 @@ export default function BudgetDashboard() {
           </table>
         )}
       </Card>
+
+      {expandAccount && (
+        <PartnerExpandModal
+          account={expandAccount}
+          fiscalYear={fiscalYear}
+          costCenterId={ccId !== 'all' ? ccId : undefined}
+          scopeLabel={scopeLabel}
+          onClose={() => setExpandAccount(null)}
+        />
+      )}
     </div>
   )
 }
@@ -334,9 +345,10 @@ function PlanActualCell({ plan, actual, nc, strong }: { plan: number; actual: nu
 
 // ── L1 group with expandable monthly rows ─────────────────────────────────────
 
-function MonthlyL1Group({ l1Code, accounts, ncByAccount }: {
+function MonthlyL1Group({ l1Code, accounts, ncByAccount, onExpandAccount }: {
   l1Code: string; accounts: ApiMonthlyAccountSummary[]
   ncByAccount: Record<string, Record<number, string>>
+  onExpandAccount: (a: ApiMonthlyAccountSummary) => void
 }) {
   const [expanded, setExpanded] = useState(true)
 
@@ -380,8 +392,11 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount }: {
       {expanded && accounts.map((a) => (
         <tr key={a.account_id} className="border-b border-neutral-100 hover:bg-primary-50/50">
           <td className="py-2 px-3">
-            <span className="font-mono text-xs text-neutral-500 mr-2">{a.account_code}</span>
-            <span className="text-xs text-neutral-700 break-words">{a.account_name}</span>
+            <button type="button" onClick={() => onExpandAccount(a)} className="text-left hover:underline"
+              title="Break down NC actual by vendor/customer">
+              <span className="font-mono text-xs text-neutral-500 mr-2">{a.account_code}</span>
+              <span className="text-xs text-primary-700 break-words">{a.account_name}</span>
+            </button>
           </td>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
             <td key={m} className="py-2 px-1.5">
@@ -395,5 +410,145 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount }: {
         </tr>
       ))}
     </>
+  )
+}
+
+// ── Partner (客商/供应商/客户) breakdown modal ─────────────────────────────────
+
+function PartnerExpandModal({ account, fiscalYear, costCenterId, scopeLabel, onClose }: {
+  account: ApiMonthlyAccountSummary
+  fiscalYear: number
+  costCenterId?: string
+  scopeLabel: string
+  onClose: () => void
+}) {
+  const { data, isLoading } = useNcPartnerMonthly({
+    income_expense_item_id: account.account_id, fiscal_year: fiscalYear, cost_center_id: costCenterId,
+  })
+  const partners = data?.partners ?? []
+  const [drill, setDrill] = useState<{ partnerId: string | null; partnerName: string | null; month: number } | null>(null)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="max-h-[90vh] w-full max-w-6xl overflow-hidden rounded-xl bg-white shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between border-b border-neutral-200 px-5 py-3">
+          <div>
+            <h3 className="text-base font-semibold text-neutral-900">
+              <span className="font-mono text-sm text-neutral-500 mr-2">{account.account_code}</span>
+              {account.account_name}
+            </h3>
+            <p className="text-xs text-neutral-500 mt-0.5">
+              NC posted actual by vendor/customer · FY {fiscalYear} · {scopeLabel}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-2xl leading-none text-neutral-400 hover:text-neutral-700">×</button>
+        </div>
+
+        <div className="overflow-auto">
+          {isLoading ? (
+            <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+          ) : partners.length === 0 ? (
+            <div className="py-10 text-center text-sm text-neutral-400">No NC actuals for this item in the current scope.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-neutral-50">
+                <tr className="border-b border-neutral-200 text-xs text-neutral-500">
+                  <th className="px-3 py-2 text-left font-medium">Vendor / Customer</th>
+                  {MONTHS.map((m) => <th key={m} className="px-1.5 py-2 text-right font-medium">{m}</th>)}
+                  <th className="px-3 py-2 text-right font-semibold text-neutral-700 bg-neutral-100">Year</th>
+                </tr>
+              </thead>
+              <tbody>
+                {partners.map((p, i) => (
+                  <tr key={p.partner_id ?? `none-${i}`} className={cn('border-b border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                    <td className="px-3 py-2 text-neutral-700">
+                      {p.partner_name || <span className="text-neutral-400">(no vendor)</span>}
+                    </td>
+                    {Array.from({ length: 12 }, (_, k) => k + 1).map((m) => {
+                      const v = Number(p.by_month[m] ?? 0)
+                      return (
+                        <td key={m} className="px-1.5 py-2 text-right font-mono">
+                          {v ? (
+                            <button className="text-emerald-700 hover:underline"
+                              onClick={() => setDrill({ partnerId: p.partner_id, partnerName: p.partner_name, month: m })}>
+                              {formatCADCompact(v)}
+                            </button>
+                          ) : <span className="text-neutral-300">–</span>}
+                        </td>
+                      )
+                    })}
+                    <td className="px-3 py-2 text-right font-mono font-semibold bg-neutral-50">{formatCADCompact(Number(p.year_total))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {drill && (
+          <PartnerVoucherPanel
+            account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
+            partnerId={drill.partnerId} partnerName={drill.partnerName} month={drill.month}
+            onClose={() => setDrill(null)}
+          />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PartnerVoucherPanel({ account, fiscalYear, costCenterId, partnerId, partnerName, month, onClose }: {
+  account: ApiMonthlyAccountSummary
+  fiscalYear: number
+  costCenterId?: string
+  partnerId: string | null
+  partnerName: string | null
+  month: number
+  onClose: () => void
+}) {
+  const { data, isLoading } = useNcPartnerVouchers({
+    income_expense_item_id: account.account_id, fiscal_year: fiscalYear, month,
+    cost_center_id: costCenterId, partner_id: partnerId ?? 'none',
+  })
+  const rows = data?.rows ?? []
+  return (
+    <div className="border-t border-neutral-200 bg-neutral-50/60">
+      <div className="flex items-center justify-between px-5 py-2">
+        <span className="text-xs font-semibold text-neutral-700">
+          Vouchers · {partnerName || '(no vendor)'} · {MONTHS[month - 1]} {fiscalYear}
+        </span>
+        <button onClick={onClose} className="text-xs text-neutral-500 hover:underline">close</button>
+      </div>
+      <div className="max-h-56 overflow-auto px-5 pb-3">
+        {isLoading ? (
+          <div className="py-4 text-center text-xs text-neutral-400">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="py-4 text-center text-xs text-neutral-400">No vouchers.</div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-neutral-500">
+                <th className="px-2 py-1 text-left font-medium">Date</th>
+                <th className="px-2 py-1 text-left font-medium">Voucher</th>
+                <th className="px-2 py-1 text-left font-medium">Account</th>
+                <th className="px-2 py-1 text-left font-medium">Summary</th>
+                <th className="px-2 py-1 text-right font-medium">Debit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={`${r.jv_id}-${i}`} className="border-t border-neutral-100">
+                  <td className="px-2 py-1 font-mono text-neutral-600">{r.voucher_date}</td>
+                  <td className="px-2 py-1 font-mono">{r.jv_number}</td>
+                  <td className="px-2 py-1 font-mono text-neutral-600">{r.account_code}</td>
+                  <td className="px-2 py-1 text-neutral-700">{r.summary || '—'}</td>
+                  <td className="px-2 py-1 text-right font-mono">{formatCADCompact(Number(r.local_debit))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   )
 }
