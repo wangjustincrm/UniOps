@@ -805,15 +805,21 @@ async def test_nc_actuals_monthly_by_item_and_month(db_session):
     cc = await _cc(db_session, "MOH-0106-E01", "ENG")
     cc2 = await _cc(db_session, "OTHER-CC", "Other")
     it = uuid.uuid4()
-    db_session.add(BudgetAccount(id=it, code="CRM003", name="IT General Fee", is_active=True))
+    pay = uuid.uuid4()
+    db_session.add_all([
+        BudgetAccount(id=it, code="CRM003", name="IT General Fee", is_active=True),
+        BudgetAccount(id=pay, code="CRM007", name="Payroll", is_active=True),   # excluded from dashboard
+    ])
     await db_session.flush()
     await _posted_dim_event(db_session, "5101", "100.00", cc_id=cc, ba_id=it, period="2026-06")
     await _posted_dim_event(db_session, "5101", "40.00", cc_id=cc, ba_id=it, period="2026-07")
     await _posted_dim_event(db_session, "5101", "9.00", cc_id=cc2, ba_id=it, period="2026-06")
+    await _posted_dim_event(db_session, "5101", "500.00", cc_id=cc, ba_id=pay, period="2026-06")
     await jv_crud.backfill_posted_jvs(db_session)
 
     res = await ab.nc_actuals_monthly(db_session, 2026)
     assert res["accounts"][str(it)] == {6: "109.00", 7: "40.00"}   # both cost centers, Jun combined
+    assert str(pay) not in res["accounts"]                         # Payroll (CRM007) excluded
     res2 = await ab.nc_actuals_monthly(db_session, 2026, cc)
     assert res2["accounts"][str(it)] == {6: "100.00", 7: "40.00"}  # scoped to cc
 

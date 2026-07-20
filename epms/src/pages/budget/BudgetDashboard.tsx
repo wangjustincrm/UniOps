@@ -21,6 +21,10 @@ const currentYear = new Date().getUTCFullYear()
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+// Payroll (CRM007) / Depreciation (CRM004) are category-level only — fully
+// excluded from the dashboard's per-account rows, totals, and over-budget alerts.
+const isPayrollOrDeprec = (code: string) => code.startsWith('CRM004') || code.startsWith('CRM007')
+
 // `finance_bp` is deliberately NOT in this set. gm/opm/finance_manager are
 // company-unique singleton POSTS (identity enforces one holder) — holding
 // one as your PRIMARY role (jwt/user.role) means you genuinely are it.
@@ -82,10 +86,11 @@ export default function BudgetDashboard() {
   }), [fiscalYear, ccId])
 
   const { data, isLoading } = useActualsSummary(summaryParams)
-  const accounts: ApiAccountSummary[] = data?.accounts ?? []
+  const accounts: ApiAccountSummary[] = (data?.accounts ?? []).filter((a) => !isPayrollOrDeprec(a.account_code))
 
   const { data: monthlyData, isLoading: monthlyLoading } = useMonthlyActualsSummary(summaryParams)
-  const monthlyAccounts: ApiMonthlyAccountSummary[] = useMemo(() => monthlyData?.accounts ?? [], [monthlyData])
+  const monthlyAccounts: ApiMonthlyAccountSummary[] = useMemo(
+    () => (monthlyData?.accounts ?? []).filter((a) => !isPayrollOrDeprec(a.account_code)), [monthlyData])
 
   // NC posted actual (finance-api) per account × month — the third cell line.
   const { data: ncData } = useNcActualsMonthly(summaryParams)

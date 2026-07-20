@@ -470,6 +470,7 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
     Feeds the EPMS Budget Dashboard's NC-actual line (keyed by budget account_id =
     income_expense_item_id). actual = period gross DEBIT. Returns
     {account_id: {month:int -> amount:str}}."""
+    from app.models.mirrors import BudgetAccount
     accts: set = set()
     for a in BUDGET_ACTUAL_ACCOUNTS:
         accts |= await _subtree_codes(db, a)
@@ -477,10 +478,14 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
     q = (select(JournalVoucherLine.income_expense_item_id, month,
                 func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
          .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .join(BudgetAccount, JournalVoucherLine.income_expense_item_id == BudgetAccount.id)
          .where(JournalVoucher.status == POSTED,
                 JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
                 JournalVoucherLine.account_code.in_(accts),
-                JournalVoucherLine.income_expense_item_id.isnot(None))
+                # Payroll (CRM007) / Depreciation (CRM004) are excluded from the
+                # dashboard entirely — they are category-level only (finance grid).
+                ~BudgetAccount.code.like(f"{_PAYROLL_PREFIX}%"),
+                ~BudgetAccount.code.like(f"{_DEPREC_PREFIX}%"))
          .group_by(JournalVoucherLine.income_expense_item_id, month))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
