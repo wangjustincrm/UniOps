@@ -1160,14 +1160,21 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
                 dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
                 director_uid=director_uid, supervisor_uid=supervisor_uid)
             actions.append(f"reissue step{true_step} -> {des_role}/{des_uid}")
-    else:  # broadcast (named) role
-        if stray or not open_tasks:
+    else:  # broadcast (named) role — the engine assigns these to NO specific user
+        # (role-based: whoever currently holds the role sees & approves it). PMS
+        # import PINNED some to a specific user, which stops them from following a
+        # role change (e.g. a new Finance Manager). Re-broadcast any pinned one so
+        # it tracks the current holder from now on (idempotent: broadcast tasks are
+        # left alone on the next run).
+        pinned = any(t.assigned_user_id is not None for t in open_tasks)
+        if stray or pinned or not open_tasks:
             await _complete_tasks(db, doc_type, doc.id)
             await _create_approve_task(
                 db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
                 dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
                 director_uid=director_uid, supervisor_uid=supervisor_uid)
-            actions.append(f"reissue step{true_step} -> {des_role}/broadcast")
+            actions.append(f"reissue step{true_step} -> {des_role}/broadcast"
+                           + (" (was pinned)" if pinned else ""))
 
     if not actions:
         return None
