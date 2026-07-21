@@ -46,7 +46,9 @@ export function generatePoHtml(po: ApiPo, config: CompanyConfig): string {
     </tr>
   `).join('')
 
-  const taxLabel = TAX_LABELS[po.tax_rate] ?? `Tax (${Math.round(po.tax_rate * 100)}%)`
+  // tax_rate is serialized as a JSON string (Decimal) — coerce so numeric-key lookups hit.
+  const taxRate = Number(po.tax_rate)
+  const taxLabel = TAX_LABELS[taxRate] ?? `Tax (${Math.round(taxRate * 100)}%)`
 
   const logoHtml = tpl.show_logo && config.logo_data_url
     ? `<img src="${config.logo_data_url}" alt="Logo" class="logo" />`

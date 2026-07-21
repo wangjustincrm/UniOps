@@ -28,6 +28,8 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'submitted', label: 'Submitted' },
   { value: 'in_review', label: 'In Review' },
   { value: 'approved', label: 'Approved' },
+  { value: 'returned', label: 'Returned' },
+  { value: 'rejected', label: 'Rejected' },
   { value: 'issued', label: 'Issued' },
   { value: 'partially_received', label: 'Partial Receipt' },
   { value: 'fully_received', label: 'Fully Received' },

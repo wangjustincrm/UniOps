@@ -61,6 +61,7 @@ export function useCreatePo() {
       queryClient.invalidateQueries({ queryKey: ['pos'] })
       queryClient.invalidateQueries({ queryKey: ['prs'] })
     },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create purchase order'),
   })
 }
 
@@ -74,6 +75,7 @@ export function useUpdatePo() {
       queryClient.invalidateQueries({ queryKey: ['pos'] })
       queryClient.invalidateQueries({ queryKey: ['pos', id] })
     },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to update purchase order'),
   })
 }
 
@@ -88,6 +90,7 @@ export function usePoAction(id: string) {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Purchase order action failed'),
   })
 }
 
@@ -111,5 +114,6 @@ export function usePlaceOrder(id: string) {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to place order'),
   })
 }

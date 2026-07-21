@@ -7,6 +7,8 @@ export type PoStatus =
   | 'submitted'
   | 'in_review'
   | 'approved'
+  | 'returned'
+  | 'rejected'
   | 'issued'
   | 'partially_received'
   | 'fully_received'
@@ -20,6 +22,8 @@ export interface ApiPoLineItem {
   description: string
   material_id?: string
   supplier_item_id?: string
+  // Source PR line this PO line was created from (backend persists it).
+  pr_line_id?: string | null
   qty: number
   unit: string
   unit_price: number
@@ -29,6 +33,13 @@ export interface ApiPoLineItem {
   // 该 line 被其他发票累计分摊的税前额(仅 match-candidates 端点返回)
   already_allocated?: string | null
 }
+
+// Fields the client posts per line. Server derives line_total/received_qty;
+// pr_line_id is kept so PO lines stay linked to their originating PR line.
+type PoLineItemInput = Omit<
+  ApiPoLineItem,
+  'id' | 'line_total' | 'received_qty' | 'already_allocated'
+>
 
 export interface ApiPo {
   id: string
@@ -64,39 +75,33 @@ export interface CreatePoBody {
   title: string
   type: number
   currency: string
-  subtotal: number
   tax_rate: number
   tax_code?: string | null
-  tax_amount: number
-  total: number
   vendor_id: string
-  vendor_name: string
   is_prepaid?: boolean
   budget_code?: string
   expected_delivery?: string
   delivery_address?: string
   notes?: string
   pr_id?: string
-  line_items: Omit<ApiPoLineItem, 'id'>[]
+  // subtotal/tax_amount/total/vendor_name are recomputed/derived server-side.
+  line_items: PoLineItemInput[]
 }
 
 export interface UpdatePoBody {
   title?: string
   type?: number
   currency?: string
-  subtotal?: number
   tax_rate?: number
   tax_code?: string | null
-  tax_amount?: number
-  total?: number
   vendor_id?: string
-  vendor_name?: string
   is_prepaid?: boolean
   budget_code?: string
   expected_delivery?: string
   delivery_address?: string
   notes?: string
-  line_items?: Omit<ApiPoLineItem, 'id'>[]
+  // subtotal/tax_amount/total/vendor_name are recomputed/derived server-side.
+  line_items?: PoLineItemInput[]
 }
 
 export interface PoActionBody {
@@ -117,7 +122,6 @@ export interface PlaceOrderBody {
 
 export interface PoFilters {
   status?: PoStatus
-  type?: number
   pr_type?: number
   department_id?: string
   is_prepaid?: boolean
