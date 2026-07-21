@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.gr_attachment import GrAttachment
+from app.models.invoice import Invoice
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -236,6 +237,9 @@ async def action(
         gr.collection_notes = req.collection_notes
         # Update PO line received_qty and PO status
         await _update_po_received_qty(db, gr)
+        # Reverse-fill GR value onto invoices on this PO that were matched before
+        # the goods arrived (convenience only — does NOT change match status).
+        await _backfill_invoice_gr_value(db, gr)
 
     elif act == "reject":
         if gr.status != "collection_pending" or gr.gr_type != "service":
@@ -392,6 +396,37 @@ async def _create_damage_report_task(db: AsyncSession, gr: GoodsReceipt, damaged
                     f"Please raise a return or credit note with the vendor. Affected: {line_summary}",
         vendor=gr.vendor_name,
     ))
+
+
+async def _backfill_invoice_gr_value(db: AsyncSession, gr: GoodsReceipt) -> None:
+    """After a GR is confirmed, attach it to invoices on the same PO that were
+    matched/exception BEFORE the goods arrived and still carry no GR, populating
+    their gr_id / gr_number / gr_value.
+
+    Convenience only: match status is decided by PO-vs-invoice variance, so this
+    does NOT re-run matching or change any invoice's status — it just spares the
+    AP clerk from re-opening each invoice to pick up the GR. Invoices that already
+    reference a GR are left untouched (their explicit linkage wins), and unmatched
+    invoices (no allocations yet) are skipped — they pick the GR up when matched.
+    """
+    if gr.po_id is None:
+        return
+    invoices = (await db.execute(
+        select(Invoice).where(
+            Invoice.po_id == gr.po_id,
+            Invoice.status.in_(("matched", "exception")),
+        )
+    )).scalars().all()
+    if not invoices:
+        return
+    gr_value = sum((it.line_total for it in gr.line_items), Decimal("0"))
+    for inv in invoices:
+        if inv.gr_ids:  # already linked to a GR — respect the explicit choice
+            continue
+        inv.gr_id = gr.id
+        inv.gr_number = gr.number
+        inv.gr_value = gr_value
+        inv.gr_ids = [str(gr.id)]
 
 
 async def _create_pa_task(db: AsyncSession, gr: GoodsReceipt) -> None:
