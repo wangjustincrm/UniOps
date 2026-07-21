@@ -38,6 +38,7 @@ async def list_prs(
     cost_center_id: uuid.UUID | None = Query(default=None),
     department_id: uuid.UUID | None = Query(default=None),
     is_prepaid: bool | None = Query(default=None),
+    created_by: uuid.UUID | None = Query(default=None),
     mine: bool = False,
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -57,6 +58,7 @@ async def list_prs(
         cost_center_id=cost_center_id,
         department_id=department_id,
         is_prepaid=is_prepaid,
+        created_by=created_by,   # narrows WITHIN the enforced scope — safe
         pr_ids_subq=scope["pr_subq"],
         search=search,
         page=page,

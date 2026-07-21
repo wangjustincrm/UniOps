@@ -83,7 +83,15 @@ async def _complete_stale_create_po_tasks(db: AsyncSession) -> None:
         .where(
             Task.type == "create_po",
             Task.is_completed.is_(False),
-            PurchaseRequest.po_id.is_not(None),
+            # PR has a PO via either back-ref (pr.po_id) OR the PO side (po.pr_id,
+            # the case when the PO was imported after the PR and pr.po_id was
+            # never backfilled) — complete the task in both.
+            or_(
+                PurchaseRequest.po_id.is_not(None),
+                PurchaseRequest.id.in_(
+                    select(PurchaseOrder.pr_id).where(PurchaseOrder.pr_id.is_not(None))
+                ),
+            ),
         )
     )
     result = await db.execute(stale_q)
@@ -109,6 +117,12 @@ async def _backfill_create_po_tasks(db: AsyncSession) -> None:
     approved_prs_q = select(PurchaseRequest).where(
         PurchaseRequest.status == "approved",
         PurchaseRequest.po_id.is_(None),
+        # A PR whose PO was imported later carries the link only on the PO side
+        # (po.pr_id) — pr.po_id may still be NULL. Exclude those too, else this
+        # keeps re-raising a create_po task for a PR that already HAS a PO.
+        PurchaseRequest.id.not_in(
+            select(PurchaseOrder.pr_id).where(PurchaseOrder.pr_id.is_not(None))
+        ),
         PurchaseRequest.created_at >= _BACKFILL_MIN_CREATED,
     )
     approved_prs = (await db.execute(approved_prs_q)).scalars().all()

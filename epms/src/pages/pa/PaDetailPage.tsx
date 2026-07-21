@@ -307,7 +307,7 @@ export default function PaDetailPage() {
       const isDone = ['approved', 'processed'].includes(pa.status) || i < stepIdx
       const isActive = !isDone && i === stepIdx && ['submitted', 'in_review'].includes(pa.status)
       const evt = approveEventByStep[i]
-      const isAutoSkipped = evt?.comment?.startsWith('Auto-skipped') ?? false
+      const isAutoSkipped = evt?.comment?.includes('Auto-skipped') ?? false
       return {
         label: node.label,
         actor: isAutoSkipped ? undefined : evt?.actor_name ?? undefined,

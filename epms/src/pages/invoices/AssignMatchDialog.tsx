@@ -21,7 +21,7 @@ export function AssignMatchDialog({ invoiceId, currentAssigneeName, onClose, onA
   const search = useDeferredValue(query.trim())
   const { data, isLoading, isError } = useQuery({
     queryKey: ['users', 'directory', search],
-    queryFn: () => userService.directory(search || undefined),
+    queryFn: () => userService.directory({ search: search || undefined }),
     staleTime: 60_000,
     placeholderData: (prev) => prev,
   })

@@ -74,6 +74,7 @@ export interface ApiUserBrief {
   id: string
   full_name: string
   email: string
+  role: string
   department_id: string | null
   department_name: string | null
 }
@@ -90,9 +91,11 @@ export const userService = {
   listAll: (filters?: Omit<UserFilters, 'page' | 'page_size'>): Promise<UserListResponse> =>
     fetchAllPages((page, page_size) => userService.list({ ...filters, page, page_size })),
 
-  directory: (search?: string) =>
+  directory: (opts?: { search?: string; role?: string; department_id?: string }) =>
     api.get<UserBriefListResponse>('/users/directory', {
-      search: search || undefined,
+      search: opts?.search || undefined,
+      role: opts?.role || undefined,
+      department_id: opts?.department_id || undefined,
       page_size: 100,
     }),
 

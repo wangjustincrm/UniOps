@@ -94,6 +94,7 @@ class UserBriefResponse(BaseModel):
     id: uuid.UUID
     full_name: str
     email: str
+    role: str
     department_id: uuid.UUID | None = None
     department_name: str | None = None
 

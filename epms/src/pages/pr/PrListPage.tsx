@@ -9,6 +9,9 @@ import { formatCAD, formatDate } from '@/lib/utils'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePrs } from '@/hooks/usePrs'
 import { useDepartments } from '@/hooks/useDepartments'
+import { useQuery } from '@tanstack/react-query'
+import { userService } from '@/services/users'
+import { useRolePermissions } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 
 const TYPE_LABELS: Record<number, string> = {
@@ -34,15 +37,31 @@ const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
 type SortField = 'number' | 'title' | 'amount' | 'status' | 'submitted_at' | 'is_prepaid'
 type SortDir = 'asc' | 'desc'
 
+// Roles that see PRs company-wide → their Requester picker isn't limited to one
+// department. Everyone else with broader-than-own visibility (e.g. Department
+// Admin, Dept Manager) is scoped to their own department's requesters.
+const COMPANY_WIDE_ROLES = new Set([
+  'procurement_officer', 'procurement_manager', 'gm', 'opm',
+  'finance_manager', 'finance_bp', 'cfo', 'auditor', 'system_admin',
+])
+
 export default function PrListPage() {
   const { user } = useAuthStore()
-  const isRequester = user?.role === 'requester'
+  // Effective roles = primary JWT role ∪ Role-Management assignments (a Requester
+  // who is ALSO a Department Admin must be able to pick other requesters). Fall
+  // back to the JWT role until the permissions query resolves.
+  const roles = useRolePermissions().data?.roles ?? (user?.role ? [user.role] : [])
+  const isRequesterOnly = roles.length > 0 && roles.every((r) => r === 'requester')
+  const seesAllDepts = roles.some((r) => COMPANY_WIDE_ROLES.has(r))
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [deptFilter, setDeptFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [prepaidFilter, setPrepaidFilter] = useState('all')
+  // Requester filter: a pure requester is locked to their own PRs; anyone who can
+  // see others' PRs (Department Admin, procurement, finance, …) can pick one.
+  const [requesterFilter, setRequesterFilter] = useState<string>('all')
   const [sortField, setSortField] = useState<SortField>('submitted_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(1)
@@ -53,12 +72,35 @@ export default function PrListPage() {
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
 
+  // Requester picker options — active requesters via the non-admin /users/directory
+  // (GET /users is system_admin-only and would 403 for a requester who is also a
+  // Department Admin). Scoped server-side to the viewer's own department unless
+  // they see PRs company-wide.
+  const { data: usersData } = useQuery({
+    queryKey: ['pr-requester-picker', seesAllDepts, user?.department_id],
+    queryFn: () => userService.directory({
+      role: 'requester',
+      department_id: seesAllDepts ? undefined : (user?.department_id ?? undefined),
+    }),
+    enabled: !isRequesterOnly,
+    staleTime: 60_000,
+  })
+  const requesters = (usersData?.items ?? [])
+    .slice()
+    .sort((a, b) => a.full_name.localeCompare(b.full_name))
+
+  // A pure requester is pinned to their own PRs; otherwise honour the picker.
+  const createdByFilter = isRequesterOnly
+    ? (user?.id ?? undefined)
+    : requesterFilter !== 'all' ? requesterFilter : undefined
+
   const { data, isLoading } = usePrs({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
     department_id: deptFilter !== 'all' ? deptFilter : undefined,
     pr_type: typeFilter !== 'all' ? Number(typeFilter) : undefined,
     is_prepaid: prepaidFilter === 'all' ? undefined : prepaidFilter === 'yes',
+    created_by: createdByFilter,
     page,
     page_size: pageSize,
   })
@@ -95,7 +137,7 @@ export default function PrListPage() {
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">
-          {isRequester ? 'My Purchase Requisitions' : 'Purchase Requisitions'}
+          {isRequesterOnly ? 'My Purchase Requisitions' : 'Purchase Requisitions'}
         </h1>
         <div className="flex items-center gap-2">
           {selectedPrId && (
@@ -143,6 +185,24 @@ export default function PrListPage() {
             {departments.map((d) => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
+          </select>
+          <select
+            value={isRequesterOnly ? (user?.id ?? 'all') : requesterFilter}
+            onChange={(e) => handleFilterChange(setRequesterFilter)(e.target.value)}
+            disabled={isRequesterOnly}
+            title="Filter by Requester"
+            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-50 disabled:text-neutral-500"
+          >
+            {isRequesterOnly ? (
+              <option value={user?.id ?? 'all'}>{user?.name ? `${user.name} (me)` : 'My Requests'}</option>
+            ) : (
+              <>
+                <option value="all">All Requesters</option>
+                {requesters.map((u) => (
+                  <option key={u.id} value={u.id}>{u.full_name}</option>
+                ))}
+              </>
+            )}
           </select>
           <select
             value={typeFilter}
