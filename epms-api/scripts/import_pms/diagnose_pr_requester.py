@@ -78,9 +78,10 @@ _PR_BY_APPLIER = {
 }
 
 
-async def go():
+async def go(apply: bool = False):
     async with sm.AsyncSessionLocal() as db:
         rows = []
+        fixed = 0
         for applier in sorted(_PR_BY_APPLIER):
             email = M.resolve_user_email(applier)
             if not email:
@@ -99,6 +100,12 @@ async def go():
             in_db = (await db.execute(text("SELECT count(*) FROM purchase_requests WHERE number = ANY(:nums)"), {"nums": nums})).scalar()
             if mismatched:
                 rows.append((applier, expected_name or email, in_db, mismatched, res[:3]))
+                if apply:
+                    await db.execute(text(
+                        "UPDATE purchase_requests SET created_by = CAST(:uid AS uuid) "
+                        "WHERE number = ANY(:nums) AND created_by <> CAST(:uid AS uuid)"),
+                        {"nums": nums, "uid": uid})
+                    fixed += mismatched
         rows.sort(key=lambda r: -r[3])
         total = 0
         for applier, expected, in_db, mism, sample in rows:
@@ -107,8 +114,16 @@ async def go():
             for cur, c in sample:
                 print(f"    currently {cur!r}: {c}")
         print("")
-        print(f"TOTAL mismatched PRs: {total} (read-only, nothing changed)")
+        if apply:
+            await db.commit()
+            print(f"APPLIED: re-attributed {fixed} PR(s) to the correct requester.")
+        else:
+            print(f"TOTAL mismatched PRs: {total} (read-only; pass --apply to fix)")
 
 
 if __name__ == "__main__":
-    asyncio.run(go())
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--apply", action="store_true", help="fix mismatches (default: read-only)")
+    args = ap.parse_args()
+    asyncio.run(go(apply=args.apply))
