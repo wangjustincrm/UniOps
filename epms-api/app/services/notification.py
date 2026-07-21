@@ -18,12 +18,38 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.notification_log import NotificationLog
 from app.models.task import Task
 from app.models.user import User
 from app.models.config import CompanyConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ── Per-module deep-link resolution ─────────────────────────────────────────────
+# This notifier is system-wide (see settings): the shared tasks table holds tasks
+# from every module, so an email link must land in the RIGHT module's frontend.
+# approval-api is the sole writer; the document_types it emits are the fixed set
+# below plus OA expense-claim types (document_type = claim_type.lower(), which is
+# open-ended — custom forms included). Everything not explicitly mapped is
+# therefore an OA expense claim and deep-links to OA's /expenses/{id}.
+def _task_link(document_type: str, document_id: Any) -> str:
+    dt = (document_type or "").lower()
+    routes: dict[str, tuple[str, str]] = {
+        "pr":          (settings.EPMS_URL,    "/pr/{id}"),
+        "po":          (settings.EPMS_URL,    "/po/{id}"),
+        "pa":          (settings.EPMS_URL,    "/pa/{id}"),
+        "gr":          (settings.EPMS_URL,    "/gr/{id}"),
+        "invoice":     (settings.EPMS_URL,    "/invoices/{id}"),
+        "pa_dir":      (settings.OA_URL,      "/pa/{id}"),          # OA Direct PA detail
+        "budget_plan": (settings.FINANCE_URL, "/budget/plans/{id}"),
+        "vms_visit":   (settings.VMS_URL,     ""),                  # VMS routes by role from its root
+        "vms_train":   (settings.VMS_URL,     ""),
+        "vms_ppe":     (settings.VMS_URL,     ""),
+    }
+    base, path = routes.get(dt, (settings.OA_URL, "/expenses/{id}"))  # default: OA expense claim
+    return f"{base}{path.format(id=document_id)}"
 
 
 # ── Template rendering ────────────────────────────────────────────────────────
@@ -155,10 +181,9 @@ async def _dispatch(
         return
 
     # ── Common template variables ───────────────────────────────────────────
-    system_url = "http://localhost:5173"  # overridden by notification_settings.system_url if set
-    system_url = notif_settings.get("system_url", system_url)
-    doc_path = "invoices" if task.document_type == "invoice" else task.document_type
-    link = f"{system_url}/{doc_path}/{task.document_id}"
+    # Deep-link resolves per module from the document_type (this notifier serves
+    # every module, not just EPMS — see _task_link).
+    link = _task_link(task.document_type, task.document_id)
 
     base_vars: dict[str, Any] = {
         "company_name": cfg.name,

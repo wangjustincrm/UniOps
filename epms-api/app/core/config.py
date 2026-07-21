@@ -28,6 +28,20 @@ class Settings(BaseSettings):
         "http://localhost:3000",
     ]
 
+    # ── Module frontend URLs (task-notification deep-links) ───────────────────
+    # The daily-followup / task notifier is SYSTEM-WIDE: the shared tasks table
+    # holds EPMS (pr/po/pa/gr/invoice), OA (pa_dir + expense claims), Finance
+    # (budget_plan) and VMS (vms_*) tasks. Each email link must point back at its
+    # OWN module's frontend, so the notifier resolves the base URL per
+    # document_type from these (see services/notification.py:_task_link).
+    # Injected from the release env (EPMS_URL/OA_URL/…); defaults are dev ports.
+    EPMS_URL: str = "http://localhost:5173"
+    OA_URL: str = "http://localhost:5175"
+    VMS_URL: str = "http://localhost:5176"
+    FINANCE_URL: str = "http://localhost:5177"
+    BOOKING_URL: str = "http://localhost:5178"
+    PORTAL_URL: str = "http://localhost:5174"
+
     # ── Database ─────────────────────────────────────────────────────────────
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432

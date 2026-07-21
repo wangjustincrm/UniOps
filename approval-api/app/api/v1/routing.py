@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.crud.engine import resync_inflight_approvals
 from app.db.base import get_db
 
 router = APIRouter(prefix="/routing", tags=["routing"])
@@ -119,3 +120,20 @@ async def put_routing(body: dict, db: AsyncSession = Depends(get_db), user: Curr
 
     await db.commit()
     return await _load_routing(db)
+
+
+@router.post("/resync-inflight")
+async def resync_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser = ...):
+    """Realign in-flight documents to the CURRENT routing config. Run after
+    changing dept gm↔opm mapping, Director/Supervisor routing, who holds a role,
+    or a workflow's step list — so already-submitted documents don't stay stuck
+    with a wrong approval_step_idx (→ 409 / "no permission") or a task assigned to
+    the old approver. Realigns each doc's step to its open task's real step, skips
+    now-unconfigured optional steps, and reassigns drifted approvers. Idempotent:
+    only touches documents that are actually out of sync. system_admin only.
+    """
+    if user.get("role") != "system_admin":
+        raise HTTPException(status_code=403, detail="system_admin only")
+    result = await resync_inflight_approvals(db)
+    await db.commit()
+    return {"resynced": len(result["resynced"]), "errors": len(result["errors"]), **result}

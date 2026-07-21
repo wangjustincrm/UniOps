@@ -990,3 +990,209 @@ async def execute_action(
         workflow_complete=new_status in ("approved", "rejected", "cancelled", "processed"),
         auto_skipped_steps=auto_skipped,
     )
+
+
+# ── In-flight re-sync (config-change remediation) ─────────────────────────────
+#
+# When approval routing config changes (dept gm↔opm mapping, Director/Supervisor
+# mapping, who holds a role) OR a workflow's step list changes, documents already
+# in flight are NOT re-routed: their approval_step_idx can point past/wrong of the
+# real pending step (→ step_role="" or the wrong step → _actor_can_approve denies
+# everyone → 409 / "no permission"), and/or their open task stays assigned to the
+# OLD approver. These helpers realign each stranded doc to the CURRENT config:
+#   • the OPEN approve task's role is the reliable "real current step" (skip events
+#     aren't always recorded, so replaying events undercounts) — realign
+#     approval_step_idx to it;
+#   • if that step is now a skippable optional (Director/Supervisor unconfigured),
+#     skip-advance to the next real step;
+#   • re-resolve the step's approver and reassign the task if it drifted.
+# They mutate the session but DO NOT commit — the caller commits (endpoint) or
+# rolls back (script dry-run).
+
+_GM_OPM_ROLES = {"gm", "opm", "gm_or_opm"}
+_USER_SPECIFIC_ROLES = {"dept_manager", "gm_or_opm", "director", "supervisor", "quality_manager"}
+
+
+def _step_index_for_task_role(workflow: list[dict], task_role: str) -> int | None:
+    """Workflow index a task's role belongs to (gm/opm/gm_or_opm → the gm_or_opm
+    node). None when the role isn't in this workflow (e.g. a legacy ap_clerk task)."""
+    target = "gm_or_opm" if task_role in _GM_OPM_ROLES else task_role
+    for i, node in enumerate(workflow):
+        if node["role"] == target:
+            return i
+    return None
+
+
+async def _resolved_assignee_for_step(
+    db, doc_type, doc, step, workflow, rm, dept_gm_opm, routing_uid, director_uid, supervisor_uid,
+) -> tuple[str, uuid.UUID | None]:
+    """(assigned_role, user_id) the engine WOULD assign this step now — mirrors
+    _create_approve_task. user_id is None for broadcast (named) roles."""
+    role = workflow[step]["role"]
+    if role == "dept_manager":
+        return role, await _get_dept_manager_id(db, routing_uid)
+    if role == "gm_or_opm":
+        return await _resolve_gm_or_opm(db, routing_uid, rm, dept_gm_opm)
+    if role == "director":
+        return role, director_uid
+    if role == "supervisor":
+        return role, supervisor_uid
+    if role == "quality_manager" and doc_type == "vms_visit":
+        return role, getattr(doc, "quality_approver_id", None)
+    return role, None  # broadcast
+
+
+async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -> dict | None:
+    """Realign one in-flight document to the current config. Returns a summary of
+    what changed, or None if it was already correct / not applicable."""
+    meta = _resolve_meta(doc_type)
+    Model = meta["model"]
+    doc = (await db.execute(select(Model).where(Model.id == doc_id))).scalar_one_or_none()
+    if doc is None:
+        return None
+    number = getattr(doc, meta["number_attr"])
+
+    open_tasks = (await db.execute(select(Task).where(
+        Task.document_type == doc_type, Task.document_id == doc.id,
+        Task.type.like("approve%"), Task.is_completed.is_(False),
+    ))).scalars().all()
+
+    status = _status_of(meta, doc)
+    if status not in ("submitted", "in_review"):
+        # Terminal document (approved / issued / cancelled / …) with leftover OPEN
+        # approve tasks — phantom "pending approvals" that 409 on click. Complete
+        # just those approve tasks (never other task types like place_order /
+        # create_pa, which are legitimate next-step work on a done document).
+        if not open_tasks:
+            return None
+        now = datetime.now(timezone.utc)
+        for t in open_tasks:
+            t.is_completed = True
+            t.completed_at = now
+        await db.flush()
+        return {"doc_type": doc_type, "number": number,
+                "actions": [f"complete {len(open_tasks)} stale approve task(s) (status={status})"],
+                "final_step": doc.approval_step_idx}
+
+    cfg = await _get_config(db)
+    rm = await get_role_management(db)
+    dept_gm_opm = await get_dept_gm_opm_mapping(db)
+    routing_uid = await _routing_user_id(db, doc_type, doc)
+    dept_director = await get_dept_director_mapping(db)
+    dept_supervisor = await get_dept_supervisor_enabled(db)
+    director_uid = await _resolve_director(db, routing_uid, dept_director)
+    supervisor_uid = await _resolve_supervisor(db, routing_uid, dept_supervisor)
+    routing_dept = (await db.execute(
+        select(User.department_id).where(User.id == routing_uid))).scalar_one_or_none()
+    dept_has_director = bool(routing_dept) and str(routing_dept) in (dept_director or {})
+    dept_has_supervisor = bool(routing_dept) and bool((dept_supervisor or {}).get(str(routing_dept)))
+    workflow = await build_effective_workflow(db, doc_type, doc, cfg)
+
+    # Real current step: the open approve task's role (reliable) → else stored idx.
+    if open_tasks:
+        mapped = [(_step_index_for_task_role(workflow, t.assigned_role), t) for t in open_tasks]
+        mapped = [(i, t) for i, t in mapped if i is not None]
+        if not mapped:
+            return None  # only unknown-role tasks (e.g. ap_clerk) — leave alone
+        true_step = min(i for i, _ in mapped)
+    elif doc.approval_step_idx < len(workflow):
+        true_step = doc.approval_step_idx
+    else:
+        return None  # no task and step out of range — can't infer, leave alone
+
+    actions: list[str] = []
+
+    # Case A — true step is now a skippable optional (Director/Supervisor gone): advance.
+    skip_now, _r = _should_skip_step(
+        workflow[true_step]["role"], doc_type, doc, director_uid, supervisor_uid,
+        dept_has_director, dept_has_supervisor)
+    if skip_now:
+        start = true_step
+        skipped: list[str] = []
+        while start < len(workflow):
+            r = workflow[start]["role"]
+            sk, reason = _should_skip_step(
+                r, doc_type, doc, director_uid, supervisor_uid, dept_has_director, dept_has_supervisor)
+            if not sk:
+                break
+            db.add(ApprovalEvent(
+                document_type=doc_type, document_id=doc.id, document_number=number,
+                step_idx=start, action="approve", actor_id=routing_uid, actor_role=r,
+                comment=f"Re-synced (config change): {reason}"))
+            skipped.append(r)
+            start += 1
+        await _complete_tasks(db, doc_type, doc.id)
+        doc.approval_step_idx = start
+        if start < len(workflow):
+            _set_status(meta, doc, "in_review")
+            await _create_approve_task(
+                db, doc_type, doc, step=start, workflow=workflow, meta=meta, rm=rm,
+                dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+                director_uid=director_uid, supervisor_uid=supervisor_uid)
+        else:
+            _set_status(meta, doc, "approved")
+            if hasattr(doc, "approved_at"):
+                doc.approved_at = datetime.now(timezone.utc)
+            post_fn = _POST_APPROVE.get(doc_type) or (_post_approve_exp if doc_type.startswith("cfm_") else None)
+            if post_fn:
+                await post_fn(db, doc)
+        actions.append(f"skip {skipped}: step {true_step}->{start}")
+        await db.flush()
+        return {"doc_type": doc_type, "number": number, "actions": actions, "final_step": doc.approval_step_idx}
+
+    # Case B — realign the stored step index to the real (task-derived) step.
+    if doc.approval_step_idx != true_step:
+        actions.append(f"step {doc.approval_step_idx}->{true_step}")
+        doc.approval_step_idx = true_step
+
+    # Case C — fix a drifted / stray-step assignee at the real step.
+    des_role, des_uid = await _resolved_assignee_for_step(
+        db, doc_type, doc, true_step, workflow, rm, dept_gm_opm, routing_uid, director_uid, supervisor_uid)
+    role = workflow[true_step]["role"]
+    stray = any(_step_index_for_task_role(workflow, t.assigned_role) != true_step for t in open_tasks)
+    if role in _USER_SPECIFIC_ROLES:
+        if des_uid is None:
+            actions.append(f"WARN {role} unresolved @step{true_step} — assign one in config, then re-sync")
+        elif stray or not any(t.assigned_user_id == des_uid for t in open_tasks):
+            await _complete_tasks(db, doc_type, doc.id)
+            await _create_approve_task(
+                db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
+                dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+                director_uid=director_uid, supervisor_uid=supervisor_uid)
+            actions.append(f"reissue step{true_step} -> {des_role}/{des_uid}")
+    else:  # broadcast (named) role
+        if stray or not open_tasks:
+            await _complete_tasks(db, doc_type, doc.id)
+            await _create_approve_task(
+                db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
+                dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+                director_uid=director_uid, supervisor_uid=supervisor_uid)
+            actions.append(f"reissue step{true_step} -> {des_role}/broadcast")
+
+    if not actions:
+        return None
+    await db.flush()
+    return {"doc_type": doc_type, "number": number, "actions": actions, "final_step": doc.approval_step_idx}
+
+
+async def resync_inflight_approvals(db: AsyncSession) -> dict:
+    """Realign every in-flight document with an open approval task to the current
+    routing config. Mutates the session; caller commits/rolls back. Each document
+    is isolated in a SAVEPOINT so one bad doc can't corrupt the batch."""
+    rows = (await db.execute(
+        select(Task.document_type, Task.document_id)
+        .where(Task.type.like("approve%"), Task.is_completed.is_(False))
+        .distinct()
+    )).all()
+    resynced: list[dict] = []
+    errors: list[dict] = []
+    for doc_type, doc_id in rows:
+        try:
+            async with db.begin_nested():
+                summary = await _resync_document(db, doc_type, doc_id)
+            if summary:
+                resynced.append(summary)
+        except Exception as exc:  # keep going; report the offender
+            errors.append({"doc_type": doc_type, "doc_id": str(doc_id),
+                           "error": f"{type(exc).__name__}: {exc}"})
+    return {"resynced": resynced, "errors": errors}
