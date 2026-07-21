@@ -66,6 +66,54 @@ async def test_due_lists_approved_pas(client, db_session):
     assert len(r.json()) >= 1 and all(Decimal(row["amount"]) > 0 for row in r.json())
 
 
+async def test_due_surfaces_vendor_invoice_number(client, db_session):
+    """A PA's linked invoice(s) surface as vendor_inv_no in the due list;
+    multiple invoices join, and PAs/claims without invoices show blank."""
+    inv1 = Invoice(
+        internal_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number="VINV-001",
+        vendor_id=uuid.uuid4(), vendor_name="ACME", amount=Decimal("100"),
+        tax_amount=Decimal("0"), total_amount=Decimal("100"), currency="CAD",
+        invoice_date=date(2026, 6, 1), due_date=date(2026, 7, 1), status="matched")
+    inv2 = Invoice(
+        internal_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number="VINV-002",
+        vendor_id=uuid.uuid4(), vendor_name="ACME", amount=Decimal("100"),
+        tax_amount=Decimal("0"), total_amount=Decimal("100"), currency="CAD",
+        invoice_date=date(2026, 6, 1), due_date=date(2026, 7, 1), status="matched")
+    db_session.add_all([inv1, inv2])
+    await db_session.flush()
+    pa = _pa("300.00", po_id=uuid.uuid4(), invoice_ids=[str(inv1.id), str(inv2.id)])
+    bare = _pa("50.00")  # no invoices
+    db_session.add_all([pa, bare])
+    await db_session.flush()
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    by_num = {r["doc_number"]: r for r in rows}
+    assert by_num[pa.pa_number]["vendor_inv_no"] == "VINV-001, VINV-002"
+    assert by_num[bare.pa_number]["vendor_inv_no"] == ""
+
+
+async def test_batch_detail_surfaces_vendor_invoice_number(client, db_session):
+    """Batch detail lines resolve each PA line's vendor invoice number(s)."""
+    inv = Invoice(
+        internal_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number="VINV-042",
+        vendor_id=uuid.uuid4(), vendor_name="ACME", amount=Decimal("100"),
+        tax_amount=Decimal("0"), total_amount=Decimal("100"), currency="CAD",
+        invoice_date=date(2026, 6, 1), due_date=date(2026, 7, 1), status="matched")
+    db_session.add(inv)
+    await db_session.flush()
+    pa = _pa("100.00", po_id=uuid.uuid4(), invoice_ids=[str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await client.post("/finance/v1/payments/batches", headers=_h(),
+                          json={"docs": [{"doc_kind": "pa", "doc_id": str(pa.id)}]})
+    assert r.status_code == 201, r.text
+    batch_id = r.json()["id"]
+
+    detail = (await client.get(f"/finance/v1/payments/batches/{batch_id}", headers=_h())).json()
+    assert detail["lines"][0]["vendor_inv_no"] == "VINV-042"
+
+
 async def test_create_and_execute_batch(client, db_session):
     a, b = _pa("100.00"), _pa("200.00")
     db_session.add_all([a, b])

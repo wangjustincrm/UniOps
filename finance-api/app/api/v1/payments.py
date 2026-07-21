@@ -76,6 +76,7 @@ class BatchLineOut(BaseModel):
     doc_kind: str
     doc_id: uuid.UUID
     doc_number: str | None
+    vendor_inv_no: str = ""
     amount: str
     status: str
     error: str | None
@@ -83,6 +84,18 @@ class BatchLineOut(BaseModel):
     @field_validator("amount", mode="before")
     @classmethod
     def _amt(cls, v): return str(v)
+
+
+async def _lines_out(db: AsyncSession, lines: list[PaymentBatchLine]) -> list[dict]:
+    """Serialize batch lines with each PA line's vendor invoice number(s)
+    resolved at read time (see crud.vendor_inv_no_for_lines)."""
+    inv_no = await batch_crud.vendor_inv_no_for_lines(db, lines)
+    out = []
+    for ln in lines:
+        d = BatchLineOut.model_validate(ln).model_dump()
+        d["vendor_inv_no"] = inv_no.get(ln.doc_id, "")
+        out.append(d)
+    return out
 
 
 class BatchOut(BaseModel):
@@ -157,7 +170,7 @@ async def get_batch(batch_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depe
     )).scalars().all()
     return {
         "batch": BatchOut.model_validate(batch).model_dump(),
-        "lines": [BatchLineOut.model_validate(ln).model_dump() for ln in lines],
+        "lines": await _lines_out(db, lines),
     }
 
 
@@ -209,7 +222,7 @@ async def execute_batch(batch_id: uuid.UUID, token: BearerToken, user: CurrentUs
         "batch": BatchOut.model_validate(batch).model_dump(),
         "paid": sum(1 for l in lines if l.status == "paid"),
         "failed": sum(1 for l in lines if l.status == "failed"),
-        "lines": [BatchLineOut.model_validate(ln).model_dump() for ln in lines],
+        "lines": await _lines_out(db, lines),
     }
 
 

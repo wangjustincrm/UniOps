@@ -25,7 +25,7 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
 
 interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
-  payee: string; amount: string; currency: string
+  payee: string; vendor_inv_no?: string; amount: string; currency: string
 }
 interface Batch {
   id: string; batch_number: string; batch_date: string; status: string
@@ -35,7 +35,7 @@ interface Batch {
 interface BankAccount { id: string; name: string; bank_name: string; currency: string; account_masked: string | null }
 interface BatchLine {
   id: string; doc_kind: string; doc_id: string; doc_number: string | null
-  amount: string; status: string; error: string | null
+  vendor_inv_no?: string; amount: string; status: string; error: string | null
 }
 
 function fmtMoney(v: string, ccy?: string): string {
@@ -160,13 +160,14 @@ export default function PaymentBatchPage() {
                 </th>
                 <th className="px-3 py-2 w-40">Document</th>
                 <th className="px-3 py-2">Payee</th>
+                <th className="px-3 py-2 w-44">Vendor Inv No</th>
                 <th className="px-3 py-2 w-24">Type</th>
                 <th className="px-3 py-2 w-40 text-right">Amount</th>
               </tr>
             </thead>
             <tbody>
               {due.length === 0 && (
-                <tr><td colSpan={5} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
                   No approved {currency} payments awaiting a run.</td></tr>
               )}
               {due.map((d, i) => (
@@ -176,6 +177,7 @@ export default function PaymentBatchPage() {
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{d.doc_number || d.doc_id.slice(0, 8)}</td>
                   <td className="px-3 py-2">{d.payee}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">{d.vendor_inv_no || <span className="text-neutral-300">—</span>}</td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{d.doc_kind === 'expense_claim' ? 'Claim' : d.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(d.amount, d.currency)}</td>
                 </tr>
@@ -297,6 +299,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
                 <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
                     <th className="px-3 py-2">Document</th>
+                    <th className="px-3 py-2 w-40">Vendor Inv No</th>
                     <th className="px-3 py-2 w-24">Type</th>
                     <th className="px-3 py-2 w-24">Status</th>
                     <th className="px-3 py-2 w-32 text-right">Amount</th>
@@ -309,6 +312,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
                         <span className="font-mono text-xs">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
                         {ln.error && <div className="text-xs text-red-600">{ln.error}</div>}
                       </td>
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-600">{ln.vendor_inv_no || <span className="text-neutral-300">—</span>}</td>
                       <td className="px-3 py-2 text-xs text-neutral-500">
                         {ln.doc_kind === 'expense_claim' ? 'Claim' : ln.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}
                       </td>
