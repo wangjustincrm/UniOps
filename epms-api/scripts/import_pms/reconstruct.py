@@ -42,6 +42,11 @@ from . import mappings as M
 RECON_TAG = "[reconstructed]"
 SUE_EMAIL = "zhengsue@canadaroyalmilk.com"
 
+# Roles the legacy PMS approval flow never had — Director/Supervisor were added to
+# the UniOps workflow later. Any such step in an imported doc's chain is recorded
+# as SKIPPED (not an approval by a fabricated holder).
+_LEGACY_SKIP_ROLES = {"director", "supervisor"}
+
 # Statuses at/after which every workflow step has been fully approved.
 _FULLY_APPROVED = {
     "pr": {"approved", "paid", "closed"},
@@ -233,10 +238,22 @@ class _Recon:
         # 2) approve — one per fully-completed workflow step.
         for i in range(n_done):
             role = workflow[i]["role"]
+            ts = created + span * ((i + 1) / (n_done + 1)) if span else created + timedelta(seconds=i + 1)
+            if role in _LEGACY_SKIP_ROLES:
+                # Legacy PMS had no Director/Supervisor → record as skipped (mirrors
+                # the live engine's Auto-skipped event); actor_id = requester so the
+                # NOT-NULL column is satisfied.
+                await self._emit(ApprovalEvent(
+                    document_type=doc_type, document_id=doc.id, document_number=number,
+                    step_idx=i, action="approve", actor_id=doc.created_by,
+                    actor_role=role,
+                    comment=f"{RECON_TAG} Auto-skipped ({role} not in legacy system)",
+                    created_at=ts,
+                ), "approve")
+                continue
             actor = self._actor_for(role, routing_dept, holdby)
             if actor is None:
                 continue
-            ts = created + span * ((i + 1) / (n_done + 1)) if span else created + timedelta(seconds=i + 1)
             await self._emit(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=number,
                 step_idx=i, action="approve", actor_id=actor,

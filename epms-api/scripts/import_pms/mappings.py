@@ -301,19 +301,66 @@ def map_po_status(status: str | None, final: str | None, receive: str | None = N
     return "submitted"
 
 
-def po_approval_step_idx(status: str | None) -> int:
-    """Which PO workflow step (0-based) the approval sits at, for the Approval
-    Timeline. PO workflow = [Procurement Manager(0), GM/OPM(1)].
-      SC MANAGER APPROVING → step 0 current (0 done)
-      GM/OPM APPROVING     → step 1 current (Procurement Manager done)
-      GM APPROVED          → both steps done (2)
-    """
+# ── Legacy-PMS approval status → target workflow ROLE ─────────────────────────
+# The step index MUST be resolved against the CURRENT workflow_defs, not hardcoded:
+# inserting a step (e.g. Director) or adding AP Review shifts every later index.
+# So map the legacy status to a stable ROLE, then look up its position in the live
+# workflow. `"__done__"` = all steps approved. Roles the legacy system never had
+# (Director / Supervisor) are simply absent from these maps → they get skipped.
+_PA_STEP_ROLE: list[tuple[str, str]] = [
+    ("PAID", "__done__"), ("WAITING PAYMENT", "__done__"),
+    ("DEP MANAGER APPROVING", "dept_manager"),
+    ("GM APPROVING", "gm_or_opm"), ("OPM APPROVING", "gm_or_opm"),
+    ("BP APPROVING", "finance_bp"),
+    ("AP REVIEW", "ap_clerk"),
+    ("FN MANAGER APPROVING", "finance_manager"),
+]
+_PO_STEP_ROLE: list[tuple[str, str]] = [
+    ("APPROVED", "__done__"),
+    ("GM APPROVING", "gm_or_opm"), ("OPM APPROVING", "gm_or_opm"),
+    ("SC MANAGER APPROVING", "procurement_manager"),
+]
+# The order these functions historically assumed (for translating already-stored,
+# old-indexed approval_step_idx of imported docs → the current workflow).
+_PA_OLD_ORDER = ["dept_manager", "gm_or_opm", "finance_bp", "ap_clerk", "finance_manager"]
+_PO_OLD_ORDER = ["procurement_manager", "gm_or_opm"]
+_PR_OLD_ORDER = ["dept_manager", "gm_or_opm"]  # pre-Director PR chain
+_OLD_ORDER = {"pa": _PA_OLD_ORDER, "po": _PO_OLD_ORDER, "pr": _PR_OLD_ORDER}
+
+
+def _role_for(table: list[tuple[str, str]], status: str | None, default: str | None) -> str | None:
     s = (status or "").strip().upper()
-    if "APPROVED" in s:
-        return 2
-    if "GM APPROVING" in s or "OPM APPROVING" in s:
-        return 1
-    return 0
+    for needle, role in table:
+        if needle in s:
+            return role
+    return default
+
+
+def _idx_for_role(workflow_roles: list[str] | None, role: str | None) -> int:
+    """Position of `role` in the current workflow (`__done__`→len, None→0)."""
+    if role == "__done__":
+        return len(workflow_roles or [])
+    if role is None:
+        return 0
+    if workflow_roles and role in workflow_roles:
+        return workflow_roles.index(role)
+    return len(workflow_roles or [])
+
+
+def translate_step_idx(doc_type: str, old_idx: int, workflow_roles: list[str]) -> int:
+    """Translate an already-stored, OLD-indexed approval_step_idx (from an earlier
+    import that assumed the pre-Director/pre-AP-Review order) into the current
+    workflow's index — via the role it used to point at."""
+    old = _OLD_ORDER.get(doc_type, _PO_OLD_ORDER)
+    role = "__done__" if old_idx >= len(old) else old[old_idx]
+    return _idx_for_role(workflow_roles, role)
+
+
+def po_approval_step_idx(status: str | None, workflow_roles: list[str] | None = None) -> int:
+    """PO approval step (0-based) for the Approval Timeline, resolved against the
+    CURRENT workflow when `workflow_roles` is given (else the legacy 2-step order)."""
+    role = _role_for(_PO_STEP_ROLE, status, "procurement_manager")
+    return _idx_for_role(workflow_roles if workflow_roles is not None else _PO_OLD_ORDER, role)
 
 
 # EPMS PA statuses: draft|submitted|in_review|approved|processed|cancelled
@@ -333,26 +380,13 @@ def map_pa_status(status: str | None, final: str | None) -> str:
     return "submitted"
 
 
-def pa_approval_step_idx(status: str | None) -> int:
-    """Which PA workflow step (0-based) the approval sits at, for the Approval
-    Timeline. PA workflow = [Department Manager(0), GM/OPM(1), Finance Director of
-    Oversea Dept / finance_bp(2), AP Review / ap_clerk(3), Finance Manager(4)].
-    5 = all five approvals done (WAITING PAYMENT → awaiting Payment Processed; PAID
-    → fully processed)."""
-    s = (status or "").strip().upper()
-    if "PAID" in s or "WAITING PAYMENT" in s:
-        return 5
-    if "DEP MANAGER APPROVING" in s:
-        return 0
-    if "GM APPROVING" in s or "OPM APPROVING" in s:
-        return 1
-    if "BP APPROVING" in s:
-        return 2
-    if "AP REVIEW" in s:
-        return 3
-    if "FN MANAGER APPROVING" in s:
-        return 4
-    return 0
+def pa_approval_step_idx(status: str | None, workflow_roles: list[str] | None = None) -> int:
+    """PA approval step (0-based) for the Approval Timeline, resolved against the
+    CURRENT workflow when `workflow_roles` is given (Director/Supervisor absent
+    from legacy → skipped; AP Review → ap_clerk). Legacy status → role → live
+    index, so inserting a workflow step never breaks the mapping again."""
+    role = _role_for(_PA_STEP_ROLE, status, None)
+    return _idx_for_role(workflow_roles if workflow_roles is not None else _PA_OLD_ORDER, role)
 
 
 def normalize_currency(cur: str | None) -> str:
