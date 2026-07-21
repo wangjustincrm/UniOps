@@ -18,7 +18,7 @@ import { usePos } from '@/hooks/usePos'
 import { useGrs } from '@/hooks/useGrs'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
-import { useRolePermissions } from '@/hooks/useConfig'
+import { useRolePermissions, useConfig } from '@/hooks/useConfig'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
@@ -1053,6 +1053,7 @@ function ExceptionsTab() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const { data } = useInvoices({ status: 'exception', page, page_size: pageSize })
+  const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const exceptions = data?.items ?? []
@@ -1073,7 +1074,7 @@ function ExceptionsTab() {
       <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-2.5 flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 text-danger-600 flex-shrink-0" />
         <p className="text-xs text-danger-700">
-          <span className="font-semibold">{exceptions.length} invoice(s)</span> have a variance exceeding 5% vs the linked PO.
+          <span className="font-semibold">{exceptions.length} invoice(s)</span> have a variance exceeding {matchTolerancePct}% vs the linked PO.
           Each exception must be resolved before a Payment Application can be created.
         </p>
       </div>
@@ -1107,7 +1108,7 @@ function ExceptionsTab() {
                   <td className={cn('px-4 py-3 font-mono text-xs font-semibold', Number(inv.variance ?? 0) > 0 ? 'text-danger-600' : 'text-success-600')}>
                     {inv.variance != null ? `${Number(inv.variance) > 0 ? '+' : ''}${formatAmount(Number(inv.variance), inv.currency)}` : '—'}
                   </td>
-                  <td className={cn('px-4 py-3 text-xs font-semibold', Math.abs(Number(inv.variance_pct) ?? 0) > 5 ? 'text-danger-600' : 'text-success-600')}>
+                  <td className={cn('px-4 py-3 text-xs font-semibold', Math.abs(Number(inv.variance_pct) ?? 0) > matchTolerancePct ? 'text-danger-600' : 'text-success-600')}>
                     {inv.variance_pct != null ? `${Number(inv.variance_pct) > 0 ? '+' : ''}${Number(inv.variance_pct).toFixed(1)}%` : '—'}
                   </td>
                   <td className="px-4 py-3">

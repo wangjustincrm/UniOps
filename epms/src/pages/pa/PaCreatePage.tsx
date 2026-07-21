@@ -115,6 +115,14 @@ export default function PaCreatePage() {
   const appliedNum   = parseFloat(prepaymentApplied) || 0
   const grossTotal   = subtotalNum + taxNum + shippingNum + otherNum
   const isSettlementType = paType === 'settlement'
+
+  // The prepayment PA this settlement reconciles — from the manual dropdown or the
+  // Settle deep-link source. Its payment_amount is the true ceiling for how much
+  // prepayment can be applied (you can't apply more than was actually prepaid).
+  const selectedPrepaymentPa =
+    linkablePrepayments.find((p) => p.id === prepaymentPaId) ??
+    (sourcePrepay?.id === prepaymentPaId ? sourcePrepay : undefined)
+  const prepaidAmount = Number(selectedPrepaymentPa?.payment_amount ?? 0)
   // Net payable = 全额 − 预付抵扣(余款);非 settlement 类型即全额
   const netPayable   = isSettlementType ? Math.max(grossTotal - appliedNum, 0) : grossTotal
   const isOverpaid   = isSettlementType && grossTotal - appliedNum < -0.01
@@ -276,7 +284,6 @@ export default function PaCreatePage() {
           qty: Number(l.qty),
           unit: l.unit,
           unit_price: Number(l.unit_price),
-          line_total: Number(l.line_total),
         }))
       const newPa = await createPa.mutateAsync({
         title: title.trim(),
@@ -297,10 +304,11 @@ export default function PaCreatePage() {
         prepayment_pct: paType === 'prepayment' ? parseFloat(prepaymentPct) : undefined,
         expected_settlement_date: paType === 'prepayment' ? expectedSettlement : undefined,
         prepayment_pa_id: isSettlementType ? prepaymentPaId || undefined : undefined,
-        // Cap applied at the invoice total: you can't apply more prepayment than
-        // the invoice is worth. Any excess prepaid is the overpayment, detected
-        // backend-side (prepaid vs final) and routed to a credit-note confirmation.
-        prepayment_applied: isSettlementType ? (Math.min(appliedNum, grossTotal) || undefined) : undefined,
+        // Cap applied at the actual prepaid amount: you can't apply more prepayment
+        // than the source prepayment PA was worth. Any shortfall (final > prepaid)
+        // is the remaining balance to pay; any excess prepaid is the overpayment,
+        // detected backend-side and routed to a credit-note confirmation.
+        prepayment_applied: isSettlementType ? (Math.min(appliedNum, prepaidAmount) || undefined) : undefined,
         line_items: paLineItems,
         notes: notes.trim() || undefined,
       })
@@ -575,15 +583,21 @@ export default function PaCreatePage() {
                 </div>
               </div>
 
-              {/* PA Type */}
+              {/* PA Type — the choices follow the PO's prepayment flag: a prepaid
+                  PO can only be paid via prepayment/settlement, a standard PO only
+                  via a regular payment. Type is never a free-form user choice. */}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600">Payment Type</p>
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { value: 'regular' as const,     label: 'Regular Payment',  desc: 'Standard payment against invoice / GR' },
-                    { value: 'prepayment' as const,  label: 'Prepayment',       desc: 'Advance payment before full GR/invoice' },
-                    { value: 'settlement' as const,  label: 'Settlement',       desc: 'Reconcile a prepayment; pays only the remaining balance' },
-                  ].map((opt) => (
+                  {(selectedPo.is_prepaid
+                    ? [
+                        { value: 'prepayment' as const,  label: 'Prepayment',       desc: 'Advance payment before full GR/invoice' },
+                        { value: 'settlement' as const,  label: 'Settlement',       desc: 'Reconcile a prepayment; pays only the remaining balance' },
+                      ]
+                    : [
+                        { value: 'regular' as const,     label: 'Regular Payment',  desc: 'Standard payment against invoice / GR' },
+                      ]
+                  ).map((opt) => (
                     <button
                       key={opt.value}
                       type="button"

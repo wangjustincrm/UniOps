@@ -54,6 +54,7 @@ const PA_STATUS_LABELS: Record<PaStatus, string> = {
   approved:  'Approved',
   processed: 'Processed',
   returned:  'Returned',
+  rejected:  'Rejected',
   cancelled: 'Cancelled',
 }
 
@@ -82,7 +83,7 @@ function invStatusToDoc(s: InvoiceStatus): DocumentStatus {
 }
 
 function paStatusToDoc(s: PaStatus): DocumentStatus {
-  return ({ draft: 'draft', submitted: 'submitted', in_review: 'in_review', approved: 'approved', processed: 'paid', returned: 'returned', cancelled: 'cancelled' } as Record<PaStatus, DocumentStatus>)[s]
+  return ({ draft: 'draft', submitted: 'submitted', in_review: 'in_review', approved: 'approved', processed: 'paid', returned: 'returned', rejected: 'cancelled', cancelled: 'cancelled' } as Record<PaStatus, DocumentStatus>)[s]
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

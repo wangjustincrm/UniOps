@@ -9,6 +9,7 @@ export type PaStatus =
   | 'approved'
   | 'processed'
   | 'returned'
+  | 'rejected'
   | 'cancelled'
 
 export type PaType = 'regular' | 'prepayment' | 'settlement' | 'balance'
@@ -51,6 +52,10 @@ export interface ApiPa {
   tax_amount: number
   tax_code?: string | null
   tax_rate?: number | null
+  // Charge breakdown extras (Decimals arrive as strings — coerce with Number() at use sites).
+  shipping_amount?: number | null
+  other_charges?: number | null
+  other_charges_note?: string | null
   payment_amount: number
   vendor_id: string
   vendor_name: string
@@ -93,27 +98,32 @@ export interface CreatePaBody {
   prepayment_applied?: number
   prepayment_pct?: number
   expected_settlement_date?: string
-  line_items?: Omit<ApiPaLineItem, 'id'>[]
+  // Posted lines omit line_total — the backend recomputes it as qty × unit_price.
+  line_items?: Omit<ApiPaLineItem, 'id' | 'line_total'>[]
   notes?: string
 }
 
 export interface UpdatePaBody {
   title?: string
-  pa_type?: PaType
-  currency?: string
+  // NOTE: pa_type and currency are NOT editable — pa_type is derived from the
+  // linked PO (prepaid PO → prepayment/settlement) and currency follows the PO.
   subtotal?: number
   tax_amount?: number
   tax_code?: string | null
   tax_rate?: number | null
+  shipping_amount?: number
+  other_charges?: number
   payment_amount?: number
   vendor_id?: string
   vendor_name?: string
   po_id?: string
   invoice_ids?: string[]
+  gr_ids?: string[]
   prepayment_applied?: number
   prepayment_pct?: number
   expected_settlement_date?: string
-  line_items?: Omit<ApiPaLineItem, 'id'>[]
+  // Posted lines omit line_total — the backend recomputes it as qty × unit_price.
+  line_items?: Omit<ApiPaLineItem, 'id' | 'line_total'>[]
   notes?: string
 }
 

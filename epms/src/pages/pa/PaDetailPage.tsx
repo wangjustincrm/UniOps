@@ -30,6 +30,7 @@ const STATUS_CFG: Record<PaStatus, { label: string; variant: 'neutral' | 'warnin
   approved:  { label: 'Approved',  variant: 'success'  },
   processed: { label: 'Processed', variant: 'neutral'  },
   returned:  { label: 'Returned',  variant: 'warning'  },
+  rejected:  { label: 'Rejected',  variant: 'danger'   },
   cancelled: { label: 'Cancelled', variant: 'danger'   },
 }
 
@@ -448,8 +449,20 @@ export default function PaDetailPage() {
                 <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Charge Breakdown</h3>
                 <div className="flex flex-col gap-2 text-sm">
                   {[
-                    { label: 'Pre-tax Amount',    value: formatAmount(pa.subtotal, pa.currency) },
-                    { label: 'Tax',               value: formatAmount(pa.tax_amount, pa.currency) },
+                    { label: 'Pre-tax Amount', value: formatAmount(Number(pa.subtotal), pa.currency) },
+                    { label: 'Tax',            value: formatAmount(Number(pa.tax_amount), pa.currency) },
+                    ...(Number(pa.shipping_amount ?? 0) > 0
+                      ? [{ label: 'Shipping / Freight', value: formatAmount(Number(pa.shipping_amount), pa.currency) }]
+                      : []),
+                    ...(Number(pa.other_charges ?? 0) > 0
+                      ? [{
+                          label: pa.other_charges_note ? `Other Charges — ${pa.other_charges_note}` : 'Other Charges',
+                          value: formatAmount(Number(pa.other_charges), pa.currency),
+                        }]
+                      : []),
+                    ...(Number(pa.prepayment_applied ?? 0) > 0
+                      ? [{ label: 'Less: Prepayment Applied', value: `−${formatAmount(Number(pa.prepayment_applied), pa.currency)}` }]
+                      : []),
                   ].map(({ label, value }) => (
                     <div key={label} className="flex items-center justify-between py-1 border-b border-neutral-100 last:border-0">
                       <span className="text-neutral-600">{label}</span>
@@ -458,7 +471,7 @@ export default function PaDetailPage() {
                   ))}
                   <div className="flex items-center justify-between pt-2 mt-1 border-t-2 border-neutral-200">
                     <span className="font-semibold text-neutral-800">Total Payment</span>
-                    <span className="font-mono font-bold text-lg text-neutral-900">{formatAmount(pa.payment_amount, pa.currency)}</span>
+                    <span className="font-mono font-bold text-lg text-neutral-900">{formatAmount(Number(pa.payment_amount), pa.currency)}</span>
                   </div>
                 </div>
               </div>

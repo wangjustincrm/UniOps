@@ -19,6 +19,7 @@ const STATUS_CFG: Record<PaStatus, { label: string; variant: 'neutral' | 'warnin
   approved:  { label: 'Approved',   variant: 'success', dot: 'bg-success-600'  },
   processed: { label: 'Processed',  variant: 'neutral', dot: 'bg-neutral-600'  },
   returned:  { label: 'Returned',   variant: 'warning', dot: 'bg-warning-400'  },
+  rejected:  { label: 'Rejected',   variant: 'danger',  dot: 'bg-danger-600'   },
   cancelled: { label: 'Cancelled',  variant: 'danger',  dot: 'bg-danger-600'   },
 }
 
@@ -30,6 +31,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'approved',  label: 'Approved' },
   { value: 'returned',  label: 'Returned' },
   { value: 'processed', label: 'Processed' },
+  { value: 'rejected',  label: 'Rejected' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 

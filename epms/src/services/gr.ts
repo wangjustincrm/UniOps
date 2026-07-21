@@ -60,13 +60,13 @@ export interface GrAttachmentIn {
 
 export interface CreateGrBody {
   title: string
-  gr_type: 'physical' | 'service'
+  // NOTE: gr_type and vendor_id are NOT sent — the backend derives both from the
+  // linked PO. line_total is likewise omitted (recomputed as qty × unit_price).
   currency: string
   po_id: string
-  vendor_id: string
   storage_location?: string
   received_by?: string
-  line_items: Omit<ApiGrLineItem, 'id'>[]
+  line_items: Omit<ApiGrLineItem, 'id' | 'line_total'>[]
   notes?: string
   attachments?: GrAttachmentIn[]
 }

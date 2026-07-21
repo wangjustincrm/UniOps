@@ -163,7 +163,6 @@ export default function GrCreatePage() {
     })
     if (errs.length > 0) return
 
-    const grType = isPhysicalGr(selectedPo.type) ? 'physical' : 'service'
     try {
       const attachments: GrAttachmentIn[] = await Promise.all(
         packListFiles.map(async (f) => ({
@@ -173,11 +172,11 @@ export default function GrCreatePage() {
         }))
       )
       const newGr = await createGr.mutateAsync({
+        // gr_type and vendor_id are derived from the PO server-side; line_total is
+        // recomputed there too — send only the fields the user actually controls.
         title: selectedPo.title,
-        gr_type: grType,
         currency: selectedPo.currency,
         po_id: selectedPo.id,
-        vendor_id: selectedPo.vendor_id,
         storage_location: storageLocation.trim() || undefined,
         received_by: user?.name,
         line_items: receivedLines.map((l) => ({
@@ -188,7 +187,6 @@ export default function GrCreatePage() {
           qty_received: l.qty_received,
           unit: l.unit,
           unit_price: l.unit_price,
-          line_total: l.line_total,
           condition: l.condition,
           discrepancy_notes: l.discrepancy_notes || undefined,
         })),

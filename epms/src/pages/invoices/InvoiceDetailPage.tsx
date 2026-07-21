@@ -15,7 +15,8 @@ import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
-import { useRolePermissions } from '@/hooks/useConfig'
+import { useRolePermissions, useConfig } from '@/hooks/useConfig'
+import { getTaxLines } from '@/services/invoiceTax'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
 
@@ -94,11 +95,22 @@ export default function InvoiceDetailPage() {
   const navigate = useNavigate()
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
+  const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
   const deleteInvoice = useDeleteInvoice()
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
   const { data: gr } = useGr(inv?.gr_id ?? '')
   const updateInvoice = useUpdateInvoice()
+
+  // Tax lines are the source of truth for the header tax when present: the
+  // backend recomputes tax_amount from them. Detect existence so the edit form
+  // can lock the free-text Tax Amount and avoid sending a divergent value.
+  const { data: taxLinesData } = useQuery({
+    queryKey: ['invoice-tax-lines', id],
+    queryFn: () => getTaxLines(id!),
+    enabled: Boolean(id),
+  })
+  const hasTaxLines = (taxLinesData?.lines?.length ?? 0) > 0
 
   const [activeTab, setActiveTab] = useState<'details' | 'match' | 'history'>('details')
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -164,7 +176,9 @@ export default function InvoiceDetailPage() {
         invoice_date: editInvoiceDate,
         due_date: editDueDate,
         amount: amtNum,
-        tax_amount: taxNum,
+        // When tax lines exist they are the source of truth — the backend
+        // recomputes the header tax from them, so don't send a divergent value.
+        ...(hasTaxLines ? {} : { tax_amount: taxNum }),
         currency: editCurrency,
         notes: editNotes.trim() || undefined,
         line_items: editLineItems.length > 0 ? editLineItems : [],
@@ -685,8 +699,14 @@ export default function InvoiceDetailPage() {
                       step="0.01"
                       value={editTaxAmount}
                       onChange={(e) => setEditTaxAmount(e.target.value)}
-                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      disabled={hasTaxLines}
+                      className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:bg-neutral-50 disabled:text-neutral-400"
                     />
+                    {hasTaxLines && (
+                      <p className="mt-1 text-[11px] text-neutral-400">
+                        Derived from the tax lines below — edit those to change the tax.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-neutral-500 mb-1">Currency</label>
@@ -851,7 +871,7 @@ export default function InvoiceDetailPage() {
                       <p className={cn('text-sm font-semibold', hasException ? 'text-danger-700' : 'text-success-700')}>
                         {hasException
                           ? `3-Way Match: Exception — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
-                          : '3-Way Match: ✓ Passed — Invoice within 5% tolerance of PO'
+                          : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
                         }
                       </p>
                       {inv.matched_at && (
@@ -915,7 +935,7 @@ export default function InvoiceDetailPage() {
                       <div className="flex items-center gap-6 text-sm">
                         <span className="text-neutral-500">Variance</span>
                         <span className={cn('font-mono font-semibold',
-                          variancePctAbs > 5 ? 'text-danger-600' : variancePctAbs > 0 ? 'text-warning-600' : 'text-success-600')}>
+                          variancePctAbs > matchTolerancePct ? 'text-danger-600' : variancePctAbs > 0 ? 'text-warning-600' : 'text-success-600')}>
                           {Number(inv.variance ?? 0) >= 0 ? '+' : ''}{formatAmount(Number(inv.variance ?? 0), inv.currency)}{' '}
                           ({Number(inv.variance_pct ?? 0) >= 0 ? '+' : ''}{Number(inv.variance_pct ?? 0).toFixed(2)}%)
                         </span>
