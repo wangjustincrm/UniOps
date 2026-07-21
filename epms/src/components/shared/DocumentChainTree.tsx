@@ -7,7 +7,10 @@
  *   [PO card  — ancestor link or current-highlighted]
  *        └─ GR row(s)
  *        └─ Invoice row(s)
- *        └─ PA row(s)   ← current PA gets a ring highlight when on PA detail
+ *             └─ PA row(s)   ← PAs nest under the invoice they were raised from,
+ *                              so it's obvious which invoices already have a PA.
+ *        └─ PA row(s)        ← PAs with no invoice on this PO (e.g. prepayment)
+ *                              stay as a direct PO child. Current PA gets a ring.
  */
 import { Link } from 'react-router-dom'
 import {
@@ -35,6 +38,7 @@ const GR_STATUS_LABELS: Record<GrStatus, string> = {
   collected:          'Collected',
   confirmed:          'Confirmed',
   discrepancy:        'Discrepancy',
+  rejected:           'Rejected',
   cancelled:          'Cancelled',
 }
 
@@ -73,7 +77,7 @@ function grStatusToDoc(s: GrStatus): DocumentStatus {
   const map: Record<GrStatus, DocumentStatus> = {
     pending_ack: 'submitted', collection_pending: 'submitted',
     collected: 'collected', confirmed: 'confirmed',
-    discrepancy: 'returned', cancelled: 'cancelled',
+    discrepancy: 'returned', rejected: 'cancelled', cancelled: 'cancelled',
   }
   return map[s]
 }
@@ -148,9 +152,12 @@ function AnchorCard({
   )
 }
 
-/** Tree row — a child node hanging below the anchor with a side connector. */
+/** Tree row — a child node hanging below the anchor with a side connector.
+ *  `ancestorLines` draws one indent column per ancestor level; each entry says
+ *  whether that ancestor's vertical line should continue past this row (i.e. the
+ *  ancestor has more siblings below). This lets PA rows nest under an invoice. */
 function TreeRow({
-  icon, label, number, meta, statusDoc, statusLabel, href, hrefExternal = false, isLast, isCurrent = false,
+  icon, label, number, meta, statusDoc, statusLabel, href, hrefExternal = false, isLast, isCurrent = false, ancestorLines = [],
 }: {
   icon: React.ReactNode
   label: string
@@ -162,6 +169,7 @@ function TreeRow({
   hrefExternal?: boolean
   isLast: boolean
   isCurrent?: boolean
+  ancestorLines?: boolean[]
 }) {
   const inner = (
     <div className={cn(
@@ -200,6 +208,11 @@ function TreeRow({
 
   return (
     <div className="flex gap-2 items-stretch">
+      {ancestorLines.map((cont, i) => (
+        <div key={i} className="flex justify-center w-4 shrink-0">
+          {cont && <div className="w-px bg-neutral-200 flex-1" />}
+        </div>
+      ))}
       <div className="flex flex-col items-center w-4 shrink-0">
         <div className="w-px bg-neutral-200 flex-1" />
         {isLast && <div className="w-px flex-1" />}
@@ -257,8 +270,28 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   const poGrs      = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poInvoices = invoicesData?.items ?? []
   const poPas      = pasData?.items ?? []
+
+  // ── Nest PAs under the invoice(s) they were raised from ────────────────────
+  // A PA derives from its invoice_ids, so show it as a child of each linked
+  // invoice on this PO — this makes it obvious which invoices already have a PA
+  // and which are still awaiting one. PAs with no invoice on this PO (e.g. a
+  // prepayment PA raised straight off the PO) stay as a direct PO child.
+  const invoiceIdSet = new Set(poInvoices.map((i) => i.id))
+  const pasByInvoice = new Map<string, typeof poPas>()
+  const orphanPas: typeof poPas = []
+  for (const pa of poPas) {
+    const linked = (pa.invoice_ids ?? []).filter((iid) => invoiceIdSet.has(iid))
+    if (linked.length === 0) {
+      orphanPas.push(pa)
+    } else {
+      for (const iid of linked) {
+        const arr = pasByInvoice.get(iid) ?? []
+        arr.push(pa)
+        pasByInvoice.set(iid, arr)
+      }
+    }
+  }
   const totalChildren = poGrs.length + poInvoices.length + poPas.length
-  let childIndex = 0
 
   // ── Build render ───────────────────────────────────────────────────────────
 
@@ -307,77 +340,94 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
 
       {/* ── Children tree rows ─────────────────────────────────────────────── */}
 
-      {/* On PR detail, PO is the first child */}
-      {anchorIsPr && (() => {
-        if (!po && !currentPr?.po_id) return null
-        const idx = childIndex++
-        const totalWithPo = totalChildren + (po || currentPr?.po_id ? 1 : 0)
-        return (
-          <TreeRow
-            icon={<Package className="h-3 w-3" />}
-            label="Purchase Order"
-            number={po?.number ?? currentPr?.po_number}
-            meta={po?.vendor_name}
-            statusDoc={po ? po.status as DocumentStatus : undefined}
-            statusLabel={po?.status ? (PO_STATUS_LABELS[po.status] ?? po.status) : undefined}
-            href={po ? `/po/${po.id}` : undefined}
-            isLast={idx === totalWithPo - 1}
-          />
-        )
-      })()}
+      {(() => {
+        // Ordered top-level children: [PO (on PR detail)] · GRs · Invoices · orphan PAs.
+        // Each invoice renders its linked PAs nested one level below it.
+        const showPoRow = anchorIsPr && (po || !!currentPr?.po_id)
+        const topCount = (showPoRow ? 1 : 0) + poGrs.length + poInvoices.length + orphanPas.length
+        const last = topCount - 1
+        const rows: React.ReactNode[] = []
+        let t = 0
 
-      {poGrs.map((gr) => {
-        const idx = childIndex++
-        return (
+        const paRow = (pa: (typeof poPas)[number], key: string, isLast: boolean, nested: boolean, parentContinues: boolean) => (
           <TreeRow
-            key={gr.id}
-            icon={<Warehouse className="h-3 w-3" />}
-            label="Goods Receipt"
-            number={gr.number}
-            meta={`${gr.gr_type === 'physical' ? 'Physical' : 'Service'} · ${new Date(gr.received_at).toLocaleDateString('en-CA')}`}
-            statusDoc={grStatusToDoc(gr.status)}
-            statusLabel={GR_STATUS_LABELS[gr.status]}
-            href={`/gr/${gr.id}`}
-            isLast={idx === totalChildren - 1}
-          />
-        )
-      })}
-
-      {poInvoices.map((inv) => {
-        const idx = childIndex++
-        return (
-          <TreeRow
-            key={inv.id}
-            icon={<Receipt className="h-3 w-3" />}
-            label="Invoice"
-            number={inv.internal_ref}
-            meta={`${formatAmount(Number(inv.total_amount), inv.currency)} · ${inv.vendor_invoice_number}`}
-            statusDoc={invStatusToDoc(inv.status)}
-            statusLabel={INV_STATUS_LABELS[inv.status]}
-            href={`/invoices/${inv.id}`}
-            isLast={idx === totalChildren - 1}
-          />
-        )
-      })}
-
-      {poPas.map((pa) => {
-        const idx = childIndex++
-        const isCurrent = currentType === 'pa' && pa.id === id
-        return (
-          <TreeRow
-            key={pa.id}
+            key={key}
             icon={<CreditCard className="h-3 w-3" />}
             label="Payment Application"
             number={pa.pa_number}
-            meta={`${formatAmount(pa.payment_amount, pa.currency)}${pa.pa_type === 'prepayment' ? ' · Prepayment' : ''}`}
+            meta={`${formatAmount(Number(pa.payment_amount), pa.currency)}${pa.pa_type === 'prepayment' ? ' · Prepayment' : ''}`}
             statusDoc={paStatusToDoc(pa.status)}
             statusLabel={PA_STATUS_LABELS[pa.status]}
             href={`/pa/${pa.id}`}
-            isLast={idx === totalChildren - 1}
-            isCurrent={isCurrent}
+            isLast={isLast}
+            isCurrent={currentType === 'pa' && pa.id === id}
+            ancestorLines={nested ? [parentContinues] : []}
           />
         )
-      })}
+
+        if (showPoRow) {
+          const idx = t++
+          rows.push(
+            <TreeRow
+              key="po-child"
+              icon={<Package className="h-3 w-3" />}
+              label="Purchase Order"
+              number={po?.number ?? currentPr?.po_number}
+              meta={po?.vendor_name}
+              statusDoc={po ? (po.status as DocumentStatus) : undefined}
+              statusLabel={po?.status ? (PO_STATUS_LABELS[po.status] ?? po.status) : undefined}
+              href={po ? `/po/${po.id}` : undefined}
+              isLast={idx === last}
+            />,
+          )
+        }
+
+        for (const gr of poGrs) {
+          const idx = t++
+          rows.push(
+            <TreeRow
+              key={gr.id}
+              icon={<Warehouse className="h-3 w-3" />}
+              label="Goods Receipt"
+              number={gr.number}
+              meta={`${gr.gr_type === 'physical' ? 'Physical' : 'Service'} · ${new Date(gr.received_at).toLocaleDateString('en-CA')}`}
+              statusDoc={grStatusToDoc(gr.status)}
+              statusLabel={GR_STATUS_LABELS[gr.status]}
+              href={`/gr/${gr.id}`}
+              isLast={idx === last}
+            />,
+          )
+        }
+
+        for (const inv of poInvoices) {
+          const idx = t++
+          const childPas = pasByInvoice.get(inv.id) ?? []
+          const parentContinues = idx < last // more top-level nodes after this invoice
+          rows.push(
+            <TreeRow
+              key={inv.id}
+              icon={<Receipt className="h-3 w-3" />}
+              label="Invoice"
+              number={inv.internal_ref}
+              meta={`${formatAmount(Number(inv.total_amount), inv.currency)} · ${inv.vendor_invoice_number}`}
+              statusDoc={invStatusToDoc(inv.status)}
+              statusLabel={INV_STATUS_LABELS[inv.status]}
+              href={`/invoices/${inv.id}`}
+              isLast={idx === last && childPas.length === 0}
+            />,
+          )
+          childPas.forEach((pa, j) =>
+            rows.push(paRow(pa, `${inv.id}-${pa.id}`, j === childPas.length - 1, true, parentContinues)),
+          )
+        }
+
+        for (const pa of orphanPas) {
+          const idx = t++
+          rows.push(paRow(pa, pa.id, idx === last, false, false))
+        }
+
+        return rows
+      })()}
 
       {totalChildren === 0 && !anchorIsPr && (
         <div className="mt-2 pl-6">
