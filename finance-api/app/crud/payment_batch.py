@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
-from app.models.mirrors import ExpenseClaim
+from app.models.mirrors import ExpenseClaim, Invoice
 from app.models.pa import PaymentApplication
 from app.models.payment_batch import DRAFT, EXECUTED, PaymentBatch, PaymentBatchLine
 from app.schemas.payment_execute import PaymentExecuteRequest
@@ -25,6 +25,56 @@ async def _next_batch_number(db: AsyncSession) -> str:
     return f"{prefix}{n + 1:04d}"
 
 
+async def _vendor_inv_no_map(db: AsyncSession,
+                             pas: list[PaymentApplication]) -> dict[uuid.UUID, str]:
+    """{pa.id: 'VINV-1, VINV-2'} — resolve each PA's invoice_ids to its vendor
+    invoice number(s) in ONE batch query (a PA can reference several invoices;
+    they join for display). PAs without invoices map to ''."""
+    all_inv_ids: set[uuid.UUID] = set()
+    per_pa: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for r in pas:
+        ids: list[uuid.UUID] = []
+        for iid in r.invoice_ids or []:
+            try:
+                u = uuid.UUID(str(iid))
+            except (ValueError, TypeError):
+                continue
+            ids.append(u)
+            all_inv_ids.add(u)
+        per_pa[r.id] = ids
+
+    inv_no_by_id: dict[uuid.UUID, str] = {}
+    if all_inv_ids:
+        inv_rows = (await db.execute(
+            select(Invoice.id, Invoice.vendor_invoice_number)
+            .where(Invoice.id.in_(all_inv_ids))
+        )).all()
+        inv_no_by_id = {iid: no for iid, no in inv_rows if no}
+
+    out: dict[uuid.UUID, str] = {}
+    for pid, ids in per_pa.items():
+        nums: list[str] = []
+        for u in ids:
+            no = inv_no_by_id.get(u)
+            if no and no not in nums:
+                nums.append(no)
+        out[pid] = ", ".join(nums)
+    return out
+
+
+async def vendor_inv_no_for_lines(db: AsyncSession,
+                                  lines: list["PaymentBatchLine"]) -> dict[uuid.UUID, str]:
+    """{line.doc_id: vendor invoice number(s)} for PA / Direct-PA batch lines.
+    Resolved at read time (lines snapshot doc_number/amount, not the invoice)."""
+    pa_ids = [ln.doc_id for ln in lines if ln.doc_kind in ("pa", "pa_dir")]
+    if not pa_ids:
+        return {}
+    pas = (await db.execute(
+        select(PaymentApplication).where(PaymentApplication.id.in_(pa_ids))
+    )).scalars().all()
+    return await _vendor_inv_no_map(db, pas)
+
+
 async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
     """Approved PAs and approved expense claims awaiting payment — pickable rows."""
     pq = select(PaymentApplication).where(PaymentApplication.status == "approved")
@@ -37,15 +87,18 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
         cq = cq.where(ExpenseClaim.currency == currency)
     claims = (await db.execute(cq.order_by(ExpenseClaim.created_at))).scalars().all()
 
+    inv_no = await _vendor_inv_no_map(db, pas)
     rows = [
         {"doc_kind": "pa_dir" if r.po_id is None else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
-         "payee": r.vendor_name, "amount": str(r.payment_amount), "currency": r.currency}
+         "payee": r.vendor_name, "vendor_inv_no": inv_no.get(r.id, ""),
+         "amount": str(r.payment_amount), "currency": r.currency}
         for r in pas
     ]
     rows += [
         {"doc_kind": "expense_claim", "doc_id": str(c.id), "doc_number": c.claim_number,
-         "payee": c.employee_name, "amount": str(c.total_amount), "currency": c.currency}
+         "payee": c.employee_name, "vendor_inv_no": "",
+         "amount": str(c.total_amount), "currency": c.currency}
         for c in claims
     ]
     return rows
