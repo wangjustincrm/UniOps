@@ -11,6 +11,7 @@ from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.gr_attachment import GrAttachment
 from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -136,7 +137,8 @@ async def create(
     db.add(gr)
     await db.flush()
 
-    for item in _build_line_items(gr.id, payload.line_items):
+    lines = _build_line_items(gr.id, payload.line_items)
+    for item in lines:
         db.add(item)
 
     # Save uploaded pack list attachments to file server
@@ -171,6 +173,9 @@ async def create(
         await _create_damage_report_task(db, gr, damaged_lines)
 
     await db.flush()
+    # Line-item reverse-match: link this GR to any already-matched invoice billing
+    # the same PO lines, and refresh its gr_value (convenience — no status change).
+    await _autofill_gr_to_matched_invoices(db, gr, lines)
     await db.refresh(gr)
     return gr
 
@@ -237,9 +242,6 @@ async def action(
         gr.collection_notes = req.collection_notes
         # Update PO line received_qty and PO status
         await _update_po_received_qty(db, gr)
-        # Reverse-fill GR value onto invoices on this PO that were matched before
-        # the goods arrived (convenience only — does NOT change match status).
-        await _backfill_invoice_gr_value(db, gr)
 
     elif act == "reject":
         if gr.status != "collection_pending" or gr.gr_type != "service":
@@ -398,35 +400,57 @@ async def _create_damage_report_task(db: AsyncSession, gr: GoodsReceipt, damaged
     ))
 
 
-async def _backfill_invoice_gr_value(db: AsyncSession, gr: GoodsReceipt) -> None:
-    """After a GR is confirmed, attach it to invoices on the same PO that were
-    matched/exception BEFORE the goods arrived and still carry no GR, populating
-    their gr_id / gr_number / gr_value.
+async def _autofill_gr_to_matched_invoices(
+    db: AsyncSession, gr: GoodsReceipt, lines: list[GrLineItem],
+) -> None:
+    """When a GR is created, link it to invoice(s) already matched against the
+    SAME PO line items this GR covers, and refresh their gr_value.
 
-    Convenience only: match status is decided by PO-vs-invoice variance, so this
-    does NOT re-run matching or change any invoice's status — it just spares the
-    AP clerk from re-opening each invoice to pick up the GR. Invoices that already
-    reference a GR are left untouched (their explicit linkage wins), and unmatched
-    invoices (no allocations yet) are skipped — they pick the GR up when matched.
+    GR lines carry po_line_id (chosen from the PO at GR creation); a matched
+    invoice's allocations (invoice_po_allocations) carry the same po_line_id — so
+    we attach the GR to exactly the invoice(s) billing the lines that were
+    received. This is correct when ONE PO has several GRs (each reaches only the
+    invoice for its own lines, not every invoice on the PO) and when ONE invoice
+    spans several GRs (each new GR appends, and gr_value re-sums across all linked
+    GRs). Convenience only — match status is PO-vs-invoice variance, so this never
+    re-runs matching or changes status. Idempotent per GR id. Invoices not yet
+    matched (no allocations) are left alone; they pick the GR up when matched.
     """
-    if gr.po_id is None:
+    po_line_ids = [ln.po_line_id for ln in lines if ln.po_line_id is not None]
+    if not po_line_ids:
+        return
+    inv_ids = (await db.execute(
+        select(InvoicePoAllocation.invoice_id)
+        .where(InvoicePoAllocation.po_line_id.in_(po_line_ids))
+        .distinct()
+    )).scalars().all()
+    if not inv_ids:
         return
     invoices = (await db.execute(
         select(Invoice).where(
-            Invoice.po_id == gr.po_id,
+            Invoice.id.in_(inv_ids),
             Invoice.status.in_(("matched", "exception")),
         )
     )).scalars().all()
-    if not invoices:
-        return
-    gr_value = sum((it.line_total for it in gr.line_items), Decimal("0"))
     for inv in invoices:
-        if inv.gr_ids:  # already linked to a GR — respect the explicit choice
-            continue
-        inv.gr_id = gr.id
-        inv.gr_number = gr.number
-        inv.gr_value = gr_value
-        inv.gr_ids = [str(gr.id)]
+        existing = list(inv.gr_ids or [])
+        if str(gr.id) in existing:
+            continue  # idempotent
+        existing.append(str(gr.id))
+        gr_uuids = [uuid.UUID(g) for g in existing]
+        # Recompute gr_value / gr_number across ALL linked GRs (match() semantics).
+        num_rows = (await db.execute(
+            select(GoodsReceipt.id, GoodsReceipt.number).where(GoodsReceipt.id.in_(gr_uuids))
+        )).all()
+        num_by_id = {r.id: r.number for r in num_rows}
+        total = (await db.execute(
+            select(func.coalesce(func.sum(GrLineItem.line_total), Decimal("0")))
+            .where(GrLineItem.gr_id.in_(gr_uuids))
+        )).scalar_one()
+        inv.gr_ids = existing
+        inv.gr_id = gr_uuids[0]
+        inv.gr_number = ", ".join(num_by_id.get(u, "") for u in gr_uuids)
+        inv.gr_value = total
 
 
 async def _create_pa_task(db: AsyncSession, gr: GoodsReceipt) -> None:
