@@ -2,25 +2,9 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Clock, ArrowRight } from 'lucide-react'
 import { cn, formatCAD } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { TASK_TYPE_LABELS } from '@/lib/taskTypes'
+import type { TaskType } from '@/lib/taskTypes'
 import type { TaskItem } from '@/types'
-
-const TASK_TYPE_LABELS: Record<string, string> = {
-  approve_pr: 'Approve Purchase Request',
-  approve_po: 'Approve Purchase Order',
-  approve_pa: 'Approve Payment Application',
-  process_pa: 'Process Payment',
-  revise_pr: 'Revise Purchase Request',
-  revise_pa: 'Revise Payment Application',
-  acknowledge_gr: 'Acknowledge Goods Receipt',
-  collect_goods: 'Collect Goods',
-  confirm_service_gr: 'Confirm Service Completion',
-  settle_prepayment: 'Settle Prepayment',
-  link_invoice: 'Link Invoice to PO',
-  create_pa: 'Create Payment Application',
-  create_prepayment_pa: 'Create Prepayment PA',
-  approve_budget_plan: 'Approve Budget Plan',
-  revise_budget_plan: 'Revise Budget Plan',
-}
 
 interface TaskCardProps {
   task: TaskItem
@@ -52,7 +36,7 @@ function TaskCard({ task }: TaskCardProps) {
           <div className="flex items-center gap-1.5 mb-0.5">
             {isUrgent && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger-600" />}
             <p className={cn('text-sm font-medium truncate', isUrgent ? 'text-danger-700' : 'text-neutral-900')}>
-              {TASK_TYPE_LABELS[task.type] ?? task.type}
+              {TASK_TYPE_LABELS[task.type as TaskType] ?? task.type}
             </p>
           </div>
           <p className="text-xs text-neutral-500 truncate">

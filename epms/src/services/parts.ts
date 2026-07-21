@@ -13,7 +13,7 @@ export interface ApiPart {
   unit: string
   is_active: boolean
   created_at: string
-  image_url?: string | null
+  image_data_url?: string | null
 }
 
 export interface CreatePartBody {
@@ -27,6 +27,7 @@ export interface CreatePartBody {
   unit_price: number
   unit: string
   is_active?: boolean
+  image_data_url?: string | null
 }
 
 export interface UpdatePartBody {
@@ -40,6 +41,7 @@ export interface UpdatePartBody {
   unit_price?: number
   unit?: string
   is_active?: boolean
+  image_data_url?: string | null
 }
 
 export interface PartFilters {

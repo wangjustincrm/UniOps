@@ -21,6 +21,7 @@ export interface ApiUser {
   email: string
   full_name: string
   role: ApiUserRole
+  erp_person_code?: string | null
   department_id: string | null
   department_name: string | null
   is_active: boolean
@@ -33,6 +34,7 @@ export interface CreateUserBody {
   email: string
   full_name: string
   role: ApiUserRole
+  erp_person_code: string
   department_id?: string | null
   is_active?: boolean
   password: string
@@ -43,6 +45,7 @@ export interface UpdateUserBody {
   email?: string
   full_name?: string
   role?: ApiUserRole
+  erp_person_code?: string
   department_id?: string | null
   is_active?: boolean
   password?: string

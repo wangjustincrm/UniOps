@@ -1004,14 +1004,14 @@ function PdfTemplates() {
 
 // ─── User form ────────────────────────────────────────────────────────────────
 
-interface UserFormData { full_name: string; email: string; role: UserRole; department_id: string; is_active: boolean; teams_account: string; supervisor_id: string }
-const BLANK_USER: UserFormData = { full_name: '', email: '', role: 'requester', department_id: '', is_active: true, teams_account: '', supervisor_id: '' }
+interface UserFormData { full_name: string; email: string; role: UserRole; erp_person_code: string; department_id: string; is_active: boolean; teams_account: string; supervisor_id: string }
+const BLANK_USER: UserFormData = { full_name: '', email: '', role: 'requester', erp_person_code: '', department_id: '', is_active: true, teams_account: '', supervisor_id: '' }
 
 // Standard initial password assigned to every new / imported account. Users are
 // forced to change it on first login (must_change_password is set server-side).
 const INITIAL_PASSWORD = 'Feihe12#$'
 
-function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData; onSave: (d: UserFormData) => void; onCancel: () => void; title: string }) {
+function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: UserFormData; onSave: (d: UserFormData) => void; onCancel: () => void; title: string; saveError?: string | null }) {
   const { data: deptData } = useDepartments()
   const activeDepts = (deptData?.items ?? []).filter((d) => d.is_active)
   const { data: usersData } = useUsers()
@@ -1024,6 +1024,7 @@ function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData;
     if (!form.full_name.trim()) e.full_name = 'Required'
     if (!form.email.trim()) e.email = 'Required'
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email'
+    if (!form.erp_person_code.trim()) e.erp_person_code = 'Required'
     if (!form.department_id) e.department_id = 'Required'
     setErrors(e); return Object.keys(e).length === 0
   }
@@ -1043,6 +1044,11 @@ function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData;
             {errors[k] && <p className="text-xs text-danger-600">{errors[k]}</p>}
           </div>
         ))}
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-neutral-700">ERP Person Code<span className="text-danger-600"> *</span></label>
+          <input type="text" className={fldCls(errors.erp_person_code)} value={form.erp_person_code} onChange={(e) => set('erp_person_code', e.target.value)} placeholder="ERP employee / person code" />
+          {errors.erp_person_code && <p className="text-xs text-danger-600">{errors.erp_person_code}</p>}
+        </div>
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-neutral-700">Department <span className="text-danger-600">*</span></label>
           <select className={fldCls(errors.department_id)} value={form.department_id} onChange={(e) => set('department_id', e.target.value)}>
@@ -1077,6 +1083,11 @@ function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData;
           </select>
         </div>
       </div>
+      {saveError && (
+        <div className="mt-4 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          {saveError}
+        </div>
+      )}
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
         <Button size="sm" onClick={() => { if (validate()) onSave(form) }}><Check className="h-3.5 w-3.5" />Save User</Button>
@@ -1087,11 +1098,11 @@ function UserForm({ initial, onSave, onCancel, title }: { initial: UserFormData;
 
 // ─── CSV helpers (User import/export) ─────────────────────────────────────────
 
-const CSV_HEADERS = ['full_name', 'email', 'role', 'department', 'is_active', 'teams_account'] as const
+const CSV_HEADERS = ['full_name', 'email', 'role', 'erp_person_code', 'department', 'is_active', 'teams_account'] as const
 const VALID_ROLES = new Set(Object.keys(ROLE_LABELS))
 
 interface CsvRow {
-  full_name: string; email: string; role: string; department: string; is_active: string; teams_account: string
+  full_name: string; email: string; role: string; erp_person_code: string; department: string; is_active: string; teams_account: string
 }
 interface ImportRow extends CsvRow {
   line: number
@@ -1120,6 +1131,7 @@ function parseUserCsv(text: string): ImportRow[] {
     const row: ImportRow = {
       line: i + 2,
       full_name: get('full_name') || get('name'), email: get('email'), role: get('role'),
+      erp_person_code: get('erp_person_code') || get('erppersoncode') || get('erp_code'),
       department: get('department'),
       is_active: get('is_active') || get('isactive') || get('isActive'),
       teams_account: get('teams_account') || get('teamsaccount') || get('teams'),
@@ -1130,6 +1142,7 @@ function parseUserCsv(text: string): ImportRow[] {
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) row.errors.push('Invalid email')
     if (!row.role) row.errors.push('Role required')
     else if (!VALID_ROLES.has(row.role)) row.errors.push(`Unknown role "${row.role}"`)
+    if (!row.erp_person_code) row.errors.push('ERP person code required')
     if (!row.department) row.errors.push('Department required')
     const activeRaw = row.is_active.toLowerCase()
     if (activeRaw && !['true','false','yes','no','1','0'].includes(activeRaw)) row.errors.push('is_active must be true/false')
@@ -1145,7 +1158,7 @@ function exportUsersCsv(users: ApiUser[]) {
   const escape = (v: string) => v.includes(',') ? `"${v}"` : v
   const rows = [
     CSV_HEADERS.join(','),
-    ...users.map((u) => [u.full_name, u.email, u.role, u.department_name ?? '', String(u.is_active), u.teams_account ?? ''].map(escape).join(',')),
+    ...users.map((u) => [u.full_name, u.email, u.role, u.erp_person_code ?? '', u.department_name ?? '', String(u.is_active), u.teams_account ?? ''].map(escape).join(',')),
   ]
   const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -1156,7 +1169,7 @@ function exportUsersCsv(users: ApiUser[]) {
 
 function downloadTemplate() {
   const header = CSV_HEADERS.join(',')
-  const example = 'Jane Smith,jane.smith@company.ca,requester,Marketing,true,jane.smith@company.onmicrosoft.com'
+  const example = 'Jane Smith,jane.smith@company.ca,requester,EMP-0001,Marketing,true,jane.smith@company.onmicrosoft.com'
   const roleNote = `# Valid roles: ${Object.keys(ROLE_LABELS).join(' | ')}`
   const blob = new Blob([[header, example, roleNote].join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
@@ -1200,6 +1213,7 @@ function ImportPanel({ rows, existingEmails, onConfirm, onCancel }: {
             <th className="px-3 py-2 text-left text-neutral-500 font-semibold">Name</th>
             <th className="px-3 py-2 text-left text-neutral-500 font-semibold">Email</th>
             <th className="px-3 py-2 text-left text-neutral-500 font-semibold">Role</th>
+            <th className="px-3 py-2 text-left text-neutral-500 font-semibold">ERP Code</th>
             <th className="px-3 py-2 text-left text-neutral-500 font-semibold">Department</th>
             <th className="px-3 py-2 text-left text-neutral-500 font-semibold">Teams Account</th>
             <th className="px-3 py-2 text-left text-neutral-500 font-semibold w-28">Status</th>
@@ -1214,6 +1228,7 @@ function ImportPanel({ rows, existingEmails, onConfirm, onCancel }: {
                   <td className="px-3 py-2 text-neutral-700">{row.full_name || <span className="text-neutral-300 italic">—</span>}</td>
                   <td className="px-3 py-2 text-neutral-600 font-mono">{row.email || <span className="text-neutral-300 italic">—</span>}</td>
                   <td className="px-3 py-2 text-neutral-600">{row.role || <span className="text-neutral-300 italic">—</span>}</td>
+                  <td className="px-3 py-2 text-neutral-600 font-mono">{row.erp_person_code || <span className="text-neutral-300 italic">—</span>}</td>
                   <td className="px-3 py-2 text-neutral-600">{row.department || <span className="text-neutral-300 italic">—</span>}</td>
                   <td className="px-3 py-2 text-neutral-600 font-mono">{row.teams_account || <span className="text-neutral-300 italic">—</span>}</td>
                   <td className="px-3 py-2">
@@ -1260,7 +1275,11 @@ function UserManagement() {
   const [importRows, setImportRows] = useState<ImportRow[] | null>(null)
   const [importDone, setImportDone] = useState<number | null>(null)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const importRef = useRef<HTMLInputElement>(null)
+
+  const asSaveError = (err: unknown, fallback: string) =>
+    err instanceof Error ? err.message : fallback
 
   const handleReset = () => {
     if (!resetTarget || !tempPwd.trim() || tempPwd.length < 8) return
@@ -1290,6 +1309,7 @@ function UserManagement() {
       createUser.mutate({
         full_name: row.full_name, email: row.email,
         role: row.role as ApiUserRole,
+        erp_person_code: row.erp_person_code,
         department_id: dept?.id ?? undefined,
         is_active: csvIsActive(row.is_active),
         password: INITIAL_PASSWORD,
@@ -1351,7 +1371,7 @@ function UserManagement() {
             <Upload className="h-4 w-4" />Import CSV
           </button>
           <input ref={importRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportFile} />
-          <Button onClick={() => setMode('add')} disabled={mode !== 'none'}><Plus className="h-4 w-4" />Add User</Button>
+          <Button onClick={() => { setMode('add'); setSaveError(null) }} disabled={mode !== 'none'}><Plus className="h-4 w-4" />Add User</Button>
         </div>
       </div>
 
@@ -1373,10 +1393,25 @@ function UserManagement() {
         />
       )}
 
-      {mode === 'add' && <UserForm title="Add New User" initial={BLANK_USER} onSave={(d) => { createUser.mutate({ full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, password: INITIAL_PASSWORD, teams_account: d.teams_account || null }); setMode('none') }} onCancel={() => setMode('none')} />}
-      {editingUser && <UserForm title={`Edit — ${editingUser.full_name}`}
-        initial={{ full_name: editingUser.full_name, email: editingUser.email, role: editingUser.role as UserRole, department_id: editingUser.department_id ?? '', is_active: editingUser.is_active, teams_account: editingUser.teams_account ?? '', supervisor_id: editingUser.supervisor_id ?? '' }}
-        onSave={(d) => { updateUserMutation.mutate({ id: (mode as { edit: string }).edit, body: { full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, department_id: d.department_id || undefined, is_active: d.is_active, teams_account: d.teams_account || null, supervisor_id: d.supervisor_id || null } }); setMode('none') }} onCancel={() => setMode('none')} />}
+      {mode === 'add' && <UserForm title="Add New User" initial={BLANK_USER} saveError={saveError}
+        onSave={(d) => {
+          setSaveError(null)
+          createUser.mutate(
+            { full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, erp_person_code: d.erp_person_code.trim(), department_id: d.department_id || undefined, is_active: d.is_active, password: INITIAL_PASSWORD, teams_account: d.teams_account || null },
+            { onSuccess: () => setMode('none'), onError: (err) => setSaveError(asSaveError(err, 'Failed to create user')) },
+          )
+        }}
+        onCancel={() => { setMode('none'); setSaveError(null) }} />}
+      {editingUser && <UserForm title={`Edit — ${editingUser.full_name}`} saveError={saveError}
+        initial={{ full_name: editingUser.full_name, email: editingUser.email, role: editingUser.role as UserRole, erp_person_code: editingUser.erp_person_code ?? '', department_id: editingUser.department_id ?? '', is_active: editingUser.is_active, teams_account: editingUser.teams_account ?? '', supervisor_id: editingUser.supervisor_id ?? '' }}
+        onSave={(d) => {
+          setSaveError(null)
+          updateUserMutation.mutate(
+            { id: (mode as { edit: string }).edit, body: { full_name: d.full_name, email: d.email, role: d.role as ApiUserRole, erp_person_code: d.erp_person_code.trim(), department_id: d.department_id || undefined, is_active: d.is_active, teams_account: d.teams_account || null, supervisor_id: d.supervisor_id || null } },
+            { onSuccess: () => setMode('none'), onError: (err) => setSaveError(asSaveError(err, 'Failed to update user')) },
+          )
+        }}
+        onCancel={() => { setMode('none'); setSaveError(null) }} />}
 
       <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] overflow-hidden">
         <div className="overflow-x-auto">

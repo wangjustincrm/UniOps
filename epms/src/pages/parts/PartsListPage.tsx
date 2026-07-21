@@ -58,7 +58,7 @@ function partToForm(p: ApiPart): PartFormData {
     unitPrice: String(p.unit_price),
     unit: p.unit,
     isActive: p.is_active,
-    imageDataUrl: p.image_url ?? null,
+    imageDataUrl: p.image_data_url ?? null,
   }
 }
 
@@ -442,6 +442,7 @@ export default function PartsListPage() {
         unit_price: parseFloat(formData.unitPrice) || 0,
         unit: formData.unit,
         is_active: formData.isActive,
+        image_data_url: formData.imageDataUrl,
       }
       createPart.mutate(body)
     } else if (typeof mode === 'object' && 'edit' in mode) {
@@ -456,6 +457,7 @@ export default function PartsListPage() {
         unit_price: parseFloat(formData.unitPrice) || 0,
         unit: formData.unit,
         is_active: formData.isActive,
+        image_data_url: formData.imageDataUrl,
       }
       updatePart.mutate({ id: mode.edit, body })
     }
@@ -628,7 +630,7 @@ export default function PartsListPage() {
                 >
                   {/* Thumbnail */}
                   <td className="px-3 py-2.5">
-                    <PartThumbnail src={part.image_url} size={36} />
+                    <PartThumbnail src={part.image_data_url} size={36} />
                   </td>
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs font-semibold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">
