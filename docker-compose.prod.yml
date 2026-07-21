@@ -56,6 +56,14 @@ services:
       APP_VERSION: 0.1.0
       API_V1_PREFIX: /api/v1
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # Public module frontend URLs — the system-wide task notifier builds email
+      # deep-links per module from these (EPMS/OA/Finance/VMS/Booking/Portal).
+      EPMS_URL: ${EPMS_URL}
+      OA_URL: ${OA_URL}
+      VMS_URL: ${VMS_URL}
+      FINANCE_URL: ${FINANCE_URL}
+      BOOKING_URL: ${BOOKING_URL}
+      PORTAL_URL: ${PORTAL_URL}
       ACCESS_TOKEN_EXPIRE_MINUTES: "480"
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
