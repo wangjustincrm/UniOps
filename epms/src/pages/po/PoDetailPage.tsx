@@ -66,7 +66,7 @@ const GR_STATUS_DOC: Record<GrStatus, DocumentStatus> = {
 
 // ─── Approval Timeline ─────────────────────────────────────────────────────────
 
-function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: number, events: ApiEvent[] = [], createdByName?: string | null): ApprovalStep[] {
+function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: number, events: ApiEvent[] = []): ApprovalStep[] {
   // Index approve events by step_idx so each workflow node shows who acted.
   const approveEventByStep = events
     .filter((e) => e.action === 'approve')
@@ -74,14 +74,14 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
       if (!(e.step_idx in acc)) acc[e.step_idx] = e
       return acc
     }, {})
-  const submitEvent = events.find((e) => e.action === 'submit')
 
   const created: ApprovalStep = {
     id: 'created',
     role: 'Procurement Officer',
-    // Prefer the document's creator (always set, incl. imported data); fall back
-    // to the submit event's actor for records created before created_by tracking.
-    actorName: createdByName ?? submitEvent?.actor_name ?? undefined,
+    // Per product decision the Procurement Officer creation step shows the role
+    // only, no name (imported POs carry no reliable creator). Later workflow
+    // steps still show their actor.
+    actorName: undefined,
     status: 'completed',
     action: 'Created',
     channel: 'Web',
@@ -595,7 +595,7 @@ export default function PoDetailPage() {
     )
   }
 
-  const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [], po.created_by_name)
+  const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [])
   const hasMaterial = po.type === 1 || po.type === 3
 
   return (
