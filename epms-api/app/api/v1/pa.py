@@ -161,6 +161,14 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # an overpaid prepayment is a credit-note situation, not a negative payment.
         from decimal import Decimal as _D
         applied = body.prepayment_applied or _D("0")
+        # Cannot apply more prepayment than was actually prepaid on the original PA.
+        if applied > orig.payment_amount:
+            raise HTTPException(
+                status_code=422,
+                detail=f"prepayment_applied ({applied}) exceeds the amount actually "
+                       f"prepaid on {orig.pa_number} ({orig.payment_amount}). "
+                       "You cannot apply more prepayment than was paid.",
+            )
         net = (body.subtotal + body.tax_amount + body.shipping_amount
                + body.other_charges - applied)
         if net < _D("0"):

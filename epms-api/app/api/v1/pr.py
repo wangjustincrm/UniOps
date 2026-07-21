@@ -9,7 +9,16 @@ from app.core.access_scope import build_scope
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
 from app.crud import pr as pr_crud
 from app.models.task import Task
-from app.schemas.pr import ApprovalEventResponse, PrActionRequest, PrCreate, PrListResponse, PrResponse, PrUpdate
+from app.schemas.pr import (
+    ApprovalEventResponse,
+    BudgetCheckRequest,
+    BudgetCheckResponse,
+    PrActionRequest,
+    PrCreate,
+    PrListResponse,
+    PrResponse,
+    PrUpdate,
+)
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services.notification import fire_and_forget_notify
@@ -62,6 +71,24 @@ async def create_pr(
 ):
     return await pr_crud.create(
         db, body, created_by=uuid.UUID(user["sub"]), bearer_token=token,
+    )
+
+
+@router.post("/budget-check", response_model=BudgetCheckResponse)
+async def budget_check(
+    body: BudgetCheckRequest, db: SessionDep, user: CurrentUserPayload, token: BearerToken,
+):
+    """Report whether the given amount is over budget for its account.
+
+    Reuses the exact computation the create path runs (crud.pr.compute_budget_check),
+    so the frontend can stop double-computing over_budget.
+    """
+    over_budget, available = await pr_crud.compute_budget_check(
+        body.budget_code, body.cost_center_id, body.amount, bearer_token=token,
+    )
+    return BudgetCheckResponse(
+        over_budget=over_budget,
+        available=(str(available) if available is not None else None),
     )
 
 

@@ -61,6 +61,8 @@ async def get_all(
     po_id: uuid.UUID | None = None,
     vendor_id: uuid.UUID | None = None,
     created_by: uuid.UUID | None = None,
+    search: str | None = None,
+    gr_type: str | None = None,
     po_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
@@ -76,6 +78,16 @@ async def get_all(
         q = q.where(GoodsReceipt.vendor_id == vendor_id)
     if created_by:
         q = q.where(GoodsReceipt.created_by == created_by)
+    if gr_type:
+        q = q.where(GoodsReceipt.gr_type == gr_type)
+    if search:
+        term = f"%{search}%"
+        # Match what the UI advertises: GR#, PO#, vendor name.
+        q = q.where(
+            GoodsReceipt.number.ilike(term)
+            | GoodsReceipt.po_number.ilike(term)
+            | GoodsReceipt.vendor_name.ilike(term)
+        )
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
@@ -385,12 +397,14 @@ async def _create_damage_report_task(db: AsyncSession, gr: GoodsReceipt, damaged
 async def _create_pa_task(db: AsyncSession, gr: GoodsReceipt) -> None:
     """Create a create_pa task for the PR requester after GR is collected/confirmed."""
     requester_id = await _get_pr_requester_id(db, gr)
+    # Anchor the task on the PO (not the GR) so the frontend's ?poId=task.document_id
+    # navigation lands on the PO — matches the invoice-match create_pa path.
     db.add(Task(
         type="create_pa",
         priority="normal",
-        document_type="gr",
-        document_id=gr.id,
-        document_number=gr.number,
+        document_type="po",
+        document_id=gr.po_id,
+        document_number=gr.po_number,
         assigned_role="requester",
         assigned_user_id=requester_id,
         title=f"Create Payment Application: {gr.number} — {gr.title}",

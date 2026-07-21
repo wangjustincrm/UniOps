@@ -13,8 +13,13 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 class Task(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "tasks"
 
-    # approve_pr | approve_po | revise_pr | revise_po | acknowledge_gr | collect_goods |
-    # confirm_service_gr | settle_prepayment | link_invoice | create_pa
+    # Actual emitted action types (grep type=" across crud/ + api/):
+    #   PR : approve_pr | revise_pr | create_po
+    #   PO : approve_po | revise_po | place_order | create_prepayment_pa
+    #   GR : acknowledge_gr | collect_goods | confirm_service_gr | gr_damage_report | create_pa
+    #   PA : approve_pa | revise_pa | process_pa | confirm_settlement
+    #   INV: review_match | match_invoice
+    # (settle_prepayment / link_invoice are NOT emitted — legacy names only.)
     type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     priority: Mapped[str] = mapped_column(String(10), nullable=False, default="normal")  # urgent | normal
 
