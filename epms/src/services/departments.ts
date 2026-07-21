@@ -24,19 +24,12 @@ export interface DepartmentListResponse {
   total: number
 }
 
+// NOTE: The EPMS /departments endpoints are GET-only — create/update/delete were
+// moved to mdm-api. Do not re-add write methods here; call mdm-api instead.
 export const departmentService = {
   list: () =>
     api.get<DepartmentListResponse>('/departments'),
 
   get: (id: string) =>
     api.get<ApiDepartment>(`/departments/${id}`),
-
-  create: (body: CreateDepartmentBody) =>
-    api.post<ApiDepartment>('/departments', body),
-
-  update: (id: string, body: UpdateDepartmentBody) =>
-    api.patch<ApiDepartment>(`/departments/${id}`, body),
-
-  delete: (id: string) =>
-    api.delete<void>(`/departments/${id}`),
 }

@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.gr_attachment import GrAttachment
+from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -61,6 +63,8 @@ async def get_all(
     po_id: uuid.UUID | None = None,
     vendor_id: uuid.UUID | None = None,
     created_by: uuid.UUID | None = None,
+    search: str | None = None,
+    gr_type: str | None = None,
     po_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
@@ -76,6 +80,16 @@ async def get_all(
         q = q.where(GoodsReceipt.vendor_id == vendor_id)
     if created_by:
         q = q.where(GoodsReceipt.created_by == created_by)
+    if gr_type:
+        q = q.where(GoodsReceipt.gr_type == gr_type)
+    if search:
+        term = f"%{search}%"
+        # Match what the UI advertises: GR#, PO#, vendor name.
+        q = q.where(
+            GoodsReceipt.number.ilike(term)
+            | GoodsReceipt.po_number.ilike(term)
+            | GoodsReceipt.vendor_name.ilike(term)
+        )
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
@@ -123,7 +137,8 @@ async def create(
     db.add(gr)
     await db.flush()
 
-    for item in _build_line_items(gr.id, payload.line_items):
+    lines = _build_line_items(gr.id, payload.line_items)
+    for item in lines:
         db.add(item)
 
     # Save uploaded pack list attachments to file server
@@ -158,6 +173,9 @@ async def create(
         await _create_damage_report_task(db, gr, damaged_lines)
 
     await db.flush()
+    # Line-item reverse-match: link this GR to any already-matched invoice billing
+    # the same PO lines, and refresh its gr_value (convenience — no status change).
+    await _autofill_gr_to_matched_invoices(db, gr, lines)
     await db.refresh(gr)
     return gr
 
@@ -382,15 +400,70 @@ async def _create_damage_report_task(db: AsyncSession, gr: GoodsReceipt, damaged
     ))
 
 
+async def _autofill_gr_to_matched_invoices(
+    db: AsyncSession, gr: GoodsReceipt, lines: list[GrLineItem],
+) -> None:
+    """When a GR is created, link it to invoice(s) already matched against the
+    SAME PO line items this GR covers, and refresh their gr_value.
+
+    GR lines carry po_line_id (chosen from the PO at GR creation); a matched
+    invoice's allocations (invoice_po_allocations) carry the same po_line_id — so
+    we attach the GR to exactly the invoice(s) billing the lines that were
+    received. This is correct when ONE PO has several GRs (each reaches only the
+    invoice for its own lines, not every invoice on the PO) and when ONE invoice
+    spans several GRs (each new GR appends, and gr_value re-sums across all linked
+    GRs). Convenience only — match status is PO-vs-invoice variance, so this never
+    re-runs matching or changes status. Idempotent per GR id. Invoices not yet
+    matched (no allocations) are left alone; they pick the GR up when matched.
+    """
+    po_line_ids = [ln.po_line_id for ln in lines if ln.po_line_id is not None]
+    if not po_line_ids:
+        return
+    inv_ids = (await db.execute(
+        select(InvoicePoAllocation.invoice_id)
+        .where(InvoicePoAllocation.po_line_id.in_(po_line_ids))
+        .distinct()
+    )).scalars().all()
+    if not inv_ids:
+        return
+    invoices = (await db.execute(
+        select(Invoice).where(
+            Invoice.id.in_(inv_ids),
+            Invoice.status.in_(("matched", "exception")),
+        )
+    )).scalars().all()
+    for inv in invoices:
+        existing = list(inv.gr_ids or [])
+        if str(gr.id) in existing:
+            continue  # idempotent
+        existing.append(str(gr.id))
+        gr_uuids = [uuid.UUID(g) for g in existing]
+        # Recompute gr_value / gr_number across ALL linked GRs (match() semantics).
+        num_rows = (await db.execute(
+            select(GoodsReceipt.id, GoodsReceipt.number).where(GoodsReceipt.id.in_(gr_uuids))
+        )).all()
+        num_by_id = {r.id: r.number for r in num_rows}
+        total = (await db.execute(
+            select(func.coalesce(func.sum(GrLineItem.line_total), Decimal("0")))
+            .where(GrLineItem.gr_id.in_(gr_uuids))
+        )).scalar_one()
+        inv.gr_ids = existing
+        inv.gr_id = gr_uuids[0]
+        inv.gr_number = ", ".join(num_by_id.get(u, "") for u in gr_uuids)
+        inv.gr_value = total
+
+
 async def _create_pa_task(db: AsyncSession, gr: GoodsReceipt) -> None:
     """Create a create_pa task for the PR requester after GR is collected/confirmed."""
     requester_id = await _get_pr_requester_id(db, gr)
+    # Anchor the task on the PO (not the GR) so the frontend's ?poId=task.document_id
+    # navigation lands on the PO — matches the invoice-match create_pa path.
     db.add(Task(
         type="create_pa",
         priority="normal",
-        document_type="gr",
-        document_id=gr.id,
-        document_number=gr.number,
+        document_type="po",
+        document_id=gr.po_id,
+        document_number=gr.po_number,
         assigned_role="requester",
         assigned_user_id=requester_id,
         title=f"Create Payment Application: {gr.number} — {gr.title}",

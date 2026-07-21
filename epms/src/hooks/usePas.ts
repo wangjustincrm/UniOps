@@ -51,6 +51,9 @@ export function useCreatePa() {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
     },
+    // Surface the server error (e.g. a 422 validation failure) rather than
+    // swallowing it — the create pages catch the throw silently.
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create payment application'),
   })
 }
 
@@ -64,6 +67,9 @@ export function useUpdatePa() {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['pas', id] })
     },
+    // Surface the server error (e.g. a 422 validation failure) rather than
+    // swallowing it — the edit page catches the throw silently.
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to update payment application'),
   })
 }
 

@@ -2,53 +2,13 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Clock, ArrowRight, Check, Inbox } from 'lucide-react'
 import { cn, formatCAD, formatDate } from '@/lib/utils'
-import { financeHandoffHref } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { useTasks, useCompleteTask } from '@/hooks/useTasks'
-import type { TaskType } from '@/types'
+import { TASK_TYPE_LABELS, ALL_TASK_TYPES, taskHref } from '@/lib/taskTypes'
+import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-const TASK_TYPE_LABELS: Record<string, string> = {
-  approve_pr: 'Approve Purchase Request',
-  approve_po: 'Approve Purchase Order',
-  approve_pa: 'Approve Payment Application',
-  process_pa: 'Process Payment',
-  revise_pr: 'Revise Purchase Request',
-  revise_po: 'Revise Purchase Order',
-  revise_pa: 'Revise Payment Application',
-  create_po: 'Create Purchase Order',
-  place_order: 'Place Order',
-  acknowledge_gr: 'Acknowledge Goods Receipt',
-  gr_damage_report: 'Damaged / Discrepancy Goods',
-  collect_goods: 'Collect Goods',
-  confirm_service_gr: 'Confirm Service Completion',
-  settle_prepayment: 'Settle Prepayment',
-  link_invoice: 'Link Invoice to PO',
-  create_pa: 'Create Payment Application',
-  approve_budget_plan: 'Approve Budget Plan',
-  revise_budget_plan: 'Revise Budget Plan',
-}
-
-const ALL_TASK_TYPES: TaskType[] = [
-  'approve_pr',
-  'approve_po',
-  'approve_pa',
-  'process_pa',
-  'revise_pr',
-  'revise_pa',
-  'create_po',
-  'place_order',
-  'revise_po',
-  'acknowledge_gr',
-  'gr_damage_report',
-  'collect_goods',
-  'confirm_service_gr',
-  'settle_prepayment',
-  'link_invoice',
-  'create_pa',
-]
 
 type TabValue = 'all' | 'urgent' | 'normal' | 'completed'
 
@@ -70,10 +30,6 @@ const EMPTY_MESSAGES: Record<TabValue, { heading: string; sub: string }> = {
 
 // ─── Full task card ───────────────────────────────────────────────────────────
 
-const HREF_MAP: Record<string, string> = {
-  pr: '/pr', po: '/po', gr: '/gr', invoice: '/invoices', pa: '/pa',
-}
-
 interface FullTaskCardProps {
   task: ApiTask
   onComplete: () => void
@@ -86,19 +42,16 @@ function FullTaskCard({ task, onComplete }: FullTaskCardProps) {
 
   // Budget Plans are owned by the Finance module. The plan pages physically live
   // in EPMS but are surfaced through Finance (Portal chrome) via EpmsEmbed, so a
-  // budget_plan task must open in Finance — a full-page handoff — rather than an
-  // in-app navigate that would strand the user on EPMS's bare budget page.
-  const isBudgetPlan = task.document_type.toLowerCase() === 'budget_plan'
-
+  // budget_plan task must open in Finance — a full-page handoff (absolute URL) —
+  // rather than an in-app navigate that would strand the user on EPMS's bare
+  // budget page. taskHref() returns the absolute URL for those.
   const goToTask = () => {
-    if (isBudgetPlan) {
-      window.location.assign(financeHandoffHref(`/budget/plans/${task.document_id}`))
-      return
+    const href = taskHref(task)
+    if (/^https?:\/\//.test(href)) {
+      window.location.assign(href)
+    } else {
+      navigate(href)
     }
-    const href = task.type === 'create_pa'
-      ? `/pa/create?poId=${task.document_id}`
-      : `${HREF_MAP[task.document_type.toLowerCase()] ?? '/'}/${task.document_id}`
-    navigate(href)
   }
 
   return (
@@ -130,7 +83,7 @@ function FullTaskCard({ task, onComplete }: FullTaskCardProps) {
                   : 'text-neutral-900'
               )}
             >
-              {TASK_TYPE_LABELS[task.type] ?? task.type}
+              {TASK_TYPE_LABELS[task.type as TaskType] ?? task.type}
             </p>
             {isDone && (
               <span className="inline-flex items-center gap-1 rounded-full bg-success-100 px-2 py-0.5 text-[11px] font-medium text-success-700">

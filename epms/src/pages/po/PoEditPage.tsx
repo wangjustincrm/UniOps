@@ -26,6 +26,10 @@ const TYPE_LABELS: Record<number, string> = {
   6: 'Type 6 — Project',
 }
 
+// The backend deletes+rebuilds PO lines on update, so pr_line_id must be resent
+// on every line to preserve the PO↔PR line link.
+type PoDraftLine = PrLineItem & { prLineId?: string }
+
 export default function PoEditPage() {
   const { id } = useParams<{ id: string }>()
   const replaceTab = useReplaceTab(epmsRoutes)
@@ -49,7 +53,7 @@ export default function PoEditPage() {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [isPrepaid, setIsPrepaid] = useState(false)
-  const [lineItems, setLineItems] = useState<PrLineItem[]>([])
+  const [lineItems, setLineItems] = useState<PoDraftLine[]>([])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -76,6 +80,8 @@ export default function PoEditPage() {
     setIsPrepaid(po.is_prepaid ?? false)
     setLineItems(po.line_items.map((li) => ({
       id: crypto.randomUUID(),
+      // Preserve the source PR line link so it survives the delete+rebuild.
+      prLineId: li.pr_line_id ?? undefined,
       description: li.description,
       materialId: li.material_id ?? '',
       supplierItemId: li.supplier_item_id ?? '',
@@ -132,15 +138,20 @@ export default function PoEditPage() {
           delivery_address: deliveryAddress || undefined,
           notes: notes || undefined,
           is_prepaid: isPrepaid,
-          line_items: lineItems.map((item) => ({
-            description: item.description,
-            material_id: item.materialId || undefined,
-            supplier_item_id: item.supplierItemId || undefined,
-            qty: item.qty,
-            unit: item.unit,
-            unit_price: item.unitPrice,
-            notes: item.notes || undefined,
-          })),
+          // Filter blank-description lines (backend requires description
+          // min_length=1) and resend pr_line_id on each surviving line.
+          line_items: lineItems
+            .filter((item) => item.description.trim())
+            .map((item) => ({
+              description: item.description,
+              material_id: item.materialId || undefined,
+              supplier_item_id: item.supplierItemId || undefined,
+              pr_line_id: item.prLineId || undefined,
+              qty: item.qty,
+              unit: item.unit,
+              unit_price: item.unitPrice,
+              notes: item.notes || undefined,
+            })),
         },
       })
       if (andSubmit) {

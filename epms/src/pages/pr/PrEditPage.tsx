@@ -9,11 +9,12 @@ import { FormField } from '@/components/ui/form-field'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { useConfig } from '@/hooks/useConfig'
-import { useBudgetOverview, useBalance } from '@/hooks/useBudget'
+import { useBudgetOverview, useBalance, useFactors } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { usePr, useUpdatePr, usePrAction } from '@/hooks/usePrs'
 import { useVendors } from '@/hooks/useVendors'
 import type { ApiVendor } from '@/services/vendors'
+import type { ApiBudgetL1 } from '@/services/budget'
 import type { PrLineItem, Currency, ProcurementType } from '@/types'
 import { CURRENCIES } from '@/types'
 
@@ -54,6 +55,8 @@ export default function PrEditPage() {
   const [isPrepaid, setIsPrepaid] = useState(false)
   const [justification, setJustification] = useState('')
   const [justificationError, setJustificationError] = useState<string | null>(null)
+  const [factorCombo, setFactorCombo] = useState<Record<string, string>>({})
+  const [factorComboError, setFactorComboError] = useState<string | null>(null)
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
 
@@ -66,7 +69,7 @@ export default function PrEditPage() {
   const [selectedCostCenter, setSelectedCostCenter] = useState('')
   const [selectedCostCenterId, setSelectedCostCenterId] = useState<string | undefined>(undefined)
   const [selectedL1, setSelectedL1] = useState('')
-  const [selectedL1Obj, setSelectedL1Obj] = useState<{ code: string; name: string; accounts: { code: string; name: string; is_active?: boolean }[] } | null>(null)
+  const [selectedL1Obj, setSelectedL1Obj] = useState<ApiBudgetL1 | null>(null)
   const [selectedL2, setSelectedL2] = useState('')
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -98,6 +101,7 @@ export default function PrEditPage() {
     setProjectCode(pr.project_code ?? '')
     setIsPrepaid(pr.is_prepaid ?? false)
     setJustification(pr.over_budget_justification ?? '')
+    setFactorCombo(pr.factor_combo ?? {})
 
     // line items
     if (pr.line_items.length > 0) {
@@ -152,6 +156,13 @@ export default function PrEditPage() {
   const selectedBudgetAccount = selectedL2
     ? (ccL2Accounts.find((a) => a.code === selectedL2) ?? null)
     : null
+  // Factors for the selected account — only fetched when decomposition is enabled.
+  const factorsAccountId =
+    selectedBudgetAccount && selectedBudgetAccount.decomposition_enabled
+      ? selectedBudgetAccount.id
+      : null
+  const { data: accountFactorsRaw = [] } = useFactors(factorsAccountId)
+  const accountFactors = accountFactorsRaw.filter((f) => f.is_active)
   // Budget figures come from /balance (scoped to the chosen cost center + account),
   // NOT the catalog account — the catalog carries no annual_budget/committed/actual_spent.
   const { data: budgetBalance } = useBalance(
@@ -172,15 +183,21 @@ export default function PrEditPage() {
     title: title.trim(),
     currency,
     vendor_id: selectedVendor?.id,
-    vendor_name: selectedVendor?.name,
     cost_center_id: selectedCostCenterId,
     budget_code: selectedL2 || undefined,
     project_code: projectCode || undefined,
+    // Only send the combo when every factor is picked (satisfies the server-side
+    // shape check); lets a decomposition combo be corrected via Edit.
+    factor_combo:
+      accountFactors.length > 0 && accountFactors.every((f) => factorCombo[f.factor_code])
+        ? factorCombo
+        : undefined,
     required_by: requiredBy || undefined,
     delivery_address: deliveryAddress || undefined,
     notes: notes || undefined,
     is_prepaid: isPrepaid,
     over_budget_justification: isOverBudget ? justification.trim() || undefined : undefined,
+    // amount / vendor_name / line_total are recomputed server-side.
     line_items: lineItems
       .filter((item) => item.description.trim())
       .map((item) => ({
@@ -190,7 +207,6 @@ export default function PrEditPage() {
         qty: item.qty,
         unit: item.unit,
         unit_price: item.unitPrice,
-        line_total: item.lineTotal,
         notes: item.notes || undefined,
       })),
   })
@@ -215,6 +231,15 @@ export default function PrEditPage() {
     // Hard-block guard — Submit button is already disabled, but guard the
     // programmatic path in case it's invoked some other way.
     if (isHardBlock) return
+    // Factor combo: when the selected Account has decomposition factors, every
+    // factor must have a value picked.
+    if (accountFactors.length > 0) {
+      const missing = accountFactors.filter((f) => !factorCombo[f.factor_code])
+      if (missing.length > 0) {
+        setFactorComboError(`Select a value for: ${missing.map((f) => f.factor_name).join(', ')}`)
+        return
+      }
+    }
     // Over-budget but pre-approval allowed: require non-empty justification.
     if (isOverBudget && !isHardBlock && !justification.trim()) {
       setJustificationError('Justification is required for over-budget PRs')
@@ -330,6 +355,7 @@ export default function PrEditPage() {
                   setSelectedCostCenter(code)
                   setSelectedCostCenterId(costCenters.find((cc) => cc.code === code)?.id)
                   setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
+                  setFactorCombo({}); setFactorComboError(null)
                 }}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
@@ -345,6 +371,7 @@ export default function PrEditPage() {
                   setSelectedL1(code)
                   setSelectedL1Obj(ccL1Groups.find((l) => l.code === code) ?? null)
                   setSelectedL2('')
+                  setFactorCombo({}); setFactorComboError(null)
                 }}
                 disabled={ccL1Groups.length === 0}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
@@ -356,7 +383,7 @@ export default function PrEditPage() {
               </select>
               <select
                 value={selectedL2}
-                onChange={(e) => setSelectedL2(e.target.value)}
+                onChange={(e) => { setSelectedL2(e.target.value); setFactorCombo({}); setFactorComboError(null) }}
                 disabled={ccL2Accounts.length === 0}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
               >
@@ -366,6 +393,58 @@ export default function PrEditPage() {
                 ))}
               </select>
             </div>
+
+            {/* Factor selectors — shown when the chosen Budget Account has factors configured */}
+            {accountFactors.length > 0 && (
+              <div className="rounded-lg border border-primary-200 bg-primary-50/40 p-3">
+                <div className="mb-2 flex items-baseline justify-between gap-2">
+                  <p className="text-xs font-semibold text-primary-800">
+                    Decomposition Factors — required
+                  </p>
+                  <p className="text-[11px] text-primary-700/80">
+                    Pick a value for each factor so this PR's budget impact maps to the right breakdown line.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {accountFactors.map((f) => {
+                    const activeValues = f.values.filter((v) => v.is_active)
+                    const current = factorCombo[f.factor_code] ?? ''
+                    return (
+                      <div key={f.id} className="flex flex-col gap-1">
+                        <label className="text-[11px] font-medium text-neutral-700">
+                          {f.factor_name}
+                          <span className="ml-1 font-mono text-neutral-400">({f.factor_code})</span>
+                        </label>
+                        <select
+                          value={current}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setFactorCombo((prev) => {
+                              const next = { ...prev }
+                              if (v) next[f.factor_code] = v
+                              else delete next[f.factor_code]
+                              return next
+                            })
+                            setFactorComboError(null)
+                          }}
+                          className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                        >
+                          <option value="">Select…</option>
+                          {activeValues.map((v) => (
+                            <option key={v.id} value={v.value_code}>
+                              {v.value_code} — {v.value_name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )
+                  })}
+                </div>
+                {factorComboError && (
+                  <p className="mt-2 text-xs text-danger-600">{factorComboError}</p>
+                )}
+              </div>
+            )}
 
             {/* Over-budget warning */}
             {isOverBudget && selectedBudgetAccount && available > 0 && (

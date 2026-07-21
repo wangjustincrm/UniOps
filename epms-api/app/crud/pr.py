@@ -152,6 +152,35 @@ async def get_by_id(db: AsyncSession, pr_id: uuid.UUID) -> PurchaseRequest | Non
 
 # ── Create ─────────────────────────────────────────────────────────────────────
 
+async def compute_budget_check(
+    budget_code: str | None,
+    cost_center_id: uuid.UUID | None,
+    amount: Decimal,
+    bearer_token: str | None = None,
+) -> tuple[bool, Decimal | None]:
+    """Single source of truth for PR over-budget determination.
+
+    Returns (over_budget, available). `available` is the account's remaining
+    balance, or None when it can't be determined (no budget_code / cost center,
+    zero amount, or budget-api unreachable / account not found). Fail-open:
+    over_budget is False whenever available is None so PR submission isn't
+    blocked by budget-api downtime.
+
+    Both the PR create path and the /pr/budget-check endpoint call this so the
+    frontend and backend agree on over-budget without double-computing.
+    """
+    if not budget_code or cost_center_id is None or amount <= 0:
+        return False, None
+    fiscal_year = datetime.now(timezone.utc).year
+    data = await budget_client.get_balance(
+        bearer_token, cost_center_id, fiscal_year, account_code=budget_code,
+    )
+    if data is None:
+        return False, None
+    available = Decimal(str(data.get("available", 0)))
+    return amount > available, available
+
+
 async def _compute_over_budget(
     db: AsyncSession,  # noqa: ARG001 — kept for call-site stability
     budget_code: str | None,
@@ -161,19 +190,13 @@ async def _compute_over_budget(
 ) -> bool:
     """Return True if pr_amount would push the budget account's projected balance < 0.
 
-    Delegates to budget-api via HTTP. Fail-open semantics: if budget-api is
-    unreachable, returns False (allows PR to submit; warning logged).
+    Thin wrapper over compute_budget_check (shared source of truth). Fail-open
+    semantics: if budget-api is unreachable, returns False (allows PR to submit).
     """
-    if not budget_code or cost_center_id is None or pr_amount <= 0:
-        return False
-    fiscal_year = datetime.now(timezone.utc).year
-    return await budget_client.compute_over_budget(
-        bearer_token=bearer_token,
-        cost_center_id=cost_center_id,
-        fiscal_year=fiscal_year,
-        budget_code=budget_code,
-        pr_amount=pr_amount,
+    over_budget, _available = await compute_budget_check(
+        budget_code, cost_center_id, pr_amount, bearer_token=bearer_token,
     )
+    return over_budget
 
 
 async def create(

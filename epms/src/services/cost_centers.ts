@@ -28,19 +28,12 @@ export interface CostCenterFilters {
   active_only?: boolean
 }
 
+// NOTE: The EPMS /cost-centers endpoints are GET-only — create/update/delete were
+// moved to mdm-api. Do not re-add write methods here; call mdm-api instead.
 export const costCenterService = {
   list: (filters?: CostCenterFilters) =>
     api.get<ApiCostCenter[]>('/cost-centers', filters),
 
   get: (id: string) =>
     api.get<ApiCostCenter>(`/cost-centers/${id}`),
-
-  create: (body: CreateCostCenterBody) =>
-    api.post<ApiCostCenter>('/cost-centers', body),
-
-  update: (id: string, body: UpdateCostCenterBody) =>
-    api.patch<ApiCostCenter>(`/cost-centers/${id}`, body),
-
-  delete: (id: string) =>
-    api.delete<void>(`/cost-centers/${id}`),
 }

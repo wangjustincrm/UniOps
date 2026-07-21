@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
+from app.models.invoice_tax_line import InvoiceTaxLine
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.user import User
 from app.models.vendor import Vendor
@@ -334,7 +335,11 @@ async def match(
         else:
             reference = po.subtotal   # pre-tax PO total (header-level fallback)
 
-        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_total), Decimal("0"))) \
+        # Reference (PoLineItem.line_total / po.subtotal) is PRE-TAX, so the
+        # invoiced side must be pre-tax too — sum allocated_amount (pre-tax),
+        # NOT allocated_total (tax-inclusive). Mirrors the header integrity
+        # check above which also compares pre-tax allocated_amount.
+        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_amount), Decimal("0"))) \
             .where(InvoicePoAllocation.po_id == row.po_id)
         if row.po_line_id is not None:
             q = q.where(InvoicePoAllocation.po_line_id == row.po_line_id)
@@ -531,7 +536,16 @@ async def update(db: AsyncSession, invoice: Invoice, payload: InvoiceUpdate) -> 
         invoice.currency = payload.currency
     if payload.amount is not None:
         invoice.amount = payload.amount
-    if payload.tax_amount is not None:
+    # Tax header source of truth: when the invoice carries invoice_tax_lines, the
+    # header tax_amount MUST equal their sum (mirrors invoice_tax.py:100-102), so
+    # an edited payload.tax_amount is ignored to avoid desyncing header ↔ lines.
+    # Only when there are NO tax lines does payload.tax_amount apply.
+    tax_rows = (await db.execute(
+        select(InvoiceTaxLine.tax_amount).where(InvoiceTaxLine.invoice_id == invoice.id)
+    )).scalars().all()
+    if tax_rows:
+        invoice.tax_amount = sum(tax_rows, Decimal("0"))
+    elif payload.tax_amount is not None:
         invoice.tax_amount = payload.tax_amount
     if payload.notes is not None:
         invoice.notes = payload.notes

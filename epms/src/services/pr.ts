@@ -10,7 +10,7 @@ export type PrStatus =
   | 'rejected'
   | 'cancelled'
 
-export type PrAction = 'submit' | 'approve' | 'return' | 'reject' | 'cancel'
+export type PrAction = 'submit' | 'approve' | 'return' | 'reject' | 'cancel' | 'recall'
 
 export interface ApiPrLineItem {
   id: string
@@ -60,9 +60,7 @@ export interface CreatePrBody {
   title: string
   type: number
   currency: string
-  amount: number
   vendor_id?: string
-  vendor_name?: string
   is_prepaid?: boolean
   project_code?: string
   cost_center_id?: string
@@ -72,16 +70,15 @@ export interface CreatePrBody {
   delivery_address?: string
   notes?: string
   over_budget_justification?: string
-  line_items: Omit<ApiPrLineItem, 'id'>[]
+  // amount/vendor_name/line_total are recomputed server-side.
+  line_items: Omit<ApiPrLineItem, 'id' | 'line_total'>[]
 }
 
 export interface UpdatePrBody {
   title?: string
   type?: number
   currency?: string
-  amount?: number
   vendor_id?: string
-  vendor_name?: string
   cost_center_id?: string
   budget_code?: string
   factor_combo?: Record<string, string> | null
@@ -90,7 +87,8 @@ export interface UpdatePrBody {
   notes?: string
   is_prepaid?: boolean
   over_budget_justification?: string
-  line_items?: Omit<ApiPrLineItem, 'id'>[]
+  // amount/vendor_name/line_total are recomputed server-side.
+  line_items?: Omit<ApiPrLineItem, 'id' | 'line_total'>[]
 }
 
 export interface PrActionBody {
@@ -100,11 +98,9 @@ export interface PrActionBody {
 
 export interface PrFilters {
   status?: PrStatus
-  type?: number
   pr_type?: number
   department_id?: string
   is_prepaid?: boolean
-  vendor_id?: string
   search?: string
   page?: number
   page_size?: number

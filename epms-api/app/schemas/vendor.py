@@ -24,6 +24,9 @@ class VendorCreate(BaseModel):
     max_prepayment_pct: Decimal | None = Field(default=None, ge=1, le=100)
     currency: str = Field(default="CAD", min_length=1, max_length=10)
     notes: str | None = None
+    # Honor "Inactive" chosen at creation. Flows into the mdm partner payload via
+    # _partner_payload (model_dump(exclude_none=True) — is_active is never None).
+    is_active: bool = True
 
 
 class VendorUpdate(BaseModel):
@@ -31,7 +34,9 @@ class VendorUpdate(BaseModel):
     erp_id: str | None = Field(default=None, max_length=100)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     category: str | None = Field(default=None, min_length=1, max_length=100)
-    contact_name: str | None = Field(default=None, min_length=1, max_length=255)
+    # No min_length — symmetric with VendorCreate (which allows empty), so
+    # editing a vendor with a blank contact name doesn't 422.
+    contact_name: str | None = Field(default=None, max_length=255)
     contact_email: str | None = Field(default=None, max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None

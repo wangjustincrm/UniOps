@@ -52,16 +52,24 @@ export default function PaEditPage() {
     if (!pa || initialized) return
     setSelectedInvoiceIds(new Set(pa.invoice_ids))
     setSelectedLineIds(new Set(pa.line_items.map((l) => l.po_line_id)))
-    setPaType(pa.pa_type)
     setPrepaymentPct(pa.prepayment_pct?.toString() ?? '50')
     setExpectedSettlement(pa.expected_settlement_date ?? '')
     setTitle(pa.title)
     setSubtotal(pa.subtotal.toString())
     setTaxAmount(pa.tax_amount.toString())
     setTaxManuallyEdited(true) // keep user's existing tax value
+    setShipping(pa.shipping_amount != null ? String(pa.shipping_amount) : '')
+    setOther(pa.other_charges != null ? String(pa.other_charges) : '')
+    setOtherNote(pa.other_charges_note ?? '')
     setNotes(pa.notes ?? '')
     setInitialized(true)
   }, [pa, initialized])
+
+  // PA type is derived from the linked PO (a prepaid PO → prepayment), never a
+  // free user choice — keep the on-screen type in sync with the PO.
+  useEffect(() => {
+    if (po) setPaType(po.is_prepaid ? 'prepayment' : 'regular')
+  }, [po?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const selectedPoLines = po ? po.line_items.filter((l) => selectedLineIds.has(l.id)) : []
@@ -132,20 +140,21 @@ export default function PaEditPage() {
           qty: l.qty,
           unit: l.unit,
           unit_price: l.unit_price,
-          line_total: l.line_total,
         }))
 
       await updatePa.mutateAsync({
         id: pa.id,
         body: {
           title: title.trim(),
-          pa_type: paType,
-          currency: po.currency,
+          // pa_type & currency are derived from the PO — not sent from the client.
           subtotal: subtotalNum,
           tax_amount: taxNum,
           tax_code: taxNum > 0 ? paTaxCode ?? undefined : null,
           tax_rate: taxNum > 0 ? paTaxRate : null,
+          shipping_amount: shippingNum || undefined,
+          other_charges: otherNum || undefined,
           invoice_ids: Array.from(selectedInvoiceIds),
+          gr_ids: Array.from(selectedGrIds),
           prepayment_pct: paType === 'prepayment' ? parseFloat(prepaymentPct) : undefined,
           expected_settlement_date: paType === 'prepayment' ? expectedSettlement : undefined,
           line_items: paLineItems,
@@ -387,27 +396,21 @@ export default function PaEditPage() {
               </div>
             )}
 
-            {/* PA Type */}
+            {/* PA Type — derived from the linked PO, read-only */}
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-neutral-600">Payment Type</p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { value: 'regular' as const,    label: 'Regular Payment',  desc: 'Standard payment against invoice / GR' },
-                  { value: 'prepayment' as const, label: 'Prepayment',       desc: 'Advance payment before full GR/invoice' },
-                ].map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setPaType(opt.value)}
-                    className={cn(
-                      'rounded-xl border-2 p-3 text-left transition-all',
-                      paType === opt.value ? 'border-primary-600 bg-primary-50' : 'border-neutral-200 hover:border-neutral-300'
-                    )}
-                  >
-                    <p className={cn('text-sm font-semibold', paType === opt.value ? 'text-primary-700' : 'text-neutral-800')}>{opt.label}</p>
-                    <p className="text-xs text-neutral-500 mt-0.5">{opt.desc}</p>
-                  </button>
-                ))}
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-neutral-800">
+                    {paType === 'prepayment' ? 'Prepayment' : 'Regular Payment'}
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {paType === 'prepayment'
+                      ? 'Advance payment before full GR/invoice'
+                      : 'Standard payment against invoice / GR'}
+                  </p>
+                </div>
+                <span className="text-xs text-neutral-400 italic">Derived from PO</span>
               </div>
 
               {paType === 'prepayment' && (

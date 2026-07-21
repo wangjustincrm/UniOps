@@ -28,7 +28,7 @@ const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'approved', label: 'Approved' },
   { value: 'returned', label: 'Returned' },
   { value: 'rejected', label: 'Rejected' },
-  { value: 'paid', label: 'Paid / Closed' },
+  { value: 'cancelled', label: 'Cancelled' },
 ]
 
 type SortField = 'number' | 'title' | 'amount' | 'status' | 'submitted_at' | 'is_prepaid'

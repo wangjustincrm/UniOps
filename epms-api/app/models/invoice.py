@@ -30,7 +30,7 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    # unmatched | matched | exception | approved | paid
+    # unmatched | matched | match_review | exception | approved | paid
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="unmatched", index=True)
 
     line_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)

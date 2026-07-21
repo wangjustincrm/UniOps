@@ -748,7 +748,7 @@ export default function PoDetailPage() {
                     <span className="amount">{formatAmount(po.subtotal, po.currency)}</span>
                   </div>
                   <div className="flex justify-between text-sm text-neutral-700">
-                    <span>{TAX_LABELS[po.tax_rate] ?? `${Math.round(po.tax_rate * 100)}% Tax`}</span>
+                    <span>{TAX_LABELS[Number(po.tax_rate)] ?? `${Math.round(Number(po.tax_rate) * 100)}% Tax`}</span>
                     <span className="amount">{formatAmount(po.tax_amount, po.currency)}</span>
                   </div>
                   <div className="border-t border-neutral-300 mt-1 pt-2 flex justify-between">
@@ -829,7 +829,7 @@ export default function PoDetailPage() {
                     </table>
                   </div>
                   <div className="border-t border-neutral-200 px-4 py-3 flex justify-end gap-8 text-sm bg-neutral-50">
-                    <span className="text-neutral-500">{TAX_LABELS[po.tax_rate] ?? 'Tax'}: <span className="amount text-neutral-700">{formatAmount(po.tax_amount, po.currency)}</span></span>
+                    <span className="text-neutral-500">{TAX_LABELS[Number(po.tax_rate)] ?? 'Tax'}: <span className="amount text-neutral-700">{formatAmount(po.tax_amount, po.currency)}</span></span>
                     <span className="font-bold text-neutral-900">Total: <span className="amount">{formatAmount(po.total, po.currency)}</span></span>
                   </div>
                 </div>

@@ -126,6 +126,26 @@ class PrUpdate(BaseModel):
         return _validate_factor_combo(v)
 
 
+class BudgetCheckRequest(BaseModel):
+    """Inputs mirroring the PR create form used to determine over-budget.
+
+    Only budget_code + cost_center_id + amount drive the computation (same as
+    the create path); department_id / factor_combo / project_code are accepted
+    for form parity but do not affect the result.
+    """
+    cost_center_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = None
+    budget_code: str | None = Field(default=None, max_length=100)
+    factor_combo: dict[str, str] | None = None
+    project_code: str | None = Field(default=None, max_length=100)
+    amount: Decimal = Field(default=Decimal("0"), ge=0)
+
+
+class BudgetCheckResponse(BaseModel):
+    over_budget: bool
+    available: str | None  # decimal-as-str; None when balance can't be determined
+
+
 class PrActionRequest(BaseModel):
     """Payload for submit / approve / return / reject / cancel."""
     action: str = Field(min_length=1, max_length=20)

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
@@ -18,6 +19,7 @@ import { useBudgetOverview, useFactors, useBalance } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { useCreatePr, usePr } from '@/hooks/usePrs'
 import { prService } from '@/services/pr'
+import { api } from '@/lib/api'
 import { prAttachmentService } from '@/services/prAttachments'
 import { useVendors } from '@/hooks/useVendors'
 import type { ApiVendor } from '@/services/vendors'
@@ -212,8 +214,39 @@ export default function PrCreatePage() {
   const committed    = Number(budgetBalance?.committed ?? 0)
   const actualSpent  = Number(budgetBalance?.actual_spent ?? 0)
   const available = annualBudget - committed - actualSpent
-  const isOverBudget = selectedBudgetAccount ? estimatedAmount > available && estimatedAmount > 0 : false
-  const overage = isOverBudget ? estimatedAmount - available : 0
+  // Local /balance subtraction — kept for the "available" display and as a
+  // fallback if the authoritative budget-check call hasn't answered / errored.
+  const localOverBudget = selectedBudgetAccount ? estimatedAmount > available && estimatedAmount > 0 : false
+  // Authoritative over-budget decision: ask the backend the same question it
+  // will answer at persist time, so the UI gate (hard-block / justification)
+  // matches what the server stores. Falls back to the local calc on error.
+  const budgetCheckEnabled = Boolean(
+    selectedBudgetAccount && selectedCostCenterId && selectedL2 && estimatedAmount > 0,
+  )
+  const { data: budgetCheck, isError: budgetCheckError } = useQuery({
+    queryKey: [
+      'pr-budget-check',
+      selectedCostCenterId,
+      user?.department_id,
+      selectedL2,
+      factorCombo,
+      getValues('projectCode') || null,
+      estimatedAmount,
+    ],
+    queryFn: () =>
+      api.post<{ over_budget: boolean; available: string }>('/pr/budget-check', {
+        cost_center_id: selectedCostCenterId,
+        department_id: user?.department_id ?? undefined,
+        factor_combo: accountFactors.length > 0 ? factorCombo : undefined,
+        project_code: getValues('projectCode') || undefined,
+        amount: estimatedAmount,
+      }),
+    enabled: budgetCheckEnabled,
+  })
+  const isOverBudget = selectedBudgetAccount
+    ? (budgetCheck && !budgetCheckError ? budgetCheck.over_budget : localOverBudget)
+    : false
+  const overage = isOverBudget ? Math.max(estimatedAmount - available, 0) : 0
   // Over-Budget Approval Mode (single source of truth = Admin → Budget Config)
   const overBudgetMode = config?.budget_admin_config?.over_budget_mode ?? 'fm_gm_opm'
   const isHardBlock = isOverBudget && overBudgetMode === 'hard_block'
@@ -258,9 +291,7 @@ export default function PrCreatePage() {
         title: formData.title,
         type: selectedType!,
         currency,
-        amount: estimatedAmount,
         vendor_id: selectedVendor?.id,
-        vendor_name: selectedVendor?.name,
         is_prepaid: formData.prepaymentRequired ?? false,
         project_code: formData.projectCode || undefined,
         cost_center_id: selectedCostCenterId,
@@ -270,6 +301,7 @@ export default function PrCreatePage() {
         delivery_address: formData.deliveryAddress || config?.delivery_address || undefined,
         notes: formData.notes,
         over_budget_justification: isOverBudget ? justification : undefined,
+        // amount / vendor_name / line_total are recomputed server-side.
         line_items: lineItems.map((item) => ({
           description: item.description,
           material_id: item.materialId || undefined,
@@ -277,7 +309,6 @@ export default function PrCreatePage() {
           qty: item.qty,
           unit: item.unit,
           unit_price: item.unitPrice,
-          line_total: item.lineTotal,
           notes: item.notes || undefined,
         })),
       })
@@ -299,9 +330,7 @@ export default function PrCreatePage() {
         title: values.title.trim(),
         type: selectedType,
         currency,
-        amount: estimatedAmount,
         vendor_id: selectedVendor?.id,
-        vendor_name: selectedVendor?.name,
         cost_center_id: selectedCostCenterId,
         budget_code: selectedL2 || undefined,
         // Drafts may have a partial combo; only send when all factors are picked
@@ -315,6 +344,7 @@ export default function PrCreatePage() {
         delivery_address: values.deliveryAddress || config?.delivery_address || undefined,
         notes: values.notes,
         over_budget_justification: draftJustification || undefined,
+        // amount / vendor_name / line_total are recomputed server-side.
         line_items: lineItems
           .filter((item) => item.description.trim())
           .map((item) => ({
@@ -324,7 +354,6 @@ export default function PrCreatePage() {
             qty: item.qty,
             unit: item.unit,
             unit_price: item.unitPrice,
-            line_total: item.lineTotal,
             notes: item.notes || undefined,
           })),
       })

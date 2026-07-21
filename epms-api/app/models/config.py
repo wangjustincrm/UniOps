@@ -43,9 +43,10 @@ class CompanyConfig(Base):
 
     # ── 3-way match tolerance (Phase a A2, FIN-AP-001) ──────────────────────
     # |variance_pct| <= tolerance → auto-matched (variance still recorded);
-    # above → exception for review. 0 = zero tolerance (historical behaviour).
+    # above → exception for review. Company default is 5% (a small over-invoice
+    # within 5% auto-matches instead of raising an exception for review).
     invoice_match_tolerance_pct: Mapped[Decimal] = mapped_column(
-        Numeric(5, 2), nullable=False, default=Decimal("0"), server_default="0"
+        Numeric(5, 2), nullable=False, default=Decimal("5"), server_default="5"
     )
 
     # ── Security ────────────────────────────────────────────────────────────

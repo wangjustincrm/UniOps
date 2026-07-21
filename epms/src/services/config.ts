@@ -111,6 +111,10 @@ export interface CompanyConfig {
   vendor_categories: string[]
   name: string
   tagline: string
+  // 3-way match variance tolerance as a percent (e.g. 5 = 5%). Invoices whose
+  // variance vs the linked PO exceeds this are flagged as exceptions. May be
+  // missing on legacy CompanyConfig rows — callers should fall back to 5.
+  invoice_match_tolerance_pct?: number
   module_taglines: Record<string, string>
   logo_data_url: string | null
   logo_file_name: string | null

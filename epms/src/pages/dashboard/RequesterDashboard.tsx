@@ -5,7 +5,7 @@ import { PrPipeline } from '@/components/dashboard/PrPipeline'
 import { Card } from '@/components/ui/card'
 import { useDashboard } from '@/hooks/useDashboard'
 import { useTasks } from '@/hooks/useTasks'
-import { financeHandoffHref } from '@/lib/api'
+import { taskHref } from '@/lib/taskTypes'
 import type { PrPipelineItem } from '@/components/dashboard/PrPipeline'
 import type { DocumentStatus, TaskItem } from '@/types'
 import type { ApiTask } from '@/services/tasks'
@@ -46,9 +46,6 @@ function mapPipeline(items: ApiPrPipelineItem[] | undefined): PrPipelineItem[] {
 }
 
 function mapTasks(tasks: ApiTask[]): TaskItem[] {
-  const hrefMap: Record<string, string> = {
-    pr: '/pr', po: '/po', gr: '/gr', invoice: '/invoices', pa: '/pa',
-  }
   return tasks.map((t) => ({
     id: t.id,
     type: t.type,
@@ -60,16 +57,10 @@ function mapTasks(tasks: ApiTask[]): TaskItem[] {
     dueDate: t.due_date,
     amount: t.amount,
     vendor: t.vendor,
-    // Budget Plans live in the Finance module — open them there via a full-page
-    // handoff (absolute URL), not an in-app EPMS route. The shared TaskCard
-    // detects the absolute URL and jumps instead of using react-router.
-    href: t.document_type.toLowerCase() === 'budget_plan'
-      ? financeHandoffHref(`/budget/plans/${t.document_id}`)
-      : t.type === 'create_pa'
-      ? `/pa/create?poId=${t.document_id}`
-      : t.type === 'create_prepayment_pa'
-      ? `/pa/new?poId=${t.document_id}`
-      : `${hrefMap[t.document_type.toLowerCase()] ?? '/'}/${t.document_id}`,
+    // Shared resolver — Budget Plan tasks return an absolute Finance handoff URL
+    // (the TaskCard detects it and jumps instead of using react-router); create_pa
+    // and create_prepayment_pa route to the PA create page anchored on the PO.
+    href: taskHref(t),
   }))
 }
 

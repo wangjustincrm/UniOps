@@ -26,6 +26,8 @@ async def list_grs(
     status: str | None = Query(default=None),
     po_id: uuid.UUID | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
+    search: str | None = Query(default=None),
+    gr_type: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
 ):
@@ -35,6 +37,7 @@ async def list_grs(
         return GrListResponse(items=[], total=0)
     items, total = await gr_crud.get_all(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
+        search=search, gr_type=gr_type,
         po_ids_subq=scope["po_subq"],
         page=page, page_size=page_size,
     )

@@ -17,6 +17,26 @@ import { usePr } from '@/hooks/usePrs'
 import { useVendors } from '@/hooks/useVendors'
 import type { ApiVendor } from '@/services/vendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
+import { useAuthStore } from '@/stores/auth.store'
+
+// PO lines can originate from a PR line — carry that source id so the backend
+// can persist pr_line_id and keep the PO↔PR line link.
+type PoDraftLine = PrLineItem & { prLineId?: string }
+
+// Mirrors prAttachmentService.upload for the PO attachment endpoint (no shared
+// service exists yet). Uploads a single file to POST /po/{id}/attachments.
+async function uploadPoAttachment(poId: string, file: File): Promise<void> {
+  const base = (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
+  const token = useAuthStore.getState().token
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${base}/po/${poId}/attachments`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  })
+  if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
+}
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Type 1 — Raw Mat./Packaging',
@@ -72,9 +92,9 @@ export default function PoCreatePage() {
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [isPrepaid, setIsPrepaid] = useState(false)
-  const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
+  const [lineItems, setLineItems] = useState<PoDraftLine[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
-  const [attachments, setAttachments] = useState<{ name: string; size: string }[]>([])
+  const [attachments, setAttachments] = useState<File[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -108,6 +128,8 @@ export default function PoCreatePage() {
       const unitPrice = Number(li.unit_price)
       return {
         id: crypto.randomUUID(),
+        // Keep the source PR line id so it can be sent as pr_line_id on submit.
+        prLineId: li.id,
         description: li.description,
         materialId: li.material_id ?? '',
         supplierItemId: li.supplier_item_id ?? '',
@@ -168,16 +190,23 @@ export default function PoCreatePage() {
         is_prepaid: isPrepaid,
         pr_id: prId ?? undefined,
         budget_code: budgetCode || undefined,
-        line_items: lineItems.map((item) => ({
-          description: item.description,
-          material_id: item.materialId || undefined,
-          supplier_item_id: item.supplierItemId || undefined,
-          qty: item.qty,
-          unit: item.unit,
-          unit_price: item.unitPrice,
-          notes: item.notes || undefined,
-        })),
+        // Filter out blank-description lines — backend requires description
+        // min_length=1, so an untouched seed line would 422 on draft save.
+        line_items: lineItems
+          .filter((item) => item.description.trim())
+          .map((item) => ({
+            description: item.description,
+            material_id: item.materialId || undefined,
+            supplier_item_id: item.supplierItemId || undefined,
+            pr_line_id: item.prLineId || undefined,
+            qty: item.qty,
+            unit: item.unit,
+            unit_price: item.unitPrice,
+            notes: item.notes || undefined,
+          })),
       })
+      // Upload locally-collected attachments now that the PO has an id.
+      await Promise.all(attachments.map((f) => uploadPoAttachment(newPo.id, f)))
       if (status === 'submitted') {
         await poService.action(newPo.id, { action: 'submit' })
       }
@@ -189,10 +218,8 @@ export default function PoCreatePage() {
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
-    setAttachments((prev) => [
-      ...prev,
-      ...files.map((f) => ({ name: f.name, size: `${(f.size / 1024 / 1024).toFixed(1)} MB` })),
-    ])
+    setAttachments((prev) => [...prev, ...files])
+    e.target.value = ''
   }
 
   const linkedPr = linkedPrData
@@ -484,7 +511,7 @@ export default function PoCreatePage() {
                       <span className="flex items-center gap-2 text-neutral-700">
                         <Upload className="h-3.5 w-3.5 text-neutral-400" />
                         {f.name}
-                        <span className="text-neutral-400">({f.size})</span>
+                        <span className="text-neutral-400">({(f.size / 1024 / 1024).toFixed(1)} MB)</span>
                       </span>
                       <button
                         type="button"

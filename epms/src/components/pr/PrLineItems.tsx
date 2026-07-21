@@ -167,7 +167,7 @@ function PartsPicker({ value, onSelect, onClear, hasError }: PartsPickerProps) {
                   onClick={() => handleSelect(part)}
                   className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-primary-50 transition-colors"
                 >
-                  <PartThumbnail src={part.image_url} size={32} />
+                  <PartThumbnail src={part.image_data_url} size={32} />
                   <div className="flex min-w-0 flex-1 flex-col">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-[10px] text-primary-600 shrink-0">{part.code}</span>
