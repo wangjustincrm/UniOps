@@ -803,13 +803,34 @@ async def run_load(
                 for r in pr_rows:
                     number = clip(r.get("PR_x0020_No"), 30)
                     pono = (r.get("PONo") or "").strip() or None
-                    if number in prno_to_id and pono in pono_to_id:
-                        obj = await db.get(PurchaseRequest, prno_to_id[number])
-                        if obj is not None:
-                            obj.po_id = pono_to_id[pono]
-                            # keep updated_at == SP Modified so incremental sync
-                            # doesn't mistake this back-fill for a local edit
-                            _stamp(obj, to_dt(r.get("Modified")))
+                    if not number or not pono:
+                        continue
+                    # Resolve the PO uuid: this batch first, then the DB — the PO may
+                    # have been imported in an earlier batch than this PR's (re)sync.
+                    po_uuid = pono_to_id.get(pono)
+                    if po_uuid is None:
+                        po_uuid = (await db.execute(
+                            select(PurchaseOrder.id).where(PurchaseOrder.number == pono)
+                        )).scalar_one_or_none()
+                    if po_uuid is None:
+                        continue
+                    # Resolve the PR uuid: this batch first, then the DB — a PR that
+                    # was UPDATED (not created) this run isn't in prno_to_id, which is
+                    # exactly the "PONo changed → re-synced but po_id never attached"
+                    # case that stranded the PR↔PO back-ref.
+                    pr_uuid = prno_to_id.get(number)
+                    if pr_uuid is None:
+                        pr_uuid = (await db.execute(
+                            select(PurchaseRequest.id).where(PurchaseRequest.number == number)
+                        )).scalar_one_or_none()
+                    if pr_uuid is None:
+                        continue
+                    obj = await db.get(PurchaseRequest, pr_uuid)
+                    if obj is not None and obj.po_id != po_uuid:
+                        obj.po_id = po_uuid
+                        # keep updated_at == SP Modified so incremental sync
+                        # doesn't mistake this back-fill for a local edit
+                        _stamp(obj, to_dt(r.get("Modified")))
 
             # ── reconstruct approval_events for imported docs ────────────────────
             # Runs alongside the import (same transaction): every PR/PO/PA that

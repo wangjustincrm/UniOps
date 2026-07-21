@@ -51,6 +51,11 @@ def _sp_pono_to_prno(pr_data):
 def _apply(po, pr):
     po.pr_id = pr.id
     po.pr_number = pr.number
+    # Back-ref the PR to its PO. pr.po_id drives the PR detail's Document Chain and
+    # the create_po-task backfill guard; without it the PR shows no linked PO and
+    # keeps getting a Create-PO task re-raised.
+    if pr.po_id is None:
+        pr.po_id = po.id
     po.type = pr.type
     po.created_by = pr.created_by or po.created_by
     if po.title == po.number:
