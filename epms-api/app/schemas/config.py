@@ -198,6 +198,11 @@ class ConfigResponse(BaseModel):
     mfa_enabled: bool
     password_expiry_days: int | None
 
+    # 3-way match tolerance (percent). Exposed as float so the frontend gets a
+    # clean JSON number (Decimal would serialize as a string). Drives the invoice
+    # match pass/exception UI so it stops hardcoding 5%.
+    invoice_match_tolerance_pct: float = 5.0
+
     smtp_host: str | None
     smtp_port: int | None
     smtp_user: str | None
