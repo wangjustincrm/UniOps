@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
-from app.crud.engine import reroute_stranded_optional_steps
+from app.crud.engine import resync_inflight_approvals
 from app.db.base import get_db
 
 router = APIRouter(prefix="/routing", tags=["routing"])
@@ -122,17 +122,18 @@ async def put_routing(body: dict, db: AsyncSession = Depends(get_db), user: Curr
     return await _load_routing(db)
 
 
-@router.post("/reroute-inflight")
-async def reroute_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser = ...):
-    """Re-route in-flight documents stranded on an optional (Director/Supervisor)
-    step that the CURRENT config now skips — advance each to its next real
-    approver (or approve it). Run after changing Director/Supervisor routing or a
-    user's role so already-submitted documents don't stay stuck (their old
-    optional-step assignee can no longer approve → 409). Idempotent: only touches
-    documents whose current step is genuinely skippable now. system_admin only.
+@router.post("/resync-inflight")
+async def resync_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser = ...):
+    """Realign in-flight documents to the CURRENT routing config. Run after
+    changing dept gm↔opm mapping, Director/Supervisor routing, who holds a role,
+    or a workflow's step list — so already-submitted documents don't stay stuck
+    with a wrong approval_step_idx (→ 409 / "no permission") or a task assigned to
+    the old approver. Realigns each doc's step to its open task's real step, skips
+    now-unconfigured optional steps, and reassigns drifted approvers. Idempotent:
+    only touches documents that are actually out of sync. system_admin only.
     """
     if user.get("role") != "system_admin":
         raise HTTPException(status_code=403, detail="system_admin only")
-    results = await reroute_stranded_optional_steps(db)
+    result = await resync_inflight_approvals(db)
     await db.commit()
-    return {"rerouted": len(results), "documents": results}
+    return {"resynced": len(result["resynced"]), "errors": len(result["errors"]), **result}

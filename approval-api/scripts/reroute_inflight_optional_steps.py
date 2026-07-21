@@ -1,16 +1,16 @@
-"""Re-route in-flight documents stranded at an optional (Director/Supervisor) step.
+"""Re-sync in-flight approval documents to the CURRENT routing config.
 
-Thin CLI around engine.reroute_stranded_optional_steps (the same logic the
-`POST /approval/v1/routing/reroute-inflight` admin endpoint runs). When a dept's
-Director/Supervisor mapping (or a user's role) changes, documents already parked
-at that optional step keep the task assigned to the OLD approver, who can no
-longer pass _actor_can_approve for that step → every Approve 409s. The engine
-skips unconfigured optional steps for NEW documents but never re-routes in-flight
-ones; this advances each stranded doc to its next real approver (or approves it).
+Thin CLI around engine.resync_inflight_approvals (the same logic the
+`POST /approval/v1/routing/resync-inflight` admin endpoint runs). When approval
+routing config changes (dept gm↔opm mapping, Director/Supervisor routing, who
+holds a role) or a workflow's step list changes, already-submitted documents are
+not re-routed — their approval_step_idx can point at the wrong/out-of-range step
+(→ 409 / "no permission") and/or their task stays assigned to the old approver.
+This realigns each doc's step to its open task's real step, skips
+now-unconfigured optional steps, and reassigns drifted approvers.
 
 Dry-run by DEFAULT (rolls back). Pass --apply to commit. Refuses ENVIRONMENT=
-production unless --allow-production. Only touches docs whose current step is now
-genuinely skippable — validly-configured approvals are left alone.
+production unless --allow-production. Idempotent — only touches out-of-sync docs.
 
 Run (dev):
     docker cp reroute_inflight_optional_steps.py <approval-container>:/app/scripts/
@@ -23,23 +23,24 @@ import asyncio
 import os
 import sys
 
-from app.crud.engine import reroute_stranded_optional_steps
+from app.crud.engine import resync_inflight_approvals
 from app.db.base import AsyncSessionLocal
 
 
 async def main(apply: bool):
     async with AsyncSessionLocal() as db:
-        results = await reroute_stranded_optional_steps(db)
-        for r in results:
-            skip_desc = ", ".join(f"step{s['step']}:{s['role']}" for s in r["skipped"])
-            print(f"  {r['doc_type'].upper()} {r['number']}: "
-                  f"skip [{skip_desc}] -> step{r['to_step']} ({r['new_role']})")
+        result = await resync_inflight_approvals(db)
+        for r in result["resynced"]:
+            print(f"  {r['doc_type'].upper()} {r['number']}: {'; '.join(r['actions'])}")
+        for e in result["errors"]:
+            print(f"  ! {e['doc_type']} {e['doc_id']}: {e['error']}")
+        n, errs = len(result["resynced"]), len(result["errors"])
         if apply:
             await db.commit()
-            print(f"\nAPPLIED: rerouted {len(results)} document(s).")
+            print(f"\nAPPLIED: re-synced {n} document(s); {errs} error(s).")
         else:
             await db.rollback()
-            print(f"\nDRY-RUN: would reroute {len(results)} document(s). "
+            print(f"\nDRY-RUN: would re-sync {n} document(s); {errs} error(s). "
                   f"Re-run with --apply to commit.")
 
 
