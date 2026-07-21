@@ -101,6 +101,7 @@ export interface PrFilters {
   pr_type?: number
   department_id?: string
   is_prepaid?: boolean
+  created_by?: string
   search?: string
   page?: number
   page_size?: number

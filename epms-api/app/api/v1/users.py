@@ -167,10 +167,14 @@ async def list_users_directory(
     db: SessionDep,
     _: CurrentUserPayload,
     search: str | None = None,
+    role: str | None = None,
+    department_id: uuid.UUID | None = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    """List active users with optional name/email search.
+    """List active users with optional name/email search, role and department
+    filters. Non-admin (any authenticated user) — powers pickers like the PR
+    list's Requester filter.
 
     Limited to `is_active=True` (inactive users should not appear in pickers).
     """
@@ -179,6 +183,10 @@ async def list_users_directory(
         q = q.where(
             or_(User.full_name.ilike(f"%{search}%"), User.email.ilike(f"%{search}%"))
         )
+    if role:
+        q = q.where(User.role == role)
+    if department_id is not None:
+        q = q.where(User.department_id == department_id)
 
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     q = q.offset((page - 1) * page_size).limit(page_size)
