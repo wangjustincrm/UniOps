@@ -990,3 +990,112 @@ async def execute_action(
         workflow_complete=new_status in ("approved", "rejected", "cancelled", "processed"),
         auto_skipped_steps=auto_skipped,
     )
+
+
+# ── In-flight re-routing (config-change remediation) ──────────────────────────
+#
+# When a department's Director/Supervisor mapping (or a user's role) changes,
+# documents already parked at that optional step keep the task assigned to the
+# OLD approver, who can no longer pass _actor_can_approve for that step -> every
+# Approve 409s. The engine skips unconfigured optional steps for NEW documents
+# (submit/approve loops) but never re-routes in-flight ones. These helpers re-run
+# that same skip/advance logic against the CURRENT config for stranded docs.
+# They mutate the session but DO NOT commit — the caller commits (endpoint) or
+# rolls back (script dry-run).
+
+async def _reroute_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -> dict | None:
+    """Advance one document IF its current step is now skippable; else no-op.
+
+    Returns a summary dict when it (would) reroute, None when the current step is
+    still a valid, required approval (left untouched).
+    """
+    meta = _resolve_meta(doc_type)
+    Model = meta["model"]
+    doc = (await db.execute(select(Model).where(Model.id == doc_id))).scalar_one_or_none()
+    if doc is None:
+        return None
+
+    cfg = await _get_config(db)
+    rm = await get_role_management(db)
+    dept_gm_opm = await get_dept_gm_opm_mapping(db)
+    routing_uid = await _routing_user_id(db, doc_type, doc)
+    dept_director = await get_dept_director_mapping(db)
+    dept_supervisor = await get_dept_supervisor_enabled(db)
+    director_uid = await _resolve_director(db, routing_uid, dept_director)
+    supervisor_uid = await _resolve_supervisor(db, routing_uid, dept_supervisor)
+    routing_dept = (await db.execute(
+        select(User.department_id).where(User.id == routing_uid))).scalar_one_or_none()
+    dept_has_director = bool(routing_dept) and str(routing_dept) in (dept_director or {})
+    dept_has_supervisor = bool(routing_dept) and bool((dept_supervisor or {}).get(str(routing_dept)))
+
+    workflow = await build_effective_workflow(db, doc_type, doc, cfg)
+    step = doc.approval_step_idx
+    if step >= len(workflow):
+        return None
+    role = workflow[step]["role"]
+    skip_now, _reason = _should_skip_step(
+        role, doc_type, doc, director_uid, supervisor_uid, dept_has_director, dept_has_supervisor)
+    if not skip_now:
+        return None  # current step is a valid required approval — leave it alone
+
+    number = getattr(doc, meta["number_attr"])
+    start = step
+    skipped: list[dict] = []
+    while start < len(workflow):
+        r = workflow[start]["role"]
+        sk, reason = _should_skip_step(
+            r, doc_type, doc, director_uid, supervisor_uid, dept_has_director, dept_has_supervisor)
+        if not sk:
+            break
+        db.add(ApprovalEvent(
+            document_type=doc_type, document_id=doc.id, document_number=number,
+            step_idx=start, action="approve", actor_id=routing_uid, actor_role=r,
+            comment=f"Re-routed (config change): {reason}",
+        ))
+        skipped.append({"step": start, "role": r})
+        start += 1
+
+    await _complete_tasks(db, doc_type, doc.id)  # clear the stale optional-step task
+    doc.approval_step_idx = start
+    if start < len(workflow):
+        _set_status(meta, doc, "in_review")
+        await _create_approve_task(
+            db, doc_type, doc, step=start, workflow=workflow, meta=meta,
+            rm=rm, dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+            director_uid=director_uid, supervisor_uid=supervisor_uid)
+        new_role, new_status = workflow[start]["role"], "in_review"
+    else:
+        _set_status(meta, doc, "approved")
+        if hasattr(doc, "approved_at"):
+            doc.approved_at = datetime.now(timezone.utc)
+        post_fn = _POST_APPROVE.get(doc_type)
+        if post_fn is None and doc_type.startswith("cfm_"):
+            post_fn = _post_approve_exp
+        if post_fn:
+            await post_fn(db, doc)
+        new_role, new_status = "APPROVED", "approved"
+
+    return {
+        "doc_type": doc_type, "number": number,
+        "from_step": step, "to_step": start,
+        "skipped": skipped, "new_role": new_role, "new_status": new_status,
+    }
+
+
+async def reroute_stranded_optional_steps(db: AsyncSession) -> list[dict]:
+    """Reroute every in-flight doc parked on an optional step the current config
+    now skips. Mutates the session; caller commits/rolls back. Returns summaries.
+    """
+    rows = (await db.execute(
+        select(Task.document_type, Task.document_id).where(
+            Task.type.like("approve%"),
+            Task.is_completed.is_(False),
+            Task.assigned_role.in_(["director", "supervisor"]),
+        ).distinct()
+    )).all()
+    results: list[dict] = []
+    for doc_type, doc_id in rows:
+        summary = await _reroute_document(db, doc_type, doc_id)
+        if summary:
+            results.append(summary)
+    return results

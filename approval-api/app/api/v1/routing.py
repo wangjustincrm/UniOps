@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.crud.engine import reroute_stranded_optional_steps
 from app.db.base import get_db
 
 router = APIRouter(prefix="/routing", tags=["routing"])
@@ -119,3 +120,19 @@ async def put_routing(body: dict, db: AsyncSession = Depends(get_db), user: Curr
 
     await db.commit()
     return await _load_routing(db)
+
+
+@router.post("/reroute-inflight")
+async def reroute_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser = ...):
+    """Re-route in-flight documents stranded on an optional (Director/Supervisor)
+    step that the CURRENT config now skips — advance each to its next real
+    approver (or approve it). Run after changing Director/Supervisor routing or a
+    user's role so already-submitted documents don't stay stuck (their old
+    optional-step assignee can no longer approve → 409). Idempotent: only touches
+    documents whose current step is genuinely skippable now. system_admin only.
+    """
+    if user.get("role") != "system_admin":
+        raise HTTPException(status_code=403, detail="system_admin only")
+    results = await reroute_stranded_optional_steps(db)
+    await db.commit()
+    return {"rerouted": len(results), "documents": results}
