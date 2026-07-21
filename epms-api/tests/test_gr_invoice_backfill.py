@@ -127,3 +127,72 @@ async def test_gr_autofills_only_the_invoice_for_its_lines_and_accumulates():
 
         assert set(inv1.gr_ids) == {str(grA.id), str(grB.id)}
         assert inv1.gr_value == Decimal("80.00")   # 50 + 30 across both GRs
+
+
+@pytest.mark.asyncio
+async def test_partial_overlap_fans_gr_out_to_every_shared_invoice():
+    """PO lines A,B,C. GR1 receives {A,C}; GR2 receives {B,C}. INV1 bills {A,B};
+    INV2 bills {C}. A GR links to an invoice on ANY shared line (no full-coverage
+    requirement), so both GRs end up on both invoices.
+    """
+    async with sm.AsyncSessionLocal() as db:
+        user = await user_crud.create(db, RegisterRequest(
+            email=f"gr-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+            full_name="GR Tester", role="warehouse_staff",
+        ))
+        vendor = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme",
+                        category="supplier", contact_name="C", contact_email="c@x.com")
+        db.add(vendor)
+        await db.flush()
+
+        po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=2,
+                           vendor_id=vendor.id, vendor_name="Acme", status="issued",
+                           created_by=user.id)
+        db.add(po)
+        await db.flush()
+
+        lineA = _po_line(po.id, "A", "5", "50")
+        lineB = _po_line(po.id, "B", "8", "80")
+        lineC = _po_line(po.id, "C", "2", "20")
+        db.add_all([lineA, lineB, lineC])
+        await db.flush()
+
+        inv1 = _invoice(po.id, vendor.id, user.id, ref=f"INV1-{uuid.uuid4().hex[:6]}", status="matched")
+        inv2 = _invoice(po.id, vendor.id, user.id, ref=f"INV2-{uuid.uuid4().hex[:6]}", status="matched")
+        db.add_all([inv1, inv2])
+        await db.flush()
+        db.add_all([
+            _alloc(inv1.id, po.id, lineA.id, "50"),   # INV1 bills A
+            _alloc(inv1.id, po.id, lineB.id, "80"),   # INV1 bills B
+            _alloc(inv2.id, po.id, lineC.id, "20"),   # INV2 bills C
+        ])
+        await db.flush()
+
+        # GR1 receives A + C
+        gr1 = _gr(po, vendor.id, user.id)
+        db.add(gr1)
+        await db.flush()
+        gr1_lines = [_gr_line(gr1.id, lineA.id, "50"), _gr_line(gr1.id, lineC.id, "20")]  # total 70
+        db.add_all(gr1_lines)
+        await db.flush()
+        await gr_crud._autofill_gr_to_matched_invoices(db, gr1, gr1_lines)
+
+        # GR2 receives B + C
+        gr2 = _gr(po, vendor.id, user.id)
+        db.add(gr2)
+        await db.flush()
+        gr2_lines = [_gr_line(gr2.id, lineB.id, "80"), _gr_line(gr2.id, lineC.id, "30")]  # total 110
+        db.add_all(gr2_lines)
+        await db.flush()
+        await gr_crud._autofill_gr_to_matched_invoices(db, gr2, gr2_lines)
+        await db.flush()
+        await db.refresh(inv1)
+        await db.refresh(inv2)
+
+        # Both GRs share a line with each invoice → both land on both invoices.
+        assert set(inv1.gr_ids) == {str(gr1.id), str(gr2.id)}
+        assert set(inv2.gr_ids) == {str(gr1.id), str(gr2.id)}
+        # gr_value is the whole-GR sum across all linked GRs (70 + 110), matching
+        # match()'s existing decorative semantics (not scoped to the billed lines).
+        assert inv1.gr_value == Decimal("180.00")
+        assert inv2.gr_value == Decimal("180.00")
