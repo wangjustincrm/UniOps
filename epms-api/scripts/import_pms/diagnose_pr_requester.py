@@ -78,10 +78,52 @@ _PR_BY_APPLIER = {
 }
 
 
+async def _dept_manager(db, dept):
+    if not dept:
+        return None
+    return (await db.execute(text(
+        "SELECT id::text FROM users WHERE role='dept_manager' AND is_active "
+        "AND department_id=CAST(:d AS uuid) ORDER BY id LIMIT 1"), {"d": dept})).scalar_one_or_none()
+
+
+async def _gm_or_opm(db, dept):
+    post = "gm"
+    if dept:
+        p = (await db.execute(text(
+            "SELECT gm_or_opm FROM approval_dept_routing WHERE dept_id=CAST(:d AS uuid)"),
+            {"d": dept})).scalar_one_or_none()
+        post = p or "gm"
+    return (await db.execute(text(
+        "SELECT id::text FROM users WHERE role=:c AND is_active "
+        "UNION SELECT ur.user_id::text FROM user_roles ur JOIN users u ON u.id=ur.user_id "
+        "  WHERE ur.role_code=:c AND u.is_active ORDER BY 1 LIMIT 1"), {"c": post})).scalar_one_or_none()
+
+
+async def _reresolve_dept_events(db, doc_type, doc_id, dm, gm):
+    """Re-point this doc's [reconstructed] dept_manager / gm_or_opm approve events
+    to the new dept holders (skips Auto-skipped rows; no-op when already correct)."""
+    n = 0
+    for role, uid in (("dept_manager", dm), ("gm_or_opm", gm)):
+        if uid is None:
+            continue
+        r = await db.execute(text(
+            "UPDATE approval_events SET actor_id=CAST(:u AS uuid) "
+            "WHERE document_type=:dt AND document_id=CAST(:id AS uuid) AND actor_role=:r "
+            "AND action IN ('approve','reject') AND comment LIKE '[reconstructed]%' "
+            "AND comment NOT LIKE '%Auto-skipped%' AND actor_id <> CAST(:u AS uuid)"),
+            {"u": uid, "dt": doc_type, "id": doc_id, "r": role})
+        n += r.rowcount or 0
+    return n
+
+
 async def go(apply: bool = False):
     async with sm.AsyncSessionLocal() as db:
         rows = []
         fixed = 0
+        # (pr_id, correct_uid) for every PR we re-attribute — used to also re-route
+        # the dept_manager / gm_or_opm timeline of the PR + its POs + PAs, which were
+        # reconstructed against the WRONG requester's department.
+        affected: list[tuple[str, str]] = []
         for applier in sorted(_PR_BY_APPLIER):
             email = M.resolve_user_email(applier)
             if not email:
@@ -101,6 +143,10 @@ async def go(apply: bool = False):
             if mismatched:
                 rows.append((applier, expected_name or email, in_db, mismatched, res[:3]))
                 if apply:
+                    ids = (await db.execute(text(
+                        "SELECT id::text FROM purchase_requests WHERE number = ANY(:nums) "
+                        "AND created_by <> CAST(:uid AS uuid)"), {"nums": nums, "uid": uid})).scalars().all()
+                    affected += [(pid, uid) for pid in ids]
                     await db.execute(text(
                         "UPDATE purchase_requests SET created_by = CAST(:uid AS uuid) "
                         "WHERE number = ANY(:nums) AND created_by <> CAST(:uid AS uuid)"),
@@ -115,8 +161,29 @@ async def go(apply: bool = False):
                 print(f"    currently {cur!r}: {c}")
         print("")
         if apply:
+            # Re-route dept_manager / gm_or_opm timeline events for each fixed PR and
+            # its downstream PO(s) and PA(s), using the corrected requester's dept.
+            rerouted = 0
+            for pr_id, uid in affected:
+                dept = (await db.execute(text(
+                    "SELECT department_id::text FROM users WHERE id=CAST(:u AS uuid)"),
+                    {"u": uid})).scalar_one_or_none()
+                dm = await _dept_manager(db, dept)
+                gm = await _gm_or_opm(db, dept)
+                rerouted += await _reresolve_dept_events(db, "pr", pr_id, dm, gm)
+                po_ids = (await db.execute(text(
+                    "SELECT id::text FROM purchase_orders WHERE pr_id=CAST(:p AS uuid)"),
+                    {"p": pr_id})).scalars().all()
+                for po in po_ids:
+                    rerouted += await _reresolve_dept_events(db, "po", po, dm, gm)
+                    pa_ids = (await db.execute(text(
+                        "SELECT id::text FROM payment_applications WHERE po_id=CAST(:o AS uuid)"),
+                        {"o": po})).scalars().all()
+                    for pa in pa_ids:
+                        rerouted += await _reresolve_dept_events(db, "pa", pa, dm, gm)
             await db.commit()
-            print(f"APPLIED: re-attributed {fixed} PR(s) to the correct requester.")
+            print(f"APPLIED: re-attributed {fixed} PR(s) to the correct requester; "
+                  f"re-routed {rerouted} dept_manager/gm_or_opm timeline event(s) on their PR/PO/PA.")
         else:
             print(f"TOTAL mismatched PRs: {total} (read-only; pass --apply to fix)")
 
