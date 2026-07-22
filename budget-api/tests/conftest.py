@@ -9,11 +9,16 @@ definitions use deferred lambdas that only the migrations render correctly.
 import os
 import subprocess
 import sys
+import uuid
+from decimal import Decimal
 
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.models.catalog import BudgetAccount, BudgetL1
+from app.models.plan import BudgetPlan, BudgetPlanLine
 
 # Local dev Postgres test database. Override host/db via env if needed.
 TEST_DB = os.getenv("TEST_BUDGET_DB", "budget_test")
@@ -107,3 +112,53 @@ async def db_session(db_engine):
     Session = async_sessionmaker(db_engine, expire_on_commit=False)
     async with Session() as session:
         yield session
+
+
+@pytest_asyncio.fixture
+async def seed_two_cc_plans(db_session):
+    """Two cost centers (distinct departments), each with a current approved
+    BudgetPlan + BudgetPlanLine for FY2026, with distinct amounts.
+
+    Cost centers are also inserted into the stub `cost_centers` table (see
+    `_create_scope_stub_tables`) so this fixture is reusable by later
+    department-scope endpoint tests that resolve cc_ids via budget_scope.py.
+    """
+    db = db_session
+    l1 = BudgetL1(code="L1-SCOPE", name="Scope Test L1", sort_order=0)
+    db.add(l1)
+    await db.flush()
+    acct = BudgetAccount(code="SCOPE-ACC", name="Scope Test Account", l1_id=l1.id, sort_order=0)
+    db.add(acct)
+    await db.flush()
+
+    dept_a, dept_b = uuid.uuid4(), uuid.uuid4()
+    cc_a, cc_b = uuid.uuid4(), uuid.uuid4()
+
+    await db.execute(
+        sa.text(
+            "INSERT INTO cost_centers (id, code, name, department_id, is_active) "
+            "VALUES (:id, :code, :name, :dept, true)"
+        ),
+        [
+            {"id": cc_a, "code": "CC-A", "name": "Cost Center A", "dept": dept_a},
+            {"id": cc_b, "code": "CC-B", "name": "Cost Center B", "dept": dept_b},
+        ],
+    )
+
+    plan_a = BudgetPlan(
+        cost_center_id=cc_a, fiscal_year=2026, status="approved",
+        is_current=True, version=1, created_by=uuid.uuid4(),
+    )
+    plan_b = BudgetPlan(
+        cost_center_id=cc_b, fiscal_year=2026, status="approved",
+        is_current=True, version=1, created_by=uuid.uuid4(),
+    )
+    db.add_all([plan_a, plan_b])
+    await db.flush()
+    db.add_all([
+        BudgetPlanLine(plan_id=plan_a.id, account_id=acct.id, month=1, amount=Decimal("1000")),
+        BudgetPlanLine(plan_id=plan_b.id, account_id=acct.id, month=1, amount=Decimal("5000")),
+    ])
+    await db.flush()
+
+    return {"cc_a": cc_a, "cc_b": cc_b, "dept_a": dept_a, "dept_b": dept_b}
