@@ -171,27 +171,51 @@ async def db_session():
 async def seed_posted_jv_two_cc(db_session):
     """POSTED JV lines in TWO cost centers, same predreal account/income_expense
     item, FY2026, with distinct amounts — for Task 5's `cc_ids` CRUD filter
-    tests. Mirrors the emit_event + backfill_posted_jvs seeding style used by
+    tests, and Task 6's endpoint department-scoping tests. Mirrors the
+    emit_event + backfill_posted_jvs seeding style used by
     test_account_balance.py's `_posted_dim_event` / `_posted_partner_event`
     helpers (account_code "5101" falls in the MOH predreal subtree, same as
-    those tests)."""
+    those tests).
+
+    cc_a/cc_b each carry a `department_id` (dept_a/dept_b), and a `users` row
+    (`mgr_uid`) is seeded in dept_a — so budget_scope.py's resolver maps a
+    dept-manager caller to cc_a only. finance-api's `User` mirror model only
+    carries the columns journal_voucher.py's actor-name lookup needs
+    (email/full_name) — it doesn't model `department_id`, even though the real
+    shared `users` table (owned by identity/epms) has it and the resolver reads
+    it via raw SQL. Extend the test-schema table here rather than touching the
+    production ORM model."""
     import uuid
     from datetime import datetime, timezone
     from decimal import Decimal
+
+    import sqlalchemy as sa
 
     from app.crud import journal_voucher as jv_crud
     from app.models.mirrors import BudgetAccount, CostCenter
     from app.services.posting import emit_event
 
+    dept_a = uuid.uuid4()
+    dept_b = uuid.uuid4()
     cc_a = uuid.uuid4()
     cc_b = uuid.uuid4()
     db_session.add_all([
-        CostCenter(id=cc_a, code="SCOPE-CC-A", name="Scope CC A", is_active=True),
-        CostCenter(id=cc_b, code="SCOPE-CC-B", name="Scope CC B", is_active=True),
+        CostCenter(id=cc_a, code="SCOPE-CC-A", name="Scope CC A", is_active=True,
+                   department_id=dept_a),
+        CostCenter(id=cc_b, code="SCOPE-CC-B", name="Scope CC B", is_active=True,
+                   department_id=dept_b),
     ])
     item = uuid.uuid4()
     db_session.add(BudgetAccount(id=item, code="CRM003", name="IT General Fee", is_active=True))
     await db_session.flush()
+
+    await db_session.execute(sa.text(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS department_id uuid"))
+    mgr_uid = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO users (id, email, full_name, department_id) "
+        "VALUES (CAST(:id AS uuid), 'dept.manager@test.local', 'Dept Manager', CAST(:dept AS uuid))"),
+        {"id": str(mgr_uid), "dept": str(dept_a)})
 
     async def _line(cc_id, amount, period="2026-06"):
         occurred = datetime(2026, int(period[5:7]), 15, tzinfo=timezone.utc)
@@ -211,4 +235,5 @@ async def seed_posted_jv_two_cc(db_session):
     await _line(cc_b, "40.00")
     await jv_crud.backfill_posted_jvs(db_session)   # -> status=posted
 
-    return {"cc_a": cc_a, "cc_b": cc_b, "income_expense_item_id": item}
+    return {"cc_a": cc_a, "cc_b": cc_b, "income_expense_item_id": item,
+            "dept_a": dept_a, "dept_b": dept_b, "mgr_uid": mgr_uid}
