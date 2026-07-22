@@ -77,3 +77,26 @@ async def test_default_channel_email_still_sends(captured_emails):
         await notification.dispatch_task_notification(_make_task(user), db)
 
     assert len(captured_emails) == 1
+
+
+# ── Role shared mailbox ──────────────────────────────────────────────────────
+
+from app.crud.config import role_display_name  # noqa: E402
+
+
+async def test_role_display_name_builtin_custom_and_fallback():
+    async with session_module.AsyncSessionLocal() as db:
+        cfg = await get_config(db)
+        cfg.custom_roles = [{"code": "ap_lead", "name": "AP Lead", "is_active": True}]
+        await db.commit()
+
+        assert role_display_name(cfg, "ap_clerk") == "AP Clerk"
+        assert role_display_name(cfg, "ap_lead") == "AP Lead"
+        assert role_display_name(cfg, "some_new_role") == "Some New Role"
+        assert role_display_name(cfg, None) == "Team"
+
+
+async def test_default_notification_settings_has_shared_mailbox_map():
+    from app.crud.config import _DEFAULT_NOTIFICATION_SETTINGS
+
+    assert _DEFAULT_NOTIFICATION_SETTINGS["role_shared_mailboxes"] == {}

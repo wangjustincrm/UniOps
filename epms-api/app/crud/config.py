@@ -101,6 +101,9 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     "default_channel": "email_only",   # email_only | teams_only | both | none
     "teams_webhook_url": None,
     "followup_time": "08:00",
+    # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
+    # 不再逐个通知该角色成员。空 = 维持逐人发送。
+    "role_shared_mailboxes": {},
 }
 
 _DEFAULT_EMAIL_TEMPLATE = lambda subject, body: {"subject": subject, "body": body}  # noqa: E731
@@ -523,3 +526,15 @@ _BUILTIN_ROLE_NAMES: dict[str, str] = {
     "auditor": "Auditor",
     "system_admin": "System Admin",
 }
+
+
+def role_display_name(cfg: CompanyConfig, role_code: str | None) -> str:
+    """Human-readable name for a role code (built-in, custom, or unknown)."""
+    if not role_code:
+        return "Team"
+    if role_code in _BUILTIN_ROLE_NAMES:
+        return _BUILTIN_ROLE_NAMES[role_code]
+    for cr in (cfg.custom_roles or []):
+        if cr.get("code") == role_code:
+            return cr.get("name") or role_code
+    return role_code.replace("_", " ").title()
