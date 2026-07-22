@@ -185,6 +185,15 @@ async def _dispatch(
         else None
     )
 
+    # 共享邮箱路径只发邮件(不发 Teams),因此公司渠道不含 email 时整条通知不发。
+    if shared_mailbox and company_channel not in ("email_only", "both"):
+        logger.info(
+            "Shared mailbox configured for role %s but company default_channel=%s "
+            "excludes email; skipping task %s",
+            task.assigned_role, company_channel, task.id,
+        )
+        return
+
     recipients: list[User] = []
     if shared_mailbox is None:
         if task.assigned_user_id:
@@ -259,7 +268,9 @@ async def _dispatch(
                 html_body = _render(tpl.get("body", task.description or ""), user_vars)
             else:
                 subject = task.title
-                html_body = task.description or task.title
+                # 与共享邮箱分支保持一致:无模板时也要渲染占位符,
+                # 否则收件人会看到字面量 {recipient_name}。
+                html_body = _render(task.description or task.title, user_vars)
 
             html = _build_email_html(html_body)
             await _send_with_retry(
@@ -275,7 +286,7 @@ async def _dispatch(
                 card_body = _render(tpl.get("body", task.description or ""), user_vars)
             else:
                 card_title = task.title
-                card_body = task.description or task.title
+                card_body = _render(task.description or task.title, user_vars)
 
             await _send_with_retry(
                 "teams", task, user, tpl_key, db,
