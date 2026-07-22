@@ -87,11 +87,15 @@ from app.crud.config import role_display_name  # noqa: E402
 async def test_role_display_name_builtin_custom_and_fallback():
     async with session_module.AsyncSessionLocal() as db:
         cfg = await get_config(db)
-        cfg.custom_roles = [{"code": "ap_lead", "name": "AP Lead", "is_active": True}]
+        cfg.custom_roles = [
+            {"code": "ap_lead", "name": "AP Lead", "is_active": True},
+            {"code": "ap_temp", "name": "AP Temp", "is_active": False},
+        ]
         await db.commit()
 
         assert role_display_name(cfg, "ap_clerk") == "AP Clerk"
         assert role_display_name(cfg, "ap_lead") == "AP Lead"
+        assert role_display_name(cfg, "ap_temp") == "Ap Temp"
         assert role_display_name(cfg, "some_new_role") == "Some New Role"
         assert role_display_name(cfg, None) == "Team"
 

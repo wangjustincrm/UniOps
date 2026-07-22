@@ -536,5 +536,7 @@ def role_display_name(cfg: CompanyConfig, role_code: str | None) -> str:
         return _BUILTIN_ROLE_NAMES[role_code]
     for cr in (cfg.custom_roles or []):
         if cr.get("code") == role_code:
+            if not cr.get("is_active", True):
+                break
             return cr.get("name") or role_code
     return role_code.replace("_", " ").title()
