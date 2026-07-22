@@ -34,7 +34,7 @@ export default function BudgetDashboard() {
   const yellowThreshold = config?.budget_admin_config?.yellow_threshold_pct ?? 80
   const redThreshold    = config?.budget_admin_config?.red_threshold_pct ?? 100
 
-  const { data: scope } = useActualsScope()
+  const { data: scope, isLoading: scopeLoading, isError: scopeError } = useActualsScope()
   const isFullAccess = scope?.full_access ?? false
   const visibleCCs = useMemo(() => {
     const scoped = scope?.cost_centers ?? []
@@ -189,7 +189,7 @@ export default function BudgetDashboard() {
               </span>
             )}
           </p>
-          {!isFullAccess && (scope?.cost_centers?.length ?? 0) === 0 && (
+          {!scopeLoading && !scopeError && scope && !scope.full_access && scope.cost_centers.length === 0 && (
             <p className="text-sm text-warning-700 mt-1">
               No budget is visible for your account. Contact your administrator if this is unexpected.
             </p>
