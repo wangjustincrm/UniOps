@@ -419,6 +419,12 @@ async def decline_match(
     )
     await db.flush()
     await db.refresh(task)
+    # Commit the (re)assignment BEFORE notifying: fire_and_forget_notify re-reads
+    # the task in a fresh session and resolves the recipient from the committed
+    # assigned_user_id. Without this commit the background reader races the
+    # request's own commit and, on reassignment, sees the PREVIOUS assignee —
+    # emailing the wrong person while the UI badge shows the new one.
+    await db.commit()
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
     return inv
@@ -475,6 +481,12 @@ async def assign_match(
         db.add(task)
     await db.flush()
     await db.refresh(task)
+    # Commit the (re)assignment BEFORE notifying: fire_and_forget_notify re-reads
+    # the task in a fresh session and resolves the recipient from the committed
+    # assigned_user_id. Without this commit the background reader races the
+    # request's own commit and, on reassignment, sees the PREVIOUS assignee —
+    # emailing the wrong person while the UI badge shows the new one.
+    await db.commit()
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
     return inv

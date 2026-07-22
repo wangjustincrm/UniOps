@@ -370,3 +370,46 @@ async def test_match_candidates_carry_already_allocated(admin_client):
     item = next(p for p in r.json()["items"] if p["id"] == po["id"])
     line = next(l for l in item["line_items"] if l["id"] == line_id)
     assert line["already_allocated"] in (None, "0", "0.00")
+
+
+@pytest.mark.asyncio
+async def test_reassign_notifies_new_assignee_not_previous(admin_client, monkeypatch):
+    """改派后,通知邮件必须发给【新】被指派人,而不是上一个。
+
+    回归 fire-and-forget 通知竞态:后台通知器用一个新 session 按 assigned_user_id
+    解析收件人;若在请求 commit 前派发,后台读到的是【旧】被指派人(改派前已提交
+    的值),邮件就发错人——而 UI 徽章读的是 commit 后的新值,两边对不上。修复=改派
+    在派发通知前先 db.commit()。
+    """
+    import asyncio
+    import app.services.email as email_mod
+    import app.db.session as session_module
+    from app.models.notification_log import NotificationLog
+
+    async def _fake_send_email(to, subject, html, **kw):  # 无 SMTP:直接“成功”,避免重试延迟
+        return None
+    monkeypatch.setattr(email_mod, "send_email", _fake_send_email)
+
+    await _ensure_company_config()   # 通知需要 CompanyConfig(default_channel=email_only)
+
+    v = await _make_vendor(admin_client, "VND-ASSIGN-NOTIF")
+    inv = await _make_invoice(admin_client, v["id"], number="ASSIGN-NOTIF")
+    first, second = await _make_user(), await _make_user()
+
+    await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match", json={"user_id": str(first)})
+    await asyncio.sleep(0.3)   # 让首派的后台通知跑完
+    await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match", json={"user_id": str(second)})
+    await asyncio.sleep(0.3)   # 让改派的后台通知跑完
+
+    task = await _open_match_task(inv["id"])
+    async with session_module.AsyncSessionLocal() as db:
+        logs = (await db.execute(
+            select(NotificationLog)
+            .where(NotificationLog.task_id == task.id)
+            .order_by(NotificationLog.sent_at)
+        )).scalars().all()
+
+    logged_users = {log.user_id for log in logs}
+    assert second in logged_users, "改派后新被指派人从未收到通知(收件人解析到了旧值)"
+    # 最后一次通知应当发给新被指派人
+    assert logs[-1].user_id == second
