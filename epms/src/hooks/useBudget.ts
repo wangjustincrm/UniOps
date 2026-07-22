@@ -5,6 +5,7 @@ import { useConfig } from '@/hooks/useConfig'
 import type {
   CreateBudgetL1Body, UpdateBudgetL1Body,
   CreateBudgetAccountBody, UpdateBudgetAccountBody,
+  ApiActualsScope,
 } from '@/services/budget'
 
 // ── Catalog ───────────────────────────────────────────────────────────────────
@@ -375,6 +376,14 @@ export function useMonthlyActualsSummary(params: { fiscal_year: number; cost_cen
     queryKey: ['budget', 'monthly-actuals-summary', params],
     queryFn: () => budgetService.getMonthlyActualsSummary(params),
     staleTime: 30_000,
+  })
+}
+
+export function useActualsScope() {
+  return useQuery<ApiActualsScope>({
+    queryKey: ['budget', 'actuals-scope'],
+    queryFn: () => budgetService.getActualsScope(),
+    staleTime: 5 * 60_000,
   })
 }
 
