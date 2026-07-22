@@ -58,3 +58,17 @@ class MonthlyActualsSummaryResponse(BaseModel):
     cost_center_id: uuid.UUID | None
     fiscal_year: int
     accounts: list[MonthlyAccountSummary]
+
+
+# ── Scope (Budget Dashboard department scoping) ────────────────────────────────
+
+class ScopeCostCenter(BaseModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    department_id: uuid.UUID | None
+
+
+class ActualsScopeResponse(BaseModel):
+    full_access: bool
+    cost_centers: list[ScopeCostCenter]

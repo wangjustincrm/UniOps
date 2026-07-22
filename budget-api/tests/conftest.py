@@ -15,8 +15,13 @@ from decimal import Decimal
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
+from httpx import ASGITransport, AsyncClient
+from jose import jwt as _jwt
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.config import settings
+from app.db.session import get_session
+from app.main import app
 from app.models.catalog import BudgetAccount, BudgetL1
 from app.models.plan import BudgetPlan, BudgetPlanLine
 
@@ -162,3 +167,54 @@ async def seed_two_cc_plans(db_session):
     await db.flush()
 
     return {"cc_a": cc_a, "cc_b": cc_b, "dept_a": dept_a, "dept_b": dept_b}
+
+
+# ── HTTP endpoint test harness ──────────────────────────────────────────────────
+#
+# SAFETY: the `client` fixture MUST override `get_session` to the test
+# `db_session` — otherwise the app would connect via `settings.DATABASE_URL`,
+# which in this worktree could point at the shared production DB. Never let
+# an endpoint test hit the real engine.
+
+@pytest_asyncio.fixture
+async def client(db_session):
+    async def _override():
+        yield db_session
+
+    app.dependency_overrides[get_session] = _override
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+def _token(sub: uuid.UUID, role: str) -> str:
+    return _jwt.encode(
+        {"sub": str(sub), "role": role, "type": "access"},
+        settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM,
+    )
+
+
+@pytest_asyncio.fixture
+async def dept_manager_token(db_session, seed_two_cc_plans):
+    """Signed access token for a user in department-A (dept_manager role).
+
+    seed_two_cc_plans already inserted CC-A with department_id = dept_a; this
+    fixture inserts the matching `users` row so budget_scope.py resolves this
+    user's scope to CC-A only.
+    """
+    uid = uuid.uuid4()
+    await db_session.execute(
+        sa.text(
+            "INSERT INTO users (id, department_id, role, is_active) "
+            "VALUES (CAST(:id AS uuid), CAST(:dept AS uuid), 'dept_manager', true)"
+        ),
+        {"id": str(uid), "dept": str(seed_two_cc_plans["dept_a"])},
+    )
+    await db_session.commit()
+    return _token(uid, "dept_manager")
+
+
+@pytest_asyncio.fixture
+async def admin_token():
+    return _token(uuid.uuid4(), "system_admin")
