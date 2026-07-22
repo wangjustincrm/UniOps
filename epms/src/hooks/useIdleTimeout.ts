@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useAuthStore } from '@/stores/auth.store'
 import { globalSignOut } from '@/lib/signOut'
 
-const IDLE_MS = 15 * 60 * 1000 // 15 minutes
+const IDLE_MS = 60 * 60 * 1000 // 60 minutes
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 const EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll', 'click'] as const
 
