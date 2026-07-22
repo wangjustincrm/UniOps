@@ -188,9 +188,43 @@ async def go(apply: bool = False):
             print(f"TOTAL mismatched PRs: {total} (read-only; pass --apply to fix)")
 
 
+async def reverse():
+    """Closes the blind spot of appliers NOT in the crosswalk: their PR should sit
+    on its own auto/temp user, NOT on a real NAMED person. Flag any that landed on
+    a crosswalk-target user (the 'wrongly on Javela' pattern, for unmapped appliers)."""
+    async with sm.AsyncSessionLocal() as db:
+        # the set of emails any applier legitimately resolves to (real named people)
+        targets = sorted({e.lower() for a in _PR_BY_APPLIER
+                          if (e := M.resolve_user_email(a))})
+        flagged = []
+        for applier in sorted(_PR_BY_APPLIER):
+            if M.resolve_user_email(applier):
+                continue  # mapped appliers are already covered by the forward check
+            nums = _PR_BY_APPLIER[applier]
+            res = (await db.execute(text(
+                "SELECT u.full_name, count(*) FROM purchase_requests pr "
+                "JOIN users u ON u.id = pr.created_by "
+                "WHERE pr.number = ANY(:nums) AND lower(u.email) = ANY(:t) "
+                "GROUP BY 1 ORDER BY 2 DESC"), {"nums": nums, "t": targets})).all()
+            if res:
+                flagged.append((applier, res))
+        if not flagged:
+            print("Reverse check: no unmapped-applier PR sits on a named crosswalk user. Clean.")
+            return
+        total = 0
+        for applier, res in flagged:
+            print(f"Unmapped applier {applier!r} -> PR(s) sitting on a NAMED user (suspicious):")
+            for name, c in res:
+                total += c
+                print(f"    {name}: {c}")
+        print(f"\nTOTAL suspicious (unmapped applier on a named user): {total}")
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="fix mismatches (default: read-only)")
+    ap.add_argument("--reverse", action="store_true",
+                    help="check unmapped-applier PRs that landed on a named user")
     args = ap.parse_args()
-    asyncio.run(go(apply=args.apply))
+    asyncio.run(reverse() if args.reverse else go(apply=args.apply))
