@@ -82,6 +82,19 @@ def _build_email_html(body_text: str) -> str:
     """
 
 
+def _shared_mailbox_for(notif_settings: dict, role: str | None) -> str | None:
+    """共享邮箱地址(角色池任务专用);未配置/空串返回 None。"""
+    if not role:
+        return None
+    mapping = notif_settings.get("role_shared_mailboxes") or {}
+    if not isinstance(mapping, dict):
+        return None
+    addr = mapping.get(role)
+    if isinstance(addr, str) and addr.strip():
+        return addr.strip()
+    return None
+
+
 # ── SMTP config helper ────────────────────────────────────────────────────────
 
 def _smtp_kwargs(cfg: CompanyConfig) -> dict:
@@ -138,7 +151,7 @@ async def _dispatch(
 ) -> None:
     from app.services.email import send_email
     from app.services.teams import send_teams_card
-    from app.crud.config import get_or_create as get_config
+    from app.crud.config import get_or_create as get_config, role_display_name
 
     cfg = await get_config(db)
 
@@ -164,21 +177,30 @@ async def _dispatch(
     tpl: dict | None = email_templates.get(tpl_key)
 
     # ── Resolve recipients ──────────────────────────────────────────────────
-    recipients: list[User] = []
-    if task.assigned_user_id:
-        user = await db.get(User, task.assigned_user_id)
-        if user and user.is_active:
-            recipients.append(user)
-    else:
-        # All active users with matching role
-        result = await db.execute(
-            select(User).where(User.role == task.assigned_role, User.is_active.is_(True))
-        )
-        recipients = list(result.scalars().all())
+    # 角色池任务(无具体指派人)若为该角色配了共享邮箱,则整封只发共享邮箱:
+    # 不再逐人发邮件、不发 Teams、也不看个人 notification_channel。
+    shared_mailbox = (
+        _shared_mailbox_for(notif_settings, task.assigned_role)
+        if task.assigned_user_id is None
+        else None
+    )
 
-    if not recipients:
-        logger.debug("No recipients for task %s (role=%s)", task.id, task.assigned_role)
-        return
+    recipients: list[User] = []
+    if shared_mailbox is None:
+        if task.assigned_user_id:
+            user = await db.get(User, task.assigned_user_id)
+            if user and user.is_active:
+                recipients.append(user)
+        else:
+            # All active users with matching role
+            result = await db.execute(
+                select(User).where(User.role == task.assigned_role, User.is_active.is_(True))
+            )
+            recipients = list(result.scalars().all())
+
+        if not recipients:
+            logger.debug("No recipients for task %s (role=%s)", task.id, task.assigned_role)
+            return
 
     # ── Common template variables ───────────────────────────────────────────
     # Deep-link resolves per module from the document_type (this notifier serves
@@ -201,6 +223,27 @@ async def _dispatch(
         "task_title": task.title,
         **extra_vars,
     }
+
+    if shared_mailbox:
+        team_vars = {
+            **base_vars,
+            "recipient_name": f"{role_display_name(cfg, task.assigned_role)} Team",
+        }
+        if tpl:
+            subject = _render(tpl.get("subject", task.title), team_vars)
+            html_body = _render(tpl.get("body", task.description or ""), team_vars)
+        else:
+            subject = task.title
+            html_body = _render(task.description or task.title, team_vars)
+
+        html = _build_email_html(html_body)
+        await _send_with_retry(
+            "email", task, None, tpl_key, db,
+            send_fn=lambda: send_email(shared_mailbox, subject, html, **_smtp_kwargs(cfg)),
+            max_retries=max_retries,
+            recipient_email=shared_mailbox,
+        )
+        return
 
     for user in recipients:
         channel = user.notification_channel or company_channel
@@ -244,22 +287,29 @@ async def _dispatch(
 async def _send_with_retry(
     channel: str,
     task: Task,
-    user: User,
+    user: User | None,
     template_key: str,
     db: AsyncSession,
     *,
     send_fn,
     max_retries: int,
+    recipient_email: str | None = None,
 ) -> None:
-    """Try send_fn up to max_retries times with exponential backoff. Log each attempt."""
+    """Try send_fn up to max_retries times with exponential backoff. Log each attempt.
+
+    ``user`` is None for shared-mailbox deliveries — the log row then carries only
+    the recipient address (notification_logs.user_id is nullable).
+    """
+    to_addr = recipient_email if recipient_email is not None else (user.email if user else None)
+    user_id = user.id if user else None
     last_error: str | None = None
     for attempt in range(1, max_retries + 1):
         try:
             await send_fn()
             db.add(NotificationLog(
                 task_id=task.id,
-                user_id=user.id,
-                recipient_email=user.email,
+                user_id=user_id,
+                recipient_email=to_addr,
                 channel=channel,
                 template_key=template_key,
                 status="ok",
@@ -269,16 +319,16 @@ async def _send_with_retry(
             return
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
-            logger.warning("Notification attempt %d/%d failed (channel=%s, user=%s): %s",
-                           attempt, max_retries, channel, user.id, exc)
+            logger.warning("Notification attempt %d/%d failed (channel=%s, recipient=%s): %s",
+                           attempt, max_retries, channel, to_addr, exc)
             if attempt < max_retries:
                 await asyncio.sleep(2 ** attempt)   # 2s, 4s backoff
 
     # All attempts failed — log failure
     db.add(NotificationLog(
         task_id=task.id,
-        user_id=user.id,
-        recipient_email=user.email,
+        user_id=user_id,
+        recipient_email=to_addr,
         channel=channel,
         template_key=template_key,
         status="failed",
