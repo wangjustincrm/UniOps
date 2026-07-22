@@ -238,6 +238,16 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   confirm_settlement: 'Confirm Settlement',
   review_match: 'Review Invoice Match',
   match_invoice: 'Match Invoice to PO',
+  process_pa: 'Process Payment Application',
+  revise_pr: 'Revise Purchase Request',
+  revise_po: 'Revise Purchase Order',
+  revise_pa: 'Revise Payment Application',
+  acknowledge_gr: 'Acknowledge Goods Receipt',
+  collect_goods: 'Collect Goods',
+  confirm_service_gr: 'Confirm Service Receipt',
+  gr_damage_report: 'Report Goods Damage',
+  approve_budget_plan: 'Approve Budget Plan',
+  revise_budget_plan: 'Revise Budget Plan',
 }
 
 const VMS_DOC_LABELS: Record<string, string> = {
@@ -251,9 +261,12 @@ const VMS_DOC_LABELS: Record<string, string> = {
 // keys fall to the end.
 const GROUP_ORDER = [
   // EPMS
-  'approve_pr', 'approve_po', 'approve_pa', 'place_order',
+  'approve_pr', 'approve_po', 'approve_pa', 'approve_budget_plan',
+  'process_pa', 'place_order',
   'create_pr', 'create_po', 'create_pa', 'create_prepayment_pa',
+  'acknowledge_gr', 'collect_goods', 'confirm_service_gr', 'gr_damage_report',
   'review_match', 'match_invoice', 'confirm_settlement',
+  'revise_pr', 'revise_po', 'revise_pa', 'revise_budget_plan',
   // Expense (OA my-actions statuses)
   'submitted', 'in_review', 'approved',
   // VMS

@@ -23,7 +23,7 @@ export const ALL_TASK_TYPES = [
 
 export type TaskType = (typeof ALL_TASK_TYPES)[number]
 
-export const TASK_TYPE_LABELS: Record<TaskType, string> = {
+export const TASK_TYPE_LABELS: Record<string, string> = {
   create_pr: 'Create Purchase Request',
   create_po: 'Create Purchase Order',
   create_pa: 'Create Payment Application',
@@ -35,6 +35,16 @@ export const TASK_TYPE_LABELS: Record<TaskType, string> = {
   confirm_settlement: 'Confirm Settlement',
   review_match: 'Review Invoice Match',
   match_invoice: 'Match Invoice to PO',
+  process_pa: 'Process Payment Application',
+  revise_pr: 'Revise Purchase Request',
+  revise_po: 'Revise Purchase Order',
+  revise_pa: 'Revise Payment Application',
+  acknowledge_gr: 'Acknowledge Goods Receipt',
+  collect_goods: 'Collect Goods',
+  confirm_service_gr: 'Confirm Service Receipt',
+  gr_damage_report: 'Report Goods Damage',
+  approve_budget_plan: 'Approve Budget Plan',
+  revise_budget_plan: 'Revise Budget Plan',
 }
 
 // ─── Navigation ────────────────────────────────────────────────────────────────

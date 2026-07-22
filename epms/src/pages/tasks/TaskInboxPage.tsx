@@ -22,12 +22,14 @@ const TABS: { value: TabValue; label: string }[] = [
 
 // Fixed display order for task-type groups (approvals → order → creates →
 // match → settlement). Types not listed fall to the end.
-const GROUP_ORDER: TaskType[] = [
-  'approve_pr', 'approve_po', 'approve_pa',
-  'place_order',
+const GROUP_ORDER: string[] = [
+  'approve_pr', 'approve_po', 'approve_pa', 'approve_budget_plan',
+  'process_pa', 'place_order',
   'create_pr', 'create_po', 'create_pa', 'create_prepayment_pa',
+  'acknowledge_gr', 'collect_goods', 'confirm_service_gr', 'gr_damage_report',
   'review_match', 'match_invoice',
   'confirm_settlement',
+  'revise_pr', 'revise_po', 'revise_pa', 'revise_budget_plan',
 ]
 
 // ─── Empty state messages ─────────────────────────────────────────────────────
@@ -208,7 +210,7 @@ export default function TaskInboxPage() {
   const groups = groupTasks(
     tabFiltered,
     (t) => t.type,
-    (k) => TASK_TYPE_LABELS[k as TaskType] ?? k,
+    (k) => TASK_TYPE_LABELS[k] ?? k,
     GROUP_ORDER,
   )
 
