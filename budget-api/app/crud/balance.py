@@ -136,8 +136,12 @@ async def list_monthly_actuals(
 async def get_actuals_summary(
     db: AsyncSession,
     *, cost_center_id: uuid.UUID | None = None, fiscal_year: int,
+    cc_ids: list[uuid.UUID] | None = None,
 ) -> ActualsSummaryResponse:
     """Per-account summary: plan vs actual for the full year."""
+    if cc_ids is not None and len(cc_ids) == 0:
+        return ActualsSummaryResponse(
+            cost_center_id=cost_center_id, fiscal_year=fiscal_year, accounts=[])
     accts_q = (
         select(BudgetAccount, BudgetL1)
         .join(BudgetL1, BudgetAccount.l1_id == BudgetL1.id)
@@ -160,7 +164,6 @@ async def get_actuals_summary(
                     BudgetPlanLine.account_id == acct.id,
                 )
             )
-            annual = Decimal(str((await db.execute(annual_q)).scalar_one()))
             committed_q = select(func.coalesce(func.sum(BudgetLedger.amount), 0)).where(
                 BudgetLedger.account_id == acct.id,
                 BudgetLedger.fiscal_year == fiscal_year,
@@ -176,6 +179,12 @@ async def get_actuals_summary(
                 BudgetLedger.fiscal_year == fiscal_year,
                 BudgetLedger.operation.in_(["actualize", "book_expense", "opening"]),
             )
+            if cc_ids:
+                annual_q = annual_q.where(BudgetPlan.cost_center_id.in_(cc_ids))
+                committed_q = committed_q.where(BudgetLedger.cost_center_id.in_(cc_ids))
+                release_q = release_q.where(BudgetLedger.cost_center_id.in_(cc_ids))
+                actual_q = actual_q.where(BudgetLedger.cost_center_id.in_(cc_ids))
+            annual = Decimal(str((await db.execute(annual_q)).scalar_one()))
             committed = Decimal(str((await db.execute(committed_q)).scalar_one())) \
                        - Decimal(str((await db.execute(release_q)).scalar_one()))
             if committed < 0:
@@ -202,6 +211,7 @@ async def get_actuals_summary(
 async def get_monthly_actuals_summary(
     db: AsyncSession,
     *, cost_center_id: uuid.UUID | None = None, fiscal_year: int,
+    cc_ids: list[uuid.UUID] | None = None,
 ) -> MonthlyActualsSummaryResponse:
     """Per-account plan vs actual broken down by month (Jan..Dec) + year totals.
 
@@ -220,6 +230,10 @@ async def get_monthly_actuals_summary(
     )
     acct_rows = (await db.execute(accts_q)).all()
 
+    if cc_ids is not None and len(cc_ids) == 0:
+        return MonthlyActualsSummaryResponse(
+            cost_center_id=cost_center_id, fiscal_year=fiscal_year, accounts=[])
+
     # ── Plan amounts by (account, month) for current approved plans ──────────
     plan_q = (
         select(
@@ -237,6 +251,8 @@ async def get_monthly_actuals_summary(
     )
     if cost_center_id is not None:
         plan_q = plan_q.where(BudgetPlan.cost_center_id == cost_center_id)
+    elif cc_ids:
+        plan_q = plan_q.where(BudgetPlan.cost_center_id.in_(cc_ids))
     plan_map: dict[tuple[uuid.UUID, int], Decimal] = {
         (aid, m): Decimal(str(total)) for aid, m, total in (await db.execute(plan_q)).all()
     }
@@ -256,6 +272,8 @@ async def get_monthly_actuals_summary(
     )
     if cost_center_id is not None:
         actual_q = actual_q.where(BudgetLedger.cost_center_id == cost_center_id)
+    elif cc_ids:
+        actual_q = actual_q.where(BudgetLedger.cost_center_id.in_(cc_ids))
     actual_map: dict[tuple[uuid.UUID, int], Decimal] = {
         (aid, m): Decimal(str(total)) for aid, m, total in (await db.execute(actual_q)).all()
     }

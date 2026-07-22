@@ -11,9 +11,8 @@ import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react
 import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears, useNcActualsMonthly, useNcPartnerMonthly, useNcPartnerVouchers } from '@/hooks/useBudget'
-import { useConfig, useRolePermissions, useMyAssignedRoles } from '@/hooks/useConfig'
-import { useAuthStore } from '@/stores/auth.store'
+import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears, useNcActualsMonthly, useNcPartnerMonthly, useNcPartnerVouchers, useActualsScope } from '@/hooks/useBudget'
+import { useConfig } from '@/hooks/useConfig'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
 import { downloadFinanceFile } from '@/lib/api'
@@ -26,36 +25,8 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 // excluded from the dashboard's per-account rows, totals, and over-budget alerts.
 const isPayrollOrDeprec = (code: string) => code.startsWith('CRM004') || code.startsWith('CRM007')
 
-// `finance_bp` is deliberately NOT in this set. gm/opm/finance_manager are
-// company-unique singleton POSTS (identity enforces one holder) — holding
-// one as your PRIMARY role (jwt/user.role) means you genuinely are it.
-// finance_bp is a job FUNCTION many people carry (identity exempts it from
-// the singleton index for that reason); reading it off user.role would
-// grant full-access scope to anyone whose primary role happens to be
-// finance_bp even if they were never assigned. See isFinanceBpAssigned
-// below, which resolves finance_bp from the user_roles assignment table
-// only — mirrors approval-api's _post_holders / finance-api's coa.py.
-const FULL_ACCESS_ROLES = new Set([
-  'gm', 'opm', 'finance_manager', 'ap_clerk',
-  'system_admin', 'cfo', 'auditor',
-])
-
-// Post-holder role codes that previously gated full access via the (now
-// retired) company_config.role_management ids. Migrated to identity's
-// user_roles — anyone holding one of these carries the role code in the
-// permissions role union below. `vendor_manager` was never part of the
-// old check and is intentionally excluded. `finance_bp` is likewise
-// excluded here — it must NOT resolve from myRoles (primary ∪ additional),
-// only from an ADDITIONAL-roles-only assignment check (isFinanceBpAssigned).
-const SPECIAL_ROLE_CODES = new Set([
-  'gm', 'opm', 'finance_manager', 'procurement_manager',
-])
-
 export default function BudgetDashboard() {
   const { data: config } = useConfig()
-  const { data: myPermissions } = useRolePermissions()
-  const { data: myAssignedRoles } = useMyAssignedRoles()
-  const { user } = useAuthStore()
   const { data: ccData } = useCostCenters({ active_only: true })
   const yearOptions = useAvailableFiscalYears()
 
@@ -63,20 +34,17 @@ export default function BudgetDashboard() {
   const yellowThreshold = config?.budget_admin_config?.yellow_threshold_pct ?? 80
   const redThreshold    = config?.budget_admin_config?.red_threshold_pct ?? 100
 
-  const myRoles = myPermissions?.roles ?? []
-  const isSpecialRoleAssignee = myRoles.some((r) => SPECIAL_ROLE_CODES.has(r))
-  // finance_bp resolved from the ADDITIONAL-roles-only assignment table —
-  // never from myRoles/user.role, which mix in the primary role. Uses the
-  // self-scoped /config/me/assigned-roles (no admin gate), NOT the admin-only
-  // /config/user-roles proxy every viewer used to hit and get 403 from.
-  const isFinanceBpAssigned = !!user &&
-    (myAssignedRoles?.role_codes ?? []).includes('finance_bp')
-  const isFullAccess = !!user &&
-    (FULL_ACCESS_ROLES.has(user.role) || isSpecialRoleAssignee || isFinanceBpAssigned)
-
-  const visibleCCs = isFullAccess
-    ? costCenters
-    : costCenters.filter((cc) => cc.department_id === user?.department_id)
+  const { data: scope, isLoading: scopeLoading, isError: scopeError } = useActualsScope()
+  const isFullAccess = scope?.full_access ?? false
+  const visibleCCs = useMemo(() => {
+    const scoped = scope?.cost_centers ?? []
+    // Preserve the richer CostCenter objects from useCostCenters where available
+    // (keeps existing dropdown label shape), falling back to the scope payload.
+    const byId = new Map(costCenters.map((c) => [c.id, c]))
+    return scoped.map((s) => byId.get(s.id) ?? {
+      id: s.id, code: s.code, name: s.name, department_id: s.department_id,
+    } as (typeof costCenters)[number])
+  }, [scope, costCenters])
 
   const [fiscalYear, setFiscalYear] = useState<number>(currentYear)
   const [ccId, setCcId] = useState<string>('all')
@@ -221,13 +189,18 @@ export default function BudgetDashboard() {
               </span>
             )}
           </p>
+          {!scopeLoading && !scopeError && scope && !scope.full_access && scope.cost_centers.length === 0 && (
+            <p className="text-sm text-warning-700 mt-1">
+              No budget is visible for your account. Contact your administrator if this is unexpected.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <select value={fiscalYear} onChange={(e) => setFiscalYear(Number(e.target.value))}
             className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600">
             {yearOptions.map((y) => <option key={y} value={y}>FY {y}</option>)}
           </select>
-          {visibleCCs.length > 1 && (
+          {(visibleCCs.length > 1 || (!isFullAccess && visibleCCs.length >= 1)) && (
             <select value={ccId} onChange={(e) => setCcId(e.target.value)}
               className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600">
               <option value="all">All Cost Centers</option>

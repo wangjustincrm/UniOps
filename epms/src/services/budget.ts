@@ -127,6 +127,11 @@ export interface ApiMonthlyActualsSummary {
   accounts: ApiMonthlyAccountSummary[]
 }
 
+export interface ApiActualsScope {
+  full_access: boolean
+  cost_centers: { id: string; code: string; name: string; department_id: string | null }[]
+}
+
 // ── CRUD body types ───────────────────────────────────────────────────────────
 
 export interface CreateBudgetL1Body {
@@ -330,6 +335,9 @@ export const budgetService = {
 
   getMonthlyActualsSummary: (params: { fiscal_year: number; cost_center_id?: string }) =>
     budgetApi.get<ApiMonthlyActualsSummary>('/actuals/monthly-summary', params),
+
+  getActualsScope: () =>
+    budgetApi.get<ApiActualsScope>('/actuals/scope'),
 
   // ── Plans ─────────────────────────────────────────────────────────────────
   listPlans: (params?: { cost_center_id?: string; fiscal_year?: number; status?: string; include_history?: boolean }) =>
