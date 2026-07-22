@@ -177,6 +177,32 @@ export async function downloadCsv(path: string, params?: Params, filename?: stri
   URL.revokeObjectURL(blobUrl)
 }
 
+/** Download a file (blob) from finance-api with auth, triggering a Save-As. */
+export async function downloadFinanceFile(path: string, params?: Params, filename?: string): Promise<void> {
+  const url = new URL(`${FINANCE_BASE}/finance/v1${path}`)
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== null) url.searchParams.set(k, String(v))
+    }
+  }
+  const token = getToken()
+  const headers: HeadersInit = {}
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(url.toString(), { headers })
+  if (!res.ok) throw new Error(`Export failed: ${res.statusText}`)
+
+  const blob = await res.blob()
+  const blobUrl = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = blobUrl
+  const cd = res.headers.get('content-disposition') ?? ''
+  const match = cd.match(/filename="([^"]+)"/)
+  a.download = filename ?? match?.[1] ?? 'export.xlsx'
+  a.click()
+  URL.revokeObjectURL(blobUrl)
+}
+
 export const api = {
   get:    <T>(path: string, params?: Params)          => request<T>('GET',    path, undefined, params),
   post:   <T>(path: string, body?: unknown)           => request<T>('POST',   path, body),
