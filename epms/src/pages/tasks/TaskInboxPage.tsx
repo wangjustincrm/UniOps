@@ -4,9 +4,10 @@ import { AlertCircle, Clock, ArrowRight, Check, Inbox } from 'lucide-react'
 import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useTasks, useCompleteTask } from '@/hooks/useTasks'
-import { TASK_TYPE_LABELS, ALL_TASK_TYPES, taskHref } from '@/lib/taskTypes'
+import { TASK_TYPE_LABELS, taskHref } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
+import { groupTasks } from '@/lib/groupTasks'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,18 @@ const TABS: { value: TabValue; label: string }[] = [
   { value: 'urgent', label: 'Urgent' },
   { value: 'normal', label: 'Normal' },
   { value: 'completed', label: 'Completed' },
+]
+
+// Fixed display order for task-type groups (approvals → order → creates →
+// match → settlement). Types not listed fall to the end.
+const GROUP_ORDER: string[] = [
+  'approve_pr', 'approve_po', 'approve_pa', 'approve_budget_plan',
+  'process_pa', 'place_order',
+  'create_pr', 'create_po', 'create_pa', 'create_prepayment_pa',
+  'acknowledge_gr', 'collect_goods', 'confirm_service_gr', 'gr_damage_report',
+  'review_match', 'match_invoice',
+  'confirm_settlement',
+  'revise_pr', 'revise_po', 'revise_pa', 'revise_budget_plan',
 ]
 
 // ─── Empty state messages ─────────────────────────────────────────────────────
@@ -168,7 +181,6 @@ export default function TaskInboxPage() {
   const completeTask = useCompleteTask()
 
   const [activeTab, setActiveTab] = useState<TabValue>('all')
-  const [typeFilter, setTypeFilter] = useState<TaskType | 'all'>('all')
 
   // Today's date prefix (YYYY-MM-DD)
   const todayPrefix = new Date().toISOString().slice(0, 10)
@@ -195,9 +207,12 @@ export default function TaskInboxPage() {
     return !t.is_completed
   })
 
-  // Filter by type
-  const filtered =
-    typeFilter === 'all' ? tabFiltered : tabFiltered.filter((t) => t.type === typeFilter)
+  const groups = groupTasks(
+    tabFiltered,
+    (t) => t.type,
+    (k) => TASK_TYPE_LABELS[k] ?? k,
+    GROUP_ORDER,
+  )
 
   const handleComplete = (id: string) => {
     completeTask.mutate(id)
@@ -276,33 +291,31 @@ export default function TaskInboxPage() {
             </button>
           ))}
         </div>
-
-        {/* Type filter */}
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value as TaskType | 'all')}
-          className="h-9 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-500/30"
-        >
-          <option value="all">All Types</option>
-          {ALL_TASK_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {TASK_TYPE_LABELS[t]}
-            </option>
-          ))}
-        </select>
       </div>
 
-      {/* ── Task list ── */}
-      {filtered.length === 0 ? (
+      {/* ── Task list (grouped by type) ── */}
+      {tabFiltered.length === 0 ? (
         <EmptyState tab={activeTab} />
       ) : (
-        <div className="flex flex-col gap-3">
-          {filtered.map((task) => (
-            <FullTaskCard
-              key={task.id}
-              task={task}
-              onComplete={() => handleComplete(task.id)}
-            />
+        <div className="flex flex-col gap-6">
+          {groups.map((group) => (
+            <section key={group.key}>
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-neutral-700">{group.label}</h3>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">
+                  {group.items.length}
+                </span>
+              </div>
+              <div className="flex flex-col gap-3">
+                {group.items.map((task) => (
+                  <FullTaskCard
+                    key={task.id}
+                    task={task}
+                    onComplete={() => handleComplete(task.id)}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}

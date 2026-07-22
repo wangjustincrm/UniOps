@@ -1,7 +1,7 @@
 """Account balance report API (科目余额表) — reads posted JV lines."""
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
@@ -117,3 +117,61 @@ async def nc_partner_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db)
         pid = uuid.UUID(partner_id)
     return await crud.nc_partner_vouchers(db, income_expense_item_id, fiscal_year,
                                           month, cost_center_id, pid)
+
+
+@router.get("/budget-actual/partner-export")
+async def budget_actual_partner_export(
+    request: Request,
+    _: CurrentUser,
+    db: AsyncSession = Depends(get_db),
+    fiscal_year: int = Query(...),
+    cost_center_id: uuid.UUID | None = Query(default=None),
+):
+    """Budget Dashboard export: one .xlsx with every predreal budget account
+    expanded by vendor (客商). Plan (budget-api) + NC-posted actual, monthly + year.
+    cost_center_id omitted => aggregated across all cost centers. Fail-open to
+    plan=0 if budget-api is unreachable (mirrors /budget-actual-grid)."""
+    import logging
+
+    from fastapi.responses import Response
+    from sqlalchemy import select as _select
+
+    from app.models.mirrors import CostCenter
+    from app.services import budget_client
+    from app.services.predreal_export import build_partner_export_xlsx
+
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
+
+    try:
+        accounts = await budget_client.fetch_monthly_summary(
+            bearer_token=token, fiscal_year=fiscal_year, cost_center_id=cost_center_id)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception(
+            "budget-api monthly-summary fetch failed; exporting with plan=0")
+        accounts = []
+    # Exclude payroll (CRM007) / depreciation (CRM004) — category-level only, same
+    # as the dashboard's isPayrollOrDeprec filter.
+    accounts = [a for a in accounts
+                if not (str(a.get("account_code", "")).startswith("CRM004")
+                        or str(a.get("account_code", "")).startswith("CRM007"))]
+
+    nc = (await crud.nc_actuals_monthly(db, fiscal_year, cost_center_id))["accounts"]
+    partners = await crud.nc_partner_monthly_all(
+        db, fiscal_year=fiscal_year, cost_center_id=cost_center_id)
+
+    if cost_center_id is not None:
+        cc_name = (await db.execute(
+            _select(CostCenter.name).where(CostCenter.id == cost_center_id))).scalar_one_or_none()
+        cc_label = cc_name or str(cost_center_id)
+    else:
+        cc_label = "All Cost Centers"
+
+    data = build_partner_export_xlsx(
+        accounts=accounts, nc_monthly=nc, partners_by_account=partners,
+        fiscal_year=fiscal_year, cost_center_label=cc_label)
+    fname = f"budget-actual-FY{fiscal_year}.xlsx"
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})

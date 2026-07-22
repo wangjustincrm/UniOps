@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { groupTasks } from '@/lib/groupTasks'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -136,6 +137,14 @@ const TABS: { value: Tab; label: string }[] = [
 ]
 
 const ACTION_TYPES = new Set(['approve_expense', 'approve_pa', 'revise_expense', 'revise_pa', 'pay_expense', 'pay_pa'])
+
+// Fixed display order for task-type groups. Types not listed fall to the end.
+const GROUP_ORDER = [
+  'approve_expense', 'approve_pa',
+  'revise_expense', 'revise_pa',
+  'pay_expense', 'pay_pa',
+  'submitted_expense', 'submitted_pa',
+]
 
 // ── Task card ─────────────────────────────────────────────────────────────────
 
@@ -269,6 +278,13 @@ export default function TaskListPage() {
     ? tabFiltered
     : tabFiltered.filter(t => t.doc_type === docTypeFilter)
 
+  const groups = groupTasks(
+    filtered,
+    (t) => t.task_type,
+    (k) => TASK_META[k]?.label ?? k,
+    GROUP_ORDER,
+  )
+
   return (
     <div className="mx-auto max-w-3xl">
       {/* Header */}
@@ -350,7 +366,7 @@ export default function TaskListPage() {
         </select>
       </div>
 
-      {/* List */}
+      {/* List (grouped by task type) */}
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => (
@@ -360,9 +376,21 @@ export default function TaskListPage() {
       ) : filtered.length === 0 ? (
         <EmptyState tab={tab} />
       ) : (
-        <div className="flex flex-col gap-3">
-          {filtered.map(task => (
-            <TaskCard key={task.id} task={task} />
+        <div className="flex flex-col gap-6">
+          {groups.map(group => (
+            <section key={group.key}>
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-neutral-700">{group.label}</h3>
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">
+                  {group.items.length}
+                </span>
+              </div>
+              <div className="flex flex-col gap-3">
+                {group.items.map(task => (
+                  <TaskCard key={task.id} task={task} />
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}

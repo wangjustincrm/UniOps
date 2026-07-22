@@ -16,6 +16,7 @@ import { useConfig, useRolePermissions, useMyAssignedRoles } from '@/hooks/useCo
 import { useAuthStore } from '@/stores/auth.store'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
+import { downloadFinanceFile } from '@/lib/api'
 
 const currentYear = new Date().getUTCFullYear()
 
@@ -81,6 +82,21 @@ export default function BudgetDashboard() {
   const [ccId, setCcId] = useState<string>('all')
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [collapsedL1, setCollapsedL1] = useState<Set<string>>(new Set())
+  const [exporting, setExporting] = useState(false)
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      await downloadFinanceFile(
+        '/gl/budget-actual/partner-export',
+        { fiscal_year: fiscalYear, ...(ccId !== 'all' ? { cost_center_id: ccId } : {}) },
+        `budget-actual-FY${fiscalYear}.xlsx`,
+      )
+    } catch {
+      alert('Export failed. Please try again.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const summaryParams = useMemo(() => ({
     fiscal_year: fiscalYear,
@@ -305,6 +321,11 @@ export default function BudgetDashboard() {
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
             <div className="flex items-center gap-2 text-xs">
+              <button type="button" onClick={handleExport} disabled={exporting}
+                className="rounded-md border border-primary-300 bg-white px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50">
+                {exporting ? 'Exporting…' : 'Export XLSX'}
+              </button>
+              <span className="text-neutral-300">·</span>
               <button type="button" onClick={expandAll} className="text-primary-600 hover:underline">Expand all</button>
               <span className="text-neutral-300">·</span>
               <button type="button" onClick={collapseAll} className="text-primary-600 hover:underline">Collapse all</button>
