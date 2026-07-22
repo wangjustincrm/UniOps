@@ -150,3 +150,21 @@ async def fetch_plan_lines(fiscal_year: int, month: int) -> dict:
         r.raise_for_status()
     return {(uuid.UUID(x["cost_center_id"]), uuid.UUID(x["account_id"])): Decimal(x["amount"])
             for x in r.json()}
+
+
+async def fetch_monthly_summary(
+    *, bearer_token: str | None, fiscal_year: int, cost_center_id: uuid.UUID | None,
+) -> list[dict[str, Any]]:
+    """Per-account monthly PLAN (+doc actual, ignored by plan-only callers) from
+    budget-api. Returns response['accounts']: each dict has account_id,
+    account_code, account_name, l1_code, plan_by_month{str->str}, plan_year, ...
+    cost_center_id=None => aggregated across all cost centers. Requires auth on
+    budget-api → forward the caller's bearer token."""
+    params: dict[str, Any] = {"fiscal_year": fiscal_year}
+    if cost_center_id is not None:
+        params["cost_center_id"] = str(cost_center_id)
+    url = f"{settings.budget_api_url}/api/v1/actuals/monthly-summary"
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.get(url, params=params, headers=_auth_headers(bearer_token))
+        r.raise_for_status()
+        return r.json().get("accounts", [])
