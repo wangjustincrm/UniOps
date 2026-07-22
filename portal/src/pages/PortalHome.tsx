@@ -8,6 +8,7 @@ import {
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
+import { groupTasks } from '@/lib/groupTasks'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
@@ -60,6 +61,10 @@ interface UnifiedTask {
   urgent: boolean
   href: string
   createdAt: string
+  /** Task-type bucket key within a module (raw type / status / doc_type). */
+  groupKey: string
+  /** Human label for the group header. */
+  groupLabel: string
 }
 
 // ── Hooks ─────────────────────────────────────────────────────────────────────
@@ -212,6 +217,51 @@ const MODULE_STYLE: Record<string, { border: string; badge: string; label: strin
   EPMS:    { border: 'border-l-primary-500',  badge: 'text-primary-600',  label: 'EPMS' },
   EXPENSE: { border: 'border-l-amber-400',    badge: 'text-amber-600',    label: 'Expense' },
   VMS:     { border: 'border-l-emerald-500',  badge: 'text-emerald-600',  label: 'Visitor' },
+}
+
+const MODULE_ORDER: UnifiedTask['module'][] = ['EPMS', 'EXPENSE', 'VMS']
+
+const MODULE_HEADING: Record<UnifiedTask['module'], string> = {
+  EPMS: 'EPMS', EXPENSE: 'Expense', VMS: 'Visitor',
+}
+
+// EPMS engine task types → display labels (inlined; portal has no taskTypes.ts).
+const EPMS_TYPE_LABELS: Record<string, string> = {
+  create_pr: 'Create Purchase Request',
+  create_po: 'Create Purchase Order',
+  create_pa: 'Create Payment Application',
+  create_prepayment_pa: 'Create Prepayment PA',
+  approve_pr: 'Approve Purchase Request',
+  approve_po: 'Approve Purchase Order',
+  approve_pa: 'Approve Payment Application',
+  place_order: 'Place Order',
+  confirm_settlement: 'Confirm Settlement',
+  review_match: 'Review Invoice Match',
+  match_invoice: 'Match Invoice to PO',
+}
+
+const VMS_DOC_LABELS: Record<string, string> = {
+  vms_visit: 'Visit Approvals',
+  vms_train: 'Training Confirmations',
+  vms_ppe:   'PPE Confirmations',
+}
+
+// Within-module group order. Keys are scoped by module in practice (an OA status
+// never collides with an EPMS type), so one flat list is unambiguous. Unlisted
+// keys fall to the end.
+const GROUP_ORDER = [
+  // EPMS
+  'approve_pr', 'approve_po', 'approve_pa', 'place_order',
+  'create_pr', 'create_po', 'create_pa', 'create_prepayment_pa',
+  'review_match', 'match_invoice', 'confirm_settlement',
+  // Expense (OA my-actions statuses)
+  'submitted', 'in_review', 'approved',
+  // VMS
+  'vms_visit', 'vms_train', 'vms_ppe',
+]
+
+function humanize(s: string): string {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function TaskRow({ task }: { task: UnifiedTask }) {
@@ -430,6 +480,8 @@ export default function PortalHome() {
       urgent: false,
       href: withSession(`${OA_URL}/expenses/${t.id}`),
       createdAt: t.submitted_at ?? t.created_at,
+      groupKey: t.status,
+      groupLabel: STATUS_LABEL[t.status] ?? humanize(t.status),
     }))
 
     const epmsRows = (epmsTasks.data?.items ?? []).map((t): UnifiedTask => {
@@ -460,6 +512,16 @@ export default function PortalHome() {
       const dedupKey = t.document_type.toLowerCase() === 'budget_plan'
         ? `budget_plan:${t.document_id}`
         : t.document_number
+      let groupKey: string
+      let groupLabel: string
+      if (module === 'VMS') {
+        groupKey = t.document_type
+        groupLabel = VMS_DOC_LABELS[t.document_type] ?? humanize(t.document_type)
+      } else {
+        // EPMS-owned, or OA-owned surfaced via approval-api: bucket by engine task type.
+        groupKey = t.type
+        groupLabel = EPMS_TYPE_LABELS[t.type] ?? humanize(t.type)
+      }
       return {
         id: `epms-${t.id}`,
         module,
@@ -471,6 +533,8 @@ export default function PortalHome() {
         urgent: t.priority === 'urgent',
         href: withSession(`${base}${path}`),
         createdAt: t.created_at,
+        groupKey,
+        groupLabel,
       }
     })
 
@@ -638,10 +702,47 @@ export default function PortalHome() {
                       <p className="mt-1 text-sm text-neutral-400">No pending tasks across any module.</p>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {allTasks.map((task) => (
-                        <TaskRow key={task.id} task={task} />
-                      ))}
+                    <div className="space-y-6">
+                      {MODULE_ORDER.map((mod) => {
+                        const modTasks = allTasks.filter((t) => t.module === mod)
+                        if (modTasks.length === 0) return null
+                        const groups = groupTasks(
+                          modTasks,
+                          (t) => t.groupKey,
+                          (_k, sample) => sample.groupLabel,
+                          GROUP_ORDER,
+                        )
+                        const style = MODULE_STYLE[mod]
+                        return (
+                          <div key={mod} className="space-y-3">
+                            {/* Module header */}
+                            <div className="flex items-center gap-2 border-b border-neutral-200 pb-1.5">
+                              <span className={cn('text-xs font-bold uppercase tracking-wider', style.badge)}>
+                                {MODULE_HEADING[mod]}
+                              </span>
+                              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[10px] font-bold text-neutral-500">
+                                {modTasks.length}
+                              </span>
+                            </div>
+                            {/* Type sub-groups */}
+                            {groups.map((group) => (
+                              <section key={group.key}>
+                                <div className="mb-1.5 flex items-center gap-2 pl-0.5">
+                                  <h3 className="text-xs font-semibold text-neutral-600">{group.label}</h3>
+                                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-neutral-100 px-1 text-[10px] font-semibold text-neutral-400">
+                                    {group.items.length}
+                                  </span>
+                                </div>
+                                <div className="space-y-2">
+                                  {group.items.map((task) => (
+                                    <TaskRow key={task.id} task={task} />
+                                  ))}
+                                </div>
+                              </section>
+                            ))}
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>
