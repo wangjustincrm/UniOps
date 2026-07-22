@@ -545,6 +545,51 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
             "partners": partners}
 
 
+async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
+                                 cost_center_id=None) -> dict:
+    """Bulk vendor (客商) breakdown for ALL predreal budget accounts in ONE query —
+    the export equivalent of calling nc_partner_monthly per account. Groups posted
+    JV debit by (income_expense_item_id, partner_id, partner_name, month). Returns
+    {account_id_str: [ {partner_id, partner_name, by_month{month:str}, year_total}
+    ... sorted by year_total desc ]}. partner_id None == '(no vendor)' bucket."""
+    accts = await _predreal_subtree(db)
+    month = func.substr(JournalVoucher.fiscal_period, 6, 2)
+    q = (select(JournalVoucherLine.income_expense_item_id,
+                JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month,
+                func.coalesce(func.sum(JournalVoucherLine.local_debit), 0))
+         .join(JournalVoucher, JournalVoucherLine.jv_id == JournalVoucher.id)
+         .where(JournalVoucher.status == POSTED,
+                JournalVoucher.fiscal_period.like(f"{fiscal_year}-%"),
+                JournalVoucherLine.account_code.in_(accts),
+                JournalVoucherLine.local_debit != 0))
+    if cost_center_id is not None:
+        q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    q = q.group_by(JournalVoucherLine.income_expense_item_id,
+                   JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month)
+
+    by_acct: dict = {}
+    for aid, pid, pname, mm, dr in (await db.execute(q)).all():
+        if aid is None:
+            continue
+        agg = by_acct.setdefault(str(aid), {})
+        key = str(pid) if pid else "__none__"
+        rec = agg.setdefault(key, {"partner_id": str(pid) if pid else None,
+                                   "partner_name": pname, "by_month": {}, "_total": _ZERO})
+        d = Decimal(dr)
+        rec["by_month"][int(mm)] = _s(d)
+        rec["_total"] += d
+        if pname and not rec["partner_name"]:
+            rec["partner_name"] = pname
+
+    out: dict = {}
+    for aid, agg in by_acct.items():
+        partners = sorted(agg.values(), key=lambda r: r["_total"], reverse=True)
+        for r in partners:
+            r["year_total"] = _s(r.pop("_total"))
+        out[aid] = partners
+    return out
+
+
 async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_year: int,
                               month: int, cost_center_id=None, partner_id=None) -> dict:
     """Drill for one (budget account × cost center × partner × month): the posted
