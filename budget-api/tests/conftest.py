@@ -26,6 +26,42 @@ ASYNC_URL = f"postgresql+asyncpg://{TEST_USER}:{TEST_PASSWORD}@{TEST_HOST}:{TEST
 SYNC_URL = f"postgresql+psycopg2://{TEST_USER}:{TEST_PASSWORD}@{TEST_HOST}:{TEST_PORT}/{TEST_DB}"
 
 
+def _create_scope_stub_tables(engine):
+    """Minimal stand-ins for identity/epms-owned tables budget_scope.py reads.
+
+    `users`, `user_roles`, and `cost_centers` live in another service's schema
+    in production (same physical DB); budget-api's own alembic chain doesn't
+    own or migrate them. Test scaffolding only — mirrors the pattern in
+    finance-api/tests/conftest.py (shadow user_roles / mirror User & CostCenter).
+    Only the columns app/core/budget_scope.py actually reads are included.
+    """
+    with engine.connect() as conn:
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS users ("
+            " id uuid PRIMARY KEY,"
+            " department_id uuid,"
+            " role text,"
+            " is_active boolean NOT NULL DEFAULT true"
+            ")"
+        ))
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS user_roles ("
+            " user_id uuid NOT NULL,"
+            " role_code text NOT NULL"
+            ")"
+        ))
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS cost_centers ("
+            " id uuid PRIMARY KEY,"
+            " code text,"
+            " name text,"
+            " department_id uuid,"
+            " is_active boolean NOT NULL DEFAULT true"
+            ")"
+        ))
+        conn.commit()
+
+
 def _migrate():
     """Reset the public schema and run alembic upgrade head against the test DB."""
     eng = sa.create_engine(SYNC_URL, isolation_level="AUTOCOMMIT")
@@ -47,6 +83,10 @@ def _migrate():
         cwd=root, env=env, check=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
+
+    eng = sa.create_engine(SYNC_URL, isolation_level="AUTOCOMMIT")
+    _create_scope_stub_tables(eng)
+    eng.dispose()
 
 
 @pytest.fixture(scope="session")
