@@ -464,12 +464,14 @@ async def budget_actual_grid(db: AsyncSession, period: str, budget_lookup: dict)
 
 
 async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
-                             cost_center_id=None) -> dict:
+                             cost_center_id=None, cc_ids=None) -> dict:
     """NC posted actual per (income_expense_item_id, month) across the 5 predreal
-    category subtrees for `fiscal_year`, optionally scoped to one cost center.
-    Feeds the EPMS Budget Dashboard's NC-actual line (keyed by budget account_id =
-    income_expense_item_id). actual = period gross DEBIT. Returns
-    {account_id: {month:int -> amount:str}}."""
+    category subtrees for `fiscal_year`, optionally scoped to one cost center
+    (`cost_center_id`) or a set of cost centers (`cc_ids`). Feeds the EPMS Budget
+    Dashboard's NC-actual line (keyed by budget account_id = income_expense_item_id).
+    actual = period gross DEBIT. Returns {account_id: {month:int -> amount:str}}."""
+    if cc_ids is not None and len(cc_ids) == 0:
+        return {"fiscal_year": fiscal_year, "accounts": {}}
     from app.models.mirrors import BudgetAccount
     accts: set = set()
     for a in BUDGET_ACTUAL_ACCOUNTS:
@@ -489,6 +491,8 @@ async def nc_actuals_monthly(db: AsyncSession, fiscal_year: int,
          .group_by(JournalVoucherLine.income_expense_item_id, month))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    elif cc_ids:
+        q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
     out: dict = {}
     for aid, mm, dr in (await db.execute(q)).all():
         out.setdefault(str(aid), {})[int(mm)] = _s(Decimal(dr))
@@ -503,12 +507,17 @@ async def _predreal_subtree(db: AsyncSession) -> set:
 
 
 async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_year: int,
-                             cost_center_id=None) -> dict:
+                             cost_center_id=None, cc_ids=None) -> dict:
     """Budget Dashboard drill: for ONE budget account (收支项目) — with cost center
     already locked by the caller — NC posted actual per partner (客商/供应商/客户)
     per month across the fiscal year. Rows = partners that appeared that year,
     sorted by year total desc; cells = monthly gross debit. `partner_id` None =
     lines with no partner (denormalized name kept)."""
+    if cc_ids is not None and len(cc_ids) == 0:
+        return {"fiscal_year": fiscal_year,
+                "income_expense_item_id": str(income_expense_item_id),
+                "cost_center_id": str(cost_center_id) if cost_center_id else None,
+                "partners": []}
     accts = await _predreal_subtree(db)
     month = func.substr(JournalVoucher.fiscal_period, 6, 2)
     q = (select(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month,
@@ -523,6 +532,8 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
                 JournalVoucherLine.local_debit != 0))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    elif cc_ids:
+        q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
     q = q.group_by(JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month)
 
     agg: dict = {}
@@ -546,12 +557,14 @@ async def nc_partner_monthly(db: AsyncSession, income_expense_item_id, fiscal_ye
 
 
 async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
-                                 cost_center_id=None) -> dict:
+                                 cost_center_id=None, cc_ids=None) -> dict:
     """Bulk vendor (客商) breakdown for ALL predreal budget accounts in ONE query —
     the export equivalent of calling nc_partner_monthly per account. Groups posted
     JV debit by (income_expense_item_id, partner_id, partner_name, month). Returns
     {account_id_str: [ {partner_id, partner_name, by_month{month:str}, year_total}
     ... sorted by year_total desc ]}. partner_id None == '(no vendor)' bucket."""
+    if cc_ids is not None and len(cc_ids) == 0:
+        return {}
     accts = await _predreal_subtree(db)
     month = func.substr(JournalVoucher.fiscal_period, 6, 2)
     q = (select(JournalVoucherLine.income_expense_item_id,
@@ -564,6 +577,8 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
                 JournalVoucherLine.local_debit != 0))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    elif cc_ids:
+        q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
     q = q.group_by(JournalVoucherLine.income_expense_item_id,
                    JournalVoucherLine.partner_id, JournalVoucherLine.partner_name, month)
 
@@ -591,11 +606,14 @@ async def nc_partner_monthly_all(db: AsyncSession, *, fiscal_year: int,
 
 
 async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_year: int,
-                              month: int, cost_center_id=None, partner_id=None) -> dict:
+                              month: int, cost_center_id=None, partner_id=None,
+                              cc_ids=None) -> dict:
     """Drill for one (budget account × cost center × partner × month): the posted
     JV lines behind it. `partner_id='none'` filters lines with no partner."""
     from app.models.coa import ChartOfAccount
     period = f"{fiscal_year}-{int(month):02d}"
+    if cc_ids is not None and len(cc_ids) == 0:
+        return {"period": period, "rows": []}
     accts = await _predreal_subtree(db)
     coa = {a.code: a for a in (await db.execute(select(ChartOfAccount))).scalars()}
     q = (select(JournalVoucherLine, JournalVoucher)
@@ -608,6 +626,8 @@ async def nc_partner_vouchers(db: AsyncSession, income_expense_item_id, fiscal_y
          .order_by(JournalVoucher.voucher_date))
     if cost_center_id is not None:
         q = q.where(JournalVoucherLine.cost_center_id == cost_center_id)
+    elif cc_ids:
+        q = q.where(JournalVoucherLine.cost_center_id.in_(cc_ids))
     if partner_id == "none":
         q = q.where(JournalVoucherLine.partner_id.is_(None))
     elif partner_id is not None:

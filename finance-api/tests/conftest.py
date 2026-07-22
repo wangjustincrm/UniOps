@@ -165,3 +165,50 @@ async def db_session():
     async with maker() as session:
         yield session
     await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def seed_posted_jv_two_cc(db_session):
+    """POSTED JV lines in TWO cost centers, same predreal account/income_expense
+    item, FY2026, with distinct amounts — for Task 5's `cc_ids` CRUD filter
+    tests. Mirrors the emit_event + backfill_posted_jvs seeding style used by
+    test_account_balance.py's `_posted_dim_event` / `_posted_partner_event`
+    helpers (account_code "5101" falls in the MOH predreal subtree, same as
+    those tests)."""
+    import uuid
+    from datetime import datetime, timezone
+    from decimal import Decimal
+
+    from app.crud import journal_voucher as jv_crud
+    from app.models.mirrors import BudgetAccount, CostCenter
+    from app.services.posting import emit_event
+
+    cc_a = uuid.uuid4()
+    cc_b = uuid.uuid4()
+    db_session.add_all([
+        CostCenter(id=cc_a, code="SCOPE-CC-A", name="Scope CC A", is_active=True),
+        CostCenter(id=cc_b, code="SCOPE-CC-B", name="Scope CC B", is_active=True),
+    ])
+    item = uuid.uuid4()
+    db_session.add(BudgetAccount(id=item, code="CRM003", name="IT General Fee", is_active=True))
+    await db_session.flush()
+
+    async def _line(cc_id, amount, period="2026-06"):
+        occurred = datetime(2026, int(period[5:7]), 15, tzinfo=timezone.utc)
+        await emit_event(
+            db_session, source_service="finance", source_doc_type="ap_invoice",
+            source_doc_id=uuid.uuid4(), source_doc_number="AP-SCOPE", event_type="accrual",
+            occurred_at=occurred, prepared_by=uuid.uuid4(),
+            lines=[
+                {"line_role": "purchase_expense", "account_code": "5101",
+                 "debit": Decimal(amount), "currency": "CAD", "cost_center_id": cc_id,
+                 "aux": {"income_expense_item": {"value_id": item, "value_text": "X"}}},
+                {"line_role": "accounts_payable", "account_code": "2000",
+                 "credit": Decimal(amount), "currency": "CAD"},
+            ])
+
+    await _line(cc_a, "100.00")
+    await _line(cc_b, "40.00")
+    await jv_crud.backfill_posted_jvs(db_session)   # -> status=posted
+
+    return {"cc_a": cc_a, "cc_b": cc_b, "income_expense_item_id": item}
