@@ -2,10 +2,17 @@ import { financeHandoffHref } from './api'
 
 // ─── Task types ────────────────────────────────────────────────────────────────
 //
-// Single source of truth for task-type display labels and navigation. The backend
-// engine emits exactly the task types listed in ALL_TASK_TYPES — keep this file in
-// lockstep with it so the Task Inbox page, the dashboard mini-inbox, and any filter
-// dropdowns all agree on labels and routes.
+// Source of truth for task-type display labels and navigation, shared by the Task
+// Inbox page and the dashboard mini-inbox.
+//
+// TASK_TYPE_LABELS is the FULL catalog: it labels every task type the backend
+// engine can emit (procurement lifecycle + GR steps + revisions + budget plan),
+// so grouped inbox headers always render a clean label. Keep it in lockstep with
+// the backend and with the wider `TaskType` union in `services/tasks.ts`.
+//
+// ALL_TASK_TYPES is the narrower legacy subset (the original 11 procurement types)
+// used only where a curated ordered list is needed. It is NOT exhaustive — do not
+// build a "show every type" control off it; iterate TASK_TYPE_LABELS keys instead.
 
 export const ALL_TASK_TYPES = [
   'create_pr',
