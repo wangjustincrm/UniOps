@@ -568,6 +568,14 @@ def test_no_template_arg_still_renders_todays_email():
     assert "This is an automated notification" in html
 
 
+def test_unknown_placeholder_is_left_literal():
+    g = _group()
+    _, html = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                         template={"intro": "Hello {{nope}} and {{payee_name}}"})
+    assert "{{nope}}" in html          # unknown token shown literally, not blanked
+    assert "ACME" in html              # a real placeholder still substitutes
+
+
 # ── Task 8: sending and the send log ────────────────────────────────────────
 
 from app.crud import remittance_send as rsend
