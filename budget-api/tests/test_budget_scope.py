@@ -181,6 +181,29 @@ async def test_director_without_own_department_still_gets_directed(db_session):
 
 
 @pytest.mark.asyncio
+async def test_resolution_error_fails_closed(db_session):
+    """If any lookup in the resolution chain blows up — e.g. an environment
+    where approval-api's migrations haven't created approval_dept_routing —
+    the whole thing must fail CLOSED to an empty scope, never raise (500)
+    and never grant full_access."""
+    uid = uuid.uuid4()
+    await db_session.execute(
+        sa.text(
+            "INSERT INTO users (id, department_id, role, is_active) "
+            "VALUES (CAST(:id AS uuid), CAST(:dept AS uuid), 'requester', true)"
+        ),
+        {"id": str(uid), "dept": str(uuid.uuid4())},
+    )
+    await db_session.commit()
+    await db_session.execute(sa.text("DROP TABLE approval_dept_routing"))
+    await db_session.commit()
+
+    scope = await resolve_budget_scope(db_session, uid, "requester")
+    assert scope.full_access is False
+    assert scope.cost_center_ids == []
+
+
+@pytest.mark.asyncio
 async def test_plain_employee_directing_nothing_unchanged(db_session):
     uid = uuid.uuid4()
     own, other = uuid.uuid4(), uuid.uuid4()

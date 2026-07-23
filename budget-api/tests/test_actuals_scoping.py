@@ -209,4 +209,5 @@ async def test_list_opening_scopes_to_department(client, dept_manager_token, see
                          headers={"Authorization": f"Bearer {dept_manager_token}"})
     assert r.status_code == 200
     ccs = {i["cost_center_id"] for i in r.json()["items"]}
-    assert str(seed_two_cc_plans["cc_b"]) not in ccs
+    assert str(seed_two_cc_plans["cc_a"]) in ccs       # own department's data survives
+    assert str(seed_two_cc_plans["cc_b"]) not in ccs   # other department must not leak
