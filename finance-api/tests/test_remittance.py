@@ -480,6 +480,94 @@ def test_template_escapes_payee_name():
     assert "<script>" not in html
 
 
+# ── Task 1: template substitution, brand colour, logo ───────────────────────
+
+def test_template_substitutes_placeholders_in_all_text_fields():
+    g = _group()  # vendor group, party_name "ACME", one line VINV-1 / 100.00 CAD
+    template = {
+        "subject": "Payment to {{payee_name}} — {{reference}}",
+        "heading": "{{company_name}} Remittance",
+        "greeting": "Hello {{payee_name}},",
+        "intro": "We paid your {{doc_type}}, total {{total}} via {{payment_method}}.",
+        "footer": "Ref {{reference}} • {{currency}}",
+    }
+    subject, html = tpl.render(g, company_name="Canada Royal Milk",
+                               reference="BP-20260723-0001", payment_method="bank_transfer",
+                               template=template)
+    assert subject == "Payment to ACME — BP-20260723-0001"
+    assert "Canada Royal Milk Remittance" in html
+    assert "Hello ACME," in html
+    assert "We paid your invoices, total 100.00 CAD via Bank Transfer." in html
+    assert "Ref BP-20260723-0001 • CAD" in html
+
+
+def test_blank_or_absent_template_falls_back_to_defaults():
+    g = _group()
+    # absent
+    subject1, html1 = tpl.render(g, company_name="CRM", reference="R", payment_method="eft")
+    # present but all-blank
+    subject2, html2 = tpl.render(g, company_name="CRM", reference="R", payment_method="eft",
+                                 template={"subject": "", "heading": "  ", "intro": None})
+    assert subject1 == subject2 == "Remittance Advice — CRM — R"
+    assert "Remittance Advice" in html1 and "Remittance Advice" in html2
+    assert "The following invoices have been paid." in html1
+
+
+def test_doc_type_differs_vendor_vs_employee():
+    from app.crud import remittance as rem2
+    vendor = _group()  # recipient_kind == 'vendor'
+    employee = rem2.PayeeGroup(recipient_kind="employee", party_id=vendor.party_id,
+                               party_name="Jane Doe", email=vendor.email, currency="CAD",
+                               lines=list(vendor.lines), total=vendor.total)
+    _, hv = tpl.render(vendor, company_name="C", reference="R", payment_method="eft",
+                       template={"intro": "Paid: {{doc_type}}"})
+    _, he = tpl.render(employee, company_name="C", reference="R", payment_method="eft",
+                       template={"intro": "Paid: {{doc_type}}"})
+    assert "Paid: invoices" in hv
+    assert "Paid: expense claims" in he
+
+
+def test_invalid_brand_color_falls_back_and_is_not_emitted_raw():
+    g = _group()
+    _, html = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                         template={"brand_color": "red;}</style><script>x</script>"})
+    assert "<script>" not in html
+    assert "#085E5E" in html            # fell back to the default heading colour
+
+
+def test_placeholder_value_is_escaped_in_html_but_subject_is_plain():
+    g = _group()
+    g.party_name = "<b>ACME</b> & Co"
+    subject, html = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                               template={"greeting": "Dear {{payee_name}},",
+                                         "subject": "To {{payee_name}}"})
+    assert "&lt;b&gt;ACME&lt;/b&gt; &amp; Co" in html      # escaped in the HTML body
+    assert "<b>ACME</b>" not in html
+    assert subject == "To <b>ACME</b> & Co"                # raw in the plain-text subject
+
+
+def test_logo_shown_only_when_enabled_and_present():
+    g = _group()
+    _, with_logo = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                              template={"show_logo": True}, logo_data_url="data:image/png;base64,AAAA")
+    _, no_flag = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                            template={"show_logo": False}, logo_data_url="data:image/png;base64,AAAA")
+    _, no_url = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                           template={"show_logo": True}, logo_data_url=None)
+    assert 'src="data:image/png;base64,AAAA"' in with_logo
+    assert "<img" not in no_flag
+    assert "<img" not in no_url
+
+
+def test_no_template_arg_still_renders_todays_email():
+    g = _group()
+    subject, html = tpl.render(g, company_name="Canada Royal Milk",
+                               reference="BP-1", payment_method="bank_transfer")
+    assert subject == "Remittance Advice — Canada Royal Milk — BP-1"
+    assert "The following invoices have been paid." in html
+    assert "This is an automated notification" in html
+
+
 # ── Task 8: sending and the send log ────────────────────────────────────────
 
 from app.crud import remittance_send as rsend
