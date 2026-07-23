@@ -91,10 +91,17 @@ export function fetchPreview(scope: RemittanceScope): Promise<RemittancePreview>
  * `recipients: null` sends every non-blocked payee found by the preview; a
  * list narrows which groups are attempted. Narrowing only — the server
  * refuses blocked payees regardless of what is requested here.
+ *
+ * `resend` defaults to false: a payee whose log row is already `sent` for
+ * the effective scope (batch or payment — see the backend's cross-scope
+ * lookup) is refused server-side and comes back `skipped`, not re-emailed.
+ * Pass `resend: true` only when the operator has deliberately re-checked a
+ * payee the panel already shows as sent.
  */
 export function sendRemittance(
   scope: RemittanceScope,
   recipients: { recipient_kind: string; party_id: string }[] | null,
+  resend = false,
 ): Promise<SendResult> {
-  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients })
+  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients, resend })
 }

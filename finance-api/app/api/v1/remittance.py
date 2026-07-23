@@ -32,7 +32,7 @@ from app.crud.payment_execute import PaymentPermissionError
 from app.db.base import get_db
 from app.models.payment import PaymentRecord
 from app.models.payment_batch import EXECUTED, PaymentBatch
-from app.models.remittance import SCOPE_BATCH, SCOPE_PAYMENT, RemittanceNotification
+from app.models.remittance import SCOPE_BATCH, SCOPE_PAYMENT
 from app.services import remittance_config as rc
 
 router = APIRouter(tags=["payments"])
@@ -45,6 +45,12 @@ class RecipientRef(BaseModel):
 
 class SendRequest(BaseModel):
     recipients: list[RecipientRef] | None = None
+    # Fix 3: resending is a deliberate, supported operation, not the default.
+    # False refuses (as `skipped`) any payee already `sent` for the effective
+    # scope (app.crud.remittance.last_send_for_group's cross-scope lookup) —
+    # enforced inside app/crud/remittance_send.py's send_groups(), the same
+    # place block_reasons are enforced, not just here.
+    resend: bool = False
 
 
 async def _authorize(db: AsyncSession, user: dict) -> None:
@@ -100,23 +106,12 @@ async def _company_name(db: AsyncSession) -> str:
     return name or "UniOps"
 
 
-async def _last_sends(db: AsyncSession, scope_kind: str,
-                       scope_id: uuid.UUID) -> dict[tuple[str, uuid.UUID], dict]:
-    rows = (await db.execute(select(RemittanceNotification).where(
-        RemittanceNotification.scope_kind == scope_kind,
-        RemittanceNotification.scope_id == scope_id))).scalars().all()
-    return {(r.recipient_kind, r.party_id): {
-        "status": r.status, "error": r.error, "attempts": r.attempts,
-        "sent_at": r.sent_at.isoformat() if r.sent_at else None} for r in rows}
-
-
 async def _preview(db: AsyncSession, user: dict, *, scope_kind: str,
                     scope_id: uuid.UUID) -> dict:
     await _authorize(db, user)
     reference, method, _ = await _scope_context(db, scope_kind=scope_kind, scope_id=scope_id)
     records = await rem.resolve_scope(db, scope_kind, scope_id)
     groups = await rem.build_groups(db, records)
-    last = await _last_sends(db, scope_kind, scope_id)
     settings_ = await rc.load(db)
     return {
         "enabled": settings_ is not None,
@@ -136,7 +131,11 @@ async def _preview(db: AsyncSession, user: dict, *, scope_kind: str,
                 "payment_date": l.payment_date.isoformat(),
                 "amount": str(l.amount),
             } for l in g.lines],
-            "last_send": last.get((g.recipient_kind, g.party_id)),
+            # Fix 2: cross-scope-aware — see rem.last_send_for_group's
+            # docstring for why a same-scope-only lookup lies for a payment
+            # that was actually sent under its batch (or vice versa).
+            "last_send": await rem.last_send_for_group(
+                db, scope_kind=scope_kind, scope_id=scope_id, group=g),
         } for g in groups],
     }
 
@@ -165,6 +164,7 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
         reference=reference, payment_method=method,
         company_name=company_name, sender=sender,
         actor_id=uuid.UUID(str(user["sub"])),
+        resend=body.resend,
     )
     # No trailing db.commit() here — app/crud/remittance_send.py's
     # send_groups() already commits the log row right after EACH payee's send

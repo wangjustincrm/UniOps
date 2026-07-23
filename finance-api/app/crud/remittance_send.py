@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud import remittance as rem
 from app.crud.remittance import PayeeGroup
 from app.models.remittance import FAILED, SENT, RemittanceNotification
 from app.services.email import send_email
@@ -71,6 +72,15 @@ async def _upsert(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
         "status": stmt.excluded.status,
         "error": stmt.excluded.error,
         "attempts": RemittanceNotification.attempts + 1,
+        # TimestampMixin's onupdate=func.now() is an ORM-flush-time hook —
+        # it never fires for this Core-level INSERT ... ON CONFLICT DO
+        # UPDATE, so without an explicit value here `updated_at` would stay
+        # frozen at the row's original insert time through every resend.
+        # remittance.py's _last_sends() cross-scope lookup (Fix 2) compares
+        # `updated_at` between a same-scope and a cross-scope row for the
+        # same payee to decide which is more recent — that comparison is
+        # meaningless unless every attempt, not just the first, bumps it.
+        "updated_at": now,
     }
     if status == SENT:
         update_cols["sent_at"] = now
@@ -85,7 +95,7 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
                        groups: list[PayeeGroup], reference: str,
                        payment_method: str, company_name: str,
                        sender: RemittanceSettings,
-                       actor_id: uuid.UUID) -> list[dict]:
+                       actor_id: uuid.UUID, resend: bool = False) -> list[dict]:
     """Send one email per payee group and record the outcome.
 
     Blocked or emailless groups are refused server-side and never reach
@@ -93,6 +103,17 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
     the UI's greyed-out checkbox. One payee's failure — in `render()` or in
     `send_email()` — is caught, logged against that payee, committed, and
     does not stop the rest of the loop.
+
+    `resend=False` (the default) is the same kind of enforcement for a payee
+    the log already shows as `sent` for the effective scope — checked via
+    `rem.last_send_for_group`'s cross-scope lookup (Fix 2), not just this
+    scope's own rows, so a payment already sent as part of its batch (or
+    vice versa) is refused here too. Before this, nothing on the server
+    consulted the log at all: a payee already `sent` was silently re-sent
+    whenever it appeared in `recipients` again — a proxy timeout after the
+    mail actually went out, a refresh mid-request, or two AP staff on the
+    same batch each produced a duplicate advice. `resend=True` is the
+    deliberate, supported override.
     """
     results: list[dict] = []
     for g in groups:
@@ -104,6 +125,14 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
             results.append({**base, "status": "skipped",
                              "error": ", ".join(g.block_reasons)})
             continue
+
+        if not resend:
+            prev = await rem.last_send_for_group(
+                db, scope_kind=scope_kind, scope_id=scope_id, group=g)
+            if prev is not None and prev["status"] == SENT:
+                results.append({**base, "status": "skipped",
+                                 "error": "Already sent — resend not requested"})
+                continue
 
         try:
             subject, html = render(g, company_name=company_name, reference=reference,

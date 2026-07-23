@@ -147,14 +147,19 @@ export function RemittancePanel({ scope, onSent }: {
 
   async function handleSend() {
     if (!preview) return
-    const recipients = preview.groups
-      .filter((g) => selected.has(payeeKey(g.recipient_kind, g.party_id)))
-      .map((g) => ({ recipient_kind: g.recipient_kind, party_id: g.party_id }))
-    if (recipients.length === 0) return
+    const selectedGroups = preview.groups.filter((g) => selected.has(payeeKey(g.recipient_kind, g.party_id)))
+    if (selectedGroups.length === 0) return
+    const recipients = selectedGroups.map((g) => ({ recipient_kind: g.recipient_kind, party_id: g.party_id }))
+    // Only true when the operator deliberately re-checked a payee the panel
+    // already shows as sent (the checkbox that carries the "Already sent —
+    // check to resend" tooltip below) — never a blanket default, so a
+    // payee the server independently knows is already sent (e.g. sent from
+    // the other scope a moment ago) still gets refused as `skipped`.
+    const resend = selectedGroups.some((g) => readinessOf(g) === 'sent')
     setSending(true)
     setSendError(null)
     try {
-      const result = await sendRemittance(scope, recipients)
+      const result = await sendRemittance(scope, recipients, resend)
       setLastResult(result)
       onSent?.(result)
       // Re-fetch rather than locally patch state — a send just changed the

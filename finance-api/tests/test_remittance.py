@@ -493,14 +493,14 @@ def _sender():
     )
 
 
-async def _send(db, groups, scope_id, side_effect=None):
+async def _send(db, groups, scope_id, side_effect=None, resend=False):
     with patch("app.crud.remittance_send.send_email",
                new=AsyncMock(side_effect=side_effect)) as m:
         results = await rsend.send_groups(
             db, scope_kind=SCOPE_BATCH, scope_id=scope_id, groups=groups,
             reference="BP-20260722-0001", payment_method="bank_transfer",
             company_name="Canada Royal Milk", sender=_sender(),
-            actor_id=uuid.uuid4(),
+            actor_id=uuid.uuid4(), resend=resend,
         )
     return results, m
 
@@ -521,10 +521,14 @@ async def test_send_writes_log_and_uses_cc(db_session):
 
 
 async def test_resend_upserts_and_increments_attempts(db_session):
+    """The second send is a deliberate resend (Fix 3's `resend=True`) — a
+    plain repeat with the pre-fix default would now be refused as `skipped`
+    (see test_unqualified_resend_of_already_sent_payee_is_skipped), which is
+    exactly the point of that fix, not something this test contradicts."""
     g = _group()
     scope_id = uuid.uuid4()
     await _send(db_session, [g], scope_id)
-    await _send(db_session, [g], scope_id)
+    await _send(db_session, [g], scope_id, resend=True)
 
     rows = (await db_session.execute(select(RemittanceNotification).where(
         RemittanceNotification.scope_id == scope_id))).scalars().all()
@@ -882,6 +886,100 @@ async def test_preview_409_when_payment_not_completed(client, db_session):
 
     r = await client.get(f"/finance/v1/payments/{rec.id}/remittance/preview", headers=_h())
     assert r.status_code == 409
+
+
+# ── Fix 2: a batch-scope send must be visible from the payment scope ────────
+
+async def test_batch_send_is_visible_from_payment_scope_preview(client, db_session):
+    """A payment paid as part of a batch has two independent notification-log
+    identities: a `batch` row and a `payment` row for the same payee. Sending
+    from the batch dialog must not leave the payment drawer showing 'Ready'
+    (and pre-checked) for that vendor — that is exactly what let an operator
+    send a real second advice listing only that one invoice."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-40")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    batch = PaymentBatch(batch_number="BP-40", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("42.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    rec = _record(pa, batch_id=batch.id)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        r = await client.post(f"/finance/v1/payments/batches/{batch.id}/remittance/send",
+                              json={"recipients": None}, headers=_h())
+    assert r.json()["sent"] == 1
+
+    body = (await client.get(
+        f"/finance/v1/payments/{rec.id}/remittance/preview", headers=_h())).json()
+    assert len(body["groups"]) == 1
+    last_send = body["groups"][0]["last_send"]
+    assert last_send is not None
+    assert last_send["status"] == "sent"
+
+
+# ── Fix 3: the server must refuse a duplicate send unless resend=True ───────
+
+async def test_unqualified_resend_of_already_sent_payee_is_skipped(client, db_session):
+    """A payee already `sent` under the effective scope must be refused —
+    not silently re-emailed — when the client does not opt in with
+    `resend: true`. Before this fix nothing on the server consulted the log
+    at all; a payee already `sent` was re-sent whenever it reappeared in
+    `recipients`."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-51")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m1:
+        first = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                                  json={"recipients": None}, headers=_h())
+    assert first.json()["sent"] == 1
+    assert m1.await_count == 1
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m2:
+        second = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                                   json={"recipients": None}, headers=_h())
+    assert second.json()["sent"] == 0
+    assert second.json()["skipped"] == 1
+    assert m2.await_count == 0        # no second email ever attempted
+
+
+async def test_resend_true_sends_again(client, db_session):
+    """The explicit opt-in still works — resending is a deliberate, supported
+    operation, not something to simply refuse outright."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-52")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        first = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                                  json={"recipients": None}, headers=_h())
+    assert first.json()["sent"] == 1
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m2:
+        second = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                                   json={"recipients": None, "resend": True}, headers=_h())
+    assert second.json()["sent"] == 1
+    assert second.json()["skipped"] == 0
+    assert m2.await_count == 1
 
 
 async def test_preview_payment_scope_requires_payment_authority(client, db_session):
