@@ -107,3 +107,88 @@ async def test_resolve_no_department_fails_closed(db_session):
     scope = await resolve_budget_scope(db_session, uid, "requester")
     assert scope.full_access is False
     assert scope.cost_center_ids == []
+
+
+async def _seed_dept_cc(db_session, dept_id, cc_id, code):
+    await db_session.execute(sa.text(
+        "INSERT INTO cost_centers (id, code, name, department_id, is_active) "
+        "VALUES (CAST(:cc AS uuid), :code, :code, CAST(:d AS uuid), true)"),
+        {"cc": str(cc_id), "code": code, "d": str(dept_id)})
+
+
+async def _make_director(db_session, uid, own_dept, directed_depts, primary_role,
+                         additional_roles=()):
+    await db_session.execute(sa.text(
+        "INSERT INTO users (id, department_id, role, is_active) "
+        "VALUES (CAST(:u AS uuid), CAST(:d AS uuid), :r, true)"),
+        {"u": str(uid), "d": str(own_dept) if own_dept else None, "r": primary_role})
+    for rc in additional_roles:
+        await db_session.execute(sa.text(
+            "INSERT INTO user_roles (user_id, role_code) VALUES (CAST(:u AS uuid), :r)"),
+            {"u": str(uid), "r": rc})
+    for d in directed_depts:
+        await db_session.execute(sa.text(
+            "INSERT INTO approval_dept_routing (dept_id, director_user_id) "
+            "VALUES (CAST(:d AS uuid), CAST(:u AS uuid))"),
+            {"d": str(d), "u": str(uid)})
+
+
+@pytest.mark.asyncio
+async def test_director_sees_own_and_directed_departments(db_session):
+    """The LIVE PRODUCTION SHAPE: primary role dept_manager + ADDITIONAL role
+    director. Which departments they direct must come from
+    approval_dept_routing.director_user_id, never from a role string."""
+    uid = uuid.uuid4()
+    dept_a, dept_b, dept_c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    cc_a, cc_b, cc_c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    for d, cc, code in ((dept_a, cc_a, "SELL-A"), (dept_b, cc_b, "SELL-B"),
+                        (dept_c, cc_c, "SELL-C")):
+        await _seed_dept_cc(db_session, d, cc, code)
+    await _make_director(db_session, uid, own_dept=dept_a,
+                         directed_depts=[dept_a, dept_b, dept_c],
+                         primary_role="dept_manager", additional_roles=["director"])
+
+    scope = await resolve_budget_scope(db_session, uid, "dept_manager")
+    assert scope.full_access is False          # director must NOT be company-wide
+    assert set(scope.cost_center_ids) == {cc_a, cc_b, cc_c}
+
+
+@pytest.mark.asyncio
+async def test_director_own_dept_not_among_directed_is_still_included(db_session):
+    uid = uuid.uuid4()
+    own, dir1 = uuid.uuid4(), uuid.uuid4()
+    cc_own, cc_dir = uuid.uuid4(), uuid.uuid4()
+    await _seed_dept_cc(db_session, own, cc_own, "SELL-OWN")
+    await _seed_dept_cc(db_session, dir1, cc_dir, "SELL-DIR")
+    await _make_director(db_session, uid, own_dept=own, directed_depts=[dir1],
+                         primary_role="dept_manager", additional_roles=["director"])
+
+    scope = await resolve_budget_scope(db_session, uid, "dept_manager")
+    assert set(scope.cost_center_ids) == {cc_own, cc_dir}
+
+
+@pytest.mark.asyncio
+async def test_director_without_own_department_still_gets_directed(db_session):
+    uid = uuid.uuid4()
+    dir1 = uuid.uuid4()
+    cc_dir = uuid.uuid4()
+    await _seed_dept_cc(db_session, dir1, cc_dir, "SELL-DIR2")
+    await _make_director(db_session, uid, own_dept=None, directed_depts=[dir1],
+                         primary_role="requester", additional_roles=["director"])
+
+    scope = await resolve_budget_scope(db_session, uid, "requester")
+    assert scope.cost_center_ids == [cc_dir]   # NOT fail-closed to empty
+
+
+@pytest.mark.asyncio
+async def test_plain_employee_directing_nothing_unchanged(db_session):
+    uid = uuid.uuid4()
+    own, other = uuid.uuid4(), uuid.uuid4()
+    cc_own, cc_other = uuid.uuid4(), uuid.uuid4()
+    await _seed_dept_cc(db_session, own, cc_own, "SELL-MINE")
+    await _seed_dept_cc(db_session, other, cc_other, "SELL-OTHER")
+    await _make_director(db_session, uid, own_dept=own, directed_depts=[],
+                         primary_role="requester")
+
+    scope = await resolve_budget_scope(db_session, uid, "requester")
+    assert scope.cost_center_ids == [cc_own]
