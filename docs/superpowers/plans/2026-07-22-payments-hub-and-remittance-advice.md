@@ -79,13 +79,10 @@
 | `src/pages/finance/PaymentBatchPage.tsx` | Open the dialog after execute; Remittance section |
 | `src/app/routes.tsx`, nav config | Route + sidebar entry |
 
-**epms frontend**
+**epms frontend** — maintenance surfaces only; no remittance UI (see Task 14)
 
 | File | Responsibility |
 | --- | --- |
-| `src/services/remittance.ts` | Same client, against `financeApi` |
-| `src/components/remittance/RemittanceDialog.tsx` | Port of the finance dialog |
-| `src/pages/pa/PaDetailPage.tsx` | Open after Confirm Payment; Remittance row |
 | `src/pages/vendors/VendorsPage.tsx` | Remittance email field |
 | Company Settings page | Remittance section |
 
@@ -2873,48 +2870,21 @@ git commit -m "feat(finance-ui): open remittance dialog after batch execute"
 
 ---
 
-### Task 14: EPMS PA detail integration
+### Task 14: DROPPED — EPMS PA detail integration
 
-**Files:**
-- Create: `epms/src/services/remittance.ts`
-- Create: `epms/src/components/remittance/RemittanceDialog.tsx`
-- Modify: `epms/src/pages/pa/PaDetailPage.tsx`
+**Do not implement this task.** Decided 2026-07-22, before execution began.
 
-**Interfaces:**
-- Consumes: Task 9's endpoints via the existing `financeApi` client in `epms/src/lib/api.ts`.
-- Produces: no new exports.
+The task would have copied the remittance client, panel, and dialog into the EPMS app so a
+single PA payment could open the dialog on its own screen. That is a second copy of every
+piece of this feature in a second app, and it would still leave OA Direct PA payments
+without an entry point.
 
-- [ ] **Step 1: Port the client and dialog**
+Instead, every non-batch payment is sent from the Payments hub (Task 12), which lists it
+with `Single` as its source and opens the remittance panel in its detail drawer. EPMS keeps
+no remittance UI. `PaDetailPage.tsx` is not modified.
 
-Copy `finance/src/services/remittance.ts` and the panel + dialog components into the epms app, changing only the API client import to epms's `financeApi` (from `@/lib/api`, already used by the PA payment modal to load payment sources). Keep the type names identical so the two stay comparable.
-
-`VITE_FINANCE_URL` and the finance-api CORS origin for EPMS are already wired — verify by confirming the existing payment-source fetch in the Process modal works before blaming the new calls.
-
-- [ ] **Step 2: Open the dialog after Confirm Payment**
-
-In `PaDetailPage.tsx`, the Process modal (around line 147, "Process (record payment) modal") confirms a payment. After that call resolves successfully, capture the payment record id from the response and open the dialog with `scope={{ kind: 'payment', id: paymentRecordId }}`.
-
-If the epms-api forwarder does not return the finance payment record id, add it to that response — the dialog cannot be scoped without it. Check `epms-api/app/api/v1/pa.py`'s process branch and the `PaymentExecuteResponse` it forwards; `payment_record_id` is already part of the executor's response, so it likely only needs passing through.
-
-- [ ] **Step 3: Add a Remittance row to the processed PA view**
-
-For a PA in `processed` status, render the remittance panel scoped to that payment record, with the same badge, Refresh, and Resend behaviour as the finance side.
-
-- [ ] **Step 4: Typecheck**
-
-Run: `cd epms && npx tsc -p tsconfig.app.json --noEmit`
-Expected: no new errors. **Do not** pass `--ignoreDeprecations 6.0` here — the epms frontend is TypeScript 5.9.3 and that flag is a hard error. There is a known pre-existing error baseline; compare counts.
-
-- [ ] **Step 5: Verify against the dev stack**
-
-Pay a single approved PA from its detail page. Confirm the dialog opens with exactly one vendor group, Send reports `sent: 1`, and the PA detail then shows the remittance status.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add epms/src/services/remittance.ts epms/src/components/remittance/ epms/src/pages/pa/PaDetailPage.tsx
-git commit -m "feat(epms-ui): send remittance advice after single PA payment"
-```
+Task numbering is preserved so the ledger and task briefs stay aligned. Skip straight from
+Task 13 to Task 15.
 
 ---
 

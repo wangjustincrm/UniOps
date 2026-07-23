@@ -73,8 +73,11 @@ Sending is a separate, explicit step in both flows:
 - **Batch** — Finance's Payment Batches page, after a successful execute and only when the
   company switch is on, fetches the remittance preview for the batch and opens the confirm
   dialog.
-- **Single** — the EPMS PA detail Process modal does the same thing after Confirm Payment
-  succeeds, for the one payment record it just created.
+- **Single** — a payment made outside a batch (the EPMS PA detail Process modal, or an OA
+  Direct PA) gets no dialog on its own screen. It appears in the Payments hub, where the
+  same preview and Send live. Decided 2026-07-22: putting the dialog in EPMS would mean a
+  second copy of the panel, client, and templates in a second app, and the hub already has
+  to exist for OA payments regardless.
 
 The operator reviews recipients and lines, then presses **Send**. Sending always happens
 after the payment transaction has committed — the same ordering bug that sent
@@ -311,18 +314,13 @@ preview / send response shape.
   send status, and a Resend action enabled whenever the group is unblocked. A Refresh
   button re-fetches the preview.
 
-**epms — `pages/pa/PaDetailPage.tsx`**:
+**epms — no remittance UI.** A PA paid from its detail page, and a Direct PA paid from OA,
+both appear in the hub with `Single` as their source and are sent from there. The
+alternative — porting the panel, client, and templates into EPMS — would put a second copy
+of every piece of this feature in a second app, and would still leave OA uncovered.
 
-- After Confirm Payment succeeds in the Process modal, if the company switch is on, fetch
-  the preview for the new payment record and open the same Remittance dialog. For a PA
-  this is a single vendor group, so the dialog is short, but the block reasons and the
-  Send confirmation behave identically.
-- A processed PA gains the same Remittance status row (badge, last send status, Refresh,
-  Resend) in its detail view.
-- These calls go through the existing `financeApi` client, which the Process modal already
-  uses to load payment sources — `VITE_FINANCE_URL` and the finance-api CORS origin for
-  EPMS are therefore already wired. No new build argument is introduced; if that changes,
-  it must be declared as both `ARG` and `ENV` in the Dockerfile.
+EPMS does gain the two maintenance surfaces the feature depends on: the vendor remittance
+email field, and the Remittance section of Company Settings.
 
 **finance — new `PaymentsPage.tsx` (the hub)**:
 
@@ -346,9 +344,9 @@ Layout, top to bottom:
   component used elsewhere, scoped to that payment: badge, last send result, Refresh,
   Send / Resend.
 
-This closes the OA Direct PA gap: a Direct PA paid from OA has no dialog on its own screen,
-but it appears in the hub like any other payment and remittance can be sent from there. Its
-own screen is left unchanged in this iteration.
+This is the entry point for every non-batch payment: a PA paid from EPMS and a Direct PA
+paid from OA both appear here with `Single` as their source, and remittance is sent from
+the drawer. Neither originating screen is changed.
 
 The page is wrapped in `PortalChromeLayout` with an `activeKey` matching its `navConfig`
 entry — no bare `div`. The sidebar entry is added to the shared `navConfig` and gated by
