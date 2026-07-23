@@ -211,3 +211,13 @@ async def test_list_opening_scopes_to_department(client, dept_manager_token, see
     ccs = {i["cost_center_id"] for i in r.json()["items"]}
     assert str(seed_two_cc_plans["cc_a"]) in ccs       # own department's data survives
     assert str(seed_two_cc_plans["cc_b"]) not in ccs   # other department must not leak
+
+
+@pytest.mark.asyncio
+async def test_plan_lines_requires_auth(client, admin_token):
+    r = await client.get("/api/v1/plan-lines?fiscal_year=2026&month=1")
+    assert r.status_code in (401, 403)          # was 200/anonymous before the fix
+    r_ok = await client.get("/api/v1/plan-lines?fiscal_year=2026&month=1",
+                            headers={"Authorization": f"Bearer {admin_token}"})
+    assert r_ok.status_code == 200
+    assert isinstance(r_ok.json(), list)

@@ -83,7 +83,8 @@ async def budget_actual(_: CurrentUser, db: AsyncSession = Depends(get_db),
 
 
 @router.get("/budget-actual-grid")
-async def budget_actual_grid(_: CurrentUser, db: AsyncSession = Depends(get_db),
+async def budget_actual_grid(request: Request, _: CurrentUser,
+                             db: AsyncSession = Depends(get_db),
                              period: str = Query(...)):
     """④b Budget-vs-Actual grid: per (cost center × income-expense item)
     budget/actual/variance for the 5 categories + Payroll/Depreciation tie-out
@@ -92,8 +93,11 @@ async def budget_actual_grid(_: CurrentUser, db: AsyncSession = Depends(get_db),
     import logging
 
     from app.services import budget_client
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
     try:
-        budget = await budget_client.fetch_plan_lines(int(period[:4]), int(period[5:7]))
+        budget = await budget_client.fetch_plan_lines(
+            int(period[:4]), int(period[5:7]), bearer_token=token)
     except Exception:  # noqa: BLE001
         logging.getLogger(__name__).exception(
             "budget-api plan-lines fetch failed; rendering actuals only")

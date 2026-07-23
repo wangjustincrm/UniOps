@@ -14,9 +14,11 @@ router = APIRouter(tags=["crossservice"])
 
 
 @router.get("/plan-lines")
-async def plan_lines(fiscal_year: int, month: int, db: SessionDep):
+async def plan_lines(fiscal_year: int, month: int, db: SessionDep,
+                     user: CurrentUserPayload):  # noqa: ARG001 — auth gate only
     """Current approved plan lines for a (fiscal_year, month), all cost centers.
-    Read-only, consumed by finance's predreal grid for the budget column."""
+    Read-only, consumed by finance's predreal grid for the budget column.
+    Requires a valid JWT (forwarded by finance-api)."""
     rows = await plan_crud.current_plan_lines(db, fiscal_year, month)
     return [{"cost_center_id": str(cc), "account_id": str(a), "amount": str(amt)}
             for cc, a, amt in rows]
