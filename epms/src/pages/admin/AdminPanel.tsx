@@ -1915,6 +1915,16 @@ function NotificationSettingsSection() {
           every holder of the role. Leave empty to notify each member individually. Tasks assigned to a
           named person always go to that person.
         </p>
+        <p className="text-sm text-neutral-500">
+          This applies system-wide, not only to EPMS: the shared task list also carries OA expense
+          claims, Finance budget plans and VMS tasks, so configuring Finance BP here also redirects
+          Finance budget-plan notifications for that role.
+        </p>
+        <p className="text-sm text-neutral-500">
+          Note: a shared mailbox is delivered by email only. When the company Default Notification
+          Channel is set to &ldquo;Teams only&rdquo;, a role with a shared mailbox configured receives
+          no notification at all for role-addressed tasks.
+        </p>
         <div className="flex flex-col gap-2">
           {roleOptions.map(([code, label]) => (
             <div key={code} className="flex items-center gap-3">

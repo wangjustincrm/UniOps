@@ -41,10 +41,15 @@ interface CompanyConfig {
   smtp_password: string | null
   smtp_use_tls: boolean | null
   smtp_from: string | null
+  // 该 JSONB 由多个客户端共享(Portal 只管这三个键,EPMS Admin 还写
+  // role_shared_mailboxes / system_url)。保留索引签名,保存时能原样带回
+  // Portal 不认识的键,避免覆盖掉别的客户端的配置。
   notification_settings: {
     default_channel: string
     teams_webhook_url: string | null
     followup_time: string
+    role_shared_mailboxes?: Record<string, string>
+    [key: string]: unknown
   }
   workflow_defs?: Record<string, WorkflowNodeDef[]>
 }
@@ -899,6 +904,9 @@ function NotificationSettings() {
     try {
       await save.mutateAsync({
         notification_settings: {
+          // 先展开已存的设置:这个 JSONB 是整块替换的,不带回 EPMS Admin 写的
+          // role_shared_mailboxes / system_url 等键就会被这次保存抹掉。
+          ...(ns ?? {}),
           default_channel: channelVal as any,
           teams_webhook_url: webhookVal || null,
           followup_time: followupVal,

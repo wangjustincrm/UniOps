@@ -185,8 +185,11 @@ async def _dispatch(
         else None
     )
 
-    # 共享邮箱路径只发邮件(不发 Teams),因此公司渠道不含 email 时整条通知不发。
-    if shared_mailbox and company_channel not in ("email_only", "both"):
+    # 共享邮箱路径只发邮件(不发 Teams),因此显式配成 teams_only 时整条通知不发。
+    # 注意这里是“只在 teams_only 时抑制”,而不是“只在 email_only/both 时发送”:
+    # 存储值若是意外/拼错的渠道,仍然应该发出邮件,与逐人路径的默认 email_only 一致。
+    # ("none" 是主开关,已在上面提前 return。)
+    if shared_mailbox and company_channel == "teams_only":
         logger.info(
             "Shared mailbox configured for role %s but company default_channel=%s "
             "excludes email; skipping task %s",

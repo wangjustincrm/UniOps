@@ -203,3 +203,96 @@ async def test_branding_blank_module_falls_back_to_portal(admin_client, client):
     r = await client.get(BRANDING_URL, params={"module": "oa"})
     assert r.status_code == 200
     assert r.json()["tagline"] == "Portal Hub"
+
+
+# ── notification_settings shallow merge + shared-mailbox validation ───────────
+# The same JSONB is PATCHed by two clients (Portal's notification form and EPMS
+# Admin's Role Shared Mailboxes section), each sending only the keys it owns.
+# crud.config.update therefore shallow-merges this one field instead of
+# replacing it wholesale — see the comment there.
+
+@pytest.fixture
+async def _reset_shared_mailboxes(admin_client):
+    """Leave role_shared_mailboxes empty so these tests don't leak into others."""
+    yield
+    await admin_client.patch(CONFIG_URL, json={
+        "notification_settings": {"role_shared_mailboxes": {}},
+    })
+
+
+@pytest.mark.asyncio
+async def test_partial_notification_settings_update_preserves_shared_mailboxes(
+    admin_client, _reset_shared_mailboxes,
+):
+    """A Portal-style save (only default_channel) must not wipe the mailbox map."""
+    r = await admin_client.patch(CONFIG_URL, json={
+        "notification_settings": {
+            "default_channel": "email_only",
+            "role_shared_mailboxes": {"ap_clerk": "ap@example.com"},
+        },
+    })
+    assert r.status_code == 200
+
+    # Portal's form only knows these keys.
+    r = await admin_client.patch(CONFIG_URL, json={
+        "notification_settings": {"default_channel": "both"},
+    })
+    assert r.status_code == 200
+    ns = r.json()["notification_settings"]
+    assert ns["default_channel"] == "both"
+    assert ns["role_shared_mailboxes"] == {"ap_clerk": "ap@example.com"}
+
+
+@pytest.mark.asyncio
+async def test_shared_mailbox_map_is_replaced_wholesale_so_removal_works(
+    admin_client, _reset_shared_mailboxes,
+):
+    """The merge is deliberately shallow: sending the full sub-dict replaces it,
+    so removing a role through the EPMS UI still removes it."""
+    r = await admin_client.patch(CONFIG_URL, json={
+        "notification_settings": {
+            "role_shared_mailboxes": {
+                "ap_clerk": "ap@example.com",
+                "finance_bp": "fbp@example.com",
+            },
+        },
+    })
+    assert r.status_code == 200
+    assert set(r.json()["notification_settings"]["role_shared_mailboxes"]) == {"ap_clerk", "finance_bp"}
+
+    # EPMS UI drops finance_bp and re-submits the whole map.
+    r = await admin_client.patch(CONFIG_URL, json={
+        "notification_settings": {
+            "role_shared_mailboxes": {"ap_clerk": "ap@example.com"},
+        },
+    })
+    assert r.status_code == 200
+    mailboxes = r.json()["notification_settings"]["role_shared_mailboxes"]
+    assert "finance_bp" not in mailboxes, "removing a role must actually remove it"
+    assert mailboxes == {"ap_clerk": "ap@example.com"}
+
+
+@pytest.mark.asyncio
+async def test_invalid_shared_mailbox_address_is_rejected(admin_client, _reset_shared_mailboxes):
+    """A malformed address would silently kill that role's notifications (3 failed
+    SMTP attempts, no fallback to the per-member fan-out) — reject it at write time."""
+    r = await admin_client.patch(CONFIG_URL, json={
+        "notification_settings": {
+            "role_shared_mailboxes": {"ap_clerk": "not-an-email"},
+        },
+    })
+    assert r.status_code == 422
+    assert "ap_clerk" in r.text
+
+
+@pytest.mark.asyncio
+async def test_valid_shared_mailbox_address_is_accepted(admin_client, _reset_shared_mailboxes):
+    r = await admin_client.patch(CONFIG_URL, json={
+        "notification_settings": {
+            "role_shared_mailboxes": {"ap_clerk": "ap@canadaroyalmilk.com"},
+        },
+    })
+    assert r.status_code == 200
+    assert r.json()["notification_settings"]["role_shared_mailboxes"] == {
+        "ap_clerk": "ap@canadaroyalmilk.com"
+    }

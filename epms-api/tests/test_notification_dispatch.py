@@ -324,7 +324,7 @@ async def test_shared_mailbox_skips_teams(captured_emails, captured_teams):
 
 
 async def test_shared_mailbox_body_greets_the_team(monkeypatch):
-    bodies: list[str] = []
+    bodies: list[tuple[str, str]] = []
 
     async def _capture(to, subject, html, **kwargs):
         bodies.append((to, html))
@@ -342,6 +342,37 @@ async def test_shared_mailbox_body_greets_the_team(monkeypatch):
     mine = [html for to, html in bodies if to == SHARED_MAILBOX]
     assert len(mine) == 1
     assert "AP Clerk Team" in mine[0]
+
+
+async def test_shared_mailbox_body_renders_placeholders_without_template(monkeypatch):
+    """Shared-mailbox delivery with no matching template still substitutes vars.
+
+    Covers the ``else`` branch (falsy ``tpl``) of the shared-mailbox path: the
+    body falls back to task.description and must render {recipient_name} as the
+    role's team name, not emit the literal placeholder.
+    """
+    bodies: list[tuple[str, str]] = []
+
+    async def _capture(to, subject, html, **kwargs):
+        bodies.append((to, html))
+
+    monkeypatch.setattr("app.services.email.send_email", _capture)
+
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(
+            db,
+            default_channel="email_only",
+            role_shared_mailboxes={"ap_clerk": SHARED_MAILBOX},
+        )
+        # template_key with no entry in email_templates → the no-template branch.
+        await notification.dispatch_task_notification(
+            _make_pool_task(), db, template_key="no_such_template_key",
+        )
+
+    mine = [html for to, html in bodies if to == SHARED_MAILBOX]
+    assert len(mine) == 1
+    assert "Hi AP Clerk Team," in mine[0]
+    assert "{recipient_name}" not in mine[0]
 
 
 async def test_named_assignee_body_renders_placeholders_without_template(monkeypatch):

@@ -70,7 +70,7 @@ block becomes a three-way branch:
 | Condition | Behaviour |
 |---|---|
 | `task.assigned_user_id` is set | **Unchanged** — resolve that user, honour their `notification_channel`, email and/or Teams. |
-| `assigned_user_id` is `NULL` **and** `role_shared_mailboxes[task.assigned_role]` is non-empty | Send exactly **one** email to the shared mailbox. No per-user email, no Teams card. Per-user `notification_channel` is not consulted. |
+| `assigned_user_id` is `NULL` **and** `role_shared_mailboxes[task.assigned_role]` is non-empty | Send exactly **one** email to the shared mailbox — unless the company channel suppresses it (see below). No per-user email, no Teams card. Per-user `notification_channel` is not consulted. |
 | `assigned_user_id` is `NULL` and no shared mailbox configured | **Unchanged** — one email (and/or Teams card) per active user holding the role. |
 
 Details of the shared-mailbox branch:
@@ -78,6 +78,13 @@ Details of the shared-mailbox branch:
 - The company-level master switch is evaluated first and is unchanged: when
   `notification_settings.default_channel == "none"`, nothing is sent, shared
   mailbox included. (This early return already exists.)
+- The shared-mailbox path is **email-only** (it never posts a Teams card), so it
+  is additionally bound to the company `default_channel`: the email is
+  **suppressed on the explicit value `"teams_only"`** and sent for every other
+  channel (`email_only`, `both`, and any unexpected/typo'd stored value — which
+  still delivers email, matching the per-user path whose per-user default is
+  `email_only`). Under `teams_only` nothing at all is dispatched for that task:
+  there is deliberately **no** fallback to the per-member fan-out.
 - The shared-mailbox lookup happens **before** the role-member query, so a
   notification is still delivered when the role currently has zero active
   members. This is an intentional behaviour change: today an empty role pool
@@ -89,7 +96,9 @@ Details of the shared-mailbox branch:
   `epms-api/app/crud/config.py` (`"ap_clerk": "AP Clerk"`), extended to look at
   `custom_roles` as well; when a role has no label, fall back to the role key
   title-cased with underscores replaced by spaces.
-- Retry/backoff uses the existing `_send_with_retry` helper unchanged.
+- Retry/backoff uses the existing `_send_with_retry` helper, extended (not
+  unchanged): it now takes `User | None` plus an optional explicit
+  `recipient_email`, so the shared-mailbox delivery logs through the same code.
 
 ### 3. Delivery log
 

@@ -348,6 +348,13 @@ async def update(
 ) -> CompanyConfig:
     fields = payload.model_dump(exclude_none=True)
     for field, value in fields.items():
+        if field == "notification_settings" and isinstance(value, dict):
+            # 浅合并:Portal 与 EPMS 两个客户端 PATCH 同一个 /config,各自只提交
+            # 自己那几个键。整块替换会让 Portal 保存通知表单时把 EPMS 写的
+            # role_shared_mailboxes / system_url 静默抹掉。
+            # 故意只做一层浅合并 —— 客户端提交完整的 role_shared_mailboxes 子字典
+            # 时仍然整体替换该子字典,这样 EPMS UI 里删除某个角色的映射依旧生效。
+            value = {**(cfg.notification_settings or {}), **value}
         setattr(cfg, field, value)
         if field in _JSONB_FIELDS:
             flag_modified(cfg, field)
