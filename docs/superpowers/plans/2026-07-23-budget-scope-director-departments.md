@@ -396,6 +396,164 @@ git commit -m "feat(epms): pluralise budget scope chip for multi-department view
 
 ---
 
+## Task 4: close the unscoped `GET /actuals` and `GET /actuals/opening`
+
+Both endpoints shipped in `9aa3449` require only a valid JWT — no permission key
+and no scope filter — so any authenticated user can read raw monthly actuals and
+opening balances for **any** cost center. (Their sibling `/actuals/opening-import`
+does gate on `require_permission("budget.opening.write")`, so this is an omission,
+not a deliberate opening.) Scope them exactly like the other six endpoints.
+
+**Files:**
+- Modify: `budget-api/app/crud/balance.py:71-77` (`list_monthly_actuals`)
+- Modify: `budget-api/app/crud/opening.py:109-112` (`list_opening_balances`)
+- Modify: `budget-api/app/api/v1/actual.py:50-57` (`list_actuals`), `:98-103` (`list_opening`)
+- Test: `budget-api/tests/test_actuals_scoping.py`
+
+**Interfaces:**
+- Consumes: `_scope_for(db, user)` and `scoped_cc_ids(scope, requested)` — both
+  already present in `budget-api/app/api/v1/actual.py`.
+- Produces: `list_monthly_actuals(..., cc_ids: list[uuid.UUID] | None = None)` and
+  `list_opening_balances(..., cc_ids: list[uuid.UUID] | None = None)`.
+  Semantics identical to the existing summary CRUD: `None` → unchanged;
+  `[]` → empty result; non-empty → `cost_center_id IN cc_ids`.
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `budget-api/tests/test_actuals_scoping.py`:
+
+```python
+@pytest.mark.asyncio
+async def test_list_actuals_scopes_to_department(client, dept_manager_token, admin_token, seed_two_cc_plans):
+    r = await client.get("/actuals?fiscal_year=2026",
+                         headers={"Authorization": f"Bearer {dept_manager_token}"})
+    assert r.status_code == 200
+    ccs = {i["cost_center_id"] for i in r.json()["items"]}
+    assert str(seed_two_cc_plans["cc_b"]) not in ccs   # other department must not leak
+
+    r_all = await client.get("/actuals?fiscal_year=2026",
+                             headers={"Authorization": f"Bearer {admin_token}"})
+    ccs_all = {i["cost_center_id"] for i in r_all.json()["items"]}
+    assert ccs <= ccs_all
+
+
+@pytest.mark.asyncio
+async def test_list_actuals_out_of_scope_cc_is_clamped(client, dept_manager_token, seed_two_cc_plans):
+    r = await client.get(f"/actuals?fiscal_year=2026&cost_center_id={seed_two_cc_plans['cc_b']}",
+                         headers={"Authorization": f"Bearer {dept_manager_token}"})
+    assert r.status_code == 200                        # never 403
+    ccs = {i["cost_center_id"] for i in r.json()["items"]}
+    assert str(seed_two_cc_plans["cc_b"]) not in ccs   # clamped, not honoured
+
+
+@pytest.mark.asyncio
+async def test_list_opening_scopes_to_department(client, dept_manager_token, seed_two_cc_plans):
+    r = await client.get("/actuals/opening?fiscal_year=2026",
+                         headers={"Authorization": f"Bearer {dept_manager_token}"})
+    assert r.status_code == 200
+    ccs = {i["cost_center_id"] for i in r.json()["items"]}
+    assert str(seed_two_cc_plans["cc_b"]) not in ccs
+```
+
+The `client`, `dept_manager_token`, `admin_token` and `seed_two_cc_plans` fixtures
+already exist in `budget-api/tests/conftest.py`.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd budget-api && python -m pytest tests/test_actuals_scoping.py -k "list_actuals or list_opening" -v`
+Expected: FAIL — the dept viewer currently receives cc_b rows (no scoping applied).
+
+- [ ] **Step 3: Add `cc_ids` to the two CRUD functions**
+
+In `budget-api/app/crud/balance.py`, change `list_monthly_actuals`'s signature to add
+`cc_ids: list[uuid.UUID] | None = None`, short-circuit an empty result immediately
+after the docstring, and extend the existing cost-center filter:
+
+```python
+    if cc_ids is not None and len(cc_ids) == 0:
+        return []
+    ...
+    if cost_center_id is not None:
+        q = q.where(BudgetLedger.cost_center_id == cost_center_id)
+    elif cc_ids:
+        q = q.where(BudgetLedger.cost_center_id.in_(cc_ids))
+```
+
+In `budget-api/app/crud/opening.py`, do the same for `list_opening_balances`: add
+`cc_ids: list[uuid.UUID] | None = None`, extend its
+`if cost_center_id is not None:` filter with the matching `elif cc_ids:` clause,
+and return an empty response when `cc_ids == []`. Read that function's own `return`
+statement and mirror its exact response shape for the empty case — do not guess it.
+
+- [ ] **Step 4: Apply the scope in both endpoints**
+
+In `budget-api/app/api/v1/actual.py`, drop the `# noqa: ARG001` from both handlers
+(the `user` argument is now used) and route through the scope:
+
+```python
+@router.get("/actuals", response_model=ActualsListResponse)
+async def list_actuals(
+    db: SessionDep, user: CurrentUserPayload,
+    cost_center_id: uuid.UUID | None = Query(default=None),
+    fiscal_year: int | None = Query(default=None),
+    account_id: uuid.UUID | None = Query(default=None),
+    month: int | None = Query(default=None, ge=1, le=12),
+):
+    scope = await _scope_for(db, user)
+    if scope.full_access:
+        items = await balance_crud.list_monthly_actuals(
+            db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
+            account_id=account_id, month=month,
+        )
+    else:
+        items = await balance_crud.list_monthly_actuals(
+            db, cost_center_id=None, fiscal_year=fiscal_year,
+            account_id=account_id, month=month,
+            cc_ids=scoped_cc_ids(scope, cost_center_id),
+        )
+    return ActualsListResponse(items=items, total=len(items))
+
+
+@router.get("/actuals/opening", response_model=OpeningListResponse)
+async def list_opening(
+    db: SessionDep, user: CurrentUserPayload,
+    fiscal_year: int = Query(..., ge=2020, le=2100),
+    cost_center_id: uuid.UUID | None = Query(default=None),
+):
+    """List imported opening balances for a (cost_center, fiscal_year) scope."""
+    scope = await _scope_for(db, user)
+    if scope.full_access:
+        return await opening_crud.list_opening_balances(
+            db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
+        )
+    return await opening_crud.list_opening_balances(
+        db, cost_center_id=None, fiscal_year=fiscal_year,
+        cc_ids=scoped_cc_ids(scope, cost_center_id),
+    )
+```
+
+Keep the full-access branch calling the CRUD exactly as before, so full-access
+behaviour is byte-equivalent.
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `cd budget-api && python -m pytest tests/test_actuals_scoping.py -v`
+Expected: PASS, including the pre-existing summary/monthly/scope endpoint tests.
+
+- [ ] **Step 6: Run the full budget-api suite**
+
+Run: `cd budget-api && python -m pytest -q`
+Expected: no new failures versus before this task.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add budget-api/app/crud/balance.py budget-api/app/crud/opening.py budget-api/app/api/v1/actual.py budget-api/tests/test_actuals_scoping.py
+git commit -m "fix(budget-api): scope GET /actuals and /actuals/opening by department"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage**
