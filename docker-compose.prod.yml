@@ -441,6 +441,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./certs:/etc/caddy/certs:ro
+      - ./legal:/srv/legal:ro
       - caddy_data:/data
       - caddy_config:/config
 

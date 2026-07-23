@@ -26,7 +26,19 @@
 # ── Frontends (nginx :80 in each web image) ───────────────────────────────────
 portal.canadaroyalmilk.com {
 	import wildcard
-	reverse_proxy portal-web:80
+
+	# Public legal pages (EULA + privacy policy). Must stay reachable WITHOUT
+	# login: Intuit fetches these URLs during the QuickBooks app assessment, as
+	# do any other third parties we register the app with. Served straight off
+	# disk so they never depend on a frontend image rebuild.
+	handle /legal/* {
+		root * /srv
+		file_server
+	}
+
+	handle {
+		reverse_proxy portal-web:80
+	}
 }
 epms.canadaroyalmilk.com {
 	import wildcard

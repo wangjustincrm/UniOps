@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UniOps — Privacy Policy</title>
+<style>
+  body { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 6rem;
+         font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         color: #1f2328; }
+  h1 { font-size: 1.75rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.15rem; margin-top: 2.25rem; }
+  .meta { color: #656d76; font-size: .9rem; margin-bottom: 2rem; }
+  ul { padding-left: 1.25rem; }
+  a { color: #0969da; }
+  footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid #d0d7de;
+           color: #656d76; font-size: .9rem; }
+</style>
+</head>
+<body>
+
+<h1>UniOps — Privacy Policy</h1>
+<p class="meta">Effective 23 July 2026 &middot; Canada Royal Milk</p>
+
+<h2>1. Who we are</h2>
+<p>
+  UniOps is an internal business application built and operated by Canada Royal Milk
+  ("we", "us") for its own employees. It is not offered to the public, not listed on
+  any app marketplace, and has no external customers. This policy describes how UniOps
+  handles data when it connects to a QuickBooks Online company that Canada Royal Milk
+  itself owns.
+</p>
+
+<h2>2. What data we access</h2>
+<p>
+  With the <code>com.intuit.quickbooks.accounting</code> scope, UniOps reads accounts
+  payable records from our own QuickBooks Online company:
+</p>
+<ul>
+  <li>Vendor master records (name, contact details, account number, terms)</li>
+  <li>Vendor bills and bill payments, including line items and amounts</li>
+  <li>Vendor credits and non-bill purchases</li>
+  <li>Chart of accounts</li>
+  <li>Attachments linked to the above records</li>
+</ul>
+<p>
+  We do not request the payments, payroll, or OpenID profile scopes. UniOps does not
+  read customer or employee personal data from QuickBooks Online.
+</p>
+
+<h2>3. Why we access it</h2>
+<p>
+  Canada Royal Milk is migrating its accounts payable records out of QuickBooks Online
+  and into UniOps. The connection exists to copy our own historical accounting data into
+  our own system. It is a one-time migration with occasional manually triggered
+  incremental pulls, not a continuous background sync.
+</p>
+
+<h2>4. Write access</h2>
+<p>
+  UniOps reads only. It does not create, modify, or delete any record in QuickBooks
+  Online.
+</p>
+
+<h2>5. Where data is stored</h2>
+<p>
+  Retrieved data is stored in Canada Royal Milk's own PostgreSQL database on company
+  infrastructure located in Canada. Access is restricted to authorized finance and IT
+  personnel through UniOps' role-based permissions. Data is transmitted over TLS.
+</p>
+
+<h2>6. Sharing</h2>
+<p>
+  We do not sell, rent, or share QuickBooks data with any third party. It is not used
+  for advertising, profiling, or machine learning. It is used solely for Canada Royal
+  Milk's internal accounting and reporting.
+</p>
+
+<h2>7. Credentials</h2>
+<p>
+  OAuth tokens are stored outside version control with restricted file permissions and
+  are never written to logs or source code. Refresh tokens are rotated by Intuit and the
+  latest value replaces the previous one on every refresh.
+</p>
+
+<h2>8. Retention</h2>
+<p>
+  Migrated accounting records are retained for the period required by Canadian
+  bookkeeping and tax-record obligations. When the QuickBooks Online connection is no
+  longer needed, we revoke the authorization and delete the stored tokens.
+</p>
+
+<h2>9. Disconnecting</h2>
+<p>
+  An administrator of our QuickBooks Online company can revoke UniOps' access at any
+  time from <em>Settings &rarr; Manage Users &rarr; Apps</em>, or at
+  <a href="https://appcenter.intuit.com/connect/apps">appcenter.intuit.com</a>.
+  Revocation immediately stops all further access.
+</p>
+
+<h2>10. Changes</h2>
+<p>
+  If this policy changes, the revised version will be published at this URL with an
+  updated effective date.
+</p>
+
+<h2>11. Contact</h2>
+<p>
+  Questions about this policy:
+  <a href="mailto:wangjustin@canadaroyalmilk.com">wangjustin@canadaroyalmilk.com</a>
+</p>
+
+<footer>
+  Canada Royal Milk &middot; UniOps internal application &middot; Last updated 23 July 2026
+</footer>
+
+</body>
+</html>
