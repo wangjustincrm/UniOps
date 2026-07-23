@@ -74,8 +74,11 @@ async def list_monthly_actuals(
     fiscal_year: int | None = None,
     account_id: uuid.UUID | None = None,
     month: int | None = None,
+    cc_ids: list[uuid.UUID] | None = None,
 ) -> list[MonthlyActualRow]:
     """Returns per (cc, account, year, month) aggregated rows."""
+    if cc_ids is not None and len(cc_ids) == 0:
+        return []
     q = (
         select(
             BudgetLedger.cost_center_id,
@@ -92,6 +95,8 @@ async def list_monthly_actuals(
     )
     if cost_center_id is not None:
         q = q.where(BudgetLedger.cost_center_id == cost_center_id)
+    elif cc_ids:
+        q = q.where(BudgetLedger.cost_center_id.in_(cc_ids))
     if fiscal_year is not None:
         q = q.where(BudgetLedger.fiscal_year == fiscal_year)
     if account_id is not None:

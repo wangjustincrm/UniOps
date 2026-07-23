@@ -69,6 +69,15 @@ def _create_scope_stub_tables(engine):
             " is_active boolean NOT NULL DEFAULT true"
             ")"
         ))
+        # Test scaffolding for scope tests: approval-api owns this table in the
+        # real shared DB; budget-api's own alembic chain never creates it. Only
+        # the two columns budget_scope.py reads are included.
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " director_user_id uuid"
+            ")"
+        ))
         conn.commit()
 
 

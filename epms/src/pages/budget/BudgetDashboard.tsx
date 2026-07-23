@@ -170,8 +170,13 @@ export default function BudgetDashboard() {
   const overBudget = accountsNc.filter((a) => a.nc_util >= redThreshold)
   const nearBudget = accountsNc.filter((a) => a.nc_util >= yellowThreshold && a.nc_util < redThreshold)
 
+  // A Director can be responsible for several departments, so the chip must not
+  // hard-code the singular.
+  const scopedDeptCount = new Set(
+    (scope?.cost_centers ?? []).map((cc) => cc.department_id).filter(Boolean),
+  ).size
   const scopeLabel = ccId === 'all'
-    ? (isFullAccess ? 'Company-wide' : 'My Department')
+    ? (isFullAccess ? 'Company-wide' : (scopedDeptCount > 1 ? 'My Departments' : 'My Department'))
     : (costCenters.find((cc) => cc.id === ccId)?.name ?? '')
 
   return (

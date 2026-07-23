@@ -92,6 +92,14 @@ def _migrate():
         conn.execute(sa.text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # approval-api owns this in the real shared DB (no ORM model here);
+        # budget_scope.py reads it to resolve which departments a user directs.
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " director_user_id uuid"
+            ")"
+        ))
         for stmt in (
             "DROP TABLE IF EXISTS role_permission_locks CASCADE",
             "DROP TABLE IF EXISTS role_permissions CASCADE",
