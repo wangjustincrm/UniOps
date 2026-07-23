@@ -7,9 +7,8 @@
  */
 import { X } from 'lucide-react'
 import { RemittancePanel } from './RemittancePanel'
+import { secondaryBtn } from './buttonStyles'
 import type { RemittanceScope, SendResult } from '@/services/remittance'
-
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
 
 export function RemittanceDialog({ scope, open, onClose, onSent }: {
   scope: RemittanceScope

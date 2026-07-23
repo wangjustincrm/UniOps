@@ -13,7 +13,7 @@
  * a plain re-fetch, not a cache bust. Blocked payees cannot be selected; the
  * disabled checkbox is a convenience only, the server refuses them anyway.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -21,9 +21,7 @@ import {
   fetchPreview, sendRemittance,
   type PayeeGroup, type RemittanceScope, type SendResult,
 } from '@/services/remittance'
-
-const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
-const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
+import { primaryBtn, secondaryBtn } from './buttonStyles'
 
 export type RemittanceStatus = 'ready' | 'blocked' | 'sent' | 'failed' | 'skipped'
 
@@ -91,16 +89,54 @@ export function RemittancePanel({ scope, onSent }: {
     queryFn: () => fetchPreview(scope),
   })
 
-  // Preview is recomputed live on every fetch — default the selection to
-  // "every non-blocked payee" each time a fresh preview lands, so a payee
-  // that just became sendable (email filled in, invoice number attached
-  // since the last look) is selected rather than silently left out.
+  // `preview.groups` from the last render, used only to tell "this payee
+  // wasn't in the previous preview" (newly unblocked → default it in) apart
+  // from "this payee was here and the user unchecked it" (Refresh must not
+  // silently re-check it). Reset to null whenever scope changes so a fresh
+  // scope always starts from a clean default rather than diffing against a
+  // different scope's payees.
+  const prevGroupsRef = useRef<PayeeGroup[] | null>(null)
+
+  // Scope changed (new payment/batch, or a consumer re-pointing this same
+  // mounted panel at a different row — see Tasks 12/13) — clear everything
+  // that belongs to the old scope rather than relying on the consumer to
+  // unmount us. Do not rely on `preview` alone for this: it stays defined
+  // (stale) until the new scope's fetch resolves.
+  useEffect(() => {
+    setSendError(null)
+    setLastResult(null)
+    setSelected(new Set())
+    prevGroupsRef.current = null
+  }, [scope.kind, scope.id])
+
+  // Preview is recomputed live on every fetch (initial load, Refresh, and
+  // the refetch after a Send). Selection rules, in order:
+  //  - blocked payees are never selected;
+  //  - a payee whose last send already succeeded is never *default*
+  //    selected — re-checking it is a deliberate resend, not automatic,
+  //    otherwise "3 sent, 2 failed, retry" re-emails the 3 that worked;
+  //  - a payee that is new since the previous preview (e.g. just became
+  //    unblocked) defaults to selected, so it isn't silently left out;
+  //  - a payee that was already present keeps whatever the user last chose
+  //    (checked or unchecked) — a plain Refresh must not discard a manual
+  //    deselection.
   useEffect(() => {
     if (!preview) return
-    setSelected(new Set(
-      preview.groups.filter((g) => g.block_reasons.length === 0)
-        .map((g) => payeeKey(g.recipient_kind, g.party_id)),
-    ))
+    const prevGroups = prevGroupsRef.current
+    const prevKeys = prevGroups && new Set(prevGroups.map((g) => payeeKey(g.recipient_kind, g.party_id)))
+
+    setSelected((prevSelected) => {
+      const next = new Set<string>()
+      for (const g of preview.groups) {
+        if (g.block_reasons.length > 0) continue
+        if (g.last_send?.status === 'sent') continue
+        const key = payeeKey(g.recipient_kind, g.party_id)
+        if (!prevKeys || !prevKeys.has(key) || prevSelected.has(key)) next.add(key)
+      }
+      return next
+    })
+
+    prevGroupsRef.current = preview.groups
   }, [preview])
 
   async function handleSend() {
@@ -200,6 +236,7 @@ export function RemittancePanel({ scope, onSent }: {
                   <tr key={key} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40', blocked && 'text-neutral-400')}>
                     <td className="px-3 py-2">
                       <input type="checkbox" disabled={blocked} checked={selected.has(key)}
+                        title={status === 'sent' ? 'Already sent — check to resend' : undefined}
                         onChange={(e) => setSelected((prev) => {
                           const next = new Set(prev)
                           if (e.target.checked) next.add(key)
