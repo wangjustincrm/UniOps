@@ -72,6 +72,29 @@ def _migrate():
         ExpenseInvoice.__table__, InvoicePoAllocation.__table__, PurchaseRequest.__table__,
         BusinessPartner.__table__,
     ])
+    # company_config is epms-owned; its physical table carries the shared
+    # smtp_*/po_smtp_* columns (epms-api migrations e5f6a7b8c9d0 /
+    # u1p2q3r4s5t6) that finance-api's mirror deliberately does not map —
+    # remittance_config.load() reads them via raw SQL, so the test schema
+    # needs them shadowed here too (same pattern as user_roles below).
+    with eng.connect() as conn:
+        for stmt in (
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_host varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_port integer",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_user varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_password varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_use_tls boolean",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_from varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_host varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_port integer",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_user varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_password varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_use_tls boolean",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_from varchar(255)",
+        ):
+            conn.execute(sa.text(stmt))
+        conn.commit()
+
     # `user_roles` is identity-owned (no ORM model here — payment_execute's
     # _user_role_codes reads it directly, same physical DB in prod, phase-3
     # Task 5). Shadow it so tests can grant additional roles.
