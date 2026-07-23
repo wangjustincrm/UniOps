@@ -149,17 +149,25 @@ export function RemittancePanel({ scope, onSent }: {
     if (!preview) return
     const selectedGroups = preview.groups.filter((g) => selected.has(payeeKey(g.recipient_kind, g.party_id)))
     if (selectedGroups.length === 0) return
-    const recipients = selectedGroups.map((g) => ({ recipient_kind: g.recipient_kind, party_id: g.party_id }))
-    // Only true when the operator deliberately re-checked a payee the panel
-    // already shows as sent (the checkbox that carries the "Already sent —
-    // check to resend" tooltip below) — never a blanket default, so a
-    // payee the server independently knows is already sent (e.g. sent from
-    // the other scope a moment ago) still gets refused as `skipped`.
-    const resend = selectedGroups.some((g) => readinessOf(g) === 'sent')
+    // Per-payee, not folded with `.some()` into one request-wide flag: only
+    // a payee THIS row already shows as sent gets `resend: true` — the
+    // checkbox that carries the "Already sent — check to resend" tooltip
+    // below. Folding this into a single blanket flag (the Round 1 bug) meant
+    // deliberately resending one payee silently waived the duplicate guard
+    // for every OTHER payee in the same request too — including one the
+    // server independently knows is already sent under this or the other
+    // scope (e.g. a colleague resent it a moment ago from the other scope's
+    // panel) but that THIS operator never intended to resend. Kept per-payee,
+    // that other payee still comes back `skipped`, exactly as it should.
+    const recipients = selectedGroups.map((g) => ({
+      recipient_kind: g.recipient_kind,
+      party_id: g.party_id,
+      resend: readinessOf(g) === 'sent',
+    }))
     setSending(true)
     setSendError(null)
     try {
-      const result = await sendRemittance(scope, recipients, resend)
+      const result = await sendRemittance(scope, recipients)
       setLastResult(result)
       onSent?.(result)
       // Re-fetch rather than locally patch state — a send just changed the

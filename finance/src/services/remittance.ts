@@ -92,16 +92,20 @@ export function fetchPreview(scope: RemittanceScope): Promise<RemittancePreview>
  * list narrows which groups are attempted. Narrowing only — the server
  * refuses blocked payees regardless of what is requested here.
  *
- * `resend` defaults to false: a payee whose log row is already `sent` for
- * the effective scope (batch or payment — see the backend's cross-scope
- * lookup) is refused server-side and comes back `skipped`, not re-emailed.
- * Pass `resend: true` only when the operator has deliberately re-checked a
- * payee the panel already shows as sent.
+ * `resend` lives on each recipient individually, not as a single flag over
+ * the whole request (Round 2 fix — see RemittancePanel.tsx's `handleSend`).
+ * A recipient's `resend` defaults to false: a payee whose log row is
+ * already `sent` for the effective scope (batch or payment — see the
+ * backend's cross-scope lookup) is refused server-side and comes back
+ * `skipped`, not re-emailed. Set `resend: true` on a recipient only when the
+ * operator has deliberately re-checked that specific payee from a panel row
+ * already showing it as sent — one recipient's resend must never be folded
+ * into a blanket flag that also waives the guard for every OTHER recipient
+ * in the same request.
  */
 export function sendRemittance(
   scope: RemittanceScope,
-  recipients: { recipient_kind: string; party_id: string }[] | null,
-  resend = false,
+  recipients: { recipient_kind: string; party_id: string; resend?: boolean }[] | null,
 ): Promise<SendResult> {
-  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients, resend })
+  return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients })
 }
