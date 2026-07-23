@@ -1,4 +1,9 @@
-from app.core.budget_scope import FULL_ACCESS_PRIMARY, FULL_ACCESS_ASSIGNED
+import uuid
+
+import pytest
+import sqlalchemy as sa
+
+from app.core.budget_scope import FULL_ACCESS_PRIMARY, FULL_ACCESS_ASSIGNED, resolve_budget_scope
 
 
 def test_role_sets_match_budget_api():
@@ -12,13 +17,7 @@ def test_role_sets_match_budget_api():
     }
 
 
-import uuid
-import sqlalchemy as sa
-import pytest
-from app.core.budget_scope import resolve_budget_scope
-
-
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_director_sees_own_and_directed_departments(db_session):
     """Live production shape: primary role dept_manager + additional role
     director; departments come from approval_dept_routing, not the role."""
