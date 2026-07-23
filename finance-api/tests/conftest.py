@@ -56,8 +56,9 @@ def _migrate():
     from app.db.base import Base
     from app.models.admin_audit_log import AdminAuditLog  # shared table, no finance migration owns it
     from app.models.mirrors import (  # noqa: F401
-        BudgetAccount, CompanyConfig, CostCenter, Department, ErpSupplier, ExpenseApprovalEvent, ExpenseClaim,
-        ExpenseInvoice, ExpenseLineItem, ExpenseTripItem, Invoice, InvoicePoAllocation, InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
+        BudgetAccount, BusinessPartner, CompanyConfig, CostCenter, Department, ErpSupplier, ExpenseApprovalEvent,
+        ExpenseClaim, ExpenseInvoice, ExpenseLineItem, ExpenseTripItem, Invoice, InvoicePoAllocation,
+        InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
     )
     from app.models.pa import PaymentApplication
     eng = sa.create_engine(SYNC_URL)
@@ -69,6 +70,7 @@ def _migrate():
         AdminAuditLog.__table__, CostCenter.__table__,
         Department.__table__, BudgetAccount.__table__, ErpSupplier.__table__,
         ExpenseInvoice.__table__, InvoicePoAllocation.__table__, PurchaseRequest.__table__,
+        BusinessPartner.__table__,
     ])
     # `user_roles` is identity-owned (no ORM model here — payment_execute's
     # _user_role_codes reads it directly, same physical DB in prod, phase-3

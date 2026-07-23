@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
+from app.models.mirrors import BusinessPartner
 from app.models.remittance import (
     KIND_VENDOR, SCOPE_BATCH, SENT, RemittanceNotification,
 )
@@ -55,3 +56,18 @@ async def test_notification_row_round_trips(db_session):
     assert got.payment_record_ids == [str(rec_id)]
     assert got.amount == Decimal("100.00")
     assert got.attempts == 1
+
+
+async def test_partner_mirror_reads_remittance_email(db_session):
+    bp = BusinessPartner(
+        code=f"V-{uuid.uuid4().hex[:6]}", name="ACME", contact_email="ap@acme.test",
+        remittance_email="remit@acme.test", is_supplier=True,
+    )
+    db_session.add(bp)
+    await db_session.flush()
+
+    got = (await db_session.execute(
+        select(BusinessPartner).where(BusinessPartner.id == bp.id)
+    )).scalar_one()
+    assert got.remittance_email == "remit@acme.test"
+    assert got.contact_email == "ap@acme.test"
