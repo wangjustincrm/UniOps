@@ -8,6 +8,10 @@ export interface ApiVendor {
   category: string
   contact_name: string
   contact_email: string
+  // Where remittance advice is emailed. Falls back to contact_email when
+  // blank — see finance-api's vendor resolution (Task 2). May be null on
+  // legacy responses.
+  remittance_email?: string | null
   phone?: string
   address?: string
   payment_terms: 'net15' | 'net30' | 'net60' | 'net90' | 'cod' | 'prepayment'
@@ -25,6 +29,7 @@ export interface CreateVendorBody {
   category: string
   contact_name: string
   contact_email: string
+  remittance_email?: string
   phone?: string
   address?: string
   payment_terms: 'net15' | 'net30' | 'net60' | 'net90' | 'cod' | 'prepayment'
@@ -41,6 +46,7 @@ export interface UpdateVendorBody {
   category?: string
   contact_name?: string
   contact_email?: string
+  remittance_email?: string
   phone?: string
   address?: string
   payment_terms?: 'net15' | 'net30' | 'net60' | 'net90' | 'cod' | 'prepayment'
