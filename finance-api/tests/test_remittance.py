@@ -21,6 +21,7 @@ from app.models.payment import PaymentRecord
 from app.models.remittance import (
     KIND_VENDOR, SCOPE_BATCH, SENT, RemittanceNotification,
 )
+from app.models.payment_batch import EXECUTED, PaymentBatch
 from app.services import remittance_config as rc
 from app.services import remittance_template as tpl
 
@@ -660,3 +661,127 @@ async def test_concurrent_double_send_lands_on_update_not_integrityerror(db_sess
         RemittanceNotification.scope_id == scope_id))).scalars().all()
     assert len(rows) == 1
     assert rows[0].attempts == 2
+
+
+# ── Task 9: preview and send endpoints ──────────────────────────────────────
+
+async def _configured(db):
+    db.add(CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test", "cc_email": "apbox@crm.test"}))
+    await db.flush()
+    await db.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_port=587,"
+        " po_smtp_use_tls=true"))
+
+
+async def test_preview_requires_payment_authority(client, db_session):
+    batch = PaymentBatch(batch_number="BP-1", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    r = await client.get(f"/finance/v1/payments/batches/{batch.id}/remittance/preview",
+                         headers=_h("requester"))
+    assert r.status_code == 403
+
+
+async def test_preview_409_when_batch_not_executed(client, db_session):
+    batch = PaymentBatch(batch_number="BP-2", batch_date=date(2026, 7, 22),
+                         status="draft", currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    r = await client.get(f"/finance/v1/payments/batches/{batch.id}/remittance/preview",
+                         headers=_h())
+    assert r.status_code == 409
+
+
+async def test_preview_lists_group_with_block_reasons(client, db_session):
+    await _configured(db_session)
+    bp = await _vendor(db_session, email="", remit=None)
+    inv = await _invoice(db_session, "VINV-20")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    batch = PaymentBatch(batch_number="BP-3", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("42.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    db_session.add(_record(pa, batch_id=batch.id))
+    await db_session.flush()
+
+    body = (await client.get(
+        f"/finance/v1/payments/batches/{batch.id}/remittance/preview",
+        headers=_h())).json()
+    assert body["enabled"] is True
+    assert body["reference"] == "BP-3"
+    assert len(body["groups"]) == 1
+    assert body["groups"][0]["block_reasons"] == ["missing_email"]
+    assert body["groups"][0]["total"] == "42.00"      # Decimal serialized as string
+
+
+async def test_send_endpoint_sends_and_reports(client, db_session):
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-21")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json={"recipients": None}, headers=_h())
+    assert r.status_code == 200
+    assert r.json()["sent"] == 1
+
+
+async def test_send_endpoint_refuses_blocked_payee(client, db_session):
+    await _configured(db_session)
+    bp = await _vendor(db_session, email="", remit=None)
+    inv = await _invoice(db_session, "VINV-22")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json={"recipients": [
+                                  {"recipient_kind": "vendor", "party_id": str(bp.id)}]},
+                              headers=_h())
+    assert r.json()["skipped"] == 1
+    assert r.json()["sent"] == 0
+    assert m.await_count == 0
+
+
+async def test_preview_payment_scope_returns_preview_shape_not_payment_detail(client, db_session):
+    """Regression guard for route-registration order: payments.py declares a
+    catch-all GET /{payment_id} at the bottom of the file specifically so
+    literal routes match first. If remittance_router were mounted after that
+    catch-all (or matched behind it for any other reason), this GET would be
+    swallowed by get_payment() and come back shaped like a payment detail
+    (has "id"/"doc_kind"/"amount" at the top level, no "groups" key) instead
+    of the preview shape asserted here."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-23")
+    pa = _pa(bp.id, "15.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/payments/{rec.id}/remittance/preview", headers=_h())
+    assert r.status_code == 200
+    body = r.json()
+    assert "groups" in body
+    assert "enabled" in body
+    assert "id" not in body                # not the payment-detail payload
+    assert body["reference"] == rec.pa_number

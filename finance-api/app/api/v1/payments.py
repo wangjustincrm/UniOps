@@ -17,6 +17,15 @@ from app.schemas.payment_execute import PaymentExecuteRequest, PaymentExecuteRes
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 
+# Mounted immediately, before any route in this module is declared (including
+# the catch-all GET /{payment_id} at the very bottom) — so
+# /{payment_id}/remittance/preview and /send are registered ahead of it. See
+# app/api/v1/remittance.py's module docstring for why route order matters
+# here.
+from app.api.v1.remittance import router as remittance_router  # noqa: E402
+
+router.include_router(remittance_router)
+
 
 @router.post("/execute", response_model=PaymentExecuteResponse)
 async def execute_payment(
