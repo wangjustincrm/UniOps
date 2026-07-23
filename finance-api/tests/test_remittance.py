@@ -313,6 +313,37 @@ async def test_direct_pa_without_invoice_no_blocks_group(db_session):
     assert rem.BLOCK_MISSING_INVOICE_NO in g.block_reasons
 
 
+async def _expense_invoice(db, pa_id, number="EXP-INV-1"):
+    from app.models.mirrors import ExpenseInvoice
+    ei = ExpenseInvoice(pa_id=pa_id, invoice_number=number)
+    db.add(ei)
+    await db.flush()
+    return ei
+
+
+async def test_oa_direct_pa_resolves_invoice_no_via_expense_invoices_fallback(db_session):
+    """Fix 4: an OA-created Direct PA's invoice_ids holds an
+    expense_invoices.id (see expense-api/app/api/v1/pa.py setting
+    invoice_ids=[str(body.invoice_id)]) — a different table in a different
+    id space than epms's `invoices`. The epms Invoice lookup never matches
+    it, so without the expense_invoices fallback this group is blocked
+    missing_invoice_no forever, with no screen anywhere able to fix it."""
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    pa = _pa(bp.id, "10.00", invoice_ids=[])
+    db_session.add(pa)
+    await db_session.flush()
+    ei = await _expense_invoice(db_session, pa.id, "EXP-INV-1")
+    pa.invoice_ids = [str(ei.id)]
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert rem.BLOCK_MISSING_INVOICE_NO not in g.block_reasons
+    assert g.lines[0].vendor_inv_no == "EXP-INV-1"
+
+
 async def test_employee_group_never_blocked_for_invoice_no(db_session):
     emp_id = uuid.uuid4()
     # NOTE: the brief's User(...) call omits full_name, which is NOT NULL on

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
-from app.models.mirrors import ExpenseClaim, Invoice
+from app.models.mirrors import ExpenseClaim, ExpenseInvoice, Invoice
 from app.models.pa import PaymentApplication
 from app.models.payment_batch import DRAFT, EXECUTED, PaymentBatch, PaymentBatchLine
 from app.schemas.payment_execute import PaymentExecuteRequest
@@ -59,6 +59,35 @@ async def vendor_inv_no_map(db: AsyncSession,
             if no and no not in nums:
                 nums.append(no)
         out[pid] = ", ".join(nums)
+
+    # Fallback (2026-07-23): an OA-created Direct PA's invoice_ids hold an
+    # expense_invoices.id — a different table in a different id space than
+    # epms's `invoices` — so the lookup above never matches for it, and the
+    # group was blocked `missing_invoice_no` forever with no screen anywhere
+    # able to fix it (see expense-api/app/api/v1/pa.py, which sets
+    # invoice_ids=[str(body.invoice_id)] to that id). Resolved here via
+    # expense_invoices.pa_id (set by expense-api on confirm), not by
+    # re-interpreting invoice_ids against yet another table: that stays
+    # correct even for historical rows whose invoice_ids values are not
+    # reliably parseable as expense_invoices ids either, and it reads as
+    # "ask the OA invoice which PA it belongs to" rather than "guess which
+    # table this foreign id points into". Only attempted for PAs the epms
+    # lookup resolved nothing for.
+    unresolved = [pid for pid, nums in out.items() if not nums]
+    if unresolved:
+        rows = (await db.execute(
+            select(ExpenseInvoice.pa_id, ExpenseInvoice.invoice_number)
+            .where(ExpenseInvoice.pa_id.in_(unresolved))
+        )).all()
+        by_pa: dict[uuid.UUID, list[str]] = {}
+        for pa_id, no in rows:
+            if not no:
+                continue
+            nums = by_pa.setdefault(pa_id, [])
+            if no not in nums:
+                nums.append(no)
+        for pid, nos in by_pa.items():
+            out[pid] = ", ".join(nos)
     return out
 
 

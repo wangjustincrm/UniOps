@@ -212,10 +212,19 @@ class ExpenseClaim(UUIDPrimaryKey, TimestampMixin, Base):
 
 class ExpenseInvoice(UUIDPrimaryKey, Base):
     """Read-only mirror subset (expense-api owns schema) — OA invoice -> Direct PA
-    link for the NC AP export dimension chain. Verified 2026-07-14."""
+    link for the NC AP export dimension chain. Verified 2026-07-14.
+
+    `invoice_number` added 2026-07-23 (column verified against
+    `\\d expense_invoices` on uniops_postgres — nullable varchar(100)) so
+    `app.crud.payment_batch.vendor_inv_no_map` can resolve a vendor invoice
+    number for an OA Direct PA. Those PAs' `invoice_ids` hold an
+    `expense_invoices.id`, not an epms `invoices.id` — a different table in a
+    different id space — so the epms `invoices` lookup never matches them;
+    this mirror's `pa_id` (set by expense-api) is the fallback path."""
     __tablename__ = "expense_invoices"
 
     pa_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class InvoicePoAllocation(UUIDPrimaryKey, TimestampMixin, Base):
