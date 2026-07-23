@@ -276,8 +276,20 @@ export function RemittancePanel({ scope, onSent }: {
                     <td className="px-3 py-2">
                       <RemittanceStatusBadge status={status} />
                       {blocked && <div className="mt-1 text-xs text-amber-700">{blockReasonText(g.block_reasons)}</div>}
-                      {!blocked && g.last_send?.status === 'failed' && (
-                        <div className="mt-1 text-xs text-red-600">{g.last_send.error}</div>
+                      {/* Fix 6 (Round 2): show whenever an error is persisted, not only
+                          when status === 'failed'. The backend's CASE refuses to downgrade
+                          a row from `sent` back to `failed` (a failed RESEND must not undo
+                          an already-delivered advice) but it still overwrites `error` — so a
+                          failed resend leaves status: 'sent' with an error message attached.
+                          Gating on status alone hid that message entirely, and the panel
+                          read as a clean "Sent" with nothing wrong. Wording says the advice
+                          already went out — this is not a "your payee never got it" alarm. */}
+                      {!blocked && g.last_send?.error && (
+                        <div className="mt-1 text-xs text-red-600">
+                          {status === 'sent'
+                            ? `Advice was delivered earlier, but the latest resend attempt failed: ${g.last_send.error}`
+                            : g.last_send.error}
+                        </div>
                       )}
                     </td>
                   </tr>
