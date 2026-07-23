@@ -20,14 +20,37 @@
   - finance-api head: `0026_jv_lines_nc_cc_code`
   - epms-api head: `aa_default_match_tolerance_5`
   - mdm-api head: `0005_units_of_measure`
+- **Alembic revision ids are capped at 32 characters** (`version_num VARCHAR(32)`, alembic's default, in every service). Two of the ids this plan originally proposed were longer and failed at runtime with `StringDataRightTruncationError`; the shipped ids are `0027_remittance_notifications` and `ab_remittance_and_vendor_view`.
+- **finance-api pytest needs the local docker Postgres password:** `TEST_PG_PASSWORD=<value from docker exec uniops_postgres printenv>`. Without it every test errors with `password authentication failed for user "epms"`, which looks like a broken fixture but is not.
+- **Typecheck commands differ per app.** finance is TypeScript 6.0.3 and REQUIRES `--ignoreDeprecations 6.0`; epms is TypeScript 5.9.3 where that same flag is a hard error. epms also carries a baseline of 59 pre-existing errors — only new ones matter.
 - **epms-api already has two heads on `main`:** `aa_default_match_tolerance_5` (live chain) and the dangling `r8m9n0o1p2q3`. Attach to `aa_default_match_tolerance_5`. Do **not** merge or otherwise touch the sibling head in this branch — a downgrade would roll it back too.
 - **All user-facing frontend strings are English.** Comments may be Chinese. Use standard accounting terminology.
-- **Status badges use the shared `StatusBadge`** from `@uniops/shell` (`packages/shell/src/ui/badge.tsx`). Never write page-local `bg-green-50`-style badges.
+- **There is NO shared `StatusBadge` in `@uniops/shell`.** `packages/shell/src/ui/badge.tsx` states explicitly that domain status→variant mapping stays in the app. The finance convention is a small local badge component — see `JvStatusBadge` in `finance/src/pages/finance/JvDetailModal.tsx`. Write one per feature and export it for reuse; do not scatter `bg-green-50` spans across pages. (This line originally claimed the opposite and was corrected during execution.)
 - **Pydantic serializes `Decimal` as a JSON string.** Every frontend arithmetic on an amount goes through `Number()` first.
 - **Any new Vite build argument must be declared as both `ARG` and `ENV` in the Dockerfile.** A missing build arg is silently dropped and shows up as a page that hangs on loading with no error. This plan introduces none — verify before adding one.
 - **Every Finance page is wrapped in `PortalChromeLayout`** with an `activeKey` matching its `navConfig` entry. Sidebar entries live in the shared nav config, gated by permission keys — never a page-local `NAV_SECTIONS` copy or a role check.
 - **New mirror models must match the physical table column-for-column.** Check `information_schema` before writing the model. `company_config` has no timestamp columns, so no `TimestampMixin`.
 - **Commit after every task.** Do not accumulate WIP.
+
+## What shipped differs from this plan — read before trusting a code block
+
+Every task below was implemented and reviewed. Seven came back from review with real
+defects, and in several cases the defect originated in this plan's own sample code. **The
+committed code is the source of truth; the snippets below are the starting point that was
+corrected.** The substantive divergences:
+
+| Where | This plan said | What shipped, and why |
+| --- | --- | --- |
+| Task 5, `remittance_config.load()` | Chose between the `po_smtp_*` and `smtp_*` profiles as an all-or-nothing block gated on `po_smtp_host` | **Per-field fallback with `is not None`**, matching `epms-api/app/api/v1/po.py`. The block switch silently produced `use_tls=False` and port 587 when an admin overrode only the relay and credentials — the `WRONG_VERSION_NUMBER` failure class this project has already paid for once. |
+| Task 8, `_upsert` | Select-then-insert | **`INSERT … ON CONFLICT DO UPDATE`** on `uq_remittance_scope_party`. The select-then-write form raised `IntegrityError` on a concurrent resend *after* the email had already gone out. |
+| Task 8, transaction boundary | One trailing `commit()` by the caller | **`commit()` after each payee.** Sending is irreversible; leaving its log row in an uncommitted transaction meant a later failure could erase the record of an email that had already been delivered, so the operator would resend and the vendor would get a second advice. `render()` also moved inside the per-payee `try`. |
+| Task 9, send handler | Ended with `await db.commit()` | No trailing commit — it would imply rows were still pending. |
+| Task 9, `_company_name()` | Read `CompanyConfig.__table__.c.name` | Raw SQL. That column is not on the finance mirror, which maps only `role_management` and `remittance_config`. |
+| Task 11/12, badges | Shared `StatusBadge` from `@uniops/shell` | A local `RemittanceStatusBadge` exported from `RemittancePanel.tsx`. No such shared component exists. |
+| Task 12, hub remittance column | — | `not_sent` renders as **"Not sent"**, not "Ready". The backend only checks whether a sent record exists; it never evaluates sendability, so "Ready" claimed something unverified and contradicted the drawer one click away. |
+| Task 13, post-execute dialog | Open it whenever the panel would render | **Gated on `preview.enabled`.** Otherwise every payment run at a company with remittance switched off pops a modal wrapping a single "not configured" sentence. |
+| Task 15, vendor field | — | The payload sends `remittance_email` unconditionally. Sending `undefined` when blank meant `exclude_none=True` dropped it and a wrong address could never be cleared — contradicting the field's own helper text. |
+| Task 14 | EPMS PA detail dialog | **Dropped before execution.** See that task's entry. |
 
 ## File Structure
 
