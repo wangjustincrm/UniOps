@@ -62,7 +62,7 @@
 
 | File | Responsibility |
 | --- | --- |
-| `alembic/versions/ab_remittance_config_and_vendor_view.py` | Add `remittance_config`; recreate the `vendors` view with the new column |
+| `alembic/versions/ab_remittance_and_vendor_view.py` | Add `remittance_config`; recreate the `vendors` view with the new column |
 | `app/models/config.py` | New column |
 | `app/schemas/config.py` | `remittance_config` on update/response |
 | `app/schemas/vendor.py` | `remittance_email` on create/update/response/CSV |
@@ -301,7 +301,7 @@ Adding a column to `business_partners` is not enough. EPMS reads vendors through
 - Create: `mdm-api/alembic/versions/0006_partner_remittance_email.py`
 - Modify: `mdm-api/app/models/business_partner.py`
 - Modify: `mdm-api/app/schemas/business_partner.py`
-- Create: `epms-api/alembic/versions/ab_remittance_config_and_vendor_view.py` (view half; the config half lands in Task 3 — same file, written once here and extended there)
+- Create: `epms-api/alembic/versions/ab_remittance_and_vendor_view.py` (view half; the config half lands in Task 3 — same file, written once here and extended there)
 - Modify: `epms-api/app/schemas/vendor.py`
 - Modify: `epms-api/app/api/v1/vendors.py`
 - Test: `mdm-api/tests/test_business_partner.py`
@@ -391,20 +391,20 @@ Expected: PASS
 - [ ] **Step 7: Recreate the epms `vendors` view with the new column**
 
 ```python
-# epms-api/alembic/versions/ab_remittance_config_and_vendor_view.py
+# epms-api/alembic/versions/ab_remittance_and_vendor_view.py
 """vendors view + company_config.remittance_config.
 
 The `vendors` compatibility view (x5_repoint_vendor_fks) lists its columns
 explicitly, so a new business_partners column does NOT appear in it. EPMS
 vendor reads go through that view, so it must be recreated here.
 
-Revision ID: ab_remittance_config_and_vendor_view
+Revision ID: ab_remittance_and_vendor_view
 Revises: aa_default_match_tolerance_5
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "ab_remittance_config_and_vendor_view"
+revision = "ab_remittance_and_vendor_view"
 down_revision = "aa_default_match_tolerance_5"
 branch_labels = None
 depends_on = None
@@ -462,7 +462,7 @@ Expected: PASS. Compare the failure count against the pre-existing baseline — 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add mdm-api/alembic/versions/0006_partner_remittance_email.py mdm-api/app/models/business_partner.py mdm-api/app/schemas/business_partner.py mdm-api/tests/test_business_partner.py epms-api/alembic/versions/ab_remittance_config_and_vendor_view.py epms-api/app/schemas/vendor.py epms-api/app/api/v1/vendors.py
+git add mdm-api/alembic/versions/0006_partner_remittance_email.py mdm-api/app/models/business_partner.py mdm-api/app/schemas/business_partner.py mdm-api/tests/test_business_partner.py epms-api/alembic/versions/ab_remittance_and_vendor_view.py epms-api/app/schemas/vendor.py epms-api/app/api/v1/vendors.py
 git commit -m "feat(mdm,epms): add vendor remittance_email through model, view, and forwarder"
 ```
 
@@ -471,7 +471,7 @@ git commit -m "feat(mdm,epms): add vendor remittance_email through model, view, 
 ### Task 3: `remittance_config` on company config
 
 **Files:**
-- Modify: `epms-api/alembic/versions/ab_remittance_config_and_vendor_view.py` (extend Task 2's migration)
+- Modify: `epms-api/alembic/versions/ab_remittance_and_vendor_view.py` (extend Task 2's migration)
 - Modify: `epms-api/app/models/config.py`
 - Modify: `epms-api/app/schemas/config.py`
 - Test: `epms-api/tests/test_config.py`
@@ -520,7 +520,7 @@ Expected: FAIL with `KeyError: 'remittance_config'`
 - [ ] **Step 4: Extend the Task 2 migration**
 
 ```python
-# epms-api/alembic/versions/ab_remittance_config_and_vendor_view.py — in upgrade(),
+# epms-api/alembic/versions/ab_remittance_and_vendor_view.py — in upgrade(),
 # BEFORE the view is recreated
     op.add_column("company_config", sa.Column(
         "remittance_config", sa.dialects.postgresql.JSONB,
@@ -550,7 +550,7 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add epms-api/alembic/versions/ab_remittance_config_and_vendor_view.py epms-api/app/models/config.py epms-api/app/schemas/config.py epms-api/tests/test_config.py
+git add epms-api/alembic/versions/ab_remittance_and_vendor_view.py epms-api/app/models/config.py epms-api/app/schemas/config.py epms-api/tests/test_config.py
 git commit -m "feat(epms): add company_config.remittance_config"
 ```
 
