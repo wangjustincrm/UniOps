@@ -320,9 +320,53 @@ async def test_scope_batch_and_scope_payment_agree_for_one_record(db_session):
     db_session.add(rec)
     await db_session.flush()
 
+    # Decoy: a different vendor, a different amount, a different batch. If
+    # resolve_scope ignored scope_kind/scope_id and just returned every
+    # completed record, this decoy would leak into both scopes and this test
+    # would still pass without it — it exists to make that failure visible.
+    decoy_bp = await _vendor(db_session, email="decoy@other.test", remit="remit@other.test")
+    decoy_inv = await _invoice(db_session, "VINV-DECOY")
+    decoy_pa = _pa(decoy_bp.id, "999.00", [str(decoy_inv.id)])
+    db_session.add(decoy_pa)
+    await db_session.flush()
+    decoy_batch_id = uuid.uuid4()
+    db_session.add(_record(decoy_pa, batch_id=decoy_batch_id))
+    await db_session.flush()
+
     by_batch = await rem.build_groups(db_session, await rem.resolve_scope(db_session, "batch", batch_id))
     by_payment = await rem.build_groups(db_session, await rem.resolve_scope(db_session, "payment", rec.id))
+    assert len(by_batch) == 1
+    assert len(by_payment) == 1
     assert [g.total for g in by_batch] == [g.total for g in by_payment] == [Decimal("75.00")]
+
+
+async def test_resolve_scope_rejects_unknown_kind(db_session):
+    with pytest.raises(ValueError):
+        await rem.resolve_scope(db_session, "bogus", uuid.uuid4())
+
+
+async def test_pa_and_pa_dir_for_one_vendor_collapse_into_one_group(db_session):
+    """A vendor appearing via a PO-based PA and a Direct PA in the same scope
+    must still collapse into a single payee group (grouping is by vendor_id,
+    not by doc_kind)."""
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    i1, i2 = await _invoice(db_session, "VINV-20"), await _invoice(db_session, "VINV-21")
+    po_pa = _pa(bp.id, "100.00", [str(i1.id)], po_id=uuid.uuid4())
+    dir_pa = _pa(bp.id, "50.00", [str(i2.id)])
+    db_session.add_all([po_pa, dir_pa])
+    await db_session.flush()
+    recs = [_record(po_pa), _record(dir_pa)]
+    db_session.add_all(recs)
+    await db_session.flush()
+
+    assert recs[0].doc_kind == "pa"
+    assert recs[1].doc_kind == "pa_dir"
+
+    groups = await rem.build_groups(db_session, recs)
+    assert len(groups) == 1
+    g = groups[0]
+    assert g.total == Decimal("150.00")
+    assert sorted(l.vendor_inv_no for l in g.lines) == ["VINV-20", "VINV-21"]
 
 
 async def test_failed_record_is_excluded(db_session):

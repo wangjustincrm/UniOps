@@ -13,7 +13,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.payment_batch import _vendor_inv_no_map
+from app.crud.payment_batch import vendor_inv_no_map
 from app.models.mirrors import BusinessPartner, ExpenseClaim, User
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
@@ -81,7 +81,7 @@ async def _vendor_groups(db: AsyncSession,
         select(PaymentApplication).where(PaymentApplication.id.in_(pa_ids))
     )).scalars().all()
     pa_by_id = {p.id: p for p in pas}
-    inv_no = await _vendor_inv_no_map(db, list(pas))
+    inv_no = await vendor_inv_no_map(db, list(pas))
 
     vendor_ids = {p.vendor_id for p in pas}
     partners = (await db.execute(

@@ -25,8 +25,8 @@ async def _next_batch_number(db: AsyncSession) -> str:
     return f"{prefix}{n + 1:04d}"
 
 
-async def _vendor_inv_no_map(db: AsyncSession,
-                             pas: list[PaymentApplication]) -> dict[uuid.UUID, str]:
+async def vendor_inv_no_map(db: AsyncSession,
+                            pas: list[PaymentApplication]) -> dict[uuid.UUID, str]:
     """{pa.id: 'VINV-1, VINV-2'} — resolve each PA's invoice_ids to its vendor
     invoice number(s) in ONE batch query (a PA can reference several invoices;
     they join for display). PAs without invoices map to ''."""
@@ -72,7 +72,7 @@ async def vendor_inv_no_for_lines(db: AsyncSession,
     pas = (await db.execute(
         select(PaymentApplication).where(PaymentApplication.id.in_(pa_ids))
     )).scalars().all()
-    return await _vendor_inv_no_map(db, pas)
+    return await vendor_inv_no_map(db, pas)
 
 
 async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
@@ -87,7 +87,7 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
         cq = cq.where(ExpenseClaim.currency == currency)
     claims = (await db.execute(cq.order_by(ExpenseClaim.created_at))).scalars().all()
 
-    inv_no = await _vendor_inv_no_map(db, pas)
+    inv_no = await vendor_inv_no_map(db, pas)
     rows = [
         {"doc_kind": "pa_dir" if r.po_id is None else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
