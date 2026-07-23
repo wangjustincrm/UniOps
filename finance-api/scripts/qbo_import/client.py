@@ -18,7 +18,17 @@ import httpx
 
 ENV_PATH = Path(r"C:\Project\qbo_conn.env")
 
+# Intuit's OpenID discovery documents. The OAuth endpoints (token exchange,
+# authorization, revocation) are read from here at runtime rather than hardcoded,
+# so a future endpoint change on Intuit's side does not silently break the flow.
+# The literals below are only a fallback if the discovery fetch fails.
+DISCOVERY_URLS = {
+    "production": "https://developer.api.intuit.com/.well-known/openid_configuration",
+    "sandbox": "https://developer.api.intuit.com/.well-known/openid_sandbox_configuration",
+}
 TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
+REVOKE_URL = "https://developer.api.intuit.com/v2/oauth2/tokens/revoke"
+AUTH_ENDPOINT = "https://appcenter.intuit.com/connect/oauth2"
 BASE_URLS = {
     "production": "https://quickbooks.api.intuit.com",
     "sandbox": "https://sandbox-quickbooks.api.intuit.com",
@@ -26,6 +36,33 @@ BASE_URLS = {
 
 # QBO caps a single query response at 1000 rows regardless of what MAXRESULTS asks for.
 PAGE_SIZE = 1000
+
+_discovery_cache: dict[str, dict] = {}
+
+
+def discover(env: str) -> dict:
+    """Fetch (and cache) Intuit's OpenID discovery document for `env`.
+
+    Returns a dict with at least authorization_endpoint / token_endpoint /
+    revocation_endpoint. Falls back to the hardcoded literals on any failure so
+    a discovery outage never blocks a migration run.
+    """
+    if env in _discovery_cache:
+        return _discovery_cache[env]
+    doc = {
+        "authorization_endpoint": AUTH_ENDPOINT,
+        "token_endpoint": TOKEN_URL,
+        "revocation_endpoint": REVOKE_URL,
+    }
+    try:
+        r = httpx.get(DISCOVERY_URLS[env], timeout=30.0)
+        if r.status_code == 200:
+            fetched = r.json()
+            doc = {k: fetched.get(k, doc[k]) for k in doc}
+    except Exception as exc:  # noqa: BLE001 — fall back to literals, never abort
+        print(f"  [discovery] fetch failed ({exc}); using built-in endpoints")
+    _discovery_cache[env] = doc
+    return doc
 
 
 def load_cfg(path: Path = ENV_PATH) -> dict:
@@ -60,7 +97,9 @@ class QboClient:
                 )
         self.realm_id = self.cfg["REALM_ID"]
         self.minor_version = self.cfg.get("MINOR_VERSION", "75")
-        self.base_url = BASE_URLS[self.cfg.get("QBO_ENV", "production")]
+        self.env = self.cfg.get("QBO_ENV", "production")
+        self.base_url = BASE_URLS[self.env]
+        self.token_url = discover(self.env)["token_endpoint"]
         self._access_token: str | None = None
         self._http = httpx.Client(timeout=60.0)
 
@@ -76,7 +115,7 @@ class QboClient:
             f"{self.cfg['CLIENT_ID']}:{self.cfg['CLIENT_SECRET']}".encode()
         ).decode()
         r = self._http.post(
-            TOKEN_URL,
+            self.token_url,
             headers={
                 "Authorization": f"Basic {basic}",
                 "Accept": "application/json",
@@ -88,7 +127,7 @@ class QboClient:
             raise SystemExit(
                 f"token refresh failed ({r.status_code}): {r.text}\n"
                 "If this says invalid_grant the refresh token expired or was "
-                "superseded — re-run the OAuth Playground to get a new one."
+                "superseded — re-run authorize.py to get a new one."
             )
         payload = r.json()
         self._access_token = payload["access_token"]

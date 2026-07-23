@@ -26,9 +26,8 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from scripts.qbo_import.client import ENV_PATH, TOKEN_URL, load_cfg  # noqa: E402
+from scripts.qbo_import.client import ENV_PATH, discover, load_cfg  # noqa: E402
 
-AUTH_URL = "https://appcenter.intuit.com/connect/oauth2"
 SCOPE = "com.intuit.quickbooks.accounting"
 STATE = "uniops-qbo"
 
@@ -41,7 +40,8 @@ def _persist(key: str, value: str, path: Path = ENV_PATH) -> None:
 
 
 def build_url(cfg: dict) -> str:
-    return AUTH_URL + "?" + urlencode({
+    auth_endpoint = discover(cfg.get("QBO_ENV", "production"))["authorization_endpoint"]
+    return auth_endpoint + "?" + urlencode({
         "client_id": cfg["CLIENT_ID"],
         "response_type": "code",
         "scope": SCOPE,
@@ -51,11 +51,12 @@ def build_url(cfg: dict) -> str:
 
 
 def exchange(cfg: dict, code: str, realm_id: str) -> None:
+    token_url = discover(cfg.get("QBO_ENV", "production"))["token_endpoint"]
     basic = base64.b64encode(
         f"{cfg['CLIENT_ID']}:{cfg['CLIENT_SECRET']}".encode()
     ).decode()
     r = httpx.post(
-        TOKEN_URL,
+        token_url,
         headers={
             "Authorization": f"Basic {basic}",
             "Accept": "application/json",
@@ -108,6 +109,16 @@ def main() -> int:
         qs = parse_qs(urlparse(args.callback).query)
         code = (qs.get("code") or [None])[0]
         realm_id = (qs.get("realmId") or [None])[0]
+        returned_state = (qs.get("state") or [None])[0]
+        # CSRF check: the state echoed back must equal the one we sent in --url.
+        # A mismatch means the callback did not originate from our request, so
+        # we refuse to exchange the code.
+        if returned_state != STATE:
+            raise SystemExit(
+                f"state mismatch (CSRF guard): expected {STATE!r}, got "
+                f"{returned_state!r}. This callback did not come from our "
+                "authorization request — not exchanging the code."
+            )
         if not code or not realm_id:
             raise SystemExit(
                 f"could not find both code and realmId in that URL "
