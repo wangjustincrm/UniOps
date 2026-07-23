@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { authService } from '@/services/auth'
@@ -1822,7 +1822,6 @@ const DEFAULT_NOTIF_SETTINGS: NotificationSettings = {
   default_channel: 'email_only',
   teams_webhook_url: null,
   followup_time: '08:00',
-  role_shared_mailboxes: {},
 }
 
 function NotificationSettingsSection() {
@@ -1834,28 +1833,13 @@ function NotificationSettingsSection() {
   const [expandedTpl, setExpandedTpl] = useState<string | null>(null)
   const [testEmail, setTestEmail] = useState('')
   const [testStatus, setTestStatus] = useState<'idle' | 'sending' | 'ok' | 'error'>('idle')
-  const [mailboxError, setMailboxError] = useState<string | null>(null)
 
   useEffect(() => {
     if (config?.notification_settings) setSettings(config.notification_settings as NotificationSettings)
     if (config?.email_templates) setTemplates(config.email_templates as Record<string, EmailTemplate>)
   }, [config?.notification_settings, config?.email_templates])
 
-  const roleOptions = useMemo<[string, string][]>(() => [
-    ...(Object.entries(ROLE_LABELS) as [string, string][]),
-    ...((config?.custom_roles ?? [])
-      .filter((r) => r.is_active !== false)
-      .map((r) => [r.code, r.name] as [string, string])),
-  ], [config?.custom_roles])
-
   const handleSave = () => {
-    const invalid = Object.entries(settings.role_shared_mailboxes ?? {})
-      .find(([, addr]) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr))
-    if (invalid) {
-      setMailboxError(`Invalid shared mailbox address for ${ROLE_LABELS[invalid[0] as UserRole] ?? invalid[0]}: "${invalid[1]}"`)
-      return
-    }
-    setMailboxError(null)
     updateConfig.mutate({ notification_settings: settings, email_templates: templates })
     setSaved(true); setTimeout(() => setSaved(false), 2500)
   }
@@ -1905,47 +1889,6 @@ function NotificationSettingsSection() {
         <input className={inCls} placeholder="https://outlook.office.com/webhook/…"
           value={settings.teams_webhook_url ?? ''}
           onChange={(e) => setSettings((p) => ({ ...p, teams_webhook_url: e.target.value || null }))} />
-      </section>
-
-      {/* Role shared mailboxes */}
-      <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Role Shared Mailboxes</h3>
-        <p className="text-sm text-neutral-500">
-          Tasks addressed to a role rather than a person are emailed to this single mailbox instead of
-          every holder of the role. Leave empty to notify each member individually. Tasks assigned to a
-          named person always go to that person.
-        </p>
-        <p className="text-sm text-neutral-500">
-          This applies system-wide, not only to EPMS: the shared task list also carries OA expense
-          claims, Finance budget plans and VMS tasks, so configuring Finance BP here also redirects
-          Finance budget-plan notifications for that role.
-        </p>
-        <p className="text-sm text-neutral-500">
-          Note: a shared mailbox is delivered by email only. When the company Default Notification
-          Channel is set to &ldquo;Teams only&rdquo;, a role with a shared mailbox configured receives
-          no notification at all for role-addressed tasks.
-        </p>
-        <div className="flex flex-col gap-2">
-          {roleOptions.map(([code, label]) => (
-            <div key={code} className="flex items-center gap-3">
-              <span className="w-52 shrink-0 text-sm text-neutral-700">{label}</span>
-              <input
-                className={cn(inCls, 'flex-1')}
-                type="email"
-                placeholder="Notify each member individually"
-                value={settings.role_shared_mailboxes?.[code] ?? ''}
-                onChange={(e) => setSettings((p) => {
-                  const next = { ...(p.role_shared_mailboxes ?? {}) }
-                  const value = e.target.value.trim()
-                  if (value) next[code] = value
-                  else delete next[code]
-                  return { ...p, role_shared_mailboxes: next }
-                })}
-              />
-            </div>
-          ))}
-        </div>
-        {mailboxError && <p className="text-xs text-danger-600">{mailboxError}</p>}
       </section>
 
       {/* Follow-up time */}

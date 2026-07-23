@@ -872,6 +872,8 @@ function NotificationSettings() {
   const [channel, setChannel] = useState('')
   const [webhook, setWebhook] = useState('')
   const [followup, setFollowup] = useState('')
+  const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
+  const [mailboxError, setMailboxError] = useState<string | null>(null)
   const [smtp, setSmtp] = useState({ host: '', port: '', user: '', password: '', from: '', use_tls: true })
   const [showPwd, setShowPwd] = useState(false)
   const [testEmail, setTestEmail] = useState('')
@@ -883,6 +885,15 @@ function NotificationSettings() {
   const channelVal = channel || ns?.default_channel || 'email_only'
   const webhookVal = webhook !== '' ? webhook : (ns?.teams_webhook_url ?? '')
   const followupVal = followup || ns?.followup_time || '09:00'
+  const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
+
+  const setMailboxFor = (code: string, value: string) => {
+    const next = { ...mailboxesVal }
+    const trimmed = value.trim()
+    if (trimmed) next[code] = trimmed
+    else delete next[code]
+    setMailboxes(next)
+  }
   const smtpVal = {
     host:     smtp.host     || cfg?.smtp_host || '',
     port:     smtp.port     || cfg?.smtp_port?.toString() || '',
@@ -901,6 +912,13 @@ function NotificationSettings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const invalid = Object.entries(mailboxesVal)
+      .find(([, addr]) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(addr))
+    if (invalid) {
+      setMailboxError(`Invalid shared mailbox address for ${ROLE_LABELS[invalid[0]] ?? invalid[0]}: "${invalid[1]}"`)
+      return
+    }
+    setMailboxError(null)
     try {
       await save.mutateAsync({
         notification_settings: {
@@ -910,6 +928,7 @@ function NotificationSettings() {
           default_channel: channelVal as any,
           teams_webhook_url: webhookVal || null,
           followup_time: followupVal,
+          role_shared_mailboxes: mailboxesVal,
         },
         smtp_host: smtpVal.host || null,
         smtp_port: smtpVal.port ? parseInt(smtpVal.port) : null,
@@ -989,6 +1008,41 @@ function NotificationSettings() {
       <Field label="Teams Webhook URL" hint="Required when channel is 'Teams only' or 'Email + Teams'.">
         <Input value={webhookVal} onChange={(e) => setWebhook(e.target.value)} placeholder="https://outlook.office.com/webhook/…" />
       </Field>
+
+      {/* Role shared mailboxes */}
+      <div className="rounded-lg border border-neutral-200 p-4">
+        <p className="text-sm font-semibold text-neutral-700 mb-1">Role Shared Mailboxes</p>
+        <p className="text-xs text-neutral-500 mb-1">
+          Tasks addressed to a role rather than a named person are emailed to this single mailbox
+          instead of every holder of the role. Leave empty to notify each member individually.
+        </p>
+        <p className="text-xs text-neutral-500 mb-1">
+          This applies system-wide: the shared task inbox also carries EPMS, OA expense claims,
+          Finance budget plans and VMS tasks, so e.g. setting a mailbox for Finance Business Partner
+          here also redirects Finance budget-plan notifications for that role.
+        </p>
+        <p className="text-xs text-neutral-500 mb-3">
+          Note: a shared mailbox is delivered by email only. When the Default Notification Channel
+          above is set to &ldquo;Teams only&rdquo;, a role with a mailbox configured receives no
+          notification at all for role-addressed tasks.
+        </p>
+        <div className="flex flex-col gap-2">
+          {ALL_ROLES.map((code) => (
+            <div key={code} className="flex items-center gap-3">
+              <span className="w-44 shrink-0 text-sm text-neutral-600">{ROLE_LABELS[code]}</span>
+              <Input
+                type="email"
+                className="flex-1"
+                placeholder="Notify each member individually"
+                value={mailboxesVal[code] ?? ''}
+                onChange={(e) => setMailboxFor(code, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+        {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
+      </div>
+
       <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
