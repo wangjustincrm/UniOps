@@ -282,14 +282,22 @@ async def can_pay(user: CurrentUser, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/due")
-async def list_due(_: CurrentUser, db: AsyncSession = Depends(get_db),
+async def list_due(user: CurrentUser, db: AsyncSession = Depends(get_db),
                    currency: str | None = Query(default=None)):
-    """Approved PAs awaiting payment — pickable rows for a payment run."""
+    """Approved PAs awaiting payment — pickable rows for a payment run.
+
+    Every approved PA and expense claim awaiting payment, employee names and
+    amounts included — the same read authority as list/summary/export below
+    (see `_authorize_read`), not just a valid token. An OA-only employee with
+    no finance role could otherwise enumerate this the same way `/export`
+    was fixed to prevent."""
+    await _authorize_read(db, user)
     return await batch_crud.list_due(db, currency=currency)
 
 
 @router.get("/batches", response_model=list[BatchOut])
-async def list_batches(_: CurrentUser, db: AsyncSession = Depends(get_db)):
+async def list_batches(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    await _authorize_read(db, user)
     rows = (await db.execute(
         select(PaymentBatch).order_by(PaymentBatch.created_at.desc()).limit(200)
     )).scalars().all()
@@ -297,7 +305,10 @@ async def list_batches(_: CurrentUser, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/batches/{batch_id}")
-async def get_batch(batch_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depends(get_db)):
+async def get_batch(batch_id: uuid.UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Full line breakdown for one batch, vendor invoice numbers included —
+    same read authority as the list above, for the same reason."""
+    await _authorize_read(db, user)
     batch = (await db.execute(
         select(PaymentBatch).where(PaymentBatch.id == batch_id)
     )).scalar_one_or_none()

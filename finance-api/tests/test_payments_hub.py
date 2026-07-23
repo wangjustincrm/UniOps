@@ -258,6 +258,54 @@ async def test_list_summary_export_require_finance_read_authority(client, db_ses
     assert r_export.status_code == 403
 
 
+# ── Fix B (Round 2): the three remaining Payments hub read endpoints ────────
+
+async def test_due_batches_and_batch_detail_require_finance_read_authority(client, db_session):
+    """GET /payments/due, /payments/batches, and /payments/batches/{id} took
+    only `CurrentUser` (any authenticated token) before this fix — the same
+    gap `/export` had. `/batches/{id}` returns full line breakdowns including
+    vendor invoice numbers; `/due` returns every approved PA and expense
+    claim awaiting payment with employee names and amounts. An OA-only
+    employee (role='requester', no finance role/assignment) must be refused
+    all three, exactly like list/summary/export above."""
+    from app.models.payment_batch import EXECUTED, PaymentBatch
+
+    batch = PaymentBatch(batch_number="BP-AUTH-1", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+
+    r_due = await client.get("/finance/v1/payments/due", headers=_h("requester"))
+    r_batches = await client.get("/finance/v1/payments/batches", headers=_h("requester"))
+    r_batch = await client.get(f"/finance/v1/payments/batches/{batch.id}",
+                               headers=_h("requester"))
+
+    assert r_due.status_code == 403
+    assert r_batches.status_code == 403
+    assert r_batch.status_code == 403
+
+
+async def test_due_batches_and_batch_detail_allow_finance_role(client, db_session):
+    """Sanity check that the new gate does not lock out a legitimate finance
+    reader — same role the pre-existing list/summary/export tests use."""
+    from app.models.payment_batch import EXECUTED, PaymentBatch
+
+    batch = PaymentBatch(batch_number="BP-AUTH-2", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+
+    r_due = await client.get("/finance/v1/payments/due", headers=_h())
+    r_batches = await client.get("/finance/v1/payments/batches", headers=_h())
+    r_batch = await client.get(f"/finance/v1/payments/batches/{batch.id}", headers=_h())
+
+    assert r_due.status_code == 200
+    assert r_batches.status_code == 200
+    assert r_batch.status_code == 200
+
+
 async def test_remittance_filter_splits_sent_from_not_sent(client, db_session):
     r1 = await _rec(db_session, amount="10.00")
     r2 = await _rec(db_session, amount="20.00")
