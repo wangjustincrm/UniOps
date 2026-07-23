@@ -100,6 +100,33 @@ async def test_send_email_uses_implicit_tls_on_465():
     assert m.await_args.kwargs["start_tls"] is False
 
 
+async def test_send_email_non_ascii_subject_serializes_cleanly():
+    """The rendered remittance subject contains an em dash. `send_email`
+    builds a MIMEMultipart under Python's default compat32 policy with no
+    explicit header encoding — a mock never flattens the message, so this
+    proves the real thing by calling as_bytes() on what is actually handed
+    to aiosmtplib.send, then re-parsing those bytes and decoding the header
+    back, the way a real MTA/mailbox would."""
+    import email
+    from email.header import decode_header, make_header
+
+    from app.services.email import send_email
+
+    subject = "Remittance Advice — Canada Royal Milk — BP-20260722-0001"
+    with patch("app.services.email.aiosmtplib.send", new=AsyncMock()) as m:
+        await send_email("a@b.test", subject, "<p>x</p>", smtp_host="h", smtp_port=587,
+                         smtp_user="u", smtp_password="p", smtp_use_tls=True,
+                         smtp_from="from@b.test")
+
+    msg = m.await_args.args[0]
+    raw = msg.as_bytes()          # must not raise (UnicodeEncodeError etc.)
+    assert b"\xe2\x80\x94" not in raw   # the em dash must be header-encoded, not raw UTF-8 bytes
+
+    reparsed = email.message_from_bytes(raw)
+    decoded = str(make_header(decode_header(reparsed["Subject"])))
+    assert decoded == subject
+
+
 async def test_settings_none_when_switch_absent(db_session):
     db_session.add(CompanyConfig(role_management={}, remittance_config={}))
     await db_session.flush()
@@ -418,3 +445,93 @@ def test_template_escapes_payee_name():
     g.party_name = "<script>x</script>"
     _, html = tpl.render(g, company_name="C", reference="R", payment_method="bank_transfer")
     assert "<script>" not in html
+
+
+# ── Task 8: sending and the send log ────────────────────────────────────────
+
+from app.crud import remittance_send as rsend
+
+
+def _sender():
+    return rc.RemittanceSettings(
+        enabled=True, from_email="ap@crm.test", from_name="CRM AP",
+        cc_email="apbox@crm.test", smtp_host="h", smtp_port=587,
+        smtp_user="u", smtp_password="p", smtp_use_tls=True,
+    )
+
+
+async def _send(db, groups, scope_id, side_effect=None):
+    with patch("app.crud.remittance_send.send_email",
+               new=AsyncMock(side_effect=side_effect)) as m:
+        results = await rsend.send_groups(
+            db, scope_kind=SCOPE_BATCH, scope_id=scope_id, groups=groups,
+            reference="BP-20260722-0001", payment_method="bank_transfer",
+            company_name="Canada Royal Milk", sender=_sender(),
+            actor_id=uuid.uuid4(),
+        )
+    return results, m
+
+
+async def test_send_writes_log_and_uses_cc(db_session):
+    g = _group()
+    scope_id = uuid.uuid4()
+    results, m = await _send(db_session, [g], scope_id)
+    assert [r["status"] for r in results] == ["sent"]
+    assert m.await_args.args[0] == "ap@acme.test"
+    assert m.await_args.kwargs["cc"] == "apbox@crm.test"
+
+    row = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalar_one()
+    assert row.status == SENT
+    assert row.attempts == 1
+    assert row.sent_at is not None
+
+
+async def test_resend_upserts_and_increments_attempts(db_session):
+    g = _group()
+    scope_id = uuid.uuid4()
+    await _send(db_session, [g], scope_id)
+    await _send(db_session, [g], scope_id)
+
+    rows = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].attempts == 2
+
+
+async def test_one_failure_does_not_stop_the_others(db_session):
+    g1, g2 = _group(), _group()
+    g1.email = "first@acme.test"
+    g2.party_id = uuid.uuid4()
+    g2.email = "second@acme.test"
+    scope_id = uuid.uuid4()
+    calls = {"n": 0}
+
+    async def _boom(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("smtp down")
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock(side_effect=_boom)):
+        results = await rsend.send_groups(
+            db_session, scope_kind=SCOPE_BATCH, scope_id=scope_id, groups=[g1, g2],
+            reference="R", payment_method="bank_transfer",
+            company_name="C", sender=_sender(), actor_id=uuid.uuid4())
+
+    assert sorted(r["status"] for r in results) == ["failed", "sent"]
+    rows = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalars().all()
+    assert len(rows) == 2
+
+
+async def test_blocked_group_is_skipped_not_sent(db_session):
+    g = _group()
+    g.block_reasons = [rem.BLOCK_MISSING_EMAIL]
+    g.email = ""
+    scope_id = uuid.uuid4()
+    results, m = await _send(db_session, [g], scope_id)
+    assert [r["status"] for r in results] == ["skipped"]
+    assert m.await_count == 0
+    rows = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalars().all()
+    assert rows == []
