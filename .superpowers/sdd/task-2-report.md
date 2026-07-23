@@ -156,3 +156,30 @@ No other discrepancies found.
 - Per instructions I did not run the full finance-api suite (only `test_remittance.py`, scoped with `-k`
   for the red-state checks and unscoped for the final green check on this one file) — the full-suite run is
   left to the user, as instructed.
+
+## Fix: logo-url guard reject-path test
+
+Added unit test `test_safe_logo_url_accepts_images_and_rejects_injection` to directly pin the behavior
+of `_safe_logo_url()` guard in `remittance_config.py`. The guard previously had no explicit test coverage
+of its REJECT path — only the ACCEPT path was tested indirectly through `test_load_surfaces_template_and_logo`.
+This made the guard vulnerable to silent removal: if someone reverted the guard to `return value`, no test
+would fail.
+
+Commit: `5236320` on `feature/batch-payment-remittance`.
+
+Test checks both directions in one test to keep the accept path pinned:
+- Accepts: `data:image/png;base64,AAAA`, `https://cdn.example.com/logo.png`
+- Rejects to None: `None`, empty string, values containing `"` (the attribute-injection vector),
+  `javascript:alert(1)`, `data:text/html,<script>`
+
+Proved the test can fail by temporarily reverting the guard to `return value`:
+- **Broken-code failure line**: `assert _safe_logo_url("") is None` (line 230 in test_remittance.py)
+  — returns empty string instead of None when guard is removed
+- **Final pass line**: `tests/test_remittance.py::test_safe_logo_url_accepts_images_and_rejects_injection PASSED [100%]`
+  — with guard restored
+
+Test command and result (green):
+```
+cd finance-api && TEST_PG_PASSWORD=... python -m pytest tests/test_remittance.py::test_safe_logo_url_accepts_images_and_rejects_injection -v
+```
+Result: `1 passed in 3.48s`
