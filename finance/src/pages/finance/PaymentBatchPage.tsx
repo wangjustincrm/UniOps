@@ -18,6 +18,8 @@ import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { RemittancePanel } from '@/components/remittance/RemittancePanel'
+import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -241,6 +243,13 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
 }) {
   const qc = useQueryClient()
   const [bankId, setBankId] = useState('')
+  // Opened right after a successful execute so the operator can send
+  // remittance advice without leaving the flow — but only when there is
+  // someone to notify (see `execute`'s onSuccess below). Not opened just
+  // because the batch happens to already be `executed` on load: that would
+  // pop a modal in the operator's face every time they reopen a past batch
+  // to check on it — the Remittance section below covers that case instead.
+  const [showRemittance, setShowRemittance] = useState(false)
   const { data, isLoading } = useQuery({
     queryKey: ['batch', batchId],
     queryFn: () => financeApi.get<{ batch: Batch; lines: BatchLine[] }>(`/payments/batches/${batchId}`),
@@ -256,6 +265,9 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['batch', batchId] })
       onExecuted(r.paid, r.failed)
+      // Zero paid lines means nobody to notify — don't stack a remittance
+      // dialog on top of a failure the operator is already looking at.
+      if (r.paid > 0) setShowRemittance(true)
     },
     onError: (e: Error) => onError(e.message),
   })
@@ -269,6 +281,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
@@ -324,6 +337,13 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
               </table>
             </div>
 
+            {batch?.status === 'executed' && (
+              <div className="mt-6">
+                <h3 className="mb-2 text-sm font-semibold text-neutral-700">Remittance</h3>
+                <RemittancePanel scope={{ kind: 'batch', id: batchId }} />
+              </div>
+            )}
+
             <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
               {batch?.status === 'executed' ? (
                 <span className="flex items-center gap-1.5 text-sm text-green-700">
@@ -355,5 +375,12 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
         )}
       </div>
     </div>
+
+    <RemittanceDialog
+      open={showRemittance}
+      onClose={() => setShowRemittance(false)}
+      scope={{ kind: 'batch', id: batchId }}
+    />
+    </>
   )
 }
