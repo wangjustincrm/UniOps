@@ -3,6 +3,7 @@ import uuid
 import sqlalchemy as sa
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.models.mirrors import ExpenseClaim
 from app.models.payment import PaymentRecord
 from app.models.pa import PaymentApplication
 from app.models.remittance import SENT, RemittanceNotification
@@ -65,11 +66,24 @@ def _filtered(*, pa_id=None, vendor_id=None, date_from=None, date_to=None,
         stmt = stmt.where(PaymentRecord.batch_id.is_(None))
     if q:
         like = f"%{q}%"
+        # Claim payments carry no vendor_name at all — the Payee column the
+        # hub actually shows for them is expense_claims.employee_name (see
+        # app/api/v1/payments.py's _payee_names), so without this correlated
+        # match `q` silently returned nothing for the very name the operator
+        # is looking at on screen. Correlated EXISTS rather than a JOIN: `q`
+        # must still match non-claim rows that have no expense_claims row at
+        # all, so this only needs to ADD a match, never narrow the base set.
+        claim_name_match = select(ExpenseClaim.id).where(
+            ExpenseClaim.id == PaymentRecord.doc_id,
+            PaymentRecord.doc_kind == "expense_claim",
+            ExpenseClaim.employee_name.ilike(like),
+        ).exists()
         stmt = stmt.where(or_(
             PaymentRecord.doc_number.ilike(like),
             PaymentRecord.pa_number.ilike(like),
             PaymentRecord.vendor_name.ilike(like),
             PaymentRecord.reference.ilike(like),
+            claim_name_match,
         ))
     if remittance in ("sent", "not_sent"):
         # JSONB containment against the record id, GIN-indexed (see

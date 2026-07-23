@@ -188,6 +188,29 @@ async def test_export_carries_claim_employee_as_payee(client, db_session):
 from app.models.remittance import KIND_VENDOR, SCOPE_PAYMENT, SENT, RemittanceNotification
 
 
+# ── Fix 7: `q` must match the payee name actually shown on screen ───────────
+
+async def test_q_matches_claim_employee_name(client, db_session):
+    """A claim payment's Payee column is filled from
+    expense_claims.employee_name (see _payee_names in app/api/v1/payments.py)
+    — the record itself carries no vendor_name at all. Before this fix `q`
+    only searched doc_number/pa_number/vendor_name/reference, so searching
+    the very name the column just displayed returned nothing (spec §7)."""
+    from app.models.mirrors import ExpenseClaim
+    claim = ExpenseClaim(claim_number="EXP-20", claim_type="EXP", status="paid",
+                         employee_id=uuid.uuid4(), employee_name="Priya Singh",
+                         currency="CAD", total_amount=Decimal("25.00"),
+                         tax_amount=Decimal("0"), net_amount=Decimal("25.00"))
+    db_session.add(claim)
+    await db_session.flush()
+    await _rec(db_session, doc_kind="expense_claim", amount="25.00", doc_id=claim.id)
+    await _rec(db_session, amount="99.00")   # decoy vendor payment, unrelated name
+
+    r = (await client.get("/finance/v1/payments?q=Priya", headers=_h())).json()
+    assert r["total"] == 1
+    assert r["items"][0]["amount"] == "25.00"
+
+
 # ── Fix 1: read authority (not just authentication) ─────────────────────────
 
 async def test_list_summary_export_require_finance_read_authority(client, db_session):
