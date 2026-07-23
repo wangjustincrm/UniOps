@@ -554,6 +554,145 @@ git commit -m "fix(budget-api): scope GET /actuals and /actuals/opening by depar
 
 ---
 
+## Task 5: authenticate `GET /plan-lines` (close the unauthenticated read)
+
+`budget-api` `GET /api/v1/plan-lines` (`budget-api/app/api/v1/crossservice.py:16-17`)
+has NO auth dependency — no `CurrentUserPayload`, no permission. budget-api is
+proxied on a public subdomain, so an **unauthenticated** caller can read every cost
+center's approved plan amounts. Its four sibling POST endpoints in the same file all
+require `CurrentUserPayload`; this GET is the omission. It is unauthenticated by
+construction because finance-api's only consumer calls it without a token. This task
+requires a valid JWT on the route and forwards the caller's token from finance-api.
+(Department scoping of plan-lines belongs to the separate finance `/gl` scoping
+follow-up, not this task — this closes only the *anonymous* hole.)
+
+**Files:**
+- Modify: `budget-api/app/api/v1/crossservice.py:16-17` (add auth dependency)
+- Modify: `finance-api/app/services/budget_client.py:141-152` (`fetch_plan_lines` forwards token)
+- Modify: `finance-api/app/api/v1/account_balance.py:85-101` (`budget_actual_grid` extracts + forwards token)
+- Test: `budget-api/tests/test_actuals_scoping.py`
+
+**Interfaces:**
+- `CurrentUserPayload` is ALREADY imported in `crossservice.py`. Reuse it.
+- `_auth_headers(bearer_token)` in `finance-api/app/services/budget_client.py`
+  already builds the Authorization header and tolerates `None` (used by
+  `fetch_monthly_summary`, whose `bearer_token` is `str | None`). Reuse it.
+- `Request` is ALREADY imported in `finance-api/app/api/v1/account_balance.py`
+  (the export endpoint uses `request: Request`). Reuse the same
+  `auth = request.headers.get("authorization")...` extraction it uses.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `budget-api/tests/test_actuals_scoping.py` (it already has `client` and
+`admin_token` fixtures):
+
+```python
+@pytest.mark.asyncio
+async def test_plan_lines_requires_auth(client, admin_token):
+    r = await client.get("/api/v1/plan-lines?fiscal_year=2026&month=1")
+    assert r.status_code in (401, 403)          # was 200/anonymous before the fix
+    r_ok = await client.get("/api/v1/plan-lines?fiscal_year=2026&month=1",
+                            headers={"Authorization": f"Bearer {admin_token}"})
+    assert r_ok.status_code == 200
+    assert isinstance(r_ok.json(), list)
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `cd budget-api && python -m pytest tests/test_actuals_scoping.py -k plan_lines -v`
+Expected: FAIL — the no-header request currently returns 200 (endpoint is anonymous).
+
+- [ ] **Step 3: Add the auth dependency on the route**
+
+In `budget-api/app/api/v1/crossservice.py`, change the handler signature:
+
+```python
+@router.get("/plan-lines")
+async def plan_lines(fiscal_year: int, month: int, db: SessionDep,
+                     user: CurrentUserPayload):  # noqa: ARG001 — auth gate only
+    """Current approved plan lines for a (fiscal_year, month), all cost centers.
+    Read-only, consumed by finance's predreal grid for the budget column.
+    Requires a valid JWT (forwarded by finance-api)."""
+    rows = await plan_crud.current_plan_lines(db, fiscal_year, month)
+    return [{"cost_center_id": str(cc), "account_id": str(a), "amount": str(amt)}
+            for cc, a, amt in rows]
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `cd budget-api && python -m pytest tests/test_actuals_scoping.py -k plan_lines -v`
+Expected: PASS (401/403 without a token, 200 with).
+
+- [ ] **Step 5: Forward the token from finance-api**
+
+In `finance-api/app/services/budget_client.py`, change `fetch_plan_lines`:
+
+```python
+async def fetch_plan_lines(fiscal_year: int, month: int,
+                           *, bearer_token: str | None = None) -> dict:
+    """(cost_center_id, account_id) -> Decimal budget from current approved plans.
+    account_id == the JV line's income_expense_item_id (shared budget_accounts),
+    so the predreal grid joins budget↔actual directly on this key.
+    budget-api requires auth → forward the caller's bearer token."""
+    import uuid
+    from decimal import Decimal
+    url = f"{settings.budget_api_url}/api/v1/plan-lines"
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        r = await client.get(url, params={"fiscal_year": fiscal_year, "month": month},
+                             headers=_auth_headers(bearer_token))
+        r.raise_for_status()
+    return {(uuid.UUID(x["cost_center_id"]), uuid.UUID(x["account_id"])): Decimal(x["amount"])
+            for x in r.json()}
+```
+
+In `finance-api/app/api/v1/account_balance.py`, make `budget_actual_grid` extract
+and forward the caller's token:
+
+```python
+@router.get("/budget-actual-grid")
+async def budget_actual_grid(request: Request, _: CurrentUser,
+                             db: AsyncSession = Depends(get_db),
+                             period: str = Query(...)):
+    """④b Budget-vs-Actual grid: per (cost center × income-expense item)
+    budget/actual/variance for the 5 categories + Payroll/Depreciation tie-out
+    rows + unmapped exceptions. Budget comes from budget-api; if it is
+    unreachable the grid still renders actuals (budget column 0)."""
+    import logging
+
+    from app.services import budget_client
+    auth = request.headers.get("authorization") or ""
+    token = auth[7:] if auth.lower().startswith("bearer ") else None
+    try:
+        budget = await budget_client.fetch_plan_lines(
+            int(period[:4]), int(period[5:7]), bearer_token=token)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception(
+            "budget-api plan-lines fetch failed; rendering actuals only")
+        budget = {}
+    return await crud.budget_actual_grid(db, period, budget)
+```
+
+> Confirm `fetch_plan_lines` has no other caller before changing its signature:
+> `grep -rn "fetch_plan_lines" finance-api/app`. Update any other call site too.
+
+- [ ] **Step 6: Regression — finance-api budget-actual-grid still works**
+
+Run: `cd finance-api && python -m pytest tests/test_account_balance.py -k "grid or budget_actual" -v`
+Expected: PASS. If a test drives `budget_actual_grid` and asserts the budget column
+is populated, check how it stubs `budget_client`
+(`grep -n "fetch_plan_lines\|budget_client" finance-api/tests/test_account_balance.py`);
+if it monkeypatches `fetch_plan_lines`, make the stub accept the new `bearer_token`
+keyword (e.g. `async def _fake(fy, m, **kwargs): ...`).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add budget-api/app/api/v1/crossservice.py finance-api/app/services/budget_client.py finance-api/app/api/v1/account_balance.py budget-api/tests/test_actuals_scoping.py
+git commit -m "fix(budget-api): require auth on GET /plan-lines; finance forwards token"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage**
