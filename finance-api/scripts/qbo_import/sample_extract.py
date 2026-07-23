@@ -25,17 +25,24 @@ from scripts.qbo_import.client import QboClient  # noqa: E402
 
 OUT_DIR = Path(__file__).resolve().parents[2] / "data" / "qbo_samples"
 
-# AP scope: vendor bills, the payments that settle them, and the masters they
-# reference. Invoice/Payment (the AR pair) are deliberately excluded — confirm
-# whether QBO is also used for customer invoicing before adding them.
+# Everything queryable, deliberately. QuickBooks is being decommissioned, so
+# this is likely the only chance to pull the data — a curated subset risks
+# discovering a gap after the account is gone. Entities absent from this region
+# or edition (JournalCode is France-only) just report as skipped.
 ENTITIES = [
-    "Vendor",
-    "Bill",
-    "BillPayment",
-    "VendorCredit",
-    "Account",
-    "Purchase",
-    "Attachable",
+    # masters
+    "Account", "Class", "CompanyCurrency", "Customer", "CustomerType",
+    "Department", "Employee", "Item", "PaymentMethod", "TaxAgency",
+    "TaxCode", "TaxRate", "Term", "Vendor",
+    # AP
+    "Bill", "BillPayment", "VendorCredit", "Purchase", "PurchaseOrder",
+    # AR
+    "Invoice", "Payment", "CreditMemo", "SalesReceipt", "RefundReceipt",
+    "Estimate",
+    # ledger + banking
+    "JournalEntry", "Deposit", "Transfer", "CreditCardPayment",
+    # other
+    "TimeActivity", "Budget", "Attachable",
 ]
 
 
@@ -47,12 +54,17 @@ def count_of(client: QboClient, entity: str) -> int | None:
         return None
 
 
-def sample_of(client: QboClient, entity: str, limit: int) -> list[dict]:
+def sample_of(client: QboClient, entity: str, limit: int) -> list[dict] | None:
+    """None means the entity is unsupported here; [] means supported but empty."""
     rows = []
-    for row in client.query_all(entity, page_size=min(limit, 1000)):
-        rows.append(row)
-        if len(rows) >= limit:
-            break
+    try:
+        for row in client.query_all(entity, page_size=min(limit, 1000)):
+            rows.append(row)
+            if len(rows) >= limit:
+                break
+    except Exception as exc:  # noqa: BLE001 — one bad entity must not abort the sweep
+        print(f"  ! skipped: {exc}")
+        return None
     return rows
 
 
@@ -80,6 +92,9 @@ def main() -> int:
         total = count_of(client, entity)
         print(f"  count: {total}")
         rows = sample_of(client, entity, args.limit)
+        if rows is None:
+            summary["entities"][entity] = {"total": total, "unsupported": True}
+            continue
         print(f"  sampled: {len(rows)}")
 
         # Key frequency exposes which documented fields actually show up.
