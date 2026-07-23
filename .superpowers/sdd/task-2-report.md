@@ -1,319 +1,242 @@
-# Task 2 Report: NC65 COA pure mapping functions
+# Task 2 report: `remittance_email` on the vendor master
 
-## Status: DONE
+Note: this exact report path (`task-2-report.md`) previously held a stale report from an unrelated
+earlier task (NC65 COA mapping functions, finance-api, commit `81d725a`). Overwritten with this task's
+report below, per the same precedent noted in that stale report itself.
 
-## What was done
+## Status: DONE_WITH_CONCERNS
 
-Followed the brief's TDD steps exactly, using verbatim code blocks from
-`.superpowers/sdd/task-2-brief.md`.
+## Summary
 
-1. Appended the Step-1 test block to `finance-api/tests/test_nc_coa_sync.py`
-   (kept Task 1's two existing tests intact).
-2. Ran the suite to confirm the expected collection failure
-   (`ModuleNotFoundError: No module named 'app.services.nc_coa_sync'`).
-3. Created `finance-api/app/services/nc_coa_sync.py` with the mapping
-   functions exactly as given in the brief: `NC_OWNED_FIELDS`,
-   `NcMappingError`, `clean`, `map_normal_balance`, `map_account_type`,
-   `map_aux_item`, `derive_party_dim`, `map_account`. It imports
-   `nc_configured` from `app/services/nc_sync.py` unchanged (no
-   reimplementation).
-4. Replaced `DIM_LABELS` in `finance-api/app/crud/account_balance.py` with
-   the brief's expanded dict — all 7 original keys preserved verbatim, plus
-   the new keys (`partner`, `project`, `project_type`,
-   `government_grant_project`, `item`, `item_category`, `asset_category`,
-   `tax_code`, `bank`, `bank_account`, `bank_category`, `country_region`,
-   `sales_type`, `credit_card`).
-5. Ran `tests/test_nc_coa_sync.py` — all pass (29 total: 2 from Task 1 + 27
-   new; the brief's "~22" estimate undercounted the parametrized cases).
-6. Ran `tests/test_account_balance.py` — all 20 pass, same count as before
-   the `DIM_LABELS` edit (no regression).
-7. Committed all three files together.
+Added `remittance_email` (nullable `varchar(255)`) to `business_partners`, exposed it through mdm-api's
+`PartnerCreate`/`PartnerUpdate`/`PartnerOut` schemas, recreated the epms-api `vendors` compatibility view
+to include it, and carried it through epms-api's `Vendor` ORM model, `VendorCreate`/`VendorUpdate`/
+`VendorResponse`/`VendorCsvRow` schemas, and the CSV export/import paths. TDD followed throughout:
+failing tests written first, confirmed to fail for the right reason, then made to pass.
 
-Note: this exact report path (`task-2-report.md`) contained a stale report
-from an unrelated earlier task (meeting-room booking data model). It has
-been overwritten with this task's report below.
+## Files changed
 
-## Environment used
+**mdm-api**
+- `mdm-api/app/models/business_partner.py` — added `remittance_email: Mapped[str | None]` column, placed
+  after `contact_email`, with the brief's fallback-comment verbatim.
+- `mdm-api/app/schemas/business_partner.py` — added `remittance_email: Optional[str] = None` to
+  `PartnerBase` (after `contact_email`) and to `PartnerUpdate`. `PartnerOut(PartnerBase)` picks it up
+  automatically — confirmed by reading the class before relying on that (per the brief's instruction).
+- `mdm-api/alembic/versions/0006_partner_remittance_email.py` (new) — `revision = "0006_partner_remittance_email"`,
+  `down_revision = "0005_units_of_measure"` (verified against the actual file's `revision =` line, which
+  reads `"0005_units_of_measure"`, matching the brief). 29 chars, under the 32-char cap.
+- `mdm-api/tests/test_partners.py` — appended two tests (see "Brief corrections" below for why these
+  differ from the brief's literal snippet).
 
-Per the mid-task correction: no venv exists in the worktree, so all commands
-ran the worktree's test files through the **main repo's** interpreter
-(`c:/Project/uniops/finance-api/.venv/Scripts/python`), with `DATABASE_URL`
-and `JWT_SECRET_KEY` set to inline dummies (never pointing at the main
-repo's `.env`, which targets the production DB). `TEST_PG_PASSWORD` was
-still sourced from `/c/Project/uniops/.env`'s `DB_PASSWORD` per the brief, to
-authenticate against the local docker postgres the test fixtures actually
-use.
+**epms-api**
+- `epms-api/alembic/versions/ab_remittance_and_vendor_view.py` (new) — `revision = "ab_remittance_and_vendor_view"`,
+  `down_revision = "aa_default_match_tolerance_5"` (verified against the actual file). Recreates the
+  `vendors` view with `remittance_email` appended to `_VIEW_COLS`. Confirmed `_VIEW_COLS` in
+  `x5_repoint_vendor_fks.py` is byte-for-byte what the brief quoted — no drift. Left a comment noting
+  Task 3 will extend this same file with `company_config.remittance_config`, per instructions; did not
+  add that column myself.
+- `epms-api/app/schemas/vendor.py` — added `remittance_email` to `VendorCreate` (`str = Field(default="", ...)`),
+  `VendorUpdate` (`str | None`), `VendorResponse` (`str | None = None`), `VendorCsvRow` (`str = Field(default="", ...)`),
+  each placed immediately after `contact_email` as specified.
+- `epms-api/app/api/v1/vendors.py` — CSV export header/row now include `remittanceEmail`/`v.remittance_email`;
+  CSV import reads `remittanceEmail` into `VendorCsvRow.remittance_email`; docstring's "Optional columns"
+  list updated. `_partner_payload` needed no code change — it already forwards via
+  `body.model_dump(exclude_none=True)`, which now includes `remittance_email` automatically since the
+  schemas carry the field.
+- `epms-api/app/models/vendor.py` — **added `remittance_email` mapped column** (see "Brief gap" below —
+  this file was not in the brief's file list but is required for the feature to actually work).
+- `epms-api/tests/test_vendors.py` — added 4 new tests (create/read round trip, update, CSV import, CSV
+  export).
 
-## Exact commands and full output
+## Brief corrections / gaps found
 
-### Step 2 — confirm failing (module not found)
+1. **Wrong mdm test file** (already flagged by the task instructions before I started): the brief says
+   `mdm-api/tests/test_business_partner.py`; the real file is `mdm-api/tests/test_partners.py`. Used that
+   file's existing fixtures (`_partner()` helper, `db_session`).
 
+2. **The brief's literal test snippet doesn't match this codebase.** It uses a `client` HTTPX fixture and
+   an `_h()` auth-header helper (`await client.post("/mdm/v1/partners", json={...}, headers=_h())`).
+   Neither exists anywhere in `mdm-api/tests/` — there is no HTTP-level test fixture in mdm-api at all;
+   every existing test in `test_partners.py` operates directly on the `BusinessPartner` ORM model via the
+   `db_session` fixture, plus one pure-schema test with no DB. I wrote two tests in that idiom instead:
+   - `test_partner_remittance_email_round_trips(db_session)` — create with `remittance_email` set, flush,
+     re-read; then mutate and re-read to prove independent update.
+   - `test_partner_schemas_expose_remittance_email()` — a schema-level test (no DB) proving
+     `PartnerCreate`/`PartnerUpdate`/`PartnerOut` all carry the field, mirroring the existing
+     `test_partner_update_schema_accepts_code` pattern in the same file.
+
+3. **`x5_repoint_vendor_fks.py`'s `_VIEW_COLS` matches the brief exactly** — no drift, migration file used
+   as given.
+
+4. **Real gap: `epms-api/app/models/vendor.py` was missing from the brief's file list but had to be
+   modified.** This is the important finding. EPMS's `Vendor` ORM model's `__tablename__` is
+   `"business_partners"` — **not** `"vendors"`. EPMS's own reads (`vendor_crud.get_by_id`/`get_all`/etc.,
+   used by `VendorResponse`, and the CSV-export row-builder's direct `v.remittance_email` attribute
+   access) go straight to the physical `business_partners` table via this ORM model, bypassing the
+   `vendors` view entirely. The view only matters for external readers (expense-api's read-only
+   `EpmsVendor` mirror, which today only reads `id/name/code/is_active` and is unaffected either way, and
+   any other future raw-SQL reader of `vendors`).
+   Without adding `remittance_email` to `app/models/vendor.py`:
+   - `VendorResponse.remittance_email` would silently always render as `None` (pydantic's
+     `from_attributes` getattr falls back to the field's default when the source object has no such
+     attribute — no crash, just silent data loss, which is exactly the failure mode the brief warned
+     about, just via a different file than the one it named).
+   - The CSV export line I added (`v.remittance_email or ""`) would raise `AttributeError` outright,
+     since a SQLAlchemy declarative model has no such Python attribute at all until it's mapped — I
+     verified this reasoning is why the brief's own hint ("the local read path selects explicit columns
+     around line 89") pointed at the CSV export row builder, which is literally at line 89 in
+     `vendors.py`.
+   I added the column to `epms-api/app/models/vendor.py` (mirroring the mdm-api model, nullable
+   `String(255)`) to close this gap. Documented here rather than silently deviating from the brief's file
+   list. The `ab_remittance_and_vendor_view.py` migration is still correct and worth keeping — it keeps
+   the compat view in sync for expense-api and any future column additions — but on its own it would
+   **not** have fixed EPMS's own vendor reads, contrary to what the brief's framing implies.
+
+## Test commands and output
+
+### mdm-api
+
+Local test DB `mdm_test` did not exist yet in the docker `uniops_postgres` container; created it:
 ```
-cd /c/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-DATABASE_URL="postgresql+asyncpg://dummy:dummy@localhost:5432/dummy" \
-JWT_SECRET_KEY="dummy" \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_coa_sync.py -v
+docker exec uniops_postgres psql -U epms -d postgres -c "CREATE DATABASE mdm_test OWNER epms;"
 ```
+mdm-api has no `.env` in this worktree, so `Settings()` needs env vars just to import (even though the
+actual test engine uses `TEST_DATABASE_URL`, not `settings.database_url` — no connection to production is
+ever made):
+```bash
+cd mdm-api
+export DATABASE_URL="postgresql+asyncpg://epms:<pg_password>@localhost:5432/mdm_test"
+export JWT_SECRET_KEY="test-secret"
+export TEST_DATABASE_URL="postgresql+asyncpg://epms:<pg_password>@localhost:5432/mdm_test"
 
-Output (tail):
+python -m pytest tests/test_partners.py -v
+# baseline (before any code change): 4 passed
 
+# ... after appending the two new tests, before implementing the field:
+python -m pytest tests/test_partners.py -v -k remittance
+# confirmed FAIL (2 failed) for the right reason:
+#   TypeError: 'remittance_email' is an invalid keyword argument for BusinessPartner
+#   AttributeError: 'PartnerCreate' object has no attribute 'remittance_email'
+
+# ... after implementing model/schema/migration:
+python -m pytest tests/ -v
+# 32 passed (full mdm-api suite, no regressions)
 ```
-collecting ... collected 0 items / 1 error
+`<pg_password>` = the docker `uniops_postgres` container's `POSTGRES_PASSWORD` (retrieved via
+`docker exec uniops_postgres printenv`, not read from any host `.env`).
 
-=================================== ERRORS ====================================
-_________________ ERROR collecting tests/test_nc_coa_sync.py __________________
-ImportError while importing test module 'C:\Project\uniops\.worktrees\nc-coa-sync\finance-api\tests\test_nc_coa_sync.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-C:\Program Files\Python312\Lib\importlib\__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-tests\test_nc_coa_sync.py:39: in <module>
-    from app.services.nc_coa_sync import (
-E   ModuleNotFoundError: No module named 'app.services.nc_coa_sync'
-=========================== short test summary info ===========================
-ERROR tests/test_nc_coa_sync.py
-!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-============================== 1 error in 0.65s ===============================
-```
+### epms-api
 
-Matches the brief's expected failure exactly.
+Needed `email-validator==2.2.0` (declared in `requirements.txt` as `pydantic[email]==2.10.3` /
+`email-validator==2.2.0` but not installed in the global interpreter) and the full `requirements.txt` +
+`requirements-dev.txt` (missing `aiosmtplib`, plus some version drift on `redis`/`httpx`/`bcrypt`/
+`fastapi`/`pydantic-settings`) — installed both to get the test suite importable at all. This is a
+pre-existing environment gap, unrelated to this task's code (see "Environment changes" below).
 
-### Step 5 — new tests, after implementation
+```bash
+cd epms-api
+export JWT_SECRET_KEY="test-secret"
+export POSTGRES_HOST="localhost"
+export POSTGRES_PORT="5432"
+export POSTGRES_USER="epms"
+export POSTGRES_PASSWORD="<pg_password>"
+export POSTGRES_DB="epms"     # base URL; conftest swaps in /epms_test
 
-```
-cd /c/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-DATABASE_URL="postgresql+asyncpg://dummy:dummy@localhost:5432/dummy" \
-JWT_SECRET_KEY="dummy" \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_coa_sync.py -v
-```
-
-Output:
-
-```
-collecting ... collected 29 items
-
-tests/test_nc_coa_sync.py::test_coa_sync_run_roundtrip PASSED            [  3%]
-tests/test_nc_coa_sync.py::test_coa_aux_item_required_defaults_false PASSED [  6%]
-tests/test_nc_coa_sync.py::test_clean_treats_tilde_as_empty PASSED       [ 10%]
-tests/test_nc_coa_sync.py::test_normal_balance_from_balanorient PASSED   [ 13%]
-tests/test_nc_coa_sync.py::test_normal_balance_rejects_unknown PASSED    [ 17%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-0-asset] PASSED   [ 20%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-1-asset] PASSED   [ 24%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[2-1-liability] PASSED [ 27%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[4-1-equity] PASSED  [ 31%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[5-0-expense] PASSED [ 34%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-1-revenue] PASSED [ 37%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-0-expense] PASSED [ 41%]
-tests/test_nc_coa_sync.py::test_account_type_rejects_unregistered_code PASSED [ 44%]
-tests/test_nc_coa_sync.py::test_aux_item_maps_supported_dims PASSED      [ 48%]
-tests/test_nc_coa_sync.py::test_aux_item_regression_project_substring_false_positives PASSED [ 51%]
-tests/test_nc_coa_sync.py::test_aux_item_rejects_unregistered_code PASSED [ 55%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[112201-asset-customer] PASSED [ 58%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[220202-liability-supplier] PASSED [ 62%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[640202-expense-supplier] PASSED [ 65%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[6002-revenue-customer] PASSED [ 68%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[4001-equity-partner] PASSED [ 72%]
-tests/test_nc_coa_sync.py::test_derive_party_dim_exceptions_never_become_customer PASSED [ 75%]
-tests/test_nc_coa_sync.py::test_map_account_reads_facts_and_joins_masters PASSED [ 79%]
-tests/test_nc_coa_sync.py::test_map_account_contra_asset_is_credit PASSED [ 82%]
-tests/test_nc_coa_sync.py::test_map_account_tilde_unit_means_no_quantity_accounting PASSED [ 86%]
-tests/test_nc_coa_sync.py::test_map_account_name_fallback_chain PASSED   [ 89%]
-tests/test_nc_coa_sync.py::test_map_account_top_level_pid_tilde PASSED   [ 93%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_uom_pk PASSED [ 96%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_missing_accasoa_row PASSED [100%]
-
-============================= 29 passed in 7.17s ==============================
-```
-
-### Step 6 — account_balance regression suite
-
-```
-cd /c/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-DATABASE_URL="postgresql+asyncpg://dummy:dummy@localhost:5432/dummy" \
-JWT_SECRET_KEY="dummy" \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_account_balance.py -v
-```
-
-Output:
-
-```
-collecting ... collected 20 items
-
-tests/test_account_balance.py::test_account_balance_opening_movement_closing PASSED [  5%]
-tests/test_account_balance.py::test_account_balance_excludes_draft PASSED [ 10%]
-tests/test_account_balance.py::test_account_balance_endpoint PASSED      [ 15%]
-tests/test_account_balance.py::test_budget_actual_by_cost_center PASSED  [ 20%]
-tests/test_account_balance.py::test_expand_single_dim_matches_old_behavior PASSED [ 25%]
-tests/test_account_balance.py::test_account_vouchers_drilldown_by_dims PASSED [ 30%]
-tests/test_account_balance.py::test_budget_actual_endpoint PASSED        [ 35%]
-tests/test_account_balance.py::test_jv_line_income_expense_item_column PASSED [ 40%]
-tests/test_account_balance.py::test_coa_aux_item_roundtrip_and_unique PASSED [ 45%]
-tests/test_account_balance.py::test_expand_two_dims_and_none_group PASSED [ 50%]
-tests/test_account_balance.py::test_expand_rejects_unknown_dim PASSED    [ 55%]
-tests/test_account_balance.py::test_expand_rejects_duplicate_dims PASSED [ 60%]
-tests/test_account_balance.py::test_vouchers_filter_none_and_combo PASSED [ 65%]
-tests/test_account_balance.py::test_dims_endpoint_config_and_fallback PASSED [ 70%]
-tests/test_account_balance.py::test_expand_endpoint_dims_param PASSED    [ 75%]
-tests/test_account_balance.py::test_aux_item_name_mapping PASSED         [ 80%]
-tests/test_account_balance.py::test_nc_customer_roundtrip_and_unique PASSED [ 85%]
-tests/test_account_balance.py::test_erp_supplier_mirror_readable PASSED  [ 90%]
-tests/test_account_balance.py::test_customer_pick_name PASSED            [ 95%]
-tests/test_account_balance.py::test_expand_by_supplier_and_customer PASSED [100%]
-
-================== 20 passed, 6 warnings in 68.67s (0:01:08) ==================
+python -m pytest tests/ -k vendor -v
 ```
 
-(The 6 warnings are pre-existing `datetime.utcnow()` deprecation warnings
-from `jose/jwt.py`, unrelated to this change.) 20/20 pass — the same count
-as before the `DIM_LABELS` edit, confirming no regression.
+**Baseline** (via `git stash -u`, running the pristine pre-Task-2 code): `tests/ -k vendor` → **23 passed,
+1 failed** (`test_reports.py::test_po_report_vendor_filter` — a 502 from `approval_client`; `approval-api`
+rejects the test JWT with 401 "Invalid token" because this ad hoc local run doesn't share `approval-api`'s
+configured secret; unrelated to vendor/remittance code, reproduces identically on unmodified code).
+
+**After my changes** (`git stash pop`, plus 4 new tests in `test_vendors.py`): `tests/ -k vendor` →
+**27 passed, 1 failed** — same single pre-existing failure, no new failures.
+
+Also ran the broader set covering every file I touched, before (stashed) and after, to be extra sure the
+approval-api-dependent failures were pre-existing and not something my diff triggered:
+```
+python -m pytest tests/test_vendors.py tests/test_vendors_import_from_erp.py tests/test_reports.py -v
+```
+- **Before** (stashed, pristine code): 27 passed, 3 failed — `test_po_report_csv`,
+  `test_po_report_vendor_filter`, `test_pa_report_csv`, all the same `approval-api` 401→502 chain
+  (unrelated to vendors — every one of these calls `_make_approved_po`, which submits a PO through the
+  approval workflow).
+- **After** (my changes + 4 new tests): 31 passed, 3 failed — **same three** pre-existing failures, **zero
+  new failures**. The 4 added tests (`test_create_vendor_with_remittance_email`,
+  `test_update_vendor_remittance_email`, `test_import_csv_carries_remittance_email`,
+  `test_export_csv_includes_remittance_email`) all pass.
+
+I did **not** run the full 361-test `epms-api` suite to completion — a `pytest tests/ -q` run was started
+in the background and, after several minutes with no output (buffered until the very end, and the suite
+includes many more `approval-api`-dependent tests that appear to hit real timeouts in this environment), I
+stopped it rather than let it run indefinitely. The `-k vendor` filter (the brief's own step 10
+instruction) plus the full targeted set above (`test_vendors.py` + `test_vendors_import_from_erp.py` +
+`test_reports.py`, before/after compared) covers every test path that touches vendor/business_partner
+code, so I'm confident in "no new failures" without the full-suite run — but flagging this as a concern
+rather than silently treating it as equivalent to a full-suite green run.
+
+## Migration ID / chain sanity checks performed
+
+- `0006_partner_remittance_email` (29 chars) and `ab_remittance_and_vendor_view` (29 chars) — both under
+  the 32-char `version_num VARCHAR(32)` cap, confirmed by direct length check.
+- mdm-api: confirmed `0005_units_of_measure.py`'s actual `revision =` line is `"0005_units_of_measure"`
+  (not a filename-derived guess) — my migration's `down_revision` matches it correctly.
+- epms-api: confirmed `aa_default_match_tolerance_5.py`'s actual `revision =` line is
+  `'aa_default_match_tolerance_5'` — my migration's `down_revision` matches it correctly.
+- Confirmed `r8m9n0o1p2q3` (down_revision `q7l8m9n0o1p2`) is a genuine second/dangling head, branching off
+  before the `aa` chain (which continues through `s9`→`t0`→…→`z4`→`aa`) — did not touch it, per
+  instructions.
+- Neither migration was actually executed by any test run — both services' pytest suites build schema via
+  `Base.metadata.create_all()` from the ORM models directly, never via `alembic upgrade`. Correctness of
+  the migration files (revision IDs, `down_revision`, view SQL) was verified by inspection only, per the
+  "never run alembic from the host shell" instruction. This means the view-recreation SQL itself has zero
+  automated test coverage in this repo's current test setup — worth knowing if a future task depends on
+  the view's exact contents.
+
+## Environment changes made (not code, but worth flagging)
+
+- Created database `mdm_test` in the local `uniops_postgres` docker container (did not exist before this
+  task; `epms_test` etc. already existed for other services).
+- Installed into the global (non-venv) Python 3.12 interpreter: `email-validator==2.2.0`, and
+  `epms-api/requirements.txt` + `requirements-dev.txt` in full, which upgraded/downgraded some already-
+  installed packages (`redis` 8.0.1→5.2.1, `httpx` 0.27.2→0.28.1, `bcrypt` 5.0.0→3.2.2,
+  `pydantic-settings` 2.6.1→2.7.0, `fastapi` 0.115.5→0.115.6). This is a shared global environment (no
+  per-service venv was found for either mdm-api or epms-api), so this could in principle affect other
+  services' test runs done in the same environment. Re-ran the full mdm-api suite afterward (32 passed) to
+  confirm no fallout there.
+- No production database or host `.env` was touched. mdm-api has no `.env` file in this worktree at all;
+  epms-api has only `.env.example`. All DB connections in this session were explicit env-var overrides to
+  `localhost:5432` (the docker container), never the production host.
 
 ## Commit
 
+Committed on `feature/batch-payment-remittance`:
 ```
-f78e505 feat(finance): NC COA mapping reads facts instead of inferring
-3 files changed, 310 insertions(+), 1 deletion(-)
-create mode 100644 finance-api/app/services/nc_coa_sync.py
+feat(mdm,epms): add vendor remittance_email through model, view, and forwarder
 ```
+Files: `mdm-api/alembic/versions/0006_partner_remittance_email.py` (new),
+`mdm-api/app/models/business_partner.py`, `mdm-api/app/schemas/business_partner.py`,
+`mdm-api/tests/test_partners.py`, `epms-api/alembic/versions/ab_remittance_and_vendor_view.py` (new),
+`epms-api/app/models/vendor.py`, `epms-api/app/schemas/vendor.py`, `epms-api/app/api/v1/vendors.py`,
+`epms-api/tests/test_vendors.py`.
 
-Files: `finance-api/app/services/nc_coa_sync.py` (new),
-`finance-api/app/crud/account_balance.py` (DIM_LABELS only),
-`finance-api/tests/test_nc_coa_sync.py` (append).
+(A pre-existing, unrelated modification to
+`docs/superpowers/plans/2026-07-22-payments-hub-and-remittance-advice.md` was sitting in the working tree
+before I started — I never touched that file and left it out of this commit.)
 
 ## Concerns
 
-None. All code was used verbatim from the brief, both new-test and
-regression suites pass in full, and `DIM_LABELS` only gained keys — none of
-the original 7 were altered. Git warned about LF→CRLF normalization on the
-two touched/created files when staging; this is the repo's existing
-`.gitattributes`/core.autocrlf behavior, not a content change made here.
-
----
-
-## Fix: two review findings (missing raise-condition tests + dead constant)
-
-### Finding 1 (Important) — two required raise conditions had no test
-
-`map_account` is required to raise `NcMappingError` on four conditions;
-only "unknown uom pk" and "missing ACCASOA row" were tested. Added two
-tests to `finance-api/tests/test_nc_coa_sync.py`, placed next to
-`test_map_account_rejects_unknown_uom_pk`, following its exact style:
-
-```python
-def test_map_account_rejects_unknown_acctype_pk():
-    with pytest.raises(NcMappingError):
-        map_account(_row(acctype_pk="NOSUCH"), **_lookups())
-
-def test_map_account_rejects_unknown_currency_pk():
-    with pytest.raises(NcMappingError):
-        map_account(_row(currency_pk="NOSUCH"), **_lookups())
-```
-
-### Finding 2 (Minor) — dead constant
-
-Deleted `PARTY_ITEM = "0004"` from `finance-api/app/services/nc_coa_sync.py`.
-It was defined but never referenced — `AUX_ITEM_MAP` uses the literal
-`"0004"` as its key, which was left untouched, per instructions.
-
-### Test command and full output
-
-```
-cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_coa_sync.py -v
-```
-
-```
-collecting ... collected 31 items
-
-tests/test_nc_coa_sync.py::test_coa_sync_run_roundtrip PASSED            [  3%]
-tests/test_nc_coa_sync.py::test_coa_aux_item_required_defaults_false PASSED [  6%]
-tests/test_nc_coa_sync.py::test_clean_treats_tilde_as_empty PASSED       [  9%]
-tests/test_nc_coa_sync.py::test_normal_balance_from_balanorient PASSED   [ 12%]
-tests/test_nc_coa_sync.py::test_normal_balance_rejects_unknown PASSED    [ 16%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-0-asset] PASSED   [ 19%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-1-asset] PASSED   [ 22%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[2-1-liability] PASSED [ 25%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[4-1-equity] PASSED  [ 29%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[5-0-expense] PASSED [ 32%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-1-revenue] PASSED [ 35%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-0-expense] PASSED [ 38%]
-tests/test_nc_coa_sync.py::test_account_type_rejects_unregistered_code PASSED [ 41%]
-tests/test_nc_coa_sync.py::test_aux_item_maps_supported_dims PASSED      [ 45%]
-tests/test_nc_coa_sync.py::test_aux_item_regression_project_substring_false_positives PASSED [ 48%]
-tests/test_nc_coa_sync.py::test_aux_item_rejects_unregistered_code PASSED [ 51%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[112201-asset-customer] PASSED [ 54%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[220202-liability-supplier] PASSED [ 58%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[640202-expense-supplier] PASSED [ 61%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[6002-revenue-customer] PASSED [ 64%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[4001-equity-partner] PASSED [ 67%]
-tests/test_nc_coa_sync.py::test_derive_party_dim_exceptions_never_become_customer PASSED [ 70%]
-tests/test_nc_coa_sync.py::test_map_account_reads_facts_and_joins_masters PASSED [ 74%]
-tests/test_nc_coa_sync.py::test_map_account_contra_asset_is_credit PASSED [ 77%]
-tests/test_nc_coa_sync.py::test_map_account_tilde_unit_means_no_quantity_accounting PASSED [ 80%]
-tests/test_nc_coa_sync.py::test_map_account_name_fallback_chain PASSED   [ 83%]
-tests/test_nc_coa_sync.py::test_map_account_top_level_pid_tilde PASSED   [ 87%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_uom_pk PASSED [ 90%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_acctype_pk PASSED [ 93%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_currency_pk PASSED [ 96%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_missing_accasoa_row PASSED [100%]
-
-============================= 31 passed in 7.43s ==============================
-```
-
-31 passed (29 existing + 2 new), consistent with the expected count.
-
-### Vacuity check
-
-For each new test, temporarily disabled the corresponding raise, ran that
-one test to confirm it fails, then restored the raise and re-ran the full
-suite to confirm all 31 pass again.
-
-**`currency_pk` test** — straightforward: commented out the
-`if default_currency is None: raise NcMappingError(...)` block. Re-ran
-`test_map_account_rejects_unknown_currency_pk` alone:
-
-```
-FAILED tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_currency_pk
-E       Failed: DID NOT RAISE <class 'app.services.nc_coa_sync.NcMappingError'>
-```
-
-Confirms the test is not vacuous — it depends on that raise.
-
-**`acctype_pk` test** — first pass was surprising: commenting out only the
-`if atype_code is None: raise NcMappingError(...)` block in `map_account`
-did **not** make `test_map_account_rejects_unknown_acctype_pk` fail. Root
-cause: `map_account` still calls `map_account_type(atype_code, ...)`
-immediately after, and when `atype_code` is `None`,
-`map_account_type` computes `code = (None or "").strip() == ""`, which is
-not a key in `ACCOUNT_TYPE_BY_NC` and is independently caught by
-`map_account_type`'s own `except KeyError: raise NcMappingError(...)` —
-i.e. the explicit check in `map_account` is behaviorally redundant with a
-backstop one level down. This is legitimate double protection, not a test
-flaw: the required behavior ("unmapped acctype_pk raises") genuinely holds.
-
-To confirm the test isn't vacuous against the actual regression the
-finding warns about (an unmapped code silently resolving to a wrong
-default, per this module's own docstring: "the old `return 'asset'`
-catch-all is how the wrong data got in"), disabled *both* layers at once —
-the explicit `map_account` check and `map_account_type`'s
-`except KeyError: raise ...` (replaced with `return "asset"`, mirroring
-the exact old buggy pattern the docstring references). Re-ran the test
-alone:
-
-```
-FAILED tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_acctype_pk
-E       Failed: DID NOT RAISE <class 'app.services.nc_coa_sync.NcMappingError'>
-```
-
-This confirms the test correctly catches the real regression class it
-guards against. Both temporary changes were then reverted and the full
-31-test suite re-run to confirm a clean pass (output above is the restored
-state).
-
-### Commit
-
-`81d725a` — `test(finance): cover acctype/currency raise paths, drop dead PARTY_ITEM constant`
+1. **`epms-api/app/models/vendor.py` gap** (detailed above) — fixed, but flagging since it wasn't in the
+   brief's file list. Worth confirming in review that this was the right call rather than something
+   needing a design discussion (e.g., "should EPMS's own model actually read through the view instead of
+   the table?" — I judged no, since that would be a larger architectural change out of scope for this
+   task, and the existing model already reads `business_partners` directly for every other field).
+2. **View-recreation SQL has no automated test coverage** in either service's current test harness (see
+   above) — a future change to `_VIEW_COLS` elsewhere would not be caught by CI as configured today.
+3. **Full epms-api suite not run to completion** (see "Test commands" section) — targeted coverage of
+   every file/path this task touches was run and compared against a stashed baseline instead.
+4. Did not touch the mdm-api ERP-import path (`import_vendors_from_erp`'s inline dict literal in
+   `vendors.py`) — it doesn't set `remittance_email` for ERP-imported vendors, which is correct/expected
+   (ERP has no such field; `remittance_email` stays `null`, falling back to `contact_email` per the
+   field's documented fallback semantics) — not a gap, just noting it was considered.

@@ -66,3 +66,42 @@ async def test_vendor_alias_is_business_partner(db_session):
     """Legacy mdm imports keep working: Vendor IS BusinessPartner now."""
     from app.models.vendor import Vendor
     assert Vendor is BusinessPartner
+
+
+async def test_partner_remittance_email_round_trips(db_session):
+    """remittance_email is where remittance advice is sent; must persist on
+    create and be independently updatable (falls back to contact_email
+    elsewhere — finance-api resolves that, not the DB)."""
+    p = _partner(remittance_email="remit@acme.test")
+    db_session.add(p)
+    await db_session.flush()
+
+    row = (await db_session.execute(
+        select(BusinessPartner).where(BusinessPartner.id == p.id)
+    )).scalar_one()
+    assert row.remittance_email == "remit@acme.test"
+
+    row.remittance_email = "ap2@acme.test"
+    await db_session.flush()
+
+    row2 = (await db_session.execute(
+        select(BusinessPartner).where(BusinessPartner.id == p.id)
+    )).scalar_one()
+    assert row2.remittance_email == "ap2@acme.test"
+
+
+def test_partner_schemas_expose_remittance_email():
+    """PartnerCreate/PartnerUpdate/PartnerOut must all carry the field through,
+    or EPMS's forwarded value silently vanishes on save."""
+    from app.schemas.business_partner import PartnerCreate, PartnerOut, PartnerUpdate
+
+    created = PartnerCreate(code="V-1", name="ACME", remittance_email="remit@acme.test")
+    assert created.remittance_email == "remit@acme.test"
+
+    updated = PartnerUpdate(remittance_email="ap2@acme.test")
+    assert updated.model_dump(exclude_unset=True) == {"remittance_email": "ap2@acme.test"}
+
+    out = PartnerOut(
+        id=uuid.uuid4(), code="V-1", name="ACME", remittance_email="remit@acme.test",
+    )
+    assert out.remittance_email == "remit@acme.test"
