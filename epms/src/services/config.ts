@@ -164,6 +164,9 @@ export interface NotificationSettings {
   teams_webhook_url: string | null
   followup_time: string  // "HH:MM" UTC
   system_url?: string
+  // Role code → shared mailbox address. A role listed here receives ONE email
+  // for role-addressed tasks instead of one per member. Absent/empty = per-member.
+  role_shared_mailboxes?: Record<string, string>
 }
 
 export interface EmailTemplate {
