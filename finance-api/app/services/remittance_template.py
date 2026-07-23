@@ -92,6 +92,7 @@ def render(group: PayeeGroup, *, company_name: str, reference: str,
     esc_values = {k: escape(v) for k, v in raw_values.items()}
 
     subject = _substitute(_field(template, "subject"), raw_values)
+    subject = subject.replace("\r", " ").replace("\n", " ")   # a subject is a single header line
     heading = _substitute(_field(template, "heading"), esc_values)
     greeting = _substitute(_field(template, "greeting"), esc_values)
     intro = _substitute(_field(template, "intro"), esc_values)

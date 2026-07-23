@@ -559,6 +559,15 @@ def test_placeholder_value_is_escaped_in_html_but_subject_is_plain():
     assert subject == "To <b>ACME</b> & Co"                # raw in the plain-text subject
 
 
+def test_subject_strips_newlines_to_prevent_header_injection():
+    g = _group()
+    g.party_name = "Acme\nBcc: attacker@evil.test"
+    subject, _ = tpl.render(g, company_name="C", reference="R", payment_method="eft",
+                            template={"subject": "To {{payee_name}}"})
+    assert "\n" not in subject and "\r" not in subject
+    assert "Bcc:" in subject   # flattened into the single subject line, not a separate header
+
+
 def test_logo_shown_only_when_enabled_and_present():
     g = _group()
     _, with_logo = tpl.render(g, company_name="C", reference="R", payment_method="eft",
