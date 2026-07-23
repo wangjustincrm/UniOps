@@ -23,7 +23,7 @@ import {
 } from '@/services/remittance'
 import { primaryBtn, secondaryBtn } from './buttonStyles'
 
-export type RemittanceStatus = 'ready' | 'blocked' | 'sent' | 'failed' | 'skipped'
+export type RemittanceStatus = 'ready' | 'blocked' | 'sent' | 'failed' | 'skipped' | 'not_sent'
 
 const STATUS_STYLE: Record<RemittanceStatus, string> = {
   ready: 'bg-neutral-100 text-neutral-600',
@@ -31,10 +31,16 @@ const STATUS_STYLE: Record<RemittanceStatus, string> = {
   sent: 'bg-green-50 text-green-700',
   failed: 'bg-red-50 text-red-700',
   skipped: 'bg-neutral-100 text-neutral-500',
+  // Deliberately the same muted grey as 'ready' but a different label: this
+  // is the hub list's existence-check state (see `_remittance_status` in
+  // finance-api/app/api/v1/payments.py) and must never read as "verified
+  // sendable" the way 'ready' does in the live preview below.
+  not_sent: 'bg-neutral-100 text-neutral-500',
 }
 
 const STATUS_LABEL: Record<RemittanceStatus, string> = {
   ready: 'Ready', blocked: 'Blocked', sent: 'Sent', failed: 'Failed', skipped: 'Skipped',
+  not_sent: 'Not sent',
 }
 
 /** Domain status pill for a remittance payee/result. Follows JvStatusBadge's

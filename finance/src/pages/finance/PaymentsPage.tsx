@@ -15,13 +15,14 @@
  * fetched individually would show a blank payee even though the list knew
  * the employee's name.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Download, X } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { financeApi, financeDownload } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
-import { RemittancePanel, RemittanceStatusBadge, type RemittanceStatus } from '@/components/remittance/RemittancePanel'
+import { RemittanceStatusBadge, type RemittanceStatus } from '@/components/remittance/RemittancePanel'
+import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 import { secondaryBtn } from '@/components/remittance/buttonStyles'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -92,26 +93,49 @@ function PaymentStatusBadge({ status }: { status: string }) {
 
 /**
  * The list only ever reports the binary 'sent' / 'not_sent' for this column
- * (see `_remittance_status` in payments.py — richer states like
- * ready/blocked/failed are only known live, inside the drawer's preview).
- * Reusing `RemittanceStatusBadge` for consistency with the drawer, mapping
- * 'not_sent' to its closest existing state, 'ready'.
+ * (see `_remittance_status` in payments.py — a pure existence check on
+ * notification history, not a sendability check). 'not_sent' must map to its
+ * own distinct status, NOT 'ready': 'ready' in `RemittancePanel` means the
+ * live preview confirmed the payee has an email / invoice number and can
+ * actually be sent to (`readinessOf`'s `block_reasons.length === 0` branch).
+ * A payment with no notification history reads identically whether its
+ * payee is perfectly sendable or missing an email entirely — collapsing
+ * that into 'ready' would tell the operator "nothing to fix" about exactly
+ * the stuck rows this page exists to surface. Open the drawer for the real
+ * answer.
  */
 function remittanceColumnStatus(v: string | null): RemittanceStatus {
-  return v === 'sent' ? 'sent' : 'ready'
+  return v === 'sent' ? 'sent' : 'not_sent'
 }
 
 export default function PaymentsPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
+  // Search text only, debounced: `filters.q` drives the input itself (so
+  // typing feels instant) while `debouncedQ` drives the queries below, so a
+  // fast typist doesn't re-run the list/summary query on every keystroke.
+  // Page-reset-on-filter-change is unaffected — `setFilter` resets `page`
+  // synchronously on every keystroke, same as any other filter, regardless
+  // of when the debounced query actually fires.
+  const [debouncedQ, setDebouncedQ] = useState(filters.q)
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(filters.q), 300)
+    return () => clearTimeout(t)
+  }, [filters.q])
+
   const [page, setPage] = useState(1)
   const [openRow, setOpenRow] = useState<PaymentRow | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
 
+  // The filters actually sent to the server: same as `filters`, except `q`
+  // is the debounced value. Everything downstream (qs/list/summary/export)
+  // reads this, never raw `filters`, so search stays debounced everywhere.
+  const queryFilters = useMemo<Filters>(() => ({ ...filters, q: debouncedQ }), [filters, debouncedQ])
+
   // Filters only — page/page_size deliberately excluded so /summary and
   // /export (both page-independent) share this exact query string with the
   // list, and changing page never re-triggers them.
-  const qs = useMemo(() => toQuery(filters), [filters])
+  const qs = useMemo(() => toQuery(queryFilters), [queryFilters])
 
   const setFilter = (patch: Partial<Filters>) => {
     setPage(1)
@@ -121,7 +145,7 @@ export default function PaymentsPage() {
   const { data: list, isLoading } = useQuery({
     queryKey: ['payments', qs, page],
     queryFn: () => financeApi.get<{ items: PaymentRow[]; total: number }>(
-      `/payments?${toQuery({ ...filters, page: String(page), page_size: String(PAGE_SIZE) })}`),
+      `/payments?${toQuery({ ...queryFilters, page: String(page), page_size: String(PAGE_SIZE) })}`),
   })
   const rows = list?.items ?? []
   const total = list?.total ?? 0
@@ -244,7 +268,7 @@ export default function PaymentsPage() {
                 <th className="px-3 py-2">Method</th>
                 <th className="px-3 py-2">Source</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Remittance</th>
+                <th className="px-3 py-2" title="Send history only — open a row to check whether it can actually be sent">Remittance</th>
               </tr>
             </thead>
             <tbody>
@@ -290,33 +314,29 @@ export default function PaymentsPage() {
   )
 }
 
+/**
+ * Uses `RemittanceDialog`'s shared modal shell (backdrop, panel, X button,
+ * Close button — see Tasks 12/13) with a payment-specific header slotted in,
+ * rather than a second copy of that shell.
+ */
 function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
-           onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-neutral-800">
-              {row.doc_number ?? 'Payment'}
-              <span className="ml-2"><PaymentStatusBadge status={row.status} /></span>
-            </h2>
-            <p className="mt-1 text-sm text-neutral-500">
-              {row.payee_name ?? '—'} · <span className="font-mono">{fmtMoney(row.amount, row.currency)}</span> · {row.payment_date}
-              {row.batch_id && <span className="ml-1 text-neutral-400">· part of a batch</span>}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
-            <X className="h-5 w-5" />
-          </button>
+    <RemittanceDialog
+      open
+      onClose={onClose}
+      scope={{ kind: 'payment', id: row.id }}
+      header={
+        <div>
+          <h2 className="text-base font-semibold text-neutral-800">
+            {row.doc_number ?? 'Payment'}
+            <span className="ml-2"><PaymentStatusBadge status={row.status} /></span>
+          </h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            {row.payee_name ?? '—'} · <span className="font-mono">{fmtMoney(row.amount, row.currency)}</span> · {row.payment_date}
+            {row.batch_id && <span className="ml-1 text-neutral-400">· part of a batch</span>}
+          </p>
         </div>
-
-        <RemittancePanel scope={{ kind: 'payment', id: row.id }} />
-
-        <div className="mt-4 flex justify-end">
-          <button type="button" onClick={onClose} className={secondaryBtn}>Close</button>
-        </div>
-      </div>
-    </div>
+      }
+    />
   )
 }
