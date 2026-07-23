@@ -8,6 +8,8 @@ violates that constraint against the real Postgres test DB. This mirrors the
 `_pa()` / `_record()` pattern already established in tests/test_remittance.py.
 `batch_id` carries no such FK, so it stays a free-standing UUID.
 """
+import csv
+import io
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -89,12 +91,43 @@ async def test_claim_payment_shows_the_employee_as_payee(client, db_session):
     assert body["items"][0]["payee_name"] == "Jane Doe"
 
 
+async def test_source_filter_isolates_batched_from_single(client, db_session):
+    """Dedicated to the `source` filter alone: two records identical on every
+    other filterable dimension (same payment_date, currency, amount), one
+    batched and one not, so only `source` can be responsible for narrowing
+    the result. Both directions are asserted — a filter that silently
+    ignored `source` would return both records for either query."""
+    batch_id = uuid.uuid4()
+    batched = await _rec(db_session, amount="10.00", currency="CAD",
+                         payment_date=date(2026, 7, 15), batch_id=batch_id)
+    single = await _rec(db_session, amount="10.00", currency="CAD",
+                        payment_date=date(2026, 7, 15))
+
+    batch_only = (await client.get("/finance/v1/payments?source=batch",
+                                   headers=_h())).json()
+    assert batch_only["total"] == 1
+    assert batch_only["items"][0]["id"] == str(batched.id)
+    assert batch_only["items"][0]["batch_id"] == str(batch_id)
+
+    single_only = (await client.get("/finance/v1/payments?source=single",
+                                    headers=_h())).json()
+    assert single_only["total"] == 1
+    assert single_only["items"][0]["id"] == str(single.id)
+    assert single_only["items"][0]["batch_id"] is None
+
+
 async def test_filters_compose(client, db_session):
     batch_id = uuid.uuid4()
     await _rec(db_session, amount="10.00", currency="CAD", batch_id=batch_id,
               payment_date=date(2026, 7, 1))
     await _rec(db_session, amount="20.00", currency="USD", payment_date=date(2026, 7, 20))
     await _rec(db_session, amount="30.00", currency="CAD", payment_date=date(2026, 7, 20))
+    # Same date/currency window as the "30.00" record above, but batched —
+    # so date_from/date_to + currency alone would still admit it, and only
+    # `source=single` excludes it. This is what makes `source` an actual
+    # participant in the composed filter below, not a no-op.
+    await _rec(db_session, amount="40.00", currency="CAD", batch_id=uuid.uuid4(),
+              payment_date=date(2026, 7, 20))
 
     r = (await client.get(
         "/finance/v1/payments?date_from=2026-07-10&date_to=2026-07-31"
@@ -127,6 +160,29 @@ async def test_export_respects_filters_and_ignores_pagination(client, db_session
     body = r.text.strip().splitlines()
     assert len(body) == 4                       # header + 3 rows
     assert body[0].startswith("payment_date,")
+
+
+async def test_export_carries_claim_employee_as_payee(client, db_session):
+    """Regression coverage for export_payments' use of _payee_names(): a claim
+    payment has no vendor_name, so if the row builder ever reverted to
+    `r.vendor_name or ""` the payee column would go blank for this row while
+    every other assertion in this file stayed green (they only exercise
+    doc_kind='pa' records)."""
+    from app.models.mirrors import ExpenseClaim
+    claim = ExpenseClaim(claim_number="EXP-10", claim_type="EXP", status="paid",
+                         employee_id=uuid.uuid4(), employee_name="John Smith",
+                         currency="CAD", total_amount=Decimal("15.00"),
+                         tax_amount=Decimal("0"), net_amount=Decimal("15.00"))
+    db_session.add(claim)
+    await db_session.flush()
+    await _rec(db_session, doc_kind="expense_claim", amount="15.00", doc_id=claim.id)
+
+    r = await client.get("/finance/v1/payments/export", headers=_h())
+    assert r.status_code == 200
+    rows = list(csv.DictReader(io.StringIO(r.text)))
+    claim_rows = [row for row in rows if row["doc_kind"] == "expense_claim"]
+    assert len(claim_rows) == 1
+    assert claim_rows[0]["payee"] == "John Smith"
 
 
 from app.models.remittance import KIND_VENDOR, SCOPE_PAYMENT, SENT, RemittanceNotification
