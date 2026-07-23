@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.deps import BearerToken, CurrentUser
+from app.core.deps import _FINANCE_ROLES, BearerToken, CurrentUser
 from app.db.base import get_db
 from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
@@ -66,6 +66,34 @@ async def record_payment_deprecated(_: CurrentUser = ...):
     )
 
 
+async def _authorize_read(db: AsyncSession, user: dict) -> None:
+    """Gate for the Payments hub's read surface (list / summary / export).
+
+    Deliberately NOT `payment_execute._check_can_pay` — that bar is for
+    *executing* a payment (see create_batch/execute_batch below, and
+    app/api/v1/remittance.py's `_authorize`), which is stricter than needed
+    to merely *view* payment history. `_FINANCE_ROLES` (app.core.deps) is
+    already declared for exactly this — "who may see finance data" — but was
+    never wired to any endpoint, which is how any authenticated employee
+    (including OA-only users with no finance role) could hit
+    GET /payments/export and download every payment the company has made.
+    finance_bp / finance_manager granted as an ADDITIONAL identity role
+    assignment (not the JWT's primary `role`) also qualify — same lookup
+    `_check_can_pay` uses for write access, so a Finance BP assigned via
+    role_management sees the same payments they can execute.
+    """
+    role = user.get("role", "")
+    if role in _FINANCE_ROLES:
+        return
+    try:
+        user_id = uuid.UUID(str(user.get("sub", "")))
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
+    codes = await payment_execute._user_role_codes(db, user_id, role)
+    if not codes & _FINANCE_ROLES:
+        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
+
+
 class PaymentFilters(BaseModel):
     pa_id: uuid.UUID | None = None
     vendor_id: uuid.UUID | None = None
@@ -119,10 +147,11 @@ async def _payee_names(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
 async def list_payments(
     filters: PaymentFilters = Depends(),
     db: AsyncSession = Depends(get_db),
-    _: CurrentUser = ...,
+    user: CurrentUser = ...,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ):
+    await _authorize_read(db, user)
     items, total = await payment_crud.get_all(
         db, page=page, page_size=page_size, **filters.model_dump())
     status_by_id = await _remittance_status(db, items)
@@ -139,18 +168,20 @@ async def list_payments(
 @router.get("/summary", response_model=list[PaymentSummaryRow])
 async def payments_summary(filters: PaymentFilters = Depends(),
                            db: AsyncSession = Depends(get_db),
-                           _: CurrentUser = ...):
+                           user: CurrentUser = ...):
     """Totals over the WHOLE filtered set, not the current page — a separate
     endpoint rather than something derived from the page for exactly that
     reason."""
+    await _authorize_read(db, user)
     return await payment_crud.summary(db, **filters.model_dump())
 
 
 @router.get("/export")
 async def export_payments(filters: PaymentFilters = Depends(),
                           db: AsyncSession = Depends(get_db),
-                          _: CurrentUser = ...):
+                          user: CurrentUser = ...):
     """CSV of the whole filtered set — pagination deliberately ignored."""
+    await _authorize_read(db, user)
     rows = await payment_crud.export_rows(db, **filters.model_dump())
     payee_by_id = await _payee_names(db, rows)
 

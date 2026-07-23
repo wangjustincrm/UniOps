@@ -188,6 +188,23 @@ async def test_export_carries_claim_employee_as_payee(client, db_session):
 from app.models.remittance import KIND_VENDOR, SCOPE_PAYMENT, SENT, RemittanceNotification
 
 
+# ── Fix 1: read authority (not just authentication) ─────────────────────────
+
+async def test_list_summary_export_require_finance_read_authority(client, db_session):
+    """An authenticated user with no finance role at all (e.g. an OA-only
+    employee) must not be able to list, total, or export payment history —
+    only a valid token, gating nothing, was the pre-fix behaviour."""
+    await _rec(db_session, amount="10.00")
+
+    r_list = await client.get("/finance/v1/payments", headers=_h("requester"))
+    r_summary = await client.get("/finance/v1/payments/summary", headers=_h("requester"))
+    r_export = await client.get("/finance/v1/payments/export", headers=_h("requester"))
+
+    assert r_list.status_code == 403
+    assert r_summary.status_code == 403
+    assert r_export.status_code == 403
+
+
 async def test_remittance_filter_splits_sent_from_not_sent(client, db_session):
     r1 = await _rec(db_session, amount="10.00")
     r2 = await _rec(db_session, amount="20.00")
