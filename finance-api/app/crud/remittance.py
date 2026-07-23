@@ -23,7 +23,7 @@ BLOCK_MISSING_EMAIL = "missing_email"
 BLOCK_MISSING_INVOICE_NO = "missing_invoice_no"
 
 _VENDOR_KINDS = ("pa", "pa_dir")
-_COMPLETED = "completed"
+COMPLETED = "completed"
 
 
 @dataclass
@@ -51,7 +51,7 @@ async def resolve_scope(db: AsyncSession, scope_kind: str,
                          scope_id: uuid.UUID) -> list[PaymentRecord]:
     """Completed payment records covered by a scope. `batch` = every record
     tagged with the batch; `payment` = that one record."""
-    q = select(PaymentRecord).where(PaymentRecord.status == _COMPLETED)
+    q = select(PaymentRecord).where(PaymentRecord.status == COMPLETED)
     if scope_kind == SCOPE_BATCH:
         q = q.where(PaymentRecord.batch_id == scope_id)
     elif scope_kind == SCOPE_PAYMENT:

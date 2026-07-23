@@ -231,9 +231,10 @@ def _pa(vendor_id, amount="100.00", invoice_ids=None, po_id=None):
     )
 
 
-def _record(pa, batch_id=None, status="completed"):
+def _record(pa, batch_id=None, status="completed", doc_number=None):
     return PaymentRecord(
-        doc_kind="pa" if pa.po_id else "pa_dir", doc_id=pa.id, doc_number=pa.pa_number,
+        doc_kind="pa" if pa.po_id else "pa_dir", doc_id=pa.id,
+        doc_number=doc_number if doc_number is not None else pa.pa_number,
         pa_id=pa.id, pa_number=pa.pa_number, vendor_id=pa.vendor_id,
         vendor_name=pa.vendor_name, payment_date=date(2026, 7, 22),
         payment_method="bank_transfer", amount=pa.payment_amount, currency="CAD",
@@ -774,7 +775,10 @@ async def test_preview_payment_scope_returns_preview_shape_not_payment_detail(cl
     pa = _pa(bp.id, "15.00", [str(inv.id)])
     db_session.add(pa)
     await db_session.flush()
-    rec = _record(pa)
+    # doc_number is deliberately distinct from pa_number: _scope_context is
+    # supposed to prefer doc_number, and both fields defaulting to the same
+    # value would let a swapped precedence pass silently.
+    rec = _record(pa, doc_number=f"DOC-{uuid.uuid4().hex[:8]}")
     db_session.add(rec)
     await db_session.flush()
 
@@ -784,4 +788,83 @@ async def test_preview_payment_scope_returns_preview_shape_not_payment_detail(cl
     assert "groups" in body
     assert "enabled" in body
     assert "id" not in body                # not the payment-detail payload
-    assert body["reference"] == rec.pa_number
+    assert body["reference"] == rec.doc_number
+    assert rec.doc_number != rec.pa_number
+
+
+async def test_send_batch_endpoint_sends_and_reports(client, db_session):
+    """Batch-scope equivalent of test_send_endpoint_sends_and_reports (which
+    only exercises the payment-scope route). POST
+    /payments/batches/{batch_id}/remittance/send was previously untested
+    entirely; the scope_kind/scope_id assertions below are what actually
+    distinguish this route from the payment-scope one — a handler that
+    accidentally always logged SCOPE_PAYMENT, or logged under the payment
+    record's id instead of the batch's, would still report sent == 1 here."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-30")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    batch = PaymentBatch(batch_number="BP-30", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("42.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    db_session.add(_record(pa, batch_id=batch.id))
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        r = await client.post(f"/finance/v1/payments/batches/{batch.id}/remittance/send",
+                              json={"recipients": None}, headers=_h())
+    assert r.status_code == 200
+    assert r.json()["sent"] == 1
+
+    row = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == batch.id))).scalar_one()
+    assert row.scope_kind == SCOPE_BATCH
+    assert row.scope_id == batch.id
+
+
+async def test_preview_404_for_nonexistent_batch(client, db_session):
+    r = await client.get(
+        f"/finance/v1/payments/batches/{uuid.uuid4()}/remittance/preview", headers=_h())
+    assert r.status_code == 404
+
+
+async def test_preview_404_for_nonexistent_payment(client, db_session):
+    r = await client.get(
+        f"/finance/v1/payments/{uuid.uuid4()}/remittance/preview", headers=_h())
+    assert r.status_code == 404
+
+
+async def test_preview_409_when_payment_not_completed(client, db_session):
+    """Payment-scope equivalent of test_preview_409_when_batch_not_executed."""
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-31")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa, status="cancelled")
+    db_session.add(rec)
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/payments/{rec.id}/remittance/preview", headers=_h())
+    assert r.status_code == 409
+
+
+async def test_preview_payment_scope_requires_payment_authority(client, db_session):
+    """Payment-scope equivalent of test_preview_requires_payment_authority
+    (which only exercises the batch scope)."""
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-32")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/payments/{rec.id}/remittance/preview",
+                         headers=_h("requester"))
+    assert r.status_code == 403

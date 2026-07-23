@@ -35,7 +35,7 @@ from app.models.payment_batch import EXECUTED, PaymentBatch
 from app.models.remittance import SCOPE_BATCH, SCOPE_PAYMENT, RemittanceNotification
 from app.services import remittance_config as rc
 
-router = APIRouter()
+router = APIRouter(tags=["payments"])
 
 
 class RecipientRef(BaseModel):
@@ -69,7 +69,7 @@ async def _scope_context(db: AsyncSession, *, scope_kind: str,
         select(PaymentRecord).where(PaymentRecord.id == scope_id))).scalar_one_or_none()
     if rec is None:
         raise HTTPException(status_code=404, detail="Payment record not found")
-    if rec.status != "completed":
+    if rec.status != rem.COMPLETED:
         raise HTTPException(status_code=409, detail=f"Payment is {rec.status}")
     return (rec.doc_number or rec.pa_number or str(rec.id)), rec.payment_method, rec.payment_date
 
