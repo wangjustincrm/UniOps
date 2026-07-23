@@ -216,7 +216,8 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             placeholder="ap@vendor.com"
           />
           <p className="text-xs text-neutral-400">
-            Where remittance advice is sent. Defaults to the contact email.
+            Where remittance advice is sent. Defaults to the contact email if left blank —
+            if both are blank, remittance advice cannot be sent for this vendor.
           </p>
           {errors.remittanceEmail && <p className="text-xs text-danger-600">{errors.remittanceEmail}</p>}
         </div>
@@ -462,7 +463,7 @@ export default function VendorsPage() {
         category: formData.category.trim(),
         contact_name: formData.contactName.trim(),
         contact_email: formData.contactEmail.trim(),
-        remittance_email: formData.remittanceEmail.trim() || undefined,
+        remittance_email: formData.remittanceEmail.trim(),
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
         payment_terms: formData.paymentTerms,
@@ -484,7 +485,7 @@ export default function VendorsPage() {
         category: formData.category.trim(),
         contact_name: formData.contactName.trim(),
         contact_email: formData.contactEmail.trim(),
-        remittance_email: formData.remittanceEmail.trim() || undefined,
+        remittance_email: formData.remittanceEmail.trim(),
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
         payment_terms: formData.paymentTerms,

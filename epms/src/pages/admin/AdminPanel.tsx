@@ -912,6 +912,12 @@ function RemittanceSettings() {
   }, [config, hydrated])
 
   const handleSave = () => {
+    // Guard: remittance_config is a whole-object JSONB replace server-side
+    // (setattr(cfg, field, value) in crud/config.py) — unlike the scalar
+    // smtp_* columns, a dict has no exclude_none safety net. Saving before
+    // hydration would PATCH `{ enabled: false }` over a populated config and
+    // silently destroy the saved from/CC address and credential override.
+    if (!hydrated) return
     // Build the JSONB object from what's actually filled in. Blank optional
     // fields are omitted (not sent as ""), so we never write a value the
     // admin never touched — `enabled` is the one field always present,
@@ -1016,10 +1022,13 @@ function RemittanceSettings() {
       </div>
 
       <div className="flex items-center gap-3 pt-2 border-t border-neutral-100">
-        <Button onClick={handleSave}>
+        <Button onClick={handleSave} disabled={!hydrated}>
           {saved && <Check className="h-4 w-4" />}
           {saved ? 'Saved!' : 'Save Remittance Settings'}
         </Button>
+        {!hydrated && (
+          <span className="text-xs text-neutral-400">Loading current settings…</span>
+        )}
       </div>
     </section>
   )
