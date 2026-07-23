@@ -6,7 +6,7 @@ import {
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
-  Workflow, ChevronDown, ChevronUp, Database, Ruler,
+  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
@@ -47,6 +47,17 @@ interface CompanyConfig {
     followup_time: string
   }
   workflow_defs?: Record<string, WorkflowNodeDef[]>
+  // Sender identity for remittance advice (Finance → Payments). JSONB blob,
+  // defaults to {} server-side; server params (host/port/TLS) are NOT here —
+  // sending reuses the PO / internal SMTP profile.
+  remittance_config?: {
+    enabled?: boolean
+    from_email?: string
+    from_name?: string
+    cc_email?: string
+    smtp_user?: string
+    smtp_password?: string
+  } | null
 }
 
 interface ApiDepartment { id: string; name: string; code: string; is_active: boolean }
@@ -1004,6 +1015,109 @@ function NotificationSettings() {
   )
 }
 
+// ── 7. Remittance Advice ──────────────────────────────────────────────────────
+//
+// Sender identity for the remittance advice emailed to a vendor when a payment
+// batch (or single payment) pays them — Finance → Payments. There is no mail
+// server to configure here: sending reuses the PO Email SMTP profile (EPMS
+// Admin → Email Settings), which itself falls back to the internal Task
+// Notification SMTP profile above. remittance_config is a whole-object JSONB
+// blob server-side, so the Save button is gated on the config having loaded —
+// saving an empty form over a populated config would wipe it.
+
+function RemittanceSettings() {
+  const { data: cfg, isLoading } = useConfig()
+  const save = useSaveConfig()
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [fromEmail, setFromEmail] = useState<string | null>(null)
+  const [fromName, setFromName] = useState<string | null>(null)
+  const [ccEmail, setCcEmail] = useState<string | null>(null)
+  const [smtpUser, setSmtpUser] = useState<string | null>(null)
+  const [smtpPassword, setSmtpPassword] = useState<string | null>(null)
+  const [showPwd, setShowPwd] = useState(false)
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const rc = cfg?.remittance_config ?? {}
+  const enabledVal = enabled ?? rc.enabled ?? false
+  const fromEmailVal = fromEmail ?? rc.from_email ?? ''
+  const fromNameVal = fromName ?? rc.from_name ?? ''
+  const ccEmailVal = ccEmail ?? rc.cc_email ?? ''
+  const smtpUserVal = smtpUser ?? rc.smtp_user ?? ''
+  const smtpPasswordVal = smtpPassword ?? rc.smtp_password ?? ''
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    // Whole-object JSONB replace: always send `enabled` (the toggle the admin
+    // just set), and only send optional fields that are actually filled, so an
+    // untouched blank never overwrites with "".
+    const body: NonNullable<CompanyConfig['remittance_config']> = { enabled: enabledVal }
+    if (fromEmailVal.trim()) body.from_email = fromEmailVal.trim()
+    if (fromNameVal.trim()) body.from_name = fromNameVal.trim()
+    if (ccEmailVal.trim()) body.cc_email = ccEmailVal.trim()
+    if (smtpUserVal.trim()) body.smtp_user = smtpUserVal.trim()
+    if (smtpPasswordVal.trim()) body.smtp_password = smtpPasswordVal.trim()
+    try {
+      await save.mutateAsync({ remittance_config: body })
+      setToast({ ok: true, msg: 'Remittance settings saved.' })
+    } catch (err: any) { setToast({ ok: false, msg: err.message }) }
+  }
+
+  if (isLoading) return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
+      <SectionHeader
+        title="Remittance Advice"
+        description="Turns on the remittance advice email sent to a vendor when a payment pays them, and sets the sender identity it goes out under. No mail server is configured here — sending reuses the PO Email SMTP profile (EPMS Admin → Email Settings), which falls back to the internal Task Notification SMTP profile above."
+      />
+
+      <label className="flex items-center gap-2.5 cursor-pointer w-fit">
+        <Toggle checked={enabledVal} onChange={setEnabled} />
+        <span className="text-sm font-medium text-neutral-700">Send remittance advice emails</span>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="From Email">
+          <Input type="email" value={fromEmailVal} onChange={(e) => setFromEmail(e.target.value)} placeholder="remittance@company.com" />
+        </Field>
+        <Field label="From Name">
+          <Input value={fromNameVal} onChange={(e) => setFromName(e.target.value)} placeholder="Accounts Payable" />
+        </Field>
+        <div className="col-span-2">
+          <Field label="CC Email" hint="Optional — copied on every remittance email.">
+            <Input type="email" value={ccEmailVal} onChange={(e) => setCcEmail(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 p-4">
+        <p className="text-sm font-semibold text-neutral-700 mb-1">SMTP Credential Override</p>
+        <p className="text-xs text-neutral-500 mb-3">Optional. Leave blank to use the shared SMTP credentials — these exist only for servers that reject a From address that doesn't match the authenticated account.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="SMTP User">
+            <Input value={smtpUserVal} onChange={(e) => setSmtpUser(e.target.value)} />
+          </Field>
+          <Field label="SMTP Password">
+            <div className="relative">
+              <Input type={showPwd ? 'text' : 'password'} value={smtpPasswordVal}
+                onChange={(e) => setSmtpPassword(e.target.value)} />
+              <button type="button" onClick={() => setShowPwd((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+                {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <SaveButton loading={save.isPending} />
+        {toast && <Toast {...toast} />}
+      </div>
+    </form>
+  )
+}
+
 // ── Approval Workflows ───────────────────────────────────────────────────────
 
 const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'cfm', 'budget_plan', 'vms_visit']
@@ -1771,6 +1885,7 @@ const SECTIONS = [
   { key: 'users',        label: 'User Management',      icon: Users },
   { key: 'currency',     label: 'Currency Settings',    icon: CreditCard },
   { key: 'notifications',label: 'Notification Settings',icon: Bell },
+  { key: 'remittance',   label: 'Remittance Advice',    icon: Mail },
   { key: 'workflows',    label: 'Approval Workflows',   icon: Workflow },
   { key: 'erp_mdm',      label: 'ERP MDM',              icon: Database },
 ]
@@ -1852,6 +1967,7 @@ export default function AdminPanel() {
           {section === 'users'         && <UserManagement />}
           {section === 'currency'      && <CurrencySettings />}
           {section === 'notifications' && <NotificationSettings />}
+          {section === 'remittance'    && <RemittanceSettings />}
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}
         </main>

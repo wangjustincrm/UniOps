@@ -25,7 +25,6 @@ import {
   type ServiceGrSlaConfig, type GrNotificationSlaConfig,
   type PrepaymentConfig, type CollectionConfig,
   type NotificationSettings, type EmailTemplate,
-  type RemittanceConfig,
 } from '@/services/config'
 import { ROLE_LABELS } from '@/stores/user.store'
 import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
@@ -866,174 +865,6 @@ function PoSmtpSettings() {
   )
 }
 
-// ─── Remittance Advice ──────────────────────────────────────────────────────
-//
-// Sender identity for the remittance advice emailed when a payment batch is
-// sent (Finance → Payments Hub). Deliberately does NOT include a mail server
-// (host/port/TLS) — that's shared with the PO Email SMTP profile above, which
-// itself falls back to the internal Task Notification SMTP profile (Portal →
-// Admin → Notification Settings). remittance_config is a JSONB blob that
-// defaults to {} server-side; every field here is read with an explicit
-// fallback, so this form only ever writes the keys the admin actually filled
-// in — never a spurious default for a field left untouched.
-
-const BLANK_REMITTANCE_FORM = {
-  enabled: false,
-  fromEmail: '',
-  fromName: '',
-  ccEmail: '',
-  smtpUser: '',
-  smtpPassword: '',
-}
-
-function RemittanceSettings() {
-  const { data: config } = useConfig()
-  const updateConfig = useUpdateConfig()
-  const [form, setForm] = useState(BLANK_REMITTANCE_FORM)
-  const [hydrated, setHydrated] = useState(false)
-  const [showPwd, setShowPwd] = useState(false)
-  const [saved, setSaved] = useState(false)
-
-  // One-shot hydration, same pattern as PoSmtpSettings — don't blow away
-  // in-progress edits every time the cached config refetches.
-  useEffect(() => {
-    if (!hydrated && config) {
-      const rc = config.remittance_config ?? {}
-      setForm({
-        enabled: rc.enabled ?? false,
-        fromEmail: rc.from_email ?? '',
-        fromName: rc.from_name ?? '',
-        ccEmail: rc.cc_email ?? '',
-        smtpUser: rc.smtp_user ?? '',
-        smtpPassword: rc.smtp_password ?? '',
-      })
-      setHydrated(true)
-    }
-  }, [config, hydrated])
-
-  const handleSave = () => {
-    // Guard: remittance_config is a whole-object JSONB replace server-side
-    // (setattr(cfg, field, value) in crud/config.py) — unlike the scalar
-    // smtp_* columns, a dict has no exclude_none safety net. Saving before
-    // hydration would PATCH `{ enabled: false }` over a populated config and
-    // silently destroy the saved from/CC address and credential override.
-    if (!hydrated) return
-    // Build the JSONB object from what's actually filled in. Blank optional
-    // fields are omitted (not sent as ""), so we never write a value the
-    // admin never touched — `enabled` is the one field always present,
-    // since it's a direct toggle the admin just set either way.
-    const cfg: RemittanceConfig = { enabled: form.enabled }
-    if (form.fromEmail.trim()) cfg.from_email = form.fromEmail.trim()
-    if (form.fromName.trim()) cfg.from_name = form.fromName.trim()
-    if (form.ccEmail.trim()) cfg.cc_email = form.ccEmail.trim()
-    if (form.smtpUser.trim()) cfg.smtp_user = form.smtpUser.trim()
-    if (form.smtpPassword.trim()) cfg.smtp_password = form.smtpPassword.trim()
-
-    updateConfig.mutate({ remittance_config: cfg })
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2500)
-  }
-
-  return (
-    <section className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-5">
-      <div>
-        <h3 className="text-sm font-semibold text-neutral-900">Remittance Advice</h3>
-        <p className="text-xs text-neutral-500 mt-1 leading-relaxed">
-          Switches on the remittance advice email sent to a vendor when a payment batch pays them, and sets
-          the sender identity it goes out under. There is no separate mail server to configure here — sending
-          uses the PO Email SMTP profile above (falling back to the internal Task Notification SMTP profile in
-          Portal → Admin → Notification Settings).
-        </p>
-      </div>
-
-      <label className="flex items-center gap-2 cursor-pointer w-fit">
-        <input
-          type="checkbox"
-          checked={form.enabled}
-          onChange={(e) => setForm((p) => ({ ...p, enabled: e.target.checked }))}
-          className="h-4 w-4 rounded border-neutral-300"
-        />
-        <span className="text-sm font-medium text-neutral-700">Send remittance advice emails</span>
-      </label>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-700">From Email</label>
-          <Input
-            type="email"
-            value={form.fromEmail}
-            onChange={(e) => setForm((p) => ({ ...p, fromEmail: e.target.value }))}
-            placeholder="remittance@company.com"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-neutral-700">From Name</label>
-          <Input
-            value={form.fromName}
-            onChange={(e) => setForm((p) => ({ ...p, fromName: e.target.value }))}
-            placeholder="Accounts Payable"
-          />
-        </div>
-        <div className="flex flex-col gap-1 sm:col-span-2">
-          <label className="text-xs font-medium text-neutral-700">CC Email</label>
-          <Input
-            type="email"
-            value={form.ccEmail}
-            onChange={(e) => setForm((p) => ({ ...p, ccEmail: e.target.value }))}
-            placeholder="Optional — copied on every remittance email"
-          />
-        </div>
-      </div>
-
-      <div className="pt-2 border-t border-neutral-100">
-        <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">
-          SMTP Credential Override (optional)
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-700">SMTP User</label>
-            <Input
-              value={form.smtpUser}
-              onChange={(e) => setForm((p) => ({ ...p, smtpUser: e.target.value }))}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-700">SMTP Password</label>
-            <div className="relative">
-              <Input
-                type={showPwd ? 'text' : 'password'}
-                value={form.smtpPassword}
-                onChange={(e) => setForm((p) => ({ ...p, smtpPassword: e.target.value }))}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPwd((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-              >
-                {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-        </div>
-        <p className="text-xs text-neutral-400 mt-1.5 leading-relaxed">
-          Leave blank to use the shared SMTP credentials. These exist only for servers that reject a From
-          address that doesn't match the authenticated account.
-        </p>
-      </div>
-
-      <div className="flex items-center gap-3 pt-2 border-t border-neutral-100">
-        <Button onClick={handleSave} disabled={!hydrated}>
-          {saved && <Check className="h-4 w-4" />}
-          {saved ? 'Saved!' : 'Save Remittance Settings'}
-        </Button>
-        {!hydrated && (
-          <span className="text-xs text-neutral-400">Loading current settings…</span>
-        )}
-      </div>
-    </section>
-  )
-}
-
 function EmailTemplates() {
   const { data: config } = useConfig()
   const updateConfig = useUpdateConfig()
@@ -1054,7 +885,6 @@ function EmailTemplates() {
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
       <PoSmtpSettings />
-      <RemittanceSettings />
       <section className="flex flex-col gap-4">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">PO Email Template</h3>
         <p className="text-sm text-neutral-500">Used when a Procurement Officer selects "Email Supplier" while placing an order. Sent via the SMTP server configured above.</p>
