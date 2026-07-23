@@ -5,7 +5,13 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# 共享邮箱地址的基础校验。写坏地址不会回落到逐人发送 —— 该角色的通知会在
+# 3 次 SMTP 重试后静默消失,所以必须在写入端就拦下来。
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 # ── Sub-config schemas ──────────────────────────────────────────────────────
@@ -176,6 +182,34 @@ class ConfigUpdate(BaseModel):
     custom_roles: list[dict[str, Any]] | None = None
     email_templates: dict[str, Any] | None = None
     notification_settings: dict[str, Any] | None = None
+
+    @field_validator("notification_settings")
+    @classmethod
+    def _validate_role_shared_mailboxes(
+        cls, v: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Validate role_shared_mailboxes when present; leave the rest free-form."""
+        if v is None or "role_shared_mailboxes" not in v:
+            return v
+        mapping = v["role_shared_mailboxes"]
+        if mapping is None:
+            return v
+        if not isinstance(mapping, dict):
+            raise ValueError("role_shared_mailboxes must be an object mapping role code to email address")
+        for role, addr in mapping.items():
+            if not isinstance(role, str):
+                raise ValueError("role_shared_mailboxes keys must be role codes (strings)")
+            if not isinstance(addr, str):
+                raise ValueError(
+                    f"role_shared_mailboxes['{role}']: mailbox address must be a string"
+                )
+            stripped = addr.strip()
+            # 空串 = 显式清空该角色的映射,合法。
+            if stripped and not _EMAIL_RE.match(stripped):
+                raise ValueError(
+                    f"role_shared_mailboxes['{role}']: '{addr}' is not a valid email address"
+                )
+        return v
 
 
 class ConfigResponse(BaseModel):

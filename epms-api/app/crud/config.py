@@ -101,6 +101,9 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     "default_channel": "email_only",   # email_only | teams_only | both | none
     "teams_webhook_url": None,
     "followup_time": "08:00",
+    # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
+    # 不再逐个通知该角色成员。空 = 维持逐人发送。
+    "role_shared_mailboxes": {},
 }
 
 _DEFAULT_EMAIL_TEMPLATE = lambda subject, body: {"subject": subject, "body": body}  # noqa: E731
@@ -345,6 +348,13 @@ async def update(
 ) -> CompanyConfig:
     fields = payload.model_dump(exclude_none=True)
     for field, value in fields.items():
+        if field == "notification_settings" and isinstance(value, dict):
+            # 浅合并:Portal 与 EPMS 两个客户端 PATCH 同一个 /config,各自只提交
+            # 自己那几个键。整块替换会让 Portal 保存通知表单时把 EPMS 写的
+            # role_shared_mailboxes / system_url 静默抹掉。
+            # 故意只做一层浅合并 —— 客户端提交完整的 role_shared_mailboxes 子字典
+            # 时仍然整体替换该子字典,这样 EPMS UI 里删除某个角色的映射依旧生效。
+            value = {**(cfg.notification_settings or {}), **value}
         setattr(cfg, field, value)
         if field in _JSONB_FIELDS:
             flag_modified(cfg, field)
@@ -523,3 +533,17 @@ _BUILTIN_ROLE_NAMES: dict[str, str] = {
     "auditor": "Auditor",
     "system_admin": "System Admin",
 }
+
+
+def role_display_name(cfg: CompanyConfig, role_code: str | None) -> str:
+    """Human-readable name for a role code (built-in, custom, or unknown)."""
+    if not role_code:
+        return "Team"
+    if role_code in _BUILTIN_ROLE_NAMES:
+        return _BUILTIN_ROLE_NAMES[role_code]
+    for cr in (cfg.custom_roles or []):
+        if cr.get("code") == role_code:
+            if not cr.get("is_active", True):
+                break
+            return cr.get("name") or role_code
+    return role_code.replace("_", " ").title()
