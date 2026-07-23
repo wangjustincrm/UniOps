@@ -211,6 +211,36 @@ async def test_q_matches_claim_employee_name(client, db_session):
     assert r["items"][0]["amount"] == "25.00"
 
 
+async def test_q_matches_vendor_name(client, db_session):
+    """Pins the pre-existing `vendor_name.ilike` branch of `_filtered`'s `q`
+    match — untested until now, so a change that broke it (e.g. the claim
+    correlated EXISTS accidentally narrowing rather than only adding a match)
+    could have landed without any test noticing."""
+    await _rec(db_session, amount="77.00")               # vendor_name="ACME" (see _rec)
+    await _rec(db_session, doc_kind="expense_claim", amount="5.00")  # decoy, no vendor_name
+
+    r = (await client.get("/finance/v1/payments?q=ACME", headers=_h())).json()
+    assert r["total"] == 1
+    assert r["items"][0]["amount"] == "77.00"
+
+
+async def test_q_matches_document_number(client, db_session):
+    """Pins the pre-existing `doc_number.ilike` branch of `_filtered`'s `q`
+    match (every `_rec` row here carries doc_number='DOC-1' — see `_rec`,
+    which does not take doc_number as a parameter). Proven both ways: the
+    real value matches, and an unrelated string matches nothing — so this
+    is the filter actually filtering, not a query that happens to return
+    everything regardless of `q`."""
+    await _rec(db_session, amount="88.00")
+
+    hit = (await client.get("/finance/v1/payments?q=DOC-1", headers=_h())).json()
+    assert hit["total"] == 1
+    assert hit["items"][0]["amount"] == "88.00"
+
+    miss = (await client.get("/finance/v1/payments?q=NO-SUCH-DOC", headers=_h())).json()
+    assert miss["total"] == 0
+
+
 # ── Fix 1: read authority (not just authentication) ─────────────────────────
 
 async def test_list_summary_export_require_finance_read_authority(client, db_session):
