@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
+import { fetchPreview } from '@/services/remittance'
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -262,12 +263,35 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
   const execute = useMutation({
     mutationFn: () => financeApi.post<{ batch: Batch; paid: number; failed: number; lines: BatchLine[] }>(
       `/payments/batches/${batchId}/execute`, { bank_account_id: bankId }),
-    onSuccess: (r) => {
+    onSuccess: async (r) => {
       qc.invalidateQueries({ queryKey: ['batch', batchId] })
       onExecuted(r.paid, r.failed)
       // Zero paid lines means nobody to notify — don't stack a remittance
       // dialog on top of a failure the operator is already looking at.
-      if (r.paid > 0) setShowRemittance(true)
+      if (r.paid > 0) {
+        // Prefetch under the exact key/queryFn RemittancePanel uses for this
+        // scope, so when the dialog mounts below it reads the already-warm
+        // cache instead of re-fetching. Gate the auto-popup on `enabled`:
+        // at a company with remittance switched off, every batch execute
+        // would otherwise pop a modal whose entire content is "not
+        // configured" — the Remittance section on the executed batch view
+        // still shows that message for anyone who goes looking for it.
+        try {
+          const preview = await qc.fetchQuery({
+            queryKey: ['remittance-preview', 'batch', batchId],
+            queryFn: () => fetchPreview({ kind: 'batch', id: batchId }),
+          })
+          if (preview.enabled) setShowRemittance(true)
+        } catch {
+          // The payment run already succeeded — onExecuted above already
+          // reported it — so a failure to *preview* remittance is a separate,
+          // secondary problem and must not be swallowed into "don't open"
+          // (that would silently drop the remittance step) nor read as the
+          // payment itself having failed. Fail open: show the dialog anyway
+          // so the operator sees RemittancePanel's own retryable error state.
+          setShowRemittance(true)
+        }
+      }
     },
     onError: (e: Error) => onError(e.message),
   })
