@@ -43,16 +43,22 @@ router = APIRouter(tags=["payments"])
 class RecipientRef(BaseModel):
     recipient_kind: str
     party_id: uuid.UUID
+    # Fix 3 (Round 2 correction): resending is a deliberate, supported
+    # operation, not the default — but it is a per-PAYEE decision, not a
+    # per-REQUEST one. This used to live on SendRequest as a single flag
+    # applied to every recipient in the request; a batch send covering ACME
+    # (deliberately re-checked for resend) and BOREAL (merely unsent in this
+    # scope, sent under the other) folded both under one boolean, so
+    # deliberately resending ACME silently waived the duplicate guard for
+    # BOREAL too. False refuses (as `skipped`) THIS payee if it is already
+    # `sent` for the effective scope (app.crud.remittance.last_send_for_group's
+    # cross-scope lookup) — enforced inside app/crud/remittance_send.py's
+    # send_groups(), the same place block_reasons are enforced, not just here.
+    resend: bool = False
 
 
 class SendRequest(BaseModel):
     recipients: list[RecipientRef] | None = None
-    # Fix 3: resending is a deliberate, supported operation, not the default.
-    # False refuses (as `skipped`) any payee already `sent` for the effective
-    # scope (app.crud.remittance.last_send_for_group's cross-scope lookup) —
-    # enforced inside app/crud/remittance_send.py's send_groups(), the same
-    # place block_reasons are enforced, not just here.
-    resend: bool = False
 
 
 async def _authorize(db: AsyncSession, user: dict) -> None:
@@ -186,6 +192,12 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
         raise HTTPException(status_code=409,
                              detail="Remittance email is not configured or is switched off")
     groups = await rem.build_groups(db, await rem.resolve_scope(db, scope_kind, scope_id))
+    # Per-payee resend flags, keyed the same way groups are — NOT a single
+    # blanket flag (see RecipientRef.resend's docstring for why folding this
+    # into one request-level boolean was the bug). Empty whenever recipients
+    # is None: that shorthand means "every non-blocked payee found by the
+    # preview", which carries no per-payee resend intent of its own.
+    resend_ids: set[tuple[str, uuid.UUID]] = set()
     if body.recipients is not None:
         # Blocked payees are refused inside send_groups regardless of what the
         # client asks for — this filter only narrows *which* groups are
@@ -193,6 +205,7 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
         # blocked payee's (recipient_kind, party_id) still gets `skipped`,
         # never `sent`.
         wanted = {(r.recipient_kind, r.party_id) for r in body.recipients}
+        resend_ids = {(r.recipient_kind, r.party_id) for r in body.recipients if r.resend}
         groups = [g for g in groups if (g.recipient_kind, g.party_id) in wanted]
 
     company_name = await _company_name(db)
@@ -201,7 +214,7 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
         reference=reference, payment_method=method,
         company_name=company_name, sender=sender,
         actor_id=uuid.UUID(str(user["sub"])),
-        resend=body.resend,
+        resend_ids=resend_ids,
     )
     # No trailing db.commit() here — app/crud/remittance_send.py's
     # send_groups() already commits the log row right after EACH payee's send

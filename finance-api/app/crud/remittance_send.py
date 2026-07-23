@@ -79,15 +79,6 @@ async def _upsert(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
         # that column. Every other transition (FAILED->SENT on a successful
         # resend, FAILED->FAILED on a repeat failure) still applies the new
         # status normally — only SENT->FAILED is refused.
-        # Fix 6: "was ever delivered" and "the latest attempt failed" are two
-        # different facts — a resend that fails must not overwrite a row
-        # that already recorded a successful send. Without this CASE, a
-        # failed resend flipped status straight from SENT to FAILED, which
-        # flips the hub column Sent -> Not sent for a vendor who already
-        # holds the advice, inviting a THIRD send at the operator who trusts
-        # that column. Every other transition (FAILED->SENT on a successful
-        # resend, FAILED->FAILED on a repeat failure) still applies the new
-        # status normally — only SENT->FAILED is refused.
         "status": sa.case(
             (sa.and_(RemittanceNotification.status == SENT,
                      stmt.excluded.status == FAILED),
@@ -119,8 +110,8 @@ async def _upsert(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
 async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
                        groups: list[PayeeGroup], reference: str,
                        payment_method: str, company_name: str,
-                       sender: RemittanceSettings,
-                       actor_id: uuid.UUID, resend: bool = False) -> list[dict]:
+                       sender: RemittanceSettings, actor_id: uuid.UUID,
+                       resend_ids: set[tuple[str, uuid.UUID]] | None = None) -> list[dict]:
     """Send one email per payee group and record the outcome.
 
     Blocked or emailless groups are refused server-side and never reach
@@ -129,18 +120,33 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
     `send_email()` — is caught, logged against that payee, committed, and
     does not stop the rest of the loop.
 
-    `resend=False` (the default) is the same kind of enforcement for a payee
-    the log already shows as `sent` for the effective scope — checked via
-    `rem.last_send_for_group`'s cross-scope lookup (Fix 2), not just this
-    scope's own rows, so a payment already sent as part of its batch (or
-    vice versa) is refused here too. Before this, nothing on the server
-    consulted the log at all: a payee already `sent` was silently re-sent
-    whenever it appeared in `recipients` again — a proxy timeout after the
-    mail actually went out, a refresh mid-request, or two AP staff on the
-    same batch each produced a duplicate advice. `resend=True` is the
-    deliberate, supported override.
+    `resend_ids` (a payee's `(recipient_kind, party_id)`, absent by default)
+    is the same kind of enforcement for a payee the log already shows as
+    `sent` for the effective scope — checked via `rem.last_send_for_group`'s
+    cross-scope lookup (Fix 2), not just this scope's own rows, so a payment
+    already sent as part of its batch (or vice versa) is refused here too.
+    Before Fix 3, nothing on the server consulted the log at all: a payee
+    already `sent` was silently re-sent whenever it appeared in `recipients`
+    again — a proxy timeout after the mail actually went out, or a refresh
+    mid-request. This is deliberately keyed PER PAYEE, not a single
+    request-wide flag (that was Round 1's bug: one payee flagged for a
+    genuine resend waived the guard for every OTHER payee in the same
+    request too, including one the operator did not intend to resend).
+
+    What this guard does NOT close: two truly concurrent sends for the same
+    payee (two AP staff double-clicking Send at the same moment, or two
+    browser tabs) can both read `last_send_for_group` before either one's
+    `_upsert` commits, both see no prior `sent` row, and both mail — this is
+    read-then-send, not an atomic check-and-send. `_upsert`'s atomic
+    `INSERT ... ON CONFLICT DO UPDATE` (see its own docstring) prevents that
+    race from corrupting the LOG (no lost update, no IntegrityError), but it
+    does not prevent the race from sending the email twice. What this guard
+    reliably closes is the SEQUENTIAL case: a retry after a proxy timeout, a
+    stale tab refreshed and re-submitted, or a second submission of the same
+    already-completed request.
     """
     results: list[dict] = []
+    resend_ids = resend_ids or set()
     for g in groups:
         base = {"recipient_kind": g.recipient_kind, "party_id": str(g.party_id),
                 "party_name": g.party_name}
@@ -151,7 +157,7 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
                              "error": ", ".join(g.block_reasons)})
             continue
 
-        if not resend:
+        if (g.recipient_kind, g.party_id) not in resend_ids:
             prev = await rem.last_send_for_group(
                 db, scope_kind=scope_kind, scope_id=scope_id, group=g)
             if prev is not None and prev["status"] == SENT:

@@ -494,13 +494,22 @@ def _sender():
 
 
 async def _send(db, groups, scope_id, side_effect=None, resend=False):
+    """`resend=True` here is a test-helper convenience that resends EVERY
+    group passed in — every caller of this helper passes a single uniform
+    group list where that is exactly the desired blanket behaviour. The real
+    per-payee mechanism (Fix 3 Round 2) is `resend_ids`, a set of
+    `(recipient_kind, party_id)`; see
+    test_resend_flag_does_not_leak_to_other_recipients_in_same_request for a
+    test that exercises two groups with different resend flags in one call,
+    the way the API layer actually uses this parameter."""
+    resend_ids = {(g.recipient_kind, g.party_id) for g in groups} if resend else set()
     with patch("app.crud.remittance_send.send_email",
                new=AsyncMock(side_effect=side_effect)) as m:
         results = await rsend.send_groups(
             db, scope_kind=SCOPE_BATCH, scope_id=scope_id, groups=groups,
             reference="BP-20260722-0001", payment_method="bank_transfer",
             company_name="Canada Royal Milk", sender=_sender(),
-            actor_id=uuid.uuid4(), resend=resend,
+            actor_id=uuid.uuid4(), resend_ids=resend_ids,
         )
     return results, m
 
@@ -1020,7 +1029,10 @@ async def test_unqualified_resend_of_already_sent_payee_is_skipped(client, db_se
 
 async def test_resend_true_sends_again(client, db_session):
     """The explicit opt-in still works — resending is a deliberate, supported
-    operation, not something to simply refuse outright."""
+    operation, not something to simply refuse outright. `resend` now lives on
+    the individual RecipientRef (Fix 3 Round 2), not as a request-level flag,
+    so the opt-in is expressed as an explicit recipients entry rather than
+    `{"recipients": None, "resend": True}`."""
     await _configured(db_session)
     bp = await _vendor(db_session, remit="remit@acme.test")
     inv = await _invoice(db_session, "VINV-52")
@@ -1037,11 +1049,91 @@ async def test_resend_true_sends_again(client, db_session):
     assert first.json()["sent"] == 1
 
     with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m2:
-        second = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
-                                   json={"recipients": None, "resend": True}, headers=_h())
+        second = await client.post(
+            f"/finance/v1/payments/{rec.id}/remittance/send",
+            json={"recipients": [
+                {"recipient_kind": "vendor", "party_id": str(bp.id), "resend": True}]},
+            headers=_h())
     assert second.json()["sent"] == 1
     assert second.json()["skipped"] == 0
     assert m2.await_count == 1
+
+
+# ── Fix 3 Round 2: resend is per-payee, not per-request ─────────────────────
+
+async def test_resend_flag_does_not_leak_to_other_recipients_in_same_request(client, db_session):
+    """Batch BP pays ACME and BOREAL. A first batch send succeeds for ACME
+    but fails for BOREAL. Independently, a colleague already resent BOREAL
+    from the payment-scope drawer (simulated directly below), so BOREAL is
+    genuinely `sent` under the OTHER scope by the time the operator's stale
+    batch panel is used again. The operator, thinking ACME's copy "vanished",
+    deliberately re-checks ACME for resend; BOREAL is also selected (the
+    operator has no idea it was just resent), but WITHOUT the resend flag.
+
+    Pre-fix (request-level `resend: bool`), selecting ACME for resend forced
+    `resend=True` for the whole request, which would also waive BOREAL's
+    guard and mail it a second time. Fixed (per-RecipientRef `resend`), ACME
+    sends and BOREAL is refused as `skipped` with no mail — proven below by
+    asserting `send_email` was called exactly once, for ACME's address only.
+    """
+    await _configured(db_session)
+    acme = await _vendor(db_session, remit="remit@acme.test")
+    boreal = await _vendor(db_session, remit="remit@boreal.test")
+    inv_a, inv_b = await _invoice(db_session, "VINV-A1"), await _invoice(db_session, "VINV-B1")
+    pa_a, pa_b = _pa(acme.id, "10.00", [str(inv_a.id)]), _pa(boreal.id, "20.00", [str(inv_b.id)])
+    db_session.add_all([pa_a, pa_b])
+    await db_session.flush()
+    batch = PaymentBatch(batch_number="BP-90", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("30.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    rec_a, rec_b = _record(pa_a, batch_id=batch.id), _record(pa_b, batch_id=batch.id)
+    db_session.add_all([rec_a, rec_b])
+    await db_session.flush()
+
+    # First batch send: ACME succeeds, BOREAL fails (SMTP down for BOREAL's
+    # address only) — this is the initial partial failure in the scenario.
+    async def _fail_boreal_only(to, *a, **k):
+        if to == "remit@boreal.test":
+            raise RuntimeError("smtp down")
+
+    with patch("app.crud.remittance_send.send_email",
+               new=AsyncMock(side_effect=_fail_boreal_only)):
+        first = await client.post(
+            f"/finance/v1/payments/batches/{batch.id}/remittance/send",
+            json={"recipients": None}, headers=_h())
+    assert first.json()["sent"] == 1
+    assert first.json()["failed"] == 1
+
+    # A colleague resends BOREAL from the payment-scope drawer, and it
+    # succeeds this time — a genuinely SENT row under the OTHER scope
+    # (payment), independent of and more recent than the batch-scope FAILED
+    # row above.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        colleague = await client.post(
+            f"/finance/v1/payments/{rec_b.id}/remittance/send",
+            json={"recipients": None}, headers=_h())
+    assert colleague.json()["sent"] == 1
+
+    # The operator's stale batch panel: ACME re-checked for a deliberate
+    # resend, BOREAL selected too but NOT flagged for resend.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        second = await client.post(
+            f"/finance/v1/payments/batches/{batch.id}/remittance/send",
+            json={"recipients": [
+                {"recipient_kind": "vendor", "party_id": str(acme.id), "resend": True},
+                {"recipient_kind": "vendor", "party_id": str(boreal.id)},
+            ]},
+            headers=_h())
+    body = second.json()
+    assert body["sent"] == 1
+    assert body["skipped"] == 1
+    by_party = {r["party_id"]: r for r in body["results"]}
+    assert by_party[str(acme.id)]["status"] == "sent"
+    assert by_party[str(boreal.id)]["status"] == "skipped"
+    assert m.await_count == 1                    # only ACME was actually mailed
+    assert m.await_args.args[0] == "remit@acme.test"
 
 
 async def test_preview_payment_scope_requires_payment_authority(client, db_session):
