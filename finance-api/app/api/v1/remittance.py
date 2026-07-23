@@ -25,11 +25,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
 from app.crud import remittance as rem
 from app.crud import remittance_send as rsend
 from app.crud.payment_execute import PaymentPermissionError
 from app.db.base import get_db
+from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
 from app.models.payment_batch import EXECUTED, PaymentBatch
 from app.models.remittance import SCOPE_BATCH, SCOPE_PAYMENT
@@ -77,7 +79,42 @@ async def _scope_context(db: AsyncSession, *, scope_kind: str,
         raise HTTPException(status_code=404, detail="Payment record not found")
     if rec.status != rem.COMPLETED:
         raise HTTPException(status_code=409, detail=f"Payment is {rec.status}")
-    return (rec.doc_number or rec.pa_number or str(rec.id)), rec.payment_method, rec.payment_date
+    return await _reference_for(db, rec), rec.payment_method, rec.payment_date
+
+
+async def _reference_for(db: AsyncSession, rec: PaymentRecord) -> str:
+    """The `reference` a single payment's remittance email shows in its
+    subject and footer (remittance_template.py) — never the PA number
+    (spec §3: internal document numbers are meaningless, and mean nothing
+    good, to the vendor). The batch path already avoids this by using the
+    batch number; here, `doc_number` IS `pa_number` for a vendor payment
+    (payment_execute.execute sets `doc_number=pa.pa_number` on every PA
+    record), so `rec.doc_number or rec.pa_number` used to resolve to the PA
+    number every time for a vendor payee regardless of which field "won".
+
+    A `payment` scope always covers exactly one PaymentRecord
+    (resolve_scope), so for a vendor payee this is always exactly one PA —
+    unlike a batch, which can span several, there is no ambiguity in using
+    that PA's own vendor invoice number as the reference instead: it is the
+    one identifier that is *also* meaningful to the vendor, not just
+    "internal but at least not the PA number". Falls back to an opaque,
+    PA-number-free payment reference only when the PA carries no invoice
+    number at all (a Direct PA in that state is blocked from Send anyway —
+    see app.crud.remittance.BLOCK_MISSING_INVOICE_NO — so this only matters
+    for a still-blocked preview). Employee (expense_claim) payments are
+    unaffected: the claim number is already the spec-sanctioned, meaningful
+    reference for an employee (see remittance_template.py).
+    """
+    if rec.doc_kind in ("pa", "pa_dir") and rec.doc_id:
+        pa = (await db.execute(
+            select(PaymentApplication).where(PaymentApplication.id == rec.doc_id)
+        )).scalar_one_or_none()
+        if pa is not None:
+            inv_no = (await batch_crud.vendor_inv_no_map(db, [pa])).get(pa.id, "")
+            if inv_no:
+                return inv_no
+        return f"PMT-{rec.id.hex[:8].upper()}"
+    return rec.doc_number or str(rec.id)
 
 
 async def _company_name(db: AsyncSession) -> str:

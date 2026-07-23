@@ -827,17 +827,29 @@ async def test_preview_payment_scope_returns_preview_shape_not_payment_detail(cl
     catch-all (or matched behind it for any other reason), this GET would be
     swallowed by get_payment() and come back shaped like a payment detail
     (has "id"/"doc_kind"/"amount" at the top level, no "groups" key) instead
-    of the preview shape asserted here."""
+    of the preview shape asserted here.
+
+    Uses an expense_claim payment rather than a PA/vendor payment: Fix 5
+    (see test_single_vendor_payment_reference_is_not_the_pa_number) makes a
+    vendor payee's `reference` resolve through its invoice number instead of
+    doc_number/pa_number, which would make this route-order regression test
+    entangled with that unrelated behaviour. An employee payment's
+    `doc_number` (the claim number) is unaffected by that fix and remains
+    the spec-sanctioned reference for an employee — see
+    remittance_template.py."""
     await _configured(db_session)
-    bp = await _vendor(db_session, remit="remit@acme.test")
-    inv = await _invoice(db_session, "VINV-23")
-    pa = _pa(bp.id, "15.00", [str(inv.id)])
-    db_session.add(pa)
+    claim = ExpenseClaim(claim_number=f"EXP-{uuid.uuid4().hex[:8]}", claim_type="EXP",
+                         status="approved", employee_id=uuid.uuid4(), employee_name="Jane Doe",
+                         currency="CAD", total_amount=Decimal("15.00"), tax_amount=Decimal("0"),
+                         net_amount=Decimal("15.00"))
+    db_session.add(claim)
     await db_session.flush()
-    # doc_number is deliberately distinct from pa_number: _scope_context is
-    # supposed to prefer doc_number, and both fields defaulting to the same
-    # value would let a swapped precedence pass silently.
-    rec = _record(pa, doc_number=f"DOC-{uuid.uuid4().hex[:8]}")
+    rec = PaymentRecord(
+        doc_kind="expense_claim", doc_id=claim.id, doc_number=claim.claim_number,
+        payment_date=date(2026, 7, 22), payment_method="bank_transfer",
+        amount=Decimal("15.00"), currency="CAD", recorded_by=uuid.uuid4(),
+        status="completed",
+    )
     db_session.add(rec)
     await db_session.flush()
 
@@ -848,7 +860,33 @@ async def test_preview_payment_scope_returns_preview_shape_not_payment_detail(cl
     assert "enabled" in body
     assert "id" not in body                # not the payment-detail payload
     assert body["reference"] == rec.doc_number
-    assert rec.doc_number != rec.pa_number
+
+
+# ── Fix 5: a single vendor payment must not show the vendor its own PA number
+
+async def test_single_vendor_payment_reference_is_not_the_pa_number(client, db_session):
+    """`doc_number` IS `pa_number` for a vendor payment (payment_execute.execute
+    sets doc_number=pa.pa_number), so the old `rec.doc_number or rec.pa_number`
+    always resolved to the PA number for a vendor payee — an internal
+    document number the spec (§3) says means nothing to, and should never
+    reach, the vendor. A `payment` scope always covers exactly one PA, so its
+    own vendor invoice number is used instead: unambiguous, and actually
+    meaningful to the vendor rather than merely non-PA."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-60")
+    pa = _pa(bp.id, "15.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    body = (await client.get(
+        f"/finance/v1/payments/{rec.id}/remittance/preview", headers=_h())).json()
+    assert body["reference"] == "VINV-60"
+    assert body["reference"] != rec.pa_number
+    assert body["reference"] != rec.doc_number
 
 
 async def test_send_batch_endpoint_sends_and_reports(client, db_session):
