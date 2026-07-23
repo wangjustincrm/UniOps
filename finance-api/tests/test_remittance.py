@@ -536,6 +536,30 @@ async def test_resend_upserts_and_increments_attempts(db_session):
     assert rows[0].attempts == 2
 
 
+async def test_failed_resend_does_not_downgrade_sent_status(db_session):
+    """Fix 6: 'was ever delivered' and 'the latest attempt failed' are
+    different facts. A resend that fails must not flip a row that already
+    recorded a successful send from SENT back to FAILED — that flip is what
+    made the hub column read Sent -> Not sent for a vendor who already holds
+    the advice, inviting a third send. The individual attempt is still
+    honestly reported as failed to the caller; only the persisted log row's
+    `status` (what the hub and the cross-scope truthful check read) holds."""
+    g = _group()
+    scope_id = uuid.uuid4()
+    await _send(db_session, [g], scope_id)          # first attempt: succeeds
+
+    async def _boom(*a, **k):
+        raise RuntimeError("smtp down")
+
+    results, m = await _send(db_session, [g], scope_id, side_effect=_boom, resend=True)
+    assert [r["status"] for r in results] == ["failed"]   # this attempt is reported honestly
+
+    row = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalar_one()
+    assert row.status == SENT            # the delivered fact is preserved
+    assert row.attempts == 2
+
+
 async def test_one_failure_does_not_stop_the_others(db_session):
     g1, g2 = _group(), _group()
     g1.email = "first@acme.test"

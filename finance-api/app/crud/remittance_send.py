@@ -23,6 +23,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,17 +70,41 @@ async def _upsert(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
         "payment_record_ids": stmt.excluded.payment_record_ids,
         "amount": stmt.excluded.amount,
         "currency": stmt.excluded.currency,
-        "status": stmt.excluded.status,
+        # Fix 6: "was ever delivered" and "the latest attempt failed" are two
+        # different facts — a resend that fails must not overwrite a row
+        # that already recorded a successful send. Without this CASE, a
+        # failed resend flipped status straight from SENT to FAILED, which
+        # flips the hub column Sent -> Not sent for a vendor who already
+        # holds the advice, inviting a THIRD send at the operator who trusts
+        # that column. Every other transition (FAILED->SENT on a successful
+        # resend, FAILED->FAILED on a repeat failure) still applies the new
+        # status normally — only SENT->FAILED is refused.
+        # Fix 6: "was ever delivered" and "the latest attempt failed" are two
+        # different facts — a resend that fails must not overwrite a row
+        # that already recorded a successful send. Without this CASE, a
+        # failed resend flipped status straight from SENT to FAILED, which
+        # flips the hub column Sent -> Not sent for a vendor who already
+        # holds the advice, inviting a THIRD send at the operator who trusts
+        # that column. Every other transition (FAILED->SENT on a successful
+        # resend, FAILED->FAILED on a repeat failure) still applies the new
+        # status normally — only SENT->FAILED is refused.
+        "status": sa.case(
+            (sa.and_(RemittanceNotification.status == SENT,
+                     stmt.excluded.status == FAILED),
+             RemittanceNotification.status),
+            else_=stmt.excluded.status,
+        ),
         "error": stmt.excluded.error,
         "attempts": RemittanceNotification.attempts + 1,
         # TimestampMixin's onupdate=func.now() is an ORM-flush-time hook —
         # it never fires for this Core-level INSERT ... ON CONFLICT DO
         # UPDATE, so without an explicit value here `updated_at` would stay
         # frozen at the row's original insert time through every resend.
-        # remittance.py's _last_sends() cross-scope lookup (Fix 2) compares
-        # `updated_at` between a same-scope and a cross-scope row for the
-        # same payee to decide which is more recent — that comparison is
-        # meaningless unless every attempt, not just the first, bumps it.
+        # app.crud.remittance.last_send_for_group's cross-scope lookup
+        # (Fix 2) compares `updated_at` between a same-scope and a
+        # cross-scope row for the same payee to decide which is more
+        # recent — that comparison is meaningless unless every attempt, not
+        # just the first, bumps it.
         "updated_at": now,
     }
     if status == SENT:
