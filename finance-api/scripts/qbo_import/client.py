@@ -10,6 +10,7 @@ This client is deliberately serial with backoff; a one-off migration has no
 reason to race the limit.
 """
 import base64
+import logging
 import re
 import time
 from pathlib import Path
@@ -17,6 +18,25 @@ from pathlib import Path
 import httpx
 
 ENV_PATH = Path(r"C:\Project\qbo_conn.env")
+
+# All errors (with Intuit's intuit_tid transaction id) are written here so a run
+# can be handed to Intuit support for troubleshooting. Console still shows them too.
+LOG_PATH = Path(__file__).resolve().parents[2] / "data" / "qbo" / "qbo_import.log"
+
+
+def _get_logger() -> logging.Logger:
+    log = logging.getLogger("qbo_import")
+    if log.handlers:
+        return log
+    log.setLevel(logging.INFO)
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fh = logging.FileHandler(LOG_PATH, encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    log.addHandler(fh)
+    return log
+
+
+logger = _get_logger()
 
 # Intuit's OpenID discovery documents. The OAuth endpoints (token exchange,
 # authorization, revocation) are read from here at runtime rather than hardcoded,
@@ -124,8 +144,11 @@ class QboClient:
             data={"grant_type": "refresh_token", "refresh_token": self.cfg["REFRESH_TOKEN"]},
         )
         if r.status_code != 200:
+            tid = r.headers.get("intuit_tid", "?")
+            logger.error("token refresh failed %s (tid=%s): %s",
+                         r.status_code, tid, r.text[:500])
             raise SystemExit(
-                f"token refresh failed ({r.status_code}): {r.text}\n"
+                f"token refresh failed ({r.status_code}, tid={tid}): {r.text}\n"
                 "If this says invalid_grant the refresh token expired or was "
                 "superseded — re-run authorize.py to get a new one."
             )
@@ -159,16 +182,26 @@ class QboClient:
             )
             if r.status_code == 200:
                 return r.json()
+            # intuit_tid is Intuit's per-request transaction id — the first thing
+            # their support asks for. Capture it on every non-200 response.
+            tid = r.headers.get("intuit_tid", "?")
             if r.status_code == 401 and attempt == 0:
+                logger.info("401 on %s (tid=%s) — refreshing access token", path, tid)
                 self.refresh()  # access token aged out mid-run
                 continue
             if r.status_code == 429 or r.status_code >= 500:
-                print(f"  [retry] {r.status_code} on {path}, sleeping {delay:.0f}s")
+                logger.warning("%s on %s (tid=%s), retry in %.0fs",
+                               r.status_code, path, tid, delay)
+                print(f"  [retry] {r.status_code} on {path} (tid={tid}), sleeping {delay:.0f}s")
                 time.sleep(delay)
                 delay *= 2
                 continue
-            raise RuntimeError(f"GET {path} -> {r.status_code}: {r.text[:500]}")
-        raise RuntimeError(f"GET {path} failed after {_retries} attempts")
+            msg = f"GET {path} -> {r.status_code} (tid={tid}): {r.text[:500]}"
+            logger.error(msg)
+            raise RuntimeError(msg)
+        msg = f"GET {path} failed after {_retries} attempts"
+        logger.error(msg)
+        raise RuntimeError(msg)
 
     def query(self, statement: str) -> dict:
         """Run one QBO SQL-ish query statement. Returns the raw QueryResponse dict."""
