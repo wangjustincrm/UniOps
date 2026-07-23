@@ -1,100 +1,213 @@
-# Task 4 Report: Portal Access Control Admin Page
+# Task 4 Report: finance mirrors for partner, user email, and config
 
-## Status: DONE
+Branch: `feature/batch-payment-remittance`
+Commit: `f0d7659` — "feat(finance): mirror business_partners, user email, remittance_config"
 
-Commit: `28fce5f629fccd6a21fc505908cbfd7bffab1b8c` on branch `feature/authz-hub-phase1`.
+(Note: this path previously held an unrelated report — Task 4 of the
+Portal Access Control Admin Page feature, on branch `feature/authz-hub-phase1`.
+Overwritten with this content per the brief's explicit instruction to write
+the report to this path.)
 
 ## Files changed
 
-- **Created** `portal/src/pages/admin/AccessControl.tsx` — two-tab page (Permission Matrix / User Roles), mirrors the chrome/guard pattern of `DataMaintenance.tsx` (bare `<div>` + "Back to UniOps" link + `system_admin`-only gate — confirmed there is no shared `PortalChromeLayout` component in this codebase; `DataMaintenance.tsx` doesn't use one either).
-- **Modified** `portal/src/App.tsx` — added `import AccessControl` + `<Route path="/admin/access-control" ...>` right after the Data Maintenance route.
-- **Modified** `portal/src/components/layout/navConfig.tsx` — imported `ShieldCheck` from lucide-react, added the `Access Control` nav item (`adminOnly: true`) after Data Maintenance.
-- **Modified** `portal/src/lib/api.ts`:
-  - Added `epmsApi.put` (was missing; needed for `PUT /users/{id}/roles`), following the existing `epmsRequest` wrapper pattern used by `financeApi.put`.
-  - Enhanced `epmsRequest`'s error path: the thrown `Error` now also carries `.detail` (raw JSON `detail` from the response body) and `.status`. Necessary because `extractDetail()` collapses any non-string/non-array `detail` (e.g. the 409 `{"detail":{"locked":[...]}}` shape from `PATCH /config/role-permissions`) down to a generic `"HTTP 409"` string, which would have made it impossible to show *which* cells were rejected as locked. This only adds properties — the `.message` string behavior for all existing callers is unchanged.
+1. `finance-api/app/models/mirrors.py`
+   - Added new `BusinessPartner(UUIDPrimaryKey, TimestampMixin, Base)` mirror
+     (`__tablename__ = "business_partners"`) with columns `code`, `name`,
+     `contact_email`, `remittance_email` (nullable), `is_supplier` — matching
+     the brief's interface exactly.
+   - `mirrors.User.email` — **already existed** in the codebase before this
+     task (see "Deviations from the brief" below); no change needed.
+   - `mirrors.CompanyConfig` — added `remittance_config: Mapped[dict] =
+     mapped_column(JSONB, nullable=False, default=dict)`. Left `CompanyConfig`
+     with **no** `TimestampMixin`, per the brief's explicit instruction (the
+     physical `company_config` table has no timestamp columns; adding one is
+     a known latent-500 bug in this codebase).
 
-## Implementation notes
+2. `finance-api/tests/conftest.py`
+   - Added `BusinessPartner` to the `from app.models.mirrors import (...)`
+     tuple.
+   - Added `BusinessPartner.__table__` to the
+     `Base.metadata.create_all(eng, tables=[...])` list.
 
-**Tab 1 — Permission Matrix**: rows grouped by `module` (header rows spanning the table, uppercased, in backend-provided `sort` order rather than a hardcoded EPMS/FINANCE/BOOKING list), columns = roles sorted by `sort` (all roles shown, active and inactive — the brief only asked to filter to active roles for Tab 2's selects). Locked cells (`permission.locked_for.includes(role)`) render checked + disabled + a lock icon with a `title` tooltip. Dirty cells are tracked in a `Record<`${role}.${key}`, boolean>` map — only actual diffs from the fetched baseline count as dirty, so toggling a cell back to its original value un-marks it. A floating footer bar appears when `dirtyCount > 0` with Save/Discard. Save sends only the dirty cells in the legacy `{role:{key:bool}}` shape via `PATCH /config/role-permissions`; on success it invalidates the `authz-matrix` query and clears dirty state; on 409 it reads `err.detail.locked` and lists the rejected role/key pairs inline in red.
+3. `finance-api/tests/test_remittance.py`
+   - Added `from app.models.mirrors import BusinessPartner` import.
+   - Appended `test_partner_mirror_reads_remittance_email` verbatim from the
+     brief's Step 2. Did not touch anything else in the file (Task 1's
+     existing test/imports untouched).
 
-**Tab 2 — User Roles**: `useAllUsers()` loops `GET /users?page=N&page_size=200` until a short page comes back (never trusts the default `page_size=20`, per the brief's explicit warning and project memory re: pagination truncation). Client-side text filter over name/email. Each row: name/email, a primary-role `<select>` (active roles only, with a defensive fallback option if the current primary role has since been deactivated), and additional roles as a compact set of toggle-chip buttons (active roles minus primary) — used inline chips rather than a popover/dropdown specifically to avoid the "overlay dropdown must be portaled" footgun documented in project memory (`feedback_uniops_overlay_dropdown_portal`), since a table-cell popover would need portal+fixed positioning to escape the table's overflow container. Save is per-row, gated on a `touched` flag (enabled only after an edit), calls `PUT /users/{id}/roles`, and shows an inline green/red flash next to the button.
+## Step 1 — column verification (the brief's exact requirement)
 
-## Known backend gap (flagged, not fixed — out of scope for Task 4)
+Ran inside the `uniops_postgres` container (never from host shell):
 
-There is **no GET endpoint** for a user's current *additional* roles — `identity-api`'s `authz.py` only exposes `PUT /authz/users/{id}/roles` (write) and `GET /me/permissions` (self, current user only). `GET /users` (`UserAdminResponse`) only has the single `role` (primary) field. This means the "Additional Roles" chips always start unchecked/empty for every user, regardless of what's actually assigned server-side — there is no way for the Portal to know. Mitigated by:
-1. Gating Save per-row on an explicit `touched` flag, so rows nobody edits are never re-submitted (no silent overwrite of untouched rows).
-2. A visible note at the top of the User Roles tab telling admins that additional-role checkboxes reflect only in-session edits.
+```
+docker exec -i uniops_postgres psql -U epms -d epms -c "\d business_partners"
+docker exec -i uniops_postgres psql -U epms -d epms -c "\d company_config"
+docker exec -i uniops_postgres psql -U epms -d epms -c "\d users"
+```
 
-Recommend a follow-up to Tasks 1-3: add `GET /authz/users/{id}/roles` (or fold `additional_roles` into `UserAdminResponse`/`GET /users`) so the UI can show ground truth instead of an always-empty starting state.
+### `business_partners` (live, actual `\d` output)
 
-## Verification
+```
+       Column       |           Type           | Collation | Nullable |          Default
+--------------------+--------------------------+-----------+----------+----------------------------
+ id                 | uuid                     |           | not null |
+ code               | character varying(50)    |           | not null |
+ erp_id             | character varying(100)   |           |          |
+ name               | character varying(255)   |           | not null |
+ category           | character varying(100)   |           | not null |
+ contact_name       | character varying(255)   |           | not null |
+ contact_email      | character varying(255)   |           | not null |
+ phone              | character varying(50)    |           |          |
+ address            | text                     |           |          |
+ payment_terms      | character varying(20)    |           | not null | 'net30'::character varying
+ max_prepayment_pct | numeric(5,2)             |           |          |
+ currency           | character varying(10)    |           | not null | 'CAD'::character varying
+ is_active          | boolean                  |           | not null | true
+ notes              | text                     |           |          |
+ is_supplier        | boolean                  |           | not null | true
+ is_customer        | boolean                  |           | not null | false
+ tax_number         | character varying(50)    |           |          |
+ customer_type      | character varying(20)    |           |          |
+ province           | character varying(2)     |           |          |
+ credit_limit       | numeric(15,2)            |           |          |
+ entity_id          | uuid                     |           |          |
+ created_at         | timestamp with time zone |           | not null | now()
+ updated_at         | timestamp with time zone |           | not null | now()
+```
 
-1. **tsc**: baseline (before any change) = **0 errors**. After = **0 errors**. (`cd portal && npx tsc -p tsconfig.app.json --noEmit --ignoreDeprecations 6.0`)
-2. **Dev container smoke**: **could not run** — Docker Desktop is not running in this environment (`docker ps` fails with "failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine"). Could not restart `uniops_portal_frontend` or tail its logs to confirm a clean Vite compile. Mitigated by the clean `tsc --noEmit` pass and a careful manual self-review of the diff and the full new file. **The controller should run the docker log check / visual smoke before treating this as production-verified.**
-3. **Self-review**: diff for the 3 modified files reviewed in full (see above); new file read back in full; only the 4 brief-named files are staged/committed — confirmed via `git status --short` that the untracked binaries in the repo root (PDF/PPTX/CHM files) and two pre-existing dirty files (`task-2-report.md`, `identity-api/tests/test_authz_api.py`, already modified before this task started) were left untouched.
+`remittance_email` is **not yet present** in the live table (its migration,
+`mdm-api/alembic/versions/0006_partner_remittance_email.py`, has not been
+applied to local dev). Per the task instructions, its type/nullability was
+taken from that migration file instead of `\d`:
 
-## Concerns for the controller
+```python
+op.add_column("business_partners",
+              sa.Column("remittance_email", sa.String(255), nullable=True))
+```
 
-- Please run the actual dev smoke test (container restart + `docker logs uniops_portal_frontend --tail 20` + click-through) since Docker wasn't available in this session.
-- The "additional roles" read gap above should probably become a quick Task 1-3 follow-up before this ships to real admins, or admins should be warned out-of-band not to blind-save rows they haven't reviewed.
-- This `task-4-report.md` path previously held an unrelated report (finance NC AP Export, from an earlier Task 4 numbering) — it has been overwritten with this content per the brief's explicit instruction to write the report here.
+→ `String(255), nullable=True`. Matches the brief's declaration exactly.
 
----
+All other mirrored columns (`id`, `code`, `name`, `contact_email`,
+`is_supplier`, `created_at`, `updated_at`) verified NOT NULL against the live
+table above — `TimestampMixin`'s `DateTime(timezone=True) server_default=now()
+nullable=False` matches `created_at`/`updated_at` exactly.
 
-## Follow-up fix: GET /authz/user-roles (closes the "Known backend gap" above)
+### `company_config` (live, actual `\d` output — relevant rows)
 
-### Status: DONE
+```
+ id                          | uuid                     |           | not null |
+ role_management             | jsonb                    |           | not null | '{}'::jsonb
+ ... (43 other config columns, no timestamp columns anywhere) ...
+```
 
-Addresses the data-loss bug flagged above: the User Roles tab had no way to read a user's
-existing additional roles, so saving a row after only editing the primary role would PUT
-`additional: []` and silently wipe roles assigned elsewhere.
+Confirmed: **no `created_at`/`updated_at` column exists on `company_config`**
+— consistent with the existing `CompanyConfig` mirror's deliberate omission
+of `TimestampMixin`. Did not add one.
 
-### Chain added
+`remittance_config` is **not yet present** in the live table (its migration,
+`epms-api/alembic/versions/ab_remittance_and_vendor_view.py`, has not been
+applied to local dev). Per the task instructions, took its type/nullability
+from that migration file:
 
-1. **identity-api** (`app/api/v1/authz.py`): new `GET /authz/user-roles`, gated by the
-   existing `_require_admin` helper (403 for non-`system_admin`). Reads every row in
-   `user_roles` and returns `{"user_roles": {"<user_id>": ["role_code", ...]}}` (values
-   sorted; primary role is intentionally excluded — it lives on `users.role`, already
-   returned by `GET /users`). Empty table → `{"user_roles": {}}`.
-   Tests added in `tests/test_authz_api.py`: `test_get_user_roles_requires_admin` (403 for
-   `requester` role) and `test_get_user_roles_maps_by_user` (inserts two `user_roles` rows
-   for one user, asserts the stringified UUID key maps to the sorted role list).
+```python
+op.add_column("company_config", sa.Column(
+    "remittance_config", postgresql.JSONB,
+    nullable=False, server_default=sa.text("'{}'::jsonb")))
+```
 
-2. **epms-api** (`app/api/v1/config.py`): new `GET /config/user-roles`, mirroring
-   `GET /config/authz-defs` exactly — `CurrentUserPayload` dep (admin gating is delegated to
-   identity, which 403s), `authz_client.forward("GET", "/authz/user-roles", token)`, 502 on
-   any exception forwarding, pass-through of identity's status/detail on non-200.
-   Test added in `tests/test_authz_proxy.py`: `test_get_user_roles_proxies_identity` — mocks
-   `authz_client.forward`, asserts the call args (`"GET"`, `"/authz/user-roles"`) and that the
-   response body is passed through verbatim.
+→ `JSONB, nullable=False`. Declared as
+`mapped_column(JSONB, nullable=False, default=dict)`, matching the existing
+`role_management` column's mirror pattern (JSONB not-null with a Python-side
+`default=dict` standing in for the server-side `'{}'::jsonb` default) — same
+convention already used one line above it in this file.
 
-3. **portal** (`src/pages/admin/AccessControl.tsx`): added `useUserRoles()` query
-   (`GET /config/user-roles`, typed `{ user_roles: Record<string, string[]> }`), loaded
-   alongside `useAuthzDefs`/`useAllUsers` in `UserRolesTab`. `rowFor(u)` now seeds
-   `additional` from `userRolesQ.data?.user_roles[u.id] ?? []` instead of always starting at
-   `[]`. Removed the on-page warning paragraph about the API having no read endpoint (no
-   longer true). Save success now also invalidates the `authz-user-roles` query key so a
-   fresh save reflects immediately. Loading/error states extended to include `userRolesQ`.
-   The per-row `touched` gate is unchanged — untouched rows still never get re-submitted.
+### `users` (live, actual `\d` output — relevant row)
 
-### Verification
+```
+        Column        |           Type           | Collation | Nullable |             Default
+----------------------+--------------------------+-----------+----------+---------------------------------
+ id                   | uuid                     |           | not null |
+ email                | character varying(255)   |           | not null |
+ ...
+```
 
-- **identity-api**: `TEST_PG_PASSWORD=*** ./.venv/Scripts/python -m pytest tests/test_authz_api.py -q`
-  → **7 passed** (5 pre-existing + 2 new), 0 failed.
-- **epms-api**: `docker exec uniops_epms_api python -m pytest tests/test_authz_proxy.py -q`
-  → **10 passed** (9 pre-existing + 1 new), 0 failed.
-- **portal tsc**: `npx tsc -p tsconfig.app.json --noEmit --ignoreDeprecations 6.0` → **0 errors**.
-- **e2e**: after `docker restart uniops_identity_api`, ran from `uniops_epms_api`:
-  ```
-  docker exec uniops_epms_api python -c "...GET http://identity-api:8009/identity/v1/authz/user-roles..."
-  ```
-  → `200 ['user_roles']` — confirms the new route is live and returns the expected shape.
+`email` is `character varying(255) NOT NULL` — this **already matched** the
+pre-existing `mirrors.User.email: Mapped[str] = mapped_column(String(255),
+nullable=False)` column exactly. No change was needed for `User`.
 
-### Files touched (all six listed in scope, nothing else)
+## Step 2/3 — failing test confirmed
 
-- `identity-api/app/api/v1/authz.py`
-- `identity-api/tests/test_authz_api.py`
-- `epms-api/app/api/v1/config.py`
-- `epms-api/tests/test_authz_proxy.py`
-- `portal/src/pages/admin/AccessControl.tsx`
-- `.superpowers/sdd/task-4-report.md` (this report)
+```
+cd finance-api && TEST_PG_PASSWORD=7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9 \
+  python -m pytest tests/test_remittance.py::test_partner_mirror_reads_remittance_email -v
+```
+
+Result before Step 4 (mirror added): FAILED as expected —
+
+```
+ImportError: cannot import name 'BusinessPartner' from 'app.models.mirrors'
+```
+
+## Step 6 — tests pass (foreground runs only, per project discipline: never
+two finance-api pytest sessions concurrently)
+
+```
+cd finance-api && TEST_PG_PASSWORD=7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9 \
+  python -m pytest tests/test_remittance.py -v
+```
+```
+tests/test_remittance.py::test_notification_row_round_trips PASSED       [ 50%]
+tests/test_remittance.py::test_partner_mirror_reads_remittance_email PASSED [100%]
+============================= 2 passed in 12.29s ==============================
+```
+
+Regression check — ran the existing `test_payment_batch.py` suite once, in
+the foreground, to confirm the `conftest.py` schema-builder change (adding
+`BusinessPartner.__table__`) didn't break anything already depending on that
+fixture:
+
+```
+cd finance-api && TEST_PG_PASSWORD=7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9 \
+  python -m pytest tests/test_payment_batch.py -v
+```
+```
+9 passed, 14 warnings in 47.01s
+```
+
+Did not run the entire finance-api suite end-to-end (only these two test
+files) — see Concerns.
+
+## Deviations from the brief
+
+- **`mirrors.User.email` did not need to be added** — it was already present
+  in `mirrors.py` before this task started (`class User(UUIDPrimaryKey,
+  Base): email: Mapped[str] = mapped_column(String(255), nullable=False)`).
+  The brief's Step 4 snippet implies it's a new addition; in this codebase
+  state it was a no-op. Verified against the live `users` table regardless
+  (`character varying(255) NOT NULL` — matches).
+- Everything else in the brief (interfaces, exact column list/types for
+  `BusinessPartner`, the `CompanyConfig.remittance_config` addition, the
+  "no `TimestampMixin` on `CompanyConfig`" rule, the conftest registration,
+  the test body, and the commit message) matched the codebase and was
+  followed verbatim.
+
+## Concerns
+
+- `business_partners.remittance_email` and `company_config.remittance_config`
+  are declared as `nullable=True`/`nullable=False` based on migration files,
+  not live-verified columns, because those migrations (from the two
+  preceding tasks) have not been applied to the local dev database. This
+  mirrors exactly what the task's "context the brief cannot know" instructed,
+  but it means the mirror is untested against the actual post-migration
+  physical column until dev is migrated. Recommend running
+  `alembic upgrade head` for `mdm-api` and `epms-api` inside their
+  containers (never the host shell) before/alongside Task 5's work, and
+  re-verifying with a live `\d` once that's done.
+- Did not run the full finance-api pytest suite (only `test_remittance.py`
+  and `test_payment_batch.py`), per explicit instruction to run only these
+  two files in the foreground. Other suites depending on
+  `mirrors.py`/`conftest.py` (e.g. `test_account_balance.py`, which the
+  conftest's `seed_posted_jv_two_cc` fixture serves) were not re-run in this
+  session; the change made here is additive-only (new table, new nullable
+  column with a default) and low-risk for those, but this is not directly
+  verified.

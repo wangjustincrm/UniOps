@@ -220,6 +220,19 @@ async def test_settings_none_when_no_smtp_host_anywhere(db_session):
     assert await rc.load(db_session) is None
 
 
+def test_safe_logo_url_accepts_images_and_rejects_injection():
+    from app.services.remittance_config import _safe_logo_url
+    # accepted
+    assert _safe_logo_url("data:image/png;base64,AAAA") == "data:image/png;base64,AAAA"
+    assert _safe_logo_url("https://cdn.example.com/logo.png") == "https://cdn.example.com/logo.png"
+    # rejected -> None
+    assert _safe_logo_url(None) is None
+    assert _safe_logo_url("") is None
+    assert _safe_logo_url('data:image/png;base64,AA" onload=alert(1)') is None   # attribute-injection via a quote
+    assert _safe_logo_url("javascript:alert(1)") is None
+    assert _safe_logo_url("data:text/html,<script>") is None
+
+
 # ── Task 6: payee grouping and block reasons ────────────────────────────────────
 
 def _pa(vendor_id, amount="100.00", invoice_ids=None, po_id=None):
