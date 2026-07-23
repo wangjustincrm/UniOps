@@ -535,3 +535,87 @@ async def test_blocked_group_is_skipped_not_sent(db_session):
     rows = (await db_session.execute(select(RemittanceNotification).where(
         RemittanceNotification.scope_id == scope_id))).scalars().all()
     assert rows == []
+
+
+# ── Fix: durability and upsert race ─────────────────────────────────────────
+
+async def test_render_failure_does_not_stop_the_others(db_session):
+    """Same shape as test_one_failure_does_not_stop_the_others, but the
+    failure is injected into render() rather than send_email() — proving
+    render() is inside the same per-payee isolation boundary as send_email(),
+    not sitting outside it where a template error on payee N would abort the
+    loop for every payee after N."""
+    g1, g2 = _group(), _group()
+    g1.email = "first@acme.test"
+    g2.party_id = uuid.uuid4()
+    g2.email = "second@acme.test"
+    scope_id = uuid.uuid4()
+    calls = {"n": 0}
+
+    def _boom(*a, **k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("template broken")
+        return "subject", "<p>ok</p>"
+
+    with patch("app.crud.remittance_send.render", side_effect=_boom), \
+         patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        results = await rsend.send_groups(
+            db_session, scope_kind=SCOPE_BATCH, scope_id=scope_id, groups=[g1, g2],
+            reference="R", payment_method="bank_transfer",
+            company_name="C", sender=_sender(), actor_id=uuid.uuid4())
+
+    assert sorted(r["status"] for r in results) == ["failed", "sent"]
+    assert m.await_count == 1                 # second payee's send was actually attempted
+    assert m.await_args.args[0] == "second@acme.test"
+    rows = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalars().all()
+    assert len(rows) == 2                      # both outcomes landed in the log
+
+
+async def test_send_durably_commits_not_just_flushes(db_session):
+    """A resend must be recorded even if a later payee, or the caller,
+    blows up before any trailing commit would run. A trailing-commit-only
+    implementation (or one that only flushes and leaves committing to the
+    caller — the pre-fix state of this module) would leave the row visible
+    only within this same session's still-open transaction; rolling that
+    session back right after send_groups returns would then wipe an
+    uncommitted insert. Surviving that rollback proves the row was already
+    hard-committed before send_groups returned."""
+    g = _group()
+    scope_id = uuid.uuid4()
+    await _send(db_session, [g], scope_id)
+
+    await db_session.rollback()
+
+    row = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalar_one()
+    assert row.status == SENT
+
+
+async def test_concurrent_double_send_lands_on_update_not_integrityerror(db_session):
+    """Simulates the race: another in-flight send already inserted the row
+    for this exact (scope_kind, scope_id, recipient_kind, party_id) key
+    before this call's _upsert runs. The atomic ON CONFLICT DO UPDATE must
+    land this second attempt on the update path — incrementing attempts from
+    the row that's already there — rather than raising IntegrityError after
+    the email has already gone out."""
+    g = _group()
+    scope_id = uuid.uuid4()
+    db_session.add(RemittanceNotification(
+        scope_kind=SCOPE_BATCH, scope_id=scope_id,
+        recipient_kind=g.recipient_kind, party_id=g.party_id, party_name=g.party_name,
+        email=g.email, payment_record_ids=[], amount=Decimal("1.00"), currency="CAD",
+        status=SENT, attempts=1, sent_at=datetime.now(timezone.utc),
+        created_by=uuid.uuid4(),
+    ))
+    await db_session.commit()
+
+    results, m = await _send(db_session, [g], scope_id)
+
+    assert [r["status"] for r in results] == ["sent"]
+    assert m.await_count == 1
+    rows = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_id == scope_id))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].attempts == 2
