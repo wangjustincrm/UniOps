@@ -1,7 +1,11 @@
+import csv
+import io
 import uuid
 from datetime import date
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +15,10 @@ from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
+from app.models.mirrors import ExpenseClaim
 from app.models.payment_batch import PaymentBatch, PaymentBatchLine
-from app.schemas.payment import PaymentListResponse, PaymentResponse
+from app.models.remittance import SENT
+from app.schemas.payment import PaymentListResponse, PaymentResponse, PaymentSummaryRow
 from app.schemas.payment_execute import PaymentExecuteRequest, PaymentExecuteResponse
 
 router = APIRouter(prefix="/payments", tags=["payments"])
@@ -60,17 +66,110 @@ async def record_payment_deprecated(_: CurrentUser = ...):
     )
 
 
+class PaymentFilters(BaseModel):
+    pa_id: uuid.UUID | None = None
+    vendor_id: uuid.UUID | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+    doc_kind: str | None = None
+    currency: str | None = None
+    payment_method: str | None = None
+    status: str | None = None
+    bank_account_id: uuid.UUID | None = None
+    batch_id: uuid.UUID | None = None
+    source: str | None = None          # batch | single
+    remittance: str | None = None      # sent | not_sent — page-independent filter only;
+    # richer blocked states (see _remittance_status) are computed live per page.
+    q: str | None = None
+
+
+async def _remittance_status(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
+    """'sent' / 'not_sent' for the CURRENT PAGE only — block reasons are live
+    and too costly to evaluate across an unbounded result set."""
+    if not records:
+        return {}
+    ids = [str(r.id) for r in records]
+    sent = set((await db.execute(sa.text(
+        "SELECT DISTINCT jsonb_array_elements_text(payment_record_ids) AS rid"
+        " FROM payment_remittance_notifications"
+        " WHERE status = :s AND payment_record_ids ?| :ids"
+    ), {"s": SENT, "ids": ids})).scalars().all())
+    return {r.id: ("sent" if str(r.id) in sent else "not_sent") for r in records}
+
+
+async def _payee_names(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
+    """Vendor name for vendor payments (already on the record); the claimant's
+    name for claim payments, which carry no vendor columns at all."""
+    out = {r.id: (r.vendor_name or "") for r in records}
+    claim_ids = [r.doc_id for r in records
+                 if r.doc_kind == "expense_claim" and r.doc_id]
+    if claim_ids:
+        rows = (await db.execute(
+            select(ExpenseClaim.id, ExpenseClaim.employee_name)
+            .where(ExpenseClaim.id.in_(claim_ids))
+        )).all()
+        name_by_claim = dict(rows)
+        for r in records:
+            if r.doc_kind == "expense_claim":
+                out[r.id] = name_by_claim.get(r.doc_id, "")
+    return out
+
+
 @router.get("", response_model=PaymentListResponse)
 async def list_payments(
+    filters: PaymentFilters = Depends(),
     db: AsyncSession = Depends(get_db),
     _: CurrentUser = ...,
-    pa_id: uuid.UUID | None = Query(default=None),
-    vendor_id: uuid.UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ):
-    items, total = await payment_crud.get_all(db, pa_id=pa_id, vendor_id=vendor_id, page=page, page_size=page_size)
-    return PaymentListResponse(items=items, total=total)
+    items, total = await payment_crud.get_all(
+        db, page=page, page_size=page_size, **filters.model_dump())
+    status_by_id = await _remittance_status(db, items)
+    payee_by_id = await _payee_names(db, items)
+    out = []
+    for r in items:
+        d = PaymentResponse.model_validate(r).model_dump()
+        d["payee_name"] = payee_by_id.get(r.id) or None
+        d["remittance_status"] = status_by_id.get(r.id)
+        out.append(d)
+    return PaymentListResponse(items=out, total=total)
+
+
+@router.get("/summary", response_model=list[PaymentSummaryRow])
+async def payments_summary(filters: PaymentFilters = Depends(),
+                           db: AsyncSession = Depends(get_db),
+                           _: CurrentUser = ...):
+    """Totals over the WHOLE filtered set, not the current page — a separate
+    endpoint rather than something derived from the page for exactly that
+    reason."""
+    return await payment_crud.summary(db, **filters.model_dump())
+
+
+@router.get("/export")
+async def export_payments(filters: PaymentFilters = Depends(),
+                          db: AsyncSession = Depends(get_db),
+                          _: CurrentUser = ...):
+    """CSV of the whole filtered set — pagination deliberately ignored."""
+    rows = await payment_crud.export_rows(db, **filters.model_dump())
+    payee_by_id = await _payee_names(db, rows)
+
+    def _iter():
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["payment_date", "doc_kind", "doc_number", "payee", "amount",
+                    "currency", "payment_method", "source", "status"])
+        yield buf.getvalue()
+        for r in rows:
+            buf.seek(0), buf.truncate(0)
+            w.writerow([r.payment_date, r.doc_kind or "", r.doc_number or "",
+                        payee_by_id.get(r.id) or "", r.amount, r.currency,
+                        r.payment_method, "batch" if r.batch_id else "single",
+                        r.status])
+            yield buf.getvalue()
+
+    return StreamingResponse(_iter(), media_type="text/csv", headers={
+        "Content-Disposition": 'attachment; filename="payments.csv"'})
 
 
 # NOTE: GET /{payment_id} is defined at the END of this file so literal routes
