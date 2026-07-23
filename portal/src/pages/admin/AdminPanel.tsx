@@ -1018,8 +1018,8 @@ function NotificationSettings() {
         </p>
         <p className="text-xs text-neutral-500 mb-1">
           This applies system-wide: the shared task inbox also carries EPMS, OA expense claims,
-          Finance budget plans and VMS tasks, so e.g. setting a mailbox for Finance Business Partner
-          here also redirects Finance budget-plan notifications for that role.
+          Finance budget plans and VMS tasks, so e.g. setting a mailbox for Finance BP here also
+          redirects Finance budget-plan notifications for that role.
         </p>
         <p className="text-xs text-neutral-500 mb-3">
           Note: a shared mailbox is delivered by email only. When the Default Notification Channel
@@ -1031,7 +1031,9 @@ function NotificationSettings() {
             <div key={code} className="flex items-center gap-3">
               <span className="w-44 shrink-0 text-sm text-neutral-600">{ROLE_LABELS[code]}</span>
               <Input
-                type="email"
+                // 刻意用 text 而非 email:浏览器原生校验会抢在 onSubmit 之前拦下,
+                // 用户只看到气泡提示,看不到我们指名角色的那条内联错误。
+                type="text"
                 className="flex-1"
                 placeholder="Notify each member individually"
                 value={mailboxesVal[code] ?? ''}
