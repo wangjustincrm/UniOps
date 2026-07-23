@@ -42,14 +42,21 @@ async def load(db: AsyncSession) -> RemittanceSettings | None:
     if not from_email:
         return None
 
-    use_po = bool(row["po_smtp_host"])
-    host = (row["po_smtp_host"] if use_po else row["smtp_host"]) or ""
+    # Per-field fallback from the outbound po_smtp_* profile to the internal
+    # smtp_* profile — matches epms-api/app/api/v1/po.py. Each field falls
+    # back independently (`is not None`, not truthiness) so an admin can
+    # override just the host/user/password while still inheriting the
+    # internal profile's port and TLS mode, and so an explicit
+    # po_smtp_use_tls=False is honoured rather than falling through.
+    host = row["po_smtp_host"] if row["po_smtp_host"] is not None else row["smtp_host"]
+    host = host or ""
     if not host:
         return None
-    port = (row["po_smtp_port"] if use_po else row["smtp_port"]) or 587
-    user = row["po_smtp_user"] if use_po else row["smtp_user"]
-    password = row["po_smtp_password"] if use_po else row["smtp_password"]
-    use_tls = row["po_smtp_use_tls"] if use_po else row["smtp_use_tls"]
+    port = row["po_smtp_port"] if row["po_smtp_port"] is not None else row["smtp_port"]
+    port = port or 587
+    user = row["po_smtp_user"] if row["po_smtp_user"] is not None else row["smtp_user"]
+    password = row["po_smtp_password"] if row["po_smtp_password"] is not None else row["smtp_password"]
+    use_tls = row["po_smtp_use_tls"] if row["po_smtp_use_tls"] is not None else row["smtp_use_tls"]
 
     return RemittanceSettings(
         enabled=True,

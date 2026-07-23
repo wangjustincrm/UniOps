@@ -120,3 +120,69 @@ async def test_settings_prefer_po_smtp_and_own_from(db_session):
     assert s.from_email == "ap@crm.test"     # never the shared smtp_from
     assert s.cc_email == "apbox@crm.test"
     assert s.smtp_user == "po_user"          # no override configured
+
+
+async def test_settings_per_field_fallback_from_partial_po_smtp(db_session):
+    """A po_smtp_* override that only sets host/user (leaving port and TLS
+    NULL to inherit) must take port/TLS from the internal smtp_* profile
+    per-field, not fall back to the internal profile wholesale nor to
+    hardcoded defaults. This fails against the old all-or-nothing block
+    switch, which would force port=587 and smtp_use_tls=False here."""
+    cfg = CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test",
+    })
+    db_session.add(cfg)
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_user='po_user',"
+        " po_smtp_port=NULL, po_smtp_use_tls=NULL,"
+        " smtp_host='int.host', smtp_port=2525, smtp_use_tls=true"
+        " WHERE id = :i"), {"i": str(cfg.id)})
+
+    s = await rc.load(db_session)
+    assert s is not None
+    assert s.smtp_host == "po.host"      # from po profile (set)
+    assert s.smtp_user == "po_user"      # from po profile (set)
+    assert s.smtp_port == 2525           # inherited from internal profile, not 587
+    assert s.smtp_use_tls is True        # inherited from internal profile, not False
+
+
+async def test_settings_explicit_po_use_tls_false_is_honoured(db_session):
+    """po_smtp_use_tls explicitly False is a real setting ('this relay does
+    not use TLS') and must not fall through to the internal profile's True."""
+    cfg = CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test",
+    })
+    db_session.add(cfg)
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_use_tls=false,"
+        " smtp_use_tls=true WHERE id = :i"), {"i": str(cfg.id)})
+
+    s = await rc.load(db_session)
+    assert s is not None
+    assert s.smtp_use_tls is False
+
+
+async def test_settings_none_when_from_email_blank(db_session):
+    cfg = CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "   ",
+    })
+    db_session.add(cfg)
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host' WHERE id = :i"), {"i": str(cfg.id)})
+
+    assert await rc.load(db_session) is None
+
+
+async def test_settings_none_when_no_smtp_host_anywhere(db_session):
+    cfg = CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test",
+    })
+    db_session.add(cfg)
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host=NULL, smtp_host=NULL WHERE id = :i"), {"i": str(cfg.id)})
+
+    assert await rc.load(db_session) is None
