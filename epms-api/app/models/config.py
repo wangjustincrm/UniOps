@@ -92,6 +92,12 @@ class CompanyConfig(Base):
     prepayment_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     budget_admin_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     collection_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Remittance advice: {enabled, from_email, from_name, cc_email,
+    # smtp_user, smtp_password}. Deliberately a JSONB blob defaulting to {}
+    # so every consumer reads through .get() with an explicit fallback — a
+    # non-null scalar default would shadow the switch the way
+    # notification_channel shadowed default_channel.
+    remittance_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     role_management: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     workflow_defs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     role_permissions: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

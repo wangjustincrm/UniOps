@@ -203,3 +203,20 @@ async def test_branding_blank_module_falls_back_to_portal(admin_client, client):
     r = await client.get(BRANDING_URL, params={"module": "oa"})
     assert r.status_code == 200
     assert r.json()["tagline"] == "Portal Hub"
+
+
+# ── Remittance config ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_remittance_config_patches_and_defaults_empty(admin_client):
+    got = (await admin_client.get(CONFIG_URL)).json()
+    assert got["remittance_config"] == {}
+
+    patched = (await admin_client.patch(CONFIG_URL, json={
+        "remittance_config": {
+            "enabled": True, "from_email": "ap@crm.test", "from_name": "CRM AP",
+            "cc_email": "apbox@crm.test",
+        },
+    })).json()
+    assert patched["remittance_config"]["enabled"] is True
+    assert patched["remittance_config"]["from_email"] == "ap@crm.test"

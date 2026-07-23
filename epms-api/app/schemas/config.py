@@ -170,6 +170,7 @@ class ConfigUpdate(BaseModel):
     prepayment_config: dict[str, Any] | None = None
     budget_admin_config: dict[str, Any] | None = None
     collection_config: dict[str, Any] | None = None
+    remittance_config: dict[str, Any] | None = None
     role_management: dict[str, Any] | None = None
     workflow_defs: dict[str, Any] | None = None
     role_permissions: dict[str, Any] | None = None
@@ -230,6 +231,7 @@ class ConfigResponse(BaseModel):
     prepayment_config: dict[str, Any]
     budget_admin_config: dict[str, Any]
     collection_config: dict[str, Any]
+    remittance_config: dict[str, Any]
     role_management: dict[str, Any]
     workflow_defs: dict[str, Any]
     role_permissions: dict[str, Any]
