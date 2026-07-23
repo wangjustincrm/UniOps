@@ -594,24 +594,65 @@ async def test_send_durably_commits_not_just_flushes(db_session):
 
 
 async def test_concurrent_double_send_lands_on_update_not_integrityerror(db_session):
-    """Simulates the race: another in-flight send already inserted the row
-    for this exact (scope_kind, scope_id, recipient_kind, party_id) key
-    before this call's _upsert runs. The atomic ON CONFLICT DO UPDATE must
-    land this second attempt on the update path — incrementing attempts from
-    the row that's already there — rather than raising IntegrityError after
-    the email has already gone out."""
+    """Exercises the real race, not a stand-in for it: a second, genuinely
+    concurrent `AsyncSession` (its own connection, its own open transaction)
+    holds an *uncommitted* INSERT for this exact
+    (scope_kind, scope_id, recipient_kind, party_id) key while `send_groups`
+    runs on `db_session` for the same key. PostgreSQL makes `send_groups`'s
+    `INSERT ... ON CONFLICT DO UPDATE` block on that row's key lock until the
+    other session's transaction resolves — this test asserts the block
+    actually happens (`task` is not done after a short wait), then commits
+    the other session and asserts `send_groups` unblocks onto the UPDATE
+    path (`"sent"`, `attempts == 2`, one row, no exception) rather than
+    racing the SELECT of a select-then-write `_upsert` and losing to
+    IntegrityError after the email already went out.
+
+    Proved both ways by temporarily reverting `_upsert` to a
+    select-then-write form (see the fix report): against that code this same
+    test fails — the blocked INSERT unblocks once the other session commits,
+    finds the row already there, and raises `IntegrityError` (unique
+    violation), which propagates out of `send_groups` because nothing there
+    catches it. Restored to the atomic `ON CONFLICT DO UPDATE` implementation,
+    it passes."""
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from tests.conftest import ASYNC_URL
+
     g = _group()
     scope_id = uuid.uuid4()
-    db_session.add(RemittanceNotification(
-        scope_kind=SCOPE_BATCH, scope_id=scope_id,
-        recipient_kind=g.recipient_kind, party_id=g.party_id, party_name=g.party_name,
-        email=g.email, payment_record_ids=[], amount=Decimal("1.00"), currency="CAD",
-        status=SENT, attempts=1, sent_at=datetime.now(timezone.utc),
-        created_by=uuid.uuid4(),
-    ))
-    await db_session.commit()
 
-    results, m = await _send(db_session, [g], scope_id)
+    # A second session on its own connection — simulates another in-flight
+    # send for the same payee that has started (inserted its row) but not
+    # yet committed.
+    engine2 = create_async_engine(ASYNC_URL, echo=False)
+    maker2 = async_sessionmaker(engine2, expire_on_commit=False)
+    session2 = maker2()
+    try:
+        session2.add(RemittanceNotification(
+            scope_kind=SCOPE_BATCH, scope_id=scope_id,
+            recipient_kind=g.recipient_kind, party_id=g.party_id, party_name=g.party_name,
+            email=g.email, payment_record_ids=[], amount=Decimal("1.00"), currency="CAD",
+            status=SENT, attempts=1, sent_at=datetime.now(timezone.utc),
+            created_by=uuid.uuid4(),
+        ))
+        await session2.flush()   # row exists only inside session2's open transaction
+
+        task = asyncio.create_task(_send(db_session, [g], scope_id))
+        await asyncio.sleep(0.3)   # let the task reach and block on the row lock
+        assert not task.done(), (
+            "expected send_groups's INSERT to block on session2's uncommitted "
+            "row for the same key — it returned instead, so nothing was "
+            "actually overlapping"
+        )
+
+        await session2.commit()   # release the lock; the blocked statement can now resolve
+
+        results, m = await asyncio.wait_for(task, timeout=10)
+    finally:
+        await session2.close()
+        await engine2.dispose()
 
     assert [r["status"] for r in results] == ["sent"]
     assert m.await_count == 1

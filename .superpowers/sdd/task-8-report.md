@@ -279,3 +279,149 @@ cd c:/Project/uniops-remittance/finance-api && TEST_PG_PASSWORD=7c0a03bb8c2afef6
 
 Result: **29 passed in 123.79s** — every test in the file passes, including the three new
 Fix-2/Fix-1 tests added above the existing Task 8 block.
+
+## Fix: race test honesty and success-path guard
+
+Follow-up to a second review pass on the code above. Three findings, all in
+`finance-api/tests/test_remittance.py` and `finance-api/app/crud/remittance_send.py`.
+
+### Finding 1 — the "concurrency" test wasn't concurrent
+
+`test_concurrent_double_send_lands_on_update_not_integrityerror` inserted a colliding row and
+**committed it before calling `send_groups`**. That's sequential setup, not a race — the old
+select-then-write `_upsert` would just find the already-committed row on its SELECT and take
+the update branch cleanly. The test passed unchanged against the pre-fix code and proved
+nothing about the race it's named for; it was a duplicate of
+`test_resend_upserts_and_increments_attempts` with different setup dressing.
+
+**Route taken: (a) — a real interleaving, achieved.** `tests/conftest.py`'s `db_session`
+fixture is a plain `AsyncSession` against a freshly migrated database with no outer
+transaction/rollback wrapper (confirmed by re-reading it), and `ASYNC_URL` is a plain
+module-level constant — so a second, fully independent `AsyncSession` on its own
+`create_async_engine(ASYNC_URL)` connection could be constructed directly inside the test,
+without calling `_migrate()` again (which would drop the schema out from under the first
+session).
+
+Rewrote the test to:
+1. Open `session2` (separate engine, separate connection) and `add()` + `flush()` (not
+   commit) a `RemittanceNotification` row for the exact same
+   `(scope_kind, scope_id, recipient_kind, party_id)` key — the row now exists only inside
+   `session2`'s still-open transaction, invisible to any other session.
+2. `asyncio.create_task(_send(db_session, [g], scope_id))` — starts `send_groups` on the
+   primary session concurrently.
+3. `await asyncio.sleep(0.3)`, then `assert not task.done()` — asserts the task actually
+   blocked on the database (on the row's unique-index key lock), not that it merely hasn't
+   been scheduled yet. This is the load-bearing assertion that makes the test's concurrency
+   claim falsifiable instead of decorative.
+4. `await session2.commit()` — releases the lock the other session was holding.
+5. `await asyncio.wait_for(task, timeout=10)` — the now-unblocked `send_groups` call
+   completes; assert it landed on `"sent"`, one row, `attempts == 2`.
+
+**Proved both ways, as instructed:**
+
+- *Against the fixed code* (`ON CONFLICT DO UPDATE`): ran `-k concurrent` alone —
+  `1 passed in 8.46s`. The short, non-timeout-bound runtime is itself evidence the test isn't
+  just waiting out a `wait_for` timeout: it blocked on the real lock for a fraction of a
+  second and unblocked immediately once `session2.commit()` ran.
+
+- *Against a temporary revert of `_upsert` to select-then-write* (SELECT for the existing
+  row; `UPDATE` the ORM object if found, else `db.add()` a new one; no `ON CONFLICT`) — same
+  test, same `-k concurrent`:
+
+  ```
+  AssertionError: assert ['failed'] == ['sent']
+  ...
+  ERROR app.crud.remittance_send:remittance_send.py:167 Remittance send SUCCEEDED but the log
+  write FAILED for vendor ACME (388e03eb-...) — email was already sent to ap@acme.test:
+  (sqlalchemy.dialects.postgresql.asyncpg.IntegrityError) <class
+  'asyncpg.exceptions.UniqueViolationError'>: duplicate key value violates unique constraint
+  "uq_remittance_scope_party"
+  DETAIL:  Key (scope_kind, scope_id, recipient_kind, party_id)=(batch, 199778a2-...) already
+  exists.
+  ```
+
+  This is exactly the failure mode the docstring describes: the reverted `_upsert`'s SELECT
+  ran before `session2` committed, found nothing, and its subsequent `INSERT` blocked on
+  `session2`'s uncommitted row; once `session2` committed, the blocked `INSERT` unblocked and
+  raised a real `UniqueViolationError`/`IntegrityError` — the second sender's email had
+  already gone out (mocked `send_email` was still called) and the write to record it then
+  crashed. It shows up here as `"failed"` rather than an uncaught exception only because this
+  same round of fixes also wraps the success-path `_upsert`+`commit()` in a `try/except`
+  (Finding 2, below) — that guard is what turned the raw `IntegrityError` into a caught,
+  logged, reported failure instead of an unhandled exception aborting the whole test process.
+  Either way the test fails against the old code and passes against the new code, which is
+  what matters. Restored `_upsert` to the atomic `ON CONFLICT DO UPDATE` form immediately
+  after capturing this output; re-ran the full file to confirm 29/29 green again.
+
+Renamed nothing — the original name
+(`test_concurrent_double_send_lands_on_update_not_integrityerror`) already accurately
+describes what the rewritten test proves, now that it actually proves it. Kept the docstring
+but rewrote it to describe the real second-session mechanics and to record how it was
+verified both ways.
+
+### Finding 2 — success path was unguarded
+
+The final `_upsert(..., status=SENT, ...)` + `db.commit()` in `send_groups` sat outside any
+`try/except`. A transient DB error there (the email already sent) would propagate straight
+out of `send_groups`, aborting the loop for every remaining payee with no result recorded for
+the one that failed — and, worse, no way for a caller/operator to tell "the email went out but
+we lost the record" apart from "the email never went out".
+
+Fix: wrapped that `_upsert` + `commit()` in its own `try/except Exception`. On failure:
+- `await db.rollback()` — the session must be usable for the next payee; a failed statement
+  in Postgres poisons the current transaction until it's rolled back.
+- `logger.error(...)` naming the payee (`recipient_kind`, `party_name`, `party_id`) and the
+  vendor's email, explicitly stating the email was **already sent** and only the log write
+  failed — worded differently from a plain "failed" so an operator doesn't read this as "the
+  send never happened" and press Send again (which would double-send the vendor).
+- `results.append({..., "status": "failed", "error": f"email sent but not logged: {exc}"})` —
+  the result list still says `"failed"` (no third status value existed in the vocabulary and
+  nothing downstream consumes one yet), but the `error` string is explicit about what actually
+  failed, matching the log line.
+- `continue` — the loop proceeds to the next payee instead of aborting the whole batch.
+
+Not covered by a dedicated new test (none was requested for this finding, and forcing a
+`_upsert`/`commit()` failure independent of the render/send_email failures would need fault
+injection at the SQL layer); verified by inspection and by confirming the existing
+`test_send_writes_log_and_uses_cc` / `test_resend_upserts_and_increments_attempts` /
+`test_one_failure_does_not_stop_the_others` still pass unchanged (the success path's happy
+case is unaffected — the `try` just wraps what was already there).
+
+Note: the failure-path `_upsert`+`commit()` (the one that records a `render()`/`send_email()`
+failure as a `FAILED` row) has the same latent unguarded-write shape, but the review finding
+was scoped specifically to "the success path" — left as-is, flagging it here rather than
+fixing unrequested scope.
+
+### Finding 3 — render() failures had no log line at all
+
+The prior fix round removed the single shared `logger.error(...)` call from the combined
+`render()`/`send_email()` except block, reasoning that `send_email()` (in
+`app/services/email.py`) already logs SMTP failures and this was a duplicate. That reasoning
+was correct for the `send_email()` case but had a side effect: a `render()` failure never
+reaches `send_email()`, so removing that line left `render()` failures with **no** log line
+anywhere — only the `FAILED` database row recorded them.
+
+Fix: split the single `try/except` around `render()` + `send_email()` into two separate
+`try/except` blocks:
+- `render()`'s except block now has its own `logger.error(...)` — naming the payee and
+  stating the send was never attempted. This is genuinely new information no other code path
+  logs.
+- `send_email()`'s except block still has **no** added log call — the comment there notes
+  explicitly that `send_email()` already logs and re-raises, so nothing is added on top of it.
+
+This satisfies "does not duplicate what `email.py` already logs" precisely: the new log line
+only ever fires on the code path `email.py` never sees (`render()` raising before
+`send_email()` is even called), not on the path `email.py` already logs.
+
+Confirmed `test_render_failure_does_not_stop_the_others` (which patches
+`app.crud.remittance_send.render` to raise on its first call) still passes against the split
+try/except — it doesn't assert on log output, only on `results` and the DB rows, both
+unaffected by the split.
+
+### Final test run
+
+```
+cd c:/Project/uniops-remittance/finance-api && TEST_PG_PASSWORD=7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9 python -m pytest tests/test_remittance.py -v
+```
+
+Result: **29 passed in 124.27s** — every test in the file passes.

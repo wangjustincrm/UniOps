@@ -19,6 +19,7 @@ by the caller — there is no unrelated payment work sitting uncommitted in
 this session that a per-payee `db.commit()` could accidentally flush early.
 Do not "optimize" this back into a single trailing commit.
 """
+import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -30,6 +31,8 @@ from app.models.remittance import FAILED, SENT, RemittanceNotification
 from app.services.email import send_email
 from app.services.remittance_config import RemittanceSettings
 from app.services.remittance_template import render
+
+logger = logging.getLogger(__name__)
 
 
 async def _upsert(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
@@ -101,9 +104,29 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
             results.append({**base, "status": "skipped",
                              "error": ", ".join(g.block_reasons)})
             continue
+
         try:
             subject, html = render(g, company_name=company_name, reference=reference,
                                     payment_method=payment_method)
+        except Exception as exc:  # noqa: BLE001 — isolate one payee's failure
+            # render() never reaches send_email(), so nothing has logged this
+            # yet anywhere — unlike an SMTP failure (logged inside
+            # app/services/email.py), a template failure has no other log
+            # line, so it gets one here.
+            logger.error(
+                "Remittance render failed for %s %s (%s): %s — send not attempted",
+                g.recipient_kind, g.party_name, g.party_id, exc,
+            )
+            await _upsert(db, scope_kind=scope_kind, scope_id=scope_id, group=g,
+                          status=FAILED, error=str(exc)[:500], actor_id=actor_id)
+            # Commit per payee, right here — see module docstring. A send
+            # that actually happened (or actually failed) must be durable
+            # before moving on to the next payee.
+            await db.commit()
+            results.append({**base, "status": "failed", "error": str(exc)[:500]})
+            continue
+
+        try:
             await send_email(
                 g.email, subject, html, cc=sender.cc_email,
                 smtp_host=sender.smtp_host, smtp_port=sender.smtp_port,
@@ -113,21 +136,36 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
                            if sender.from_name else sender.from_email),
             )
         except Exception as exc:  # noqa: BLE001 — isolate one payee's failure
-            # send_email() already logs and re-raises SMTP failures; a
-            # render() failure never reaches send_email. Either way, the
-            # RemittanceNotification row below is the durable record of the
-            # failure — no second log line for what send_email already logged.
+            # send_email() already logs and re-raises SMTP failures — no
+            # second log line here for what it already logged.
             await _upsert(db, scope_kind=scope_kind, scope_id=scope_id, group=g,
                           status=FAILED, error=str(exc)[:500], actor_id=actor_id)
-            # Commit per payee, right here — see module docstring. A send
-            # that actually happened (or actually failed) must be durable
-            # before moving on to the next payee.
+            # Commit per payee, right here — see module docstring.
             await db.commit()
             results.append({**base, "status": "failed", "error": str(exc)[:500]})
             continue
-        await _upsert(db, scope_kind=scope_kind, scope_id=scope_id, group=g,
-                      status=SENT, error=None, actor_id=actor_id)
-        # Commit per payee, right here — see module docstring.
-        await db.commit()
+
+        try:
+            await _upsert(db, scope_kind=scope_kind, scope_id=scope_id, group=g,
+                          status=SENT, error=None, actor_id=actor_id)
+            # Commit per payee, right here — see module docstring.
+            await db.commit()
+        except Exception as exc:  # noqa: BLE001 — the email already went out;
+            # a failure recording that must never be silent, and must never
+            # be indistinguishable from "the email was never sent" — an
+            # operator who reads a plain "failed" here would resend and
+            # double the vendor's payment email. Roll back so this session
+            # is usable for the remaining payees, and say explicitly in both
+            # the log and the result that the send already happened.
+            await db.rollback()
+            logger.error(
+                "Remittance send SUCCEEDED but the log write FAILED for %s %s "
+                "(%s) — email was already sent to %s: %s",
+                g.recipient_kind, g.party_name, g.party_id, g.email, exc,
+            )
+            results.append({**base, "status": "failed",
+                             "error": f"email sent but not logged: {exc}"[:500]})
+            continue
+
         results.append({**base, "status": "sent", "error": None})
     return results
