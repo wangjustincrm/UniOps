@@ -22,6 +22,7 @@ from app.models.remittance import (
     KIND_VENDOR, SCOPE_BATCH, SENT, RemittanceNotification,
 )
 from app.services import remittance_config as rc
+from app.services import remittance_template as tpl
 
 
 def _token(role="finance_manager"):
@@ -380,3 +381,40 @@ async def test_failed_record_is_excluded(db_session):
     await db_session.flush()
 
     assert await rem.resolve_scope(db_session, "batch", batch_id) == []
+
+
+# ── Task 7: email templates ─────────────────────────────────────────────────
+
+def _group(kind="vendor", inv="VINV-1", doc="PA-0001"):
+    return rem.PayeeGroup(
+        recipient_kind=kind, party_id=uuid.uuid4(), party_name="ACME",
+        email="ap@acme.test", currency="CAD",
+        lines=[rem.GroupLine(vendor_inv_no=inv, doc_number=doc,
+                             payment_date=date(2026, 7, 22), amount=Decimal("100.00"))],
+        total=Decimal("100.00"),
+    )
+
+
+def test_vendor_template_shows_invoice_no_and_hides_pa_no():
+    subject, html = tpl.render(_group(), company_name="Canada Royal Milk",
+                               reference="BP-20260722-0001", payment_method="bank_transfer")
+    assert "VINV-1" in html
+    assert "PA-0001" not in html          # internal document number, not the vendor's concern
+    assert "100.00" in html
+    assert "2026-07-22" in html
+    assert "Remittance Advice" in subject
+
+
+def test_employee_template_shows_claim_no():
+    _, html = tpl.render(_group(kind="employee", inv="", doc="EXP-0007"),
+                         company_name="Canada Royal Milk",
+                         reference="BP-20260722-0001", payment_method="bank_transfer")
+    assert "EXP-0007" in html
+    assert "Invoice" not in html
+
+
+def test_template_escapes_payee_name():
+    g = _group()
+    g.party_name = "<script>x</script>"
+    _, html = tpl.render(g, company_name="C", reference="R", payment_method="bank_transfer")
+    assert "<script>" not in html
