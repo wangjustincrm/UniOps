@@ -57,6 +57,15 @@ interface CompanyConfig {
     cc_email?: string
     smtp_user?: string
     smtp_password?: string
+    template?: {
+      subject?: string
+      heading?: string
+      greeting?: string
+      intro?: string
+      footer?: string
+      brand_color?: string
+      show_logo?: boolean
+    }
   } | null
 }
 
@@ -1025,6 +1034,38 @@ function NotificationSettings() {
 // blob server-side, so the Save button is gated on the config having loaded —
 // saving an empty form over a populated config would wipe it.
 
+// Mirrors finance-api/app/services/remittance_template.py DEFAULT_TEMPLATE
+// verbatim — this is what a blank field falls back to server-side, and what
+// the editor pre-fills so it always previews the email that will actually
+// send. Do not change these strings without intending to change the default
+// email everyone gets.
+const DEFAULT_TEMPLATE = {
+  subject: 'Remittance Advice — {{company_name}} — {{reference}}',
+  heading: 'Remittance Advice',
+  greeting: 'Dear {{payee_name}},',
+  intro: 'The following {{doc_type}} have been paid.',
+  footer: 'Reference: {{reference}}\nPayment method: {{payment_method}}\n\n'
+    + 'This is an automated notification from {{company_name}}. Please do '
+    + 'not reply to this message; contact your accounts payable '
+    + 'representative with any questions.',
+  brand_color: '#085E5E',
+  show_logo: false,
+}
+
+// Sample data for the frontend-only preview — illustrative, not a byte-exact
+// mirror of the backend HTML (the payment table itself is server-rendered).
+const REMITTANCE_PREVIEW_SAMPLE: Record<string, string> = {
+  company_name: 'Canada Royal Milk',
+  payee_name: 'Acme Supplies Ltd',
+  doc_type: 'invoices',
+  reference: 'BP-20260723-0001',
+  total: '1,234.56 CAD',
+  payment_method: 'Bank Transfer',
+  currency: 'CAD',
+}
+const fillRemittancePreview = (t: string) =>
+  t.replace(/\{\{(\w+)\}\}/g, (_, k) => REMITTANCE_PREVIEW_SAMPLE[k] ?? `{{${k}}}`)
+
 function RemittanceSettings() {
   const { data: cfg, isLoading } = useConfig()
   const save = useSaveConfig()
@@ -1035,15 +1076,30 @@ function RemittanceSettings() {
   const [smtpUser, setSmtpUser] = useState<string | null>(null)
   const [smtpPassword, setSmtpPassword] = useState<string | null>(null)
   const [showPwd, setShowPwd] = useState(false)
+  const [tplSubject, setTplSubject] = useState<string | null>(null)
+  const [tplHeading, setTplHeading] = useState<string | null>(null)
+  const [tplGreeting, setTplGreeting] = useState<string | null>(null)
+  const [tplIntro, setTplIntro] = useState<string | null>(null)
+  const [tplFooter, setTplFooter] = useState<string | null>(null)
+  const [tplBrandColor, setTplBrandColor] = useState<string | null>(null)
+  const [tplShowLogo, setTplShowLogo] = useState<boolean | null>(null)
   const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
 
   const rc = cfg?.remittance_config ?? {}
+  const tpl = rc.template ?? {}
   const enabledVal = enabled ?? rc.enabled ?? false
   const fromEmailVal = fromEmail ?? rc.from_email ?? ''
   const fromNameVal = fromName ?? rc.from_name ?? ''
   const ccEmailVal = ccEmail ?? rc.cc_email ?? ''
   const smtpUserVal = smtpUser ?? rc.smtp_user ?? ''
   const smtpPasswordVal = smtpPassword ?? rc.smtp_password ?? ''
+  const tplSubjectVal = tplSubject ?? tpl.subject ?? DEFAULT_TEMPLATE.subject
+  const tplHeadingVal = tplHeading ?? tpl.heading ?? DEFAULT_TEMPLATE.heading
+  const tplGreetingVal = tplGreeting ?? tpl.greeting ?? DEFAULT_TEMPLATE.greeting
+  const tplIntroVal = tplIntro ?? tpl.intro ?? DEFAULT_TEMPLATE.intro
+  const tplFooterVal = tplFooter ?? tpl.footer ?? DEFAULT_TEMPLATE.footer
+  const tplBrandColorVal = tplBrandColor ?? tpl.brand_color ?? DEFAULT_TEMPLATE.brand_color
+  const tplShowLogoVal = tplShowLogo ?? tpl.show_logo ?? DEFAULT_TEMPLATE.show_logo
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1056,6 +1112,21 @@ function RemittanceSettings() {
     if (ccEmailVal.trim()) body.cc_email = ccEmailVal.trim()
     if (smtpUserVal.trim()) body.smtp_user = smtpUserVal.trim()
     if (smtpPasswordVal.trim()) body.smtp_password = smtpPasswordVal.trim()
+    // template: show_logo and brand_color always included (they're not
+    // free text, so there's no "blank means leave alone" case); text
+    // fields only when non-blank, mirroring the backend's blank→default
+    // fallback (DEFAULT_TEMPLATE) and avoiding writing "" for an untouched
+    // field.
+    const template: NonNullable<NonNullable<CompanyConfig['remittance_config']>['template']> = {
+      show_logo: tplShowLogoVal,
+      brand_color: tplBrandColorVal,
+    }
+    if (tplSubjectVal.trim()) template.subject = tplSubjectVal.trim()
+    if (tplHeadingVal.trim()) template.heading = tplHeadingVal.trim()
+    if (tplGreetingVal.trim()) template.greeting = tplGreetingVal.trim()
+    if (tplIntroVal.trim()) template.intro = tplIntroVal.trim()
+    if (tplFooterVal.trim()) template.footer = tplFooterVal.trim()
+    body.template = template
     try {
       await save.mutateAsync({ remittance_config: body })
       setToast({ ok: true, msg: 'Remittance settings saved.' })
@@ -1107,6 +1178,70 @@ function RemittanceSettings() {
               </button>
             </div>
           </Field>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 p-4">
+        <p className="text-sm font-semibold text-neutral-700 mb-1">Email Template</p>
+        <p className="text-xs text-neutral-500 mb-3">Customize the wording and look of the remittance advice email. The payment table itself is generated automatically and cannot be edited.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <Field label="Subject">
+              <Input value={tplSubjectVal} onChange={(e) => setTplSubject(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Heading">
+            <Input value={tplHeadingVal} onChange={(e) => setTplHeading(e.target.value)} />
+          </Field>
+          <Field label="Greeting">
+            <Input value={tplGreetingVal} onChange={(e) => setTplGreeting(e.target.value)} />
+          </Field>
+          <div className="col-span-2">
+            <Field label="Intro">
+              <Textarea rows={2} value={tplIntroVal} onChange={(e) => setTplIntro(e.target.value)} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Footer">
+              <Textarea rows={4} value={tplFooterVal} onChange={(e) => setTplFooter(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Brand Colour">
+            <div className="flex items-center gap-2">
+              <input type="color" value={tplBrandColorVal} onChange={(e) => setTplBrandColor(e.target.value)}
+                className="h-9 w-9 cursor-pointer rounded border border-neutral-200 p-0.5" />
+              <span className="text-xs text-neutral-500">{tplBrandColorVal}</span>
+            </div>
+          </Field>
+          <Field label="Show Company Logo">
+            <div className="flex items-center gap-2 pt-1.5">
+              <Toggle checked={tplShowLogoVal} onChange={setTplShowLogo} />
+              <span className="text-xs text-neutral-500">Shown at the top of the email, if a logo is set in Company Settings.</span>
+            </div>
+          </Field>
+        </div>
+        <p className="mt-3 text-xs text-neutral-500">
+          Available placeholders: {'{{company_name}}'}, {'{{payee_name}}'}, {'{{doc_type}}'}, {'{{reference}}'}, {'{{total}}'}, {'{{payment_method}}'}, {'{{currency}}'}
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+        <p className="text-sm font-semibold text-neutral-700 mb-3">Preview (sample data — the payment table is added automatically)</p>
+        <div className="rounded-lg border border-neutral-200 bg-white p-5 font-sans text-[#222]">
+          {tplShowLogoVal && cfg?.logo_data_url && (
+            <img src={cfg.logo_data_url} alt="" className="mb-3 max-h-12" />
+          )}
+          <h2 className="mb-2 text-lg font-semibold" style={{ color: tplBrandColorVal }}>
+            {fillRemittancePreview(tplHeadingVal)}
+          </h2>
+          <p className="mb-2 text-sm">{fillRemittancePreview(tplGreetingVal)}</p>
+          <p className="mb-3 text-sm">{fillRemittancePreview(tplIntroVal)}</p>
+          <div className="mb-3 rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-400">
+            [ Payment table appears here ]
+          </div>
+          <div className="whitespace-pre-line text-xs text-neutral-500">
+            {fillRemittancePreview(tplFooterVal)}
+          </div>
         </div>
       </div>
 
