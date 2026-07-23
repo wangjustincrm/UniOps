@@ -1112,21 +1112,33 @@ function RemittanceSettings() {
     if (ccEmailVal.trim()) body.cc_email = ccEmailVal.trim()
     if (smtpUserVal.trim()) body.smtp_user = smtpUserVal.trim()
     if (smtpPasswordVal.trim()) body.smtp_password = smtpPasswordVal.trim()
-    // template: show_logo and brand_color always included (they're not
-    // free text, so there's no "blank means leave alone" case); text
-    // fields only when non-blank, mirroring the backend's blank→default
-    // fallback (DEFAULT_TEMPLATE) and avoiding writing "" for an untouched
-    // field.
-    const template: NonNullable<NonNullable<CompanyConfig['remittance_config']>['template']> = {
-      show_logo: tplShowLogoVal,
-      brand_color: tplBrandColorVal,
+    // Persistence values: state (this session) ?? previously-saved ?? undefined.
+    // Deliberately NOT falling back to DEFAULT_TEMPLATE — a field that is
+    // neither edited nor previously saved must be omitted so the backend
+    // default applies, and stays applied when that default later changes.
+    // (The DISPLAY values above — tplSubjectVal etc. — keep the DEFAULT_TEMPLATE
+    // fallback so the editor still shows/previews the default; only the
+    // persisted payload differs.)
+    const persistStr = (edited: string | null, saved: string | undefined): string | undefined => {
+      const v = edited ?? saved
+      return typeof v === 'string' && v.trim() ? v.trim() : undefined
     }
-    if (tplSubjectVal.trim()) template.subject = tplSubjectVal.trim()
-    if (tplHeadingVal.trim()) template.heading = tplHeadingVal.trim()
-    if (tplGreetingVal.trim()) template.greeting = tplGreetingVal.trim()
-    if (tplIntroVal.trim()) template.intro = tplIntroVal.trim()
-    if (tplFooterVal.trim()) template.footer = tplFooterVal.trim()
-    body.template = template
+    const template: NonNullable<NonNullable<CompanyConfig['remittance_config']>['template']> = {}
+    const subj = persistStr(tplSubject, tpl.subject)
+    if (subj !== undefined) template.subject = subj
+    const heading = persistStr(tplHeading, tpl.heading)
+    if (heading !== undefined) template.heading = heading
+    const greeting = persistStr(tplGreeting, tpl.greeting)
+    if (greeting !== undefined) template.greeting = greeting
+    const intro = persistStr(tplIntro, tpl.intro)
+    if (intro !== undefined) template.intro = intro
+    const footer = persistStr(tplFooter, tpl.footer)
+    if (footer !== undefined) template.footer = footer
+    const bc = tplBrandColor ?? tpl.brand_color            // no DEFAULT fallback
+    if (typeof bc === 'string') template.brand_color = bc
+    const sl = tplShowLogo ?? tpl.show_logo                // no DEFAULT fallback
+    if (typeof sl === 'boolean') template.show_logo = sl
+    if (Object.keys(template).length) body.template = template
     try {
       await save.mutateAsync({ remittance_config: body })
       setToast({ ok: true, msg: 'Remittance settings saved.' })
