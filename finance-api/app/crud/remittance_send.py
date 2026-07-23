@@ -167,7 +167,9 @@ async def send_groups(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
 
         try:
             subject, html = render(g, company_name=company_name, reference=reference,
-                                    payment_method=payment_method)
+                                    payment_method=payment_method,
+                                    template=sender.template,
+                                    logo_data_url=sender.logo_data_url)
         except Exception as exc:  # noqa: BLE001 — isolate one payee's failure
             # render() never reaches send_email(), so nothing has logged this
             # yet anywhere — unlike an SMTP failure (logged inside

@@ -5,10 +5,27 @@ preferred, internal smtp_* as fallback). The From address is always the
 remittance-specific one — never the shared smtp_from — with optional
 credential overrides for servers that reject a mismatched From.
 """
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# Light sanity guard, not a full validator: logo_data_url is admin-uploaded
+# (system_admin-gated, same trust tier as the rest of remittance_config.template
+# per remittance_template.py's docstring) but is interpolated RAW into
+# `<img src="...">` with no escaping (see render()'s logo_html) — a value
+# containing a `"` could close the attribute and inject markup/JS into every
+# remittance email. Only surface values that look like an image data URI or an
+# http(s) URL; anything else (including one crafted with a stray quote) is
+# dropped to None rather than rendered.
+_LOGO_URL_RE = re.compile(r"^(data:image/[a-zA-Z0-9.+-]+;|https?://)", re.IGNORECASE)
+
+
+def _safe_logo_url(value: str | None) -> str | None:
+    if isinstance(value, str) and _LOGO_URL_RE.match(value) and '"' not in value:
+        return value
+    return None
 
 
 @dataclass(frozen=True)
@@ -22,15 +39,17 @@ class RemittanceSettings:
     smtp_user: str | None
     smtp_password: str | None
     smtp_use_tls: bool
+    template: dict = field(default_factory=dict)
+    logo_data_url: str | None = None
 
 
 async def load(db: AsyncSession) -> RemittanceSettings | None:
     """None when remittance is switched off or not configured well enough to
     send (no from address, or no SMTP host anywhere)."""
     row = (await db.execute(sa.text(
-        "SELECT remittance_config, po_smtp_host, po_smtp_port, po_smtp_user,"
-        " po_smtp_password, po_smtp_use_tls, smtp_host, smtp_port, smtp_user,"
-        " smtp_password, smtp_use_tls FROM company_config LIMIT 1"
+        "SELECT remittance_config, logo_data_url, po_smtp_host, po_smtp_port,"
+        " po_smtp_user, po_smtp_password, po_smtp_use_tls, smtp_host, smtp_port,"
+        " smtp_user, smtp_password, smtp_use_tls FROM company_config LIMIT 1"
     ))).mappings().first()
     if row is None:
         return None
@@ -67,4 +86,6 @@ async def load(db: AsyncSession) -> RemittanceSettings | None:
         smtp_user=cfg.get("smtp_user") or user,
         smtp_password=cfg.get("smtp_password") or password,
         smtp_use_tls=bool(use_tls),
+        template=cfg.get("template") or {},
+        logo_data_url=_safe_logo_url(row["logo_data_url"]),
     )

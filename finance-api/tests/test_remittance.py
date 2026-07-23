@@ -19,7 +19,7 @@ from app.models.mirrors import BusinessPartner, CompanyConfig, ExpenseClaim, Inv
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
 from app.models.remittance import (
-    KIND_VENDOR, SCOPE_BATCH, SENT, RemittanceNotification,
+    KIND_VENDOR, SCOPE_BATCH, SCOPE_PAYMENT, SENT, RemittanceNotification,
 )
 from app.models.payment_batch import EXECUTED, PaymentBatch
 from app.services import remittance_config as rc
@@ -1247,3 +1247,51 @@ async def test_preview_payment_scope_requires_payment_authority(client, db_sessi
     r = await client.get(f"/finance/v1/payments/{rec.id}/remittance/preview",
                          headers=_h("requester"))
     assert r.status_code == 403
+
+
+# ── Task 2: template + logo threaded from config into the sent email ────────
+
+
+async def test_load_surfaces_template_and_logo(db_session):
+    db_session.add(CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test",
+        "template": {"heading": "Custom Heading", "show_logo": True}}))
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_port=587,"
+        " po_smtp_use_tls=true, logo_data_url='data:image/png;base64,ZZZ'"))
+
+    s = await rc.load(db_session)
+    assert s is not None
+    assert s.template.get("heading") == "Custom Heading"
+    assert s.template.get("show_logo") is True
+    assert s.logo_data_url == "data:image/png;base64,ZZZ"
+
+
+async def test_send_uses_the_configured_template(db_session):
+    # A configured heading must reach the actually-sent email.
+    await _configured(db_session)  # enables remittance + po_smtp
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET remittance_config = remittance_config || "
+        "'{\"template\": {\"heading\": \"CRM Payment Notice\"}}'::jsonb"))
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-77")
+    pa = _pa(bp.id, "12.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    sent_html = {}
+
+    async def _capture(to, subject, html, **kw):
+        sent_html["subject"], sent_html["html"] = subject, html
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock(side_effect=_capture)):
+        sender = await rc.load(db_session)
+        await rsend.send_groups(
+            db_session, scope_kind=SCOPE_PAYMENT, scope_id=rec.id,
+            groups=await rem.build_groups(db_session, [rec]),
+            reference="PAY-1", payment_method="bank_transfer",
+            company_name="CRM", sender=sender, actor_id=uuid.uuid4())
+    assert "CRM Payment Notice" in sent_html["html"]
