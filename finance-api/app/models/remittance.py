@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, Numeric, String
+from sqlalchemy import DateTime, Index, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,6 +24,12 @@ FAILED = "failed"
 
 class RemittanceNotification(UUIDPrimaryKey, TimestampMixin, Base):
     __tablename__ = "payment_remittance_notifications"
+    __table_args__ = (
+        UniqueConstraint("scope_kind", "scope_id", "recipient_kind", "party_id",
+                         name="uq_remittance_scope_party"),
+        Index("ix_remittance_scope", "scope_kind", "scope_id"),
+        Index("ix_remittance_record_ids", "payment_record_ids", postgresql_using="gin"),
+    )
 
     scope_kind: Mapped[str] = mapped_column(String(10), nullable=False)      # batch | payment
     # No FK: points at payment_batches or payment_records depending on scope_kind.
