@@ -15,15 +15,16 @@
  * fetched individually would show a blank payee even though the list knew
  * the employee's name.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Download } from 'lucide-react'
-import { financeApi, financeDownload } from '@/lib/api'
+import { Download, Send, X } from 'lucide-react'
+import { financeApi, financeDownload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittanceStatusBadge, type RemittanceStatus } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
-import { secondaryBtn } from '@/components/remittance/buttonStyles'
+import { primaryBtn, secondaryBtn } from '@/components/remittance/buttonStyles'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
@@ -53,15 +54,21 @@ interface Filters {
   payment_method: string
   source: string
   remittance: string
+  /** Business partner id — same field the backend's `PaymentFilters.vendor_id`
+   * already accepts and `payment_crud.get_all` already honours; this page
+   * simply hadn't had a picker to set it. */
+  vendor_id: string
 }
 
 const EMPTY_FILTERS: Filters = {
   date_from: '', date_to: '', q: '',
-  currency: '', payment_method: '', source: '', remittance: '',
+  currency: '', payment_method: '', source: '', remittance: '', vendor_id: '',
 }
 
 const PAGE_SIZE = 50
 const CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
+
+interface VendorOption { id: string; name: string; code: string }
 
 function toQuery(f: object): string {
   const p = new URLSearchParams()
@@ -108,6 +115,108 @@ function remittanceColumnStatus(v: string | null): RemittanceStatus {
   return v === 'sent' ? 'sent' : 'not_sent'
 }
 
+/**
+ * Vendor typeahead for the filter bar. Vendors can number in the hundreds,
+ * so this hits `GET /mdm/v1/partners?role=supplier&search=...` (debounced,
+ * same 300ms as the hub's own search box) rather than loading a giant
+ * static `<select>`.
+ *
+ * The dropdown is `createPortal`ed to `document.body` and positioned
+ * `fixed` off the trigger's own bounding rect (per this app's overlay
+ * convention — a plain absolutely-positioned dropdown gets clipped by any
+ * ancestor `overflow` and this filter bar sits inside several). Click-outside
+ * excludes both the trigger and the portaled overlay via two refs, not just
+ * one, since the overlay is not a DOM descendant of the trigger once
+ * portaled.
+ */
+function VendorFilter({ vendorId, vendorName, onChange }: {
+  vendorId: string
+  vendorName: string
+  onChange: (vendor: { id: string; name: string } | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState(vendorName)
+  const [debouncedQuery, setDebouncedQuery] = useState(vendorName)
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null)
+  const triggerRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  // Keep the input text in sync when the selection is cleared/changed from
+  // outside this component (e.g. the filter bar's own "All" reset), not just
+  // in response to a pick made here.
+  useEffect(() => { setQuery(vendorName) }, [vendorName])
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const { data } = useQuery({
+    queryKey: ['vendor-typeahead', debouncedQuery],
+    queryFn: () => mdmApi.get<{ items: VendorOption[] }>(
+      `/partners?role=supplier&search=${encodeURIComponent(debouncedQuery)}&page_size=50`),
+    enabled: open,
+  })
+  const options = data?.items ?? []
+
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      const target = e.target as Node
+      if (triggerRef.current?.contains(target)) return
+      if (overlayRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    document.addEventListener('mousedown', onDocMouseDown)
+    return () => document.removeEventListener('mousedown', onDocMouseDown)
+  }, [])
+
+  function openDropdown() {
+    const r = triggerRef.current?.getBoundingClientRect()
+    if (r) setRect({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 240) })
+    setOpen(true)
+  }
+
+  return (
+    <div ref={triggerRef} className="relative">
+      <input
+        value={query}
+        placeholder="All vendors"
+        className={cn(inputCls, 'block w-48 pr-6')}
+        onFocus={openDropdown}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          if (vendorId) onChange(null)
+          openDropdown()
+        }}
+      />
+      {vendorId && (
+        <button type="button" title="Clear vendor filter"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                onClick={() => { onChange(null); setQuery(''); setOpen(false) }}>
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+      {open && createPortal(
+        <div ref={overlayRef}
+             style={{ position: 'fixed', top: rect?.top, left: rect?.left, width: rect?.width, zIndex: 60 }}
+             className="max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg">
+          {options.length === 0 && (
+            <div className="px-3 py-2 text-xs text-neutral-400">No vendors found</div>
+          )}
+          {options.map((v) => (
+            <button key={v.id} type="button"
+                    className="block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-50"
+                    onClick={() => { onChange({ id: v.id, name: v.name }); setQuery(v.name); setOpen(false) }}>
+              {v.name} <span className="text-xs text-neutral-400">({v.code})</span>
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </div>
+  )
+}
+
 export default function PaymentsPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
   // Search text only, debounced: `filters.q` drives the input itself (so
@@ -126,6 +235,27 @@ export default function PaymentsPage() {
   const [openRow, setOpenRow] = useState<PaymentRow | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+
+  // Display name for the selected vendor filter — `filters.vendor_id` alone
+  // (what's actually sent to the server) has no name to show back in the
+  // typeahead's input once selected.
+  const [vendorName, setVendorName] = useState('')
+
+  // Row multi-select for the "send one remittance for several payments"
+  // action. Selection is page-scoped only: it is cleared whenever the
+  // filtered set or the page changes (below), not carried across pages —
+  // there is no cross-page persistence here, by design (see report).
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // The ids the selection dialog is open for — captured once, at the moment
+  // "Send remittance" is clicked, and independent of `selectedIds` from then
+  // on. This deliberately does NOT read `selectedIds` live: a successful
+  // send clears the table's checkboxes (below) so the operator returns to a
+  // clean page, but the dialog must keep showing the SAME scope it was
+  // opened with while it does — if it re-derived `paymentIds` from
+  // `selectedIds` on every render, clearing the checkboxes mid-dialog would
+  // shrink the scope to `[]` and the panel would flip to "no payees to
+  // email" right under the send result it just produced. `null` = closed.
+  const [selectionScopeIds, setSelectionScopeIds] = useState<string[] | null>(null)
 
   // The filters actually sent to the server: same as `filters`, except `q`
   // is the debounced value. Everything downstream (qs/list/summary/export)
@@ -151,6 +281,28 @@ export default function PaymentsPage() {
   const total = list?.total ?? 0
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
+  // The filtered set or the visible page changed — the checked ids may no
+  // longer even be on screen, so drop the selection rather than carry stale
+  // ids forward silently.
+  useEffect(() => { setSelectedIds(new Set()) }, [qs, page])
+
+  const selectedRows = rows.filter((r) => selectedIds.has(r.id))
+  // Every row's `payee_name` stands in for its payee identity here — the
+  // same field the table already displays. Two selected rows with no payee
+  // name at all (an edge case; the list endpoint fills this whenever it can)
+  // are treated as the same "unknown" payee rather than as distinct ones —
+  // acceptable since a genuinely payee-less payment cannot be sent remittance
+  // for anyway (it would show blocked in the panel).
+  const selectedPayeeNames = new Set(selectedRows.map((r) => r.payee_name ?? ''))
+  const singlePayee = selectedPayeeNames.size <= 1
+
+  // Header context for the (possibly already-cleared, see above) selection
+  // dialog — derived from the frozen `selectionScopeIds`, not from live
+  // `selectedIds`/`selectedRows`.
+  const dialogPayeeName = selectionScopeIds
+    ? rows.find((r) => selectionScopeIds.includes(r.id))?.payee_name ?? null
+    : null
+
   // Totals over the WHOLE filtered set, not the visible page — wired to the
   // filters only, never to `page`.
   const { data: summary = [] } = useQuery({
@@ -169,6 +321,30 @@ export default function PaymentsPage() {
     } finally {
       setExporting(false)
     }
+  }
+
+  function toggleRow(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  // Header checkbox selects/clears the CURRENT PAGE only — selection does
+  // not persist across pages (see the `useEffect` above), so "select all"
+  // only ever means "all rows visible right now".
+  const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.id))
+  function toggleAllOnPage(checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (const r of rows) {
+        if (checked) next.add(r.id)
+        else next.delete(r.id)
+      }
+      return next
+    })
   }
 
   return (
@@ -248,6 +424,17 @@ export default function PaymentsPage() {
               <option value="not_sent">Not sent</option>
             </select>
           </label>
+          <label className="text-xs text-neutral-600">
+            Vendor
+            <VendorFilter
+              vendorId={filters.vendor_id}
+              vendorName={vendorName}
+              onChange={(v) => {
+                setVendorName(v?.name ?? '')
+                setFilter({ vendor_id: v?.id ?? '' })
+              }}
+            />
+          </label>
           <button type="button" onClick={() => void handleExport()} disabled={exporting}
                   className={cn(secondaryBtn, 'ml-auto')}>
             <Download className="h-4 w-4" />
@@ -257,10 +444,38 @@ export default function PaymentsPage() {
 
         {exportError && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{exportError}</div>}
 
+        {selectedIds.size > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary-200 bg-primary-50 px-4 py-2">
+            <span className="text-sm font-medium text-neutral-800">
+              {selectedIds.size} payment{selectedIds.size === 1 ? '' : 's'} selected
+            </span>
+            {!singlePayee && (
+              <span className="text-xs text-amber-700">
+                Selected payments must all be for the same payee to send one remittance advice — narrow the selection or filter by vendor first.
+              </span>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <button type="button" className={secondaryBtn} onClick={() => setSelectedIds(new Set())}>
+                Clear
+              </button>
+              <button type="button" className={primaryBtn} disabled={!singlePayee}
+                      onClick={() => setSelectionScopeIds([...selectedIds])}>
+                <Send className="h-4 w-4" />
+                Send remittance
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-hidden rounded-lg border border-neutral-200">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
               <tr>
+                <th className="w-8 px-3 py-2">
+                  <input type="checkbox" checked={allOnPageSelected}
+                         onChange={(e) => toggleAllOnPage(e.target.checked)}
+                         aria-label="Select all payments on this page" />
+                </th>
                 <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Document</th>
                 <th className="px-3 py-2">Payee</th>
@@ -273,14 +488,19 @@ export default function PaymentsPage() {
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>
               )}
               {!isLoading && rows.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">No payments match the current filters.</td></tr>
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">No payments match the current filters.</td></tr>
               )}
               {rows.map((r, i) => (
                 <tr key={r.id} className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50', i % 2 && 'bg-neutral-50/40')}
                     onClick={() => setOpenRow(r)}>
+                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selectedIds.has(r.id)}
+                           onChange={(e) => toggleRow(r.id, e.target.checked)}
+                           aria-label={`Select payment ${r.doc_number ?? r.id}`} />
+                  </td>
                   <td className="px-3 py-2 text-xs text-neutral-600">{r.payment_date}</td>
                   <td className="px-3 py-2 font-mono text-xs">{r.doc_number ?? '—'}</td>
                   <td className="px-3 py-2">{r.payee_name ?? '—'}</td>
@@ -310,6 +530,29 @@ export default function PaymentsPage() {
       </div>
 
       {openRow && <PaymentDetailModal row={openRow} onClose={() => setOpenRow(null)} />}
+
+      {selectionScopeIds && (
+        <RemittanceDialog
+          open
+          onClose={() => setSelectionScopeIds(null)}
+          // A successful send only clears the underlying table selection
+          // (so the operator returns to unchecked rows) — it must NOT touch
+          // `selectionScopeIds` itself, or the dialog still open above it
+          // would suddenly be scoped to an empty selection (see that state's
+          // docstring).
+          onSent={() => setSelectedIds(new Set())}
+          scope={{ kind: 'selection', paymentIds: selectionScopeIds }}
+          header={
+            <div>
+              <h2 className="text-base font-semibold text-neutral-800">Send Remittance Advice</h2>
+              <p className="mt-1 text-sm text-neutral-500">
+                {selectionScopeIds.length} payment{selectionScopeIds.length === 1 ? '' : 's'}
+                {dialogPayeeName && <> · {dialogPayeeName}</>}
+              </p>
+            </div>
+          }
+        />
+      )}
     </PortalChromeLayout>
   )
 }
