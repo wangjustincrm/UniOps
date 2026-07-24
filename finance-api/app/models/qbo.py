@@ -49,3 +49,21 @@ class QboAccount(TimestampMixin, Base):
     last_updated_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     raw: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class QboVendor(TimestampMixin, Base):
+    """Vendor master mirror. Canadian slip flags (T4A/T5018 eligibility) are
+    kept in `raw` only — no dedicated columns."""
+    __tablename__ = "qbo_vendors"
+
+    qbo_id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    sync_token: Mapped[str | None] = mapped_column(String(10))
+    display_name: Mapped[str | None] = mapped_column(String(255))
+    print_on_check_name: Mapped[str | None] = mapped_column(String(255))
+    currency: Mapped[str | None] = mapped_column(String(10))
+    balance: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    email: Mapped[str | None] = mapped_column(String(255))
+    active: Mapped[bool | None] = mapped_column(Boolean)
+    last_updated_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=False)

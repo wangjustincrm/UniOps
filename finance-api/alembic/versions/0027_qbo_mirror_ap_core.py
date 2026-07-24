@@ -48,10 +48,27 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
+    op.create_table(
+        "qbo_vendors",
+        sa.Column("qbo_id", sa.String(20), primary_key=True),
+        sa.Column("sync_token", sa.String(10)),
+        sa.Column("display_name", sa.String(255)),
+        sa.Column("print_on_check_name", sa.String(255)),
+        sa.Column("currency", sa.String(10)),
+        sa.Column("balance", sa.Numeric(20, 2)),
+        sa.Column("email", sa.String(255)),
+        sa.Column("active", sa.Boolean),
+        sa.Column("last_updated_time", sa.DateTime(timezone=True)),
+        sa.Column("deleted_at", sa.DateTime(timezone=True)),
+        sa.Column("raw", JSONB, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    )
     # Further entity tables are added in later steps of this same migration (later tasks).
 
 
 def downgrade() -> None:
+    op.drop_table("qbo_vendors")
     op.drop_table("qbo_accounts")
     op.drop_index("ix_qbo_sync_runs_status", table_name="qbo_sync_runs")
     op.drop_table("qbo_sync_runs")

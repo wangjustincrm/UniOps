@@ -101,3 +101,19 @@ def account_header(obj: dict) -> dict:
         "last_updated_time": last_updated(obj),
         "raw": obj,
     }
+
+
+def vendor_header(obj: dict) -> dict:
+    email = (obj.get("PrimaryEmailAddr") or {}).get("Address")
+    return {
+        "qbo_id": obj["Id"],
+        "sync_token": obj.get("SyncToken"),
+        "display_name": obj.get("DisplayName"),
+        "print_on_check_name": obj.get("PrintOnCheckName"),
+        "currency": ref_id(obj, "CurrencyRef"),
+        "balance": obj.get("Balance"),
+        "email": email,
+        "active": obj.get("Active"),
+        "last_updated_time": last_updated(obj),
+        "raw": obj,
+    }
