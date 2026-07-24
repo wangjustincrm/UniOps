@@ -34,7 +34,7 @@ from app.db.base import get_db
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
 from app.models.payment_batch import EXECUTED, PaymentBatch
-from app.models.remittance import SCOPE_BATCH, SCOPE_PAYMENT
+from app.models.remittance import SCOPE_BATCH, SCOPE_PAYMENT, SCOPE_SELECTION
 from app.services import remittance_config as rc
 
 router = APIRouter(tags=["payments"])
@@ -58,6 +58,22 @@ class RecipientRef(BaseModel):
 
 
 class SendRequest(BaseModel):
+    recipients: list[RecipientRef] | None = None
+
+
+class SelectionRequest(BaseModel):
+    """Body for the selection-scope preview — a selection is a list of
+    payment ids, so unlike batch/payment it cannot live in the path."""
+    payment_ids: list[uuid.UUID]
+
+
+class SelectionSendRequest(BaseModel):
+    """Body for the selection-scope send. `recipients` carries the same
+    per-payee `resend` flag (RecipientRef.resend) as the batch/payment send —
+    there is deliberately no request-level resend flag; see RecipientRef's
+    own docstring for why folding resend into one request-wide boolean was a
+    bug (Fix 3 Round 2), not a shortcut to reintroduce here."""
+    payment_ids: list[uuid.UUID]
     recipients: list[RecipientRef] | None = None
 
 
@@ -149,6 +165,62 @@ async def _company_name(db: AsyncSession) -> str:
     return name or "UniOps"
 
 
+async def _serialize_groups(db: AsyncSession, groups: list[rem.PayeeGroup], *,
+                             scope_kind: str, scope_id: uuid.UUID) -> list[dict]:
+    """The one preview-response group shape, shared by every scope (batch,
+    payment, selection) — do not let a new scope grow its own divergent
+    shape here."""
+    return [{
+        "recipient_kind": g.recipient_kind,
+        "party_id": str(g.party_id),
+        "party_name": g.party_name,
+        "email": g.email,
+        "currency": g.currency,
+        "total": str(g.total),
+        "block_reasons": g.block_reasons,
+        "lines": [{
+            "reference": (l.vendor_inv_no if g.recipient_kind == "vendor"
+                          else l.doc_number),
+            "payment_date": l.payment_date.isoformat(),
+            "amount": str(l.amount),
+        } for l in g.lines],
+        # Fix 2: cross-scope-aware — see rem.last_send_for_group's
+        # docstring for why a same-scope-only lookup lies for a payment
+        # that was actually sent under another scope.
+        "last_send": await rem.last_send_for_group(
+            db, scope_kind=scope_kind, scope_id=scope_id, group=g),
+    } for g in groups]
+
+
+def _send_summary(results: list[dict]) -> dict:
+    """The one send-response shape, shared by every scope."""
+    return {
+        "sent": sum(1 for r in results if r["status"] == "sent"),
+        "failed": sum(1 for r in results if r["status"] == "failed"),
+        "skipped": sum(1 for r in results if r["status"] == "skipped"),
+        "results": results,
+    }
+
+
+def _apply_recipients_filter(
+    groups: list[rem.PayeeGroup], recipients: list[RecipientRef] | None,
+) -> tuple[list[rem.PayeeGroup], set[tuple[str, uuid.UUID]]]:
+    """Narrow `groups` to the requested recipients and derive the per-payee
+    resend set — NOT a single blanket flag (see RecipientRef.resend's
+    docstring for why folding this into one request-level boolean was the
+    bug). `recipients is None` means "every non-blocked payee found by the
+    preview", which carries no per-payee resend intent of its own. Blocked
+    payees are refused inside send_groups regardless of what the client
+    asks for — this filter only narrows *which* groups are attempted, it
+    never widens or waives a block.
+    """
+    if recipients is None:
+        return groups, set()
+    wanted = {(r.recipient_kind, r.party_id) for r in recipients}
+    resend_ids = {(r.recipient_kind, r.party_id) for r in recipients if r.resend}
+    return [g for g in groups if (g.recipient_kind, g.party_id) in wanted], resend_ids
+
+
 async def _preview(db: AsyncSession, user: dict, *, scope_kind: str,
                     scope_id: uuid.UUID) -> dict:
     await _authorize(db, user)
@@ -160,26 +232,7 @@ async def _preview(db: AsyncSession, user: dict, *, scope_kind: str,
         "enabled": settings_ is not None,
         "reference": reference,
         "payment_method": method,
-        "groups": [{
-            "recipient_kind": g.recipient_kind,
-            "party_id": str(g.party_id),
-            "party_name": g.party_name,
-            "email": g.email,
-            "currency": g.currency,
-            "total": str(g.total),
-            "block_reasons": g.block_reasons,
-            "lines": [{
-                "reference": (l.vendor_inv_no if g.recipient_kind == "vendor"
-                              else l.doc_number),
-                "payment_date": l.payment_date.isoformat(),
-                "amount": str(l.amount),
-            } for l in g.lines],
-            # Fix 2: cross-scope-aware — see rem.last_send_for_group's
-            # docstring for why a same-scope-only lookup lies for a payment
-            # that was actually sent under its batch (or vice versa).
-            "last_send": await rem.last_send_for_group(
-                db, scope_kind=scope_kind, scope_id=scope_id, group=g),
-        } for g in groups],
+        "groups": await _serialize_groups(db, groups, scope_kind=scope_kind, scope_id=scope_id),
     }
 
 
@@ -192,21 +245,7 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
         raise HTTPException(status_code=409,
                              detail="Remittance email is not configured or is switched off")
     groups = await rem.build_groups(db, await rem.resolve_scope(db, scope_kind, scope_id))
-    # Per-payee resend flags, keyed the same way groups are — NOT a single
-    # blanket flag (see RecipientRef.resend's docstring for why folding this
-    # into one request-level boolean was the bug). Empty whenever recipients
-    # is None: that shorthand means "every non-blocked payee found by the
-    # preview", which carries no per-payee resend intent of its own.
-    resend_ids: set[tuple[str, uuid.UUID]] = set()
-    if body.recipients is not None:
-        # Blocked payees are refused inside send_groups regardless of what the
-        # client asks for — this filter only narrows *which* groups are
-        # attempted, it never widens or waives a block. A client posting a
-        # blocked payee's (recipient_kind, party_id) still gets `skipped`,
-        # never `sent`.
-        wanted = {(r.recipient_kind, r.party_id) for r in body.recipients}
-        resend_ids = {(r.recipient_kind, r.party_id) for r in body.recipients if r.resend}
-        groups = [g for g in groups if (g.recipient_kind, g.party_id) in wanted]
+    groups, resend_ids = _apply_recipients_filter(groups, body.recipients)
 
     company_name = await _company_name(db)
     results = await rsend.send_groups(
@@ -225,12 +264,73 @@ async def _send(db: AsyncSession, user: dict, body: SendRequest, *,
     # between send_groups returning and here raised, the sends would still be
     # durable; a reader who saw a trailing commit here could wrongly assume
     # the opposite.
+    return _send_summary(results)
+
+
+def _selection_reference(records: list[PaymentRecord], groups: list[rem.PayeeGroup]) -> str:
+    """A plain ad-hoc label for a selection send — deliberately never a
+    PA/document number (spec §3: internal document numbers mean nothing
+    good to the vendor; see _reference_for's docstring for the same rule
+    applied to a single payment). A selection has no natural single
+    document behind it the way a batch (batch_number) or a single payment
+    (its own invoice number) does, so this is just a count, optionally
+    prefixed with the payee's name once grouping has resolved one."""
+    count = f"{len(records)} payment{'' if len(records) == 1 else 's'}"
+    return f"{groups[0].party_name} — {count}" if groups else count
+
+
+async def _resolve_selection(db: AsyncSession, payment_ids: list[uuid.UUID]
+                              ) -> tuple[list[PaymentRecord], list[rem.PayeeGroup]]:
+    records = await rem.resolve_records(db, payment_ids)
+    groups = await rem.build_groups(db, records)
+    if len(groups) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Selection spans more than one payee; send them separately.")
+    return records, groups
+
+
+async def _selection_preview(db: AsyncSession, user: dict,
+                              payment_ids: list[uuid.UUID]) -> dict:
+    await _authorize(db, user)
+    records, groups = await _resolve_selection(db, payment_ids)
+    scope_id = rem.selection_scope_id(payment_ids)
+    settings_ = await rc.load(db)
     return {
-        "sent": sum(1 for r in results if r["status"] == "sent"),
-        "failed": sum(1 for r in results if r["status"] == "failed"),
-        "skipped": sum(1 for r in results if r["status"] == "skipped"),
-        "results": results,
+        "enabled": settings_ is not None,
+        "reference": _selection_reference(records, groups),
+        # A selection has no single natural payment_method the way a batch
+        # or a lone payment does; every record in it was, in practice, paid
+        # the same way (that's what made them selectable as one advice), so
+        # the first record's is representative. Empty selection -> "".
+        "payment_method": records[0].payment_method if records else "",
+        "groups": await _serialize_groups(
+            db, groups, scope_kind=SCOPE_SELECTION, scope_id=scope_id),
     }
+
+
+async def _selection_send(db: AsyncSession, user: dict,
+                           body: SelectionSendRequest) -> dict:
+    await _authorize(db, user)
+    records, groups = await _resolve_selection(db, body.payment_ids)
+    scope_id = rem.selection_scope_id(body.payment_ids)
+    sender = await rc.load(db)
+    if sender is None:
+        raise HTTPException(status_code=409,
+                             detail="Remittance email is not configured or is switched off")
+    groups, resend_ids = _apply_recipients_filter(groups, body.recipients)
+
+    company_name = await _company_name(db)
+    results = await rsend.send_groups(
+        db, scope_kind=SCOPE_SELECTION, scope_id=scope_id, groups=groups,
+        reference=_selection_reference(records, groups),
+        payment_method=records[0].payment_method if records else "",
+        company_name=company_name, sender=sender,
+        actor_id=uuid.UUID(str(user["sub"])),
+        resend_ids=resend_ids,
+    )
+    # See _send's comment above — send_groups already commits per payee.
+    return _send_summary(results)
 
 
 @router.get("/batches/{batch_id}/remittance/preview")
@@ -244,6 +344,18 @@ async def send_batch(batch_id: uuid.UUID, user: CurrentUser,
                       body: SendRequest = SendRequest(),
                       db: AsyncSession = Depends(get_db)):
     return await _send(db, user, body, scope_kind=SCOPE_BATCH, scope_id=batch_id)
+
+
+@router.post("/remittance/selection/preview")
+async def preview_selection(body: SelectionRequest, user: CurrentUser,
+                             db: AsyncSession = Depends(get_db)):
+    return await _selection_preview(db, user, body.payment_ids)
+
+
+@router.post("/remittance/selection/send")
+async def send_selection(body: SelectionSendRequest, user: CurrentUser,
+                          db: AsyncSession = Depends(get_db)):
+    return await _selection_send(db, user, body)
 
 
 @router.get("/{payment_id}/remittance/preview")
