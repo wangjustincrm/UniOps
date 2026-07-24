@@ -99,9 +99,12 @@ def extract_list_attachments(sp: SharePointClient, spec: dict, since: str | None
         if not it.get("Attachments"):
             continue
         number = it.get(nf)
-        if not number:
-            continue
         sp_id = str(it.get("ID"))
+        if not number:
+            # An item carrying attachments but no document number can't be
+            # mapped to an EPMS record — surface it rather than dropping silently.
+            print(f"    !! {spec['subdir']}: item {sp_id} has attachments but no {nf}; skipped")
+            continue
         for f in _attachment_files(it):
             name = f.get("FileName")
             url = f.get("ServerRelativeUrl")

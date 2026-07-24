@@ -32,7 +32,7 @@ class SyncBusyError(RuntimeError):
 @dataclass
 class SyncRun:
     id: str
-    phase: str               # "full" | "incremental"
+    phase: str               # "full" | "incremental" | "attachments"
     dry_run: bool
     triggered_by: str
     status: str = "running"  # running | success | error
