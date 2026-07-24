@@ -13,9 +13,13 @@ set -euo pipefail
 COMPOSE="docker compose -f docker-compose.prod.yml"
 
 # finance-api first (hard ordering constraint); the rest in a safe order.
+# mdm-api MUST run before epms-api: epms-api's ab_remittance_and_vendor_view
+# migration reads business_partners.remittance_email, a column mdm-api adds in
+# its own 0006_partner_remittance_email migration (that epms migration guards
+# with an explicit RuntimeError if run out of order).
 # approval-api runs right after identity-api: its routing tables have no FKs,
 # but its migrations start depending on identity's user_roles being seeded.
-SERVICES="finance-api epms-api mdm-api identity-api approval-api budget-api expense-api vms-api booking-api"
+SERVICES="finance-api mdm-api epms-api identity-api approval-api budget-api expense-api vms-api booking-api"
 
 for svc in $SERVICES; do
   echo ">> alembic upgrade head: ${svc}"
