@@ -25,6 +25,11 @@ REGISTRY: list[Entity] = []
 
 REGISTRY.append(Entity(name="Account", model=m.QboAccount, header=mappers.account_header))
 REGISTRY.append(Entity(name="Vendor", model=m.QboVendor, header=mappers.vendor_header))
+REGISTRY.append(Entity(
+    name="Bill", model=m.QboBill,
+    header=lambda o: mappers.txn_header(o, counterparty="VendorRef"),
+    line_model=m.QboBillLine, line=mappers.txn_line,
+))
 
 
 def by_name(name: str) -> Entity:

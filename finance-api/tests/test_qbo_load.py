@@ -52,3 +52,47 @@ async def test_load_vendor_keeps_canadian_flags_in_raw(db_session):
     assert v.email == "ap@acme.test"
     # Canadian slip flags are not columns — they live in raw.
     assert v.raw["T5018Eligible"] is True
+
+
+from app.models.qbo import QboBill, QboBillLine
+
+BILLS = [
+    {"Id": "1645", "SyncToken": "0", "DocNumber": "INV-001",
+     "TxnDate": "2019-05-01", "DueDate": "2019-06-01",
+     "CurrencyRef": {"value": "USD"}, "ExchangeRate": 1.35,
+     "TotalAmt": 100.0, "HomeTotalAmt": 135.0, "Balance": 100.0, "HomeBalance": 135.0,
+     "GlobalTaxCalculation": "TaxExcluded",
+     "VendorRef": {"value": "64", "name": "Acme Inc"},
+     "MetaData": {"LastUpdatedTime": "2019-05-02T10:00:00-07:00"},
+     "Line": [
+        {"Id": "1", "LineNum": 1, "Amount": 100.0, "Description": "widgets",
+         "DetailType": "AccountBasedExpenseLineDetail",
+         "AccountBasedExpenseLineDetail": {
+            "AccountRef": {"value": "141", "name": "COGS"}, "TaxCodeRef": {"value": "2"}}},
+     ]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_bill_header_and_lines_multicurrency(db_session):
+    await load_entity(db_session, "Bill", BILLS)
+    b = (await db_session.execute(select(QboBill))).scalar_one()
+    assert b.qbo_id == "1645"
+    assert b.currency == "USD"
+    assert float(b.exchange_rate) == 1.35
+    assert float(b.total_amt) == 100.0
+    assert float(b.home_total_amt) == 135.0
+    assert b.counterparty_id == "64"
+
+    lines = (await db_session.execute(select(QboBillLine))).scalars().all()
+    assert len(lines) == 1
+    assert lines[0].account_id == "141"
+    assert lines[0].tax_code_ref == "2"
+
+
+@pytest.mark.asyncio
+async def test_reload_bill_replaces_lines_not_duplicates(db_session):
+    await load_entity(db_session, "Bill", BILLS)
+    await load_entity(db_session, "Bill", BILLS)  # second load
+    lines = (await db_session.execute(select(QboBillLine))).scalars().all()
+    assert len(lines) == 1  # delete-then-insert, no dup
