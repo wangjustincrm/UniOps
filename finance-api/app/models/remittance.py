@@ -16,6 +16,7 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 
 SCOPE_BATCH = "batch"
 SCOPE_PAYMENT = "payment"
+SCOPE_SELECTION = "selection"
 KIND_VENDOR = "vendor"
 KIND_EMPLOYEE = "employee"
 SENT = "sent"

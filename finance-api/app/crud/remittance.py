@@ -28,6 +28,10 @@ BLOCK_MISSING_INVOICE_NO = "missing_invoice_no"
 _VENDOR_KINDS = ("pa", "pa_dir")
 COMPLETED = "completed"
 
+# Fixed namespace for deriving a selection's deterministic scope id (Fix:
+# selection scope). Any stable UUID works — this one has no other meaning.
+_SELECTION_NS = uuid.UUID("6c9b6b1e-6f2d-4e4a-9c1a-6f2f6f2c9b1e")
+
 
 @dataclass
 class GroupLine:
@@ -64,8 +68,29 @@ async def resolve_scope(db: AsyncSession, scope_kind: str,
     return list((await db.execute(q.order_by(PaymentRecord.created_at))).scalars().all())
 
 
-def _other_scope(scope_kind: str) -> str:
-    return SCOPE_PAYMENT if scope_kind == SCOPE_BATCH else SCOPE_BATCH
+async def resolve_records(db: AsyncSession, ids: list[uuid.UUID]) -> list[PaymentRecord]:
+    """Completed payment records among an arbitrary id list, ordered by
+    created_at — the record-resolution half of a `selection` scope. A
+    selection is a list of ids, not a single uuid, so it cannot go through
+    `resolve_scope` (batch/payment only); this does not invent a scope of its
+    own, it just filters+orders the same way resolve_scope's two branches do.
+    """
+    if not ids:
+        return []
+    q = select(PaymentRecord).where(
+        PaymentRecord.status == COMPLETED, PaymentRecord.id.in_(ids))
+    return list((await db.execute(q.order_by(PaymentRecord.created_at))).scalars().all())
+
+
+def selection_scope_id(ids: list[uuid.UUID]) -> uuid.UUID:
+    """Deterministic scope id for a `selection` scope, derived from the
+    sorted record ids. Re-sending the exact same set of ids must land on the
+    same log row (upsert, `attempts` increments) and a different set must
+    land on a different row — both the preview and the send call this same
+    helper so they always agree on the id for a given selection.
+    """
+    key = ",".join(sorted(str(i) for i in ids))
+    return uuid.uuid5(_SELECTION_NS, key)
 
 
 async def last_send_for_group(db: AsyncSession, *, scope_kind: str, scope_id: uuid.UUID,
@@ -74,20 +99,25 @@ async def last_send_for_group(db: AsyncSession, *, scope_kind: str, scope_id: uu
     scope actually performed the send.
 
     The log's unique key is (scope_kind, scope_id, recipient_kind,
-    party_id), so a payment record paid as part of a batch has TWO
-    independent identities: a `batch` row (sent from the batch dialog) and a
-    `payment` row (sent from the payment drawer). Reading only the row under
-    the CURRENT scope makes a payee already sent under the OTHER scope look
-    unsent here — "Ready" and pre-checked in the drawer, one click from a
-    duplicate advice. This also resolves the OTHER scope kind's row for the
+    party_id), so a payment record paid as part of a batch has multiple
+    independent identities across scopes: a `batch` row (sent from the batch
+    dialog), a `payment` row (sent from the payment drawer), and now a
+    `selection` row (sent from an ad-hoc multi-select). Reading only the row
+    under the CURRENT scope makes a payee already sent under ANY OTHER scope
+    look unsent here — "Ready" and pre-checked in the drawer, one click from
+    a duplicate advice. This also resolves the OTHER scopes' rows for the
     same payee via containment on `payment_record_ids` (GIN-indexed — the
     same shape app/api/v1/payments.py's `_remittance_status` already uses
     for its own scope-agnostic check), keyed off THIS group's own
-    `payment_record_ids` rather than re-resolving the whole scope. Where
-    both a same-scope and a cross-scope row exist, the more recently updated
-    one wins — used both by the preview (what to show) and by
-    app/crud/remittance_send.py's send guard (what to refuse without an
-    explicit `resend`).
+    `payment_record_ids` rather than re-resolving the whole scope. The cross
+    lookup filters `scope_kind != scope_kind` rather than enumerating a
+    single "other" scope (the old binary `_other_scope(batch|payment)`) — with
+    three-plus scopes possible, "any scope but this one" is the general form,
+    and it never double-counts the exact-key `same` row because that row is
+    always exactly the CURRENT scope. Where both a same-scope and a
+    cross-scope row exist, the more recently updated one wins — used both by
+    the preview (what to show) and by app/crud/remittance_send.py's send
+    guard (what to refuse without an explicit `resend`).
     """
     same = (await db.execute(select(RemittanceNotification).where(
         RemittanceNotification.scope_kind == scope_kind,
@@ -102,10 +132,10 @@ async def last_send_for_group(db: AsyncSession, *, scope_kind: str, scope_id: uu
         cross = (await db.execute(sa.text(
             "SELECT status, error, attempts, sent_at, updated_at"
             " FROM payment_remittance_notifications"
-            " WHERE scope_kind = :k AND recipient_kind = :rk AND party_id = :pid"
+            " WHERE scope_kind != :k AND recipient_kind = :rk AND party_id = :pid"
             " AND payment_record_ids ?| :ids"
             " ORDER BY updated_at DESC LIMIT 1"
-        ), {"k": _other_scope(scope_kind), "rk": group.recipient_kind,
+        ), {"k": scope_kind, "rk": group.recipient_kind,
             "pid": group.party_id, "ids": ids})).mappings().first()
 
     candidates = []
