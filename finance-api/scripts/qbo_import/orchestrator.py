@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.qbo import QboSyncRun
 from scripts.qbo_import.extract import extract_entity
 from scripts.qbo_import.load import load_entity
-from scripts.qbo_import.mappers import last_updated
+from scripts.qbo_import.mappers import to_dt
 from scripts.qbo_import.registry import by_name
 
 # AP-core default order (masters before transactions).
@@ -20,12 +20,23 @@ DEFAULT_ENTITIES = ["Account", "Vendor", "Bill", "BillPayment", "VendorCredit"]
 
 
 def _max_watermark(objects: list[dict]) -> str | None:
-    best = None
+    """Return the original LastUpdatedTime string with the latest instant.
+
+    Compares by PARSED datetime (not lexically) — QBO's UTC offset shifts with
+    DST (e.g. Toronto -04:00 summer / -05:00 winter), so a chronologically
+    later timestamp can sort lexically smaller than an earlier one.
+    """
+    best_dt = None
+    best_str = None
     for o in objects:
         lu = (o.get("MetaData") or {}).get("LastUpdatedTime")
-        if lu and (best is None or lu > best):
-            best = lu
-    return best
+        if not lu:
+            continue
+        dt = to_dt(lu)
+        if dt is not None and (best_dt is None or dt > best_dt):
+            best_dt = dt
+            best_str = lu
+    return best_str
 
 
 async def _soft_delete_extras(db: AsyncSession, name: str, seen_ids: set[str]) -> int:
@@ -38,13 +49,14 @@ async def _soft_delete_extras(db: AsyncSession, name: str, seen_ids: set[str]) -
             update(model).where(model.qbo_id.in_(gone)).values(deleted_at=datetime.now(timezone.utc))
         )
         await db.commit()
+    db.expire_all()
     return len(gone)
 
 
 async def run_sync(db: AsyncSession, client, mode: str, entities: list[str] | None = None,
                    started_by=None) -> QboSyncRun:
     entities = entities or DEFAULT_ENTITIES
-    run = QboSyncRun(mode=mode, status="running",
+    run = QboSyncRun(mode=mode, status="running", started_by=started_by,
                      started_at=datetime.now(timezone.utc), counters={}, watermarks={})
     db.add(run)
     await db.commit()
