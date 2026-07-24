@@ -124,3 +124,28 @@ async def test_billpayment_line_captures_reconciliation(db_session):
     assert line.linked_txn_id == "1645"
     assert line.linked_txn_type == "Bill"
     assert float(line.amount) == 100.0
+
+
+from app.models.qbo import QboVendorCredit, QboVendorCreditLine
+
+VENDORCREDITS = [
+    {"Id": "900", "SyncToken": "0", "DocNumber": "VC-1", "TxnDate": "2019-07-01",
+     "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1, "TotalAmt": 50.0,
+     "VendorRef": {"value": "64", "name": "Acme Inc"},
+     "MetaData": {"LastUpdatedTime": "2019-07-02T10:00:00-07:00"},
+     "Line": [
+        {"Id": "1", "LineNum": 1, "Amount": 50.0,
+         "DetailType": "AccountBasedExpenseLineDetail",
+         "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "141", "name": "COGS"}}},
+     ]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_vendor_credit(db_session):
+    await load_entity(db_session, "VendorCredit", VENDORCREDITS)
+    vc = (await db_session.execute(select(QboVendorCredit))).scalar_one()
+    assert vc.qbo_id == "900"
+    assert vc.counterparty_id == "64"
+    line = (await db_session.execute(select(QboVendorCreditLine))).scalar_one()
+    assert line.account_id == "141"
