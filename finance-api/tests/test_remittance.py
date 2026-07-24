@@ -577,6 +577,10 @@ def test_logo_shown_only_when_enabled_and_present():
     _, no_url = tpl.render(g, company_name="C", reference="R", payment_method="eft",
                            template={"show_logo": True}, logo_data_url=None)
     assert 'src="data:image/png;base64,AAAA"' in with_logo
+    # Outlook renders via Word and ignores CSS max-height, so the logo MUST carry
+    # an HTML height attribute or it renders at native size (see the 2026-07-24
+    # oversized-logo report). CSS alone is not enough.
+    assert 'height="40"' in with_logo
     assert "<img" not in no_flag
     assert "<img" not in no_url
 

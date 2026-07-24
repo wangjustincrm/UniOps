@@ -111,9 +111,15 @@ def render(group: PayeeGroup, *, company_name: str, reference: str,
         for l in group.lines
     )
 
+    # The HTML height attribute is load-bearing: Outlook renders via Word and
+    # ignores CSS max-height/max-width, so a CSS-only cap lets the logo render at
+    # its native pixel size. With only height set (not width) Outlook scales
+    # width proportionally, so the aspect ratio is preserved. The style block
+    # repeats it for clients that honour CSS.
     logo_html = (
-        f'<img src="{logo_data_url}" alt="{escape(company_name)}" '
-        f'style="max-height:48px;margin-bottom:12px">' if show_logo else ""
+        f'<img src="{logo_data_url}" alt="{escape(company_name)}" height="40" '
+        f'style="height:40px;width:auto;margin-bottom:12px;display:block;border:0">'
+        if show_logo else ""
     )
 
     html = f"""
