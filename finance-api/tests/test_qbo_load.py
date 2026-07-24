@@ -96,3 +96,31 @@ async def test_reload_bill_replaces_lines_not_duplicates(db_session):
     await load_entity(db_session, "Bill", BILLS)  # second load
     lines = (await db_session.execute(select(QboBillLine))).scalars().all()
     assert len(lines) == 1  # delete-then-insert, no dup
+
+
+from app.models.qbo import QboBillPayment, QboBillPaymentLine
+
+BILLPAYMENTS = [
+    {"Id": "22", "SyncToken": "0", "DocNumber": "CHK-1",
+     "TxnDate": "2019-05-26", "PayType": "Check",
+     "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1,
+     "TotalAmt": 100.0, "VendorRef": {"value": "64", "name": "Acme Inc"},
+     "MetaData": {"LastUpdatedTime": "2019-05-27T10:00:00-07:00"},
+     "Line": [
+        {"Amount": 100.0, "LinkedTxn": [{"TxnId": "1645", "TxnType": "Bill"}]},
+     ]},
+]
+
+
+@pytest.mark.asyncio
+async def test_billpayment_line_captures_reconciliation(db_session):
+    await load_entity(db_session, "BillPayment", BILLPAYMENTS)
+    p = (await db_session.execute(select(QboBillPayment))).scalar_one()
+    assert p.counterparty_id == "64"
+    assert p.pay_type == "Check"
+
+    line = (await db_session.execute(select(QboBillPaymentLine))).scalar_one()
+    # The payment->bill reconciliation link:
+    assert line.linked_txn_id == "1645"
+    assert line.linked_txn_type == "Bill"
+    assert float(line.amount) == 100.0

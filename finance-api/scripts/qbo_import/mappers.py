@@ -87,6 +87,12 @@ def txn_line(line: dict, parent_qbo_id: str) -> dict:
     }
 
 
+def billpayment_header(obj: dict) -> dict:
+    h = txn_header(obj, counterparty="VendorRef")
+    h["pay_type"] = obj.get("PayType")
+    return h
+
+
 def account_header(obj: dict) -> dict:
     return {
         "qbo_id": obj["Id"],

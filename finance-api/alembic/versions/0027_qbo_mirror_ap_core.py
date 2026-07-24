@@ -106,10 +106,54 @@ def upgrade() -> None:
         sa.Column("raw", JSONB, nullable=False),
     )
     op.create_index("ix_qbo_bill_lines_parent", "qbo_bill_lines", ["parent_qbo_id"])
+
+    op.create_table(
+        "qbo_bill_payments",
+        sa.Column("qbo_id", sa.String(20), primary_key=True),
+        sa.Column("sync_token", sa.String(10)),
+        sa.Column("doc_number", sa.String(64)),
+        sa.Column("txn_date", sa.String(10)),
+        sa.Column("due_date", sa.String(10)),
+        sa.Column("currency", sa.String(10)),
+        sa.Column("exchange_rate", sa.Numeric(20, 8)),
+        sa.Column("total_amt", sa.Numeric(20, 2)),
+        sa.Column("home_total_amt", sa.Numeric(20, 2)),
+        sa.Column("balance", sa.Numeric(20, 2)),
+        sa.Column("home_balance", sa.Numeric(20, 2)),
+        sa.Column("global_tax_calc", sa.String(20)),
+        sa.Column("private_note", sa.Text),
+        sa.Column("counterparty_id", sa.String(20)),
+        sa.Column("counterparty_name", sa.String(255)),
+        sa.Column("last_updated_time", sa.DateTime(timezone=True)),
+        sa.Column("deleted_at", sa.DateTime(timezone=True)),
+        sa.Column("raw", JSONB, nullable=False),
+        sa.Column("pay_type", sa.String(20)),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    )
+    op.create_table(
+        "qbo_bill_payment_lines",
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("parent_qbo_id", sa.String(20), nullable=False),
+        sa.Column("line_num", sa.Integer),
+        sa.Column("amount", sa.Numeric(20, 2)),
+        sa.Column("detail_type", sa.String(48)),
+        sa.Column("account_id", sa.String(20)),
+        sa.Column("account_name", sa.String(255)),
+        sa.Column("tax_code_ref", sa.String(20)),
+        sa.Column("description", sa.Text),
+        sa.Column("linked_txn_id", sa.String(20)),
+        sa.Column("linked_txn_type", sa.String(32)),
+        sa.Column("raw", JSONB, nullable=False),
+    )
+    op.create_index("ix_qbo_bill_payment_lines_parent", "qbo_bill_payment_lines", ["parent_qbo_id"])
     # Further entity tables are added in later steps of this same migration (later tasks).
 
 
 def downgrade() -> None:
+    op.drop_index("ix_qbo_bill_payment_lines_parent", table_name="qbo_bill_payment_lines")
+    op.drop_table("qbo_bill_payment_lines")
+    op.drop_table("qbo_bill_payments")
     op.drop_index("ix_qbo_bill_lines_parent", table_name="qbo_bill_lines")
     op.drop_table("qbo_bill_lines")
     op.drop_index("ix_qbo_bills_doc_number", table_name="qbo_bills")

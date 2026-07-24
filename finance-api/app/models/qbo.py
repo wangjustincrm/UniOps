@@ -97,6 +97,15 @@ class QboBillLine(_TxnLineMixin, Base):
     __tablename__ = "qbo_bill_lines"
 
 
+class QboBillPayment(_TxnHeaderMixin, TimestampMixin, Base):
+    __tablename__ = "qbo_bill_payments"
+    pay_type: Mapped[str | None] = mapped_column(String(20))
+
+
+class QboBillPaymentLine(_TxnLineMixin, Base):
+    __tablename__ = "qbo_bill_payment_lines"
+
+
 class QboVendor(TimestampMixin, Base):
     """Vendor master mirror. Canadian slip flags (T4A/T5018 eligibility) are
     kept in `raw` only — no dedicated columns."""
