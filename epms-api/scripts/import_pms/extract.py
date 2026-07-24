@@ -60,6 +60,80 @@ def extract_invoice_attachments(sp: SharePointClient, since: str | None = None) 
     return n
 
 
+# ── PR / PO / PA document attachments (official lists only — no *Backup) ──────
+DOC_ATTACHMENT_SPEC: dict[str, dict] = {
+    "pr": {
+        "list_title": "Purchase Request", "number_field": "PR_x0020_No",
+        "subdir": "pr_attachments", "meta_name": "pr_attachments.json",
+        "att_table": "pr_attachments", "fk_col": "pr_id",
+        "doc_table": "purchase_requests", "number_col": "number", "doc_type": "pr",
+    },
+    "po": {
+        "list_title": "PO List", "number_field": "Title",
+        "subdir": "po_attachments", "meta_name": "po_attachments.json",
+        "att_table": "po_attachments", "fk_col": "po_id",
+        "doc_table": "purchase_orders", "number_col": "number", "doc_type": "po",
+    },
+    "pa": {
+        "list_title": "Payment Request", "number_field": "Title",
+        "subdir": "pa_attachments", "meta_name": "pa_attachments.json",
+        "att_table": "pa_attachments", "fk_col": "pa_id",
+        "doc_table": "payment_applications", "number_col": "pa_number", "doc_type": "pa",
+    },
+}
+
+
+def extract_list_attachments(sp: SharePointClient, spec: dict, since: str | None = None) -> int:
+    """Download a document list's item attachments → data/<subdir>/<sp_item_id>/<file>
+    and write a metadata index keyed by document number. Returns files staged."""
+    nf = spec["number_field"]
+    dest_root = DATA_DIR / spec["subdir"]
+    dest_root.mkdir(parents=True, exist_ok=True)
+    items = sp.get_list_items(
+        spec["list_title"], select=["ID", nf, "Attachments"],
+        expand=["AttachmentFiles"], since=since,
+    )
+    meta: list[dict] = []
+    n = 0
+    for it in items:
+        if not it.get("Attachments"):
+            continue
+        number = it.get(nf)
+        sp_id = str(it.get("ID"))
+        if not number:
+            # An item carrying attachments but no document number can't be
+            # mapped to an EPMS record — surface it rather than dropping silently.
+            print(f"    !! {spec['subdir']}: item {sp_id} has attachments but no {nf}; skipped")
+            continue
+        for f in _attachment_files(it):
+            name = f.get("FileName")
+            url = f.get("ServerRelativeUrl")
+            if not name or not url:
+                continue
+            try:
+                data = sp.download_file(url)
+            except Exception as e:  # noqa: BLE001
+                print(f"    !! attachment {sp_id}/{name}: {e}")
+                continue
+            dest = dest_root / sp_id
+            dest.mkdir(exist_ok=True)
+            (dest / name).write_bytes(data)
+            meta.append({
+                "doc_number": str(number),
+                "sp_item_id": sp_id,
+                "file_name": name,
+                "content_type": mimetypes.guess_type(name)[0] or "application/octet-stream",
+                "size": len(data),
+            })
+            n += 1
+    (DATA_DIR / spec["meta_name"]).write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"  {spec['subdir']}: staged {n} file(s) across "
+          f"{len({m['sp_item_id'] for m in meta})} doc(s)")
+    return n
+
+
 def extract(only: set[str] | None = None, since: str | None = None,
             skip_attachments: bool = False) -> None:
     """Pull SharePoint lists into data/*.json.

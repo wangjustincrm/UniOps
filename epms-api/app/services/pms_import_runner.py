@@ -32,7 +32,7 @@ class SyncBusyError(RuntimeError):
 @dataclass
 class SyncRun:
     id: str
-    phase: str               # "full" | "incremental"
+    phase: str               # "full" | "incremental" | "attachments"
     dry_run: bool
     triggered_by: str
     status: str = "running"  # running | success | error
@@ -112,8 +112,8 @@ def start_run(phase: str, dry_run: bool, triggered_by: str) -> dict:
     global _current
     if _current is not None and _current.status == "running":
         raise SyncBusyError("A PMS import is already running.")
-    if phase not in ("full", "incremental"):
-        raise ValueError("phase must be 'full' or 'incremental'")
+    if phase not in ("full", "incremental", "attachments"):
+        raise ValueError("phase must be 'full', 'incremental' or 'attachments'")
 
     runs = _ensure_loaded()
     run = SyncRun(id=uuid.uuid4().hex, phase=phase, dry_run=dry_run, triggered_by=triggered_by)
@@ -139,6 +139,34 @@ async def _execute(run: SyncRun) -> None:
         os.environ.setdefault("SP_PASSWORD", settings.SP_PASSWORD)
         os.environ.setdefault("SP_TENANT", settings.SP_TENANT)
         os.environ.setdefault("SP_SITE", settings.SP_SITE)
+
+        # Attachments-only phase: import PR/PO/PA list attachments, nothing else.
+        if run.phase == "attachments":
+            from scripts.import_pms.extract import DOC_ATTACHMENT_SPEC, extract_list_attachments
+            from scripts.import_pms.sharepoint import SharePointClient
+            from scripts.import_pms.attachments import sync_doc_attachments
+
+            run.step = "extracting PR/PO/PA attachments from SharePoint"
+            _persist()
+
+            def _extract_all() -> None:
+                sp = SharePointClient()
+                for spec in DOC_ATTACHMENT_SPEC.values():
+                    extract_list_attachments(sp, spec, since=None)  # full, idempotent
+
+            await asyncio.to_thread(_extract_all)
+
+            run.step = "loading attachments into EPMS" + (" (dry-run)" if run.dry_run else "")
+            _persist()
+            doc_att: dict = {}
+            for kind in ("pr", "po", "pa"):
+                rep = await sync_doc_attachments(kind, dry_run=run.dry_run)
+                doc_att[kind] = rep.to_doc_dict()
+            run.report = {"dry_run": run.dry_run, "doc_attachments": doc_att}
+            run.status = "success"
+            run.step = "done"
+            logger.info("PMS attachment import %s: success", run.id)
+            return  # `finally` still stamps finished_at, persists, clears _current
 
         # Watermark captured BEFORE extract so we never miss changes made mid-run.
         run_started = state.now_iso()
