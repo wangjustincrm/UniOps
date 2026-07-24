@@ -40,6 +40,10 @@ interface PaymentRow {
   currency: string
   status: string
   batch_id: string | null
+  /** Business-partner id for vendor payments; null for expense-claim payments.
+   * The payee-identity key for the one-payee guard — stable across a vendor
+   * rename, unlike the `payee_name` snapshot. */
+  vendor_id: string | null
   /** 'sent' | 'not_sent' — always filled by the list endpoint. */
   remittance_status: string | null
 }
@@ -287,14 +291,17 @@ export default function PaymentsPage() {
   useEffect(() => { setSelectedIds(new Set()) }, [qs, page])
 
   const selectedRows = rows.filter((r) => selectedIds.has(r.id))
-  // Every row's `payee_name` stands in for its payee identity here — the
-  // same field the table already displays. Two selected rows with no payee
-  // name at all (an edge case; the list endpoint fills this whenever it can)
-  // are treated as the same "unknown" payee rather than as distinct ones —
-  // acceptable since a genuinely payee-less payment cannot be sent remittance
-  // for anyway (it would show blocked in the panel).
-  const selectedPayeeNames = new Set(selectedRows.map((r) => r.payee_name ?? ''))
-  const singlePayee = selectedPayeeNames.size <= 1
+  // Payee identity for the one-payee guard is `vendor_id`, not `payee_name`:
+  // the backend groups remittance by vendor_id, and vendor_name is a per-payment
+  // snapshot that diverges across a vendor rename — comparing names would wrongly
+  // block the exact "one vendor paid across several payments" case this feature
+  // exists for. Expense-claim rows have no vendor_id; fall back to their
+  // employee payee_name for those. A genuinely payee-less row keys as ""
+  // (harmless — it shows blocked in the panel and cannot be sent anyway).
+  const selectedPayeeKeys = new Set(
+    selectedRows.map((r) => r.vendor_id ?? r.payee_name ?? ''),
+  )
+  const singlePayee = selectedPayeeKeys.size <= 1
 
   // Header context for the (possibly already-cleared, see above) selection
   // dialog — derived from the frozen `selectionScopeIds`, not from live
