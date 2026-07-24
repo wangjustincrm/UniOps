@@ -23,6 +23,8 @@ class Entity:
 # Populated incrementally by later tasks.
 REGISTRY: list[Entity] = []
 
+REGISTRY.append(Entity(name="Account", model=m.QboAccount, header=mappers.account_header))
+
 
 def by_name(name: str) -> Entity:
     for e in REGISTRY:

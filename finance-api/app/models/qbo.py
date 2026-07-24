@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -30,3 +30,22 @@ class QboSyncRun(UUIDPrimaryKey, TimestampMixin, Base):
     counters: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     watermarks: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class QboAccount(TimestampMixin, Base):
+    """Chart-of-accounts mirror. Master entity — no lines. `qbo_id` is the
+    natural primary key (mirror rows don't need a separate UUID)."""
+    __tablename__ = "qbo_accounts"
+
+    qbo_id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    sync_token: Mapped[str | None] = mapped_column(String(10))
+    name: Mapped[str | None] = mapped_column(String(255))
+    acct_num: Mapped[str | None] = mapped_column(String(50))
+    account_type: Mapped[str | None] = mapped_column(String(64))
+    account_sub_type: Mapped[str | None] = mapped_column(String(64))
+    currency: Mapped[str | None] = mapped_column(String(10))
+    current_balance: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    active: Mapped[bool | None] = mapped_column(Boolean)
+    last_updated_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=False)

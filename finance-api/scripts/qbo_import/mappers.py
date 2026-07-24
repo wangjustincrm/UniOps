@@ -85,3 +85,19 @@ def txn_line(line: dict, parent_qbo_id: str) -> dict:
         "linked_txn_type": linked.get("TxnType"),
         "raw": line,
     }
+
+
+def account_header(obj: dict) -> dict:
+    return {
+        "qbo_id": obj["Id"],
+        "sync_token": obj.get("SyncToken"),
+        "name": obj.get("Name"),
+        "acct_num": obj.get("AcctNum"),
+        "account_type": obj.get("AccountType"),
+        "account_sub_type": obj.get("AccountSubType"),
+        "currency": ref_id(obj, "CurrencyRef"),
+        "current_balance": obj.get("CurrentBalance"),
+        "active": obj.get("Active"),
+        "last_updated_time": last_updated(obj),
+        "raw": obj,
+    }
