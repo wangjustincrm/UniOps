@@ -12,6 +12,7 @@ class PartnerBase(BaseModel):
     category: str = "General"
     contact_name: str = ""
     contact_email: str = ""
+    remittance_email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     payment_terms: str = "net30"
@@ -38,6 +39,7 @@ class PartnerUpdate(BaseModel):
     category: Optional[str] = None
     contact_name: Optional[str] = None
     contact_email: Optional[str] = None
+    remittance_email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     payment_terms: Optional[str] = None

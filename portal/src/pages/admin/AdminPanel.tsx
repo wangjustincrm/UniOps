@@ -6,7 +6,7 @@ import {
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
-  Workflow, ChevronDown, ChevronUp, Database, Ruler,
+  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
@@ -52,6 +52,26 @@ interface CompanyConfig {
     [key: string]: unknown
   }
   workflow_defs?: Record<string, WorkflowNodeDef[]>
+  // Sender identity for remittance advice (Finance → Payments). JSONB blob,
+  // defaults to {} server-side; server params (host/port/TLS) are NOT here —
+  // sending reuses the PO / internal SMTP profile.
+  remittance_config?: {
+    enabled?: boolean
+    from_email?: string
+    from_name?: string
+    cc_email?: string
+    smtp_user?: string
+    smtp_password?: string
+    template?: {
+      subject?: string
+      heading?: string
+      greeting?: string
+      intro?: string
+      footer?: string
+      brand_color?: string
+      show_logo?: boolean
+    }
+  } | null
 }
 
 interface ApiDepartment { id: string; name: string; code: string; is_active: boolean }
@@ -1068,6 +1088,247 @@ function NotificationSettings() {
   )
 }
 
+// ── 7. Remittance Advice ──────────────────────────────────────────────────────
+//
+// Sender identity for the remittance advice emailed to a vendor when a payment
+// batch (or single payment) pays them — Finance → Payments. There is no mail
+// server to configure here: sending reuses the PO Email SMTP profile (EPMS
+// Admin → Email Settings), which itself falls back to the internal Task
+// Notification SMTP profile above. remittance_config is a whole-object JSONB
+// blob server-side, so the Save button is gated on the config having loaded —
+// saving an empty form over a populated config would wipe it.
+
+// Mirrors finance-api/app/services/remittance_template.py DEFAULT_TEMPLATE
+// verbatim — this is what a blank field falls back to server-side, and what
+// the editor pre-fills so it always previews the email that will actually
+// send. Do not change these strings without intending to change the default
+// email everyone gets.
+const DEFAULT_TEMPLATE = {
+  subject: 'Remittance Advice — {{company_name}} — {{reference}}',
+  heading: 'Remittance Advice',
+  greeting: 'Dear {{payee_name}},',
+  intro: 'The following {{doc_type}} have been paid.',
+  footer: 'Reference: {{reference}}\nPayment method: {{payment_method}}\n\n'
+    + 'This is an automated notification from {{company_name}}. Please do '
+    + 'not reply to this message; contact your accounts payable '
+    + 'representative with any questions.',
+  brand_color: '#085E5E',
+  show_logo: false,
+}
+
+// Sample data for the frontend-only preview — illustrative, not a byte-exact
+// mirror of the backend HTML (the payment table itself is server-rendered).
+const REMITTANCE_PREVIEW_SAMPLE: Record<string, string> = {
+  company_name: 'Canada Royal Milk',
+  payee_name: 'Acme Supplies Ltd',
+  doc_type: 'invoices',
+  reference: 'BP-20260723-0001',
+  total: '1,234.56 CAD',
+  payment_method: 'Bank Transfer',
+  currency: 'CAD',
+}
+const fillRemittancePreview = (t: string) =>
+  t.replace(/\{\{(\w+)\}\}/g, (_, k) => REMITTANCE_PREVIEW_SAMPLE[k] ?? `{{${k}}}`)
+
+function RemittanceSettings() {
+  const { data: cfg, isLoading } = useConfig()
+  const save = useSaveConfig()
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  const [fromEmail, setFromEmail] = useState<string | null>(null)
+  const [fromName, setFromName] = useState<string | null>(null)
+  const [ccEmail, setCcEmail] = useState<string | null>(null)
+  const [smtpUser, setSmtpUser] = useState<string | null>(null)
+  const [smtpPassword, setSmtpPassword] = useState<string | null>(null)
+  const [showPwd, setShowPwd] = useState(false)
+  const [tplSubject, setTplSubject] = useState<string | null>(null)
+  const [tplHeading, setTplHeading] = useState<string | null>(null)
+  const [tplGreeting, setTplGreeting] = useState<string | null>(null)
+  const [tplIntro, setTplIntro] = useState<string | null>(null)
+  const [tplFooter, setTplFooter] = useState<string | null>(null)
+  const [tplBrandColor, setTplBrandColor] = useState<string | null>(null)
+  const [tplShowLogo, setTplShowLogo] = useState<boolean | null>(null)
+  const [toast, setToast] = useState<{ ok: boolean; msg: string } | null>(null)
+
+  const rc = cfg?.remittance_config ?? {}
+  const tpl = rc.template ?? {}
+  const enabledVal = enabled ?? rc.enabled ?? false
+  const fromEmailVal = fromEmail ?? rc.from_email ?? ''
+  const fromNameVal = fromName ?? rc.from_name ?? ''
+  const ccEmailVal = ccEmail ?? rc.cc_email ?? ''
+  const smtpUserVal = smtpUser ?? rc.smtp_user ?? ''
+  const smtpPasswordVal = smtpPassword ?? rc.smtp_password ?? ''
+  const tplSubjectVal = tplSubject ?? tpl.subject ?? DEFAULT_TEMPLATE.subject
+  const tplHeadingVal = tplHeading ?? tpl.heading ?? DEFAULT_TEMPLATE.heading
+  const tplGreetingVal = tplGreeting ?? tpl.greeting ?? DEFAULT_TEMPLATE.greeting
+  const tplIntroVal = tplIntro ?? tpl.intro ?? DEFAULT_TEMPLATE.intro
+  const tplFooterVal = tplFooter ?? tpl.footer ?? DEFAULT_TEMPLATE.footer
+  const tplBrandColorVal = tplBrandColor ?? tpl.brand_color ?? DEFAULT_TEMPLATE.brand_color
+  const tplShowLogoVal = tplShowLogo ?? tpl.show_logo ?? DEFAULT_TEMPLATE.show_logo
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    // Whole-object JSONB replace: always send `enabled` (the toggle the admin
+    // just set), and only send optional fields that are actually filled, so an
+    // untouched blank never overwrites with "".
+    const body: NonNullable<CompanyConfig['remittance_config']> = { enabled: enabledVal }
+    if (fromEmailVal.trim()) body.from_email = fromEmailVal.trim()
+    if (fromNameVal.trim()) body.from_name = fromNameVal.trim()
+    if (ccEmailVal.trim()) body.cc_email = ccEmailVal.trim()
+    if (smtpUserVal.trim()) body.smtp_user = smtpUserVal.trim()
+    if (smtpPasswordVal.trim()) body.smtp_password = smtpPasswordVal.trim()
+    // Persistence values: state (this session) ?? previously-saved ?? undefined.
+    // Deliberately NOT falling back to DEFAULT_TEMPLATE — a field that is
+    // neither edited nor previously saved must be omitted so the backend
+    // default applies, and stays applied when that default later changes.
+    // (The DISPLAY values above — tplSubjectVal etc. — keep the DEFAULT_TEMPLATE
+    // fallback so the editor still shows/previews the default; only the
+    // persisted payload differs.)
+    const persistStr = (edited: string | null, saved: string | undefined): string | undefined => {
+      const v = edited ?? saved
+      return typeof v === 'string' && v.trim() ? v.trim() : undefined
+    }
+    const template: NonNullable<NonNullable<CompanyConfig['remittance_config']>['template']> = {}
+    const subj = persistStr(tplSubject, tpl.subject)
+    if (subj !== undefined) template.subject = subj
+    const heading = persistStr(tplHeading, tpl.heading)
+    if (heading !== undefined) template.heading = heading
+    const greeting = persistStr(tplGreeting, tpl.greeting)
+    if (greeting !== undefined) template.greeting = greeting
+    const intro = persistStr(tplIntro, tpl.intro)
+    if (intro !== undefined) template.intro = intro
+    const footer = persistStr(tplFooter, tpl.footer)
+    if (footer !== undefined) template.footer = footer
+    const bc = tplBrandColor ?? tpl.brand_color            // no DEFAULT fallback
+    if (typeof bc === 'string') template.brand_color = bc
+    const sl = tplShowLogo ?? tpl.show_logo                // no DEFAULT fallback
+    if (typeof sl === 'boolean') template.show_logo = sl
+    if (Object.keys(template).length) body.template = template
+    try {
+      await save.mutateAsync({ remittance_config: body })
+      setToast({ ok: true, msg: 'Remittance settings saved.' })
+    } catch (err: any) { setToast({ ok: false, msg: err.message }) }
+  }
+
+  if (isLoading) return <div className="py-10 text-center text-sm text-neutral-400">Loading…</div>
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
+      <SectionHeader
+        title="Remittance Advice"
+        description="Turns on the remittance advice email sent to a vendor when a payment pays them, and sets the sender identity it goes out under. No mail server is configured here — sending reuses the PO Email SMTP profile (EPMS Admin → Email Settings), which falls back to the internal Task Notification SMTP profile above."
+      />
+
+      <label className="flex items-center gap-2.5 cursor-pointer w-fit">
+        <Toggle checked={enabledVal} onChange={setEnabled} />
+        <span className="text-sm font-medium text-neutral-700">Send remittance advice emails</span>
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="From Email">
+          <Input type="email" value={fromEmailVal} onChange={(e) => setFromEmail(e.target.value)} placeholder="remittance@company.com" />
+        </Field>
+        <Field label="From Name">
+          <Input value={fromNameVal} onChange={(e) => setFromName(e.target.value)} placeholder="Accounts Payable" />
+        </Field>
+        <div className="col-span-2">
+          <Field label="CC Email" hint="Optional — copied on every remittance email.">
+            <Input type="email" value={ccEmailVal} onChange={(e) => setCcEmail(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 p-4">
+        <p className="text-sm font-semibold text-neutral-700 mb-1">SMTP Credential Override</p>
+        <p className="text-xs text-neutral-500 mb-3">Optional. Leave blank to use the shared SMTP credentials — these exist only for servers that reject a From address that doesn't match the authenticated account.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="SMTP User">
+            <Input value={smtpUserVal} onChange={(e) => setSmtpUser(e.target.value)} />
+          </Field>
+          <Field label="SMTP Password">
+            <div className="relative">
+              <Input type={showPwd ? 'text' : 'password'} value={smtpPasswordVal}
+                onChange={(e) => setSmtpPassword(e.target.value)} />
+              <button type="button" onClick={() => setShowPwd((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600">
+                {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 p-4">
+        <p className="text-sm font-semibold text-neutral-700 mb-1">Email Template</p>
+        <p className="text-xs text-neutral-500 mb-3">Customize the wording and look of the remittance advice email. The payment table itself is generated automatically and cannot be edited.</p>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <Field label="Subject">
+              <Input value={tplSubjectVal} onChange={(e) => setTplSubject(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Heading">
+            <Input value={tplHeadingVal} onChange={(e) => setTplHeading(e.target.value)} />
+          </Field>
+          <Field label="Greeting">
+            <Input value={tplGreetingVal} onChange={(e) => setTplGreeting(e.target.value)} />
+          </Field>
+          <div className="col-span-2">
+            <Field label="Intro">
+              <Textarea rows={2} value={tplIntroVal} onChange={(e) => setTplIntro(e.target.value)} />
+            </Field>
+          </div>
+          <div className="col-span-2">
+            <Field label="Footer">
+              <Textarea rows={4} value={tplFooterVal} onChange={(e) => setTplFooter(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Brand Colour">
+            <div className="flex items-center gap-2">
+              <input type="color" value={tplBrandColorVal} onChange={(e) => setTplBrandColor(e.target.value)}
+                className="h-9 w-9 cursor-pointer rounded border border-neutral-200 p-0.5" />
+              <span className="text-xs text-neutral-500">{tplBrandColorVal}</span>
+            </div>
+          </Field>
+          <Field label="Show Company Logo">
+            <div className="flex items-center gap-2 pt-1.5">
+              <Toggle checked={tplShowLogoVal} onChange={setTplShowLogo} />
+              <span className="text-xs text-neutral-500">Shown at the top of the email, if a logo is set in Company Settings.</span>
+            </div>
+          </Field>
+        </div>
+        <p className="mt-3 text-xs text-neutral-500">
+          Available placeholders: {'{{company_name}}'}, {'{{payee_name}}'}, {'{{doc_type}}'}, {'{{reference}}'}, {'{{total}}'}, {'{{payment_method}}'}, {'{{currency}}'}
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+        <p className="text-sm font-semibold text-neutral-700 mb-3">Preview (sample data — the payment table is added automatically)</p>
+        <div className="rounded-lg border border-neutral-200 bg-white p-5 font-sans text-[#222]">
+          {tplShowLogoVal && cfg?.logo_data_url && (
+            <img src={cfg.logo_data_url} alt="" className="mb-3 max-h-12" />
+          )}
+          <h2 className="mb-2 text-lg font-semibold" style={{ color: tplBrandColorVal }}>
+            {fillRemittancePreview(tplHeadingVal)}
+          </h2>
+          <p className="mb-2 text-sm">{fillRemittancePreview(tplGreetingVal)}</p>
+          <p className="mb-3 text-sm">{fillRemittancePreview(tplIntroVal)}</p>
+          <div className="mb-3 rounded border border-dashed border-neutral-300 bg-neutral-50 px-3 py-6 text-center text-xs text-neutral-400">
+            [ Payment table appears here ]
+          </div>
+          <div className="whitespace-pre-line text-xs text-neutral-500">
+            {fillRemittancePreview(tplFooterVal)}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <SaveButton loading={save.isPending} />
+        {toast && <Toast {...toast} />}
+      </div>
+    </form>
+  )
+}
+
 // ── Approval Workflows ───────────────────────────────────────────────────────
 
 const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'cfm', 'budget_plan', 'vms_visit']
@@ -1835,6 +2096,7 @@ const SECTIONS = [
   { key: 'users',        label: 'User Management',      icon: Users },
   { key: 'currency',     label: 'Currency Settings',    icon: CreditCard },
   { key: 'notifications',label: 'Notification Settings',icon: Bell },
+  { key: 'remittance',   label: 'Remittance Advice',    icon: Mail },
   { key: 'workflows',    label: 'Approval Workflows',   icon: Workflow },
   { key: 'erp_mdm',      label: 'ERP MDM',              icon: Database },
 ]
@@ -1916,6 +2178,7 @@ export default function AdminPanel() {
           {section === 'users'         && <UserManagement />}
           {section === 'currency'      && <CurrencySettings />}
           {section === 'notifications' && <NotificationSettings />}
+          {section === 'remittance'    && <RemittanceSettings />}
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}
         </main>

@@ -296,3 +296,20 @@ async def test_valid_shared_mailbox_address_is_accepted(admin_client, _reset_sha
     assert r.json()["notification_settings"]["role_shared_mailboxes"] == {
         "ap_clerk": "ap@canadaroyalmilk.com"
     }
+
+
+# ── Remittance config ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_remittance_config_patches_and_defaults_empty(admin_client):
+    got = (await admin_client.get(CONFIG_URL)).json()
+    assert got["remittance_config"] == {}
+
+    patched = (await admin_client.patch(CONFIG_URL, json={
+        "remittance_config": {
+            "enabled": True, "from_email": "ap@crm.test", "from_name": "CRM AP",
+            "cc_email": "apbox@crm.test",
+        },
+    })).json()
+    assert patched["remittance_config"]["enabled"] is True
+    assert patched["remittance_config"]["from_email"] == "ap@crm.test"

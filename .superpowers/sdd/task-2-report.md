@@ -1,319 +1,185 @@
-# Task 2 Report: NC65 COA pure mapping functions
+# Task 2 report: thread the template and logo from config to render
+
+Note: this exact report path (`task-2-report.md`) previously held a stale report from an unrelated
+earlier task (vendor `remittance_email` on the business partner master, commit noted therein). Overwritten
+with this task's report below, per the same precedent that stale report itself documented (it, in turn,
+overwrote an even earlier NC65 COA-mapping report at this same path).
 
 ## Status: DONE
 
-## What was done
+Commit: `48904b5` on `feature/batch-payment-remittance` (worktree `c:/Project/uniops-remittance`; not
+merged/pushed).
 
-Followed the brief's TDD steps exactly, using verbatim code blocks from
-`.superpowers/sdd/task-2-brief.md`.
+## What changed
 
-1. Appended the Step-1 test block to `finance-api/tests/test_nc_coa_sync.py`
-   (kept Task 1's two existing tests intact).
-2. Ran the suite to confirm the expected collection failure
-   (`ModuleNotFoundError: No module named 'app.services.nc_coa_sync'`).
-3. Created `finance-api/app/services/nc_coa_sync.py` with the mapping
-   functions exactly as given in the brief: `NC_OWNED_FIELDS`,
-   `NcMappingError`, `clean`, `map_normal_balance`, `map_account_type`,
-   `map_aux_item`, `derive_party_dim`, `map_account`. It imports
-   `nc_configured` from `app/services/nc_sync.py` unchanged (no
-   reimplementation).
-4. Replaced `DIM_LABELS` in `finance-api/app/crud/account_balance.py` with
-   the brief's expanded dict — all 7 original keys preserved verbatim, plus
-   the new keys (`partner`, `project`, `project_type`,
-   `government_grant_project`, `item`, `item_category`, `asset_category`,
-   `tax_code`, `bank`, `bank_account`, `bank_category`, `country_region`,
-   `sales_type`, `credit_card`).
-5. Ran `tests/test_nc_coa_sync.py` — all pass (29 total: 2 from Task 1 + 27
-   new; the brief's "~22" estimate undercounted the parametrized cases).
-6. Ran `tests/test_account_balance.py` — all 20 pass, same count as before
-   the `DIM_LABELS` edit (no regression).
-7. Committed all three files together.
+- `finance-api/app/services/remittance_config.py`
+  - `from dataclasses import dataclass, field` (was `dataclass` only), plus `import re`.
+  - `RemittanceSettings` gains two fields, both defaulted so the existing `_sender()` test helper
+    (constructs the dataclass without them) keeps working unchanged:
+    - `template: dict = field(default_factory=dict)`
+    - `logo_data_url: str | None = None`
+  - `load()`'s SELECT now also fetches `logo_data_url` from `company_config`.
+  - Populates `template=cfg.get("template") or {}` and
+    `logo_data_url=_safe_logo_url(row["logo_data_url"])` on the returned settings.
+  - New `_safe_logo_url()` guard (see below).
 
-Note: this exact report path (`task-2-report.md`) contained a stale report
-from an unrelated earlier task (meeting-room booking data model). It has
-been overwritten with this task's report below.
+- `finance-api/app/crud/remittance_send.py`
+  - `send_groups`'s `render(...)` call now passes `template=sender.template,
+    logo_data_url=sender.logo_data_url` — exactly as the brief specified. No signature change to
+    `send_groups`.
 
-## Environment used
+- `finance-api/tests/test_remittance.py`
+  - Added `SCOPE_PAYMENT` to the existing `from app.models.remittance import (...)` line — it was **not**
+    already imported (only `SCOPE_BATCH` was; the constant exists in `app/models/remittance.py`, the test
+    file just hadn't needed it before). This was the one place the brief's "reuse the file's existing
+    helpers" framing was slightly inaccurate — I imported the name rather than weakening the test.
+  - Appended the two tests from the brief, matching their behavior exactly, with two mechanical
+    adjustments: dropped the redundant inline `import uuid` / `from unittest.mock import AsyncMock, patch`
+    (both already imported at module scope) and used the module-level `sa` (`import sqlalchemy as sa`)
+    rather than re-importing.
 
-Per the mid-task correction: no venv exists in the worktree, so all commands
-ran the worktree's test files through the **main repo's** interpreter
-(`c:/Project/uniops/finance-api/.venv/Scripts/python`), with `DATABASE_URL`
-and `JWT_SECRET_KEY` set to inline dummies (never pointing at the main
-repo's `.env`, which targets the production DB). `TEST_PG_PASSWORD` was
-still sourced from `/c/Project/uniops/.env`'s `DB_PASSWORD` per the brief, to
-authenticate against the local docker postgres the test fixtures actually
-use.
+- `finance-api/tests/conftest.py` (not in the brief's file list, but required for the tests to run — see
+  "Anything else wrong in the brief" below)
+  - Added `"ALTER TABLE company_config ADD COLUMN IF NOT EXISTS logo_data_url text"` to the existing shim
+    that shadows epms-owned `company_config` columns (`smtp_*`/`po_smtp_*`) in the finance-api test schema,
+    matching the real column's type (`Text, nullable=True`) from
+    `epms-api/alembic/versions/d4e5f6a7b8c9_sprint4_company_config.py`.
 
-## Exact commands and full output
+## Helper signatures vs. the brief
 
-### Step 2 — confirm failing (module not found)
+All confirmed against the current file before use — no assumed signature was actually wrong:
+- `_configured(db)` — seeds enabled remittance_config + po_smtp, exactly as the brief assumed.
+- `_vendor(db, email=..., remit=...)` — matches.
+- `_invoice(db, number=...)` — matches (the file's own comment notes the brief's simplified version would
+  fail at flush; the real helper already fills every NOT NULL column).
+- `_pa(vendor_id, amount=..., invoice_ids=..., po_id=...)` — matches.
+- `_record(pa, batch_id=..., status=..., doc_number=...)` — matches.
+- `rc` = `app.services.remittance_config`, `rsend` = `app.crud.remittance_send`, `rem` =
+  `app.crud.remittance` — all already imported under those names.
+- `CompanyConfig` — already imported from `app.models.mirrors`.
+- `SCOPE_PAYMENT` — exists in `app.models.remittance` but was **not** imported into the test file (only
+  `SCOPE_BATCH` was). Added it to the import line (see above) rather than adapting the test to avoid it,
+  since the brief's test genuinely needs the payment scope.
 
-```
-cd /c/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-DATABASE_URL="postgresql+asyncpg://dummy:dummy@localhost:5432/dummy" \
-JWT_SECRET_KEY="dummy" \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_coa_sync.py -v
-```
+## The `logo_data_url` guard
 
-Output (tail):
+`remittance_template.render()` interpolates `logo_data_url` raw into `<img src="{logo_data_url}">` with no
+escaping — a value containing a `"` could close the `src` attribute and inject arbitrary markup/attributes
+into every remittance email sent afterward. The value's provenance (`company_config.logo_data_url`) is
+admin-uploaded, not directly attacker-controlled in the normal flow, but it's exactly the kind of value
+that shouldn't be trusted blind at a raw-HTML-interpolation site.
 
-```
-collecting ... collected 0 items / 1 error
+Guard added in `remittance_config.py`:
 
-=================================== ERRORS ====================================
-_________________ ERROR collecting tests/test_nc_coa_sync.py __________________
-ImportError while importing test module 'C:\Project\uniops\.worktrees\nc-coa-sync\finance-api\tests\test_nc_coa_sync.py'.
-Hint: make sure your test modules/packages have valid Python names.
-Traceback:
-C:\Program Files\Python312\Lib\importlib\__init__.py:90: in import_module
-    return _bootstrap._gcd_import(name[level:], package, level)
-tests\test_nc_coa_sync.py:39: in <module>
-    from app.services.nc_coa_sync import (
-E   ModuleNotFoundError: No module named 'app.services.nc_coa_sync'
-=========================== short test summary info ===========================
-ERROR tests/test_nc_coa_sync.py
-!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
-============================== 1 error in 0.65s ===============================
+```python
+_LOGO_URL_RE = re.compile(r"^(data:image/[a-zA-Z0-9.+-]+;|https?://)", re.IGNORECASE)
+
+def _safe_logo_url(value: str | None) -> str | None:
+    if isinstance(value, str) and _LOGO_URL_RE.match(value) and '"' not in value:
+        return value
+    return None
 ```
 
-Matches the brief's expected failure exactly.
+Rationale for the shape:
+- Anchored `^` prefix check for `data:image/...;` or `http(s)://` — matches the two legitimate shapes a
+  logo URL takes (an uploaded data URI or a hosted image URL), same intent as the brief's "starts with
+  `data:image/` or `http`" suggestion, just anchored and with an explicit MIME-subtype charset instead of a
+  bare substring check (a naive `.startswith(("data:image/", "http"))` would also accept a string like
+  `"httpfoo"`; I required the actual scheme delimiter `https?://`).
+- Explicit `'"' not in value` rejects the actual injection vector even for an otherwise-well-formed
+  `data:image/...` or `http(s)://` value — the prefix check alone doesn't stop a value like
+  `data:image/png;base64,"><script>...` from smuggling a quote in later in the string.
+- Anything else (plain text, `javascript:`, a bare quote payload, `None`, non-string) returns `None`,
+  meaning `render()`'s `show_logo = bool(...) and bool(logo_data_url)` short-circuits and no `<img>` tag is
+  emitted at all — the existing intended behavior for "no logo configured."
 
-### Step 5 — new tests, after implementation
+This is deliberately a light sanity guard (prefix + quote check), not a full data-URI/MIME validator, per
+the brief's instruction.
 
+## Test commands and output
+
+Red (implementation reverted via `git stash push` of only the two impl files, tests present):
 ```
-cd /c/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-DATABASE_URL="postgresql+asyncpg://dummy:dummy@localhost:5432/dummy" \
-JWT_SECRET_KEY="dummy" \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_coa_sync.py -v
+cd finance-api && TEST_PG_PASSWORD=... python -m pytest tests/test_remittance.py -k "surfaces_template or uses_the_configured_template" -v
 ```
+Result: both FAILED, for the right reasons.
+- `test_load_surfaces_template_and_logo` — `sqlalchemy.exc.ProgrammingError: ... UndefinedColumnError:
+  column "logo_data_url" of relation "company_config" does not exist` (raised by the test's own `UPDATE`
+  statement, since the conftest schema shim didn't have the column yet either).
+- `test_send_uses_the_configured_template` — assertion failure: `"CRM Payment Notice" not in` the
+  default-template HTML (render called without `template=`).
 
-Output:
+After `git stash pop` (restoring the implementation) but before the `conftest.py` fix, the same `-k` run
+still failed — this time at `load()`'s own `SELECT`, same `UndefinedColumnError`, because the test schema
+genuinely lacked the column. This is what led to the `conftest.py` fix (see below).
 
+After adding the column shim to `conftest.py`:
 ```
-collecting ... collected 29 items
-
-tests/test_nc_coa_sync.py::test_coa_sync_run_roundtrip PASSED            [  3%]
-tests/test_nc_coa_sync.py::test_coa_aux_item_required_defaults_false PASSED [  6%]
-tests/test_nc_coa_sync.py::test_clean_treats_tilde_as_empty PASSED       [ 10%]
-tests/test_nc_coa_sync.py::test_normal_balance_from_balanorient PASSED   [ 13%]
-tests/test_nc_coa_sync.py::test_normal_balance_rejects_unknown PASSED    [ 17%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-0-asset] PASSED   [ 20%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-1-asset] PASSED   [ 24%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[2-1-liability] PASSED [ 27%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[4-1-equity] PASSED  [ 31%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[5-0-expense] PASSED [ 34%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-1-revenue] PASSED [ 37%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-0-expense] PASSED [ 41%]
-tests/test_nc_coa_sync.py::test_account_type_rejects_unregistered_code PASSED [ 44%]
-tests/test_nc_coa_sync.py::test_aux_item_maps_supported_dims PASSED      [ 48%]
-tests/test_nc_coa_sync.py::test_aux_item_regression_project_substring_false_positives PASSED [ 51%]
-tests/test_nc_coa_sync.py::test_aux_item_rejects_unregistered_code PASSED [ 55%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[112201-asset-customer] PASSED [ 58%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[220202-liability-supplier] PASSED [ 62%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[640202-expense-supplier] PASSED [ 65%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[6002-revenue-customer] PASSED [ 68%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[4001-equity-partner] PASSED [ 72%]
-tests/test_nc_coa_sync.py::test_derive_party_dim_exceptions_never_become_customer PASSED [ 75%]
-tests/test_nc_coa_sync.py::test_map_account_reads_facts_and_joins_masters PASSED [ 79%]
-tests/test_nc_coa_sync.py::test_map_account_contra_asset_is_credit PASSED [ 82%]
-tests/test_nc_coa_sync.py::test_map_account_tilde_unit_means_no_quantity_accounting PASSED [ 86%]
-tests/test_nc_coa_sync.py::test_map_account_name_fallback_chain PASSED   [ 89%]
-tests/test_nc_coa_sync.py::test_map_account_top_level_pid_tilde PASSED   [ 93%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_uom_pk PASSED [ 96%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_missing_accasoa_row PASSED [100%]
-
-============================= 29 passed in 7.17s ==============================
+cd finance-api && TEST_PG_PASSWORD=... python -m pytest tests/test_remittance.py -k "surfaces_template or uses_the_configured_template" -v
 ```
+Result: `2 passed, 55 deselected in 14.82s`.
 
-### Step 6 — account_balance regression suite
-
+Full file (Step 5, run in the foreground, one session, per instructions):
 ```
-cd /c/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-DATABASE_URL="postgresql+asyncpg://dummy:dummy@localhost:5432/dummy" \
-JWT_SECRET_KEY="dummy" \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_account_balance.py -v
+cd finance-api && TEST_PG_PASSWORD=... python -m pytest tests/test_remittance.py -v
 ```
+Result: **`57 passed, 21 warnings in 252.76s (0:04:12)`** — every test in the file, including all of
+Task 1's and the pre-existing suite, plus the two new ones. (This run exceeded the tool's 120s foreground
+timeout and was auto-moved to background by the harness; I did not start it in the background myself, ran
+no other pytest session concurrently, and did not poll it — I waited for the completion notification and
+then read the full captured output.)
 
-Output:
+Also verified no other construction site of `RemittanceSettings` exists outside `load()` in application
+code (`grep -rn "RemittanceSettings(" app tests`), so the two new defaulted fields can't have broken any
+other caller.
 
-```
-collecting ... collected 20 items
+## Anything else wrong in the brief
 
-tests/test_account_balance.py::test_account_balance_opening_movement_closing PASSED [  5%]
-tests/test_account_balance.py::test_account_balance_excludes_draft PASSED [ 10%]
-tests/test_account_balance.py::test_account_balance_endpoint PASSED      [ 15%]
-tests/test_account_balance.py::test_budget_actual_by_cost_center PASSED  [ 20%]
-tests/test_account_balance.py::test_expand_single_dim_matches_old_behavior PASSED [ 25%]
-tests/test_account_balance.py::test_account_vouchers_drilldown_by_dims PASSED [ 30%]
-tests/test_account_balance.py::test_budget_actual_endpoint PASSED        [ 35%]
-tests/test_account_balance.py::test_jv_line_income_expense_item_column PASSED [ 40%]
-tests/test_account_balance.py::test_coa_aux_item_roundtrip_and_unique PASSED [ 45%]
-tests/test_account_balance.py::test_expand_two_dims_and_none_group PASSED [ 50%]
-tests/test_account_balance.py::test_expand_rejects_unknown_dim PASSED    [ 55%]
-tests/test_account_balance.py::test_expand_rejects_duplicate_dims PASSED [ 60%]
-tests/test_account_balance.py::test_vouchers_filter_none_and_combo PASSED [ 65%]
-tests/test_account_balance.py::test_dims_endpoint_config_and_fallback PASSED [ 70%]
-tests/test_account_balance.py::test_expand_endpoint_dims_param PASSED    [ 75%]
-tests/test_account_balance.py::test_aux_item_name_mapping PASSED         [ 80%]
-tests/test_account_balance.py::test_nc_customer_roundtrip_and_unique PASSED [ 85%]
-tests/test_account_balance.py::test_erp_supplier_mirror_readable PASSED  [ 90%]
-tests/test_account_balance.py::test_customer_pick_name PASSED            [ 95%]
-tests/test_account_balance.py::test_expand_by_supplier_and_customer PASSED [100%]
+The brief's file list (`remittance_config.py` + `remittance_send.py` + the test file, "no migration")
+didn't anticipate that `company_config` in finance-api's test database is a **schema shim**, not a real
+epms-owned table — `finance-api/tests/conftest.py::_migrate()` ALTERs in the `smtp_*`/`po_smtp_*` columns
+by hand because finance-api's own `CompanyConfig` mirror model only maps `role_management` and
+`remittance_config` (see the model's own docstring at `app/models/mirrors.py`). Since `logo_data_url` is a
+third epms-owned column read via the same raw-SQL path, it needed the same shim treatment, or `load()`'s
+SELECT fails outright in tests (confirmed above: it does, with `UndefinedColumnError`). I added one line to
+that existing shim list in `conftest.py`. This is not a migration (the column already exists on the real
+physical table via the existing epms-api migration `d4e5f6a7b8c9_sprint4_company_config`) — it's a
+test-fixture-only change, consistent with "no migration" in spirit even though it's a fourth touched file.
 
-================== 20 passed, 6 warnings in 68.67s (0:01:08) ==================
-```
-
-(The 6 warnings are pre-existing `datetime.utcnow()` deprecation warnings
-from `jose/jwt.py`, unrelated to this change.) 20/20 pass — the same count
-as before the `DIM_LABELS` edit, confirming no regression.
-
-## Commit
-
-```
-f78e505 feat(finance): NC COA mapping reads facts instead of inferring
-3 files changed, 310 insertions(+), 1 deletion(-)
-create mode 100644 finance-api/app/services/nc_coa_sync.py
-```
-
-Files: `finance-api/app/services/nc_coa_sync.py` (new),
-`finance-api/app/crud/account_balance.py` (DIM_LABELS only),
-`finance-api/tests/test_nc_coa_sync.py` (append).
+No other discrepancies found.
 
 ## Concerns
 
-None. All code was used verbatim from the brief, both new-test and
-regression suites pass in full, and `DIM_LABELS` only gained keys — none of
-the original 7 were altered. Git warned about LF→CRLF normalization on the
-two touched/created files when staging; this is the repo's existing
-`.gitattributes`/core.autocrlf behavior, not a content change made here.
+- None outstanding. All 57 tests in `test_remittance.py` pass; the guard is narrowly scoped and documented;
+  the one file outside the brief's list (`conftest.py`) was a required fix, not scope creep, with its own
+  comment explaining why.
+- Per instructions I did not run the full finance-api suite (only `test_remittance.py`, scoped with `-k`
+  for the red-state checks and unscoped for the final green check on this one file) — the full-suite run is
+  left to the user, as instructed.
 
----
+## Fix: logo-url guard reject-path test
 
-## Fix: two review findings (missing raise-condition tests + dead constant)
+Added unit test `test_safe_logo_url_accepts_images_and_rejects_injection` to directly pin the behavior
+of `_safe_logo_url()` guard in `remittance_config.py`. The guard previously had no explicit test coverage
+of its REJECT path — only the ACCEPT path was tested indirectly through `test_load_surfaces_template_and_logo`.
+This made the guard vulnerable to silent removal: if someone reverted the guard to `return value`, no test
+would fail.
 
-### Finding 1 (Important) — two required raise conditions had no test
+Commit: `5236320` on `feature/batch-payment-remittance`.
 
-`map_account` is required to raise `NcMappingError` on four conditions;
-only "unknown uom pk" and "missing ACCASOA row" were tested. Added two
-tests to `finance-api/tests/test_nc_coa_sync.py`, placed next to
-`test_map_account_rejects_unknown_uom_pk`, following its exact style:
+Test checks both directions in one test to keep the accept path pinned:
+- Accepts: `data:image/png;base64,AAAA`, `https://cdn.example.com/logo.png`
+- Rejects to None: `None`, empty string, values containing `"` (the attribute-injection vector),
+  `javascript:alert(1)`, `data:text/html,<script>`
 
-```python
-def test_map_account_rejects_unknown_acctype_pk():
-    with pytest.raises(NcMappingError):
-        map_account(_row(acctype_pk="NOSUCH"), **_lookups())
+Proved the test can fail by temporarily reverting the guard to `return value`:
+- **Broken-code failure line**: `assert _safe_logo_url("") is None` (line 230 in test_remittance.py)
+  — returns empty string instead of None when guard is removed
+- **Final pass line**: `tests/test_remittance.py::test_safe_logo_url_accepts_images_and_rejects_injection PASSED [100%]`
+  — with guard restored
 
-def test_map_account_rejects_unknown_currency_pk():
-    with pytest.raises(NcMappingError):
-        map_account(_row(currency_pk="NOSUCH"), **_lookups())
+Test command and result (green):
 ```
-
-### Finding 2 (Minor) — dead constant
-
-Deleted `PARTY_ITEM = "0004"` from `finance-api/app/services/nc_coa_sync.py`.
-It was defined but never referenced — `AUX_ITEM_MAP` uses the literal
-`"0004"` as its key, which was left untouched, per instructions.
-
-### Test command and full output
-
+cd finance-api && TEST_PG_PASSWORD=... python -m pytest tests/test_remittance.py::test_safe_logo_url_accepts_images_and_rejects_injection -v
 ```
-cd c:/Project/uniops/.worktrees/nc-coa-sync/finance-api
-TEST_PG_PASSWORD=$(grep '^DB_PASSWORD=' /c/Project/uniops/.env | cut -d= -f2- | tr -d ' \r') \
-  DATABASE_URL=postgresql+asyncpg://x:x@localhost/x JWT_SECRET_KEY=x \
-  /c/Project/uniops/finance-api/.venv/Scripts/python -m pytest tests/test_nc_coa_sync.py -v
-```
-
-```
-collecting ... collected 31 items
-
-tests/test_nc_coa_sync.py::test_coa_sync_run_roundtrip PASSED            [  3%]
-tests/test_nc_coa_sync.py::test_coa_aux_item_required_defaults_false PASSED [  6%]
-tests/test_nc_coa_sync.py::test_clean_treats_tilde_as_empty PASSED       [  9%]
-tests/test_nc_coa_sync.py::test_normal_balance_from_balanorient PASSED   [ 12%]
-tests/test_nc_coa_sync.py::test_normal_balance_rejects_unknown PASSED    [ 16%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-0-asset] PASSED   [ 19%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[1-1-asset] PASSED   [ 22%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[2-1-liability] PASSED [ 25%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[4-1-equity] PASSED  [ 29%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[5-0-expense] PASSED [ 32%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-1-revenue] PASSED [ 35%]
-tests/test_nc_coa_sync.py::test_account_type_mapping[6-0-expense] PASSED [ 38%]
-tests/test_nc_coa_sync.py::test_account_type_rejects_unregistered_code PASSED [ 41%]
-tests/test_nc_coa_sync.py::test_aux_item_maps_supported_dims PASSED      [ 45%]
-tests/test_nc_coa_sync.py::test_aux_item_regression_project_substring_false_positives PASSED [ 48%]
-tests/test_nc_coa_sync.py::test_aux_item_rejects_unregistered_code PASSED [ 51%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[112201-asset-customer] PASSED [ 54%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[220202-liability-supplier] PASSED [ 58%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[640202-expense-supplier] PASSED [ 61%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[6002-revenue-customer] PASSED [ 64%]
-tests/test_nc_coa_sync.py::test_derive_party_dim[4001-equity-partner] PASSED [ 67%]
-tests/test_nc_coa_sync.py::test_derive_party_dim_exceptions_never_become_customer PASSED [ 70%]
-tests/test_nc_coa_sync.py::test_map_account_reads_facts_and_joins_masters PASSED [ 74%]
-tests/test_nc_coa_sync.py::test_map_account_contra_asset_is_credit PASSED [ 77%]
-tests/test_nc_coa_sync.py::test_map_account_tilde_unit_means_no_quantity_accounting PASSED [ 80%]
-tests/test_nc_coa_sync.py::test_map_account_name_fallback_chain PASSED   [ 83%]
-tests/test_nc_coa_sync.py::test_map_account_top_level_pid_tilde PASSED   [ 87%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_uom_pk PASSED [ 90%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_acctype_pk PASSED [ 93%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_currency_pk PASSED [ 96%]
-tests/test_nc_coa_sync.py::test_map_account_rejects_missing_accasoa_row PASSED [100%]
-
-============================= 31 passed in 7.43s ==============================
-```
-
-31 passed (29 existing + 2 new), consistent with the expected count.
-
-### Vacuity check
-
-For each new test, temporarily disabled the corresponding raise, ran that
-one test to confirm it fails, then restored the raise and re-ran the full
-suite to confirm all 31 pass again.
-
-**`currency_pk` test** — straightforward: commented out the
-`if default_currency is None: raise NcMappingError(...)` block. Re-ran
-`test_map_account_rejects_unknown_currency_pk` alone:
-
-```
-FAILED tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_currency_pk
-E       Failed: DID NOT RAISE <class 'app.services.nc_coa_sync.NcMappingError'>
-```
-
-Confirms the test is not vacuous — it depends on that raise.
-
-**`acctype_pk` test** — first pass was surprising: commenting out only the
-`if atype_code is None: raise NcMappingError(...)` block in `map_account`
-did **not** make `test_map_account_rejects_unknown_acctype_pk` fail. Root
-cause: `map_account` still calls `map_account_type(atype_code, ...)`
-immediately after, and when `atype_code` is `None`,
-`map_account_type` computes `code = (None or "").strip() == ""`, which is
-not a key in `ACCOUNT_TYPE_BY_NC` and is independently caught by
-`map_account_type`'s own `except KeyError: raise NcMappingError(...)` —
-i.e. the explicit check in `map_account` is behaviorally redundant with a
-backstop one level down. This is legitimate double protection, not a test
-flaw: the required behavior ("unmapped acctype_pk raises") genuinely holds.
-
-To confirm the test isn't vacuous against the actual regression the
-finding warns about (an unmapped code silently resolving to a wrong
-default, per this module's own docstring: "the old `return 'asset'`
-catch-all is how the wrong data got in"), disabled *both* layers at once —
-the explicit `map_account` check and `map_account_type`'s
-`except KeyError: raise ...` (replaced with `return "asset"`, mirroring
-the exact old buggy pattern the docstring references). Re-ran the test
-alone:
-
-```
-FAILED tests/test_nc_coa_sync.py::test_map_account_rejects_unknown_acctype_pk
-E       Failed: DID NOT RAISE <class 'app.services.nc_coa_sync.NcMappingError'>
-```
-
-This confirms the test correctly catches the real regression class it
-guards against. Both temporary changes were then reverted and the full
-31-test suite re-run to confirm a clean pass (output above is the restored
-state).
-
-### Commit
-
-`81d725a` — `test(finance): cover acctype/currency raise paths, drop dead PARTY_ITEM constant`
+Result: `1 passed in 3.48s`

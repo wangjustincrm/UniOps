@@ -40,6 +40,7 @@ interface VendorFormData {
   category: string
   contactName: string
   contactEmail: string
+  remittanceEmail: string
   phone: string
   address: string
   paymentTerms: ApiVendor['payment_terms']
@@ -56,6 +57,7 @@ const BLANK_FORM: VendorFormData = {
   category: '',
   contactName: '',
   contactEmail: '',
+  remittanceEmail: '',
   phone: '',
   address: '',
   paymentTerms: 'net30',
@@ -73,6 +75,7 @@ function vendorToForm(v: ApiVendor): VendorFormData {
     category: v.category,
     contactName: v.contact_name,
     contactEmail: v.contact_email,
+    remittanceEmail: v.remittance_email ?? '',
     phone: v.phone ?? '',
     address: v.address ?? '',
     paymentTerms: v.payment_terms,
@@ -200,6 +203,23 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
             placeholder="jane@vendor.com"
           />
           {errors.contactEmail && <p className="text-xs text-danger-600">{errors.contactEmail}</p>}
+        </div>
+
+        {/* Remittance Email */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-neutral-700">Remittance Email</label>
+          <input
+            type="email"
+            className={inputCls(errors.remittanceEmail)}
+            value={form.remittanceEmail}
+            onChange={(e) => set('remittanceEmail', e.target.value)}
+            placeholder="ap@vendor.com"
+          />
+          <p className="text-xs text-neutral-400">
+            Where remittance advice is sent. Defaults to the contact email if left blank —
+            if both are blank, remittance advice cannot be sent for this vendor.
+          </p>
+          {errors.remittanceEmail && <p className="text-xs text-danger-600">{errors.remittanceEmail}</p>}
         </div>
 
         {/* Phone */}
@@ -406,6 +426,9 @@ export default function VendorsPage() {
     if (f.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.contactEmail)) {
       e.contactEmail = 'Invalid email address'
     }
+    if (f.remittanceEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.remittanceEmail)) {
+      e.remittanceEmail = 'Invalid email address'
+    }
     setFormErrors(e)
     return Object.keys(e).length === 0
   }
@@ -440,6 +463,7 @@ export default function VendorsPage() {
         category: formData.category.trim(),
         contact_name: formData.contactName.trim(),
         contact_email: formData.contactEmail.trim(),
+        remittance_email: formData.remittanceEmail.trim(),
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
         payment_terms: formData.paymentTerms,
@@ -461,6 +485,7 @@ export default function VendorsPage() {
         category: formData.category.trim(),
         contact_name: formData.contactName.trim(),
         contact_email: formData.contactEmail.trim(),
+        remittance_email: formData.remittanceEmail.trim(),
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
         payment_terms: formData.paymentTerms,
@@ -715,6 +740,11 @@ export default function VendorsPage() {
                     {vendor.contact_email && (
                       <p className="text-xs text-neutral-400 truncate max-w-44">
                         {vendor.contact_email}
+                      </p>
+                    )}
+                    {vendor.remittance_email && (
+                      <p className="text-xs text-neutral-400 truncate max-w-44" title="Remittance email">
+                        ↳ {vendor.remittance_email}
                       </p>
                     )}
                   </td>

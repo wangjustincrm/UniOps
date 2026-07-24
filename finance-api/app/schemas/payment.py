@@ -16,18 +16,26 @@ class PaymentCreate(BaseModel):
 
 class PaymentResponse(BaseModel):
     id: uuid.UUID
-    pa_id: uuid.UUID
-    pa_number: str
-    vendor_id: uuid.UUID
-    vendor_name: str
+    # Nullable on the table: expense-claim payments carry none of these.
+    pa_id: uuid.UUID | None = None
+    pa_number: str | None = None
+    vendor_id: uuid.UUID | None = None
+    vendor_name: str | None = None
+    doc_kind: str | None = None
+    doc_number: str | None = None
+    payee_name: str | None = None
     payment_date: date
     payment_method: str
-    reference: str | None
+    reference: str | None = None
     amount: Decimal
     currency: str
     status: str
+    batch_id: uuid.UUID | None = None
+    bank_account_id: uuid.UUID | None = None
+    entity_id: uuid.UUID | None = None
     recorded_by: uuid.UUID
-    notes: str | None
+    notes: str | None = None
+    remittance_status: str | None = None     # sent | not_sent, filled by the API layer
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -35,3 +43,9 @@ class PaymentResponse(BaseModel):
 class PaymentListResponse(BaseModel):
     items: list[PaymentResponse]
     total: int
+
+
+class PaymentSummaryRow(BaseModel):
+    currency: str
+    count: int
+    total: Decimal

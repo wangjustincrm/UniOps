@@ -1,21 +1,36 @@
+import csv
+import io
 import uuid
 from datetime import date
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.deps import BearerToken, CurrentUser
+from app.core.deps import _FINANCE_ROLES, BearerToken, CurrentUser
 from app.db.base import get_db
 from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
+from app.models.mirrors import ExpenseClaim
 from app.models.payment_batch import PaymentBatch, PaymentBatchLine
-from app.schemas.payment import PaymentListResponse, PaymentResponse
+from app.models.remittance import SENT
+from app.schemas.payment import PaymentListResponse, PaymentResponse, PaymentSummaryRow
 from app.schemas.payment_execute import PaymentExecuteRequest, PaymentExecuteResponse
 
 router = APIRouter(prefix="/payments", tags=["payments"])
+
+# Mounted immediately, before any route in this module is declared (including
+# the catch-all GET /{payment_id} at the very bottom) — so
+# /{payment_id}/remittance/preview and /send are registered ahead of it. See
+# app/api/v1/remittance.py's module docstring for why route order matters
+# here.
+from app.api.v1.remittance import router as remittance_router  # noqa: E402
+
+router.include_router(remittance_router)
 
 
 @router.post("/execute", response_model=PaymentExecuteResponse)
@@ -51,17 +66,141 @@ async def record_payment_deprecated(_: CurrentUser = ...):
     )
 
 
+async def _authorize_read(db: AsyncSession, user: dict) -> None:
+    """Gate for the Payments hub's read surface (list / summary / export).
+
+    Deliberately NOT `payment_execute._check_can_pay` — that bar is for
+    *executing* a payment (see create_batch/execute_batch below, and
+    app/api/v1/remittance.py's `_authorize`), which is stricter than needed
+    to merely *view* payment history. `_FINANCE_ROLES` (app.core.deps) is
+    already declared for exactly this — "who may see finance data" — but was
+    never wired to any endpoint, which is how any authenticated employee
+    (including OA-only users with no finance role) could hit
+    GET /payments/export and download every payment the company has made.
+    finance_bp / finance_manager granted as an ADDITIONAL identity role
+    assignment (not the JWT's primary `role`) also qualify — same lookup
+    `_check_can_pay` uses for write access, so a Finance BP assigned via
+    role_management sees the same payments they can execute.
+    """
+    role = user.get("role", "")
+    if role in _FINANCE_ROLES:
+        return
+    try:
+        user_id = uuid.UUID(str(user.get("sub", "")))
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
+    codes = await payment_execute._user_role_codes(db, user_id, role)
+    if not codes & _FINANCE_ROLES:
+        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
+
+
+class PaymentFilters(BaseModel):
+    pa_id: uuid.UUID | None = None
+    vendor_id: uuid.UUID | None = None
+    date_from: date | None = None
+    date_to: date | None = None
+    doc_kind: str | None = None
+    currency: str | None = None
+    payment_method: str | None = None
+    status: str | None = None
+    bank_account_id: uuid.UUID | None = None
+    batch_id: uuid.UUID | None = None
+    source: str | None = None          # batch | single
+    remittance: str | None = None      # sent | not_sent — page-independent filter only;
+    # richer blocked states (see _remittance_status) are computed live per page.
+    q: str | None = None
+
+
+async def _remittance_status(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
+    """'sent' / 'not_sent' for the CURRENT PAGE only — block reasons are live
+    and too costly to evaluate across an unbounded result set."""
+    if not records:
+        return {}
+    ids = [str(r.id) for r in records]
+    sent = set((await db.execute(sa.text(
+        "SELECT DISTINCT jsonb_array_elements_text(payment_record_ids) AS rid"
+        " FROM payment_remittance_notifications"
+        " WHERE status = :s AND payment_record_ids ?| :ids"
+    ), {"s": SENT, "ids": ids})).scalars().all())
+    return {r.id: ("sent" if str(r.id) in sent else "not_sent") for r in records}
+
+
+async def _payee_names(db: AsyncSession, records: list) -> dict[uuid.UUID, str]:
+    """Vendor name for vendor payments (already on the record); the claimant's
+    name for claim payments, which carry no vendor columns at all."""
+    out = {r.id: (r.vendor_name or "") for r in records}
+    claim_ids = [r.doc_id for r in records
+                 if r.doc_kind == "expense_claim" and r.doc_id]
+    if claim_ids:
+        rows = (await db.execute(
+            select(ExpenseClaim.id, ExpenseClaim.employee_name)
+            .where(ExpenseClaim.id.in_(claim_ids))
+        )).all()
+        name_by_claim = dict(rows)
+        for r in records:
+            if r.doc_kind == "expense_claim":
+                out[r.id] = name_by_claim.get(r.doc_id, "")
+    return out
+
+
 @router.get("", response_model=PaymentListResponse)
 async def list_payments(
+    filters: PaymentFilters = Depends(),
     db: AsyncSession = Depends(get_db),
-    _: CurrentUser = ...,
-    pa_id: uuid.UUID | None = Query(default=None),
-    vendor_id: uuid.UUID | None = Query(default=None),
+    user: CurrentUser = ...,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
 ):
-    items, total = await payment_crud.get_all(db, pa_id=pa_id, vendor_id=vendor_id, page=page, page_size=page_size)
-    return PaymentListResponse(items=items, total=total)
+    await _authorize_read(db, user)
+    items, total = await payment_crud.get_all(
+        db, page=page, page_size=page_size, **filters.model_dump())
+    status_by_id = await _remittance_status(db, items)
+    payee_by_id = await _payee_names(db, items)
+    out = []
+    for r in items:
+        d = PaymentResponse.model_validate(r).model_dump()
+        d["payee_name"] = payee_by_id.get(r.id) or None
+        d["remittance_status"] = status_by_id.get(r.id)
+        out.append(d)
+    return PaymentListResponse(items=out, total=total)
+
+
+@router.get("/summary", response_model=list[PaymentSummaryRow])
+async def payments_summary(filters: PaymentFilters = Depends(),
+                           db: AsyncSession = Depends(get_db),
+                           user: CurrentUser = ...):
+    """Totals over the WHOLE filtered set, not the current page — a separate
+    endpoint rather than something derived from the page for exactly that
+    reason."""
+    await _authorize_read(db, user)
+    return await payment_crud.summary(db, **filters.model_dump())
+
+
+@router.get("/export")
+async def export_payments(filters: PaymentFilters = Depends(),
+                          db: AsyncSession = Depends(get_db),
+                          user: CurrentUser = ...):
+    """CSV of the whole filtered set — pagination deliberately ignored."""
+    await _authorize_read(db, user)
+    rows = await payment_crud.export_rows(db, **filters.model_dump())
+    payee_by_id = await _payee_names(db, rows)
+
+    def _iter():
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["payment_date", "doc_kind", "doc_number", "payee", "amount",
+                    "currency", "payment_method", "source", "status"])
+        yield buf.getvalue()
+        for r in rows:
+            buf.seek(0), buf.truncate(0)
+            w.writerow([r.payment_date, r.doc_kind or "", r.doc_number or "",
+                        payee_by_id.get(r.id) or "", r.amount, r.currency,
+                        r.payment_method, "batch" if r.batch_id else "single",
+                        r.status])
+            yield buf.getvalue()
+
+    return StreamingResponse(_iter(), media_type="text/csv", headers={
+        "Content-Disposition": 'attachment; filename="payments.csv"'})
 
 
 # NOTE: GET /{payment_id} is defined at the END of this file so literal routes
@@ -143,14 +282,22 @@ async def can_pay(user: CurrentUser, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/due")
-async def list_due(_: CurrentUser, db: AsyncSession = Depends(get_db),
+async def list_due(user: CurrentUser, db: AsyncSession = Depends(get_db),
                    currency: str | None = Query(default=None)):
-    """Approved PAs awaiting payment — pickable rows for a payment run."""
+    """Approved PAs awaiting payment — pickable rows for a payment run.
+
+    Every approved PA and expense claim awaiting payment, employee names and
+    amounts included — the same read authority as list/summary/export below
+    (see `_authorize_read`), not just a valid token. An OA-only employee with
+    no finance role could otherwise enumerate this the same way `/export`
+    was fixed to prevent."""
+    await _authorize_read(db, user)
     return await batch_crud.list_due(db, currency=currency)
 
 
 @router.get("/batches", response_model=list[BatchOut])
-async def list_batches(_: CurrentUser, db: AsyncSession = Depends(get_db)):
+async def list_batches(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    await _authorize_read(db, user)
     rows = (await db.execute(
         select(PaymentBatch).order_by(PaymentBatch.created_at.desc()).limit(200)
     )).scalars().all()
@@ -158,7 +305,10 @@ async def list_batches(_: CurrentUser, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/batches/{batch_id}")
-async def get_batch(batch_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depends(get_db)):
+async def get_batch(batch_id: uuid.UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Full line breakdown for one batch, vendor invoice numbers included —
+    same read authority as the list above, for the same reason."""
+    await _authorize_read(db, user)
     batch = (await db.execute(
         select(PaymentBatch).where(PaymentBatch.id == batch_id)
     )).scalar_one_or_none()
