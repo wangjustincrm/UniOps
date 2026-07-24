@@ -19,7 +19,7 @@ from app.models.mirrors import BusinessPartner, CompanyConfig, ExpenseClaim, Inv
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
 from app.models.remittance import (
-    KIND_VENDOR, SCOPE_BATCH, SCOPE_PAYMENT, SENT, RemittanceNotification,
+    KIND_VENDOR, SCOPE_BATCH, SCOPE_PAYMENT, SCOPE_SELECTION, SENT, RemittanceNotification,
 )
 from app.models.payment_batch import EXECUTED, PaymentBatch
 from app.services import remittance_config as rc
@@ -1321,3 +1321,254 @@ async def test_send_uses_the_configured_template(db_session):
             reference="PAY-1", payment_method="bank_transfer",
             company_name="CRM", sender=sender, actor_id=uuid.uuid4())
     assert "CRM Payment Notice" in sent_html["html"]
+
+
+# ── Selection scope: aggregated remittance for an arbitrary payment set ─────
+# (increment: vendor filter + multi-select on the Payments hub)
+
+async def test_selection_preview_two_payments_one_vendor_single_group(client, db_session):
+    """A selection of two payments to one vendor previews as a single group
+    covering both invoices, with the total summed."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    i1, i2 = await _invoice(db_session, "VINV-100"), await _invoice(db_session, "VINV-101")
+    pa1, pa2 = _pa(bp.id, "30.00", [str(i1.id)]), _pa(bp.id, "70.00", [str(i2.id)])
+    db_session.add_all([pa1, pa2])
+    await db_session.flush()
+    rec1, rec2 = _record(pa1), _record(pa2)
+    db_session.add_all([rec1, rec2])
+    await db_session.flush()
+
+    r = await client.post(
+        "/finance/v1/payments/remittance/selection/preview",
+        json={"payment_ids": [str(rec1.id), str(rec2.id)]}, headers=_h())
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["groups"]) == 1
+    g = body["groups"][0]
+    assert g["total"] == "100.00"
+    assert sorted(l["reference"] for l in g["lines"]) == ["VINV-100", "VINV-101"]
+    # Reference is a plain ad-hoc label, never a PA/document number (spec §3).
+    assert "PA-" not in body["reference"]
+    assert pa1.pa_number not in body["reference"]
+    assert pa2.pa_number not in body["reference"]
+
+
+async def test_selection_preview_spanning_two_vendors_is_400(client, db_session):
+    """A selection spanning two payees is rejected, not silently split."""
+    await _configured(db_session)
+    bp1 = await _vendor(db_session, remit="remit@acme.test")
+    bp2 = await _vendor(db_session, remit="remit@boreal.test")
+    i1, i2 = await _invoice(db_session, "VINV-110"), await _invoice(db_session, "VINV-111")
+    pa1, pa2 = _pa(bp1.id, "10.00", [str(i1.id)]), _pa(bp2.id, "20.00", [str(i2.id)])
+    db_session.add_all([pa1, pa2])
+    await db_session.flush()
+    rec1, rec2 = _record(pa1), _record(pa2)
+    db_session.add_all([rec1, rec2])
+    await db_session.flush()
+
+    r = await client.post(
+        "/finance/v1/payments/remittance/selection/preview",
+        json={"payment_ids": [str(rec1.id), str(rec2.id)]}, headers=_h())
+    assert r.status_code == 400
+    assert "more than one payee" in r.json()["detail"]
+
+    # The send endpoint applies the same guard.
+    r2 = await client.post(
+        "/finance/v1/payments/remittance/selection/send",
+        json={"payment_ids": [str(rec1.id), str(rec2.id)]}, headers=_h())
+    assert r2.status_code == 400
+
+
+async def test_selection_send_writes_one_row_resend_upserts_to_two_attempts(client, db_session):
+    """Sending a selection writes one `selection`-scope row whose
+    `payment_record_ids` holds both ids; re-sending the exact same selection
+    upserts onto that same row (one row, attempts == 2) rather than
+    duplicating — proving the deterministic scope id (uuid5 over the sorted
+    ids) agrees between the two requests."""
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    i1, i2 = await _invoice(db_session, "VINV-120"), await _invoice(db_session, "VINV-121")
+    pa1, pa2 = _pa(bp.id, "15.00", [str(i1.id)]), _pa(bp.id, "25.00", [str(i2.id)])
+    db_session.add_all([pa1, pa2])
+    await db_session.flush()
+    rec1, rec2 = _record(pa1), _record(pa2)
+    db_session.add_all([rec1, rec2])
+    await db_session.flush()
+    ids = [str(rec1.id), str(rec2.id)]
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        r = await client.post("/finance/v1/payments/remittance/selection/send",
+                              json={"payment_ids": ids}, headers=_h())
+    assert r.status_code == 200
+    assert r.json()["sent"] == 1
+
+    rows = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_kind == SCOPE_SELECTION))).scalars().all()
+    assert len(rows) == 1
+    row = rows[0]
+    assert sorted(row.payment_record_ids) == sorted(ids)
+    assert row.attempts == 1
+
+    # Re-sending the SAME set of ids, with resend requested, must upsert onto
+    # the same row rather than insert a second one.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        r2 = await client.post(
+            "/finance/v1/payments/remittance/selection/send",
+            json={"payment_ids": ids, "recipients": [
+                {"recipient_kind": "vendor", "party_id": str(bp.id), "resend": True}]},
+            headers=_h())
+    assert r2.json()["sent"] == 1
+
+    # `_upsert` writes via a raw Core `INSERT ... ON CONFLICT DO UPDATE`
+    # (see its docstring), which bypasses the ORM unit-of-work entirely —
+    # the `row` object above, already resident in this session's identity
+    # map, is never told its `attempts` changed underneath it. Without this
+    # expire, re-querying would silently hand back the SAME cached Python
+    # object with its stale attempts==1, not the row's true DB state.
+    db_session.expire_all()
+    rows2 = (await db_session.execute(select(RemittanceNotification).where(
+        RemittanceNotification.scope_kind == SCOPE_SELECTION))).scalars().all()
+    assert len(rows2) == 1
+    assert rows2[0].id == row.id
+    assert rows2[0].attempts == 2
+
+
+async def test_selection_preview_and_send_detect_prior_batch_send(client, db_session):
+    """Cross-scope guard, the NEW direction added by this increment: a
+    payment already sent under a `batch` scope must show as already-sent
+    from a `selection` preview covering that same record, and an unqualified
+    selection send of it must be refused (`skipped`, no mail). `resend: true`
+    still sends.
+
+    NOTE on what this test does and does not prove: `_other_scope("selection")`
+    happens to fall through to its `else` branch and return `"batch"` — the
+    SAME value the old pre-fix binary helper would compute for `"payment"`
+    too, since it only ever recognised two scopes. That means THIS specific
+    direction (prior BATCH send, checked from a selection) passes even
+    against the old code, by coincidence, not because the old code actually
+    generalizes. See
+    test_selection_guard_generalizes_beyond_the_old_batch_payment_pair below
+    for the direction that actually distinguishes old from new — a prior
+    PAYMENT-scope send, which `_other_scope("selection")` can never resolve
+    to since it only ever returns "batch" or "payment" for its own two
+    recognised inputs.
+    """
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-130")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    batch = PaymentBatch(batch_number="BP-130", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("42.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    rec = _record(pa, batch_id=batch.id)
+    db_session.add(rec)
+    await db_session.flush()
+
+    # Sent from the batch dialog.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        sent = await client.post(f"/finance/v1/payments/batches/{batch.id}/remittance/send",
+                                 json={"recipients": None}, headers=_h())
+    assert sent.json()["sent"] == 1
+
+    # A selection covering that same one record must show it as already sent.
+    preview = (await client.post(
+        "/finance/v1/payments/remittance/selection/preview",
+        json={"payment_ids": [str(rec.id)]}, headers=_h())).json()
+    assert len(preview["groups"]) == 1
+    last_send = preview["groups"][0]["last_send"]
+    assert last_send is not None
+    assert last_send["status"] == "sent"
+
+    # An unqualified selection send is refused — no second email.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        unqualified = await client.post(
+            "/finance/v1/payments/remittance/selection/send",
+            json={"payment_ids": [str(rec.id)]}, headers=_h())
+    assert unqualified.json()["sent"] == 0
+    assert unqualified.json()["skipped"] == 1
+    assert m.await_count == 0
+
+    # resend: true is the deliberate opt-in and still sends.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m2:
+        resent = await client.post(
+            "/finance/v1/payments/remittance/selection/send",
+            json={"payment_ids": [str(rec.id)], "recipients": [
+                {"recipient_kind": "vendor", "party_id": str(bp.id), "resend": True}]},
+            headers=_h())
+    assert resent.json()["sent"] == 1
+    assert m2.await_count == 1
+
+
+async def test_selection_guard_generalizes_beyond_the_old_batch_payment_pair(client, db_session):
+    """THE proof test for the safety-critical change: a payment already sent
+    under a `payment` scope (the drawer) must be detected as already-sent
+    from a `selection` preview/send covering that same record.
+
+    This is the direction that actually distinguishes the fix from the old
+    code. The old `_other_scope(scope_kind)` was `SCOPE_PAYMENT if scope_kind
+    == SCOPE_BATCH else SCOPE_BATCH` — for `scope_kind="selection"` (which it
+    was never written to know about) that unconditionally falls to the
+    `else` branch and returns `"batch"`, NEVER `"payment"`. So a prior
+    PAYMENT-scope send is invisible to the old code's cross-scope lookup
+    from a selection, no matter what — this is not a coincidence to route
+    around, it is the actual bug the widened `scope_kind != :current` filter
+    fixes. Confirmed by temporarily reverting to the binary form and running
+    this test: it fails (see the increment report for the captured output).
+    """
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-140")
+    pa = _pa(bp.id, "42.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    # Sent from the payment-scope drawer.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()):
+        sent = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                                 json={"recipients": None}, headers=_h())
+    assert sent.json()["sent"] == 1
+
+    # A selection covering that same one record must show it as already sent.
+    preview = (await client.post(
+        "/finance/v1/payments/remittance/selection/preview",
+        json={"payment_ids": [str(rec.id)]}, headers=_h())).json()
+    assert len(preview["groups"]) == 1
+    last_send = preview["groups"][0]["last_send"]
+    assert last_send is not None
+    assert last_send["status"] == "sent"
+
+    # An unqualified selection send is refused — no second email.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        unqualified = await client.post(
+            "/finance/v1/payments/remittance/selection/send",
+            json={"payment_ids": [str(rec.id)]}, headers=_h())
+    assert unqualified.json()["sent"] == 0
+    assert unqualified.json()["skipped"] == 1
+    assert m.await_count == 0
+
+    # resend: true is the deliberate opt-in and still sends.
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m2:
+        resent = await client.post(
+            "/finance/v1/payments/remittance/selection/send",
+            json={"payment_ids": [str(rec.id)], "recipients": [
+                {"recipient_kind": "vendor", "party_id": str(bp.id), "resend": True}]},
+            headers=_h())
+    assert resent.json()["sent"] == 1
+    assert m2.await_count == 1
+
+
+async def test_selection_endpoints_require_payment_authority(client, db_session):
+    r1 = await client.post("/finance/v1/payments/remittance/selection/preview",
+                           json={"payment_ids": []}, headers=_h("requester"))
+    assert r1.status_code == 403
+    r2 = await client.post("/finance/v1/payments/remittance/selection/send",
+                           json={"payment_ids": []}, headers=_h("requester"))
+    assert r2.status_code == 403
