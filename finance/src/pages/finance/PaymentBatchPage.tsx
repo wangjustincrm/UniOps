@@ -20,7 +20,7 @@ import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
-import { fetchPreview } from '@/services/remittance'
+import { fetchPreview, scopeKey } from '@/services/remittance'
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -277,8 +277,16 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
         // configured" — the Remittance section on the executed batch view
         // still shows that message for anyone who goes looking for it.
         try {
+          // Key must match RemittancePanel's own `['remittance-preview',
+          // scopeKey(scope)]` exactly (see RemittancePanel.tsx) — it moved
+          // off a hand-built `['remittance-preview', scope.kind, scope.id]`
+          // tuple when the 'selection' scope was added, since 'selection'
+          // has no singular `.id`. Building the key by hand here would
+          // silently drift from that and defeat this prefetch (RemittancePanel
+          // would just refetch under its own key instead of reading this
+          // warm cache entry).
           const preview = await qc.fetchQuery({
-            queryKey: ['remittance-preview', 'batch', batchId],
+            queryKey: ['remittance-preview', scopeKey({ kind: 'batch', id: batchId })],
             queryFn: () => fetchPreview({ kind: 'batch', id: batchId }),
           })
           if (preview.enabled) setShowRemittance(true)

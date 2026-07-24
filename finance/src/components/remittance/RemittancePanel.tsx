@@ -18,7 +18,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
-  fetchPreview, sendRemittance,
+  fetchPreview, scopeKey, sendRemittance,
   type PayeeGroup, type RemittanceScope, type SendResult,
 } from '@/services/remittance'
 import { primaryBtn, secondaryBtn } from './buttonStyles'
@@ -89,7 +89,11 @@ export function RemittancePanel({ scope, onSent }: {
   const [sendError, setSendError] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<SendResult | null>(null)
 
-  const queryKey = ['remittance-preview', scope.kind, scope.id] as const
+  // Keyed on `scopeKey(scope)`, not `scope.id` — a 'selection' scope has no
+  // `.id` of its own, and its key must be stable under reordering of the
+  // same set of payment ids (see scopeKey's docstring).
+  const key = scopeKey(scope)
+  const queryKey = ['remittance-preview', key] as const
   const { data: preview, isLoading, isFetching, error, refetch } = useQuery({
     queryKey,
     queryFn: () => fetchPreview(scope),
@@ -113,7 +117,7 @@ export function RemittancePanel({ scope, onSent }: {
     setLastResult(null)
     setSelected(new Set())
     prevGroupsRef.current = null
-  }, [scope.kind, scope.id])
+  }, [key])
 
   // Preview is recomputed live on every fetch (initial load, Refresh, and
   // the refetch after a Send). Selection rules, in order:

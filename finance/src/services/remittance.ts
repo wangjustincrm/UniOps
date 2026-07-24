@@ -14,7 +14,31 @@
  */
 import { financeApi } from '@/lib/api'
 
-export type RemittanceScope = { kind: 'batch' | 'payment'; id: string }
+export type RemittanceScope =
+  | { kind: 'batch'; id: string }
+  | { kind: 'payment'; id: string }
+  /** An ad-hoc set of payments, not tied to a batch — see
+   * finance-api/app/api/v1/remittance.py's selection endpoints. All
+   * payments must resolve to one payee; the backend rejects a selection
+   * spanning more than one with a 400 (the UI should keep the operator from
+   * ever hitting that). */
+  | { kind: 'selection'; paymentIds: string[] }
+
+/**
+ * Stable identity for a scope, safe to use as a react-query key / effect
+ * dependency. For 'batch'/'payment' this is just `kind:id`. For 'selection'
+ * it mirrors the backend's deterministic scope-id derivation
+ * (`rem.selection_scope_id` — sort + dedupe the ids) so that reopening the
+ * exact same set of payments — regardless of the order they were selected
+ * in — produces the same key and reuses the cached preview/send state
+ * instead of treating it as a brand new scope.
+ */
+export function scopeKey(scope: RemittanceScope): string {
+  if (scope.kind === 'selection') {
+    return `selection:${[...new Set(scope.paymentIds)].sort().join(',')}`
+  }
+  return `${scope.kind}:${scope.id}`
+}
 
 export type PayeeGroupLine = {
   /** Vendor invoice number for vendor payees, claim number for employees. */
@@ -77,13 +101,20 @@ export type SendResult = {
   results: SendResultItem[]
 }
 
-function base(scope: RemittanceScope): string {
+/** Path base for the batch/payment scopes only — 'selection' has no path
+ * segment of its own (the id list travels in the body instead), so it is
+ * branched on separately in `fetchPreview`/`sendRemittance` below. */
+function base(scope: { kind: 'batch' | 'payment'; id: string }): string {
   return scope.kind === 'batch'
     ? `/payments/batches/${scope.id}/remittance`
     : `/payments/${scope.id}/remittance`
 }
 
 export function fetchPreview(scope: RemittanceScope): Promise<RemittancePreview> {
+  if (scope.kind === 'selection') {
+    return financeApi.post<RemittancePreview>(
+      '/payments/remittance/selection/preview', { payment_ids: scope.paymentIds })
+  }
   return financeApi.get<RemittancePreview>(`${base(scope)}/preview`)
 }
 
@@ -107,5 +138,10 @@ export function sendRemittance(
   scope: RemittanceScope,
   recipients: { recipient_kind: string; party_id: string; resend?: boolean }[] | null,
 ): Promise<SendResult> {
+  if (scope.kind === 'selection') {
+    return financeApi.post<SendResult>(
+      '/payments/remittance/selection/send',
+      { payment_ids: scope.paymentIds, recipients })
+  }
   return financeApi.post<SendResult>(`${base(scope)}/send`, { recipients })
 }
