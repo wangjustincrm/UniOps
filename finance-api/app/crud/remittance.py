@@ -88,8 +88,12 @@ def selection_scope_id(ids: list[uuid.UUID]) -> uuid.UUID:
     same log row (upsert, `attempts` increments) and a different set must
     land on a different row — both the preview and the send call this same
     helper so they always agree on the id for a given selection.
+
+    Ids are deduplicated first: resolve_records dedupes at the SQL row level,
+    so ["a","a","b"] and ["a","b"] cover the identical records and must map to
+    the same scope id rather than two different upsert rows.
     """
-    key = ",".join(sorted(str(i) for i in ids))
+    key = ",".join(sorted(set(str(i) for i in ids)))
     return uuid.uuid5(_SELECTION_NS, key)
 
 
