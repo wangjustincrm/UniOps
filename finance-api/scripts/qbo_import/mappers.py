@@ -137,6 +137,16 @@ def deposit_header(obj: dict) -> dict:
     return h
 
 
+def transfer_header(obj: dict) -> dict:
+    h = txn_header(obj, counterparty=None)
+    h["total_amt"] = obj.get("Amount")   # Transfer uses Amount, not TotalAmt
+    h["from_account_id"] = ref_id(obj, "FromAccountRef")
+    h["from_account_name"] = ref_name(obj, "FromAccountRef")
+    h["to_account_id"] = ref_id(obj, "ToAccountRef")
+    h["to_account_name"] = ref_name(obj, "ToAccountRef")
+    return h
+
+
 def vendor_header(obj: dict) -> dict:
     email = (obj.get("PrimaryEmailAddr") or {}).get("Address")
     return {

@@ -270,3 +270,24 @@ async def test_load_deposit(db_session):
     line = (await db_session.execute(select(QboDepositLine))).scalar_one()
     assert line.linked_txn_id == "31"
     assert line.linked_txn_type == "Payment"
+
+
+from app.models.qbo import QboTransfer
+
+TRANSFERS = [
+    {"Id": "1", "SyncToken": "0", "TxnDate": "2017-01-09",
+     "CurrencyRef": {"value": "USD"}, "ExchangeRate": 1.3, "Amount": 1200000.0,
+     "FromAccountRef": {"value": "67", "name": "CAD Chequing"},
+     "ToAccountRef": {"value": "66", "name": "USD Chequing"},
+     "MetaData": {"LastUpdatedTime": "2017-01-09T00:00:00-08:00"}},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_transfer_no_lines(db_session):
+    await load_entity(db_session, "Transfer", TRANSFERS)
+    t = (await db_session.execute(select(QboTransfer))).scalar_one()
+    assert t.from_account_id == "67"
+    assert t.to_account_id == "66"
+    assert float(t.total_amt) == 1200000.0
+    assert t.currency == "USD"

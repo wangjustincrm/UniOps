@@ -246,10 +246,42 @@ def upgrade() -> None:
         sa.Column("raw", JSONB, nullable=False),
     )
     op.create_index("ix_qbo_deposit_lines_parent", "qbo_deposit_lines", ["parent_qbo_id"])
+
+    op.create_table(
+        "qbo_transfers",
+        sa.Column("qbo_id", sa.String(20), primary_key=True),
+        sa.Column("sync_token", sa.String(10)),
+        sa.Column("doc_number", sa.String(64)),
+        sa.Column("txn_date", sa.String(10)),
+        sa.Column("due_date", sa.String(10)),
+        sa.Column("currency", sa.String(10)),
+        sa.Column("exchange_rate", sa.Numeric(20, 8)),
+        sa.Column("total_amt", sa.Numeric(20, 2)),
+        sa.Column("home_total_amt", sa.Numeric(20, 2)),
+        sa.Column("balance", sa.Numeric(20, 2)),
+        sa.Column("home_balance", sa.Numeric(20, 2)),
+        sa.Column("global_tax_calc", sa.String(20)),
+        sa.Column("private_note", sa.Text),
+        sa.Column("counterparty_id", sa.String(20)),
+        sa.Column("counterparty_name", sa.String(255)),
+        sa.Column("last_updated_time", sa.DateTime(timezone=True)),
+        sa.Column("deleted_at", sa.DateTime(timezone=True)),
+        sa.Column("raw", JSONB, nullable=False),
+        sa.Column("from_account_id", sa.String(20)),
+        sa.Column("from_account_name", sa.String(255)),
+        sa.Column("to_account_id", sa.String(20)),
+        sa.Column("to_account_name", sa.String(255)),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    )
+    op.create_index("ix_qbo_transfers_txn_date", "qbo_transfers", ["txn_date"])
     # New tables are added by later steps of this migration (later Phase-2 tasks).
 
 
 def downgrade() -> None:
+    op.drop_index("ix_qbo_transfers_txn_date", table_name="qbo_transfers")
+    op.drop_table("qbo_transfers")
+
     op.drop_index("ix_qbo_deposit_lines_parent", table_name="qbo_deposit_lines")
     op.drop_table("qbo_deposit_lines")
     op.drop_index("ix_qbo_deposits_txn_date", table_name="qbo_deposits")
