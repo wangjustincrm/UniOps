@@ -149,3 +149,32 @@ async def test_load_vendor_credit(db_session):
     assert vc.counterparty_id == "64"
     line = (await db_session.execute(select(QboVendorCreditLine))).scalar_one()
     assert line.account_id == "141"
+
+
+from app.models.qbo import QboInvoice, QboInvoiceLine
+
+INVOICES = [
+    {"Id": "9", "SyncToken": "0", "DocNumber": "1001", "TxnDate": "2019-05-26",
+     "DueDate": "2019-06-25", "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1,
+     "TotalAmt": 108.0, "HomeTotalAmt": 108.0, "Balance": 0,
+     "CustomerRef": {"value": "1", "name": "Bird Sanctuary"},
+     "MetaData": {"LastUpdatedTime": "2019-05-27T10:00:00-07:00"},
+     "Line": [
+        {"Id": "1", "LineNum": 1, "Amount": 100.0, "Description": "Service",
+         "DetailType": "SalesItemLineDetail",
+         "SalesItemLineDetail": {"ItemAccountRef": {"value": "45", "name": "Sales"},
+                                 "TaxCodeRef": {"value": "TAX"}}},
+     ]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_invoice_customer_and_lines(db_session):
+    await load_entity(db_session, "Invoice", INVOICES)
+    inv = (await db_session.execute(select(QboInvoice))).scalar_one()
+    assert inv.qbo_id == "9"
+    assert inv.counterparty_id == "1"
+    assert inv.counterparty_name == "Bird Sanctuary"
+    lines = (await db_session.execute(select(QboInvoiceLine))).scalars().all()
+    assert len(lines) == 1
+    assert lines[0].detail_type == "SalesItemLineDetail"

@@ -40,6 +40,11 @@ REGISTRY.append(Entity(
     header=lambda o: mappers.txn_header(o, counterparty="VendorRef"),
     line_model=m.QboVendorCreditLine, line=mappers.txn_line,
 ))
+REGISTRY.append(Entity(
+    name="Invoice", model=m.QboInvoice,
+    header=lambda o: mappers.txn_header(o, counterparty="CustomerRef"),
+    line_model=m.QboInvoiceLine, line=mappers.txn_line,
+))
 
 
 def by_name(name: str) -> Entity:
