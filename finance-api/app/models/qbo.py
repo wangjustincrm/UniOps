@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, LargeBinary, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -209,3 +209,29 @@ class QboRaw(TimestampMixin, Base):
     last_updated_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class QboAttachment(TimestampMixin, Base):
+    """Attachable metadata + downloaded binary. The binary lives here because
+    QBO's TempDownloadUri is signed and expires — it must be pulled during
+    the import run, not fetched lazily on read."""
+    __tablename__ = "qbo_attachments"
+
+    qbo_id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    file_name: Mapped[str | None] = mapped_column(String(512))
+    content_type: Mapped[str | None] = mapped_column(String(128))
+    size: Mapped[int | None] = mapped_column(Integer)
+    content: Mapped[bytes | None] = mapped_column(LargeBinary)
+    last_updated_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class QboAttachmentLink(Base):
+    """One attachment can link to multiple transactions (AttachableRef)."""
+    __tablename__ = "qbo_attachment_links"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    attachment_qbo_id: Mapped[str] = mapped_column(String(20), index=True, nullable=False)
+    txn_id: Mapped[str] = mapped_column(String(20), nullable=False)
+    txn_type: Mapped[str | None] = mapped_column(String(32))

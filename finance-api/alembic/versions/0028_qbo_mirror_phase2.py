@@ -329,6 +329,28 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
     )
+
+    op.create_table(
+        "qbo_attachments",
+        sa.Column("qbo_id", sa.String(20), primary_key=True),
+        sa.Column("file_name", sa.String(512)),
+        sa.Column("content_type", sa.String(128)),
+        sa.Column("size", sa.Integer()),
+        sa.Column("content", sa.LargeBinary()),
+        sa.Column("last_updated_time", sa.DateTime(timezone=True)),
+        sa.Column("deleted_at", sa.DateTime(timezone=True)),
+        sa.Column("raw", JSONB, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    )
+    op.create_table(
+        "qbo_attachment_links",
+        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column("attachment_qbo_id", sa.String(20), nullable=False),
+        sa.Column("txn_id", sa.String(20), nullable=False),
+        sa.Column("txn_type", sa.String(32)),
+    )
+    op.create_index("ix_qbo_attachment_links_attachment", "qbo_attachment_links", ["attachment_qbo_id"])
     # New tables are added by later steps of this migration (later Phase-2 tasks).
 
 
@@ -373,6 +395,10 @@ def downgrade() -> None:
     op.drop_index("ix_qbo_invoices_counterparty_id", table_name="qbo_invoices")
     op.drop_index("ix_qbo_invoices_txn_date", table_name="qbo_invoices")
     op.drop_table("qbo_invoices")
+
+    op.drop_index("ix_qbo_attachment_links_attachment", table_name="qbo_attachment_links")
+    op.drop_table("qbo_attachment_links")
+    op.drop_table("qbo_attachments")
 
     for t in _EXISTING_LINE_TABLES:
         op.drop_column(t, "posting_type")
