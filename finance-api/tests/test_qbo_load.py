@@ -223,3 +223,29 @@ async def test_load_credit_memo(db_session):
     assert cm.qbo_id == "77"
     assert cm.counterparty_id == "1"
     assert (await db_session.execute(select(QboCreditMemoLine))).scalar_one().amount == 20
+
+
+from app.models.qbo import QboPurchase, QboPurchaseLine
+
+PURCHASES = [
+    {"Id": "500", "SyncToken": "0", "TxnDate": "2019-05-01",
+     "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1, "TotalAmt": 75.0,
+     "PaymentType": "Check", "Credit": False,
+     "AccountRef": {"value": "224", "name": "Bank"},
+     "EntityRef": {"value": "64", "name": "Acme Inc", "type": "Vendor"},
+     "MetaData": {"LastUpdatedTime": "2019-05-02T10:00:00-07:00"},
+     "Line": [{"Id": "1", "LineNum": 1, "Amount": 75.0,
+               "DetailType": "AccountBasedExpenseLineDetail",
+               "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "141"}}}]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_purchase_entity_and_payment(db_session):
+    await load_entity(db_session, "Purchase", PURCHASES)
+    p = (await db_session.execute(select(QboPurchase))).scalar_one()
+    assert p.payment_type == "Check"
+    assert p.account_id == "224"
+    assert p.entity_id == "64"
+    assert p.entity_type == "Vendor"
+    assert (await db_session.execute(select(QboPurchaseLine))).scalar_one().account_id == "141"

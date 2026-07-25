@@ -117,6 +117,19 @@ def account_header(obj: dict) -> dict:
     }
 
 
+def purchase_header(obj: dict) -> dict:
+    h = txn_header(obj, counterparty=None)
+    h["payment_type"] = obj.get("PaymentType")
+    h["is_credit"] = obj.get("Credit")
+    h["account_id"] = ref_id(obj, "AccountRef")
+    h["account_name"] = ref_name(obj, "AccountRef")
+    ent = obj.get("EntityRef") or {}
+    h["entity_id"] = ent.get("value")
+    h["entity_name"] = ent.get("name")
+    h["entity_type"] = ent.get("type")
+    return h
+
+
 def vendor_header(obj: dict) -> dict:
     email = (obj.get("PrimaryEmailAddr") or {}).get("Address")
     return {

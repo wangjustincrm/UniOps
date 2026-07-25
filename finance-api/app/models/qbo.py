@@ -141,6 +141,21 @@ class QboCreditMemoLine(_TxnLineMixin, Base):
     __tablename__ = "qbo_credit_memo_lines"
 
 
+class QboPurchase(_TxnHeaderMixin, TimestampMixin, Base):
+    __tablename__ = "qbo_purchases"
+    payment_type: Mapped[str | None] = mapped_column(String(20))
+    is_credit: Mapped[bool | None] = mapped_column(Boolean)
+    account_id: Mapped[str | None] = mapped_column(String(20))
+    account_name: Mapped[str | None] = mapped_column(String(255))
+    entity_id: Mapped[str | None] = mapped_column(String(20))
+    entity_name: Mapped[str | None] = mapped_column(String(255))
+    entity_type: Mapped[str | None] = mapped_column(String(20))
+
+
+class QboPurchaseLine(_TxnLineMixin, Base):
+    __tablename__ = "qbo_purchase_lines"
+
+
 class QboVendor(TimestampMixin, Base):
     """Vendor master mirror. Canadian slip flags (T4A/T5018 eligibility) are
     kept in `raw` only — no dedicated columns."""
