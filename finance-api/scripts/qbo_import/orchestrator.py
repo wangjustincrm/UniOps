@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.qbo import QboSyncRun
+from app.models.qbo import QboRaw, QboSyncRun
 from scripts.qbo_import.extract import extract_entity
 from scripts.qbo_import.load import load_entity
 from scripts.qbo_import.mappers import to_dt
@@ -41,6 +41,18 @@ def _max_watermark(objects: list[dict]) -> str | None:
 
 async def _soft_delete_extras(db: AsyncSession, name: str, seen_ids: set[str]) -> int:
     ent = by_name(name)
+    if ent.raw_only:
+        local = set((await db.execute(
+            select(QboRaw.qbo_id).where(QboRaw.entity_type == name, QboRaw.deleted_at.is_(None))
+        )).scalars().all())
+        gone = local - seen_ids
+        if gone:
+            await db.execute(update(QboRaw).where(
+                QboRaw.entity_type == name, QboRaw.qbo_id.in_(gone)
+            ).values(deleted_at=datetime.now(timezone.utc)))
+            await db.commit()
+        db.expire_all()
+        return len(gone)
     model = ent.model
     local = set((await db.execute(select(model.qbo_id).where(model.deleted_at.is_(None)))).scalars().all())
     gone = local - seen_ids

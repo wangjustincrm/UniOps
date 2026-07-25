@@ -198,3 +198,14 @@ class QboVendor(TimestampMixin, Base):
     last_updated_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     raw: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+class QboRaw(TimestampMixin, Base):
+    """Raw-only mirror for long-tail masters that don't warrant typed columns."""
+    __tablename__ = "qbo_raw"
+
+    entity_type: Mapped[str] = mapped_column(String(40), primary_key=True)
+    qbo_id: Mapped[str] = mapped_column(String(20), primary_key=True)
+    last_updated_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)

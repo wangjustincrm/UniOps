@@ -318,10 +318,23 @@ def upgrade() -> None:
         sa.Column("raw", JSONB, nullable=False),
     )
     op.create_index("ix_qbo_journal_entry_lines_parent", "qbo_journal_entry_lines", ["parent_qbo_id"])
+
+    op.create_table(
+        "qbo_raw",
+        sa.Column("entity_type", sa.String(40), primary_key=True),
+        sa.Column("qbo_id", sa.String(20), primary_key=True),
+        sa.Column("last_updated_time", sa.DateTime(timezone=True)),
+        sa.Column("deleted_at", sa.DateTime(timezone=True)),
+        sa.Column("payload", JSONB, nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+    )
     # New tables are added by later steps of this migration (later Phase-2 tasks).
 
 
 def downgrade() -> None:
+    op.drop_table("qbo_raw")
+
     op.drop_index("ix_qbo_journal_entry_lines_parent", table_name="qbo_journal_entry_lines")
     op.drop_table("qbo_journal_entry_lines")
     op.drop_index("ix_qbo_journal_entries_doc_number", table_name="qbo_journal_entries")

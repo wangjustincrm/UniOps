@@ -7,6 +7,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.qbo import QboRaw
+from scripts.qbo_import.mappers import last_updated
 from scripts.qbo_import.registry import by_name
 
 
@@ -30,9 +32,36 @@ async def _upsert(db: AsyncSession, model, rows: list[dict]) -> dict:
     return {"inserted": ins, "updated": updated}
 
 
+async def _load_raw(db: AsyncSession, entity_type: str, objects: list[dict]) -> dict:
+    if not objects:
+        return {"inserted": 0, "updated": 0}
+    existing = set((await db.execute(
+        select(QboRaw.qbo_id).where(QboRaw.entity_type == entity_type)
+    )).scalars().all())
+    ins = updated = 0
+    for o in objects:
+        row = {"entity_type": entity_type, "qbo_id": o["Id"],
+               "last_updated_time": last_updated(o), "payload": o}
+        stmt = insert(QboRaw).values(**row)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["entity_type", "qbo_id"],
+            set_={"payload": stmt.excluded.payload,
+                  "last_updated_time": stmt.excluded.last_updated_time})
+        await db.execute(stmt)
+        if o["Id"] in existing:
+            updated += 1
+        else:
+            ins += 1
+    await db.commit()
+    db.expire_all()
+    return {"inserted": ins, "updated": updated}
+
+
 async def load_entity(db: AsyncSession, name: str, objects: list[dict]) -> dict:
     """Load one entity's raw objects. Returns {inserted, updated}."""
     ent = by_name(name)
+    if ent.raw_only:
+        return await _load_raw(db, name, objects)
     headers = [ent.header(o) for o in objects]
     counts = await _upsert(db, ent.model, headers)
 

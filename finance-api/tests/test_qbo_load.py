@@ -317,3 +317,29 @@ async def test_load_journal_entry_debit_credit(db_session):
         select(QboJournalEntryLine).order_by(QboJournalEntryLine.id))).scalars().all()
     assert [l.posting_type for l in lines] == ["Debit", "Credit"]
     assert [l.account_id for l in lines] == ["38", "34"]
+
+
+from app.models.qbo import QboRaw
+
+TAXCODES = [
+    {"Id": "2", "Name": "GST", "MetaData": {"LastUpdatedTime": "2019-01-01T00:00:00-08:00"}},
+    {"Id": "3", "Name": "HST", "MetaData": {"LastUpdatedTime": "2019-01-02T00:00:00-08:00"}},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_raw_entity(db_session):
+    n = await load_entity(db_session, "TaxCode", TAXCODES)
+    assert n["inserted"] == 2
+    rows = (await db_session.execute(
+        select(QboRaw).where(QboRaw.entity_type == "TaxCode").order_by(QboRaw.qbo_id))).scalars().all()
+    assert [r.qbo_id for r in rows] == ["2", "3"]
+    assert rows[0].payload["Name"] == "GST"
+
+    # Re-load with a change → update, not duplicate.
+    TAXCODES[0]["Name"] = "GST-13"
+    n2 = await load_entity(db_session, "TaxCode", TAXCODES)
+    assert n2["updated"] == 2
+    row = (await db_session.execute(
+        select(QboRaw).where(QboRaw.entity_type == "TaxCode", QboRaw.qbo_id == "2"))).scalar_one()
+    assert row.payload["Name"] == "GST-13"

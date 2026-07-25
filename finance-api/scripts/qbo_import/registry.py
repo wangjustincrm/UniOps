@@ -14,10 +14,11 @@ from scripts.qbo_import import mappers
 @dataclass(frozen=True)
 class Entity:
     name: str                       # QBO entity name, e.g. "Bill"
-    model: type                     # header SQLAlchemy model
-    header: Callable[[dict], dict]  # raw -> header column dict
+    model: type | None = None                     # header SQLAlchemy model
+    header: Callable[[dict], dict] | None = None  # raw -> header column dict
     line_model: type | None = None  # line SQLAlchemy model, if any
     line: Callable[[dict, str], dict] | None = None  # (raw_line, parent_qbo_id) -> line dict
+    raw_only: bool = False           # True: no typed columns, mirror into qbo_raw
 
 
 # Populated incrementally by later tasks.
@@ -68,6 +69,11 @@ REGISTRY.append(Entity(
     header=lambda o: mappers.txn_header(o, counterparty=None),
     line_model=m.QboJournalEntryLine, line=mappers.txn_line,
 ))
+
+
+for _name in ("Term", "TaxCode", "TaxRate", "TaxAgency", "PaymentMethod", "Class",
+              "Item", "CustomerType", "CompanyCurrency", "Employee", "Department"):
+    REGISTRY.append(Entity(name=_name, raw_only=True))
 
 
 def by_name(name: str) -> Entity:
