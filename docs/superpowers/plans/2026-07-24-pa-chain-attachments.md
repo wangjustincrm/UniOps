@@ -6,9 +6,35 @@
 
 **Architecture:** Frontend-only composition in the epms app. A hook resolves the lineage (reusing existing single-doc hooks) and fetches each doc's attachment list from epms-api (PR/PO/GR/PA) and expense-api (INV), normalizing to one shape. A pure helper module fetches blobs (bounded concurrency), builds a ZIP with JSZip, and rasterizes PDFs/images with pdf.js into a single hidden-iframe print document. No backend, no migration, no backend image rebuild.
 
-**Tech Stack:** React 19 + TypeScript 5.9, TanStack Query, `pdfjs-dist` (already present), `jszip` (new), Tailwind. Verification = `npm run build` (`tsc -b && vite build`) + `npm run lint` + manual QA (no unit-test harness in this app).
+**Tech Stack:** React 19 + TypeScript 5.9, TanStack Query, `pdfjs-dist` (already present), `jszip` (new), Tailwind.
 
 **Spec:** `docs/superpowers/specs/2026-07-24-pa-chain-attachments-design.md`
+
+---
+
+## ⚠️ VERIFICATION GATES (READ FIRST — supersedes any `npm run build`/`npm run lint` wording below)
+
+This app's `npm run build` (`tsc -b && vite build`) and `npm run lint` (`eslint .`) are **RED on
+the baseline** (main): **59 pre-existing `tsc` errors** and **~220 pre-existing eslint problems**.
+So they are NOT clean gates. Use baseline-relative checks instead:
+
+1. **Typecheck (primary gate):**
+   `npx tsc -p tsconfig.app.json --noEmit`
+   Baseline = **59 errors**. Requirement: total stays ≤ 59 AND **zero** errors reference any file
+   you created/modified. Quick check:
+   `npx tsc -p tsconfig.app.json --noEmit 2>&1 | grep -E 'attachmentBundle|useChainAttachments|ChainAttachmentsPanel|DocumentChainTree|lib/utils|services/invoices'`
+   → must print **nothing**.
+   (Do NOT use `npm run build`; its `tsc -b` variant and `vite build` are not the gate here.)
+
+2. **Lint (your files only):**
+   `npx eslint <each file you created/modified>`
+   → must be clean. Do NOT run `eslint .` (220 pre-existing problems drown the signal).
+
+3. **Manual QA:** dev server (`npm run dev`) per Task 5.
+
+Files touched by this feature all have **0 baseline tsc errors** (`DocumentChainTree.tsx`,
+`lib/utils.ts`, `services/invoices.ts` are clean at baseline), so any error mentioning them is
+one you introduced — fix it.
 
 ---
 
