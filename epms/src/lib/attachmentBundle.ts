@@ -45,7 +45,11 @@ export function saveBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
-/** Map over items with a bounded number of concurrent workers, preserving order. */
+/**
+ * Map over items with a bounded number of concurrent workers, preserving order.
+ * If fn rejects, Promise.all fails fast; callers that must not abort the batch
+ * should catch inside fn (as downloadAllAsZip does).
+ */
 async function mapConcurrent<T, R>(
   items: T[],
   limit: number,
@@ -237,27 +241,38 @@ async function printHtmlInIframe(html: string): Promise<void> {
   iframe.style.border = '0'
   document.body.appendChild(iframe)
 
-  const doc = iframe.contentDocument!
-  doc.open()
-  doc.write(html)
-  doc.close()
+  let removed = false
+  const remove = () => {
+    if (removed) return
+    removed = true
+    if (iframe.parentNode) document.body.removeChild(iframe)
+  }
 
-  // Wait for every <img> to finish decoding, else blank pages print.
-  const imgs = Array.from(doc.images)
-  await Promise.all(
-    imgs.map((img) =>
-      img.complete
-        ? Promise.resolve()
-        : new Promise<void>((res) => {
-            img.onload = () => res()
-            img.onerror = () => res()
-          }),
-    ),
-  )
+  try {
+    const doc = iframe.contentDocument!
+    doc.open()
+    doc.write(html)
+    doc.close()
 
-  iframe.contentWindow!.focus()
-  iframe.contentWindow!.print()
+    // Wait for every <img> to finish decoding, else blank pages print.
+    const imgs = Array.from(doc.images)
+    await Promise.all(
+      imgs.map((img) =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise<void>((res) => {
+              img.onload = () => res()
+              img.onerror = () => res()
+            }),
+      ),
+    )
 
-  // Remove the iframe after the print dialog has had time to open.
-  window.setTimeout(() => document.body.removeChild(iframe), 60_000)
+    iframe.contentWindow!.focus()
+    iframe.contentWindow!.print()
+    // Remove after the print dialog has had time to open.
+    window.setTimeout(remove, 60_000)
+  } catch (e) {
+    remove()
+    throw e
+  }
 }
