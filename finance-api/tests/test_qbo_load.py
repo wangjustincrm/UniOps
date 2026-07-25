@@ -291,3 +291,29 @@ async def test_load_transfer_no_lines(db_session):
     assert t.to_account_id == "66"
     assert float(t.total_amt) == 1200000.0
     assert t.currency == "USD"
+
+
+from app.models.qbo import QboJournalEntry, QboJournalEntryLine
+
+JOURNALS = [
+    {"Id": "6", "SyncToken": "0", "DocNumber": "JE-1", "TxnDate": "2019-05-13",
+     "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1, "TotalAmt": 100.0,
+     "MetaData": {"LastUpdatedTime": "2019-05-14T10:00:00-07:00"},
+     "Line": [
+        {"Id": "0", "Amount": 100.0, "DetailType": "JournalEntryLineDetail",
+         "JournalEntryLineDetail": {"PostingType": "Debit", "AccountRef": {"value": "38", "name": "Truck"}}},
+        {"Id": "1", "Amount": 100.0, "DetailType": "JournalEntryLineDetail",
+         "JournalEntryLineDetail": {"PostingType": "Credit", "AccountRef": {"value": "34", "name": "Equity"}}},
+     ]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_journal_entry_debit_credit(db_session):
+    await load_entity(db_session, "JournalEntry", JOURNALS)
+    je = (await db_session.execute(select(QboJournalEntry))).scalar_one()
+    assert je.qbo_id == "6"
+    lines = (await db_session.execute(
+        select(QboJournalEntryLine).order_by(QboJournalEntryLine.id))).scalars().all()
+    assert [l.posting_type for l in lines] == ["Debit", "Credit"]
+    assert [l.account_id for l in lines] == ["38", "34"]

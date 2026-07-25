@@ -174,6 +174,14 @@ class QboTransfer(_TxnHeaderMixin, TimestampMixin, Base):
     to_account_name: Mapped[str | None] = mapped_column(String(255))
 
 
+class QboJournalEntry(_TxnHeaderMixin, TimestampMixin, Base):
+    __tablename__ = "qbo_journal_entries"
+
+
+class QboJournalEntryLine(_TxnLineMixin, Base):
+    __tablename__ = "qbo_journal_entry_lines"
+
+
 class QboVendor(TimestampMixin, Base):
     """Vendor master mirror. Canadian slip flags (T4A/T5018 eligibility) are
     kept in `raw` only — no dedicated columns."""
