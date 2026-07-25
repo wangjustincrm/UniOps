@@ -12,13 +12,15 @@
  *        └─ PA row(s)        ← PAs with no invoice on this PO (e.g. prepayment)
  *                              stay as a direct PO child. Current PA gets a ring.
  */
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileText, Package, Warehouse, CreditCard, Receipt,
-  ArrowRight, ChevronRight,
+  ArrowRight, ChevronRight, Paperclip,
 } from 'lucide-react'
 import { cn, formatAmount } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/badge'
+import { ChainAttachmentsPanel } from '@/components/shared/ChainAttachmentsPanel'
 import { usePr } from '@/hooks/usePrs'
 import { usePo } from '@/hooks/usePos'
 import { usePa } from '@/hooks/usePas'
@@ -299,11 +301,33 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   // PR detail → PR is anchor; PO/PA detail → PO is anchor
   const anchorIsPr = currentType === 'pr'
 
+  const [showAttachments, setShowAttachments] = useState(false)
+  const isPa = currentType === 'pa'
+
   return (
     <div className="mt-5 border-t border-neutral-100 pt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-3">
-        Document Chain
-      </h3>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+          Document Chain
+        </h3>
+        {isPa && currentPa && (
+          <button
+            type="button"
+            onClick={() => setShowAttachments(true)}
+            className="inline-flex items-center gap-1 rounded-md border border-neutral-200 px-2 py-1 text-[11px] font-medium text-neutral-600 hover:border-primary-300 hover:bg-primary-50 hover:text-primary-700 transition-colors"
+          >
+            <Paperclip className="h-3 w-3" /> Attachments
+          </button>
+        )}
+      </div>
+
+      {isPa && currentPa && showAttachments && (
+        <ChainAttachmentsPanel
+          paId={currentPa.id}
+          paNumber={currentPa.pa_number}
+          onClose={() => setShowAttachments(false)}
+        />
+      )}
 
       {/* ── Ancestors above the anchor ─────────────────────────────────────── */}
 
