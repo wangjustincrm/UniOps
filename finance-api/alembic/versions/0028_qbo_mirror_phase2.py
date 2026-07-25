@@ -351,7 +351,6 @@ def upgrade() -> None:
         sa.Column("txn_type", sa.String(32)),
     )
     op.create_index("ix_qbo_attachment_links_attachment", "qbo_attachment_links", ["attachment_qbo_id"])
-    # New tables are added by later steps of this migration (later Phase-2 tasks).
 
 
 def downgrade() -> None:

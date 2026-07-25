@@ -21,7 +21,6 @@ class Entity:
     raw_only: bool = False           # True: no typed columns, mirror into qbo_raw
 
 
-# Populated incrementally by later tasks.
 REGISTRY: list[Entity] = []
 
 REGISTRY.append(Entity(name="Account", model=m.QboAccount, header=mappers.account_header))
