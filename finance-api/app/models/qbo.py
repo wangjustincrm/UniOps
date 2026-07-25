@@ -133,6 +133,14 @@ class QboPaymentLine(_TxnLineMixin, Base):
     __tablename__ = "qbo_payment_lines"
 
 
+class QboCreditMemo(_TxnHeaderMixin, TimestampMixin, Base):
+    __tablename__ = "qbo_credit_memos"
+
+
+class QboCreditMemoLine(_TxnLineMixin, Base):
+    __tablename__ = "qbo_credit_memo_lines"
+
+
 class QboVendor(TimestampMixin, Base):
     """Vendor master mirror. Canadian slip flags (T4A/T5018 eligibility) are
     kept in `raw` only — no dedicated columns."""

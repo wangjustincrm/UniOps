@@ -201,3 +201,25 @@ async def test_load_payment_reconciliation_and_deposit(db_session):
     line = (await db_session.execute(select(QboPaymentLine))).scalar_one()
     assert line.linked_txn_id == "9"
     assert line.linked_txn_type == "Invoice"
+
+
+from app.models.qbo import QboCreditMemo, QboCreditMemoLine
+
+CREDITMEMOS = [
+    {"Id": "77", "SyncToken": "0", "DocNumber": "CM-1", "TxnDate": "2019-06-01",
+     "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1, "TotalAmt": 20.0,
+     "CustomerRef": {"value": "1", "name": "Bird Sanctuary"},
+     "MetaData": {"LastUpdatedTime": "2019-06-02T10:00:00-07:00"},
+     "Line": [{"Id": "1", "LineNum": 1, "Amount": 20.0,
+               "DetailType": "SalesItemLineDetail",
+               "SalesItemLineDetail": {"ItemRef": {"value": "6"}}}]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_credit_memo(db_session):
+    await load_entity(db_session, "CreditMemo", CREDITMEMOS)
+    cm = (await db_session.execute(select(QboCreditMemo))).scalar_one()
+    assert cm.qbo_id == "77"
+    assert cm.counterparty_id == "1"
+    assert (await db_session.execute(select(QboCreditMemoLine))).scalar_one().amount == 20
