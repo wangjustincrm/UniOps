@@ -80,6 +80,7 @@ def txn_line(line: dict, parent_qbo_id: str) -> dict:
         "account_id": ref_id(detail, "AccountRef"),
         "account_name": ref_name(detail, "AccountRef"),
         "tax_code_ref": ref_id(detail, "TaxCodeRef"),
+        "posting_type": detail.get("PostingType"),
         "description": line.get("Description"),
         "linked_txn_id": linked.get("TxnId"),
         "linked_txn_type": linked.get("TxnType"),

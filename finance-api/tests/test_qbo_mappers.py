@@ -65,3 +65,24 @@ def test_txn_line_maps_account_and_tax():
     assert line["account_id"] == "141"
     assert line["account_name"] == "Construction"
     assert line["tax_code_ref"] == "2"
+
+
+def test_txn_line_captures_posting_type_for_journal_lines():
+    je_line = {
+        "Id": "0", "Amount": 100.0, "DetailType": "JournalEntryLineDetail",
+        "JournalEntryLineDetail": {
+            "PostingType": "Credit",
+            "AccountRef": {"value": "285", "name": "A/P"},
+        },
+    }
+    line = txn_line(je_line, parent_qbo_id="9")
+    assert line["posting_type"] == "Credit"
+    assert line["account_id"] == "285"
+
+
+def test_txn_line_posting_type_none_for_non_journal():
+    normal = {
+        "Id": "1", "Amount": 10.0, "DetailType": "AccountBasedExpenseLineDetail",
+        "AccountBasedExpenseLineDetail": {"AccountRef": {"value": "1"}},
+    }
+    assert txn_line(normal, parent_qbo_id="1")["posting_type"] is None

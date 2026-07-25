@@ -83,6 +83,7 @@ class _TxnLineMixin:
     account_id: Mapped[str | None] = mapped_column(String(20))
     account_name: Mapped[str | None] = mapped_column(String(255))
     tax_code_ref: Mapped[str | None] = mapped_column(String(20))
+    posting_type: Mapped[str | None] = mapped_column(String(10))
     description: Mapped[str | None] = mapped_column(Text)
     linked_txn_id: Mapped[str | None] = mapped_column(String(20))
     linked_txn_type: Mapped[str | None] = mapped_column(String(32))
