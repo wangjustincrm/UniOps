@@ -94,6 +94,13 @@ def billpayment_header(obj: dict) -> dict:
     return h
 
 
+def payment_header(obj: dict) -> dict:
+    h = txn_header(obj, counterparty="CustomerRef")
+    h["deposit_to_account_id"] = ref_id(obj, "DepositToAccountRef")
+    h["deposit_to_account_name"] = ref_name(obj, "DepositToAccountRef")
+    return h
+
+
 def account_header(obj: dict) -> dict:
     return {
         "qbo_id": obj["Id"],

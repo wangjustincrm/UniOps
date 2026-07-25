@@ -178,3 +178,26 @@ async def test_load_invoice_customer_and_lines(db_session):
     lines = (await db_session.execute(select(QboInvoiceLine))).scalars().all()
     assert len(lines) == 1
     assert lines[0].detail_type == "SalesItemLineDetail"
+
+
+from app.models.qbo import QboPayment, QboPaymentLine
+
+PAYMENTS = [
+    {"Id": "31", "SyncToken": "0", "TxnDate": "2019-05-27",
+     "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1, "TotalAmt": 108.0,
+     "CustomerRef": {"value": "1", "name": "Bird Sanctuary"},
+     "DepositToAccountRef": {"value": "35", "name": "Chequing"},
+     "MetaData": {"LastUpdatedTime": "2019-05-28T10:00:00-07:00"},
+     "Line": [{"Amount": 108.0, "LinkedTxn": [{"TxnId": "9", "TxnType": "Invoice"}]}]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_payment_reconciliation_and_deposit(db_session):
+    await load_entity(db_session, "Payment", PAYMENTS)
+    p = (await db_session.execute(select(QboPayment))).scalar_one()
+    assert p.counterparty_id == "1"
+    assert p.deposit_to_account_id == "35"
+    line = (await db_session.execute(select(QboPaymentLine))).scalar_one()
+    assert line.linked_txn_id == "9"
+    assert line.linked_txn_type == "Invoice"
