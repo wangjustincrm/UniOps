@@ -128,7 +128,7 @@ export function useChainAttachments(paId: string) {
           `${EXPENSE_BASE}/api/v1/invoice-attachments?invoice_id=${inv.id}&invoice_source=epms`,
           { headers: token ? { Authorization: `Bearer ${token}` } : {} },
         )
-        if (!res.ok) return []
+        if (!res.ok) throw new Error(`invoice-attachments ${res.status}`)
         const raw = (await res.json()) as Array<{
           id: string; file_name: string; content_type: string; file_size_bytes: number
         }>
