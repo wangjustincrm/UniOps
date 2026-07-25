@@ -175,7 +175,8 @@ export async function printFiles(
   onProgress?: (done: number, total: number) => void,
 ): Promise<BulkResult> {
   const printable = files.filter((f) => f.printable)
-  const skipped = files.length - printable.length
+  let skipped = files.length - printable.length
+  let ok = 0
 
   const sections: string[] = []
   let done = 0
@@ -184,11 +185,21 @@ export async function printFiles(
     try {
       pages = await fileToPageImages(f, token)
     } catch {
-      // treat a fetch/parse failure as skipped
+      // fetch/parse failure — does not count toward ok
+      skipped++
       done++
       onProgress?.(done, printable.length)
       continue
     }
+    if (pages.length === 0) {
+      // "printable" but produced no pages (e.g. contentType matched neither
+      // pdf nor image/*) — still counts as skipped, not ok.
+      skipped++
+      done++
+      onProgress?.(done, printable.length)
+      continue
+    }
+    ok++
     const caption = escapeHtml(`${f.folder} · ${f.filename}`)
     for (const src of pages) {
       sections.push(
@@ -199,7 +210,7 @@ export async function printFiles(
     onProgress?.(done, printable.length)
   }
 
-  if (sections.length === 0) return { ok: 0, skipped }
+  if (sections.length === 0) return { ok, skipped }
 
   const html =
     `<!doctype html><html><head><meta charset="utf-8"><style>` +
@@ -212,7 +223,7 @@ export async function printFiles(
     `</style></head><body>${sections.join('')}</body></html>`
 
   await printHtmlInIframe(html)
-  return { ok: printable.length, skipped }
+  return { ok, skipped }
 }
 
 /** Write HTML into a hidden iframe, wait for all images to load, then print. */
