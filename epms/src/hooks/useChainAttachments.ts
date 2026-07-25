@@ -64,13 +64,13 @@ function mapEpmsAtt(
 export function useChainAttachments(paId: string) {
   const token = useAuthStore((s) => s.token)
 
-  const { data: pa, isLoading: paLoading } = usePa(paId)
+  const { data: pa, isLoading: paLoading, isError: paError } = usePa(paId)
   const poId = pa?.po_id ?? ''
   const invoiceIds = useMemo(() => pa?.invoice_ids ?? [], [pa])
 
-  const { data: po, isLoading: poLoading } = usePo(poId)
+  const { data: po, isLoading: poLoading, isError: poError } = usePo(poId)
   const prId = po?.pr_id ?? ''
-  const { data: pr, isLoading: prLoading } = usePr(prId)
+  const { data: pr, isLoading: prLoading, isError: prError } = usePr(prId)
 
   // Invoices (each invoice → its detail, so we can read gr_ids + number)
   const invoiceQueries = useQueries({
@@ -146,11 +146,20 @@ export function useChainAttachments(paId: string) {
   })
 
   // ── Assemble grouped model in paper-trail order: PR, PO, GR(s), INV(s), PA ──
-  // grAtt/invAtt are per-item query-result arrays whose length tracks grs/invoices,
-  // so their .data isn't a "simple expression" the deps linter can statically check —
-  // pre-flatten to plain keys the array can hold instead.
-  const grAttKey = grAtt.map((q) => q.data).join(',')
-  const invAttKey = invAtt.map((q) => q.data).join(',')
+  // Single identity key built from actual doc/attachment ids — reflects add/
+  // delete/reassign correctly (unlike stringifying data objects, which only
+  // detects count changes), and satisfies the react-hooks/use-memo "simple
+  // expression" rule with one dependency.
+  const groupsKey = [
+    pr?.id, po?.id, pa?.id,
+    grs.map((g) => g.id).join(','),
+    invoices.map((i) => i.id).join(','),
+    (prAtt[0]?.data ?? []).map((a) => a.id).join(','),
+    (poAtt[0]?.data ?? []).map((a) => a.id).join(','),
+    (paAtt[0]?.data ?? []).map((a) => a.id).join(','),
+    grAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
+    invAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
+  ].join(';')
 
   const groups = useMemo<ChainDocGroup[]>(() => {
     const out: ChainDocGroup[] = []
@@ -161,8 +170,11 @@ export function useChainAttachments(paId: string) {
     if (pa) out.push({ docType: 'PA', docNumber: pa.pa_number, docId: pa.id, attachments: (paAtt[0]?.data ?? []).map((a) => mapEpmsAtt('pa', pa.id, a)) })
     return out
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pr, po, pa, grs, invoices, prAtt[0]?.data, poAtt[0]?.data, paAtt[0]?.data, grAttKey, invAttKey])
+  }, [groupsKey])
 
+  // `groups` is intentionally keyed off `groupsKey` above rather than its raw
+  // closed-over inputs, so the compiler can't verify this downstream memo either.
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const total = useMemo(() => groups.reduce((n, g) => n + g.attachments.length, 0), [groups])
 
   const isLoading =
@@ -173,7 +185,11 @@ export function useChainAttachments(paId: string) {
     invAtt.some((q) => q.isLoading)
 
   const error =
-    [...prAtt, ...poAtt, ...paAtt, ...grAtt, ...invAtt].some((q) => q.isError)
+    paError || poError || prError ||
+    invoiceQueries.some((q) => q.isError) || grQueries.some((q) => q.isError) ||
+    prAtt.some((q) => q.isError) || poAtt.some((q) => q.isError) ||
+    paAtt.some((q) => q.isError) || grAtt.some((q) => q.isError) ||
+    invAtt.some((q) => q.isError)
 
   return { groups, total, isLoading, error }
 }
