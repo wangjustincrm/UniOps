@@ -59,6 +59,13 @@ export function formatCADCompact(amount: number): string {
   return formatCAD(amount)
 }
 
+/** Human-readable file size, e.g. "512 B", "3.4 KB", "1.2 MB". */
+export function formatBytes(b: number): string {
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function formatDateTime(date: Date | string | null | undefined): string {
   if (!date) return '—'
   const d = typeof date === 'string' ? new Date(date) : date
