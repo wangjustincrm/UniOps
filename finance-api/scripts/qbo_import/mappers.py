@@ -130,6 +130,13 @@ def purchase_header(obj: dict) -> dict:
     return h
 
 
+def deposit_header(obj: dict) -> dict:
+    h = txn_header(obj, counterparty=None)
+    h["deposit_to_account_id"] = ref_id(obj, "DepositToAccountRef")
+    h["deposit_to_account_name"] = ref_name(obj, "DepositToAccountRef")
+    return h
+
+
 def vendor_header(obj: dict) -> dict:
     email = (obj.get("PrimaryEmailAddr") or {}).get("Address")
     return {

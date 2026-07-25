@@ -249,3 +249,24 @@ async def test_load_purchase_entity_and_payment(db_session):
     assert p.entity_id == "64"
     assert p.entity_type == "Vendor"
     assert (await db_session.execute(select(QboPurchaseLine))).scalar_one().account_id == "141"
+
+
+from app.models.qbo import QboDeposit, QboDepositLine
+
+DEPOSITS = [
+    {"Id": "600", "SyncToken": "0", "TxnDate": "2019-05-30",
+     "CurrencyRef": {"value": "CAD"}, "ExchangeRate": 1, "TotalAmt": 108.0,
+     "HomeTotalAmt": 108.0, "DepositToAccountRef": {"value": "35", "name": "Chequing"},
+     "MetaData": {"LastUpdatedTime": "2019-05-31T10:00:00-07:00"},
+     "Line": [{"Amount": 108.0, "LinkedTxn": [{"TxnId": "31", "TxnType": "Payment"}]}]},
+]
+
+
+@pytest.mark.asyncio
+async def test_load_deposit(db_session):
+    await load_entity(db_session, "Deposit", DEPOSITS)
+    d = (await db_session.execute(select(QboDeposit))).scalar_one()
+    assert d.deposit_to_account_id == "35"
+    line = (await db_session.execute(select(QboDepositLine))).scalar_one()
+    assert line.linked_txn_id == "31"
+    assert line.linked_txn_type == "Payment"

@@ -58,6 +58,10 @@ REGISTRY.append(Entity(
     name="Purchase", model=m.QboPurchase, header=mappers.purchase_header,
     line_model=m.QboPurchaseLine, line=mappers.txn_line,
 ))
+REGISTRY.append(Entity(
+    name="Deposit", model=m.QboDeposit, header=mappers.deposit_header,
+    line_model=m.QboDepositLine, line=mappers.txn_line,
+))
 
 
 def by_name(name: str) -> Entity:
