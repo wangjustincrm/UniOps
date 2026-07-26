@@ -113,3 +113,74 @@ async def test_sync_rejected_when_already_running(db_session, monkeypatch):
                          headers={"Authorization": "Bearer x"})
     app.dependency_overrides.clear()
     assert r.status_code == 409
+
+
+# ── Task 3: entity browse + detail ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_browse_excludes_soft_deleted_and_detail_returns_lines(db_session):
+    from datetime import datetime, timezone
+
+    from app.models.qbo import QboBill, QboBillLine
+
+    db_session.add_all([
+        QboBill(qbo_id="b1", doc_number="BILL-1", txn_date="2026-01-01",
+               counterparty_name="Acme Co", total_amt="100.00", raw={}),
+        QboBill(qbo_id="b2", doc_number="BILL-2", txn_date="2026-01-02",
+               deleted_at=datetime.now(timezone.utc), raw={}),
+    ])
+    db_session.add(QboBillLine(parent_qbo_id="b1", line_num=1, amount="100.00",
+                              account_id="acct-1", raw={}))
+    await db_session.flush()
+
+    _override_auth_and_db(db_session)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as c:
+        browse = await c.get("/finance/v1/qbo/bills", headers={"Authorization": "Bearer x"})
+        detail = await c.get("/finance/v1/qbo/bills/b1", headers={"Authorization": "Bearer x"})
+        missing = await c.get("/finance/v1/qbo/bills/b2", headers={"Authorization": "Bearer x"})
+        unknown = await c.get("/finance/v1/qbo/not-a-real-entity", headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+
+    assert browse.status_code == 200
+    body = browse.json()
+    assert body["total"] == 1
+    assert [i["qbo_id"] for i in body["items"]] == ["b1"]
+
+    assert detail.status_code == 200
+    d = detail.json()
+    assert d["header"]["qbo_id"] == "b1"
+    assert len(d["lines"]) == 1
+    assert d["lines"][0]["account_id"] == "acct-1"
+    assert d["attachments"] == []
+
+    # b2 is soft-deleted — browse hides it, but detail-by-id still finds it
+    # (detail is an explicit lookup, not a listing; soft-delete exclusion is
+    # a browse/list concern only).
+    assert missing.status_code == 200
+    assert missing.json()["header"]["qbo_id"] == "b2"
+
+    assert unknown.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_browse_query_and_date_filters(db_session):
+    from app.models.qbo import QboVendor
+
+    db_session.add_all([
+        QboVendor(qbo_id="v1", display_name="Northwind Traders", raw={}),
+        QboVendor(qbo_id="v2", display_name="Contoso Ltd", raw={}),
+    ])
+    await db_session.flush()
+
+    _override_auth_and_db(db_session)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as c:
+        r = await c.get("/finance/v1/qbo/vendors", params={"q": "north"},
+                        headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert body["items"][0]["qbo_id"] == "v1"
