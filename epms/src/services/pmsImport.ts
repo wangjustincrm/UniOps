@@ -1,6 +1,6 @@
 import { api } from '@/lib/api'
 
-export type PmsPhase = 'full' | 'incremental'
+export type PmsPhase = 'full' | 'incremental' | 'attachments'
 export type PmsStatus = 'running' | 'success' | 'error'
 
 export interface PmsReport {
@@ -26,6 +26,11 @@ export interface PmsReport {
     no_invoice: number
     failed: number
     samples_failed: string[]
+  }
+  doc_attachments?: {
+    pr?: { uploaded: number; skipped_existing: number; no_doc: number; failed: number }
+    po?: { uploaded: number; skipped_existing: number; no_doc: number; failed: number }
+    pa?: { uploaded: number; skipped_existing: number; no_doc: number; failed: number }
   }
 }
 

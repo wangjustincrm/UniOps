@@ -23,7 +23,7 @@ AdminDep = Annotated[dict, Depends(require_permission("admin_panel"))]
 class RunRequest(BaseModel):
     # full = import everything (new docs only); incremental = sync docs changed
     # since the last committed sync (header-level update + new docs).
-    phase: Literal["full", "incremental"] = "incremental"
+    phase: Literal["full", "incremental", "attachments"] = "incremental"
     dry_run: bool = True
 
 

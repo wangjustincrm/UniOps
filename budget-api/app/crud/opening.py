@@ -109,8 +109,12 @@ async def import_opening_csv(
 async def list_opening_balances(
     db: AsyncSession,
     *, cost_center_id: uuid.UUID | None = None, fiscal_year: int,
+    cc_ids: list[uuid.UUID] | None = None,
 ) -> OpeningListResponse:
     """List imported opening-balance rows for回显 in the config UI."""
+    if cc_ids is not None and len(cc_ids) == 0:
+        return OpeningListResponse(
+            cost_center_id=cost_center_id, fiscal_year=fiscal_year, items=[])
     q = (
         select(BudgetLedger, BudgetAccount)
         .join(BudgetAccount, BudgetLedger.account_id == BudgetAccount.id)
@@ -124,6 +128,8 @@ async def list_opening_balances(
     )
     if cost_center_id is not None:
         q = q.where(BudgetLedger.cost_center_id == cost_center_id)
+    elif cc_ids:
+        q = q.where(BudgetLedger.cost_center_id.in_(cc_ids))
 
     items = [
         OpeningBalanceRow(

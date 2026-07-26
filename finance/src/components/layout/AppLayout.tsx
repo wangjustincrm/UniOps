@@ -4,7 +4,7 @@ import {
   CreditCard, Receipt, BookOpen, FileText, Banknote, Landmark, LayoutDashboard,
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
-  RefreshCw,
+  RefreshCw, Wallet,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -33,6 +33,7 @@ const NAV: NavSection[] = [
       { label: 'Journal Vouchers', href: '/finance/journal-vouchers', icon: FileText, permission: 'view_finance' },
       { label: 'Account Balance', href: '/finance/account-balance', icon: Scale, permission: 'view_finance' },
       { label: 'Budget Actual', href: '/finance/budget-actual', icon: Target, permission: 'view_finance' },
+      { label: 'Payments', href: '/finance/payments', icon: Wallet, permission: 'view_finance' },
       { label: 'Payment Batches', href: '/finance/payment-batches', icon: Banknote, permission: 'view_finance' },
       { label: 'Bank Reconciliation', href: '/finance/bank', icon: Landmark, permission: 'view_finance' },
       { label: 'QuickBooks', href: '/finance/qbo', icon: RefreshCw, permission: 'view_finance' },

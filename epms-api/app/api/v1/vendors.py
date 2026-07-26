@@ -82,13 +82,14 @@ async def export_vendors(db: SessionDep, _: CurrentUserPayload):
     writer = csv.writer(buf)
     writer.writerow([
         "code", "erpId", "name", "category", "contactName", "contactEmail",
-        "phone", "address", "paymentTerms", "currency", "notes", "isActive",
+        "remittanceEmail", "phone", "address", "paymentTerms", "currency",
+        "notes", "isActive",
     ])
     for v in vendors:
         writer.writerow([
             v.code, v.erp_id or "", v.name, v.category, v.contact_name, v.contact_email,
-            v.phone or "", v.address or "", v.payment_terms, v.currency,
-            v.notes or "", str(v.is_active).lower(),
+            v.remittance_email or "", v.phone or "", v.address or "", v.payment_terms,
+            v.currency, v.notes or "", str(v.is_active).lower(),
         ])
 
     buf.seek(0)
@@ -107,7 +108,7 @@ async def import_vendors(file: UploadFile, db: SessionDep, _: WriteDep, token: B
     Upload a CSV to upsert vendors. Updates existing by code, creates new ones.
 
     Required columns: code, name, category
-    Optional columns: contactName, contactEmail, phone, address, paymentTerms, currency, notes, isActive
+    Optional columns: contactName, contactEmail, remittanceEmail, phone, address, paymentTerms, currency, notes, isActive
     """
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="File must be a .csv")
@@ -138,6 +139,7 @@ async def import_vendors(file: UploadFile, db: SessionDep, _: WriteDep, token: B
                 category=raw["category"].strip(),
                 contact_name=raw.get("contactName", "").strip(),
                 contact_email=raw.get("contactEmail", "").strip(),
+                remittance_email=raw.get("remittanceEmail", "").strip(),
                 phone=raw.get("phone", "").strip() or None,
                 address=raw.get("address", "").strip() or None,
                 payment_terms=raw.get("paymentTerms", "net30").strip() or "net30",

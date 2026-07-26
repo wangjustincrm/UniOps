@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 
 import pytest
 import sqlalchemy as sa
@@ -6,6 +7,8 @@ from jose import jwt as _jwt
 
 from app.core.config import settings
 from app.crud import balance as balance_crud
+from app.models.catalog import BudgetAccount
+from app.models.ledger import BudgetLedger
 
 
 def _token(sub: uuid.UUID, role: str) -> str:
@@ -13,6 +16,41 @@ def _token(sub: uuid.UUID, role: str) -> str:
         {"sub": str(sub), "role": role, "type": "access"},
         settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM,
     )
+
+
+async def _seed_ledger_rows(
+    db_session, seed_two_cc_plans, operation: str,
+    *, source_service: str = "test", source_doc_type: str = "test_doc",
+) -> None:
+    """seed_two_cc_plans only creates BudgetPlan/BudgetPlanLine rows — the
+    /actuals and /actuals/opening endpoints read BudgetLedger instead, which
+    is otherwise empty. Without this, "cc_b not in result" would hold
+    vacuously (no rows at all) and the scoping tests wouldn't actually
+    exercise the leak they're meant to catch.
+
+    source_service/source_doc_type default to arbitrary test values for the
+    /actuals endpoint (list_monthly_actuals doesn't filter on them); the
+    opening-balance test overrides them to match list_opening_balances'
+    hardcoded ("manual", "opening_balance") filter.
+    """
+    acct_id = (await db_session.execute(
+        sa.select(BudgetAccount.id).where(BudgetAccount.code == "SCOPE-ACC")
+    )).scalar_one()
+    db_session.add_all([
+        BudgetLedger(
+            source_service=source_service, source_doc_type=source_doc_type,
+            source_doc_id=uuid.uuid4(), operation=operation,
+            cost_center_id=seed_two_cc_plans["cc_a"], account_id=acct_id,
+            fiscal_year=2026, month=1, amount=Decimal("100"),
+        ),
+        BudgetLedger(
+            source_service=source_service, source_doc_type=source_doc_type,
+            source_doc_id=uuid.uuid4(), operation=operation,
+            cost_center_id=seed_two_cc_plans["cc_b"], account_id=acct_id,
+            fiscal_year=2026, month=1, amount=Decimal("200"),
+        ),
+    ])
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
@@ -128,3 +166,58 @@ async def test_dept_user_with_no_department_gets_empty_scope(client, db_session)
     body = r.json()
     assert body["full_access"] is False
     assert body["cost_centers"] == []
+
+
+@pytest.mark.asyncio
+async def test_list_actuals_scopes_to_department(client, dept_manager_token, admin_token, seed_two_cc_plans, db_session):
+    await _seed_ledger_rows(db_session, seed_two_cc_plans, "book_expense")
+
+    r = await client.get("/api/v1/actuals?fiscal_year=2026",
+                         headers={"Authorization": f"Bearer {dept_manager_token}"})
+    assert r.status_code == 200
+    ccs = {i["cost_center_id"] for i in r.json()["items"]}
+    assert str(seed_two_cc_plans["cc_a"]) in ccs       # own department's data survives
+    assert str(seed_two_cc_plans["cc_b"]) not in ccs   # other department must not leak
+
+    r_all = await client.get("/api/v1/actuals?fiscal_year=2026",
+                             headers={"Authorization": f"Bearer {admin_token}"})
+    ccs_all = {i["cost_center_id"] for i in r_all.json()["items"]}
+    assert str(seed_two_cc_plans["cc_b"]) in ccs_all   # admin/full-access still sees it
+    assert ccs <= ccs_all
+
+
+@pytest.mark.asyncio
+async def test_list_actuals_out_of_scope_cc_is_clamped(client, dept_manager_token, seed_two_cc_plans, db_session):
+    await _seed_ledger_rows(db_session, seed_two_cc_plans, "book_expense")
+
+    r = await client.get(f"/api/v1/actuals?fiscal_year=2026&cost_center_id={seed_two_cc_plans['cc_b']}",
+                         headers={"Authorization": f"Bearer {dept_manager_token}"})
+    assert r.status_code == 200                        # never 403
+    ccs = {i["cost_center_id"] for i in r.json()["items"]}
+    assert str(seed_two_cc_plans["cc_a"]) in ccs       # clamped to own dept, not emptied
+    assert str(seed_two_cc_plans["cc_b"]) not in ccs   # clamped, not honoured
+
+
+@pytest.mark.asyncio
+async def test_list_opening_scopes_to_department(client, dept_manager_token, seed_two_cc_plans, db_session):
+    await _seed_ledger_rows(
+        db_session, seed_two_cc_plans, "opening",
+        source_service="manual", source_doc_type="opening_balance",
+    )
+
+    r = await client.get("/api/v1/actuals/opening?fiscal_year=2026",
+                         headers={"Authorization": f"Bearer {dept_manager_token}"})
+    assert r.status_code == 200
+    ccs = {i["cost_center_id"] for i in r.json()["items"]}
+    assert str(seed_two_cc_plans["cc_a"]) in ccs       # own department's data survives
+    assert str(seed_two_cc_plans["cc_b"]) not in ccs   # other department must not leak
+
+
+@pytest.mark.asyncio
+async def test_plan_lines_requires_auth(client, admin_token):
+    r = await client.get("/api/v1/plan-lines?fiscal_year=2026&month=1")
+    assert r.status_code in (401, 403)          # was 200/anonymous before the fix
+    r_ok = await client.get("/api/v1/plan-lines?fiscal_year=2026&month=1",
+                            headers={"Authorization": f"Bearer {admin_token}"})
+    assert r_ok.status_code == 200
+    assert isinstance(r_ok.json(), list)

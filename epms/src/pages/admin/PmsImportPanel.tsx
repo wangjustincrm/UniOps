@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Database, Download, RefreshCw, AlertTriangle, CheckCircle2, Loader2, ChevronDown } from 'lucide-react'
+import { Database, Download, RefreshCw, Paperclip, AlertTriangle, CheckCircle2, Loader2, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -9,6 +9,9 @@ import {
 
 const fmt = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString() : '—'
+
+const phaseLabel = (p: PmsRun['phase']) =>
+  p === 'full' ? 'Full import' : p === 'attachments' ? 'Import Attachments' : 'Incremental sync'
 
 function CountGrid({ title, data }: { title: string; data: Record<string, number> }) {
   const entries = Object.entries(data || {}).filter(([, v]) => v)
@@ -54,6 +57,23 @@ function ReportView({ r }: { r: PmsReport }) {
           {r.attachments.no_invoice ? `, ${r.attachments.no_invoice} no-invoice` : ''}
         </div>
       ) : null}
+      {r.doc_attachments && (
+        <div className="rounded-lg border border-neutral-200 p-3">
+          <div className="text-xs font-semibold text-neutral-500 uppercase mb-1.5">Document attachments</div>
+          <div className="flex flex-col gap-0.5 text-sm text-neutral-600">
+            {(['pr', 'po', 'pa'] as const).map((k) => {
+              const a = r.doc_attachments![k]
+              if (!a) return null
+              return (
+                <span key={k} className="tabular-nums">
+                  <b className="uppercase">{k}</b> — {a.uploaded} uploaded, {a.skipped_existing} existing
+                  {a.no_doc ? `, ${a.no_doc} no-doc` : ''}{a.failed ? `, ${a.failed} failed` : ''}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
       {warnings.filter(([, v]) => v).map(([label, v]) => (
         <div key={label} className="text-xs text-amber-700 bg-amber-50 rounded px-2 py-1">
           <b>{label}</b> — {v}
@@ -116,7 +136,7 @@ export function PmsImportPanel() {
     return () => { if (timer.current) { clearInterval(timer.current); timer.current = null } }
   }, [current?.status, refresh])
 
-  const start = async (phase: 'full' | 'incremental') => {
+  const start = async (phase: 'full' | 'incremental' | 'attachments') => {
     setError(null); setBusy(true)
     try {
       const run = await svc.run(phase, dryRun)
@@ -171,6 +191,9 @@ export function PmsImportPanel() {
           <Button variant="secondary" onClick={() => start('incremental')} disabled={running || busy || !!noSp || !config?.last_sync}>
             <RefreshCw className="h-4 w-4 mr-1.5" /> Incremental sync
           </Button>
+          <Button variant="secondary" onClick={() => start('attachments')} disabled={running || busy || !!noSp}>
+            <Paperclip className="h-4 w-4 mr-1.5" /> Import Attachments
+          </Button>
           {!config?.last_sync && (
             <span className="self-center text-xs text-neutral-400">Run a committed full import first to enable incremental.</span>
           )}
@@ -188,7 +211,7 @@ export function PmsImportPanel() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <StatusBadge s={current.status} />
-              <span className="font-medium">{current.phase === 'full' ? 'Full import' : 'Incremental sync'}</span>
+              <span className="font-medium">{phaseLabel(current.phase)}</span>
               {current.dry_run && <span className="text-xs text-neutral-400">(dry-run)</span>}
               <span className="text-neutral-500">— {current.step}</span>
             </div>
@@ -224,7 +247,7 @@ export function PmsImportPanel() {
                 }}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-neutral-50 text-sm">
                 <StatusBadge s={run.status} />
-                <span className="font-medium w-28">{run.phase === 'full' ? 'Full import' : 'Incremental'}</span>
+                <span className="font-medium w-28">{phaseLabel(run.phase)}</span>
                 {run.dry_run && <span className="text-xs text-neutral-400">dry-run</span>}
                 <span className="text-neutral-500 flex-1">{fmt(run.started_at)}</span>
                 <span className="text-xs text-neutral-400">{run.triggered_by}</span>

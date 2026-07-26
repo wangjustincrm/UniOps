@@ -53,6 +53,26 @@ export interface CollectionConfig {
   fm_alert_days: number
 }
 
+/**
+ * Remittance advice sender identity. Deliberately a loose partial — this is a
+ * JSONB blob that defaults to {} server-side, and every backend consumer
+ * reads it with `.get(key, fallback)`. Server connection settings (host,
+ * port, TLS) are NOT part of this config: they're shared with PO-to-vendor
+ * email (po_smtp_*) and internal task email (smtp_*), edited elsewhere on
+ * this same page. smtp_user/smtp_password here are an OPTIONAL override of
+ * just the credentials, for servers that reject a From address that doesn't
+ * match the authenticated account — leave them blank to inherit the shared
+ * profile's login.
+ */
+export interface RemittanceConfig {
+  enabled?: boolean
+  from_email?: string
+  from_name?: string
+  cc_email?: string
+  smtp_user?: string
+  smtp_password?: string
+}
+
 export interface PdfTemplateSettings {
   show_logo: boolean
   header_note: string
@@ -152,6 +172,9 @@ export interface CompanyConfig {
   prepayment_config: PrepaymentConfig
   budget_admin_config: BudgetAdminConfig
   collection_config: CollectionConfig
+  // May be {} (or missing on legacy rows) — remittance is off by default and
+  // every field is read via .get() with a fallback. Don't assume presence.
+  remittance_config?: RemittanceConfig
   workflow_defs: {
     pr: WorkflowNodeDef[]
     po: WorkflowNodeDef[]
@@ -164,9 +187,6 @@ export interface NotificationSettings {
   teams_webhook_url: string | null
   followup_time: string  // "HH:MM" UTC
   system_url?: string
-  // Role code → shared mailbox address. A role listed here receives ONE email
-  // for role-addressed tasks instead of one per member. Absent/empty = per-member.
-  role_shared_mailboxes?: Record<string, string>
 }
 
 export interface EmailTemplate {

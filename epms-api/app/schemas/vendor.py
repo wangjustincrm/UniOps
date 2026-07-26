@@ -18,6 +18,7 @@ class VendorCreate(BaseModel):
     # and mdm PartnerBase, both of which default these to "".
     contact_name: str = Field(default="", max_length=255)
     contact_email: str = Field(default="", max_length=255)
+    remittance_email: str = Field(default="", max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
     payment_terms: str = Field(default="net30", max_length=20)
@@ -38,6 +39,7 @@ class VendorUpdate(BaseModel):
     # editing a vendor with a blank contact name doesn't 422.
     contact_name: str | None = Field(default=None, max_length=255)
     contact_email: str | None = Field(default=None, max_length=255)
+    remittance_email: str | None = Field(default=None, max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
     payment_terms: str | None = Field(default=None, max_length=20)
@@ -55,6 +57,7 @@ class VendorResponse(BaseModel):
     category: str
     contact_name: str
     contact_email: str
+    remittance_email: str | None = None
     phone: str | None
     address: str | None
     payment_terms: str
@@ -75,6 +78,7 @@ class VendorCsvRow(BaseModel):
     category: str = Field(min_length=1, max_length=100)
     contact_name: str = Field(default="", max_length=255)
     contact_email: str = Field(default="", max_length=255)
+    remittance_email: str = Field(default="", max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
     payment_terms: str = Field(default="net30", max_length=20)

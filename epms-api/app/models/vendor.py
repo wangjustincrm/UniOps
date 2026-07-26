@@ -23,6 +23,9 @@ class Vendor(UUIDPrimaryKey, TimestampMixin, Base):
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     contact_name: Mapped[str] = mapped_column(String(255), nullable=False)
     contact_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Where remittance advice is sent (nullable — falls back to contact_email
+    # when empty; finance-api resolves that fallback, not the DB).
+    remittance_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
     payment_terms: Mapped[str] = mapped_column(String(20), nullable=False, default="net30")

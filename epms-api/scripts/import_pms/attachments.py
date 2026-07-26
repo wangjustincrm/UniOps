@@ -21,6 +21,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.core.security import create_access_token
+from app.services.attachment_helper import upload_to_file_server
+
+from .extract import DOC_ATTACHMENT_SPEC
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 ATT_DIR = DATA_DIR / "invoice_attachments"
@@ -56,6 +59,17 @@ class AttachReport:
             "uploaded": self.uploaded,
             "skipped_existing": self.skipped_existing,
             "no_invoice": self.no_invoice,
+            "failed": self.failed,
+            "samples_failed": self.samples_failed[:15],
+        }
+
+    def to_doc_dict(self) -> dict:
+        """Same numbers as to_dict(), but exposes the 'target not found' count
+        under the neutral key `no_doc` (used by the PR/PO/PA attachment flow)."""
+        return {
+            "uploaded": self.uploaded,
+            "skipped_existing": self.skipped_existing,
+            "no_doc": self.no_invoice,
             "failed": self.failed,
             "samples_failed": self.samples_failed[:15],
         }
@@ -123,6 +137,83 @@ async def sync_invoice_attachments(dry_run: bool = True, db_url: str | None = No
                         "ub": sysid, "ts": datetime.now(timezone.utc),
                     })
                     existing.add((inv_id, m["file_name"]))
+                    rep.uploaded += 1
+                except Exception as e:  # noqa: BLE001
+                    rep.failed += 1
+                    rep.samples_failed.append(f"{m['file_name']}: {type(e).__name__}")
+            if not dry_run:
+                await db.commit()
+    finally:
+        await engine.dispose()
+    return rep
+
+
+async def sync_doc_attachments(kind: str, dry_run: bool = True,
+                               db_url: str | None = None) -> AttachReport:
+    """Upload staged PR/PO/PA list attachments into <kind>_attachments.
+
+    Maps SharePoint document number → EPMS doc id, uploads the file to the file
+    server (service='epms', doc_type=kind), inserts the attachment row. Idempotent
+    by (doc_id, filename). Writes only on a committed (non-dry-run) load."""
+    spec = DOC_ATTACHMENT_SPEC[kind]
+    rep = AttachReport()
+    meta_file = DATA_DIR / spec["meta_name"]
+    if not meta_file.exists():
+        return rep
+    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+    if not meta:
+        return rep
+
+    att_table, fk = spec["att_table"], spec["fk_col"]
+    doc_table, num_col = spec["doc_table"], spec["number_col"]
+    subdir, doc_type = spec["subdir"], spec["doc_type"]
+
+    engine = create_async_engine(db_url or settings.DATABASE_URL, echo=False)
+    sf = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with sf() as db:
+            rows = (await db.execute(text(f"select {num_col}, id from {doc_table}"))).all()
+            id_by_number = {str(r[0]): r[1] for r in rows}
+            sysid = (await db.execute(text(
+                "select id from users where email=:e"), {"e": SYSTEM_USER_EMAIL})).scalar()
+
+            existing = set()
+            for did, fn in (await db.execute(text(
+                f"select {fk}, filename from {att_table}"))).all():
+                existing.add((did, fn))
+
+            token = None if dry_run else create_access_token(subject=str(sysid), role="system_admin")
+
+            for m in meta:
+                doc_id = id_by_number.get(str(m["doc_number"]))
+                if not doc_id:
+                    rep.no_invoice += 1  # generic: target document not found
+                    continue
+                if (doc_id, m["file_name"]) in existing:
+                    rep.skipped_existing += 1
+                    continue
+                if dry_run:
+                    rep.uploaded += 1  # would upload
+                    continue
+                fpath = DATA_DIR / subdir / str(m["sp_item_id"]) / m["file_name"]
+                if not fpath.exists():
+                    rep.failed += 1
+                    rep.samples_failed.append(f"missing file {fpath.name}")
+                    continue
+                try:
+                    data = fpath.read_bytes()
+                    storage_key = await upload_to_file_server(
+                        data, m["file_name"], m["content_type"], doc_type, doc_id, token,
+                    )
+                    await db.execute(text(
+                        f"insert into {att_table} "
+                        f"(id, {fk}, filename, content_type, file_size, storage_key) "
+                        f"values (:id,:did,:fn,:ct,:sz,:sk)"
+                    ), {
+                        "id": uuid.uuid4(), "did": doc_id, "fn": m["file_name"],
+                        "ct": m["content_type"], "sz": m["size"], "sk": storage_key,
+                    })
+                    existing.add((doc_id, m["file_name"]))
                     rep.uploaded += 1
                 except Exception as e:  # noqa: BLE001
                     rep.failed += 1

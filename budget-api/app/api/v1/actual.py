@@ -49,16 +49,24 @@ async def actuals_scope(db: SessionDep, user: CurrentUserPayload):
 
 @router.get("/actuals", response_model=ActualsListResponse)
 async def list_actuals(
-    db: SessionDep, user: CurrentUserPayload,  # noqa: ARG001
+    db: SessionDep, user: CurrentUserPayload,
     cost_center_id: uuid.UUID | None = Query(default=None),
     fiscal_year: int | None = Query(default=None),
     account_id: uuid.UUID | None = Query(default=None),
     month: int | None = Query(default=None, ge=1, le=12),
 ):
-    items = await balance_crud.list_monthly_actuals(
-        db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
-        account_id=account_id, month=month,
-    )
+    scope = await _scope_for(db, user)
+    if scope.full_access:
+        items = await balance_crud.list_monthly_actuals(
+            db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
+            account_id=account_id, month=month,
+        )
+    else:
+        items = await balance_crud.list_monthly_actuals(
+            db, cost_center_id=None, fiscal_year=fiscal_year,
+            account_id=account_id, month=month,
+            cc_ids=scoped_cc_ids(scope, cost_center_id),
+        )
     return ActualsListResponse(items=items, total=len(items))
 
 
@@ -97,13 +105,19 @@ async def actuals_monthly_summary(
 
 @router.get("/actuals/opening", response_model=OpeningListResponse)
 async def list_opening(
-    db: SessionDep, user: CurrentUserPayload,  # noqa: ARG001
+    db: SessionDep, user: CurrentUserPayload,
     fiscal_year: int = Query(..., ge=2020, le=2100),
     cost_center_id: uuid.UUID | None = Query(default=None),
 ):
     """List imported opening balances for a (cost_center, fiscal_year) scope."""
+    scope = await _scope_for(db, user)
+    if scope.full_access:
+        return await opening_crud.list_opening_balances(
+            db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
+        )
     return await opening_crud.list_opening_balances(
-        db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
+        db, cost_center_id=None, fiscal_year=fiscal_year,
+        cc_ids=scoped_cc_ids(scope, cost_center_id),
     )
 
 

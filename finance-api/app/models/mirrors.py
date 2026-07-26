@@ -72,6 +72,22 @@ class ErpSupplier(UUIDPrimaryKey, TimestampMixin, Base):
     supplier_name: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
+class BusinessPartner(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror subset (mdm-api owns schema) — remittance recipients.
+    Columns verified against `\\d business_partners` on uniops_postgres
+    2026-07-22 (id/code/name/contact_email/is_supplier/created_at/updated_at
+    all NOT NULL). remittance_email added by mdm-api migration
+    0006_partner_remittance_email (not yet applied to local dev DB at
+    verification time) — String(255) nullable, per that migration file."""
+    __tablename__ = "business_partners"
+
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    contact_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    remittance_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_supplier: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     """epms-api owns schema. A2 extends the mirror for AP accrual + open items
     (columns verified against information_schema 2026-06-12)."""
@@ -111,6 +127,11 @@ class CompanyConfig(UUIDPrimaryKey, Base):
     __tablename__ = "company_config"
 
     role_management: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # remittance_config: {enabled, from_email, from_name, cc_email, smtp_user,
+    # smtp_password}. Added by epms-api migration ab_remittance_and_vendor_view
+    # (not yet applied to local dev DB at verification time) — JSONB NOT NULL
+    # server_default '{}'::jsonb, per that migration file.
+    remittance_config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 
 class Task(UUIDPrimaryKey, TimestampMixin, Base):
@@ -191,10 +212,19 @@ class ExpenseClaim(UUIDPrimaryKey, TimestampMixin, Base):
 
 class ExpenseInvoice(UUIDPrimaryKey, Base):
     """Read-only mirror subset (expense-api owns schema) — OA invoice -> Direct PA
-    link for the NC AP export dimension chain. Verified 2026-07-14."""
+    link for the NC AP export dimension chain. Verified 2026-07-14.
+
+    `invoice_number` added 2026-07-23 (column verified against
+    `\\d expense_invoices` on uniops_postgres — nullable varchar(100)) so
+    `app.crud.payment_batch.vendor_inv_no_map` can resolve a vendor invoice
+    number for an OA Direct PA. Those PAs' `invoice_ids` hold an
+    `expense_invoices.id`, not an epms `invoices.id` — a different table in a
+    different id space — so the epms `invoices` lookup never matches them;
+    this mirror's `pa_id` (set by expense-api) is the fallback path."""
     __tablename__ = "expense_invoices"
 
     pa_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    invoice_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class InvoicePoAllocation(UUIDPrimaryKey, TimestampMixin, Base):

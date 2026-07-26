@@ -56,8 +56,9 @@ def _migrate():
     from app.db.base import Base
     from app.models.admin_audit_log import AdminAuditLog  # shared table, no finance migration owns it
     from app.models.mirrors import (  # noqa: F401
-        BudgetAccount, CompanyConfig, CostCenter, Department, ErpSupplier, ExpenseApprovalEvent, ExpenseClaim,
-        ExpenseInvoice, ExpenseLineItem, ExpenseTripItem, Invoice, InvoicePoAllocation, InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
+        BudgetAccount, BusinessPartner, CompanyConfig, CostCenter, Department, ErpSupplier, ExpenseApprovalEvent,
+        ExpenseClaim, ExpenseInvoice, ExpenseLineItem, ExpenseTripItem, Invoice, InvoicePoAllocation,
+        InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
     )
     from app.models.pa import PaymentApplication
     eng = sa.create_engine(SYNC_URL)
@@ -69,7 +70,34 @@ def _migrate():
         AdminAuditLog.__table__, CostCenter.__table__,
         Department.__table__, BudgetAccount.__table__, ErpSupplier.__table__,
         ExpenseInvoice.__table__, InvoicePoAllocation.__table__, PurchaseRequest.__table__,
+        BusinessPartner.__table__,
     ])
+    # company_config is epms-owned; its physical table carries the shared
+    # smtp_*/po_smtp_* columns (epms-api migrations e5f6a7b8c9d0 /
+    # u1p2q3r4s5t6) and logo_data_url (epms-api migration
+    # d4e5f6a7b8c9_sprint4_company_config, Text, nullable) that finance-api's
+    # mirror deliberately does not map — remittance_config.load() reads them
+    # via raw SQL, so the test schema needs them shadowed here too (same
+    # pattern as user_roles below).
+    with eng.connect() as conn:
+        for stmt in (
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_host varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_port integer",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_user varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_password varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_use_tls boolean",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS smtp_from varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_host varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_port integer",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_user varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_password varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_use_tls boolean",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS po_smtp_from varchar(255)",
+            "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS logo_data_url text",
+        ):
+            conn.execute(sa.text(stmt))
+        conn.commit()
+
     # `user_roles` is identity-owned (no ORM model here — payment_execute's
     # _user_role_codes reads it directly, same physical DB in prod, phase-3
     # Task 5). Shadow it so tests can grant additional roles.
@@ -92,6 +120,14 @@ def _migrate():
         conn.execute(sa.text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # approval-api owns this in the real shared DB (no ORM model here);
+        # budget_scope.py reads it to resolve which departments a user directs.
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " director_user_id uuid"
+            ")"
+        ))
         for stmt in (
             "DROP TABLE IF EXISTS role_permission_locks CASCADE",
             "DROP TABLE IF EXISTS role_permissions CASCADE",

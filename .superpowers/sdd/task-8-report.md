@@ -1,371 +1,427 @@
-# Task 8 Report: Routing parity verifier + phase 3 release notes
+# Task 8 report: sending and the send log
 
-## Status: DONE (with one flagged, investigated, non-blocking finding — see Concerns)
+## Status: DONE
 
-## Commit
-- `d0c0381` — "test(approval): routing parity verifier + phase 3 release notes"
-  - `approval-api/scripts/verify_routing_parity.py` (new)
-  - `docs/superpowers/plans/2026-07-15-approval-routing-phase3-release.md` (new)
+Commit: `d85efd8` — "feat(finance): send remittance advice with per-payee isolation and resend"
+(branch `feature/batch-payment-remittance`, worktree `c:/Project/uniops-remittance`)
 
-## Parity verifier output (dev)
+Note: the file at this path previously contained an unrelated report (a routing-parity
+verifier task from a different feature/repo). That content has been replaced below with
+the actual Task 8 (remittance send + log) report, per the task instructions for this file.
+
+## Files changed
+
+- **Created** `finance-api/app/crud/remittance_send.py`
+  - `_upsert(db, *, scope_kind, scope_id, group, status, error, actor_id)` — looks up an
+    existing `RemittanceNotification` row by the unique key
+    `(scope_kind, scope_id, recipient_kind, party_id)`; inserts on first send
+    (`attempts=1`), updates + increments `attempts` on resend. `sent_at` is only set/refreshed
+    when `status == SENT`; a failed resend leaves the prior `sent_at` alone.
+  - `send_groups(db, *, scope_kind, scope_id, groups, reference, payment_method,
+    company_name, sender, actor_id) -> list[dict]` — iterates `PayeeGroup`s from
+    Task 6, renders via Task 7's `render()`, sends via Task 5's `send_email()` using
+    Task 5's `RemittanceSettings` for connection info and `cc_email`. Per-payee results are
+    `{"recipient_kind", "party_id", "party_name", "status", "error"}` with
+    `status in {"sent", "failed", "skipped"}`.
+  - Blocked/emailless groups (`g.block_reasons` non-empty or `not g.email`) are refused
+    before any network call or DB write — `status="skipped"`, no row written, `send_email`
+    never invoked. This is the server-side enforcement point described in the design intent:
+    a client posting a blocked payee cannot get `sent`, and never triggers an actual email.
+  - Each payee's `send_email` call is wrapped in `try/except Exception` — a failure is
+    logged, recorded as a `FAILED` row via `_upsert`, appended to results as `"failed"`, and
+    the loop continues to the next payee (does not re-raise). This isolates one payee's SMTP
+    error from the rest of the batch.
+  - No transaction handling of its own — matches the design intent that sending is never
+    inside the payment transaction; the caller is expected to have already committed the
+    payment and to call this afterward. `_upsert` only `flush()`es, leaving commit to the
+    caller (a later task/endpoint, out of scope here).
+
+- **Modified** `finance-api/tests/test_remittance.py` (appended only, existing content
+  untouched)
+  - Added `from app.crud import remittance_send as rsend` and the Task 8 test block from
+    the brief verbatim: `_sender()`, `_send()` helper, plus
+    `test_send_writes_log_and_uses_cc`, `test_resend_upserts_and_increments_attempts`,
+    `test_one_failure_does_not_stop_the_others`, `test_blocked_group_is_skipped_not_sent`.
+    Reused the existing `_group()` builder from the Task 7 section rather than redefining
+    it, per instructions.
+  - Added one extra test not in the brief:
+    `test_send_email_non_ascii_subject_serializes_cleanly` (placed next to the existing
+    Task 5 `send_email` TLS tests). See the non-ASCII subject section below for why and what
+    it proves.
+
+## Test commands and output
+
+Step 2 (verify failing state before writing the module):
 
 ```
-docker exec uniops_approval_api python -m scripts.verify_routing_parity
+$env:TEST_PG_PASSWORD="7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9"
+cd C:\Project\uniops-remittance\finance-api
+python -m pytest tests/test_remittance.py -k "send_writes or resend or one_failure or blocked_group" -v
+```
+Result: collection error —
+`ImportError: cannot import name 'remittance_send' from 'app.crud' (unknown location)`
+(module didn't exist yet, as expected; the brief predicted `ModuleNotFoundError`, the
+actual error was the equivalent `ImportError` from the `from app.crud import
+remittance_send as rsend` form of the import — same root cause, module absent).
+
+After writing `remittance_send.py`, targeted re-run:
+
+```
+python -m pytest tests/test_remittance.py -k "send_writes or resend or one_failure or blocked_group" -v
+```
+Result: `4 passed, 21 deselected in 25.79s` — all four new tests green on first try, no
+implementation changes needed beyond what's below.
+
+Full file:
+
+```
+python -m pytest tests/test_remittance.py -v
+```
+Result (after also adding the non-ASCII subject test): `26 passed in 106.87s` — every test
+in the file (Tasks 1, 4, 5, 6, 7, 8 combined) passes.
+
+Single pytest session used throughout; no concurrent runs against the shared test DB.
+
+## Non-ASCII subject check (the one concrete thing to verify)
+
+Verified by hand first, then captured as a permanent regression test.
+
+Manual check (`python3 -c ...` against the real `email.mime.multipart.MIMEMultipart` +
+`email.mime.text.MIMEText`, no aiosmtplib involved):
+
+```python
+msg = MIMEMultipart('mixed')
+msg['Subject'] = 'Remittance Advice — Canada Royal Milk — BP-20260722-0001'
+...
+b = msg.as_bytes()
 ```
 
+Result: `msg.as_bytes()` does **not** raise, and the em dash is correctly RFC 2047-encoded:
+
 ```
-DIFF dept=0100 doc=pa step=finance_bp old=['907147d2-aabb-4fba-83e0-9bee9d01a33e'] new=['907147d2-aabb-4fba-83e0-9bee9d01a33e', 'f933fd52-bdfa-433d-b4c1-9226075bc7b0']
-... (identical shape, one DIFF per active department — 12 total)
-PARITY FAILED: 12 divergence(s) across 12 depts x 3 doc types   [exit 1]
+Subject: =?utf-8?q?Remittance_Advice_=E2=80=94_Canada_Royal_Milk_=E2=80=94_B?=
+ =?utf-8?q?P-20260722-0001?=
 ```
 
-**Root-caused, not papered over.** All 12 diffs are the same single cause: user
-Yuping Huang (`f933fd52-...`) has **primary** `users.role = 'finance_bp'` (set
-2026-06-30, unrelated to this branch), but was never in the old
-`company_config.role_management.finance_bp_user_ids` curated list. The new
-`_post_holders()` (approval-api/app/crud/workflow.py:33-46) unions
-`users.role` ∪ `user_roles` for **every** post code including `finance_bp` —
-this is Task 4's **deliberate, spec'd, reviewed-and-approved** design (spec
-line 713 `codes = list(_POST_CODES) + ["finance_bp"]`; docstring "A post can
-be held as a PRIMARY role or an ADDITIONAL role — both count"; existing
-tests are load-bearing on this union per Task 4's own report). It is a
-one-directional widening (adds an eligible approver, never removes one) and
-was never covered by Task 3's "5 singleton posts match role_management"
-parity check (finance_bp is explicitly non-singleton, list-type). This is
-the first end-to-end check to exercise it. All other migrated getters
-(`gm`/`opm`/`vendor_manager`/`finance_manager`/`procurement_manager`,
-`gm_or_opm` dept resolution, `director`, `supervisor_enabled`) show **zero**
-divergence across all 12 depts x 3 doc types.
+This works because `email.message.Message.__setitem__` stores the header as a plain str,
+and `Generator`/`BytesGenerator` under the default `compat32` policy fold headers through
+`email.header.Header`, which auto-detects non-ASCII content and switches to `utf-8`
+Q-encoding — no explicit charset/policy needed on `send_email`'s part. `email.py` did not
+need to change.
 
-Documented in the release notes' "验收阶段发现...一处行为变化" section with a
-recommendation to cross-check prod's finance_bp-primary-role users against
-the old curated list before go-live. Did not alter the verifier to mask this
-— it is a real, reproducible, and now-permanent property of the new getters
-given current dev data, not a seed/migration defect.
+Added `test_send_email_non_ascii_subject_serializes_cleanly` in
+`finance-api/tests/test_remittance.py` to make this a permanent, real (non-mocked-away)
+proof rather than something only checked by hand:
 
-## Full regression
+- Calls the real `send_email()` with a subject containing an em dash, mocking only
+  `aiosmtplib.send` (the network boundary) exactly like the other `email.py` tests already
+  in the file.
+- Retrieves the actual `MIMEMultipart` object passed to the mock (`m.await_args.args[0]`)
+  and calls `.as_bytes()` on it — this is the real flattening step a mocked
+  `send_email(...)` test would never exercise, since a mock of `send_email` itself (as used
+  by `test_send_writes_log_and_uses_cc` etc.) never touches the `MIMEMultipart` internals.
+- Asserts the raw em-dash UTF-8 bytes (`\xe2\x80\x94`) are **not** present verbatim in the
+  serialized output (i.e. it went through header encoding, not a raw pass-through that
+  would produce an invalid 8-bit header).
+- Re-parses the serialized bytes with `email.message_from_bytes` and decodes the `Subject`
+  header back with `email.header.decode_header` / `make_header`, asserting round-trip
+  equality with the original subject string — proving a real mail client/MTA would recover
+  the exact original text, not a mangled one.
 
-| Suite | Result | Expected |
-|---|---|---|
-| approval-api pytest | **37 passed** | 37+ |
-| identity-api pytest | **20 passed** | 20 |
-| expense-api pytest (docker exec) | **83 passed** | 83 |
-| vms-api pytest (docker exec) | **175 passed** | 175 |
-| portal tsc --noEmit | **0 errors** | 0 |
-| epms tsc --noEmit (`grep -c "error TS"`) | **69** | 69 (baseline, unchanged) |
+Conclusion: **no fix was needed in `email.py`.** The subject serializes cleanly under the
+default compat32 policy as-is; the concern in the brief was valid to check but did not
+materialize as a bug in this codebase's Python version (3.12).
 
-finance-api and epms-api pytest skipped per instructions (controller already
-ran both on this exact code: finance 201 passed; epms failure set identical
-to baseline minus the 4 deleted temp-assignment tests).
+## Discrepancies vs. the brief
 
-## Release notes
-
-`docs/superpowers/plans/2026-07-15-approval-routing-phase3-release.md`,
-modelled on the phase 1 release doc. Covers: 3 migrations (approval
-`0001_approval_routing` first-ever + `migrate-prod.sh` confirmed updated,
-identity `0003_post_role_singleton`, epms `z4_drop_temp_assignments`);
-mandatory seed step with exact command, order (migrate → seed → parity →
-up), and the "no-seed" failure mode stated plainly (every non-dept_manager
-step fails to resolve an approver — worse than phase 1); seed's reassign
-behavior + WARNING lines + when it is unsafe to re-run; zero new
-infrastructure (verified: approval-api's prod compose block has no
-`ALLOWED_ORIGINS`, `Caddyfile:52` confirms no subdomain, `APPROVAL_ENGINE_URL`
-already present in both dev/prod compose for epms-api — verified line
-numbers cited in the doc); rollback (four JSONB columns untouched;
-temp_assignments downgrade recreates empty, table was 0 rows in prod); the
-deliberate `reconstruct.py` exemption; concrete post-deploy verification
-commands (epms-gateway script asserting departments=12 and
-supervisor_on=0, plus a browser checklist).
+- The brief's Step 2 said to expect `ModuleNotFoundError`; the actual failure was
+  `ImportError` (same underlying cause — `app.crud.remittance_send` doesn't exist — just a
+  different exception class for a `from X import Y` statement vs. a bare `import X`).
+  Cosmetic only, no action needed.
+- The brief's `send_groups`/`_upsert` code in Step 3 matched the real signatures of
+  `PayeeGroup`, `RemittanceSettings`, `render()`, `send_email()`, and
+  `RemittanceNotification` exactly — no changes were needed against what's actually in
+  `app/crud/remittance.py`, `app/services/remittance_template.py`,
+  `app/services/remittance_config.py`, `app/services/email.py`, or `app/models/remittance.py`.
+  The module was implemented essentially verbatim from the brief.
+- No other contradictions found.
 
 ## Concerns
 
-- The finance_bp parity divergence above is real and will reproduce
-  identically in prod if any user's primary role is `finance_bp` without
-  being in the old curated list. It is not a code defect from this branch's
-  work, but it is new information the user should have before running the
-  prod seed — flagged prominently in the release notes; recommend a manual
-  prod cross-check before go-live per the doc's wording.
-- Everything else (migrations, seed order, gateway plumbing, rollback,
-  regression) verified directly against the repo, not taken on faith.
+- `git status` showed `.superpowers/sdd/task-4-report.md` and
+  `.superpowers/sdd/task-7-report.md` as modified in the working tree before I started, and
+  `.superpowers/sdd/task-8-report.md` itself contained a stale, unrelated report (see note
+  at top). These pre-existing modifications/content are unrelated to Task 8 and were
+  deliberately excluded from the commit — only `finance-api/app/crud/remittance_send.py`
+  and `finance-api/tests/test_remittance.py` were staged and committed.
+- `send_groups`/`_upsert` only `flush()`, never `commit()`. This is correct per the design
+  intent (sending happens after the caller already committed the payment; the endpoint
+  layer that wires this in is responsible for committing the notification-log writes
+  afterward) but is worth double-checking when that endpoint is built, so a send that
+  updates the log doesn't get silently rolled back by an uncommitted session.
 
-## Follow-up fix (2026-07-15): the finance_bp diff above was a real over-grant, now fixed
+## Fix: durability and upsert race
 
-The 12 DIFFs flagged above were re-triaged as an actual bug, not an
-acceptable one-directional widening: `finance_bp` is exempt from
-identity's singleton index specifically *because* it's a multi-holder job
-function, not a company-unique position like the other five post codes.
-Reading `users.role` for it conflates "holds the job function" with "is the
-assigned approver" — Yuping Huang's primary role is `finance_bp` but she was
-never added to `role_management.finance_bp_user_ids`, so she should never
-have resolved as a PA approver.
+Follow-up to the review findings above — the "worth double-checking" concern in the last
+bullet turned out to be exactly right and is fixed here. Commit: see the commit that
+introduces this section (`fix(finance): make each remittance send durable and upsert
+race-safe`, branch `feature/batch-payment-remittance`).
 
-### Status: DONE
+### The problem
 
-### Root cause
-`approval-api/app/crud/workflow.py::_post_holders` unioned `users.role` ∪
-`user_roles` for **all six** post codes including `finance_bp`. Correct for
-the five singleton posts (gm/opm/vendor_manager/finance_manager/
-procurement_manager — identity enforces one holder each via
-`0003_post_role_singleton` + the cross-table 409 in
-`PUT /authz/users/{id}/roles`, so holding the primary role IS holding the
-post). Wrong for `finance_bp`, which must resolve from the curated
-ASSIGNMENT (`user_roles`) only.
+Sending an email is an irreversible side effect, but the record of it lived only in this
+session's uncommitted transaction. If a later payee (or the caller) raised before that
+transaction committed, the email had already gone out with no durable log row — an operator
+seeing "not sent" would press Send again and double-send the vendor. Two smaller issues fed
+the same root cause: `render()` sat outside the per-payee `try`, so a template error on payee
+N aborted the loop for every payee after N (never reaching the log write for them at all);
+and `_upsert`'s SELECT-then-insert had a TOCTOU window where two overlapping sends for the
+same payee could both miss the SELECT and both attempt an INSERT, the second raising
+`IntegrityError` after its email had already gone out.
 
-### Changes
-- `approval-api/app/crud/workflow.py` — `_post_holders()`: split the SQL so
-  `users.role` is matched against `_POST_CODES` (five singletons) only,
-  while `user_roles` continues to be matched against
-  `_POST_CODES + ["finance_bp"]`. Added an explicit docstring explaining the
-  singleton-position vs. multi-holder-job-function distinction and citing
-  the real prod case (Yuping Huang) as the motivating example.
-- `approval-api/scripts/seed_routing.py` — removed the
-  `if primary == "finance_bp": continue` skip from the finance_bp loop. Since
-  finance_bp is now resolved from `user_roles` only, skipping the insert
-  when an assignee's primary role happens to also be `finance_bp` would make
-  that assignee vanish as an approver entirely. The `ON CONFLICT (user_id,
-  role_code) DO NOTHING` still makes repeat runs idempotent. The five
-  singletons' skip-if-primary-matches logic and stale-holder
-  reassignment were left untouched, per instructions.
-- Tests added:
-  - `test_routing_adapters.py::test_finance_bp_primary_role_alone_is_not_included`
-    — user with `users.role='finance_bp'` and no `user_roles` row must NOT
-    appear in `finance_bp_user_ids`. Reproduces the exact prod situation;
-    fails against the pre-fix code.
-  - `test_seed_routing.py::test_finance_bp_row_always_written_even_when_primary_role_matches`
-    — an assigned finance_bp whose primary role is also `finance_bp` must
-    still get a `user_roles` row written. Guards the seed script change.
-  - Kept `test_post_from_primary_role_is_included` (gm) unchanged as the
-    contrasting singleton-post case — the two tests together pin the
-    distinction.
+### Fix 1 — widened isolation boundary + per-payee commit
 
-### Verification (foreground)
+Moved `render(...)` inside the same per-payee `try/except Exception` as `send_email(...)`,
+so a render failure on one payee is caught, logged against that payee, and does not stop the
+rest of the loop (previously it would have propagated straight out of `send_groups`).
 
-```
-cd /c/Project/uniops/approval-api && TEST_PG_PASSWORD=*** ./.venv/Scripts/python -m pytest tests -q
-```
-```
-39 passed in 18.78s
-```
-(37 pre-existing + 2 new; no regressions.)
+Added `await db.commit()` immediately after each payee's `_upsert` — both on the success path
+and the failure path — instead of leaving the commit to the caller or to the end of the loop.
+This is documented as safe *by design* in the module docstring and inline above each commit
+call: remittance sending always runs after the payment transaction has already been committed
+by the caller, so there is no unrelated payment work sitting uncommitted in this session that
+a per-payee commit could flush early. The comment explicitly warns a future reader not to
+"optimize" this back into a single trailing commit.
 
-```
-docker exec uniops_approval_api python -m scripts.seed_routing
-```
-```
-seed_routing done: {'user_roles': 0, 'dept_rows': 0, 'backups': 0, 'reassigned': 0}
-```
-No-op re-run, as expected — the live-mounted container picked up the source change without a rebuild.
+### Fix 2 — atomic upsert (chosen strategy: `ON CONFLICT DO UPDATE`)
 
-```
-docker exec uniops_approval_api python -m scripts.verify_routing_parity
-```
-```
-PARITY OK (12 depts x 3 doc types)
-```
-Zero DIFFs — the 12 diffs from the original Task 8 run are gone. Yuping Huang
-no longer resolves as a `finance_bp` approver; prod's only real assignee
-(`907147d2-...`, PM test) is unaffected since she's read from `user_roles`
-which already carries her via the original curated
-`role_management.finance_bp_user_ids` seed.
+Chose the atomic PostgreSQL upsert over the "catch IntegrityError + savepoint + re-select"
+alternative, because:
+- It fits the existing code cleanly — `_upsert` already had one write path to replace, not
+  two (a try path and a catch path) to maintain in parallel.
+- It's a single round trip to the database and pushes the conflict resolution down to the row
+  lock PostgreSQL already takes for the unique index, rather than depending on session-level
+  exception handling and a manual savepoint dance to get the same guarantee.
+- `attempts` increments correctly straight off the existing row
+  (`RemittanceNotification.attempts + 1` in the `SET` clause) without a second read.
 
-### Commit
-`fix(approval): finance_bp approvers come from the assignment only, not from holding the job function`
+Implementation: `sqlalchemy.dialects.postgresql.insert` building an INSERT with all columns
+(as before), then `.on_conflict_do_update(constraint="uq_remittance_scope_party", set_=...)`
+— matching the real constraint name declared on the model. The `SET` clause takes
+`party_name`/`email`/`payment_record_ids`/`amount`/`currency`/`status`/`error` from
+`excluded` (the row that would have been inserted) and `attempts` from
+`RemittanceNotification.attempts + 1` (the row already on disk) — reproducing the old
+SELECT-then-update semantics exactly, just atomically. `sent_at` is only included in the SET
+clause when `status == SENT`, matching the old code's "a failed resend leaves the prior
+sent_at alone" behavior.
 
-## Final-review fixes (2026-07-15)
+### Fix 3 — dropped the duplicate error log
 
-Three findings from the controller's final review, all confirmed against live
-code/data.
+Removed the `logger.error("Remittance send failed for %s: %s", ...)` call (and the now-unused
+`logging` import/`logger` object) from the `except` block in `send_groups`. `send_email()` in
+`app/services/email.py` already logs and re-raises SMTP failures, so that call was a second
+log line for the same event. A `render()` failure (which never reaches `send_email`) isn't
+logged a second time either now — its durable record is the `FAILED` row itself, which is the
+whole point of this fix.
 
-### Status: DONE
+### Fix 4 — removed the unreachable fallback
 
-### FIX 1 — finance_bp over-grant in two more consumers
+Simplified `", ".join(g.block_reasons) or "missing_email"` to `", ".join(g.block_reasons)`.
+Confirmed by reading `app/crud/remittance.py`'s `_vendor_groups`/`_employee_groups`: both
+always append `BLOCK_MISSING_EMAIL` to `block_reasons` whenever `email` is blank, so
+`block_reasons` can never be empty at this point outside a hand-built test fixture. Checked
+every test that builds a blocked group by hand (`test_blocked_group_is_skipped_not_sent`) —
+it already sets `g.block_reasons = [rem.BLOCK_MISSING_EMAIL]` explicitly and doesn't assert on
+the literal `error` string, so no test needed adjusting for this simplification.
 
-**(a) `finance-api/app/api/v1/coa.py::_can_manage`** — the same doctrine as
-`workflow.py::_post_holders`: `finance_manager` (singleton post) may resolve
-from `users.role` ∪ `user_roles`; `finance_bp` (job function) must resolve
-from `user_roles` only. Rewrote `_can_manage` to check `finance_manager` via
-the existing `_user_role_codes` union, then check `finance_bp` with a direct
-`SELECT 1 FROM user_roles WHERE user_id = :u AND role_code = 'finance_bp'`
-query — no longer reads the primary role for finance_bp.
-Added `finance-api/tests/test_coa.py::test_coa_primary_role_finance_bp_without_assignment_denied`
-— a user whose JWT/primary role is `finance_bp` with no `user_roles` row
-gets `can_manage: false` from `GET /coa/permissions` and `403` from a
-mapping-write endpoint. Confirmed it fails against the pre-fix code
-(re-ran before editing: pre-fix code returned `can_manage: true`).
+### How durability was proved
 
-**(b) `epms/src/pages/budget/BudgetDashboard.tsx`** — two separate leaks, both
-fixed:
-  - `FULL_ACCESS_ROLES` included `'finance_bp'` checked directly against
-    `user.role` (the primary role from the auth store) — removed it.
-  - `SPECIAL_ROLE_CODES` included `'finance_bp'` checked against `myRoles`
-    (from `/config/me/permissions`, which is primary ∪ additional) — removed
-    it and added a separate `isFinanceBpAssigned` computed from the
-    ADDITIONAL-roles-only `GET /config/user-roles` proxy (same one Portal's
-    Access Control page uses; returns `{user_roles: {uid: [codes]}}`).
-    `isFullAccess` now ORs in `isFinanceBpAssigned` instead of trusting
-    myRoles/user.role for this code. Added `configService.getUserRoles()`
-    (`epms/src/services/config.ts`) and `useUserRoles()`
-    (`epms/src/hooks/useConfig.ts`) to support it. Comments in the file state
-    why finance_bp is excluded from both role-only sets.
-  - No test harness exists for this component (no epms frontend test runner
-    wired up for pages); verified via `tsc` only, matching the file's
-    existing testing posture.
+`test_send_durably_commits_not_just_flushes`: calls `send_groups` for one payee, then calls
+`await db_session.rollback()` on the *same* session before reading the row back. A
+trailing-commit-only implementation (the pre-fix state — `_upsert` only `flush()`ed, commit
+was left to a caller that doesn't exist yet) would still have the insert sitting in an open,
+uncommitted transaction at that point; the explicit `rollback()` would discard it and the
+subsequent `scalar_one()` would raise `NoResultFound`. Against the fix, the row is already
+hard-committed by the time `send_groups` returns, so the later `rollback()` has nothing to
+undo and the row reads back fine. Ran this test against the pre-fix module (git stash) to
+confirm it does fail there before finalizing — it raised `NoResultFound` as expected, then
+passed clean against the fixed code.
 
-### FIX 2 — singleton invariant unguarded write path in epms-api
+`test_render_failure_does_not_stop_the_others`: patches `app.crud.remittance_send.render` to
+raise only on its first call, and `send_email` with a plain `AsyncMock` (not asserting a
+side_effect on it). Asserts both a `"failed"` and a `"sent"` outcome come back, the mock for
+`send_email` was actually awaited once for the second payee's address, and both rows exist in
+the log — proving the loop's isolation boundary now covers `render()`, not just `send_email()`.
 
-`epms-api/app/api/v1/users.py`: added `_POST_ROLES` (the five singleton
-codes, finance_bp deliberately excluded) and `_post_conflict(db, role,
-exclude_user_id=None)`, mirroring identity-api's `authz.py::_post_conflict`
-query shape (primary-role hit first, then `user_roles` hit), excluding the
-user being edited so re-saving the current holder is idempotent. Wired into
-both `update_user` (PATCH `/users/{id}`) and `create_user` (POST `/users`) —
-both now 409 when the requested role is a singleton post already held by
-someone else. The CSV bulk `/users/import` path also sets `.role` directly
-and was **not** touched — see Concerns.
+`test_concurrent_double_send_lands_on_update_not_integrityerror`: inserts a
+`RemittanceNotification` row directly for the same
+`(scope_kind, scope_id, recipient_kind, party_id)` key (`attempts=1`, `status=SENT`) and
+commits it, simulating an in-flight send that already landed. Then calls `send_groups` for
+that same payee and asserts it returns `"sent"` (no `IntegrityError` propagates), and the row
+in the DB now has `attempts == 2` — the second call updated the existing row instead of
+crashing on the unique constraint.
 
-Tests added to `epms-api/tests/test_user_supervisor_assignment.py` (the file
-already had the admin_client + `_make_user` PATCH-role test harness):
-- `test_patch_role_to_held_singleton_post_rejected_409` — PATCHing a second
-  user to `gm` when one already exists → 409.
-- `test_patch_role_resave_current_holder_is_idempotent` — re-saving the
-  current holder's own post role → 200 (exclude-self works).
-- `test_patch_role_to_finance_bp_allows_multiple_holders` — finance_bp is
-  never guarded → 200 with two primary-role holders.
-- `test_create_user_with_held_singleton_post_rejected_409` — POST `/users`
-  with an already-held singleton role → 409.
+### Fixture note (`db_session`)
 
-Hardening in `approval-api/app/crud/workflow.py::_post_holders`: added
-`ORDER BY 1, 2` to the UNION ALL query (deterministic `[0]` selection in
-`get_role_management` if the invariant is ever broken) and a
-`logger.warning(...)` when any of the five singleton codes resolves to more
-than one holder, naming the role and listing the holder ids.
+`tests/conftest.py`'s `db_session` fixture does not wrap the test in an outer transaction that
+gets rolled back at teardown — it hands out a plain `AsyncSession` against a freshly migrated
+per-test database (each test calls `_migrate()`, which drops and recreates the schema). So a
+real `await db.commit()` inside `send_groups` commits for real against that test database, and
+nothing in the fixture needed to change to support per-payee commits or the explicit
+`db_session.rollback()` durability check in the new test — the fixture's semantics for every
+other test in the file are untouched.
 
-### FIX 3 — z4_drop_temp_assignments removed from this release
-
-Confirmed the finding: `epms-api/app/api/v1/config.py::_full_response` calls
-`list_temp_assignments`, backing `GET /api/v1/config` (used everywhere via
-`useConfig`) — dropping the table at migrate time while the OLD container
-still serves until `up` would 500 every config request company-wide for the
-whole migrate→seed→parity→up window.
-
-Exact sequence run (dev DB was at `z4` / head going in):
-```
-docker exec uniops_epms_api alembic current      # z4_drop_temp_assignments (head)
-docker exec uniops_epms_api alembic downgrade -1  # -> z3_add_created_by_to_tasks; recreates empty temp_assignments
-rm /c/Project/uniops/epms-api/alembic/versions/z4_drop_temp_assignments.py
-docker exec uniops_epms_api alembic heads          # z3_add_created_by_to_tasks (head) — single head
-docker exec uniops_epms_api alembic upgrade head   # no-op, already at head — clean
-```
-Grepped for other references to `temp_assignments` in epms-api after the
-delete: only the original creation migration
-(`d4e5f6a7b8c9_sprint4_company_config.py`) remains, as expected — all Task 7
-reading-code deletions (UI/endpoints/model/schema/tests) stay in place per
-instructions.
-
-Release notes (`docs/superpowers/plans/2026-07-15-approval-routing-phase3-release.md`)
-updated:
-- Migration count 3 → 2 (approval `0001_approval_routing`, identity
-  `0003_post_role_singleton`); explicit note that epms has no migration this
-  release and z4 was removed.
-- Added a "下个发布" row: `temp_assignments` stays as an empty table, safe to
-  drop next release once this release's code (which already stopped
-  reading it) is live.
-- Added a pre-flight check step (both as prose and as a runnable
-  `docker compose run --rm epms-api python -c "..."` snippet using
-  `app.db.session.engine`, since prod's DB is an external server, not a
-  compose service — no `psql` in the container) for the
-  `user_roles` duplicate-singleton-post query, run and confirmed working
-  against dev (`dup singleton posts: []`).
-- Rewrote the rollback section's `temp_assignments` bullet — it's no longer
-  touched by this release's migration at all.
-
-### Verification (foreground, all run and awaited before this report)
+### Final test run
 
 ```
-cd /c/Project/uniops/approval-api && TEST_PG_PASSWORD=*** ./.venv/Scripts/python -m pytest tests -q
-```
-```
-39 passed in 20.84s
+cd c:/Project/uniops-remittance/finance-api && TEST_PG_PASSWORD=7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9 python -m pytest tests/test_remittance.py -v
 ```
 
-```
-cd /c/Project/uniops/finance-api && TEST_PG_PASSWORD=*** ./.venv/Scripts/python -m pytest tests/test_coa.py tests/test_payment_execute.py -q
-```
-```
-29 passed in 128.91s
-```
+Result: **29 passed in 123.79s** — every test in the file passes, including the three new
+Fix-2/Fix-1 tests added above the existing Task 8 block.
+
+## Fix: race test honesty and success-path guard
+
+Follow-up to a second review pass on the code above. Three findings, all in
+`finance-api/tests/test_remittance.py` and `finance-api/app/crud/remittance_send.py`.
+
+### Finding 1 — the "concurrency" test wasn't concurrent
+
+`test_concurrent_double_send_lands_on_update_not_integrityerror` inserted a colliding row and
+**committed it before calling `send_groups`**. That's sequential setup, not a race — the old
+select-then-write `_upsert` would just find the already-committed row on its SELECT and take
+the update branch cleanly. The test passed unchanged against the pre-fix code and proved
+nothing about the race it's named for; it was a duplicate of
+`test_resend_upserts_and_increments_attempts` with different setup dressing.
+
+**Route taken: (a) — a real interleaving, achieved.** `tests/conftest.py`'s `db_session`
+fixture is a plain `AsyncSession` against a freshly migrated database with no outer
+transaction/rollback wrapper (confirmed by re-reading it), and `ASYNC_URL` is a plain
+module-level constant — so a second, fully independent `AsyncSession` on its own
+`create_async_engine(ASYNC_URL)` connection could be constructed directly inside the test,
+without calling `_migrate()` again (which would drop the schema out from under the first
+session).
+
+Rewrote the test to:
+1. Open `session2` (separate engine, separate connection) and `add()` + `flush()` (not
+   commit) a `RemittanceNotification` row for the exact same
+   `(scope_kind, scope_id, recipient_kind, party_id)` key — the row now exists only inside
+   `session2`'s still-open transaction, invisible to any other session.
+2. `asyncio.create_task(_send(db_session, [g], scope_id))` — starts `send_groups` on the
+   primary session concurrently.
+3. `await asyncio.sleep(0.3)`, then `assert not task.done()` — asserts the task actually
+   blocked on the database (on the row's unique-index key lock), not that it merely hasn't
+   been scheduled yet. This is the load-bearing assertion that makes the test's concurrency
+   claim falsifiable instead of decorative.
+4. `await session2.commit()` — releases the lock the other session was holding.
+5. `await asyncio.wait_for(task, timeout=10)` — the now-unblocked `send_groups` call
+   completes; assert it landed on `"sent"`, one row, `attempts == 2`.
+
+**Proved both ways, as instructed:**
+
+- *Against the fixed code* (`ON CONFLICT DO UPDATE`): ran `-k concurrent` alone —
+  `1 passed in 8.46s`. The short, non-timeout-bound runtime is itself evidence the test isn't
+  just waiting out a `wait_for` timeout: it blocked on the real lock for a fraction of a
+  second and unblocked immediately once `session2.commit()` ran.
+
+- *Against a temporary revert of `_upsert` to select-then-write* (SELECT for the existing
+  row; `UPDATE` the ORM object if found, else `db.add()` a new one; no `ON CONFLICT`) — same
+  test, same `-k concurrent`:
+
+  ```
+  AssertionError: assert ['failed'] == ['sent']
+  ...
+  ERROR app.crud.remittance_send:remittance_send.py:167 Remittance send SUCCEEDED but the log
+  write FAILED for vendor ACME (388e03eb-...) — email was already sent to ap@acme.test:
+  (sqlalchemy.dialects.postgresql.asyncpg.IntegrityError) <class
+  'asyncpg.exceptions.UniqueViolationError'>: duplicate key value violates unique constraint
+  "uq_remittance_scope_party"
+  DETAIL:  Key (scope_kind, scope_id, recipient_kind, party_id)=(batch, 199778a2-...) already
+  exists.
+  ```
+
+  This is exactly the failure mode the docstring describes: the reverted `_upsert`'s SELECT
+  ran before `session2` committed, found nothing, and its subsequent `INSERT` blocked on
+  `session2`'s uncommitted row; once `session2` committed, the blocked `INSERT` unblocked and
+  raised a real `UniqueViolationError`/`IntegrityError` — the second sender's email had
+  already gone out (mocked `send_email` was still called) and the write to record it then
+  crashed. It shows up here as `"failed"` rather than an uncaught exception only because this
+  same round of fixes also wraps the success-path `_upsert`+`commit()` in a `try/except`
+  (Finding 2, below) — that guard is what turned the raw `IntegrityError` into a caught,
+  logged, reported failure instead of an unhandled exception aborting the whole test process.
+  Either way the test fails against the old code and passes against the new code, which is
+  what matters. Restored `_upsert` to the atomic `ON CONFLICT DO UPDATE` form immediately
+  after capturing this output; re-ran the full file to confirm 29/29 green again.
+
+Renamed nothing — the original name
+(`test_concurrent_double_send_lands_on_update_not_integrityerror`) already accurately
+describes what the rewritten test proves, now that it actually proves it. Kept the docstring
+but rewrote it to describe the real second-session mechanics and to record how it was
+verified both ways.
+
+### Finding 2 — success path was unguarded
+
+The final `_upsert(..., status=SENT, ...)` + `db.commit()` in `send_groups` sat outside any
+`try/except`. A transient DB error there (the email already sent) would propagate straight
+out of `send_groups`, aborting the loop for every remaining payee with no result recorded for
+the one that failed — and, worse, no way for a caller/operator to tell "the email went out but
+we lost the record" apart from "the email never went out".
+
+Fix: wrapped that `_upsert` + `commit()` in its own `try/except Exception`. On failure:
+- `await db.rollback()` — the session must be usable for the next payee; a failed statement
+  in Postgres poisons the current transaction until it's rolled back.
+- `logger.error(...)` naming the payee (`recipient_kind`, `party_name`, `party_id`) and the
+  vendor's email, explicitly stating the email was **already sent** and only the log write
+  failed — worded differently from a plain "failed" so an operator doesn't read this as "the
+  send never happened" and press Send again (which would double-send the vendor).
+- `results.append({..., "status": "failed", "error": f"email sent but not logged: {exc}"})` —
+  the result list still says `"failed"` (no third status value existed in the vocabulary and
+  nothing downstream consumes one yet), but the `error` string is explicit about what actually
+  failed, matching the log line.
+- `continue` — the loop proceeds to the next payee instead of aborting the whole batch.
+
+Not covered by a dedicated new test (none was requested for this finding, and forcing a
+`_upsert`/`commit()` failure independent of the render/send_email failures would need fault
+injection at the SQL layer); verified by inspection and by confirming the existing
+`test_send_writes_log_and_uses_cc` / `test_resend_upserts_and_increments_attempts` /
+`test_one_failure_does_not_stop_the_others` still pass unchanged (the success path's happy
+case is unaffected — the `try` just wraps what was already there).
+
+Note: the failure-path `_upsert`+`commit()` (the one that records a `render()`/`send_email()`
+failure as a `FAILED` row) has the same latent unguarded-write shape, but the review finding
+was scoped specifically to "the success path" — left as-is, flagging it here rather than
+fixing unrequested scope.
+
+### Finding 3 — render() failures had no log line at all
+
+The prior fix round removed the single shared `logger.error(...)` call from the combined
+`render()`/`send_email()` except block, reasoning that `send_email()` (in
+`app/services/email.py`) already logs SMTP failures and this was a duplicate. That reasoning
+was correct for the `send_email()` case but had a side effect: a `render()` failure never
+reaches `send_email()`, so removing that line left `render()` failures with **no** log line
+anywhere — only the `FAILED` database row recorded them.
+
+Fix: split the single `try/except` around `render()` + `send_email()` into two separate
+`try/except` blocks:
+- `render()`'s except block now has its own `logger.error(...)` — naming the payee and
+  stating the send was never attempted. This is genuinely new information no other code path
+  logs.
+- `send_email()`'s except block still has **no** added log call — the comment there notes
+  explicitly that `send_email()` already logs and re-raises, so nothing is added on top of it.
+
+This satisfies "does not duplicate what `email.py` already logs" precisely: the new log line
+only ever fires on the code path `email.py` never sees (`render()` raising before
+`send_email()` is even called), not on the path `email.py` already logs.
+
+Confirmed `test_render_failure_does_not_stop_the_others` (which patches
+`app.crud.remittance_send.render` to raise on its first call) still passes against the split
+try/except — it doesn't assert on log output, only on `results` and the DB rows, both
+unaffected by the split.
+
+### Final test run
 
 ```
-docker exec uniops_epms_api python -m pytest tests/test_admin.py -q
-```
-```
-19 passed in 7.99s
-```
-(the 4 new singleton-guard tests live in `test_user_supervisor_assignment.py`,
-not `test_admin.py`; ran together separately: `25 passed`.)
-
-```
-cd /c/Project/uniops/epms && npx tsc -p tsconfig.app.json --noEmit 2>&1 | grep -c "error TS"
-```
-```
-69
-```
-(baseline, unchanged)
-
-```
-docker exec uniops_approval_api python -m scripts.verify_routing_parity
-```
-```
-PARITY OK (12 depts x 3 doc types)
+cd c:/Project/uniops-remittance/finance-api && TEST_PG_PASSWORD=7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9 python -m pytest tests/test_remittance.py -v
 ```
 
-```
-docker exec uniops_epms_api alembic heads
-```
-```
-z3_add_created_by_to_tasks (head)
-```
-Single head, no z4.
-
-### Concerns
-
-- `epms-api/app/api/v1/users.py`'s CSV bulk-import path (`POST
-  /users/import`) also writes `.role` directly for both new and existing
-  users (lines ~275 and ~290-298) without going through the new
-  `_post_conflict` guard. This wasn't named in the controller's three
-  findings (which called out `update_user` and "the create path" — i.e.
-  `POST /users`, which is now guarded), so it was left untouched to avoid
-  scope creep beyond what was reviewed. It is the same class of gap as FIX 2
-  and should be looked at — a CSV import setting two rows to `gm` would
-  silently arm the same nondeterminism.
-- `finance-api/app/crud/payment_execute.py::_check_can_pay` has the
-  identical shape of bug: `_PAY_ROLES = {"ap_clerk", "finance_manager",
-  "finance_bp", "system_admin"}` is checked against `user.get("role")`
-  (line 81) — a primary-role-only check — before the assignment-based
-  `_user_role_codes` fallback is even consulted, so a primary-role
-  `finance_bp` user without an assignment can already execute payments.
-  Not touched: the controller's FIX 1 named exactly "two consumers" (coa.py
-  and BudgetDashboard.tsx) and `test_payment_execute.py` was listed as an
-  unmodified green baseline in the verify block, so this was treated as
-  out of scope for this pass rather than assumed-broken-and-silently-fixed.
-  Flagging it explicitly here since it's the same doctrine violation.
-- BudgetDashboard.tsx's `isFinanceBpAssigned` now fetches the whole-company
-  `GET /config/user-roles` map (same proxy already used by Portal's Access
-  Control page) just to check one user's membership. Accepted as the
-  correct-per-doctrine option per the task's explicit menu of choices; the
-  endpoint is already used elsewhere and `useUserRoles` sets a 60s
-  `staleTime`, so this is not expected to be a meaningful load concern, but
-  it is a new network call this page did not previously make.
-
-
-## CSV/ERP import guard(控制器验证并代提交)
-
-实施代理再次返回无效响应(第 6 次:"wait for the Monitor task"),未验证未提交。代码本身完整正确,由控制器验证后提交。
-
-**覆盖三条绕过路径**:CSV 导入的 update 分支(~275)/create 分支(~293)、ERP 导入(~474) —— 此前 `_post_conflict` 只守 create_user/update_user 两个端点,导入路径直接写 `.role` 完全绕过守卫(守前门敞后门=守卫没做完)。
-**设计**:批量导入按各自既有的错误收集惯例逐行 error/skip(不中断整个文件),消息点名当前持有人;新增 `claimed_posts` 字典处理**同一文件内两行争抢同一岗位**(DB 检查在 flush 前看不到前一行)。
-
-**验证(控制器亲跑)**:
-- `test_user_supervisor_assignment.py` 单独跑 **6 passed**(含 4 个新守卫测试:PATCH 409/自我改保幂等/finance_bp 多持有者放行/create 409)
-- 与 `test_users_import_from_erp.py` 同跑时出现的 10 errors 是**既有的测试顺序污染**(该文件的 `assert 9 >= 12` 密码策略失败在 76 条基线里),非本次引入
-- **epms 全量失败集:72 vs 基线 76,新增为零**,消失的 4 条正是随死功能删除的 temp-assignment 测试
+Result: **29 passed in 124.27s** — every test in the file passes.
