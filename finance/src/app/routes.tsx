@@ -10,6 +10,7 @@ import BankReconciliationPage from '@/pages/finance/BankReconciliationPage'
 import CoaConfigPage from '@/pages/finance/CoaConfigPage'
 import TaxSettingsPage from '@/pages/finance/TaxSettingsPage'
 import BankSettingsPage from '@/pages/finance/BankSettingsPage'
+import QboMirrorPage from '@/pages/finance/QboMirrorPage'
 import BudgetConfigPage from '@/pages/budget/BudgetConfigPage'
 import BudgetDashboardPage from '@/pages/budget/BudgetDashboardPage'
 import BudgetPlansPage from '@/pages/budget/BudgetPlansPage'
@@ -26,6 +27,7 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/budget-actual', element: <BudgetActualPage />, tab: { title: 'Budget Actual', icon: 'Target', keyStrategy: 'static' } },
   { path: '/finance/payment-batches', element: <PaymentBatchPage />, tab: { title: 'Payment Batches', icon: 'Banknote', keyStrategy: 'static' } },
   { path: '/finance/bank', element: <BankReconciliationPage />, tab: { title: 'Bank Reconciliation', icon: 'Landmark', keyStrategy: 'static' } },
+  { path: '/finance/qbo', element: <QboMirrorPage />, tab: { title: 'QuickBooks', icon: 'RefreshCw', keyStrategy: 'static' } },
 
   { path: '/budget/dashboard', element: <BudgetDashboardPage />, tab: { title: 'Budget Dashboard', icon: 'LayoutDashboard', keyStrategy: 'static' } },
   { path: '/budget/plans', element: <BudgetPlansPage />, tab: { title: 'Budget Plans', icon: 'ClipboardList', keyStrategy: 'static' } },
