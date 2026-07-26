@@ -21,10 +21,13 @@ mirror. Spec: `docs/superpowers/specs/2026-07-26-qbo-mirror-phase3-ui-design.md`
 
 - Routers register in `app/api/v1/__init__.py` (`include_router`). Base path is
   `/finance/v1` + router prefix. Use prefix `/qbo`.
-- Permission gate: `from app.core.authz import require_permission`;
-  `require_permission("view_finance")` returns a FastAPI dependency (see
-  `coa.py:_manage_gate = require_permission(_MANAGE_KEY)`). `CurrentUser =
-  Annotated[dict, Depends(get_token_payload)]` from `app.core.deps`.
+- Permission: **server-side is auth-only (`CurrentUser`)**, matching every other
+  finance-api read endpoint (ap_invoices/ar/gl reads use just `CurrentUser`).
+  `view_finance` is enforced CLIENT-SIDE via the nav gate — it is an EPMS matrix
+  key not seeded in finance-api's test permission tables, so do NOT server-gate on
+  it. `CurrentUser = Annotated[dict, Depends(get_token_payload)]` from
+  `app.core.deps`. (Decision confirmed with the user: finance users view AND
+  trigger; server requires only authentication.)
 - Sync precedent: `app/api/v1/nc_sync.py` + `app/services/nc_sync.py`
   (`start_run`, `_run_worker`, `SSTALE_AFTER`, stale sweep). QBO's orchestrator
   `scripts/qbo_import/orchestrator.py:run_sync(db, client, mode, entities,
@@ -182,15 +185,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.core.deps import get_token_payload
-from app.core.authz import require_permission
 from app.services import qbo_sync
-
-
-def _auth(perm_ok=True):
-    app.dependency_overrides[get_token_payload] = lambda: {"sub": "00000000-0000-0000-0000-000000000001", "role": "finance_manager"}
-    # require_permission returns a dependency; override the specific instance used
-    # by the router by overriding the callable it produces. Simplest: monkeypatch
-    # the authz check to allow. See conftest for the shared override helper if present.
 
 
 @pytest.mark.asyncio
@@ -229,11 +224,12 @@ async def test_full_sync_requires_confirm(db_session, monkeypatch):
     assert launched.get("mode") == "full"
 ```
 
-Note: check `tests/conftest.py` for an existing auth/permission override helper
-(other finance API tests must authenticate). If `require_permission("view_finance")`
-blocks these, replicate whatever the existing finance-api API tests do to satisfy
-it (e.g. a fixture that overrides the permission dependency or seeds the matrix).
-Use that same mechanism; do not weaken the gate in the router.
+Note: the router is auth-only (no permission gate), so overriding
+`get_token_payload` to return a payload dict is sufficient — no permission
+seeding needed. If `app.main:app` import needs env (JWT_SECRET_KEY/DATABASE_URL),
+those are already set in the test env block above. Confirm the `db_session`
+fixture name and how existing API tests (e.g. `test_coa.py`) build the ASGI
+client / override `get_db`, and follow that.
 
 - [ ] **Step 2: Run → FAIL** (404 / import error).
 
@@ -252,13 +248,14 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.authz import require_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.qbo import RUNNING, QboSyncRun
 from app.services import qbo_sync as svc
 
-router = APIRouter(prefix="/qbo", tags=["qbo"], dependencies=[Depends(require_permission("view_finance"))])
+# Server-side auth only (CurrentUser); view_finance is the client-side nav gate,
+# matching every other finance-api read endpoint.
+router = APIRouter(prefix="/qbo", tags=["qbo"])
 
 
 class SyncIn(BaseModel):
@@ -960,8 +957,9 @@ lines, and (if any attachments loaded) the download link streams the file.
 
 - **Spec coverage:** sync trigger/status/runs (T2), browse+detail (T3), attachment
   stream (T4), qboApi (T5), nav+route+sync panel (T6), tabs+detail modal (T7),
-  dev verify (T8). Background-thread execution (T1). All gated `view_finance` via
-  the router-level `dependencies=[Depends(require_permission("view_finance"))]`.
+  dev verify (T8). Background-thread execution (T1). Server-side is auth-only
+  (`CurrentUser`) matching finance-api reads; `view_finance` gates client-side via
+  the nav item (T6).
 - **Run-row ownership resolution:** the router does NOT pre-create a QboSyncRun;
   `run_sync` (on the worker thread) creates and owns it. The trigger returns
   `{status:"started"}`; the UI discovers the new run via `/sync/status`. This
