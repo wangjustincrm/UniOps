@@ -10,13 +10,18 @@ import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, RefreshCw, X } from 'lucide-react'
 import { qboApi, ENTITY_TABS, type QboDetail } from '@/services/qboApi'
+import { financeDownload } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 50
-
-const FINANCE_API = (import.meta.env.VITE_FINANCE_API_URL as string | undefined) || 'http://localhost:8004'
+// After a sync trigger, keep polling for this long even if `current_run` is
+// still null in the response we already have in cache — the QboSyncRun row is
+// created on the worker thread, slightly after the 202 response, so an
+// immediate poll can race it and see current_run: null (which would otherwise
+// turn refetchInterval off before the row ever appears).
+const POST_TRIGGER_POLL_MS = 20000
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -25,15 +30,20 @@ const dangerBtn = 'flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-2 tex
 export default function QboMirrorPage() {
   const qc = useQueryClient()
   const [confirming, setConfirming] = useState(false)
+  const [pollUntil, setPollUntil] = useState(0)
   const { data: status } = useQuery({
     queryKey: ['qbo-status'],
     queryFn: qboApi.status,
-    refetchInterval: (q) => (q.state.data?.current_run ? 2000 : false),
+    refetchInterval: (q) => (q.state.data?.current_run || Date.now() < pollUntil ? 2000 : false),
   })
   const running = status?.current_run ?? null
 
   async function trigger(mode: 'full' | 'incremental') {
     await qboApi.triggerSync(mode, mode === 'full' ? 'RELOAD' : undefined)
+    // The run row is created on a worker thread just after this 202 returns,
+    // so an immediate refetch can still see current_run: null — keep polling
+    // for a grace window regardless, until that row shows up.
+    setPollUntil(Date.now() + POST_TRIGGER_POLL_MS)
     await qc.invalidateQueries({ queryKey: ['qbo-status'] })
     setConfirming(false)
   }
@@ -118,7 +128,10 @@ function num(v: unknown): string {
   return Number.isNaN(n) ? String(v) : n.toFixed(2)
 }
 
-const AMOUNT_COL = /(amt|balance)$/i
+/** Columns that hold Decimal-as-string amounts and should be Number()-coerced/formatted. */
+function isAmountCol(c: string): boolean {
+  return c.includes('amt') || c.includes('balance') || c === 'exchange_rate'
+}
 
 function QboTabs() {
   const [tab, setTab] = useState(ENTITY_TABS[0].slug)
@@ -198,8 +211,8 @@ function QboTabs() {
                   className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-100', i % 2 && 'bg-neutral-50/40')}
                 >
                   {cols.map((c) => (
-                    <td key={c} className={cn('whitespace-nowrap px-3 py-2', AMOUNT_COL.test(c) && 'text-right')}>
-                      {AMOUNT_COL.test(c) ? num(row[c]) : String(row[c] ?? '')}
+                    <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
+                      {isAmountCol(c) ? num(row[c]) : String(row[c] ?? '')}
                     </td>
                   ))}
                 </tr>
@@ -233,6 +246,24 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
     queryKey: ['qbo-detail', entity, id],
     queryFn: () => qboApi.detail(entity, id),
   })
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
+  const [downloadErr, setDownloadErr] = useState<string | null>(null)
+
+  async function downloadAttachment(attachmentQboId: string) {
+    setDownloadErr(null)
+    setDownloadingId(attachmentQboId)
+    try {
+      // financeDownload does an authenticated fetch (Authorization: Bearer via
+      // authHeaders()) -> blob -> synthetic download link. A bare <a href>
+      // navigation can't carry the JWT header, so the CurrentUser-gated
+      // attachment endpoint would 403 every click.
+      await financeDownload(qboApi.fileUrl(attachmentQboId), attachmentQboId)
+    } catch (e) {
+      setDownloadErr((e as Error).message)
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
@@ -255,7 +286,7 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                 {Object.entries(data.header).filter(([k]) => k !== 'raw').map(([k, v]) => (
                   <tr key={k}>
                     <td className="pr-4 align-top text-neutral-500">{k}</td>
-                    <td className="text-neutral-800">{String(v ?? '')}</td>
+                    <td className="text-neutral-800">{isAmountCol(k) ? num(v) : String(v ?? '')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -278,7 +309,9 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                         {data.lines.map((ln, i) => (
                           <tr key={i} className="border-t border-neutral-100">
                             {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
-                              <td key={c} className="whitespace-nowrap px-3 py-2">{String(ln[c] ?? '')}</td>
+                              <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
+                                {isAmountCol(c) ? num(ln[c]) : String(ln[c] ?? '')}
+                              </td>
                             ))}
                           </tr>
                         ))}
@@ -295,17 +328,19 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                 <ul className="space-y-0.5 text-sm">
                   {data.attachments.map((a) => (
                     <li key={a.attachment_qbo_id}>
-                      <a
-                        className="text-[#085E5E] underline hover:no-underline"
-                        href={`${FINANCE_API}/finance/v1${qboApi.fileUrl(a.attachment_qbo_id)}`}
-                        target="_blank"
-                        rel="noreferrer"
+                      <button
+                        type="button"
+                        disabled={downloadingId === a.attachment_qbo_id}
+                        onClick={() => downloadAttachment(a.attachment_qbo_id)}
+                        className="flex items-center gap-1.5 text-[#085E5E] underline hover:no-underline disabled:opacity-50"
                       >
+                        {downloadingId === a.attachment_qbo_id && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         {a.attachment_qbo_id}
-                      </a>
+                      </button>
                     </li>
                   ))}
                 </ul>
+                {downloadErr && <p className="mt-1 text-xs text-red-600">{downloadErr}</p>}
               </div>
             )}
           </>
