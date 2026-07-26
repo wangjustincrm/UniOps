@@ -206,12 +206,11 @@ function QboTabs() {
         </form>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-neutral-200">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+      <div className="overflow-auto rounded-lg border border-neutral-200 max-h-[70vh]">
+        <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 text-left text-xs text-neutral-500">
               <tr>
-                {cols.map((c) => <th key={c} className="whitespace-nowrap px-3 py-2 font-medium">{c}</th>)}
+                {cols.map((c) => <th key={c} className="whitespace-nowrap border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">{c}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -237,8 +236,7 @@ function QboTabs() {
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
+        </table>
       </div>
 
       <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
