@@ -104,11 +104,23 @@ def load_cfg(path: Path = ENV_PATH) -> dict:
 
 
 def _persist_refresh_token(token: str, path: Path = ENV_PATH) -> None:
-    """Rewrite the REFRESH_TOKEN line in place, preserving comments/ordering."""
-    text = path.read_text(encoding="utf-8-sig")
-    new, n = re.subn(r"(?m)^REFRESH_TOKEN=.*$", f"REFRESH_TOKEN={token}", text)
-    assert n == 1, f"expected exactly 1 REFRESH_TOKEN line in {path}, found {n}"
-    path.write_text(new, encoding="utf-8")
+    """Rewrite the REFRESH_TOKEN line in place, preserving comments/ordering.
+
+    QBO rotates the refresh token every ~24-26h; the new value MUST be saved or the
+    next refresh fails with invalid_grant. If the creds file is read-only (e.g. a
+    read-only container mount), log loudly instead of crashing the whole sync — the
+    current run still succeeds on its access token, but the mount must be made
+    writable before the token next rotates.
+    """
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+        new, n = re.subn(r"(?m)^REFRESH_TOKEN=.*$", f"REFRESH_TOKEN={token}", text)
+        assert n == 1, f"expected exactly 1 REFRESH_TOKEN line in {path}, found {n}"
+        path.write_text(new, encoding="utf-8")
+    except OSError as exc:
+        logger.error("could not persist rotated refresh token to %s (%s) — make the "
+                     "creds file writable before it rotates again, or the next "
+                     "refresh will fail with invalid_grant", path, exc)
 
 
 class QboClient:

@@ -211,10 +211,11 @@ services:
     volumes:
       - ./finance-api:/app
       - ./packages/authz:/packages/authz
-      # QBO credentials (gitignored, outside the repo). Mounted read-only so the
-      # containerized finance-api can read them for the QBO Sync button; the
-      # QBO_CONN_ENV env var below points the client at this in-container path.
-      - ${QBO_CONN_ENV_HOST:-/dev/null}:/run/qbo_conn.env:ro
+      # QBO credentials (gitignored, outside the repo). Mounted read-WRITE so the
+      # containerized finance-api can read them AND persist the rotated refresh
+      # token back (QBO rotates it every ~24-26h). QBO_CONN_ENV below points the
+      # client at this in-container path.
+      - ${QBO_CONN_ENV_HOST:-/dev/null}:/run/qbo_conn.env
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
