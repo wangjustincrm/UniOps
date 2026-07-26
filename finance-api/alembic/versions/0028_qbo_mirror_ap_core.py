@@ -1,15 +1,18 @@
 """qbo mirror AP core tables
 
-Revision ID: 0027_qbo_mirror_ap_core
-Revises: 0026_jv_lines_nc_cc_code
+Revision ID: 0028_qbo_mirror_ap_core
+Revises: 0027_remittance_notifications
 Create Date: 2026-07-24
+
+Re-chained after 0027_remittance_notifications during the 2026-07-26 reconcile
+with main (main added its own 0027; QBO migrations moved to 0028/0029).
 """
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 
-revision = "0027_qbo_mirror_ap_core"
-down_revision = "0026_jv_lines_nc_cc_code"
+revision = "0028_qbo_mirror_ap_core"
+down_revision = "0027_remittance_notifications"
 branch_labels = None
 depends_on = None
 

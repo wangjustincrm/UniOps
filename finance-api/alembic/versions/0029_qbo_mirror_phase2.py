@@ -1,15 +1,18 @@
 """qbo mirror phase 2 — AR, more transactions, long-tail raw, attachments
 
-Revision ID: 0028_qbo_mirror_phase2
-Revises: 0027_qbo_mirror_ap_core
+Revision ID: 0029_qbo_mirror_phase2
+Revises: 0028_qbo_mirror_ap_core
 Create Date: 2026-07-25
+
+Re-chained during the 2026-07-26 reconcile with main (QBO migrations moved from
+0027/0028 to 0028/0029 to sit after main's 0027_remittance_notifications).
 """
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision = "0028_qbo_mirror_phase2"
-down_revision = "0027_qbo_mirror_ap_core"
+revision = "0029_qbo_mirror_phase2"
+down_revision = "0028_qbo_mirror_ap_core"
 branch_labels = None
 depends_on = None
 
