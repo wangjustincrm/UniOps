@@ -172,7 +172,15 @@ services:
       NC_SERVICE: ${NC65_SERVICE:-}
       NC_USER: ${NC65_USER:-}
       NC_PASSWORD: ${NC65_PASSWORD:-}
+      # Where the client reads QBO creds inside the container (see the volume below).
+      QBO_CONN_ENV: /run/qbo_conn.env
     ports: ["8004:8004"]
+    # QBO credentials for the QuickBooks Sync button. Place qbo_conn.env on the app
+    # server and set QBO_CONN_ENV_HOST in the (gitignored) .env to its path;
+    # mounted read-WRITE so the rotated refresh token (every ~24-26h) persists back.
+    # Unset host var → /dev/null → feature reports "not configured" (graceful).
+    volumes:
+      - ${QBO_CONN_ENV_HOST:-/dev/null}:/run/qbo_conn.env
     command: uvicorn app.main:app --host 0.0.0.0 --port 8004
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8004/health').status==200 else 1)"]
