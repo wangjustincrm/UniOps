@@ -6,10 +6,17 @@
  * `view_finance` nav permission (server is auth-only, see finance-api qbo.py).
  */
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react'
-import { qboApi } from '@/services/qboApi'
+import { AlertTriangle, Loader2, RefreshCw, X } from 'lucide-react'
+import { qboApi, ENTITY_TABS, type QboDetail } from '@/services/qboApi'
+import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+
+const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+const PAGE_SIZE = 50
+
+const FINANCE_API = (import.meta.env.VITE_FINANCE_API_URL as string | undefined) || 'http://localhost:8004'
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -105,6 +112,206 @@ export default function QboMirrorPage() {
   )
 }
 
+function num(v: unknown): string {
+  if (v === null || v === undefined || v === '') return ''
+  const n = Number(v)
+  return Number.isNaN(n) ? String(v) : n.toFixed(2)
+}
+
+const AMOUNT_COL = /(amt|balance)$/i
+
 function QboTabs() {
-  return null  // replaced in Task 7
+  const [tab, setTab] = useState(ENTITY_TABS[0].slug)
+  const [q, setQ] = useState('')
+  const [qInput, setQInput] = useState('')
+  const [page, setPage] = useState(1)
+  const [openId, setOpenId] = useState<string | null>(null)
+
+  const { data, isFetching } = useQuery({
+    queryKey: ['qbo-browse', tab, q, page],
+    queryFn: () => qboApi.browse(tab, { q, page, page_size: PAGE_SIZE }),
+  })
+  const items = data?.items ?? []
+  const cols = items[0] ? Object.keys(items[0]).filter((c) => c !== 'raw') : []
+  const total = data?.total ?? 0
+
+  const switchTab = (slug: string) => {
+    setTab(slug); setQ(''); setQInput(''); setPage(1); setOpenId(null)
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap gap-1 border-b border-neutral-200">
+        {ENTITY_TABS.map((t) => (
+          <button
+            key={t.slug}
+            onClick={() => switchTab(t.slug)}
+            className={cn(
+              'px-3 py-1.5 text-sm',
+              tab === t.slug
+                ? 'border-b-2 border-[#085E5E] font-medium text-[#085E5E]'
+                : 'text-neutral-500 hover:text-neutral-700',
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <form className="flex items-center gap-1"
+          onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); setPage(1) }}>
+          <input
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            placeholder="Search name / doc #"
+            className={cn(inputCls, 'w-56')}
+          />
+          <button type="submit" className="rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
+            Search
+          </button>
+        </form>
+        <span className="text-sm text-neutral-500">{total.toLocaleString()} rows</span>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+              <tr>
+                {cols.map((c) => <th key={c} className="whitespace-nowrap px-3 py-2 font-medium">{c}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {isFetching && (
+                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-neutral-400">
+                  <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
+              )}
+              {!isFetching && items.length === 0 && (
+                <tr><td colSpan={cols.length || 1} className="px-3 py-6 text-center text-neutral-400">No rows.</td></tr>
+              )}
+              {items.map((row, i) => (
+                <tr
+                  key={String(row.qbo_id)}
+                  onClick={() => setOpenId(String(row.qbo_id))}
+                  title="Open detail"
+                  className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-100', i % 2 && 'bg-neutral-50/40')}
+                >
+                  {cols.map((c) => (
+                    <td key={c} className={cn('whitespace-nowrap px-3 py-2', AMOUNT_COL.test(c) && 'text-right')}>
+                      {AMOUNT_COL.test(c) ? num(row[c]) : String(row[c] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-sm">
+        <button
+          className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+          disabled={page <= 1}
+          onClick={() => setPage((p) => p - 1)}
+        >Prev</button>
+        <span className="px-2 py-1 text-neutral-600">Page {page}</span>
+        <button
+          className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+          disabled={total <= page * PAGE_SIZE}
+          onClick={() => setPage((p) => p + 1)}
+        >Next</button>
+      </div>
+
+      {openId && <DetailModal entity={tab} id={openId} onClose={() => setOpenId(null)} />}
+    </section>
+  )
+}
+
+function DetailModal({ entity, id, onClose }: { entity: string; id: string; onClose: () => void }) {
+  const { data } = useQuery<QboDetail>({
+    queryKey: ['qbo-detail', entity, id],
+    queryFn: () => qboApi.detail(entity, id),
+  })
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div className="max-h-[85vh] w-full max-w-3xl overflow-auto rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 flex items-center justify-between border-b border-neutral-100 pb-3">
+          <h2 className="text-base font-semibold text-neutral-800">{entity} · {id}</h2>
+          <button onClick={onClose} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {!data && (
+          <div className="py-8 text-center text-neutral-400"><Loader2 className="mx-auto h-5 w-5 animate-spin" /></div>
+        )}
+
+        {data && (
+          <>
+            <table className="mb-4 text-sm">
+              <tbody>
+                {Object.entries(data.header).filter(([k]) => k !== 'raw').map(([k, v]) => (
+                  <tr key={k}>
+                    <td className="pr-4 align-top text-neutral-500">{k}</td>
+                    <td className="text-neutral-800">{String(v ?? '')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {data.lines.length > 0 && (
+              <div className="mb-4">
+                <h3 className="mb-1 text-sm font-semibold text-neutral-700">Lines</h3>
+                <div className="overflow-hidden rounded-lg border border-neutral-200">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                        <tr>
+                          {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
+                            <th key={c} className="whitespace-nowrap px-3 py-2 font-medium">{c}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.lines.map((ln, i) => (
+                          <tr key={i} className="border-t border-neutral-100">
+                            {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
+                              <td key={c} className="whitespace-nowrap px-3 py-2">{String(ln[c] ?? '')}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {data.attachments.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-sm font-semibold text-neutral-700">Attachments</h3>
+                <ul className="space-y-0.5 text-sm">
+                  {data.attachments.map((a) => (
+                    <li key={a.attachment_qbo_id}>
+                      <a
+                        className="text-[#085E5E] underline hover:no-underline"
+                        href={`${FINANCE_API}/finance/v1${qboApi.fileUrl(a.attachment_qbo_id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {a.attachment_qbo_id}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
 }
