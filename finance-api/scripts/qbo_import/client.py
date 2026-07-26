@@ -11,13 +11,18 @@ reason to race the limit.
 """
 import base64
 import logging
+import os
 import re
 import time
 from pathlib import Path
 
 import httpx
 
-ENV_PATH = Path(r"C:\Project\qbo_conn.env")
+# Credentials live outside the repo. Host scripts (import/authorize on Windows)
+# default to C:\Project\qbo_conn.env; the containerized finance-api overrides this
+# with QBO_CONN_ENV pointing at a path mounted into the container (Linux), since
+# the Windows default is unreachable there.
+ENV_PATH = Path(os.environ.get("QBO_CONN_ENV", r"C:\Project\qbo_conn.env"))
 
 # All errors (with Intuit's intuit_tid transaction id) are written here so a run
 # can be handed to Intuit support for troubleshooting. Console still shows them too.

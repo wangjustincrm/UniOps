@@ -211,6 +211,10 @@ services:
     volumes:
       - ./finance-api:/app
       - ./packages/authz:/packages/authz
+      # QBO credentials (gitignored, outside the repo). Mounted read-only so the
+      # containerized finance-api can read them for the QBO Sync button; the
+      # QBO_CONN_ENV env var below points the client at this in-container path.
+      - ${QBO_CONN_ENV_HOST:-/dev/null}:/run/qbo_conn.env:ro
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
@@ -221,6 +225,8 @@ services:
       PORT: "8004"
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
+      # Where the client reads QBO creds inside the container (see the volume above).
+      QBO_CONN_ENV: /run/qbo_conn.env
       # NC65 read-only connection for the NC Sync button (values live in the
       # gitignored root .env as NC65_*; missing values = feature hidden).
       NC_HOST: ${NC65_HOST:-}
