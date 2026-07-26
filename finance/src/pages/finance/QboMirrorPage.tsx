@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Loader2, RefreshCw, X } from 'lucide-react'
+import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, RefreshCw, X } from 'lucide-react'
 import { qboApi, ENTITY_TABS, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -147,6 +147,7 @@ function QboTabs() {
   const items = data?.items ?? []
   const cols = items[0] ? Object.keys(items[0]).filter((c) => c !== 'raw') : []
   const total = data?.total ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const switchTab = (slug: string) => {
     setTab(slug); setQ(''); setQInput(''); setPage(1); setOpenId(null)
@@ -184,7 +185,6 @@ function QboTabs() {
             Search
           </button>
         </form>
-        <span className="text-sm text-neutral-500">{total.toLocaleString()} rows</span>
       </div>
 
       <div className="overflow-hidden rounded-lg border border-neutral-200">
@@ -222,18 +222,17 @@ function QboTabs() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-sm">
-        <button
-          className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-          disabled={page <= 1}
-          onClick={() => setPage((p) => p - 1)}
-        >Prev</button>
-        <span className="px-2 py-1 text-neutral-600">Page {page}</span>
-        <button
-          className="rounded-lg border border-neutral-300 bg-white px-2 py-1 text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-          disabled={total <= page * PAGE_SIZE}
-          onClick={() => setPage((p) => p + 1)}
-        >Next</button>
+      <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
+        <span>{total.toLocaleString()} row{total === 1 ? '' : 's'}</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} className={secondaryBtn}>
+            <ChevronLeft className="h-4 w-4" /> Prev
+          </button>
+          <span>Page {page} / {pageCount}</span>
+          <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} className={secondaryBtn}>
+            Next <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {openId && <DetailModal entity={tab} id={openId} onClose={() => setOpenId(null)} />}
