@@ -133,6 +133,25 @@ function isAmountCol(c: string): boolean {
   return c.includes('amt') || c.includes('balance') || c === 'exchange_rate'
 }
 
+/** Date/timestamp columns (txn_date, due_date, created_at, updated_at, deleted_at, last_updated_time). */
+function isDateCol(c: string): boolean {
+  return c.endsWith('_at') || c.endsWith('_time') || c.endsWith('_date')
+}
+
+/** Show only the calendar date (YYYY-MM-DD). Works for both ISO datetimes and
+ *  already-date strings; slicing avoids any timezone shift from re-parsing. */
+function fmtDate(v: unknown): string {
+  if (v === null || v === undefined || v === '') return ''
+  return String(v).slice(0, 10)
+}
+
+/** Render a cell value by column type: amount → 2dp, date/time → YYYY-MM-DD, else raw. */
+function cell(c: string, v: unknown): string {
+  if (isAmountCol(c)) return num(v)
+  if (isDateCol(c)) return fmtDate(v)
+  return String(v ?? '')
+}
+
 function QboTabs() {
   const [tab, setTab] = useState(ENTITY_TABS[0].slug)
   const [q, setQ] = useState('')
@@ -212,7 +231,7 @@ function QboTabs() {
                 >
                   {cols.map((c) => (
                     <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
-                      {isAmountCol(c) ? num(row[c]) : String(row[c] ?? '')}
+                      {cell(c, row[c])}
                     </td>
                   ))}
                 </tr>
@@ -285,7 +304,7 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                 {Object.entries(data.header).filter(([k]) => k !== 'raw').map(([k, v]) => (
                   <tr key={k}>
                     <td className="pr-4 align-top text-neutral-500">{k}</td>
-                    <td className="text-neutral-800">{isAmountCol(k) ? num(v) : String(v ?? '')}</td>
+                    <td className="text-neutral-800">{cell(k, v)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -309,7 +328,7 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
                           <tr key={i} className="border-t border-neutral-100">
                             {Object.keys(data.lines[0]).filter((c) => c !== 'raw').map((c) => (
                               <td key={c} className={cn('whitespace-nowrap px-3 py-2', isAmountCol(c) && 'text-right')}>
-                                {isAmountCol(c) ? num(ln[c]) : String(ln[c] ?? '')}
+                                {cell(c, ln[c])}
                               </td>
                             ))}
                           </tr>
