@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,12 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.qbo import (
-    RUNNING, QboAccount, QboAttachmentLink, QboBill, QboBillLine,
-    QboBillPayment, QboBillPaymentLine, QboCreditMemo, QboCreditMemoLine,
-    QboDeposit, QboDepositLine, QboInvoice, QboInvoiceLine, QboJournalEntry,
-    QboJournalEntryLine, QboPayment, QboPaymentLine, QboPurchase,
-    QboPurchaseLine, QboSyncRun, QboTransfer, QboVendor, QboVendorCredit,
-    QboVendorCreditLine,
+    RUNNING, QboAccount, QboAttachment, QboAttachmentLink, QboBill,
+    QboBillLine, QboBillPayment, QboBillPaymentLine, QboCreditMemo,
+    QboCreditMemoLine, QboDeposit, QboDepositLine, QboInvoice, QboInvoiceLine,
+    QboJournalEntry, QboJournalEntryLine, QboPayment, QboPaymentLine,
+    QboPurchase, QboPurchaseLine, QboSyncRun, QboTransfer, QboVendor,
+    QboVendorCredit, QboVendorCreditLine,
 )
 from app.services import qbo_sync as svc
 
@@ -155,3 +155,16 @@ async def detail(entity: str, qbo_id: str, user: CurrentUser, db: AsyncSession =
     att = (await db.execute(select(QboAttachmentLink).where(QboAttachmentLink.txn_id == qbo_id))).scalars().all()
     return {"header": _row_dict(header), "lines": lines,
             "attachments": [{"attachment_qbo_id": a.attachment_qbo_id, "txn_type": a.txn_type} for a in att]}
+
+
+# ── attachment file stream ──────────────────────────────────────────────
+# NOTE: "attachments" is not in _ENTITIES, so this 3-segment route never
+# collides with the /{entity}/{qbo_id} browse-detail route above.
+
+@router.get("/attachments/{qbo_id}/file")
+async def attachment_file(qbo_id: str, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    a = (await db.execute(select(QboAttachment).where(QboAttachment.qbo_id == qbo_id))).scalars().first()
+    if not a or a.content is None:
+        raise HTTPException(status_code=404, detail="attachment not found")
+    return Response(content=a.content, media_type=a.content_type or "application/octet-stream",
+                    headers={"Content-Disposition": f'inline; filename="{a.file_name or qbo_id}"'})

@@ -184,3 +184,35 @@ async def test_browse_query_and_date_filters(db_session):
     body = r.json()
     assert body["total"] == 1
     assert body["items"][0]["qbo_id"] == "v1"
+
+
+# ── Task 4: attachment file stream ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_attachment_file_stream(db_session):
+    from app.models.qbo import QboAttachment
+
+    db_session.add(QboAttachment(qbo_id="a1", file_name="invoice.pdf",
+                                content_type="application/pdf", content=b"%PDF!", raw={}))
+    await db_session.flush()
+
+    _override_auth_and_db(db_session)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as c:
+        r = await c.get("/finance/v1/qbo/attachments/a1/file", headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content == b"%PDF!"
+
+
+@pytest.mark.asyncio
+async def test_attachment_file_not_found(db_session):
+    _override_auth_and_db(db_session)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as c:
+        r = await c.get("/finance/v1/qbo/attachments/nope/file", headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+
+    assert r.status_code == 404
