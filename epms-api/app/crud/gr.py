@@ -7,6 +7,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._numbering import next_number
 from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.gr_attachment import GrAttachment
@@ -24,11 +25,7 @@ from app.services.pdf_gr import generate_gr_pdf
 async def _next_number(db: AsyncSession) -> str:
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     prefix = f"GR-{today}-"
-    result = await db.execute(
-        select(func.count()).where(GoodsReceipt.number.like(f"{prefix}%"))
-    )
-    count = result.scalar_one()
-    return f"{prefix}{count + 1:04d}"
+    return await next_number(db, GoodsReceipt.number, prefix, width=4)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

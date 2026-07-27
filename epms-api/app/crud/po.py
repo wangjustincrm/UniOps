@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -22,11 +23,7 @@ from app.schemas.pr import ApprovalEventResponse
 async def _next_number(db: AsyncSession, vendor_code: str) -> str:
     ym = datetime.now(timezone.utc).strftime("%y%m")
     prefix = f"PO-{vendor_code}-{ym}-"
-    result = await db.execute(
-        select(func.count()).where(PurchaseOrder.number.like(f"{prefix}%"))
-    )
-    count = result.scalar_one()
-    return f"{prefix}{count + 1:02d}"
+    return await next_number(db, PurchaseOrder.number, prefix, width=2)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

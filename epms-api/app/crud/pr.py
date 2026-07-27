@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -24,11 +25,7 @@ from app.services.pdf_pr import generate_pr_pdf
 async def _next_number(db: AsyncSession) -> str:
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     prefix = f"PR-{today}-"
-    result = await db.execute(
-        select(func.count()).where(PurchaseRequest.number.like(f"{prefix}%"))
-    )
-    count = result.scalar_one()
-    return f"{prefix}{count + 1:04d}"
+    return await next_number(db, PurchaseRequest.number, prefix, width=4)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
