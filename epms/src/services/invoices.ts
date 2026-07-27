@@ -2,12 +2,14 @@ import { api, fetchAllPages } from '@/lib/api'
 import type { ApiPo } from '@/services/po'
 
 export interface InvoiceLineItem {
-  id?:         string
-  description: string
-  quantity:    number
-  unit:        string | null
-  unit_price:  number
-  line_total:  number
+  id?:          string
+  description:  string
+  quantity:     number
+  unit:         string | null
+  unit_price:   number
+  line_total:   number
+  non_po_fee?:  boolean          // marked as a non-PO fee (excluded from matching)
+  non_po_note?: string | null
 }
 
 export type InvoiceStatus =
@@ -110,12 +112,18 @@ export interface AllocationInput {
   note?: string
 }
 
+export interface NonPoLineInput {
+  line_id: string
+  note?:   string | null
+}
+
 export interface MatchInvoiceBody {
-  allocations?: AllocationInput[]
-  po_id?: string
-  gr_id?: string
-  gr_ids?: string[]
-  po_line_ids?: string[]
+  allocations?:  AllocationInput[]
+  non_po_lines?: NonPoLineInput[]
+  po_id?:        string
+  gr_id?:        string
+  gr_ids?:       string[]
+  po_line_ids?:  string[]
 }
 
 export interface ResolveExceptionBody {
