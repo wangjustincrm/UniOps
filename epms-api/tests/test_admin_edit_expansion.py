@@ -515,3 +515,55 @@ async def test_edit_endpoint_fires_resync(admin_client, test_engine, monkeypatch
     assert calls == [("pr", str(pr_id))]
     assert "_routing_requester_changed" not in body
     assert body["routing_resync"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_pa_source_requester_edits_source_pr_creator(test_engine, monkeypatch):
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.models.po import PurchaseOrder
+    from app.models.pa import PaymentApplication
+    from app.models.vendor import Vendor
+    from app.admin import service
+    from app.services import approval_client
+
+    calls = []
+    async def _fake(doc_type, doc_id, bearer_token):
+        calls.append((doc_type, str(doc_id))); return {}
+    monkeypatch.setattr(approval_client, "resync_document", _fake)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    old_c = uuid.uuid4(); new_c = uuid.uuid4(); vid = uuid.uuid4()
+    pr_id = uuid.uuid4(); po_id = uuid.uuid4(); pa_id = uuid.uuid4()
+    async with factory() as db:
+        for u in (old_c, new_c):
+            db.add(User(id=u, email=f"{u.hex[:6]}@x.com", hashed_password="x",
+                        full_name="U", role="requester"))
+        db.add(Vendor(id=vid, code="V", name="V", category="supplier",
+                      contact_name="A", contact_email="a@x.com"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-PA1", title="t", type=1, status="approved",
+                               currency="CAD", amount=Decimal("0"), created_by=old_c))
+        await db.flush()
+        db.add(PurchaseOrder(id=po_id, number="PO-PA1", title="t", type=1, status="approved",
+                             currency="CAD", subtotal=Decimal("0"), tax_rate=Decimal("0"),
+                             tax_amount=Decimal("0"), total=Decimal("0"),
+                             vendor_id=vid, vendor_name="V", pr_id=pr_id, created_by=old_c))
+        await db.flush()
+        db.add(PaymentApplication(id=pa_id, pa_number="PA-1", title="t", po_id=po_id, po_number="PO-PA1",
+                                  vendor_id=vid, vendor_name="V", pa_type="regular",
+                                  subtotal=Decimal("0"), tax_amount=Decimal("0"),
+                                  payment_amount=Decimal("0"), currency="CAD",
+                                  status="in_review", created_by=old_c))
+        await db.commit()
+
+    async with factory() as db:
+        result = await service.edit_record(db, "pa", pa_id, {"source_requester_id": str(new_c)},
+                                           actor_id=old_c, actor_email="admin@x.com", bearer_token="t")
+        await db.commit()
+    async with factory() as db:
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
+        assert str(pr.created_by) == str(new_c)         # source PR creator updated
+    # resync fires for the PA and/or PR chain
+    assert result.get("_routing_requester_changed") is True

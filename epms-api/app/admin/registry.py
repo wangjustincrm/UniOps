@@ -352,6 +352,7 @@ _PA_SCHEMA = EntitySchema(
         FieldSpec("other_charges_note", "string", True),
         FieldSpec("payment_amount", "decimal", True),
         FieldSpec("created_by", "reference", True, label="PA Creator (AP Clerk)", ref_source="users"),
+        FieldSpec("source_requester_id", "reference", True, label="Source Requester (PR creator)", ref_source="users"),
         FieldSpec("vendor_id", "reference", True, label="Vendor", ref_source="vendors", ref_name_field="vendor_name"),
         FieldSpec("vendor_name", "string", False),
         FieldSpec("notes", "string", True),

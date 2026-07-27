@@ -13,6 +13,8 @@ from app.admin.recompute import recompute_header
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.models.admin_audit_log import AdminAuditLog
+from app.models.po import PurchaseOrder
+from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.vendor import Vendor
 
@@ -27,6 +29,8 @@ def _spec(entity: str) -> EntitySpec:
 def _serialize(spec: EntitySpec, row) -> dict:
     out: dict = {"id": str(getattr(row, "id"))}
     for f in spec.schema.fields:
+        if f.name == "source_requester_id":
+            continue   # virtual — resolved on demand, not a column
         v = getattr(row, f.name, None)
         if isinstance(v, (datetime, date)):
             v = v.isoformat()
@@ -188,6 +192,18 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     editable = spec.schema.editable_field_names()
     before = _serialize(spec, row)
     routing_requester_changed = False
+    if entity == "pa":
+        src_req = patch.pop("source_requester_id", None)
+        if src_req not in (None, ""):
+            po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == row.po_id))).scalar_one_or_none()
+            if po is None or po.pr_id is None:
+                raise ValueError("This PA has no linked source PR; source Requester cannot be changed")
+            src_pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == po.pr_id))).scalar_one()
+            hit = await get_resolver("users").fetch_by_id(db, uuid.UUID(str(src_req)))
+            if hit is None:
+                raise ValueError(f"users reference '{src_req}' not found")
+            src_pr.created_by = hit.id
+            routing_requester_changed = True
     for key, value in patch.items():
         if key not in editable:
             raise ValueError(f"Field '{key}' is not editable")
