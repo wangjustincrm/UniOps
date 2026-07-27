@@ -14,3 +14,9 @@
 .superpowers
 .gstack
 screenshots
+# PMS import attachments: ~2GB of one-off migration data under epms-api. The
+# epms-api Dockerfile does `COPY epms-api .`, and the build context is the REPO
+# ROOT, so only THIS root .dockerignore excludes it (an epms-api/.dockerignore
+# is dead). Without this the data gets baked into the epms-api image and
+# exhausts the app server's disk on pull (f272f7e release). Permanent guard.
+epms-api/scripts/import_pms/data/
