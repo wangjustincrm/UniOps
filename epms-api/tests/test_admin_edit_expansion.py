@@ -139,3 +139,34 @@ async def test_edit_reference_unknown_id_rejected(test_engine):
         with pytest.raises(ValueError, match="not found"):
             await service.edit_record(db, "pr", pr_id, {"vendor_id": str(uuid.uuid4())},
                                       actor_id=creator, actor_email="admin@x.com")
+
+
+def test_recompute_po_header():
+    from decimal import Decimal
+    from app.admin.recompute import recompute_header
+
+    class _Row:
+        tax_rate = Decimal("0.05")
+    row = _Row()
+    lines = [{"line_total": Decimal("100.00")}, {"line_total": Decimal("50.00")}]
+    result = recompute_header("po", row, lines)
+    assert result["subtotal"] == Decimal("150.00")
+    assert result["tax_amount"] == Decimal("7.50")
+    assert result["total"] == Decimal("157.50")
+
+
+def test_recompute_pa_header_with_charges():
+    from decimal import Decimal
+    from app.admin.recompute import recompute_header
+
+    class _Row:
+        tax_rate = Decimal("0.10")
+        shipping_amount = Decimal("20.00")
+        other_charges = Decimal("5.00")
+        prepayment_applied = None
+    row = _Row()
+    lines = [{"line_total": Decimal("200.00")}]
+    result = recompute_header("pa", row, lines)
+    assert result["subtotal"] == Decimal("200.00")
+    assert result["tax_amount"] == Decimal("20.00")
+    assert result["payment_amount"] == Decimal("245.00")  # 200 + 20 + 20 + 5 - 0
