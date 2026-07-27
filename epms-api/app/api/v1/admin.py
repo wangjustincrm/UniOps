@@ -56,10 +56,13 @@ async def get_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: Ad
 
 @router.patch("/{entity}/{record_id}")
 async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
-                      patch: dict = Body(...)):
+                      patch: dict = Body(...),
+                      regenerate_po_number: int = Query(0)):
     actor_id, email = _actor(user)
     try:
-        result = await service.edit_record(db, entity, record_id, patch, actor_id=actor_id, actor_email=email)
+        result = await service.edit_record(db, entity, record_id, patch, actor_id=actor_id,
+                                            actor_email=email,
+                                            regenerate_po_number=bool(regenerate_po_number))
         await db.commit()
         return result
     except ValueError as e:

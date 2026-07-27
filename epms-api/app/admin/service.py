@@ -8,11 +8,13 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin.po_number import regenerate_and_cascade
 from app.admin.recompute import recompute_header
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.task import Task
+from app.models.vendor import Vendor
 
 
 def _spec(entity: str) -> EntitySpec:
@@ -173,11 +175,13 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
 
 
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
-                      *, actor_id: uuid.UUID, actor_email: str) -> dict:
+                      *, actor_id: uuid.UUID, actor_email: str,
+                      regenerate_po_number: bool = False) -> dict:
     spec = _spec(entity)
     if not spec.schema.allow_edit:
         raise ValueError(f"'{entity}' is delete-only and cannot be edited")
     row = await _load(db, spec, record_id)
+    old_vendor_id = getattr(row, "vendor_id", None)
     patch = dict(patch)
     line_items = patch.pop("line_items", None)
     editable = spec.schema.editable_field_names()
@@ -192,6 +196,17 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             setattr(row, key, _coerce(spec.schema.field_type(key), value))
     if line_items is not None:
         await _apply_line_items(db, spec, row, line_items)
+
+    cascade = None
+    if entity == "po" and regenerate_po_number:
+        new_vendor_id = getattr(row, "vendor_id", None)
+        if new_vendor_id is not None and str(new_vendor_id) != str(old_vendor_id):
+            vendor = (await db.execute(
+                select(Vendor).where(Vendor.id == new_vendor_id))).scalar_one_or_none()
+            if vendor is None:
+                raise ValueError("New vendor not found for PO number regeneration")
+            cascade = await regenerate_and_cascade(db, row, vendor.code)
+
     await db.flush()
     after = _serialize(spec, row)
     if line_items is not None:
@@ -202,6 +217,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         record_number=str(getattr(row, spec.schema.number_field, None)),
         before=before,
         after=after,
+        cascade_summary=cascade,
     ))
     await db.flush()
     return after

@@ -331,3 +331,92 @@ async def test_edit_approval_state_reassigns_open_tasks(test_engine):
         done_t = [t for t in tasks if t.is_completed]
         assert all(t.assigned_role == "finance_manager" for t in open_t)   # open reassigned
         assert done_t[0].assigned_role == "finance_bp"                     # completed untouched
+
+
+@pytest.mark.asyncio
+async def test_po_vendor_change_regenerates_number_and_cascades(test_engine):
+    from app.models.user import User
+    from app.models.vendor import Vendor
+    from app.models.po import PurchaseOrder
+    from app.models.pr import PurchaseRequest
+    from app.models.task import Task
+    from app.models.approval import ApprovalEvent
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); v_old = uuid.uuid4(); v_new = uuid.uuid4()
+    pr_id = uuid.uuid4(); po_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"pn-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        db.add(Vendor(id=v_old, code="OLD", name="Old Co", category="supplier",
+                      contact_name="A", contact_email="a@x.com"))
+        db.add(Vendor(id=v_new, code="NEW", name="New Co", category="supplier",
+                      contact_name="B", contact_email="b@x.com"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-PN1", title="t", type=1, status="approved",
+                               currency="CAD", amount=Decimal("0"), created_by=creator,
+                               po_id=po_id, po_number="PO-OLD-2501-01"))
+        await db.flush()
+        db.add(PurchaseOrder(id=po_id, number="PO-OLD-2501-01", title="t", type=1, status="approved",
+                             currency="CAD", subtotal=Decimal("0"), tax_rate=Decimal("0"),
+                             tax_amount=Decimal("0"), total=Decimal("0"),
+                             vendor_id=v_old, vendor_name="Old Co", pr_id=pr_id, created_by=creator))
+        db.add(Task(document_type="po", document_id=po_id, document_number="PO-OLD-2501-01",
+                    type="approve_po", assigned_role="finance_bp", title="Approve"))
+        db.add(ApprovalEvent(document_type="po", document_id=po_id, document_number="PO-OLD-2501-01",
+                             step_idx=0, action="submitted", actor_id=creator, actor_role="requester"))
+        await db.commit()
+
+    async with factory() as db:
+        await service.edit_record(db, "po", po_id,
+                                  {"vendor_id": str(v_new)},
+                                  actor_id=creator, actor_email="admin@x.com",
+                                  regenerate_po_number=True)
+        await db.commit()
+
+    async with factory() as db:
+        po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one()
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
+        task = (await db.execute(select(Task).where(Task.document_id == po_id))).scalars().first()
+        ev = (await db.execute(select(ApprovalEvent).where(ApprovalEvent.document_id == po_id))).scalars().first()
+        assert po.number.startswith("PO-NEW-")          # regenerated with new vendor code
+        assert po.number != "PO-OLD-2501-01"
+        assert pr.po_number == po.number                # cascade → PR
+        assert task.document_number == po.number        # cascade → tasks
+        assert ev.document_number == po.number          # cascade → approval_events
+
+
+@pytest.mark.asyncio
+async def test_po_vendor_change_without_flag_keeps_number(test_engine):
+    from app.models.user import User
+    from app.models.vendor import Vendor
+    from app.models.po import PurchaseOrder
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); v_old = uuid.uuid4(); v_new = uuid.uuid4(); po_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"pk-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        db.add(Vendor(id=v_old, code="OLD2", name="Old2", category="supplier",
+                      contact_name="A", contact_email="a@x.com"))
+        db.add(Vendor(id=v_new, code="NEW2", name="New2", category="supplier",
+                      contact_name="B", contact_email="b@x.com"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseOrder(id=po_id, number="PO-OLD2-2501-01", title="t", type=1, status="draft",
+                             currency="CAD", subtotal=Decimal("0"), tax_rate=Decimal("0"),
+                             tax_amount=Decimal("0"), total=Decimal("0"),
+                             vendor_id=v_old, vendor_name="Old2", created_by=creator))
+        await db.commit()
+    async with factory() as db:
+        await service.edit_record(db, "po", po_id, {"vendor_id": str(v_new)},
+                                  actor_id=creator, actor_email="admin@x.com",
+                                  regenerate_po_number=False)
+        await db.commit()
+    async with factory() as db:
+        po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one()
+        assert po.number == "PO-OLD2-2501-01"           # unchanged
+        assert po.vendor_name == "New2"                 # vendor still changed
