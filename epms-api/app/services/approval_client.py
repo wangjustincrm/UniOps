@@ -62,6 +62,19 @@ async def delegate_action(
     return resp.json()
 
 
+async def resync_document(doc_type: str, doc_id: str, bearer_token: str) -> dict:
+    """Call POST /routing/resync-document on the Approval Engine to realign this
+    document to current routing (used after an admin changes its Requester).
+    Raises RuntimeError on unreachable / error so the caller can surface a warning."""
+    url = f"{settings.APPROVAL_ENGINE_URL}/routing/resync-document"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(url, json={"doc_type": doc_type, "doc_id": doc_id},
+                                 headers={"Authorization": f"Bearer {bearer_token}"})
+    if not resp.is_success:
+        raise RuntimeError(f"resync-document {resp.status_code}: {resp.text[:200]}")
+    return resp.json()
+
+
 async def forward(method: str, path: str, token: str | None, json=None) -> tuple[int, dict]:
     """Pass a caller request through to the Approval Engine using the caller's own Bearer token.
 

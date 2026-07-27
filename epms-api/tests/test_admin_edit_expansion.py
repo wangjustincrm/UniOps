@@ -420,3 +420,98 @@ async def test_po_vendor_change_without_flag_keeps_number(test_engine):
         po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one()
         assert po.number == "PO-OLD2-2501-01"           # unchanged
         assert po.vendor_name == "New2"                 # vendor still changed
+
+
+# ── Task 12: routing resync on Requester change ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_requester_change_flags_resync(test_engine):
+    """Service layer: changing a PR's created_by returns a flag telling the
+    endpoint layer to fire a post-commit routing resync. The service itself
+    makes no HTTP call — approval-api reads the shared DB, so the resync must
+    run only after the transaction actually lands."""
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    old_creator = uuid.uuid4(); new_creator = uuid.uuid4(); pr_id = uuid.uuid4()
+    async with factory() as db:
+        for u, name in [(old_creator, "Old"), (new_creator, "New")]:
+            db.add(User(id=u, email=f"{u.hex[:6]}@x.com", hashed_password="x",
+                        full_name=name, role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-RS1", title="t", type=1, status="in_review",
+                               currency="CAD", amount=Decimal("0"), created_by=old_creator))
+        await db.commit()
+
+    async with factory() as db:
+        result = await service.edit_record(db, "pr", pr_id, {"created_by": str(new_creator)},
+                                           actor_id=old_creator, actor_email="admin@x.com",
+                                           bearer_token="tok")
+        await db.commit()
+    assert result["_routing_requester_changed"] is True
+
+
+@pytest.mark.asyncio
+async def test_requester_change_on_other_field_does_not_flag_resync(test_engine):
+    """Sanity check on the flag's precision: editing a non-created_by field on a
+    PR must NOT flag a resync."""
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); pr_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"nf-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="Creator", role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-RS2", title="t", type=1, status="in_review",
+                               currency="CAD", amount=Decimal("0"), created_by=creator))
+        await db.commit()
+
+    async with factory() as db:
+        result = await service.edit_record(db, "pr", pr_id, {"title": "Updated title"},
+                                           actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    assert result["_routing_requester_changed"] is False
+
+
+@pytest.mark.asyncio
+async def test_edit_endpoint_fires_resync(admin_client, test_engine, monkeypatch):
+    """Endpoint layer: PATCHing a PR's created_by via the Data Maintenance HTTP
+    endpoint fires the resync post-commit, and the internal flag never leaks
+    into the HTTP response."""
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.services import approval_client
+
+    calls = []
+
+    async def _fake_resync(doc_type, doc_id, bearer_token=None):
+        calls.append((doc_type, doc_id))
+        return {"resynced": {"actions": ["reissue"]}}
+
+    monkeypatch.setattr(approval_client, "resync_document", _fake_resync)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    old_creator = uuid.uuid4(); new_creator = uuid.uuid4(); pr_id = uuid.uuid4()
+    async with factory() as db:
+        for u, name in [(old_creator, "Old"), (new_creator, "New")]:
+            db.add(User(id=u, email=f"ep-{u.hex[:6]}@x.com", hashed_password="x",
+                        full_name=name, role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-EP1", title="t", type=1, status="in_review",
+                               currency="CAD", amount=Decimal("0"), created_by=old_creator))
+        await db.commit()
+
+    r = await admin_client.patch(f"/api/v1/admin/pr/{pr_id}", json={"created_by": str(new_creator)})
+    assert r.status_code == 200
+    body = r.json()
+    assert calls == [("pr", str(pr_id))]
+    assert "_routing_requester_changed" not in body
+    assert body["routing_resync"] == "ok"

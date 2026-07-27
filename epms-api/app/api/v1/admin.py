@@ -7,7 +7,8 @@ from pydantic import BaseModel
 
 from app.admin import service
 from app.admin.registry import REGISTRY
-from app.core.deps import SessionDep, require_permission
+from app.core.deps import BearerToken, SessionDep, require_permission
+from app.services import approval_client
 
 router = APIRouter(prefix="/admin", tags=["data-maintenance"])
 
@@ -56,18 +57,29 @@ async def get_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: Ad
 
 @router.patch("/{entity}/{record_id}")
 async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
+                      token: BearerToken,
                       patch: dict = Body(...),
                       regenerate_po_number: int = Query(0)):
     actor_id, email = _actor(user)
     try:
         result = await service.edit_record(db, entity, record_id, patch, actor_id=actor_id,
                                             actor_email=email,
-                                            regenerate_po_number=bool(regenerate_po_number))
+                                            regenerate_po_number=bool(regenerate_po_number),
+                                            bearer_token=token)
         await db.commit()
-        return result
     except ValueError as e:
         await db.rollback()
         raise HTTPException(400, str(e))
+    # Post-commit, best-effort: approval-api reads the shared DB, so the resync
+    # must run after the transaction lands. A failure here must never fail the
+    # edit itself — surface it as a warning field instead.
+    if result.pop("_routing_requester_changed", False):
+        try:
+            await approval_client.resync_document(entity, str(record_id), bearer_token=token)
+            result["routing_resync"] = "ok"
+        except Exception as e:
+            result["routing_resync"] = f"failed: {e}"
+    return result
 
 
 @router.patch("/{entity}/{record_id}/approval-state")

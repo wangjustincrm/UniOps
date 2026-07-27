@@ -176,7 +176,8 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
 
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
                       *, actor_id: uuid.UUID, actor_email: str,
-                      regenerate_po_number: bool = False) -> dict:
+                      regenerate_po_number: bool = False,
+                      bearer_token: str | None = None) -> dict:
     spec = _spec(entity)
     if not spec.schema.allow_edit:
         raise ValueError(f"'{entity}' is delete-only and cannot be edited")
@@ -186,12 +187,15 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     line_items = patch.pop("line_items", None)
     editable = spec.schema.editable_field_names()
     before = _serialize(spec, row)
+    routing_requester_changed = False
     for key, value in patch.items():
         if key not in editable:
             raise ValueError(f"Field '{key}' is not editable")
         fspec = spec.schema.field_spec(key)
         if fspec is not None and fspec.type == "reference":
             await _apply_reference(db, spec, row, fspec, value)
+            if entity == "pr" and fspec.name == "created_by":
+                routing_requester_changed = True
         else:
             setattr(row, key, _coerce(spec.schema.field_type(key), value))
     if line_items is not None:
@@ -211,6 +215,7 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     after = _serialize(spec, row)
     if line_items is not None:
         after["_line_items_count"] = len(line_items)
+    after["_routing_requester_changed"] = routing_requester_changed
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit", system=spec.system,
         entity=entity, record_id=record_id,
