@@ -517,6 +517,78 @@ async def test_edit_endpoint_fires_resync(admin_client, test_engine, monkeypatch
     assert body["routing_resync"] == "ok"
 
 
+def test_coerce_bool_parses_string_false():
+    from app.admin.service import _coerce
+
+    assert _coerce("bool", "false") is False
+    assert _coerce("bool", "true") is True
+    assert _coerce("bool", True) is True
+
+
+@pytest.mark.asyncio
+async def test_edit_bool_field_via_string_false_stays_false(test_engine):
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); pr_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"bf-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-BF1", title="t", type=1, status="draft",
+                               currency="CAD", amount=Decimal("0"), created_by=creator,
+                               is_prepaid=True))
+        await db.commit()
+
+    async with factory() as db:
+        await service.edit_record(db, "pr", pr_id, {"is_prepaid": "false"},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    async with factory() as db:
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
+        assert pr.is_prepaid is False
+
+
+@pytest.mark.asyncio
+async def test_edit_line_items_blank_qty_rejected_cleanly(test_engine):
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); pr_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"bq-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-BQ1", title="t", type=1, status="draft",
+                               currency="CAD", amount=Decimal("0"), created_by=creator))
+        await db.commit()
+
+    async with factory() as db:
+        with pytest.raises(ValueError, match="quantity and unit price"):
+            await service.edit_record(db, "pr", pr_id,
+                                      {"line_items": [{"description": "x", "qty": "",
+                                                       "unit": "ea", "unit_price": ""}]},
+                                      actor_id=creator, actor_email="admin@x.com")
+
+    # blank sort_order but valid qty/unit_price succeeds
+    async with factory() as db:
+        await service.edit_record(db, "pr", pr_id,
+                                  {"line_items": [{"description": "y", "qty": "1",
+                                                   "unit": "ea", "unit_price": "5",
+                                                   "sort_order": ""}]},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    async with factory() as db:
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
+        assert pr.amount == Decimal("5.00")
+
+
 @pytest.mark.asyncio
 async def test_pa_source_requester_edits_source_pr_creator(test_engine, monkeypatch):
     from app.models.user import User

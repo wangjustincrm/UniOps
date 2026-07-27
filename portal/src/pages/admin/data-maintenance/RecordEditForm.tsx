@@ -48,6 +48,7 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
     const patch: Record<string, unknown> = {}
     for (const f of editable) {
       if (isRef(f)) { if (refDirty[f.name] !== undefined) patch[f.name] = refDirty[f.name] }
+      else if (f.type === 'bool') patch[f.name] = form[f.name] === 'true'
       else patch[f.name] = form[f.name] === '' ? null : form[f.name]
     }
     if (schema.child) patch.line_items = lines
@@ -86,6 +87,10 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
                   {!f.options.includes(form[f.name]) && form[f.name] && <option value={form[f.name]}>{form[f.name]} (current)</option>}
                   {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
                 </select>
+              ) : f.type === 'bool' ? (
+                <input type="checkbox" checked={form[f.name] === 'true'} disabled={!f.editable}
+                  onChange={(e) => setForm((p) => ({ ...p, [f.name]: String(e.target.checked) }))}
+                  className="h-4 w-4 self-start" />
               ) : (
                 <input value={form[f.name] ?? ''} disabled={!f.editable}
                   onChange={(e) => setForm((p) => ({ ...p, [f.name]: e.target.value }))}

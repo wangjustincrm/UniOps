@@ -211,8 +211,10 @@ async def test_service_list_get_and_edit_writes_audit(test_engine):
         rec = await service.get_record(db, "pr", pr_id)
         assert rec["number"] == "PR-S1"
 
+        # amount is a derived/read-only header field (recomputed from line items);
+        # edit a plain editable field instead to exercise the write path.
         updated = await service.edit_record(
-            db, "pr", pr_id, {"title": "fixed", "amount": "9.50"},
+            db, "pr", pr_id, {"title": "fixed", "budget_code": "BC-9"},
             actor_id=actor, actor_email="a@x.com",
         )
         await db.commit()
@@ -221,7 +223,7 @@ async def test_service_list_get_and_edit_writes_audit(test_engine):
     async with factory() as db:
         fresh = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
         assert fresh.title == "fixed"
-        assert str(fresh.amount) == "9.50"
+        assert fresh.budget_code == "BC-9"
         audits = (await db.execute(select(AdminAuditLog).where(AdminAuditLog.action == "edit"))).scalars().all()
         assert len(audits) == 1
         assert audits[0].before["title"] == "orig"

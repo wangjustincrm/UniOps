@@ -50,7 +50,9 @@ def _coerce(field_type: str, value):
     if field_type == "number":
         return int(value)
     if field_type == "bool":
-        return bool(value)
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in ("true", "1", "yes", "t", "on")
     if field_type == "date":
         return date.fromisoformat(value) if isinstance(value, str) else value
     if field_type == "datetime":
@@ -148,9 +150,9 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
     for idx, item in enumerate(items):
         raw_id = item.get("id")
         qty = item.get("qty"); price = item.get("unit_price")
-        if qty is None or price is None:
-            raise ValueError("Each line item needs qty and unit_price")
-        payload = {k: v for k, v in item.items() if k in editable and k != "line_total"}
+        if qty in (None, "") or price in (None, ""):
+            raise ValueError("Each line item needs a quantity and unit price")
+        payload = {k: v for k, v in item.items() if k in editable and k != "line_total" and v != ""}
         payload.setdefault("sort_order", idx)
         lt = _line_total(qty, price)
         if raw_id:
