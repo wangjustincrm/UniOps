@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._numbering import next_number
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.pa import PaymentApplication
@@ -23,9 +24,7 @@ from app.models.approval import ApprovalEvent
 async def _next_number(db: AsyncSession, vendor_code: str) -> str:
     ym = datetime.now(timezone.utc).strftime("%y%m")
     prefix = f"PO-{vendor_code}-{ym}-"
-    count = (await db.execute(
-        select(func.count()).where(PurchaseOrder.number.like(f"{prefix}%")))).scalar_one()
-    return f"{prefix}{count + 1:02d}"
+    return await next_number(db, PurchaseOrder.number, prefix, width=2)
 
 
 async def regenerate_and_cascade(db: AsyncSession, po, vendor_code: str) -> dict[str, int | str]:
