@@ -29,7 +29,9 @@ class PoLineItemIn(BaseModel):
     supplier_item_id: str | None = Field(default=None, max_length=100)
     qty: Decimal = Field(gt=0)
     unit: str = Field(min_length=1, max_length=30)
-    unit_price: Decimal = Field(ge=0)
+    # unit_price may be 0 or negative: a discount / rebate / credit line carries a
+    # negative price so its line_total nets down the order total (qty stays > 0).
+    unit_price: Decimal
     notes: str | None = None
 
     @property
