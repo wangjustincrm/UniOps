@@ -4,10 +4,18 @@
 
 export interface FieldSpec {
   name: string
-  type: 'string' | 'number' | 'decimal' | 'bool' | 'date' | 'datetime' | 'uuid' | 'json' | 'enum'
+  type: 'string' | 'number' | 'decimal' | 'bool' | 'date' | 'datetime' | 'uuid' | 'json' | 'enum' | 'reference'
   editable: boolean
   label: string
   options: string[] | null
+  ref_source?: string | null
+  ref_name_field?: string | null
+}
+
+export interface ChildSchema {
+  table_label: string
+  fk_field: string
+  fields: FieldSpec[]
 }
 
 export interface EntitySchema {
@@ -20,7 +28,10 @@ export interface EntitySchema {
   order_by: string
   allow_edit?: boolean   // false = delete-only (no edit). Missing → editable.
   fields: FieldSpec[]
+  child?: ChildSchema | null
 }
+
+export interface RefHit { id: string; label: string }
 
 export interface ListResult { items: Record<string, unknown>[]; total: number }
 export type CascadeSummary = Record<string, number>
@@ -93,6 +104,14 @@ export const adminApi = {
     request<Record<string, unknown>>(system, 'GET', `/admin/${entity}/${id}`),
   edit: (system: string, entity: string, id: string, patch: Record<string, unknown>) =>
     request<Record<string, unknown>>(system, 'PATCH', `/admin/${entity}/${id}`, patch),
+  lookup: (system: string, source: string, q: string) =>
+    request<RefHit[]>(system, 'GET', `/admin/lookup/${source}${qs({ q, limit: 20 })}`),
+  editWithOptions: (system: string, entity: string, id: string,
+                    patch: Record<string, unknown>, opts?: { regeneratePoNumber?: boolean }) =>
+    request<Record<string, unknown>>(system, 'PATCH',
+      `/admin/${entity}/${id}${qs({ regenerate_po_number: opts?.regeneratePoNumber ? 1 : 0 })}`, patch),
+  editApprovalState: (system: string, entity: string, id: string, patch: Record<string, unknown>) =>
+    request<Record<string, unknown>>(system, 'PATCH', `/admin/${entity}/${id}/approval-state`, patch),
   preview: (system: string, entity: string, id: string) =>
     request<{ preview: boolean; cascade: CascadeSummary }>(system, 'DELETE', `/admin/${entity}/${id}?preview=1`)
       .then((r) => r.cascade),

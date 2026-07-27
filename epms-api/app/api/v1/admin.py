@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.admin import service
 from app.admin.registry import REGISTRY
+from app.admin.resolvers import get_resolver, resolver_sources
 from app.core.deps import BearerToken, SessionDep, require_permission
 from app.services import approval_client
 
@@ -31,6 +32,15 @@ def _actor(user: dict) -> tuple[uuid.UUID, str]:
 @router.get("/entities")
 async def list_entities(user: AdminUser):
     return [spec.schema.to_dict() | {"system": spec.system} for spec in REGISTRY.values()]
+
+
+@router.get("/lookup/{source}")
+async def lookup(source: str, db: SessionDep, user: AdminUser,
+                 q: str = Query(""), limit: int = Query(20, le=50)):
+    if source not in resolver_sources():
+        raise HTTPException(404, f"Unknown reference source '{source}'")
+    hits = await get_resolver(source).search(db, q, limit)
+    return [{"id": str(h.id), "label": h.label} for h in hits]
 
 
 @router.get("/{entity}", response_model=ListResponse)
