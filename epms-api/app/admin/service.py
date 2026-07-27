@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.admin.recompute import recompute_header
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.models.admin_audit_log import AdminAuditLog
@@ -97,12 +98,64 @@ async def _apply_reference(db, spec, row, field, value):
     return hit.label
 
 
+def _line_total(qty, unit_price) -> Decimal:
+    return (Decimal(str(qty)) * Decimal(str(unit_price))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+async def _apply_line_items(db, spec, row, items: list[dict]):
+    """Diff the submitted line-item array against DB rows: update (has id), insert
+    (no id), delete (existing id absent). line_total is recomputed server-side.
+    Then recompute the header. Returns the list of resulting line dicts (for recompute)."""
+    child = spec.schema.child
+    if child is None:
+        raise ValueError(f"'{spec.schema.key}' has no line items")
+    Model = child.model
+    editable = child.editable_field_names()
+    existing = {li.id: li for li in (await db.execute(
+        select(Model).where(getattr(Model, child.fk_field) == row.id))).scalars().all()}
+
+    seen: set = set()
+    for idx, item in enumerate(items):
+        raw_id = item.get("id")
+        qty = item.get("qty"); price = item.get("unit_price")
+        if qty is None or price is None:
+            raise ValueError("Each line item needs qty and unit_price")
+        payload = {k: v for k, v in item.items() if k in editable and k != "line_total"}
+        payload.setdefault("sort_order", idx)
+        lt = _line_total(qty, price)
+        if raw_id:
+            li = existing.get(uuid.UUID(str(raw_id)))
+            if li is None:
+                raise ValueError(f"Line item '{raw_id}' does not belong to this record")
+            for k, v in payload.items():
+                setattr(li, k, _coerce(child.field_type(k), v))
+            li.line_total = lt
+            seen.add(li.id)
+        else:
+            coerced = {k: _coerce(child.field_type(k), v) for k, v in payload.items()}
+            db.add(Model(**{child.fk_field: row.id}, line_total=lt, **coerced))
+
+    # delete existing rows the payload dropped
+    for lid, li in existing.items():
+        if lid not in seen:
+            await db.delete(li)
+
+    await db.flush()
+    lines = (await db.execute(
+        select(Model).where(getattr(Model, child.fk_field) == row.id))).scalars().all()
+    line_dicts = [{"line_total": l.line_total} for l in lines]
+    for hk, hv in recompute_header(spec.schema.key, row, line_dicts).items():
+        setattr(row, hk, hv)
+
+
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
                       *, actor_id: uuid.UUID, actor_email: str) -> dict:
     spec = _spec(entity)
     if not spec.schema.allow_edit:
         raise ValueError(f"'{entity}' is delete-only and cannot be edited")
     row = await _load(db, spec, record_id)
+    patch = dict(patch)
+    line_items = patch.pop("line_items", None)
     editable = spec.schema.editable_field_names()
     before = _serialize(spec, row)
     for key, value in patch.items():
@@ -113,8 +166,12 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             await _apply_reference(db, spec, row, fspec, value)
         else:
             setattr(row, key, _coerce(spec.schema.field_type(key), value))
+    if line_items is not None:
+        await _apply_line_items(db, spec, row, line_items)
     await db.flush()
     after = _serialize(spec, row)
+    if line_items is not None:
+        after["_line_items_count"] = len(line_items)
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit", system=spec.system,
         entity=entity, record_id=record_id,

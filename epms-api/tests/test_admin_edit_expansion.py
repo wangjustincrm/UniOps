@@ -185,3 +185,83 @@ def test_registry_entities_have_child_line_items():
         lt = child.field_type("line_total")
         assert lt == "decimal"
         assert not any(f.name == "line_total" and f.editable for f in child.fields)
+
+
+@pytest.mark.asyncio
+async def test_edit_line_items_add_update_delete_and_recompute(test_engine):
+    from app.models.user import User
+    from app.models.po import PurchaseOrder, PoLineItem
+    from app.models.vendor import Vendor
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); vid = uuid.uuid4(); po_id = uuid.uuid4(); keep_line = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"po-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        db.add(Vendor(id=vid, code="V-PO", name="V", category="supplier",
+                      contact_name="A", contact_email="a@x.com"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseOrder(id=po_id, number="PO-LI1", title="t", type=1, status="draft",
+                             currency="CAD", subtotal=Decimal("0"), tax_rate=Decimal("0.05"),
+                             tax_amount=Decimal("0"), total=Decimal("0"),
+                             vendor_id=vid, vendor_name="V", created_by=creator))
+        await db.flush()
+        db.add(PoLineItem(id=keep_line, po_id=po_id, description="old", qty=Decimal("1"),
+                          unit="ea", unit_price=Decimal("10"), line_total=Decimal("10"), sort_order=0))
+        await db.commit()
+
+    # keep+update the existing line (qty 1->2), add a new line, (implicitly delete none here)
+    line_items = [
+        {"id": str(keep_line), "description": "updated", "qty": "2", "unit": "ea", "unit_price": "10"},
+        {"description": "brand new", "qty": "3", "unit": "ea", "unit_price": "100"},
+    ]
+    async with factory() as db:
+        await service.edit_record(db, "po", po_id, {"line_items": line_items},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+
+    async with factory() as db:
+        po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one()
+        lines = (await db.execute(select(PoLineItem).where(PoLineItem.po_id == po_id))).scalars().all()
+        assert len(lines) == 2
+        # 2*10 + 3*100 = 320 subtotal; tax 5% = 16.00; total 336.00
+        assert po.subtotal == Decimal("320.00")
+        assert po.tax_amount == Decimal("16.00")
+        assert po.total == Decimal("336.00")
+        assert {l.line_total for l in lines} == {Decimal("20.00"), Decimal("300.00")}
+
+
+@pytest.mark.asyncio
+async def test_edit_line_items_deletes_dropped_rows(test_engine):
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest, PrLineItem
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); pr_id = uuid.uuid4(); l1 = uuid.uuid4(); l2 = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"pr-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-LI2", title="t", type=1, status="draft",
+                               currency="CAD", amount=Decimal("0"), created_by=creator))
+        await db.flush()
+        db.add(PrLineItem(id=l1, pr_id=pr_id, description="a", qty=Decimal("1"), unit="ea",
+                          unit_price=Decimal("10"), line_total=Decimal("10"), sort_order=0))
+        db.add(PrLineItem(id=l2, pr_id=pr_id, description="b", qty=Decimal("1"), unit="ea",
+                          unit_price=Decimal("20"), line_total=Decimal("20"), sort_order=1))
+        await db.commit()
+    async with factory() as db:
+        await service.edit_record(db, "pr", pr_id,
+                                  {"line_items": [{"id": str(l1), "description": "a", "qty": "1",
+                                                   "unit": "ea", "unit_price": "10"}]},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    async with factory() as db:
+        remaining = (await db.execute(select(PrLineItem).where(PrLineItem.pr_id == pr_id))).scalars().all()
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
+        assert {l.id for l in remaining} == {l1}
+        assert pr.amount == Decimal("10.00")
