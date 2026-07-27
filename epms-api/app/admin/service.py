@@ -9,6 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.registry import REGISTRY, EntitySpec
+from app.admin.resolvers import get_resolver
 from app.models.admin_audit_log import AdminAuditLog
 
 
@@ -81,6 +82,21 @@ async def _load(db: AsyncSession, spec: EntitySpec, record_id: uuid.UUID):
     return row
 
 
+async def _apply_reference(db, spec, row, field, value):
+    """Set an FK reference field + sync its denormalized name column. Returns the
+    resolved label (for audit) or raises ValueError if the id is unknown."""
+    if value in (None, ""):
+        raise ValueError(f"Field '{field.name}' is a required reference and cannot be cleared")
+    rid = uuid.UUID(str(value))
+    hit = await get_resolver(field.ref_source).fetch_by_id(db, rid)
+    if hit is None:
+        raise ValueError(f"{field.ref_source} reference '{rid}' not found")
+    setattr(row, field.name, rid)
+    if field.ref_name_field:
+        setattr(row, field.ref_name_field, hit.label)
+    return hit.label
+
+
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
                       *, actor_id: uuid.UUID, actor_email: str) -> dict:
     spec = _spec(entity)
@@ -92,15 +108,19 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     for key, value in patch.items():
         if key not in editable:
             raise ValueError(f"Field '{key}' is not editable")
-        setattr(row, key, _coerce(spec.schema.field_type(key), value))
+        fspec = spec.schema.field_spec(key)
+        if fspec is not None and fspec.type == "reference":
+            await _apply_reference(db, spec, row, fspec, value)
+        else:
+            setattr(row, key, _coerce(spec.schema.field_type(key), value))
     await db.flush()
     after = _serialize(spec, row)
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit", system=spec.system,
         entity=entity, record_id=record_id,
         record_number=str(getattr(row, spec.schema.number_field, None)),
-        before={k: before[k] for k in patch if k in before},
-        after={k: after[k] for k in patch if k in after},
+        before=before,
+        after=after,
     ))
     await db.flush()
     return after

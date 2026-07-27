@@ -84,3 +84,58 @@ def test_reference_name_fields_serialize_readonly():
     cost_center_name = pr_schema.field_spec("cost_center_name")
     assert cost_center_name is not None
     assert cost_center_name.editable is False
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_sets_id_and_syncs_name(test_engine):
+    from app.models.user import User
+    from app.models.vendor import Vendor
+    from app.models.pr import PurchaseRequest
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); new_vendor = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"c-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="Creator", role="requester"))
+        db.add(Vendor(id=new_vendor, code="V-NEW", name="New Vendor Inc",
+                      category="supplier", contact_name="N", contact_email="n@x.com"))
+        await db.commit()
+    pr_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-REF1", title="t", type=1, status="draft",
+                               currency="CAD", amount=Decimal("0"), vendor_name="Old Vendor",
+                               created_by=creator))
+        await db.commit()
+
+    async with factory() as db:
+        await service.edit_record(db, "pr", pr_id, {"vendor_id": str(new_vendor)},
+                                  actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    async with factory() as db:
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
+        assert str(pr.vendor_id) == str(new_vendor)
+        assert pr.vendor_name == "New Vendor Inc"   # denormalized name synced
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_unknown_id_rejected(test_engine):
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"c2-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C2", role="requester"))
+        await db.commit()
+    pr_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-REF2", title="t", type=1, status="draft",
+                               currency="CAD", amount=Decimal("0"), created_by=creator))
+        await db.commit()
+    async with factory() as db:
+        with pytest.raises(ValueError, match="not found"):
+            await service.edit_record(db, "pr", pr_id, {"vendor_id": str(uuid.uuid4())},
+                                      actor_id=creator, actor_email="admin@x.com")
