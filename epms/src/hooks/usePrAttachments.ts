@@ -24,3 +24,11 @@ export function useDeleteAttachment(prId: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pr-attachments', prId] }),
   })
 }
+
+export function useRegeneratePrPdf(prId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => prAttachmentService.regeneratePdf(prId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pr-attachments', prId] }),
+  })
+}

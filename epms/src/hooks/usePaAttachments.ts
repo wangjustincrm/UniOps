@@ -25,3 +25,11 @@ export function useDeletePaAttachment(paId: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pa-attachments', paId] }),
   })
 }
+
+export function useRegeneratePaPdf(paId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => paAttachmentService.regeneratePdf(paId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pa-attachments', paId] }),
+  })
+}

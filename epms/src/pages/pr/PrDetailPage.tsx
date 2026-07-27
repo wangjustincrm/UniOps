@@ -13,7 +13,7 @@ import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/use
 import type { ApiEvent } from '@/services/pr'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
-import { usePrAttachments, useDeleteAttachment } from '@/hooks/usePrAttachments'
+import { usePrAttachments, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
 import { prAttachmentService } from '@/services/prAttachments'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { generatePrHtml } from '@/lib/pr-document'
@@ -200,6 +200,7 @@ export default function PrDetailPage() {
   const prAction = usePrAction(id ?? '')
   const { data: attachments = [] } = usePrAttachments(id ?? '')
   const deleteAttachment = useDeleteAttachment(id ?? '')
+  const regeneratePdf = useRegeneratePrPdf(id ?? '')
   const { data: budgetData } = useBudgetOverview()
   const budgetAccount = pr?.budget_code
     ? (budgetData?.accounts ?? []).find((a) => a.code === pr.budget_code)
@@ -508,9 +509,23 @@ export default function PrDetailPage() {
           {/* Attachments tab */}
           {activeTab === 'Attachments' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">
-                Attachments
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  Attachments
+                </h2>
+                {pr.status === 'approved' && (
+                  <button
+                    type="button"
+                    onClick={() => regeneratePdf.mutate()}
+                    disabled={regeneratePdf.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                    title="Generate the approved-PR PDF and attach it (replaces the existing one)"
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${regeneratePdf.isPending ? 'animate-spin' : ''}`} />
+                    {regeneratePdf.isPending ? 'Generating…' : 'Regenerate PDF'}
+                  </button>
+                )}
+              </div>
               {attachments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />

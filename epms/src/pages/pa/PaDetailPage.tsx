@@ -16,7 +16,7 @@ import { usePo } from '@/hooks/usePos'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
-import { usePaAttachments, useDeletePaAttachment } from '@/hooks/usePaAttachments'
+import { usePaAttachments, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
 import { PA_TYPE_LABEL, type PaStatus } from '@/services/pa'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
@@ -230,6 +230,7 @@ export default function PaDetailPage() {
   const moreRef = useRef<HTMLDivElement>(null)
   const { data: attachments = [] } = usePaAttachments(id ?? '')
   const deleteAttachment = useDeletePaAttachment(id ?? '')
+  const regeneratePdf = useRegeneratePaPdf(id ?? '')
 
   const { data: workflowSteps } = usePaWorkflowSteps(id ?? '')
   // Must stay above the early returns below — calling it later would make the
@@ -625,7 +626,21 @@ export default function PaDetailPage() {
 
           {activeTab === 'attachments' && (
             <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-              <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Attachments</h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Attachments</h3>
+                {['approved', 'processed'].includes(pa.status) && (
+                  <button
+                    type="button"
+                    onClick={() => regeneratePdf.mutate()}
+                    disabled={regeneratePdf.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                    title="Generate the approved-PA PDF and attach it (replaces the existing one)"
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${regeneratePdf.isPending ? 'animate-spin' : ''}`} />
+                    {regeneratePdf.isPending ? 'Generating…' : 'Regenerate PDF'}
+                  </button>
+                )}
+              </div>
               {attachments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />

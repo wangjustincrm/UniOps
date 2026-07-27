@@ -18,7 +18,7 @@ import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig } from '@/hooks/useConfig'
 import { downloadPdf } from '@/lib/pdf-utils'
-import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps } from '@/hooks/usePos'
+import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
 import { useGrs } from '@/hooks/useGrs'
 import { useTasks } from '@/hooks/useTasks'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
@@ -497,6 +497,7 @@ export default function PoDetailPage() {
   const { data: po, isLoading } = usePo(id ?? '')
   const { data: events } = usePoEvents(id ?? '')
   const { data: poAttachments = [] } = usePoAttachments(id ?? '')
+  const regeneratePdf = useRegeneratePoPdf(id ?? '')
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
@@ -883,7 +884,21 @@ export default function PoDetailPage() {
           {/* Attachments Tab */}
           {activeTab === 'Attachments' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Attachments</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Attachments</h2>
+                {['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(po.status) && (
+                  <button
+                    type="button"
+                    onClick={() => regeneratePdf.mutate()}
+                    disabled={regeneratePdf.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                    title="Generate the approved-PO PDF and attach it (replaces the existing one)"
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${regeneratePdf.isPending ? 'animate-spin' : ''}`} />
+                    {regeneratePdf.isPending ? 'Generating…' : 'Regenerate PDF'}
+                  </button>
+                )}
+              </div>
               {poAttachments.length > 0 ? (
                 <ul className="flex flex-col gap-2">
                   {poAttachments.map((att) => (
@@ -965,13 +980,6 @@ export default function PoDetailPage() {
                 >
                   <ShoppingCart className="h-4 w-4" />
                   Place Order
-                </button>
-                <button
-                  onClick={handleDownloadPdf}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-neutral-300 py-2 text-sm font-medium text-neutral-700 transition-colors hover:bg-neutral-50"
-                >
-                  <FileText className="h-4 w-4" />
-                  Download PDF
                 </button>
               </div>
             )}

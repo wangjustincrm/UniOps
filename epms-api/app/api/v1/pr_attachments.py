@@ -1,4 +1,5 @@
 """PR attachment endpoints."""
+import asyncio
 import uuid
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
@@ -9,12 +10,17 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud.pr import get_by_id as get_pr
+from app.models.config import CompanyConfig
 from app.models.pr_attachment import PrAttachment
 from app.services.attachment_helper import delete_from_file_server, proxy_download, upload_to_file_server
+from app.services.pdf_pr import generate_pr_pdf
 
 router = APIRouter(prefix="/pr/{pr_id}/attachments", tags=["pr-attachments"])
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+
+# Statuses at/after which an approved-document PDF is meaningful (regenerate-able).
+_PDF_STATUSES = {"approved"}
 
 
 class AttachmentMeta(BaseModel):
@@ -67,6 +73,61 @@ async def upload_attachment(
         filename=file.filename or "attachment",
         content_type=file.content_type or "application/octet-stream",
         file_size=len(data),
+        storage_key=storage_key,
+    )
+    db.add(att)
+    await db.flush()
+    await db.refresh(att)
+    return _meta(att)
+
+
+@router.post("/regenerate-pdf", response_model=AttachmentMeta)
+async def regenerate_pdf(
+    pr_id: uuid.UUID,
+    db: SessionDep, user: CurrentUserPayload, token: BearerToken,
+):
+    """(Re)generate the approved-PR PDF and (re)attach it.
+
+    Used to backfill the PDF on documents that reached ``approved`` without
+    passing through the live approval action (e.g. PMS-imported PRs), or to
+    refresh it after a template/logo change. Replaces any existing
+    ``<number>.pdf`` attachment so there is exactly one auto-PDF.
+    """
+    pr = await get_pr(db, pr_id)
+    if pr is None:
+        raise HTTPException(status_code=404, detail="PR not found")
+    if pr.status not in _PDF_STATUSES:
+        raise HTTPException(status_code=409, detail="PDF is only available once the PR is approved")
+
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    company_name = cfg.name if cfg else "EPMS"
+    filename = f"{pr.number}.pdf"
+    loop = asyncio.get_event_loop()
+    pdf_bytes = await loop.run_in_executor(
+        None, generate_pr_pdf, pr, company_name,
+        cfg.pdf_templates if cfg else None,
+        cfg.logo_data_url if cfg else None,
+    )
+
+    # Replace any prior auto-PDF of the same name (row + backing file).
+    existing = (await db.execute(
+        select(PrAttachment).where(
+            PrAttachment.pr_id == pr_id,
+            PrAttachment.filename == filename,
+        )
+    )).scalars().all()
+    for att in existing:
+        if att.storage_key:
+            await delete_from_file_server(att.storage_key, token)
+        await db.delete(att)
+    await db.flush()
+
+    storage_key = await upload_to_file_server(
+        pdf_bytes, filename, "application/pdf", "pr", pr_id, token,
+    )
+    att = PrAttachment(
+        pr_id=pr_id, filename=filename,
+        content_type="application/pdf", file_size=len(pdf_bytes),
         storage_key=storage_key,
     )
     db.add(att)

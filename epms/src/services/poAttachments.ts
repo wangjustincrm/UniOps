@@ -16,6 +16,9 @@ export const poAttachmentService = {
   list: (poId: string) =>
     api.get<AttachmentMeta[]>(`/po/${poId}/attachments`),
 
+  regeneratePdf: (poId: string) =>
+    api.post<AttachmentMeta>(`/po/${poId}/attachments/regenerate-pdf`),
+
   upload: async (poId: string, file: File): Promise<AttachmentMeta> => {
     const form = new FormData()
     form.append('file', file)

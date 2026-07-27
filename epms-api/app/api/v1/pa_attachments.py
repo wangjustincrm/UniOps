@@ -1,4 +1,5 @@
 """PA attachment endpoints."""
+import asyncio
 import uuid
 
 from fastapi import APIRouter, HTTPException, UploadFile, status
@@ -9,12 +10,17 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud.pa import get_by_id as get_pa
+from app.models.config import CompanyConfig
 from app.models.pa_attachment import PaAttachment
 from app.services.attachment_helper import delete_from_file_server, proxy_download, upload_to_file_server
+from app.services.pdf_pa import generate_pa_pdf
 
 router = APIRouter(prefix="/pa/{pa_id}/attachments", tags=["pa-attachments"])
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+
+# Statuses at/after which an approved-document PDF is meaningful (regenerate-able).
+_PDF_STATUSES = {"approved", "processed"}
 
 
 class AttachmentMeta(BaseModel):
@@ -67,6 +73,59 @@ async def upload_attachment(
         filename=file.filename or "attachment",
         content_type=file.content_type or "application/octet-stream",
         file_size=len(data),
+        storage_key=storage_key,
+    )
+    db.add(att)
+    await db.flush()
+    await db.refresh(att)
+    return _meta(att)
+
+
+@router.post("/regenerate-pdf", response_model=AttachmentMeta)
+async def regenerate_pdf(
+    pa_id: uuid.UUID,
+    db: SessionDep, user: CurrentUserPayload, token: BearerToken,
+):
+    """(Re)generate the approved-PA PDF and (re)attach it.
+
+    Backfills the PDF on PAs that reached ``approved`` without passing through
+    the live approval action (e.g. PMS-imported PAs), or refreshes it after a
+    template/logo change. Replaces any existing ``<pa_number>.pdf`` attachment.
+    """
+    pa = await get_pa(db, pa_id)
+    if pa is None:
+        raise HTTPException(status_code=404, detail="PA not found")
+    if pa.status not in _PDF_STATUSES:
+        raise HTTPException(status_code=409, detail="PDF is only available once the PA is approved")
+
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    company_name = cfg.name if cfg else "EPMS"
+    filename = f"{pa.pa_number}.pdf"
+    loop = asyncio.get_event_loop()
+    pdf_bytes = await loop.run_in_executor(
+        None, generate_pa_pdf, pa, company_name,
+        cfg.pdf_templates if cfg else None,
+        cfg.logo_data_url if cfg else None,
+    )
+
+    existing = (await db.execute(
+        select(PaAttachment).where(
+            PaAttachment.pa_id == pa_id,
+            PaAttachment.filename == filename,
+        )
+    )).scalars().all()
+    for att in existing:
+        if att.storage_key:
+            await delete_from_file_server(att.storage_key, token)
+        await db.delete(att)
+    await db.flush()
+
+    storage_key = await upload_to_file_server(
+        pdf_bytes, filename, "application/pdf", "pa", pa_id, token,
+    )
+    att = PaAttachment(
+        pa_id=pa_id, filename=filename,
+        content_type="application/pdf", file_size=len(pdf_bytes),
         storage_key=storage_key,
     )
     db.add(att)

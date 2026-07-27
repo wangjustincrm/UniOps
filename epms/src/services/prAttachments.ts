@@ -16,6 +16,9 @@ export const prAttachmentService = {
   list: (prId: string) =>
     api.get<AttachmentMeta[]>(`/pr/${prId}/attachments`),
 
+  regeneratePdf: (prId: string) =>
+    api.post<AttachmentMeta>(`/pr/${prId}/attachments/regenerate-pdf`),
+
   upload: async (prId: string, file: File): Promise<AttachmentMeta> => {
     const form = new FormData()
     form.append('file', file)

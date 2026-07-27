@@ -103,6 +103,14 @@ export function usePoAttachments(poId: string) {
   })
 }
 
+export function useRegeneratePoPdf(poId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.post<PoAttachmentMeta>(`/po/${poId}/attachments/regenerate-pdf`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pos', poId, 'attachments'] }),
+  })
+}
+
 export function usePlaceOrder(id: string) {
   const queryClient = useQueryClient()
 

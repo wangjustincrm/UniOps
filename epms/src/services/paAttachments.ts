@@ -16,6 +16,9 @@ export const paAttachmentService = {
   list: (paId: string) =>
     api.get<AttachmentMeta[]>(`/pa/${paId}/attachments`),
 
+  regeneratePdf: (paId: string) =>
+    api.post<AttachmentMeta>(`/pa/${paId}/attachments/regenerate-pdf`),
+
   upload: async (paId: string, file: File): Promise<AttachmentMeta> => {
     const form = new FormData()
     form.append('file', file)
