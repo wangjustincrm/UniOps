@@ -12,6 +12,7 @@ from app.admin.recompute import recompute_header
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.models.admin_audit_log import AdminAuditLog
+from app.models.task import Task
 
 
 def _spec(entity: str) -> EntitySpec:
@@ -202,6 +203,48 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         before=before,
         after=after,
     ))
+    await db.flush()
+    return after
+
+
+async def edit_approval_state(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
+                              *, actor_id: uuid.UUID, actor_email: str) -> dict:
+    """Manually correct a document's live approval position: its approval_step_idx
+    and the assignment of its OPEN approve tasks. Does NOT re-run the engine, send
+    notifications, or touch completed tasks / approval_events."""
+    spec = _spec(entity)
+    if entity not in ("pr", "po", "pa"):
+        raise ValueError(f"'{entity}' has no approval state")
+    row = await _load(db, spec, record_id)
+    before = {"approval_step_idx": getattr(row, "approval_step_idx", None)}
+
+    new_idx = patch.get("approval_step_idx")
+    if new_idx is not None:
+        row.approval_step_idx = int(new_idx)
+
+    new_role = patch.get("assigned_role")
+    new_user = patch.get("assigned_user_id")
+    reassigned = 0
+    if new_role is not None or new_user is not None:
+        open_tasks = (await db.execute(select(Task).where(
+            Task.document_id == record_id, Task.type.like("approve%"),
+            Task.is_completed.is_(False)))).scalars().all()
+        for t in open_tasks:
+            if new_role is not None:
+                t.assigned_role = new_role
+            if new_user is not None:
+                t.assigned_user_id = uuid.UUID(str(new_user)) if new_user else None
+            reassigned += 1
+
+    await db.flush()
+    after = {"approval_step_idx": getattr(row, "approval_step_idx", None),
+             "reassigned_open_tasks": reassigned,
+             "assigned_role": new_role, "assigned_user_id": new_user}
+    db.add(AdminAuditLog(
+        actor_id=actor_id, actor_email=actor_email, action="edit_approval_state",
+        system=spec.system, entity=entity, record_id=record_id,
+        record_number=str(getattr(row, spec.schema.number_field, None)),
+        before=before, after=after))
     await db.flush()
     return after
 

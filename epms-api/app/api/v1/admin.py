@@ -67,6 +67,20 @@ async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: A
         raise HTTPException(400, str(e))
 
 
+@router.patch("/{entity}/{record_id}/approval-state")
+async def edit_approval_state(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
+                              patch: dict = Body(...)):
+    actor_id, email = _actor(user)
+    try:
+        result = await service.edit_approval_state(db, entity, record_id, patch,
+                                                   actor_id=actor_id, actor_email=email)
+        await db.commit()
+        return result
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(400, str(e))
+
+
 @router.delete("/{entity}/{record_id}")
 async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
                         preview: int = Query(0)):

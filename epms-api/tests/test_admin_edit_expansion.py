@@ -292,3 +292,42 @@ async def test_get_record_includes_line_items(test_engine):
         assert rec["line_items"][0]["description"] == "a"
         assert rec["line_items"][0]["line_total"] == "10.00"
         assert "id" in rec["line_items"][0]
+
+
+@pytest.mark.asyncio
+async def test_edit_approval_state_reassigns_open_tasks(test_engine):
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest
+    from app.models.task import Task
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); pr_id = uuid.uuid4(); done_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"as-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-AS1", title="t", type=1, status="in_review",
+                               currency="CAD", amount=Decimal("0"), created_by=creator,
+                               approval_step_idx=1))
+        await db.flush()
+        db.add(Task(document_type="pr", document_id=pr_id, document_number="PR-AS1",
+                    type="approve_pr", assigned_role="dept_manager", title="Approve", is_completed=False))
+        db.add(Task(id=done_id, document_type="pr", document_id=pr_id, document_number="PR-AS1",
+                    type="approve_pr", assigned_role="finance_bp", title="Done", is_completed=True))
+        await db.commit()
+
+    async with factory() as db:
+        await service.edit_approval_state(db, "pr", pr_id,
+                                          {"approval_step_idx": 2, "assigned_role": "finance_manager"},
+                                          actor_id=creator, actor_email="admin@x.com")
+        await db.commit()
+    async with factory() as db:
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
+        tasks = (await db.execute(select(Task).where(Task.document_id == pr_id))).scalars().all()
+        assert pr.approval_step_idx == 2
+        open_t = [t for t in tasks if not t.is_completed]
+        done_t = [t for t in tasks if t.is_completed]
+        assert all(t.assigned_role == "finance_manager" for t in open_t)   # open reassigned
+        assert done_t[0].assigned_role == "finance_bp"                     # completed untouched
