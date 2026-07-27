@@ -6,12 +6,14 @@ router only reads it via raw SQL against the shared `departments` table —
 no ORM model here, matching the rest of this service's cross-service reads
 (see app/crud/workflow.py's `_post_holders`).
 """
+import uuid
+
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
-from app.crud.engine import resync_inflight_approvals
+from app.crud.engine import _resync_document, resync_inflight_approvals
 from app.db.base import get_db
 
 router = APIRouter(prefix="/routing", tags=["routing"])
@@ -137,3 +139,23 @@ async def resync_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser 
     result = await resync_inflight_approvals(db)
     await db.commit()
     return {"resynced": len(result["resynced"]), "errors": len(result["errors"]), **result}
+
+
+@router.post("/resync-document")
+async def resync_document(body: dict, db: AsyncSession = Depends(get_db), user: CurrentUser = ...):
+    """Realign ONE in-flight document to current routing config (single-doc variant of
+    resync-inflight). Used after an admin corrects a document's Requester so the
+    department-derived approvers follow. system_admin only."""
+    if user.get("role") != "system_admin":
+        raise HTTPException(status_code=403, detail="system_admin only")
+    doc_type = body.get("doc_type")
+    doc_id = body.get("doc_id")
+    if not doc_type or not doc_id:
+        raise HTTPException(status_code=422, detail="doc_type and doc_id required")
+    try:
+        summary = await _resync_document(db, doc_type, uuid.UUID(str(doc_id)))
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"{type(exc).__name__}: {exc}")
+    await db.commit()
+    return {"resynced": summary}
