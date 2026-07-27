@@ -315,6 +315,130 @@ async def test_additional_role_widens_scope(test_engine, admin_client):
 
 
 @pytest.mark.asyncio
+async def test_multi_restricted_role_unions_scope_dept_manager_plus_gm(test_engine):
+    """Multi-role bug (hanchenggang: Department Manager + GM): when a user holds
+    TWO restricted roles, PR visibility must be the UNION of both roles' scopes,
+    not just the single JWT base role's scope.
+
+    Before the fix, `visible_pr_subquery` branched on the single base JWT role
+    (`dept_manager`) and never reached the `gm` branch, so a dept_manager who is
+    ALSO a GM saw only their own department's PRs — the PRs of the departments
+    their GM role covers were invisible in the PA/PR/PO lists. `_has_unrestricted_
+    special_role` did NOT rescue this because gm/dept_manager are BOTH restricted
+    roles (neither grants unrestricted scope), so the multi-role union path that
+    already works for unrestricted additional roles (test_additional_role_widens_
+    scope) never fired for two restricted roles.
+    """
+    from app.crud import config as config_crud
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await config_crud.get_or_create(db)   # default matrix grants dept_manager/gm view_pr
+        await db.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',"
+            " director_user_id uuid NULL,"
+            " supervisor_enabled boolean NOT NULL DEFAULT false,"
+            " updated_by uuid NULL,"
+            " updated_at timestamptz NOT NULL DEFAULT now()"
+            ")"
+        ))
+        await db.commit()
+
+    dept_mgr_own = await _make_dept(test_engine)   # the user's OWN department (dept_manager scope)
+    dept_gm = await _make_dept(test_engine)        # a department the user covers as GM
+    cc_gm = await _make_cc(test_engine, dept_gm)   # PR will be charged to this GM-dept cost center
+
+    # Map dept_gm to 'gm' so _mapped_dept_ids('gm') resolves it to our user's GM scope.
+    async with factory() as db:
+        await db.execute(sa.text("DELETE FROM approval_dept_routing WHERE dept_id = :d"), {"d": dept_gm})
+        await db.execute(sa.text(
+            "INSERT INTO approval_dept_routing (dept_id, gm_or_opm, supervisor_enabled) "
+            "VALUES (:d, 'gm', false)"), {"d": dept_gm})
+        await db.commit()
+
+    # The multi-role user: base JWT role dept_manager (pinned to their own dept) +
+    # an ADDITIONAL gm role in user_roles.
+    uid_mgr, tok_mgr = await _make_user(test_engine, "dept_manager", department_id=dept_mgr_own)
+    async with factory() as db:
+        await db.execute(sa.text(
+            "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'gm')"), {"u": uid_mgr})
+        await db.commit()
+
+    # A requester in the GM-covered department raises a PR charged to that dept's
+    # cost center — outside the manager's own department entirely.
+    _, tok_req_gm = await _make_user(test_engine, "requester", department_id=dept_gm)
+    async with _authed_client(tok_req_gm) as c:
+        r = await c.post("/api/v1/pr", json={**_PR_BASE, "cost_center_id": cc_gm})
+        assert r.status_code == 201, r.text
+        pr_in_gm_dept = r.json()["id"]
+
+    # The dept_manager+gm user MUST see the GM-department PR in their list.
+    async with _authed_client(tok_mgr) as c:
+        resp = await c.get("/api/v1/pr")
+        assert resp.status_code == 200, resp.text
+        ids = [p["id"] for p in resp.json()["items"]]
+        assert pr_in_gm_dept in ids, (
+            "dept_manager+gm user did not see a PR from a department their GM role "
+            "covers — multi-restricted-role scope was NOT unioned"
+        )
+
+
+@pytest.mark.asyncio
+async def test_multi_role_dept_manager_plus_director_unions_scope(test_engine):
+    """Director spans multiple departments too. A user who is a dept_manager AND
+    a director (approval_dept_routing.director_user_id) must see BOTH their own
+    department's PRs and the PRs of the departments they direct — the union must
+    include the director-derived scope, not only the base dept_manager scope.
+    """
+    from app.crud import config as config_crud
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await config_crud.get_or_create(db)
+        await db.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',"
+            " director_user_id uuid NULL,"
+            " supervisor_enabled boolean NOT NULL DEFAULT false,"
+            " updated_by uuid NULL,"
+            " updated_at timestamptz NOT NULL DEFAULT now()"
+            ")"
+        ))
+        await db.commit()
+
+    own_dept = await _make_dept(test_engine)       # user's dept_manager department
+    directed_dept = await _make_dept(test_engine)  # a department they DIRECT
+    cc_dir = await _make_cc(test_engine, directed_dept)
+
+    uid_mgr, tok_mgr = await _make_user(test_engine, "dept_manager", department_id=own_dept)
+    # Make the user the director of directed_dept (derives the 'director' role).
+    async with factory() as db:
+        await db.execute(sa.text("DELETE FROM approval_dept_routing WHERE dept_id = :d"), {"d": directed_dept})
+        await db.execute(sa.text(
+            "INSERT INTO approval_dept_routing (dept_id, gm_or_opm, director_user_id, supervisor_enabled) "
+            "VALUES (:d, 'gm', :dir, false)"), {"d": directed_dept, "dir": uid_mgr})
+        await db.commit()
+
+    _, tok_req = await _make_user(test_engine, "requester", department_id=directed_dept)
+    async with _authed_client(tok_req) as c:
+        r = await c.post("/api/v1/pr", json={**_PR_BASE, "cost_center_id": cc_dir})
+        assert r.status_code == 201, r.text
+        pr_in_directed = r.json()["id"]
+
+    async with _authed_client(tok_mgr) as c:
+        resp = await c.get("/api/v1/pr")
+        assert resp.status_code == 200, resp.text
+        ids = [p["id"] for p in resp.json()["items"]]
+        assert pr_in_directed in ids, (
+            "dept_manager+director user did not see a PR from a department they "
+            "direct — director scope was NOT unioned"
+        )
+
+
+@pytest.mark.asyncio
 async def test_supervisor_sees_only_direct_reports_prs(test_engine):
     """Supervisor sees PRs created by their direct reports, not by unrelated users."""
     from app.crud import config as config_crud

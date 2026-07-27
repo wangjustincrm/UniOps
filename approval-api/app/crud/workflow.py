@@ -78,6 +78,22 @@ async def _post_holders(db: AsyncSession) -> dict[str, list[str]]:
     return out
 
 
+async def post_holder_ids(db: AsyncSession, role: str) -> set:
+    """Active user ids holding the given post role ('gm' | 'opm' |
+    'finance_manager' | 'procurement_manager' | 'vendor_manager' | 'finance_bp').
+
+    Full holder SET (PRIMARY users.role ∪ ADDITIONAL identity user_roles), unlike
+    get_role_management()'s `<role>_user_id`, which collapses a post to a SINGLE
+    holder (`_post_holders()[role][0]`). Authorization must check membership in
+    this set, not equality to that single collapsed holder — otherwise, when the
+    singleton invariant is broken (2+ holders, which `_post_holders` warns about),
+    only the first-by-uid holder can act and every other legitimate holder is
+    wrongly denied.
+    """
+    holders = await _post_holders(db)
+    return {uuid.UUID(u) for u in holders.get(role, [])}
+
+
 async def get_role_management(db: AsyncSession) -> dict:
     """Legacy-shaped dict, now sourced from user_roles + approval_backups.
 

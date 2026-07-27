@@ -162,6 +162,70 @@ async def test_gm_does_not_see_invoice_from_dept_mapped_to_opm(routing_db):
 
 
 @pytest.mark.asyncio
+async def test_multi_role_dept_manager_plus_gm_sees_gm_dept_invoice(routing_db):
+    """Multi-role bug (hanchenggang: Department Manager + GM) on the unified
+    invoice list. A user whose JWT base role is dept_manager but who ALSO holds
+    an ADDITIONAL gm role (identity user_roles) must see invoices from the
+    departments their GM role covers — not only their own department's chain.
+
+    Before the fix, `_build_invoice_scope` branched on the single JWT base role
+    and never even read user_roles, so the gm scope was silently dropped: a
+    dept_manager+gm saw only their own department (here: none, since the JWT
+    carries no department_id) and the GM-department invoice was invisible.
+    """
+    gm_dept = uuid.uuid4()
+    await _set_routing(routing_db, {gm_dept: "gm"})
+    inv_id = await _make_epms_invoice_chain(routing_db, gm_dept)
+
+    # Give the (dept_manager) user an ADDITIONAL gm role via user_roles.
+    mgr_id = uuid.uuid4()
+    await routing_db.execute(text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'gm')"), {"u": str(mgr_id)})
+    await routing_db.commit()
+
+    async with _client_for("dept_manager", str(mgr_id)) as mgr:
+        resp = await mgr.get("/api/v1/invoices/all")
+    assert resp.status_code == 200
+    assert str(inv_id) in _ids(resp.json()), (
+        "dept_manager+gm user did not see an invoice from a department their GM "
+        "role covers — multi-role scope was NOT unioned on the invoice list"
+    )
+
+
+@pytest.mark.asyncio
+async def test_director_sees_invoices_from_all_directed_departments(routing_db):
+    """Director spans multiple departments (approval_dept_routing.director_user_id)
+    — the unified invoice list must show invoices from EVERY department they
+    direct, not just own uploads. Before the fix the invoice list had no director
+    branch at all, so a director saw nothing here.
+    """
+    director_id = uuid.uuid4()
+    dept_x, dept_y, dept_z = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    # director directs X and Y; Z is directed by someone else.
+    for d in (dept_x, dept_y, dept_z):
+        await _make_dept(routing_db, d)
+    await routing_db.execute(text(
+        "INSERT INTO approval_dept_routing (dept_id, gm_or_opm, director_user_id) VALUES "
+        "(:x, 'gm', :dir), (:y, 'gm', :dir), (:z, 'gm', :other)"),
+        {"x": str(dept_x), "y": str(dept_y), "z": str(dept_z),
+         "dir": str(director_id), "other": str(uuid.uuid4())})
+    await routing_db.commit()
+
+    inv_x = await _make_epms_invoice_chain(routing_db, dept_x)
+    inv_y = await _make_epms_invoice_chain(routing_db, dept_y)
+    inv_z = await _make_epms_invoice_chain(routing_db, dept_z)
+
+    async with _client_for("director", str(director_id)) as director:
+        resp = await director.get("/api/v1/invoices/all")
+    assert resp.status_code == 200
+    seen = _ids(resp.json())
+    assert str(inv_x) in seen and str(inv_y) in seen, (
+        "director did not see invoices from both departments they direct"
+    )
+    assert str(inv_z) not in seen, "director saw an invoice from a department they do NOT direct"
+
+
+@pytest.mark.asyncio
 async def test_gm_sees_invoice_from_dept_with_no_routing_row(routing_db):
     """★ 无 routing 行的部门(mdm-api 建的新部门就是这种状态 —— 没有人写
     approval_dept_routing)。COALESCE 默认 'gm' 生效,GM 应该看得见;OPM 不该。

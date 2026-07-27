@@ -75,25 +75,76 @@ async def _epms_po_subq_for_user(db: AsyncSession, user_id: uuid.UUID):
     return select(EpmsPurchaseOrder.id).where(EpmsPurchaseOrder.pr_id.in_(pr_subq))
 
 
+async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str) -> set[str]:
+    """JWT base role + ADDITIONAL roles from identity's user_roles (same physical
+    DB — phase 3 replaced the retired company_config.role_management assignments).
+
+    Mirrors expense-api/app/api/v1/pa.py:_user_role_codes and epms-api's
+    access_scope._effective_role_codes. Kept local here rather than imported to
+    match this file's existing self-contained style; the query is identical.
+    """
+    codes = {base_role} if base_role else set()
+    rows = (await db.execute(sa.text(
+        "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(user_id)})).scalars().all()
+    codes.update(rows)
+    return codes
+
+
+async def _gm_opm_dept_ids(db: AsyncSession, role: str) -> list[uuid.UUID]:
+    """Department ids whose gm_or_opm routing resolves to `role` ('gm' | 'opm').
+
+    Resolve mapped departments via approval-api's approval_dept_routing (same
+    physical DB, read-only — expense-api never writes it; Portal → Approval
+    Routing is the only writer). Single source of truth since the phase-3
+    migration; company_config.dept_gm_opm_mapping is a frozen rollback snapshot
+    (see epms-api/app/core/access_scope.py:_mapped_dept_ids, the reference impl).
+
+    A department with NO approval_dept_routing row at all (e.g. one mdm-api just
+    created) is treated as 'gm' via COALESCE, matching the approval engine's own
+    fallback (`dept_gm_opm.get(str(dept_id), "gm")`), so a brand-new department's
+    invoices — routed to GM for approval — stay visible to GM here.
+
+    ⚠️ SIBLING COPY of epms-api/app/core/access_scope.py:_mapped_dept_ids — change
+    both together (this codebase has been bitten by sibling copies drifting).
+    不过滤 d.is_active —— 有意为之,与 epms 一致:停用部门的在途发票对 GM 必须仍可见
+    (这里没有 task-chain 兜底,加过滤会让 GM 完全看不到)。
+    """
+    return list((await db.execute(sa.text(
+        "SELECT d.id FROM departments d "
+        "LEFT JOIN approval_dept_routing r ON r.dept_id = d.id "
+        "WHERE COALESCE(r.gm_or_opm, 'gm') = :r"),
+        {"r": role})).scalars().all())
+
+
 async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
-    """Derive invoice visibility scope from the user's JWT.
+    """Derive invoice visibility scope from the user's full role set.
+
+    Multi-role users: visibility is the UNION of every role the user holds (JWT
+    base role + ADDITIONAL roles in identity's user_roles). If ANY held role is
+    unrestricted, the user is unrestricted; otherwise the EPMS PO scope is the
+    OR (SQL UNION) of each restricted role's own scope. This is what lets a
+    Department Manager who is ALSO a GM (hanchenggang) see both their own
+    department's invoices and the invoices of the departments their GM role
+    covers — before this the function branched on the single JWT base role and
+    never even read user_roles, silently dropping the second role's scope.
 
     Returns:
       restrict (bool)       — whether any filter applies
       user_id (UUID)
-      role (str)
+      role (str)            — JWT base role (kept for callers/logging)
       epms_po_subq          — SQLAlchemy subquery of visible EPMS PO ids, or None
-      epms_own_uploads (bool) — requester: also show EPMS invoices uploaded by this user
+      epms_own_uploads (bool) — also show EPMS invoices uploaded by this user
       oa_restrict (bool)    — whether OA invoices are restricted to own uploads
     """
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
+    codes = await _user_role_codes(db, user_id, role)
 
     _UNRESTRICTED = {
         "procurement_officer", "procurement_manager", "finance_bp",
         "finance_manager", "ap_clerk", "system_admin",
     }
-    if role in _UNRESTRICTED:
+    if codes & _UNRESTRICTED:
         return {
             "restrict": False,
             "user_id": user_id,
@@ -103,94 +154,58 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
             "oa_restrict": False,
         }
 
-    if role == "requester":
-        po_subq = await _epms_po_subq_for_user(db, user_id)
-        return {
-            "restrict": True,
-            "user_id": user_id,
-            "role": role,
-            "epms_po_subq": po_subq,
-            "epms_own_uploads": True,   # also show their own unmatched uploads
-            "oa_restrict": True,
-        }
+    # Union of EPMS PO scopes across every restricted role the user holds.
+    po_selects: list = []
+    epms_own_uploads = False
 
-    if role in ("dept_manager", "department_admin"):
+    if "requester" in codes:
+        po_selects.append(await _epms_po_subq_for_user(db, user_id))
+        epms_own_uploads = True   # requester also sees their own unmatched uploads
+
+    if codes & {"dept_manager", "department_admin"}:
         dept_id_raw = user.get("department_id")
         if dept_id_raw:
-            po_subq = await _epms_po_subq_for_dept(db, uuid.UUID(dept_id_raw))
-        else:
-            # No department → fall back to own uploads only
-            po_subq = select(EpmsPurchaseOrder.id).where(False)
-        return {
-            "restrict": True,
-            "user_id": user_id,
-            "role": role,
-            "epms_po_subq": po_subq,
-            "epms_own_uploads": False,
-            "oa_restrict": True,
-        }
+            po_selects.append(await _epms_po_subq_for_dept(db, uuid.UUID(dept_id_raw)))
 
-    if role in ("gm", "opm"):
-        # Resolve mapped departments via approval-api's approval_dept_routing
-        # (same physical DB, read-only — expense-api never writes it;
-        # Portal → Approval Routing is the only writer). This is the single
-        # source of truth for dept routing since the phase-3 migration;
-        # company_config.dept_gm_opm_mapping is a frozen snapshot kept for
-        # rollback (see epms-api/app/core/access_scope.py:_mapped_dept_ids,
-        # the reference implementation this mirrors).
-        #
-        # ★ Semantic change vs the old JSONB: a department with no explicit
-        # mapping had NO entry in dept_gm_opm_mapping, so GM never saw it.
-        # A department with NO approval_dept_routing row at all (e.g. one
-        # mdm-api just created — nothing writes this table for it; only
-        # seed_routing.py at seed time and Portal's PUT /routing ever insert
-        # rows) is treated as if it were 'gm', via COALESCE. This matches the
-        # approval engine's own fallback (approval-api/app/crud/engine.py:
-        # `dept_gm_opm.get(str(dept_id), "gm")`), so GM must also see it here
-        # — otherwise a brand-new department's invoices are routed to GM for
-        # approval but invisible to GM in this list (no task-chain fallback on
-        # this endpoint, unlike epms-api's PR/PO/PA scoping — so this gap was
-        # worse here: GM couldn't see the invoice at all).
-        #
-        # ⚠️ SIBLING COPY: epms-api/app/core/access_scope.py's _mapped_dept_ids
-        # is the reference implementation this mirrors. If you change this
-        # query's semantics, change that one too (this codebase has been
-        # bitten before by a sibling copy drifting out of sync — see
-        # identity's email.py).
-        # 不过滤 d.is_active —— 有意为之,与 epms 的 _mapped_dept_ids 保持一致:
-        # 旧实现与 engine 的 .get(dept,"gm") 都不看停用状态;加上它会让停用部门的
-        # 在途发票对 GM 消失,而这里没有 task-chain 兜底,GM 会完全看不到。
-        dept_ids = list((await db.execute(sa.text(
-            "SELECT d.id FROM departments d "
-            "LEFT JOIN approval_dept_routing r ON r.dept_id = d.id "
-            "WHERE COALESCE(r.gm_or_opm, 'gm') = :r"),
-            {"r": role})).scalars().all())
-        if dept_ids:
-            cc_subq = select(EpmsCostCenter.id).where(
-                EpmsCostCenter.department_id.in_(dept_ids)
-            )
-            pr_subq = select(EpmsPurchaseRequest.id).where(
-                EpmsPurchaseRequest.cost_center_id.in_(cc_subq)
-            )
-            po_subq = select(EpmsPurchaseOrder.id).where(EpmsPurchaseOrder.pr_id.in_(pr_subq))
-        else:
-            po_subq = select(EpmsPurchaseOrder.id).where(False)
-        return {
-            "restrict": True,
-            "user_id": user_id,
-            "role": role,
-            "epms_po_subq": po_subq,
-            "epms_own_uploads": False,
-            "oa_restrict": True,
-        }
+    # Departments this user oversees, from gm/opm mapping AND (multi-department)
+    # director assignment. Director spans multiple departments too, so like GM it
+    # must see every mapped department's invoices — not just own uploads. Director
+    # is a DERIVED role (approval_dept_routing.director_user_id), NOT a user_roles
+    # code, so it is resolved directly here (mirrors epms-api's _director_dept_ids
+    # / _effective_role_codes), independent of `codes`. Before this the invoice
+    # list had no director branch at all — a director saw only their own uploads.
+    oversee_dept_ids: set[uuid.UUID] = set()
+    for gm_role in ("gm", "opm"):
+        if gm_role in codes:
+            oversee_dept_ids.update(await _gm_opm_dept_ids(db, gm_role))
+    director_dept_ids = list((await db.execute(sa.text(
+        "SELECT dept_id FROM approval_dept_routing WHERE director_user_id = :u"),
+        {"u": str(user_id)})).scalars().all())
+    is_director = bool(director_dept_ids)
+    oversee_dept_ids.update(director_dept_ids)
+    if oversee_dept_ids:
+        cc_subq = select(EpmsCostCenter.id).where(EpmsCostCenter.department_id.in_(oversee_dept_ids))
+        pr_subq = select(EpmsPurchaseRequest.id).where(EpmsPurchaseRequest.cost_center_id.in_(cc_subq))
+        po_selects.append(select(EpmsPurchaseOrder.id).where(EpmsPurchaseOrder.pr_id.in_(pr_subq)))
 
-    # Unknown / unrecognised role — restrict to own uploads
+    recognized = (codes & {"requester", "dept_manager", "department_admin", "gm", "opm"}) or is_director
+    if not recognized:
+        # Unknown / unrecognised role — restrict to own uploads (unchanged fallback).
+        epms_own_uploads = True
+
+    if po_selects:
+        epms_po_subq = po_selects[0]
+        for extra in po_selects[1:]:
+            epms_po_subq = epms_po_subq.union(extra)
+    else:
+        epms_po_subq = select(EpmsPurchaseOrder.id).where(False)
+
     return {
         "restrict": True,
         "user_id": user_id,
         "role": role,
-        "epms_po_subq": select(EpmsPurchaseOrder.id).where(False),
-        "epms_own_uploads": True,
+        "epms_po_subq": epms_po_subq,
+        "epms_own_uploads": epms_own_uploads,
         "oa_restrict": True,
     }
 

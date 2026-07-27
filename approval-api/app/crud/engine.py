@@ -11,7 +11,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud.workflow import (get_dept_director_mapping, get_dept_gm_opm_mapping,
-                                get_dept_supervisor_enabled, get_role_management)
+                                get_dept_supervisor_enabled, get_role_management,
+                                post_holder_ids)
 from app.models.budget_plan import BudgetPlan
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
@@ -331,17 +332,29 @@ async def _actor_can_approve(
         dept_mgr_id = await _get_dept_manager_id(db, creator_id)
         return dept_mgr_id is not None and actor_id == dept_mgr_id
     if step_role == "gm_or_opm":
-        # Resolve via creator's department — same logic as task assignment
-        _, resolved_user_id = await _resolve_gm_or_opm(db, creator_id, rm, dept_gm_opm)
-        return resolved_user_id is not None and actor_id == resolved_user_id
+        # Resolve which post (gm/opm) this department routes to — same logic as
+        # task assignment — then authorize ANY active holder of that post, not
+        # just the single collapsed rm['<role>_user_id'] (= _post_holders()[0]).
+        # A post can legitimately have >1 holder (e.g. a Department Manager who
+        # ALSO holds GM via an additional user_roles role); the broadcast approve
+        # task is visible to all of them, so all of them must be able to act.
+        resolved_role, resolved_user_id = await _resolve_gm_or_opm(db, creator_id, rm, dept_gm_opm)
+        if resolved_user_id is not None and actor_id == resolved_user_id:
+            return True
+        return actor_id in await post_holder_ids(db, resolved_role)
     if step_role == "director":
+        # Director is resolved per-department (routing_uid's dept), not via a
+        # collapsed global holder, so a director covering multiple departments
+        # already matches on any of their departments' documents.
         return director_uid is not None and actor_id == director_uid
     if step_role == "supervisor":
         return supervisor_uid is not None and actor_id == supervisor_uid
-    # Named role: check role_management map
-    uid_str = rm.get(f"{step_role}_user_id")
-    if uid_str:
-        return actor_id == uuid.UUID(uid_str)
+    # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager
+    # as a direct step): authorize any active holder of that post — membership,
+    # not equality to the single collapsed rm['<role>_user_id'].
+    post_holders = await post_holder_ids(db, step_role)
+    if post_holders:
+        return actor_id in post_holders
     # Fallback: actor's own JWT role must match the step role (for broadcast steps)
     return actor_role == step_role
 
@@ -941,6 +954,23 @@ async def execute_action(
     elif act == "reject":
         if _status_of(meta, doc) not in meta["valid_return"]:
             raise ValueError(f"Cannot reject {doc_type.upper()} in status '{_status_of(meta, doc)}'")
+
+        # Authorization: reject is an approval-step decision, so it requires the
+        # SAME authority as approve — the current step's approver (or system_admin).
+        # Without this gate any user who could merely SEE a broadcast approve task
+        # (get_for_role matches by assigned_role) could reject/cancel the document,
+        # even when the same actor is (correctly) denied Approve.
+        current_step_role = workflow[step]["role"] if step < len(workflow) else ""
+        finance_bp_ids_auth = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
+        authorized = await _actor_can_approve(
+            db, current_step_role, actor_id, actor_role,
+            routing_uid, rm, dept_gm_opm, finance_bp_ids_auth,
+            doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+        )
+        if not authorized:
+            raise ValueError(
+                f"Not authorized to reject this step (requires role: {current_step_role})"
+            )
         await _complete_tasks(db, doc_type, doc.id)
         # PA types use "cancelled" instead of "rejected" (consistent with PA state machine)
         _set_status(meta, doc, "cancelled" if doc_type in ("pa", "pa_dir") else "rejected")

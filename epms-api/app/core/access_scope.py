@@ -231,79 +231,75 @@ async def visible_pr_subquery(
 ) -> Optional[Select]:
     """Return a scalar subquery of visible PR ids, or None (= no filter = all).
 
-    Multi-role users: if the user holds any unrestricted special role via an
-    ADDITIONAL role in identity's user_roles (e.g. base=dept_manager but also
-    procurement_manager), they get unrestricted scope (None) regardless of
-    their base role.
+    Multi-role users: visibility is the UNION of every role the user holds
+    (JWT base role + ADDITIONAL roles in identity's user_roles). Two cases:
+
+      • If ANY held role is unrestricted (procurement_manager, finance_manager,
+        …), the user gets full visibility (None) regardless of the others.
+      • Otherwise the user's scope is the OR of every RESTRICTED role's own
+        scope. This is what lets a user who is BOTH Department Manager AND GM
+        (hanchenggang) see their own department's PRs *and* the PRs of the
+        departments their GM role covers — before this, the function branched
+        on the single JWT base role and silently dropped the second role's
+        scope (a dept_manager+gm saw only their department). gm/dept_manager
+        are both RESTRICTED, so the unrestricted shortcut above never rescued
+        this multi-restricted-role case.
+
+    Per-role scope is unchanged from the previous single-role branches; they
+    are just OR-ed together here instead of being selected by base role.
     """
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
+    codes = await _effective_role_codes(db, role, user_id)
 
-    # Multi-role expansion: if the user holds any unrestricted special role,
-    # grant full visibility regardless of the base JWT role.
-    if await _has_unrestricted_special_role(db, role, user_id):
+    # Any unrestricted role → full visibility.
+    if any(c not in _RESTRICTED_ROLES for c in codes):
         return None  # unrestricted
 
+    # Union of scopes across every restricted role the user actually holds.
     task_pr = _task_chain_pr_ids(user_id)
+    # task-chain is always OR-ed in: if you hold an open approval task for a PR
+    # (routing may land it outside your dept/cost-center scope), you can see it.
+    conds = [PurchaseRequest.id.in_(task_pr)]
+    cc_dept_ids: set[uuid.UUID] = set()       # cost-center oversight (dept_manager/gm/opm/director)
+    creator_dept_ids: set[uuid.UUID] = set()  # creator's-department membership (dept_manager/director)
 
-    if role == "requester":
-        return select(PurchaseRequest.id).where(
-            or_(PurchaseRequest.created_by == user_id, PurchaseRequest.id.in_(task_pr))
-        )
+    if "requester" in codes:
+        conds.append(PurchaseRequest.created_by == user_id)
 
-    if role in ("dept_manager", "department_admin"):
+    if codes & {"dept_manager", "department_admin"}:
+        # A dept_manager sees PRs charged to their department's cost centers
+        # (budget oversight) OR raised by a member of their department. (b) is
+        # required to match approval routing: the engine assigns approve_pr by
+        # the *requester's* department (approval-api _get_dept_manager_id), so
+        # without it a manager gets the inbox task but 404s on GET /pr/{id} when
+        # the PR is charged to a cost center outside their dept (PR-20260620-0001).
         dept_id = await _user_dept_id(db, user_id)
-        if not dept_id:
-            # No department → still see anything explicitly assigned to them.
-            return select(PurchaseRequest.id).where(PurchaseRequest.id.in_(task_pr))
-        # A PR is visible to a dept_manager if EITHER:
-        #   (a) it is charged to one of their department's cost centers (budget
-        #       oversight), OR
-        #   (b) it was raised by a member of their department (creator's
-        #       User.department_id == this manager's department).
-        # (b) is required to match approval routing: the approval engine assigns
-        # the approve_pr task by the *requester's* department
-        # (approval-api _get_dept_manager_id), so without it a manager receives
-        # the inbox task but 404s on GET /pr/{id} whenever the PR is charged to a
-        # cost center outside their department (PR-20260620-0001).
-        cc_subq = select(CostCenter.id).where(CostCenter.department_id == dept_id)
-        creator_subq = select(User.id).where(User.department_id == dept_id)
-        return select(PurchaseRequest.id).where(
-            or_(
-                PurchaseRequest.cost_center_id.in_(cc_subq),
-                PurchaseRequest.created_by.in_(creator_subq),
-                PurchaseRequest.id.in_(task_pr),
-            )
-        )
+        if dept_id:
+            cc_dept_ids.add(dept_id)
+            creator_dept_ids.add(dept_id)
 
-    if role in ("gm", "opm"):
-        dept_ids = await _mapped_dept_ids(db, role)
-        if not dept_ids:
-            return select(PurchaseRequest.id).where(PurchaseRequest.id.in_(task_pr))
-        cc_subq = select(CostCenter.id).where(CostCenter.department_id.in_(dept_ids))
-        return select(PurchaseRequest.id).where(
-            or_(
-                PurchaseRequest.cost_center_id.in_(cc_subq),
-                PurchaseRequest.id.in_(task_pr),
-            )
-        )
+    for gm_role in ("gm", "opm"):
+        if gm_role in codes:
+            cc_dept_ids.update(await _mapped_dept_ids(db, gm_role))
 
-    if role == "director":
-        dept_ids = await _director_dept_ids(db, user_id)
-        if not dept_ids:
-            return select(PurchaseRequest.id).where(False)
-        cc_subq = select(CostCenter.id).where(CostCenter.department_id.in_(dept_ids))
-        creator_subq = select(User.id).where(User.department_id.in_(dept_ids))
-        return select(PurchaseRequest.id).where(
-            or_(PurchaseRequest.cost_center_id.in_(cc_subq),
-                PurchaseRequest.created_by.in_(creator_subq))
-        )
+    if "director" in codes:
+        for d in await _director_dept_ids(db, user_id):
+            cc_dept_ids.add(d)
+            creator_dept_ids.add(d)
 
-    if role == "supervisor":
+    if "supervisor" in codes:
         reports = select(User.id).where(User.supervisor_id == user_id)
-        return select(PurchaseRequest.id).where(PurchaseRequest.created_by.in_(reports))
+        conds.append(PurchaseRequest.created_by.in_(reports))
 
-    return None  # unrestricted
+    if cc_dept_ids:
+        conds.append(PurchaseRequest.cost_center_id.in_(
+            select(CostCenter.id).where(CostCenter.department_id.in_(cc_dept_ids))))
+    if creator_dept_ids:
+        conds.append(PurchaseRequest.created_by.in_(
+            select(User.id).where(User.department_id.in_(creator_dept_ids))))
+
+    return select(PurchaseRequest.id).where(or_(*conds))
 
 
 async def visible_po_subquery(
