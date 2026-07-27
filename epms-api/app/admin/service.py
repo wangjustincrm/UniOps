@@ -70,10 +70,33 @@ async def list_records(db: AsyncSession, entity: str, *, page: int, page_size: i
     return [_serialize(spec, r) for r in rows], total
 
 
+def _serialize_child(child, li) -> dict:
+    out = {"id": str(getattr(li, "id"))}
+    for f in child.fields:
+        v = getattr(li, f.name, None)
+        if isinstance(v, (datetime, date)):
+            v = v.isoformat()
+        elif isinstance(v, Decimal):
+            v = str(v)
+        elif isinstance(v, uuid.UUID):
+            v = str(v)
+        out[f.name] = v
+    return out
+
+
 async def get_record(db: AsyncSession, entity: str, record_id: uuid.UUID) -> dict | None:
     spec = _spec(entity)
     row = (await db.execute(select(spec.model).where(spec.model.id == record_id))).scalar_one_or_none()
-    return _serialize(spec, row) if row else None
+    if row is None:
+        return None
+    rec = _serialize(spec, row)
+    child = spec.schema.child
+    if child is not None:
+        lis = (await db.execute(
+            select(child.model).where(getattr(child.model, child.fk_field) == row.id)
+            .order_by(child.model.sort_order.asc()))).scalars().all()
+        rec["line_items"] = [_serialize_child(child, li) for li in lis]
+    return rec
 
 
 async def _load(db: AsyncSession, spec: EntitySpec, record_id: uuid.UUID):

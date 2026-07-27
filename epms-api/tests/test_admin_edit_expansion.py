@@ -265,3 +265,30 @@ async def test_edit_line_items_deletes_dropped_rows(test_engine):
         pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
         assert {l.id for l in remaining} == {l1}
         assert pr.amount == Decimal("10.00")
+
+
+@pytest.mark.asyncio
+async def test_get_record_includes_line_items(test_engine):
+    from app.models.user import User
+    from app.models.pr import PurchaseRequest, PrLineItem
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator = uuid.uuid4(); pr_id = uuid.uuid4()
+    async with factory() as db:
+        db.add(User(id=creator, email=f"g-{creator.hex[:6]}@x.com", hashed_password="x",
+                    full_name="C", role="requester"))
+        await db.commit()
+    async with factory() as db:
+        db.add(PurchaseRequest(id=pr_id, number="PR-G1", title="t", type=1, status="draft",
+                               currency="CAD", amount=Decimal("10"), created_by=creator))
+        await db.flush()
+        db.add(PrLineItem(id=uuid.uuid4(), pr_id=pr_id, description="a", qty=Decimal("1"),
+                          unit="ea", unit_price=Decimal("10"), line_total=Decimal("10"), sort_order=0))
+        await db.commit()
+    async with factory() as db:
+        rec = await service.get_record(db, "pr", pr_id)
+        assert "line_items" in rec and len(rec["line_items"]) == 1
+        assert rec["line_items"][0]["description"] == "a"
+        assert rec["line_items"][0]["line_total"] == "10.00"
+        assert "id" in rec["line_items"][0]
