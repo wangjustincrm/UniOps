@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { formatAmount } from '@/lib/utils'
-import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/invoices'
+import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 
 // invoiceLineId -> { poId, poLineId }
@@ -10,7 +11,7 @@ export type AllocationAssignment = Record<string, { poId: string; poLineId: stri
 interface Props {
   invoice: ApiInvoice
   pos: ApiPo[]                 // candidate POs (issued/approved, same vendor)
-  onSubmit: (allocations: AllocationInput[]) => void
+  onSubmit: (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[] }) => void
   submitting?: boolean
   defaultAssignments?: AllocationAssignment  // prefill (e.g. AI-recognized PO on upload)
 }
@@ -19,6 +20,13 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
   const lines: InvoiceLineItem[] = invoice.line_items ?? []
   const [assign, setAssign] = useState<AllocationAssignment>(defaultAssignments ?? {})
   const [dragLineId, setDragLineId] = useState<string | null>(null)
+  // Prefill non-PO marks from persisted line_items (re-opening a matched/exception invoice).
+  const [nonPo, setNonPo] = useState<Record<string, string | null>>(() => {
+    const m: Record<string, string | null> = {}
+    for (const l of lines) if (l.id && l.non_po_fee) m[l.id] = l.non_po_note ?? null
+    return m
+  })
+  const [menu, setMenu] = useState<{ x: number; y: number; lineId: string } | null>(null)
 
   const currency = invoice.currency
   // Allocations are pre-tax: invoice lines and PO lines are pre-tax, so we balance
@@ -51,7 +59,23 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
     return new Map(shared.map((a, i) => [a, HINT_COLORS[i % HINT_COLORS.length]]))
   }, [lines, pos])
   const hintColor = (amount: number) => amountColorMap.get(amount.toFixed(2))
-  const unallocated = total - assignedTotal
+
+  const isNonPo = (lineId?: string | null) => !!lineId && lineId in nonPo
+  const excludedTotal = useMemo(
+    () => Object.keys(nonPo).reduce((s, lid) => s + allocatedByLine(lid), 0),
+    [nonPo, lines],
+  )
+  const markNonPo = (lineId: string) => {
+    clearLine(lineId)                                   // marking wins over any allocation
+    setNonPo((p) => ({ ...p, [lineId]: p[lineId] ?? null }))
+    setMenu(null)
+  }
+  const unmarkNonPo = (lineId: string) =>
+    setNonPo((p) => { const n = { ...p }; delete n[lineId]; return n })
+  const setNote = (lineId: string, note: string) =>
+    setNonPo((p) => ({ ...p, [lineId]: note }))
+
+  const unallocated = total - assignedTotal - excludedTotal
   const balanced = Math.abs(unallocated) < 0.01
 
   const drop = (poId: string, poLineId: string) => {
@@ -72,6 +96,11 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
       allocated_tax: 0,
     }))
 
+  const submit = () => onSubmit({
+    allocations: buildAllocations(),
+    nonPoLines: Object.entries(nonPo).map(([line_id, note]) => ({ line_id, note })),
+  })
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5">
@@ -87,6 +116,11 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
           {formatAmount(unallocated, currency)}
         </span>
       </div>
+      {excludedTotal > 0 && (
+        <span className="-mt-2 text-[11px] text-neutral-400">
+          {formatAmount(excludedTotal, currency)} in non-PO fees excluded from matching
+        </span>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         {/* Invoice lines (drag source) */}
@@ -95,10 +129,40 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {lines.map((l) => {
               const a = l.id ? assign[l.id] : undefined
+              if (isNonPo(l.id)) {
+                return (
+                  <div key={l.id}
+                    className="rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2 text-sm opacity-80">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate text-neutral-500 line-through">{l.description}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">
+                          Non-PO fee
+                        </span>
+                        <span className="font-mono text-xs text-neutral-500">{formatAmount(Number(l.line_total), currency)}</span>
+                      </div>
+                    </div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={(l.id && nonPo[l.id]) || ''}
+                        onChange={(e) => l.id && setNote(l.id, e.target.value)}
+                        placeholder="note (optional), e.g. shipping"
+                        className="h-6 flex-1 rounded border border-neutral-300 bg-white px-2 text-[11px] focus:outline-none focus:ring-1 focus:ring-primary-500"
+                      />
+                      <button onClick={() => l.id && unmarkNonPo(l.id)}
+                        className="text-[11px] text-primary-600 hover:underline">
+                        Unmark
+                      </button>
+                    </div>
+                  </div>
+                )
+              }
               return (
                 <div key={l.id}
                   draggable
                   onDragStart={() => setDragLineId(l.id ?? null)}
+                  onContextMenu={(e) => { e.preventDefault(); if (l.id) setMenu({ x: e.clientX, y: e.clientY, lineId: l.id }) }}
                   className={`cursor-grab rounded-lg border px-3 py-2 text-sm ${a ? 'border-primary-200 bg-primary-50' : 'border-neutral-200'} ${hintColor(Number(l.line_total)) ? `border-l-4 ${hintColor(Number(l.line_total))}` : ''}`}>
                   <div className="flex justify-between">
                     <span className="truncate">{l.description}</span>
@@ -110,6 +174,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
                       Assigned - unassign
                     </button>
                   )}
+                  <span className="mt-1 block text-[10px] text-neutral-300">right-click to mark as other fee</span>
                 </div>
               )
             })}
@@ -156,10 +221,27 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
       </div>
 
       <div className="flex justify-end">
-        <Button onClick={() => onSubmit(buildAllocations())} disabled={!balanced || submitting}>
+        <Button onClick={submit} disabled={!balanced || submitting}>
           {submitting ? 'Matching...' : 'Confirm allocation & match'}
         </Button>
       </div>
+
+      {menu && createPortal(
+        <div className="fixed inset-0 z-50"
+          onClick={() => setMenu(null)}
+          onContextMenu={(e) => { e.preventDefault(); setMenu(null) }}>
+          <div className="absolute min-w-[210px] rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
+            style={{ top: menu.y, left: menu.x }}
+            onClick={(e) => e.stopPropagation()}>
+            <button
+              className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50"
+              onClick={() => markNonPo(menu.lineId)}>
+              Mark as other fee (shipping etc.)
+            </button>
+          </div>
+        </div>,
+        document.body,
+      )}
     </div>
   )
 }

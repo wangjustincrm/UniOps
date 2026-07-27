@@ -19,7 +19,7 @@ import { useGrs } from '@/hooks/useGrs'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
-import type { ApiInvoice, InvoiceLineItem, AllocationInput } from '@/services/invoices'
+import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
 import { MatchPanel } from './MatchPanel'
@@ -323,10 +323,10 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       }
     }
 
-    const handleAllocSubmit = (allocations: AllocationInput[]) => {
+    const handleAllocSubmit = (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[] }) => {
       const linkedGr = matchedPo ? grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled') : undefined
       matchInvoiceMutation.mutate(
-        { id: createdInv.id, allocations, gr_id: linkedGr?.id },
+        { id: createdInv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines, gr_id: linkedGr?.id },
         { onSuccess: () => onUploaded(createdInv.id) },
       )
     }

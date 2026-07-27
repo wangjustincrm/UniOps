@@ -4,7 +4,7 @@ import { AlertTriangle, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useDeclineMatch, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
 import { useAuthStore } from '@/stores/auth.store'
-import type { ApiInvoice, AllocationInput } from '@/services/invoices'
+import type { ApiInvoice, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
 
@@ -32,9 +32,9 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
     p.vendor_name.toLowerCase().includes(poSearch.toLowerCase())
   )
 
-  const handleMatch = (allocations: AllocationInput[]) => {
+  const handleMatch = (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[] }) => {
     matchInvoiceMutation.mutate(
-      { id: inv.id, allocations },
+      { id: inv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines },
       {
         onSuccess: () => {
           onClose()
