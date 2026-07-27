@@ -170,3 +170,18 @@ def test_recompute_pa_header_with_charges():
     assert result["subtotal"] == Decimal("200.00")
     assert result["tax_amount"] == Decimal("20.00")
     assert result["payment_amount"] == Decimal("245.00")  # 200 + 20 + 20 + 5 - 0
+
+
+def test_registry_entities_have_child_line_items():
+    from app.admin.registry import REGISTRY
+
+    for key, fk in [("pr", "pr_id"), ("po", "po_id"), ("pa", "pa_id")]:
+        child = REGISTRY[key].schema.child
+        assert child is not None, f"{key} missing child schema"
+        assert child.fk_field == fk
+        names = {f.name for f in child.fields}
+        assert {"description", "qty", "unit", "unit_price"} <= names
+        # line_total is server-computed → read-only in the child schema
+        lt = child.field_type("line_total")
+        assert lt == "decimal"
+        assert not any(f.name == "line_total" and f.editable for f in child.fields)

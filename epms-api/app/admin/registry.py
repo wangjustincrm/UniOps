@@ -19,13 +19,13 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import count_polymorphic, purge_workflow_refs
-from app.admin.fields import EntitySchema, FieldSpec
+from app.admin.fields import EntitySchema, FieldSpec, ChildSchema
 from app.models.approval import ApprovalEvent
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
-from app.models.pa import PaymentApplication
-from app.models.po import PurchaseOrder
-from app.models.pr import PurchaseRequest
+from app.models.pa import PaymentApplication, PaLineItem
+from app.models.po import PurchaseOrder, PoLineItem
+from app.models.pr import PurchaseRequest, PrLineItem
 from app.models.task import Task
 
 CascadeFn = Callable[[AsyncSession, object], Awaitable[dict[str, int]]]
@@ -192,6 +192,50 @@ async def _pr_preview(db: AsyncSession, pr) -> dict[str, int]:
     return _merge(summary, await _wf_counts(db, pr.id))
 
 
+# ── Line-item child schemas ─────────────────────────────────────────────────
+# line_total is server-computed (recompute.py) → read-only in each child schema.
+
+_PR_CHILD = ChildSchema(
+    table_label="Line Items", model=PrLineItem, fk_field="pr_id",
+    fields=[
+        FieldSpec("description", "string", True),
+        FieldSpec("material_id", "string", True),
+        FieldSpec("supplier_item_id", "string", True),
+        FieldSpec("qty", "decimal", True),
+        FieldSpec("unit", "string", True),
+        FieldSpec("unit_price", "decimal", True),
+        FieldSpec("line_total", "decimal", False),   # server-computed
+        FieldSpec("notes", "string", True),
+        FieldSpec("sort_order", "number", True),
+    ],
+)
+_PO_CHILD = ChildSchema(
+    table_label="Line Items", model=PoLineItem, fk_field="po_id",
+    fields=[
+        FieldSpec("description", "string", True),
+        FieldSpec("material_id", "string", True),
+        FieldSpec("supplier_item_id", "string", True),
+        FieldSpec("qty", "decimal", True),
+        FieldSpec("unit", "string", True),
+        FieldSpec("unit_price", "decimal", True),
+        FieldSpec("line_total", "decimal", False),
+        FieldSpec("notes", "string", True),
+        FieldSpec("sort_order", "number", True),
+    ],
+)
+_PA_CHILD = ChildSchema(
+    table_label="Line Items", model=PaLineItem, fk_field="pa_id",
+    fields=[
+        FieldSpec("description", "string", True),
+        FieldSpec("qty", "decimal", True),
+        FieldSpec("unit", "string", True),
+        FieldSpec("unit_price", "decimal", True),
+        FieldSpec("line_total", "decimal", False),
+        FieldSpec("notes", "string", True),
+        FieldSpec("sort_order", "number", True),
+    ],
+)
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
 # Field names verified against the ORM models. Identity/number/created_by/totals
 # are read-only; status, names, amounts, notes, dates are editable.
@@ -223,6 +267,7 @@ _PR_SCHEMA = EntitySchema(
         FieldSpec("required_by", "date", True),
         FieldSpec("created_at", "datetime", False),
     ],
+    child=_PR_CHILD,
 )
 
 _PO_SCHEMA = EntitySchema(
@@ -250,6 +295,7 @@ _PO_SCHEMA = EntitySchema(
         FieldSpec("notes", "string", True),
         FieldSpec("created_at", "datetime", False),
     ],
+    child=_PO_CHILD,
 )
 
 _GR_SCHEMA = EntitySchema(
@@ -311,6 +357,7 @@ _PA_SCHEMA = EntitySchema(
         FieldSpec("notes", "string", True),
         FieldSpec("created_at", "datetime", False),
     ],
+    child=_PA_CHILD,
 )
 
 # ── Task Inbox (delete-only) ────────────────────────────────────────────────────
