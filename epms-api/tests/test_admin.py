@@ -62,7 +62,8 @@ def test_field_spec_serialization():
     data = schema.to_dict()
     assert data["key"] == "pr"
     assert data["fields"][0] == {"name": "number", "type": "string", "editable": False,
-                                 "label": "number", "options": None}
+                                 "label": "number", "options": None,
+                                 "ref_source": None, "ref_name_field": None}
     assert data["fields"][2]["options"] == ["draft", "approved"]
 
 

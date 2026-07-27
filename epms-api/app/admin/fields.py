@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-FieldType = str  # "string"|"number"|"decimal"|"bool"|"date"|"datetime"|"uuid"|"json"|"enum"
+# adds "reference" — a FK the admin edits via a picker (id + denormalized name)
+FieldType = str  # "string"|"number"|"decimal"|"bool"|"date"|"datetime"|"uuid"|"json"|"enum"|"reference"
 
 
 @dataclass
@@ -12,7 +13,9 @@ class FieldSpec:
     type: FieldType
     editable: bool
     label: str | None = None
-    options: list[str] | None = None  # for enum types
+    options: list[str] | None = None          # for enum types
+    ref_source: str | None = None             # for reference: resolver key ("users"|"vendors"|"cost_centers")
+    ref_name_field: str | None = None         # for reference: denormalized name column kept in sync
 
     def to_dict(self) -> dict:
         return {
@@ -21,7 +24,34 @@ class FieldSpec:
             "editable": self.editable,
             "label": self.label or self.name,
             "options": self.options,
+            "ref_source": self.ref_source,
+            "ref_name_field": self.ref_name_field,
         }
+
+
+@dataclass
+class ChildSchema:
+    """A one-level child collection (line items) editable inline with the parent."""
+    table_label: str
+    model: type
+    fk_field: str                              # child column pointing back at the parent id
+    fields: list[FieldSpec] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "table_label": self.table_label,
+            "fk_field": self.fk_field,
+            "fields": [f.to_dict() for f in self.fields],
+        }
+
+    def editable_field_names(self) -> set[str]:
+        return {f.name for f in self.fields if f.editable}
+
+    def field_type(self, name: str) -> str | None:
+        for f in self.fields:
+            if f.name == name:
+                return f.type
+        return None
 
 
 @dataclass
@@ -33,7 +63,8 @@ class EntitySchema:
     search_fields: list[str]
     order_by: str
     fields: list[FieldSpec] = field(default_factory=list)
-    allow_edit: bool = True  # False = delete-only entity (no PATCH)
+    allow_edit: bool = True                    # False = delete-only entity (no PATCH)
+    child: ChildSchema | None = None           # line-item sub-collection (None = none)
 
     def to_dict(self) -> dict:
         return {
@@ -45,6 +76,7 @@ class EntitySchema:
             "order_by": self.order_by,
             "allow_edit": self.allow_edit,
             "fields": [f.to_dict() for f in self.fields],
+            "child": self.child.to_dict() if self.child else None,
         }
 
     def editable_field_names(self) -> set[str]:
@@ -54,4 +86,10 @@ class EntitySchema:
         for f in self.fields:
             if f.name == name:
                 return f.type
+        return None
+
+    def field_spec(self, name: str) -> FieldSpec | None:
+        for f in self.fields:
+            if f.name == name:
+                return f
         return None
