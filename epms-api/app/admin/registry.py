@@ -266,6 +266,7 @@ _PR_SCHEMA = EntitySchema(
         FieldSpec("notes", "string", True),
         FieldSpec("required_by", "date", True),
         FieldSpec("created_at", "datetime", False),
+        FieldSpec("approval_step_idx", "number", False),
     ],
     child=_PR_CHILD,
 )
@@ -294,6 +295,7 @@ _PO_SCHEMA = EntitySchema(
         FieldSpec("is_prepaid", "bool", True),
         FieldSpec("notes", "string", True),
         FieldSpec("created_at", "datetime", False),
+        FieldSpec("approval_step_idx", "number", False),
     ],
     child=_PO_CHILD,
 )
@@ -357,6 +359,7 @@ _PA_SCHEMA = EntitySchema(
         FieldSpec("vendor_name", "string", False),
         FieldSpec("notes", "string", True),
         FieldSpec("created_at", "datetime", False),
+        FieldSpec("approval_step_idx", "number", False),
     ],
     child=_PA_CHILD,
 )
