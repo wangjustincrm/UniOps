@@ -503,6 +503,7 @@ async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: 
     # against total_amount here wrongly reset taxed invoices to unmatched on edit.
     alloc_total = sum((r.allocated_amount for r in rows), Decimal("0"))
     if abs(alloc_total - invoice.amount) > Decimal("0.01"):
+        former_po_id = invoice.po_id
         await db.execute(sa_delete(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id))
         invoice.status = "unmatched"
         invoice.po_id = None
@@ -512,6 +513,11 @@ async def rematch_from_existing(db: AsyncSession, invoice: Invoice, matched_by: 
         invoice.variance_pct = None
         invoice.matched_at = None
         await db.flush()
+        # This invoice no longer backs a payment; clear the PO's create_pa task
+        # if nothing else matched to it (else it lingers as an orphan forever).
+        if former_po_id is not None:
+            from app.crud.task import _complete_orphan_create_pa_tasks
+            await _complete_orphan_create_pa_tasks(db, former_po_id)
         await db.refresh(invoice, ["allocations"])
         return invoice
     req = InvoiceMatchRequest(allocations=[
@@ -596,8 +602,14 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
             f"Cannot delete invoice in '{invoice.status}' status. "
             "Only unmatched or exception invoices may be deleted."
         )
+    po_id = invoice.po_id
     await db.delete(invoice)
     await db.flush()
+    # If this was the last invoice keeping a create_pa task alive for its PO,
+    # complete that task so it doesn't linger in the requester's inbox.
+    if po_id is not None:
+        from app.crud.task import _complete_orphan_create_pa_tasks
+        await _complete_orphan_create_pa_tasks(db, po_id)
 
 
 # ── Status update ──────────────────────────────────────────────────────────────

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
@@ -44,6 +45,84 @@ async def _complete_stale_create_pa_tasks(db: AsyncSession) -> None:
     result = await db.execute(stale_q)
     now = datetime.now(timezone.utc)
     for task in result.scalars().all():
+        task.is_completed = True
+        task.completed_at = now
+    await db.flush()
+
+
+async def _complete_orphan_create_pa_tasks(
+    db: AsyncSession, po_id: uuid.UUID | None = None
+) -> None:
+    """Complete open PO-anchored create_pa tasks whose PO has NO matched invoice
+    and NO PA — the matched invoice that raised the task was later deleted or
+    reverted out of "matched". Without this the task lingers forever, because
+    completion is otherwise tied only to PA creation (see
+    _complete_stale_create_pa_tasks) — a real prod orphan (POs with no invoice
+    still prompting "Create Payment Application").
+
+    po_id=None → sweep every such orphan (inbox self-heal on each GET /tasks).
+    po_id set  → target one PO, called the moment an invoice leaves "matched" /
+                 is deleted so the requester's inbox clears immediately.
+
+    Scoped to document_type="po": GR-anchored create_pa tasks legitimately have
+    no invoice, so they are left to the PA-based completion path. A "matched"
+    invoice counts whether it links via header po_id OR a line allocation — the
+    same reference invoice_crud.list treats as "this PO has an invoice".
+    """
+    pos_with_pa = select(PaymentApplication.po_id).where(
+        PaymentApplication.po_id.is_not(None)
+    )
+    pos_matched_header = select(Invoice.po_id).where(
+        Invoice.status == "matched", Invoice.po_id.is_not(None)
+    )
+    pos_matched_alloc = (
+        select(InvoicePoAllocation.po_id)
+        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+        .where(Invoice.status == "matched")
+    )
+    q = select(Task).where(
+        Task.type == "create_pa",
+        Task.is_completed.is_(False),
+        Task.document_type == "po",
+        Task.document_id.not_in(pos_with_pa),
+        Task.document_id.not_in(pos_matched_header),
+        Task.document_id.not_in(pos_matched_alloc),
+    )
+    if po_id is not None:
+        q = q.where(Task.document_id == po_id)
+    tasks = (await db.execute(q)).scalars().all()
+    if not tasks:
+        return
+    now = datetime.now(timezone.utc)
+    for task in tasks:
+        task.is_completed = True
+        task.completed_at = now
+    await db.flush()
+
+
+async def _complete_stale_place_order_tasks(db: AsyncSession) -> None:
+    """Complete open place_order tasks whose PO is no longer 'approved'.
+
+    place_order is only valid while a PO sits 'approved' and unplaced. The live
+    place_order() action flips the PO to 'issued' AND completes the task via
+    _complete_tasks. PMS-imported / bulk-synced POs were set straight to
+    issued / received WITHOUT that action, so their place_order tasks were never
+    completed and linger in Procurement's inbox (real prod: 11 such tasks on
+    issued / fully_received POs). Mirrors _backfill_place_order_tasks' inverse:
+    it creates only for status == 'approved', so anything past that is stale.
+    """
+    pos_not_approved = select(PurchaseOrder.id).where(PurchaseOrder.status != "approved")
+    stale_q = select(Task).where(
+        Task.type == "place_order",
+        Task.is_completed.is_(False),
+        Task.document_type == "po",
+        Task.document_id.in_(pos_not_approved),
+    )
+    tasks = (await db.execute(stale_q)).scalars().all()
+    if not tasks:
+        return
+    now = datetime.now(timezone.utc)
+    for task in tasks:
         task.is_completed = True
         task.completed_at = now
     await db.flush()
@@ -325,6 +404,8 @@ async def get_for_role(
     """
     await _complete_stale_create_po_tasks(db)
     await _complete_stale_create_pa_tasks(db)
+    await _complete_orphan_create_pa_tasks(db)
+    await _complete_stale_place_order_tasks(db)
     await _complete_stale_create_prepayment_pa_tasks(db)
     await _backfill_create_po_tasks(db)
     await _backfill_place_order_tasks(db)
