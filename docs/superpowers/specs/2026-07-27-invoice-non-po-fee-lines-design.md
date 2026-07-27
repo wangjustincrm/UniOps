@@ -91,7 +91,10 @@ goods 全分到 PO、shipping 全标记后即可平账,提交按钮亮起。
 
 **PA / 付款不会自动带入非PO费用。** PA 仍按 PO 行重算,制单人需在 PA 现有的 `shipping_amount` / `other_charges` 字段**手工补**这笔费用;否则出纳会少付,而 `payment_execute` 会把 AP 强置"已付全额"([`payment_execute.py:300-303`](../../../finance-api/app/crud/payment_execute.py#L300-L303))掩盖差额。
 
-后续建议单独立项做端到端"照付":把非PO费用自动带入 PA 的 `other_charges`,或修 `payment_execute` 的强置掩盖逻辑,使少付留为 AP 未清残余。
+> ⚠️ **发布必读(release-blocker 级警告)——本功能会"激活"一条此前不可达的静默少付路径。**
+> 此前带 shipping 行的发票**根本 match 不了**,永远走不到 PA/付款。本功能放开匹配后,这类发票会一路走到 PA:finance AP 按发票头**全额**同步(含费用)→ PA 只按 PO 行重算(**不含**费用)→ `payment_execute` 又把 AP `paid_amount` 强置为 `total_amount`,于是 **AP 账面显示"已付清"、实际出纳少付了这笔费用,且无任何残余提示**。
+> **上线必须同步给 AP/制单人**:凡是含"非PO费用"标记的发票,建 PA 时务必把该费用手工填进 PA 的 `shipping_amount` / `other_charges`。否则会静默少付。
+> 根治需另立项做端到端"照付":把非PO费用自动带入 PA 的 `other_charges`,或修 `payment_execute` 的强置掩盖逻辑,使少付留为 AP 未清残余。
 
 ## 测试
 
