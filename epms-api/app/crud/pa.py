@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -26,11 +27,7 @@ from app.services.pdf_pa import generate_pa_pdf
 async def _next_number(db: AsyncSession) -> str:
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     prefix = f"PA-{today}-"
-    result = await db.execute(
-        select(func.count()).where(PaymentApplication.pa_number.like(f"{prefix}%"))
-    )
-    count = result.scalar_one()
-    return f"{prefix}{count + 1:04d}"
+    return await next_number(db, PaymentApplication.pa_number, prefix, width=4)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

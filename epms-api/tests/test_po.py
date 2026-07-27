@@ -406,3 +406,38 @@ async def test_po_approve_auto_skips_step_held_by_same_actor(test_engine):
         assert [e.action for e in events] == ["approve", "approve"]
         assert events[1].comment == "Auto-approved (same approver holds both roles)"
         assert events[1].actor_role == "finance_manager"
+
+
+# ── Number generation: survives sequence gaps (regression) ─────────────────────
+
+@pytest.mark.asyncio
+async def test_po_number_survives_sequence_gap(admin_client, test_engine):
+    """Regression for prod 500 (UniqueViolation on ix_purchase_orders_number).
+
+    PO numbers must key off the MAX existing sequence, not count(*). When an
+    earlier PO in the prefix window is deleted / renumbered, count() lags the
+    real max tail — and count()+1 regenerates an already-existing number,
+    raising IntegrityError -> 500. This reproduces the gap, then asserts the
+    next PO gets a fresh number instead of colliding.
+    """
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    v = await _make_vendor(admin_client, code="GAPSEQ")
+    po1 = await _create_po(admin_client, v["id"])   # ...-01
+    po2 = await _create_po(admin_client, v["id"])   # ...-02
+    assert po1["number"].endswith("-01")
+    assert po2["number"].endswith("-02")
+
+    # Move po1 out of the prefix window: now count()==1 but the real max tail==2.
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await db.execute(
+            sa.text("UPDATE purchase_orders SET number = :n WHERE id = :i"),
+            {"n": "PO-ARCHIVED-000001-01", "i": po1["id"]},
+        )
+        await db.commit()
+
+    # Under the old count()+1 this regenerates po2's -02 -> UniqueViolation 500.
+    po3 = await _create_po(admin_client, v["id"])
+    assert po3["number"] != po2["number"], "regenerated an existing PO number"
+    assert po3["number"].endswith("-03")
