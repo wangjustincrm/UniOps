@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.gr import GoodsReceipt
@@ -19,6 +19,29 @@ from app.models.task import Task
 # cutoff (roughly when EPMS became the system of record); every month from then
 # on is included, so this stays correct as time moves forward.
 _BACKFILL_MIN_CREATED = datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+
+def _already_surfaced(task_type: str, document_type: str):
+    """Docs whose backfilled task must NOT be re-raised — those with either an
+    OPEN task OR one a USER explicitly dismissed via "Mark Done"
+    (completed_by IS NOT NULL).
+
+    Why completed_by matters (prod bug): "Mark Done" (POST /tasks/{id}/complete)
+    only flips is_completed; it does not advance the underlying document. A
+    place_order task's PO stays 'approved'/unplaced, so a backfill that keyed
+    dedup on OPEN tasks alone re-raised it every inbox load — and because the
+    inbox fires several GET /tasks at once, the unguarded re-raise landed as
+    DUPLICATE open rows. Treating a user completion as permanent dismissal fixes
+    both: the task stays gone, and there is nothing left to duplicate.
+
+    System/document completions (completed_by IS NULL — _complete_tasks and the
+    stale-sweeps) are deliberately NOT counted here, so a legitimate re-raise
+    still fires (e.g. a PR whose PO was deleted must re-prompt Create PO)."""
+    return select(Task.document_id).where(
+        Task.type == task_type,
+        Task.document_type == document_type,
+        or_(Task.is_completed.is_(False), Task.completed_by.is_not(None)),
+    )
 
 
 async def _complete_stale_create_pa_tasks(db: AsyncSession) -> None:
@@ -208,12 +231,11 @@ async def _backfill_create_po_tasks(db: AsyncSession) -> None:
     if not approved_prs:
         return
 
-    pr_ids_with_task_q = select(Task.document_id).where(
-        Task.type == "create_po",
-        Task.is_completed.is_(False),
-        Task.document_type == "pr",
+    # Don't re-raise for a PR whose create_po task is still open OR was
+    # user-dismissed via Mark Done (see _already_surfaced).
+    pr_ids_with_task = set(
+        (await db.execute(_already_surfaced("create_po", "pr"))).scalars().all()
     )
-    pr_ids_with_task = set((await db.execute(pr_ids_with_task_q)).scalars().all())
 
     for pr in approved_prs:
         if pr.id not in pr_ids_with_task:
@@ -244,13 +266,11 @@ async def _backfill_place_order_tasks(db: AsyncSession) -> None:
     if not approved_pos:
         return
 
-    # Find which of those already have an open place_order task
-    po_ids_with_task_q = select(Task.document_id).where(
-        Task.type == "place_order",
-        Task.is_completed.is_(False),
-        Task.document_type == "po",
+    # Skip POs whose place_order task is still open OR was user-dismissed via
+    # Mark Done (see _already_surfaced) — a manual dismissal is permanent.
+    po_ids_with_task = set(
+        (await db.execute(_already_surfaced("place_order", "po"))).scalars().all()
     )
-    po_ids_with_task = set((await db.execute(po_ids_with_task_q)).scalars().all())
 
     for po in approved_pos:
         if po.id not in po_ids_with_task:
@@ -285,11 +305,9 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
     same assignee the live task uses.
     """
     pos_with_pa = select(PaymentApplication.po_id).where(PaymentApplication.po_id.is_not(None))
-    pos_with_open_task = select(Task.document_id).where(
-        Task.type == "create_pa",
-        Task.is_completed.is_(False),
-        Task.document_type == "po",
-    )
+    # Skip POs whose create_pa task is still open OR was user-dismissed via
+    # Mark Done (see _already_surfaced).
+    pos_with_open_task = _already_surfaced("create_pa", "po")
     recent_matched_pos = select(Invoice.po_id).where(
         Invoice.status == "matched",
         Invoice.po_id.is_not(None),
@@ -402,6 +420,15 @@ async def get_for_role(
     system_admin sees all tasks.
     is_completed=None returns open tasks (default), True returns completed tasks.
     """
+    # Serialize the read-side backfills across concurrent GET /tasks. The inbox
+    # fires several requests at once (header badge + open list + completed list),
+    # all of which run these backfills. Without this, two could both read "this
+    # doc has no task" and each INSERT one, producing duplicate open rows (the
+    # Task Inbox duplication bug). A transaction-scoped advisory lock makes the
+    # read-check-insert atomic across requests; it releases automatically when
+    # the request's transaction commits.
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('epms:task_backfill'))"))
+
     await _complete_stale_create_po_tasks(db)
     await _complete_stale_create_pa_tasks(db)
     await _complete_orphan_create_pa_tasks(db)
