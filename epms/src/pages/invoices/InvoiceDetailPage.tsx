@@ -527,7 +527,17 @@ export default function InvoiceDetailPage() {
                       <tbody>
                         {inv.line_items.map((item, idx) => (
                           <tr key={idx} className="border-b border-neutral-50 last:border-0">
-                            <td className="py-2.5 pr-4 text-neutral-800">{item.description}</td>
+                            <td className="py-2.5 pr-4 text-neutral-800">
+                              <span>{item.description}</span>
+                              {item.non_po_fee && (
+                                <span className="ml-2 inline-flex items-center rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 align-middle">
+                                  Non-PO fee
+                                </span>
+                              )}
+                              {item.non_po_fee && item.non_po_note && (
+                                <span className="ml-2 text-[11px] text-neutral-400">{item.non_po_note}</span>
+                              )}
+                            </td>
                             <td className="py-2.5 text-right font-mono text-xs text-neutral-600">{Number(item.quantity)}</td>
                             <td className="py-2.5 pl-3 text-xs text-neutral-400">{item.unit ?? '—'}</td>
                             <td className="py-2.5 text-right font-mono text-xs text-neutral-600">{formatAmount(Number(item.unit_price), inv.currency)}</td>
