@@ -400,6 +400,43 @@ async def test_non_po_fee_line_lets_mixed_invoice_match(admin_client):
     assert ship["non_po_fee"] is True
     assert ship["non_po_note"] == "freight"
     assert goods["non_po_fee"] is False           # 未标记的行默认 False
+    # 头部 variance 只应衡量 PO 匹配部分:发票 1150 - 非PO费用 150 = 1000,
+    # 与 PO 参照 1000 相等 → variance 应为 0,不应被非PO费用污染(Finding 2)。
+    assert float(data["variance"]) == 0.0
+    assert float(data["po_total"]) == 1000.00
+
+
+@pytest.mark.asyncio
+async def test_non_po_line_also_allocated_rejected_422(admin_client):
+    """同一行不能既分配到 PO 又标记为非PO费用(会在平账里被双重计入,
+    可能掩盖真实超/少开)→ 422(Finding 1)。"""
+    await _ensure_company_config()
+    v = await _make_vendor(admin_client, "VND-NONPO-OVERLAP")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "Widget", "qty": "1", "unit": "EA", "unit_price": "1000.00"},
+               {"description": "Freight line", "qty": "1", "unit": "EA", "unit_price": "150.00"}])
+    po_goods = po["line_items"][0]["id"]
+    po_ship = po["line_items"][1]["id"]
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], vendor_invoice_number="INV-NONPO-OVERLAP",
+        amount="1150.00", tax_amount="0.00",
+        line_items=[
+            {"description": "Widget", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"},
+            {"description": "Shipping", "quantity": "1", "unit_price": "150.00", "line_total": "150.00"},
+        ]))).json()
+    goods_line = inv["line_items"][0]["id"]
+    ship_line = inv["line_items"][1]["id"]
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [
+            {"invoice_line_id": goods_line, "po_id": po["id"], "po_line_id": po_goods,
+             "allocated_amount": "1000.00", "allocated_tax": "0.00"},
+            {"invoice_line_id": ship_line, "po_id": po["id"], "po_line_id": po_ship,
+             "allocated_amount": "150.00", "allocated_tax": "0.00"},
+        ],
+        "non_po_lines": [{"line_id": ship_line, "note": "freight"}],
+    })
+    assert r.status_code == 422, r.text
 
 
 @pytest.mark.asyncio

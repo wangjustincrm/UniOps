@@ -295,6 +295,15 @@ async def match(
                 li["non_po_note"] = None
         flag_modified(invoice, "line_items")
 
+    # 0b. mutual exclusion: a line cannot be both allocated to a PO and marked
+    # non-PO fee — that would double-count its amount in the balance check
+    # below (real allocation + excluded_total) and could mask an imbalance.
+    overlap = {str(a.invoice_line_id) for a in allocs} & set(non_po_map)
+    if overlap:
+        raise AllocationImbalance(
+            f"Line(s) {sorted(overlap)} cannot be both allocated to a PO and marked as non-PO fee"
+        )
+
     # 1. integrity: allocations carry PRE-TAX amounts (invoice/PO lines are
     # pre-tax; tax reconciles at the invoice header), so pre-tax allocations
     # PLUS non-PO fee lines must equal the invoice's pre-tax amount.
@@ -404,7 +413,12 @@ async def match(
         else:
             summary_reference += po_cache[row.po_id].subtotal
     invoice.po_total = summary_reference
-    invoice.variance = invoice.amount - summary_reference
+    # Header variance measures only the PO-matched portion of the invoice: a
+    # non-PO fee line's pre-tax amount is not part of the PO reference, so it
+    # must be subtracted from the invoice side here or a perfectly-balanced
+    # mixed invoice (PO alloc + non-PO fee) would show a spurious variance and
+    # a misleading "Auto-matched within tolerance" exception_reason below.
+    invoice.variance = (invoice.amount - excluded_total) - summary_reference
     invoice.variance_pct = (
         (invoice.variance / summary_reference * 100).quantize(Decimal("0.0001"))
         if summary_reference != Decimal("0") else Decimal("0")
