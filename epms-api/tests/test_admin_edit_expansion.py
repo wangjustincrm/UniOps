@@ -35,3 +35,23 @@ def test_entityschema_child_serialization():
     assert d["child"]["table_label"] == "Line Items"
     assert d["child"]["fk_field"] == "pr_id"
     assert [f["name"] for f in d["child"]["fields"]] == ["description", "qty"]
+
+
+@pytest.mark.asyncio
+async def test_resolver_fetch_and_search_vendors(test_engine):
+    from app.models.vendor import Vendor
+    from app.admin.resolvers import get_resolver
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    vid = uuid.uuid4()
+    async with factory() as db:
+        db.add(Vendor(id=vid, code="V-ABC", name="Acme Supplies",
+                      category="supplier", contact_name="A", contact_email="a@x.com"))
+        await db.commit()
+
+    resolver = get_resolver("vendors")
+    async with factory() as db:
+        got = await resolver.fetch_by_id(db, vid)
+        assert got is not None and got.label == "Acme Supplies"
+        hits = await resolver.search(db, "acme", limit=10)
+        assert any(h.id == vid for h in hits)
