@@ -55,3 +55,17 @@ async def test_resolver_fetch_and_search_vendors(test_engine):
         assert got is not None and got.label == "Acme Supplies"
         hits = await resolver.search(db, "acme", limit=10)
         assert any(h.id == vid for h in hits)
+
+
+def test_registry_pr_has_reference_and_expanded_fields():
+    from app.admin.registry import REGISTRY
+
+    schema = REGISTRY["pr"].schema
+    names = {f.name for f in schema.fields}
+    assert {"created_by", "vendor_id", "cost_center_id", "project_code",
+            "delivery_address", "is_prepaid"} <= names
+    created_by = schema.field_spec("created_by")
+    assert created_by.type == "reference" and created_by.ref_source == "users"
+    assert created_by.editable is True
+    vendor = schema.field_spec("vendor_id")
+    assert vendor.ref_source == "vendors" and vendor.ref_name_field == "vendor_name"
