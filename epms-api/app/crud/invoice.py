@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
@@ -276,13 +277,32 @@ async def match(
     if not allocs:
         raise ValueError("At least one allocation is required")
 
+    # 0. 非PO费用行:排除出 PO 匹配,但其税前 line_total 计入平账(照付,随发票头
+    # 走 AP)。每次 match 以入参为准重写标记 —— 未列出的行清除标记(支持 unmark)。
+    non_po_map: dict[str, str | None] = {
+        str(n.line_id): n.note for n in (req.non_po_lines or [])
+    }
+    excluded_total = Decimal("0")
+    if invoice.line_items:
+        for li in invoice.line_items:
+            lid = str(li.get("id"))
+            if lid in non_po_map:
+                li["non_po_fee"] = True
+                li["non_po_note"] = non_po_map[lid]
+                excluded_total += Decimal(str(li.get("line_total") or "0"))
+            else:
+                li["non_po_fee"] = False
+                li["non_po_note"] = None
+        flag_modified(invoice, "line_items")
+
     # 1. integrity: allocations carry PRE-TAX amounts (invoice/PO lines are
-    # pre-tax; tax reconciles at the invoice header), so the pre-tax allocation
-    # total must equal the invoice's pre-tax amount.
+    # pre-tax; tax reconciles at the invoice header), so pre-tax allocations
+    # PLUS non-PO fee lines must equal the invoice's pre-tax amount.
     alloc_total = sum((a.allocated_amount for a in allocs), Decimal("0"))
-    if abs(alloc_total - invoice.amount) > Decimal("0.01"):
+    if abs(alloc_total + excluded_total - invoice.amount) > Decimal("0.01"):
         raise AllocationImbalance(
-            f"Allocations total {alloc_total} must equal invoice pre-tax amount {invoice.amount}"
+            f"Allocations {alloc_total} + non-PO fees {excluded_total} must equal "
+            f"invoice pre-tax amount {invoice.amount}"
         )
 
     # 2. validate referenced POs/lines, cache PO objects

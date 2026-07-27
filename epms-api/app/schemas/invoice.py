@@ -14,6 +14,9 @@ class InvoiceLineItem(BaseModel):
     unit: str | None = Field(default=None, max_length=50)
     unit_price: Decimal = Field(default=Decimal("0"), ge=0)
     line_total: Decimal = Field(default=Decimal("0"), ge=0)
+    # 非PO费用标记(shipping/packaging 等):不参与 PO 匹配,金额照付(随发票头)
+    non_po_fee: bool = False
+    non_po_note: str | None = Field(default=None, max_length=500)
 
 
 class InvoiceCreate(BaseModel):
@@ -72,9 +75,16 @@ class AllocationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class NonPoLineInput(BaseModel):
+    line_id: uuid.UUID
+    note: str | None = Field(default=None, max_length=500)
+
+
 class InvoiceMatchRequest(BaseModel):
     # New multi-PO path: when provided, takes priority.
     allocations: list[AllocationInput] | None = None
+    # 非PO费用行:排除出匹配,但其 line_total 计入平账(照付)
+    non_po_lines: list[NonPoLineInput] | None = None
     # Legacy single-PO path (existing tests / PATCH re-match / pre-rework UI).
     po_id: uuid.UUID | None = None
     gr_id: uuid.UUID | None = None

@@ -363,3 +363,110 @@ async def test_partial_invoicing_cumulative(admin_client):
     c = (await admin_client.post(INV_URL, json=payload("PART-C", "50.00"))).json()
     r = await match(c, "50.00")
     assert r.json()["status"] == "exception"      # 累计 250 超开 → 拦
+
+
+@pytest.mark.asyncio
+async def test_non_po_fee_line_lets_mixed_invoice_match(admin_client):
+    """含 shipping 行的发票:goods 分到 PO,shipping 标记为非PO费用 →
+    goods_alloc + 非PO合计 = 发票税前额 → matched;标记与备注持久化。"""
+    await _ensure_company_config()
+    v = await _make_vendor(admin_client, "VND-NONPO-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "Widget", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    po_line = po["line_items"][0]["id"]
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], vendor_invoice_number="INV-NONPO-01",
+        amount="1150.00", tax_amount="0.00",
+        line_items=[
+            {"description": "Widget", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"},
+            {"description": "Shipping & handling", "quantity": "1", "unit_price": "150.00", "line_total": "150.00"},
+        ]))).json()
+    goods_line = inv["line_items"][0]["id"]
+    ship_line = inv["line_items"][1]["id"]
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [
+            {"invoice_line_id": goods_line, "po_id": po["id"], "po_line_id": po_line,
+             "allocated_amount": "1000.00", "allocated_tax": "0.00"},
+        ],
+        "non_po_lines": [{"line_id": ship_line, "note": "freight"}],
+    })
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "matched"
+    assert len(data["allocations"]) == 1          # shipping 不产生 allocation
+    ship = next(li for li in data["line_items"] if li["id"] == ship_line)
+    goods = next(li for li in data["line_items"] if li["id"] == goods_line)
+    assert ship["non_po_fee"] is True
+    assert ship["non_po_note"] == "freight"
+    assert goods["non_po_fee"] is False           # 未标记的行默认 False
+
+
+@pytest.mark.asyncio
+async def test_unmarked_fee_line_still_imbalances_422(admin_client):
+    """同样的混合发票,若不标记 shipping 也不分配它 → 仍 422(证明门禁未被架空)。"""
+    v = await _make_vendor(admin_client, "VND-NONPO-422")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "Widget", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    po_line = po["line_items"][0]["id"]
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], vendor_invoice_number="INV-NONPO-422",
+        amount="1150.00", tax_amount="0.00",
+        line_items=[
+            {"description": "Widget", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"},
+            {"description": "Shipping", "quantity": "1", "unit_price": "150.00", "line_total": "150.00"},
+        ]))).json()
+    goods_line = inv["line_items"][0]["id"]
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": goods_line, "po_id": po["id"], "po_line_id": po_line,
+         "allocated_amount": "1000.00", "allocated_tax": "0.00"},
+    ]})
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_non_po_fee_unmark_on_rematch_clears_flag(admin_client):
+    """re-match 以入参为准:把原先标记的 shipping 改成分配到真实 PO 行且不再传
+    non_po_lines → 标记被清除。用 exception 态(可 re-match)构造。"""
+    await _ensure_company_config()
+    v = await _make_vendor(admin_client, "VND-NONPO-UNMARK")
+    # goods PO 行 500(小于开票 1000 → 超开触发 exception,便于随后 re-match);
+    # shipping PO 行 150(第二次匹配用)
+    po = await _make_issued_po(admin_client, v["id"], lines=[
+        {"description": "Widget", "qty": "1", "unit": "EA", "unit_price": "500.00"},
+        {"description": "Freight line", "qty": "1", "unit": "EA", "unit_price": "150.00"},
+    ])
+    po_goods = po["line_items"][0]["id"]
+    po_ship = po["line_items"][1]["id"]
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], vendor_invoice_number="INV-NONPO-UNMARK",
+        amount="1150.00", tax_amount="0.00",
+        line_items=[
+            {"description": "Widget", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"},
+            {"description": "Shipping", "quantity": "1", "unit_price": "150.00", "line_total": "150.00"},
+        ]))).json()
+    goods_line = inv["line_items"][0]["id"]
+    ship_line = inv["line_items"][1]["id"]
+
+    # match #1: goods 分到 500(超开 → exception),shipping 标记非PO
+    r1 = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [{"invoice_line_id": goods_line, "po_id": po["id"],
+                         "po_line_id": po_goods, "allocated_amount": "1000.00", "allocated_tax": "0.00"}],
+        "non_po_lines": [{"line_id": ship_line, "note": "freight"}],
+    })
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["status"] == "exception"
+    ship1 = next(li for li in r1.json()["line_items"] if li["id"] == ship_line)
+    assert ship1["non_po_fee"] is True
+
+    # match #2(exception 可 re-match):shipping 改分到真实 PO 行,不传 non_po_lines
+    r2 = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": goods_line, "po_id": po["id"], "po_line_id": po_goods,
+         "allocated_amount": "1000.00", "allocated_tax": "0.00"},
+        {"invoice_line_id": ship_line, "po_id": po["id"], "po_line_id": po_ship,
+         "allocated_amount": "150.00", "allocated_tax": "0.00"},
+    ]})
+    assert r2.status_code == 200, r2.text
+    ship2 = next(li for li in r2.json()["line_items"] if li["id"] == ship_line)
+    assert ship2["non_po_fee"] is False           # unmark:标记已清
+    assert ship2["non_po_note"] is None
