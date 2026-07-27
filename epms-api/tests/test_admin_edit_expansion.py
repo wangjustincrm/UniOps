@@ -69,3 +69,18 @@ def test_registry_pr_has_reference_and_expanded_fields():
     assert created_by.editable is True
     vendor = schema.field_spec("vendor_id")
     assert vendor.ref_source == "vendors" and vendor.ref_name_field == "vendor_name"
+
+
+def test_reference_name_fields_serialize_readonly():
+    from app.admin.registry import REGISTRY
+
+    for key in ("pr", "po", "pa"):
+        schema = REGISTRY[key].schema
+        vendor_name = schema.field_spec("vendor_name")
+        assert vendor_name is not None, f"{key} missing vendor_name field"
+        assert vendor_name.editable is False, f"{key} vendor_name must be read-only"
+
+    pr_schema = REGISTRY["pr"].schema
+    cost_center_name = pr_schema.field_spec("cost_center_name")
+    assert cost_center_name is not None
+    assert cost_center_name.editable is False
