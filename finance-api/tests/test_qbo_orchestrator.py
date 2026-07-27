@@ -95,3 +95,17 @@ def test_max_watermark_compares_parsed_instant_not_lexical_string():
         {"MetaData": {"LastUpdatedTime": b}},
     ]
     assert _max_watermark(objects) == b
+
+
+def test_default_entities_covers_the_whole_registry():
+    """A default full sync must sync every registered entity — the hardcoded
+    AP-core subset silently dropped all Phase-2 entities (Invoice/Payment/etc.)."""
+    from scripts.qbo_import.orchestrator import DEFAULT_ENTITIES
+    from scripts.qbo_import.registry import REGISTRY
+
+    registered = {e.name for e in REGISTRY}
+    assert set(DEFAULT_ENTITIES) == registered
+    # Explicitly guard the entities that were being dropped.
+    for name in ("Invoice", "Payment", "CreditMemo", "Purchase", "Deposit",
+                 "Transfer", "JournalEntry", "TaxCode"):
+        assert name in DEFAULT_ENTITIES

@@ -13,10 +13,13 @@ from app.models.qbo import QboRaw, QboSyncRun
 from scripts.qbo_import.extract import extract_entity
 from scripts.qbo_import.load import load_entity
 from scripts.qbo_import.mappers import to_dt
-from scripts.qbo_import.registry import by_name
+from scripts.qbo_import.registry import REGISTRY, by_name
 
-# AP-core default order (masters before transactions).
-DEFAULT_ENTITIES = ["Account", "Vendor", "Bill", "BillPayment", "VendorCredit"]
+# Every registered entity (typed + raw), in registry order (masters → AP → AR →
+# other transactions → long-tail raw). Derived from REGISTRY so a newly-registered
+# entity is ALWAYS covered by a default full sync — a hardcoded subset silently
+# dropped Phase-2 entities (Invoice/Payment/… never synced) until this was fixed.
+DEFAULT_ENTITIES = [e.name for e in REGISTRY]
 
 
 def _max_watermark(objects: list[dict]) -> str | None:
