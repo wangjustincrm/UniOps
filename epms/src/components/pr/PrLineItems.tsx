@@ -775,7 +775,9 @@ export function validateLineItems(items: PrLineItem[]): Record<string, LineError
     const e: LineErrors = {}
     if (!item.description.trim()) e.description = 'Required'
     if (!item.qty || item.qty <= 0) e.qty = 'Must be > 0'
-    if (!item.unitPrice || item.unitPrice <= 0) e.unitPrice = 'Must be > 0'
+    // unit price may be 0 or negative (discount / rebate / credit line); only a
+    // missing / non-numeric value is an error. Applies to both PR and PO forms.
+    if (!Number.isFinite(item.unitPrice)) e.unitPrice = 'Required'
     if (Object.keys(e).length) errs[String(i)] = e
   })
   return errs
