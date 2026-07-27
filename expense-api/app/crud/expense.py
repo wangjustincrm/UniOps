@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 # NOTE: BudgetAccount mirror removed — expense-api no longer writes directly to
 # budget_accounts. Actual spend is now reported to budget-api via /book-expense.
+from app.crud._numbering import next_number
 from app.models.expense import (
     ExpenseApprovalEvent, ExpenseAttachment, ExpenseClaim,
     ExpenseLineItem, ExpenseTripItem,
@@ -23,12 +24,7 @@ from app.services import budget_client
 
 async def _next_number(db: AsyncSession, claim_type: str) -> str:
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
-    prefix = f"{claim_type}-{today}-"
-    result = await db.execute(
-        select(func.count()).where(ExpenseClaim.claim_number.like(f"{prefix}%"))
-    )
-    count = result.scalar_one()
-    return f"{prefix}{count + 1:04d}"
+    return await next_number(db, ExpenseClaim.claim_number, f"{claim_type}-{today}-", width=4)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

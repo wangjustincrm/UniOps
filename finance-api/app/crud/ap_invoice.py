@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import delete as sa_delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._numbering import next_number
 from app.models.ap_invoice import ApInvoice, ApInvoiceTaxLine, VOID
 
 _ZERO = Decimal("0")
@@ -18,18 +19,9 @@ def _q(v) -> Decimal:
 async def _next_number(db: AsyncSession) -> str:
     # max-suffix, not count: voided-and-deleted invoices leave gaps, and a
     # count would reissue a number that is still taken (unique constraint).
+    # Shared allocator also takes a per-prefix advisory lock for concurrency.
     today = date.today().strftime("%Y%m%d")
-    like = f"AP-{today}-%"
-    nums = (await db.execute(
-        select(ApInvoice.ap_invoice_number).where(ApInvoice.ap_invoice_number.like(like))
-    )).scalars().all()
-    highest = 0
-    for n in nums:
-        try:
-            highest = max(highest, int(n.rsplit("-", 1)[1]))
-        except (IndexError, ValueError):
-            continue
-    return f"AP-{today}-{highest + 1:04d}"
+    return await next_number(db, ApInvoice.ap_invoice_number, f"AP-{today}-", width=4)
 
 
 async def get_by_source(db: AsyncSession, *, source: str,

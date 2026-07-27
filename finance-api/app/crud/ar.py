@@ -10,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._numbering import next_number
 from app.crud.payment_execute import _stamp_account_codes, _stamp_fx
 from app.models.ar import (
     OPEN_STATUSES, PAID, PARTIALLY_PAID, POSTED, ArInvoice, ArInvoiceTaxLine, ArReceipt,
@@ -23,14 +24,13 @@ def _q(v) -> Decimal:
     return Decimal(str(v)).quantize(Decimal("0.01"))
 
 
-async def _next_number(db: AsyncSession, model, col, prefix: str) -> str:
-    """PREFIX-YYYYMMDD-NNNN, sequential within the day."""
+async def _next_number(db: AsyncSession, col, prefix: str) -> str:
+    """PREFIX-YYYYMMDD-NNNN, sequential within the day.
+
+    Delegates to the shared allocator (max-tail+1, immune to voided/deleted gaps,
+    plus a per-prefix advisory lock for concurrency)."""
     today = date.today().strftime("%Y%m%d")
-    like = f"{prefix}-{today}-%"
-    n = (await db.execute(
-        select(func.count()).select_from(model).where(col.like(like))
-    )).scalar_one()
-    return f"{prefix}-{today}-{n + 1:04d}"
+    return await next_number(db, col, f"{prefix}-{today}-", width=4)
 
 
 # ── invoice creation ──────────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ async def create_invoice(db: AsyncSession, *, customer_id: uuid.UUID, customer_n
     tax_total = sum((_q(t.get("tax_amount", 0)) for t in lines_tax), _ZERO)
     amount = _q(amount)
     inv = ArInvoice(
-        invoice_number=invoice_number or await _next_number(db, ArInvoice, ArInvoice.invoice_number, "AR"),
+        invoice_number=invoice_number or await _next_number(db, ArInvoice.invoice_number, "AR"),
         customer_id=customer_id, customer_name=customer_name,
         amount=amount, tax_amount=tax_total, total_amount=amount + tax_total,
         currency=currency, invoice_date=invoice_date, due_date=due_date,
@@ -134,7 +134,7 @@ async def record_receipt(db: AsyncSession, *, customer_id: uuid.UUID, customer_n
             raise ValueError(f"Receipt currency {currency} != invoice currency {inv.currency}")
 
     receipt = ArReceipt(
-        receipt_number=await _next_number(db, ArReceipt, ArReceipt.receipt_number, "RCP"),
+        receipt_number=await _next_number(db, ArReceipt.receipt_number, "RCP"),
         customer_id=customer_id, customer_name=customer_name, invoice_id=invoice_id,
         amount=amount, currency=currency, receipt_date=receipt_date, method=method,
         bank_account_id=bank_account_id, reference=reference, recorded_by=recorded_by,
