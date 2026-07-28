@@ -181,3 +181,29 @@ async def test_output_tax_flows_into_gst_return(client):
     assert rep["output_tax_total"] == "130.00"
     # net = output - itc; with no ITC this period it's +130 owing
     assert rep["net_tax"] == "130.00"
+
+
+async def test_ar_invoice_number_survives_gap(client, db_session):
+    """Regression: AR invoice number keys off the max tail, not count(*).
+
+    A renumbered/deleted invoice leaves count() lagging the real max, so count()+1
+    reissues an already-existing number -> UniqueViolation on uq_ar_invoices_number.
+    Reproduce the gap, expect a fresh number instead of a collision."""
+    from sqlalchemy import text
+
+    r1 = await client.post("/finance/v1/ar/invoices", headers=_h(), json=_invoice_body())
+    r2 = await client.post("/finance/v1/ar/invoices", headers=_h(), json=_invoice_body())
+    assert r1.status_code == 201 and r2.status_code == 201, (r1.text, r2.text)
+    n2 = r2.json()["invoice_number"]
+
+    # Move r1 out of today's AR-<today> window: count() now lags the real max tail.
+    await db_session.execute(
+        text("UPDATE ar_invoices SET invoice_number = :n WHERE id = :i"),
+        {"n": "AR-19000101-0001", "i": r1.json()["id"]},
+    )
+    await db_session.flush()
+
+    # Under the old count()+1 this reissues r2's number -> 500 (UniqueViolation).
+    r3 = await client.post("/finance/v1/ar/invoices", headers=_h(), json=_invoice_body())
+    assert r3.status_code == 201, r3.text
+    assert r3.json()["invoice_number"] != n2, "reissued an existing AR invoice number"
