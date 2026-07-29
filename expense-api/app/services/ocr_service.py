@@ -41,6 +41,15 @@ Return a JSON object with EXACTLY this structure (no extra keys, no markdown):
   ]
 }
 
+Line item field meaning (READ CAREFULLY):
+- "unit_price": the PRE-TAX price of one unit.
+- "amount": the line's PRE-TAX extended price = quantity × unit_price, EXCLUDING tax.
+- "tax_amount": the tax charged on this line only (0 if the invoice taxes at the footer).
+- The sum of every line's "amount" MUST equal the header "subtotal" (pre-tax).
+- NEVER put the tax-inclusive figure in a line's "amount". For a single-line invoice
+  whose only printed number is the grand total, still report "amount" as the pre-tax
+  line value (= subtotal), and carry the tax in the header "tax_amount".
+
 Rules:
 - Confidence 1.0 = clearly printed, unambiguous
 - Confidence 0.5 = partially visible, estimated, or inferred
@@ -73,6 +82,41 @@ Return ONLY this JSON (no markdown):
   "tax_amount": {"value": number or null, "confidence": 0.0-1.0},
   "currency": {"value": "CAD", "confidence": 0.0-1.0}
 }"""
+
+
+def _reconcile_line_amounts(
+    lines: list[dict],
+    subtotal: float | None,
+    tax_amount: float | None,
+    total_amount: float | None,
+) -> list[dict]:
+    """Repair line ``amount`` values that OCR filled with the tax-INCLUSIVE figure.
+
+    Observed failure (2026-07, single-line Amazon Prime invoice): unit_price 109.00
+    but line ``amount`` came back as 123.17 (= 109 + 13% tax). Downstream, epms maps
+    line ``amount`` -> line_total and the PO-match panel balances Σ line_total against
+    the invoice's PRE-TAX header amount, so a tax-inclusive line total is off by exactly
+    the tax and the match can never balance (Match button stays disabled).
+
+    Fires only when the evidence is unambiguous: the lines sum to the tax-inclusive
+    total while unit_price × quantity sums to the pre-tax subtotal. Then each line's
+    ``amount`` is rewritten to its pre-tax extended price. No-op when any signal is
+    missing, when there is no tax, or when the sums don't clearly indicate contamination
+    (e.g. unit prices are themselves tax-inclusive) — never "corrects" a healthy invoice.
+    """
+    if not lines or subtotal is None or total_amount is None or not tax_amount:
+        return lines
+
+    def _close(a: float, b: float) -> bool:
+        return abs(a - b) <= max(0.02, abs(b) * 0.005)
+
+    reported = sum(li["amount"] for li in lines)
+    computed = sum(li["unit_price"] * li["quantity"] for li in lines)
+
+    if _close(reported, total_amount) and not _close(reported, subtotal) and _close(computed, subtotal):
+        for li in lines:
+            li["amount"] = round(li["unit_price"] * li["quantity"], 2)
+    return lines
 
 
 def _mime_to_media_type(mime: str) -> str:
@@ -194,6 +238,18 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
             "amount": float(li.get("amount", 0) or 0),
             "tax_amount": float(li.get("tax_amount", 0) or 0),
         })
+
+    # Repair tax-inclusive line amounts before they reach the client (they map to
+    # line_total and must be pre-tax so PO matching can balance). See docstring.
+    def _num(v: object) -> float | None:
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    lines = _reconcile_line_amounts(
+        lines, _num(result.get("subtotal")), _num(result.get("tax_amount")), _num(result.get("total_amount")),
+    )
 
     overall_confidence = round(sum(confidences) / len(confidences), 4) if confidences else 0.0
 
