@@ -267,6 +267,9 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         # actual kind derives from the document, not the client
         doc_kind = "pa_dir" if pa.po_id is None else "pa"
         pa.status = "processed"
+        # Stamp the real payment date (honours a back-dated req.payment_date).
+        # Dashboards read paid_at, never the onupdate-bumped updated_at.
+        pa.paid_at = datetime.combine(pay_date, datetime.min.time(), tzinfo=timezone.utc)
         await _complete_open_tasks(db, ["pa", "pa_dir"], pa.id)
 
         if doc_kind == "pa":
