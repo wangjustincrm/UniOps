@@ -330,6 +330,17 @@ async def test_export_endpoint_streams_and_marks(client, db_session):
     assert batch is not None and batch.ap_count == 1
 
 
+async def test_export_endpoint_allows_ap_clerk(client, db_session):
+    """AP clerk (any finance role) may run the NC export — it is a routine AP
+    handoff to NC65, not chart-of-accounts management. Regression for the
+    mis-gated finance.coa.manage lock that 403'd every ap_clerk."""
+    ap = await _mk_ap(db_session, number="AP-2026-0210")
+    await _mk_accrual(db_session, ap)
+    r = await client.post("/finance/v1/ap/nc-export",
+                          json={"ap_ids": [str(ap.id)]}, headers=_h(role="ap_clerk"))
+    assert r.status_code == 200, r.text
+
+
 async def test_export_endpoint_guards(client, db_session):
     ap = await _mk_ap(db_session, number="AP-2026-0201")   # no accrual
     r = await client.post("/finance/v1/ap/nc-export",
