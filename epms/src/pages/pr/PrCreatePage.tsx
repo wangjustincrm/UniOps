@@ -92,6 +92,7 @@ export default function PrCreatePage() {
   const ccL2Accounts = (selectedL1Obj?.accounts ?? []).filter((a) => a.is_active || a.code === selectedL2)
   const [factorCombo, setFactorCombo] = useState<Record<string, string>>({})
   const [factorComboError, setFactorComboError] = useState<string | null>(null)
+  const [departmentError, setDepartmentError] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<File[]>([])
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
@@ -272,6 +273,13 @@ export default function PrCreatePage() {
     // Hard-block guard — Submit button is already disabled, but guard the
     // programmatic path in case it's invoked some other way.
     if (isHardBlock) return
+    // Department is required at submit time: the approval engine raises when it
+    // can't resolve a dept_manager for a NULL department. Default is pre-filled
+    // from the user's own department, so this only bites when cleared/unset.
+    if (!selectedDepartmentId) {
+      setDepartmentError('Department is required')
+      return
+    }
     // Factor combo: when the selected Account has decomposition factors, every
     // factor must have a value picked (matches the per-PR Required policy).
     if (accountFactors.length > 0) {
@@ -514,6 +522,7 @@ export default function PrCreatePage() {
                       value={selectedDepartmentId ?? ''}
                       onChange={(e) => {
                         setSelectedDepartmentId(e.target.value || undefined)
+                        setDepartmentError(null)
                         // department changed → clear cost-center cascade (cc belongs to the old dept)
                         setSelectedCostCenter(''); setSelectedCostCenterId(undefined)
                         setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
@@ -525,6 +534,9 @@ export default function PrCreatePage() {
                         <option key={d.id} value={d.id}>{d.name}</option>
                       ))}
                     </select>
+                    {departmentError && (
+                      <p className="text-xs text-danger-600">{departmentError}</p>
+                    )}
                   </div>
 
                   {/* Budget — hidden for Type 1 */}
