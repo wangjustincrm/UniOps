@@ -90,6 +90,7 @@ class PrCreate(BaseModel):
     currency: str = Field(default="CAD", min_length=1, max_length=10)
     vendor_id: uuid.UUID | None = None
     cost_center_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = None
     budget_code: str | None = Field(default=None, max_length=100)
     factor_combo: dict[str, str] | None = None
     project_code: str | None = Field(default=None, max_length=100)
@@ -112,6 +113,7 @@ class PrUpdate(BaseModel):
     currency: str | None = Field(default=None, max_length=10)
     vendor_id: uuid.UUID | None = None
     cost_center_id: uuid.UUID | None = None
+    department_id: uuid.UUID | None = None
     budget_code: str | None = Field(default=None, max_length=100)
     factor_combo: dict[str, str] | None = None
     project_code: str | None = Field(default=None, max_length=100)
@@ -167,6 +169,7 @@ class PrResponse(BaseModel):
     is_prepaid: bool
     cost_center_id: uuid.UUID | None
     cost_center_name: str | None
+    department_id: uuid.UUID | None
     department_name: str | None
     budget_code: str | None
     factor_combo: dict[str, str] | None = None

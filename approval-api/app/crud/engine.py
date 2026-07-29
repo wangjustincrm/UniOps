@@ -257,9 +257,7 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
 
 # ── Dept manager lookup ───────────────────────────────────────────────────────
 
-async def _get_dept_manager_id(db: AsyncSession, requester_id: uuid.UUID) -> uuid.UUID | None:
-    dept_result = await db.execute(select(User.department_id).where(User.id == requester_id))
-    dept_id = dept_result.scalar_one_or_none()
+async def _get_dept_manager_id(db: AsyncSession, dept_id: uuid.UUID | None) -> uuid.UUID | None:
     if not dept_id:
         return None
     mgr_result = await db.execute(
@@ -304,7 +302,7 @@ async def _actor_can_approve(
     step_role: str,
     actor_id: uuid.UUID,
     actor_role: str,
-    creator_id: uuid.UUID,
+    routing_dept_id: uuid.UUID | None,
     rm: dict,
     dept_gm_opm: dict,
     finance_bp_ids: set[uuid.UUID],
@@ -318,6 +316,10 @@ async def _actor_can_approve(
     VMS Quality Manager step needs it to read `doc.quality_approver_id`
     (per-visit assignment is VMS-local — no `role_management` mapping for
     quality_manager). See S2_ARCHITECTURE_REVIEW.md F2.
+
+    `routing_dept_id` is the department that drives dept_manager/gm_or_opm
+    routing for this document — the PR's selected department_id, falling back
+    to the routing user's own department (see `_routing_department_id`).
     """
     if actor_role == "system_admin":
         return True
@@ -329,7 +331,7 @@ async def _actor_can_approve(
     if step_role == "finance_bp":
         return actor_id in finance_bp_ids
     if step_role == "dept_manager":
-        dept_mgr_id = await _get_dept_manager_id(db, creator_id)
+        dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
         return dept_mgr_id is not None and actor_id == dept_mgr_id
     if step_role == "gm_or_opm":
         # Resolve which post (gm/opm) this department routes to — same logic as
@@ -338,12 +340,12 @@ async def _actor_can_approve(
         # A post can legitimately have >1 holder (e.g. a Department Manager who
         # ALSO holds GM via an additional user_roles role); the broadcast approve
         # task is visible to all of them, so all of them must be able to act.
-        resolved_role, resolved_user_id = await _resolve_gm_or_opm(db, creator_id, rm, dept_gm_opm)
+        resolved_role, resolved_user_id = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
         if resolved_user_id is not None and actor_id == resolved_user_id:
             return True
         return actor_id in await post_holder_ids(db, resolved_role)
     if step_role == "director":
-        # Director is resolved per-department (routing_uid's dept), not via a
+        # Director is resolved per-department (routing_dept_id), not via a
         # collapsed global holder, so a director covering multiple departments
         # already matches on any of their departments' documents.
         return director_uid is not None and actor_id == director_uid
@@ -377,14 +379,11 @@ async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) ->
 
 async def _resolve_gm_or_opm(
     db: AsyncSession,
-    creator_id: uuid.UUID,
+    dept_id: uuid.UUID | None,
     rm: dict,
     dept_gm_opm: dict,
 ) -> tuple[str, uuid.UUID | None]:
     """Return (resolved_role, user_id) for a gm_or_opm step based on dept mapping."""
-    dept_result = await db.execute(select(User.department_id).where(User.id == creator_id))
-    dept_id = dept_result.scalar_one_or_none()
-
     resolved_role = dept_gm_opm.get(str(dept_id), "gm") if dept_id else "gm"
     uid_str = rm.get(f"{resolved_role}_user_id")
     return resolved_role, (uuid.UUID(uid_str) if uid_str else None)
@@ -401,12 +400,9 @@ async def _active_user_id(db: AsyncSession, user_id: uuid.UUID | None) -> uuid.U
 
 
 async def _resolve_director(
-    db: AsyncSession, routing_uid: uuid.UUID, dept_director_mapping: dict,
+    db: AsyncSession, dept_id: uuid.UUID | None, dept_director_mapping: dict,
 ) -> uuid.UUID | None:
-    """Director for the requester's department, or None (unmapped / inactive)."""
-    dept_id = (await db.execute(
-        select(User.department_id).where(User.id == routing_uid)
-    )).scalar_one_or_none()
+    """Director for the routing department, or None (unmapped / inactive)."""
     if not dept_id:
         return None
     uid_str = dept_director_mapping.get(str(dept_id))
@@ -468,6 +464,34 @@ async def _routing_user_id(db: AsyncSession, doc_type: str, doc: Any) -> uuid.UU
     return doc.created_by
 
 
+async def _routing_department_id(
+    db: AsyncSession, doc_type: str, doc: Any, routing_uid: uuid.UUID,
+) -> uuid.UUID | None:
+    """Department that drives dept-based approval routing (dept_manager /
+    gm_or_opm / director). Prefer the department explicitly selected on the
+    originating PR; fall back to the routing user's own department (legacy)."""
+    pr_id = None
+    if doc_type == "pr":
+        pr_id = doc.id
+    elif doc_type == "po":
+        pr_id = getattr(doc, "pr_id", None)
+    elif doc_type in ("pa", "pa_dir"):
+        po_id = getattr(doc, "po_id", None)
+        if po_id:
+            pr_id = (await db.execute(
+                select(PurchaseOrder.pr_id).where(PurchaseOrder.id == po_id)
+            )).scalar_one_or_none()
+    if pr_id:
+        dept = (await db.execute(
+            select(PurchaseRequest.department_id).where(PurchaseRequest.id == pr_id)
+        )).scalar_one_or_none()
+        if dept:
+            return dept
+    return (await db.execute(
+        select(User.department_id).where(User.id == routing_uid)
+    )).scalar_one_or_none()
+
+
 async def _cc_label_for_plan(db: AsyncSession, doc: Any, fallback: str | None) -> str | None:
     """Resolve a human cost-center label ("CODE — Name") for a budget plan task.
 
@@ -498,7 +522,7 @@ async def _create_approve_task(
     meta: dict,
     rm: dict,
     dept_gm_opm: dict,
-    routing_uid: uuid.UUID,
+    routing_dept_id: uuid.UUID | None = None,
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
 ) -> None:
@@ -508,10 +532,11 @@ async def _create_approve_task(
     assigned_role = role
 
     if role == "dept_manager":
-        # routing_uid = the requester (PR creator) — see _routing_user_id
-        assigned_user_id = await _get_dept_manager_id(db, routing_uid)
+        # routing_dept_id = the PR's selected department, else the requester's own
+        # department — see _routing_department_id
+        assigned_user_id = await _get_dept_manager_id(db, routing_dept_id)
         # dept_manager is a populous base JWT role. If we cannot resolve a
-        # SPECIFIC manager (requester has no department, or that department has no
+        # SPECIFIC manager (no routing department, or that department has no
         # active dept_manager), we must NOT leave assigned_user_id=NULL: get_for_role
         # would broadcast the task to EVERY department manager company-wide, and
         # _actor_can_approve would let none of them act (PR-20260620-0001). Fail
@@ -524,9 +549,9 @@ async def _create_approve_task(
                 "be submitted."
             )
     elif role == "gm_or_opm":
-        # GM vs OPM is decided by the requester's department, resolved from the
-        # originating PR's creator (routing_uid), not the PO/PA creator.
-        assigned_role, assigned_user_id = await _resolve_gm_or_opm(db, routing_uid, rm, dept_gm_opm)
+        # GM vs OPM is decided by the routing department (PR's selected
+        # department, else the requester's own).
+        assigned_role, assigned_user_id = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
     elif role == "director":
         assigned_user_id = director_uid
     elif role == "supervisor":
@@ -789,20 +814,22 @@ async def execute_action(
     rm = await get_role_management(db)
     dept_gm_opm = await get_dept_gm_opm_mapping(db)
 
-    # Department-based routing (dept_manager / gm_or_opm) follows the requester's
-    # department — the originating PR creator — not the PO/PA creator. See
-    # _routing_user_id. For PR and other doc types this is just doc.created_by.
+    # Department-based routing (dept_manager / gm_or_opm / director) follows the
+    # department SELECTED ON THE PR (department_id), falling back to the routing
+    # user's own department for documents with no PR selection (legacy / direct
+    # PO/PA). See _routing_user_id / _routing_department_id. The personal
+    # supervisor stays keyed to the routing user (creator), never the selected
+    # department — see _resolve_supervisor.
     routing_uid = await _routing_user_id(db, doc_type, doc)
+    routing_dept_id = await _routing_department_id(db, doc_type, doc, routing_uid)
 
     dept_director = await get_dept_director_mapping(db)
     dept_supervisor = await get_dept_supervisor_enabled(db)
-    director_uid = await _resolve_director(db, routing_uid, dept_director)
+    director_uid = await _resolve_director(db, routing_dept_id, dept_director)
     supervisor_uid = await _resolve_supervisor(db, routing_uid, dept_supervisor)
     # dept-level "configured?" flags — distinguish opt-out vs misconfig in skip reasons
-    _routing_dept = (await db.execute(
-        select(User.department_id).where(User.id == routing_uid))).scalar_one_or_none()
-    dept_has_director = bool(_routing_dept) and str(_routing_dept) in (dept_director or {})
-    dept_has_supervisor = bool(_routing_dept) and bool((dept_supervisor or {}).get(str(_routing_dept)))
+    dept_has_director = bool(routing_dept_id) and str(routing_dept_id) in (dept_director or {})
+    dept_has_supervisor = bool(routing_dept_id) and bool((dept_supervisor or {}).get(str(routing_dept_id)))
 
     # Build the effective workflow for this document: base workflow_defs plus any
     # runtime-injected over-budget steps (PR only). Optional supervisor/director
@@ -848,7 +875,7 @@ async def execute_action(
         if start < len(workflow):
             await _create_approve_task(db, doc_type, doc, step=start, workflow=workflow,
                                        meta=meta, rm=rm, dept_gm_opm=dept_gm_opm,
-                                       routing_uid=routing_uid, director_uid=director_uid,
+                                       routing_dept_id=routing_dept_id, director_uid=director_uid,
                                        supervisor_uid=supervisor_uid)
         else:
             _set_status(meta, doc, "approved")
@@ -862,7 +889,7 @@ async def execute_action(
         finance_bp_ids_auth = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
         authorized = await _actor_can_approve(
             db, current_step_role, actor_id, actor_role,
-            routing_uid, rm, dept_gm_opm, finance_bp_ids_auth,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
         )
         if not authorized:
@@ -874,13 +901,13 @@ async def execute_action(
         await _complete_tasks(db, doc_type, doc.id)
 
         # Build role → user map for auto-skip
-        # For gm_or_opm, resolve using the requester's department (routing_uid),
-        # not doc.created_by (PO/PA creator) and not doc.department_id (None on PO).
-        routing_dept_r = await db.execute(select(User.department_id).where(User.id == routing_uid))
-        routing_dept_id = routing_dept_r.scalar_one_or_none()
+        # For gm_or_opm, resolve using the routing department (PR-selected, else
+        # the requester's own) — not doc.created_by (PO/PA creator) and not
+        # doc.department_id (None on PO). routing_dept_id was computed once at
+        # the top of execute_action via _routing_department_id.
         role_map = _build_role_map(rm, dept_gm_opm, routing_dept_id)
         finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
-        dept_mgr_id = await _get_dept_manager_id(db, routing_uid)
+        dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
 
         def _holds(role: str) -> bool:
             if role == "finance_bp":
@@ -932,7 +959,7 @@ async def execute_action(
         if next_step < len(workflow):
             doc.approval_step_idx = next_step
             _set_status(meta, doc, "in_review")
-            await _create_approve_task(db, doc_type, doc, step=next_step, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_uid=routing_uid, director_uid=director_uid, supervisor_uid=supervisor_uid)
+            await _create_approve_task(db, doc_type, doc, step=next_step, workflow=workflow, meta=meta, rm=rm, dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id, director_uid=director_uid, supervisor_uid=supervisor_uid)
         else:
             _set_status(meta, doc, "approved")
             if hasattr(doc, "approved_at"):
@@ -964,7 +991,7 @@ async def execute_action(
         finance_bp_ids_auth = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
         authorized = await _actor_can_approve(
             db, current_step_role, actor_id, actor_role,
-            routing_uid, rm, dept_gm_opm, finance_bp_ids_auth,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
         )
         if not authorized:
@@ -1054,15 +1081,15 @@ def _step_index_for_task_role(workflow: list[dict], task_role: str) -> int | Non
 
 
 async def _resolved_assignee_for_step(
-    db, doc_type, doc, step, workflow, rm, dept_gm_opm, routing_uid, director_uid, supervisor_uid,
+    db, doc_type, doc, step, workflow, rm, dept_gm_opm, routing_dept_id, director_uid, supervisor_uid,
 ) -> tuple[str, uuid.UUID | None]:
     """(assigned_role, user_id) the engine WOULD assign this step now — mirrors
     _create_approve_task. user_id is None for broadcast (named) roles."""
     role = workflow[step]["role"]
     if role == "dept_manager":
-        return role, await _get_dept_manager_id(db, routing_uid)
+        return role, await _get_dept_manager_id(db, routing_dept_id)
     if role == "gm_or_opm":
-        return await _resolve_gm_or_opm(db, routing_uid, rm, dept_gm_opm)
+        return await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
     if role == "director":
         return role, director_uid
     if role == "supervisor":
@@ -1108,14 +1135,13 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
     rm = await get_role_management(db)
     dept_gm_opm = await get_dept_gm_opm_mapping(db)
     routing_uid = await _routing_user_id(db, doc_type, doc)
+    routing_dept_id = await _routing_department_id(db, doc_type, doc, routing_uid)
     dept_director = await get_dept_director_mapping(db)
     dept_supervisor = await get_dept_supervisor_enabled(db)
-    director_uid = await _resolve_director(db, routing_uid, dept_director)
+    director_uid = await _resolve_director(db, routing_dept_id, dept_director)
     supervisor_uid = await _resolve_supervisor(db, routing_uid, dept_supervisor)
-    routing_dept = (await db.execute(
-        select(User.department_id).where(User.id == routing_uid))).scalar_one_or_none()
-    dept_has_director = bool(routing_dept) and str(routing_dept) in (dept_director or {})
-    dept_has_supervisor = bool(routing_dept) and bool((dept_supervisor or {}).get(str(routing_dept)))
+    dept_has_director = bool(routing_dept_id) and str(routing_dept_id) in (dept_director or {})
+    dept_has_supervisor = bool(routing_dept_id) and bool((dept_supervisor or {}).get(str(routing_dept_id)))
     workflow = await build_effective_workflow(db, doc_type, doc, cfg)
 
     # Real current step: the open approve task's role (reliable) → else stored idx.
@@ -1157,7 +1183,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
             _set_status(meta, doc, "in_review")
             await _create_approve_task(
                 db, doc_type, doc, step=start, workflow=workflow, meta=meta, rm=rm,
-                dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+                dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
                 director_uid=director_uid, supervisor_uid=supervisor_uid)
         else:
             _set_status(meta, doc, "approved")
@@ -1177,7 +1203,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
 
     # Case C — fix a drifted / stray-step assignee at the real step.
     des_role, des_uid = await _resolved_assignee_for_step(
-        db, doc_type, doc, true_step, workflow, rm, dept_gm_opm, routing_uid, director_uid, supervisor_uid)
+        db, doc_type, doc, true_step, workflow, rm, dept_gm_opm, routing_dept_id, director_uid, supervisor_uid)
     role = workflow[true_step]["role"]
     stray = any(_step_index_for_task_role(workflow, t.assigned_role) != true_step for t in open_tasks)
     if role in _USER_SPECIFIC_ROLES:
@@ -1187,7 +1213,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
             await _complete_tasks(db, doc_type, doc.id)
             await _create_approve_task(
                 db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
-                dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+                dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
                 director_uid=director_uid, supervisor_uid=supervisor_uid)
             actions.append(f"reissue step{true_step} -> {des_role}/{des_uid}")
     else:  # broadcast (named) role — the engine assigns these to NO specific user
@@ -1201,7 +1227,7 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
             await _complete_tasks(db, doc_type, doc.id)
             await _create_approve_task(
                 db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
-                dept_gm_opm=dept_gm_opm, routing_uid=routing_uid,
+                dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
                 director_uid=director_uid, supervisor_uid=supervisor_uid)
             actions.append(f"reissue step{true_step} -> {des_role}/broadcast"
                            + (" (was pinned)" if pinned else ""))

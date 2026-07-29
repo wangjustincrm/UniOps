@@ -15,7 +15,8 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from app.crud.engine import execute_action
+from app.crud.engine import (_get_dept_manager_id, _resolve_supervisor,
+                              _routing_department_id, execute_action)
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
@@ -69,3 +70,86 @@ async def test_submit_pr_with_dept_manager_assigns_specific_user(engine_db_sessi
     ).scalar_one()
     assert task.assigned_user_id == manager.id, "dept_manager task must target a specific user"
     assert task.assigned_user_id is not None, "dept_manager task must not broadcast (NULL user)"
+
+
+# ── PR.department_id drives routing (Task 3: pr-department-selector) ───────────
+#
+# purchase_requests.department_id (nullable) lets a requester file a PR under a
+# DIFFERENT department than their own (e.g. filing on behalf of another team).
+# Department-based approval routing (dept_manager / gm_or_opm / director) must
+# follow that explicit selection, falling back to the requester's own
+# User.department_id when the PR didn't set one (legacy / same-department PRs).
+# The personal supervisor step must stay keyed to the requester regardless.
+
+
+async def test_pr_department_id_drives_dept_manager_routing(engine_db_session):
+    """A PR explicitly filed under dept B (creator's own department is A) must
+    route the dept_manager approve task to dept B's manager, not dept A's."""
+    db = engine_db_session
+    dept_a = uuid.uuid4()
+    dept_b = uuid.uuid4()
+    manager_a = User(id=uuid.uuid4(), role="dept_manager", department_id=dept_a, is_active=True)
+    manager_b = User(id=uuid.uuid4(), role="dept_manager", department_id=dept_b, is_active=True)
+    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_a, is_active=True)
+    db.add_all([manager_a, manager_b, requester])
+    await db.flush()
+
+    pr = await _make_draft_pr(db, requester)
+    pr.department_id = dept_b  # explicit cross-department filing
+    await db.flush()
+
+    # Unit-level: the helper resolves the PR's own department, not the creator's.
+    dept_id = await _routing_department_id(db, "pr", pr, requester.id)
+    assert dept_id == dept_b
+    mgr = await _get_dept_manager_id(db, dept_id)
+    assert mgr == manager_b.id
+
+    # Integration: execute_action must route the same way.
+    await execute_action(db, "pr", pr.id, "submit", requester.id, "requester")
+    task = (
+        await db.execute(
+            select(Task).where(Task.document_id == pr.id, Task.type == "approve_pr")
+        )
+    ).scalar_one()
+    assert task.assigned_user_id == manager_b.id, (
+        "PR.department_id must drive dept_manager routing, not the requester's own department"
+    )
+
+
+async def test_null_pr_department_falls_back_to_creator_department(engine_db_session):
+    """A PR with no explicit department_id (the common case) must fall back to
+    the requester's own department — unchanged legacy behaviour."""
+    db = engine_db_session
+    dept_a = uuid.uuid4()
+    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_a, is_active=True)
+    db.add(requester)
+    await db.flush()
+    pr = await _make_draft_pr(db, requester)
+    assert pr.department_id is None
+
+    dept_id = await _routing_department_id(db, "pr", pr, requester.id)
+    assert dept_id == dept_a
+
+
+async def test_supervisor_resolution_unaffected_by_pr_department(engine_db_session):
+    """_resolve_supervisor stays keyed to the routing user (creator) — the
+    personal supervisor relationship must NOT switch just because the PR was
+    filed under a different department."""
+    db = engine_db_session
+    dept_a = uuid.uuid4()
+    dept_b = uuid.uuid4()
+    supervisor = User(id=uuid.uuid4(), role="requester", is_active=True)
+    requester = User(
+        id=uuid.uuid4(), role="requester", department_id=dept_a,
+        is_active=True, supervisor_id=supervisor.id,
+    )
+    db.add_all([supervisor, requester])
+    await db.flush()
+    pr = await _make_draft_pr(db, requester)
+    pr.department_id = dept_b
+    await db.flush()
+
+    sup = await _resolve_supervisor(
+        db, requester.id, {str(dept_a): True, str(dept_b): True}
+    )
+    assert sup == supervisor.id

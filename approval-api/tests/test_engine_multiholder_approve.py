@@ -68,7 +68,7 @@ async def test_actor_can_approve_gm_or_opm_allows_any_holder_not_just_first(engi
     assert rm["gm_user_id"] != str(actor.id)
 
     ok = await _actor_can_approve(
-        db, "gm_or_opm", actor.id, "dept_manager", requester.id, rm, dept_gm_opm, fbp)
+        db, "gm_or_opm", actor.id, "dept_manager", dept_id, rm, dept_gm_opm, fbp)
     assert ok, (
         "a GM role-holder who is not _post_holders['gm'][0] must still be "
         "authorized to approve the gm_or_opm step (multi-holder membership)"
@@ -91,7 +91,7 @@ async def test_actor_can_approve_gm_or_opm_denies_non_holder(engine_db_session):
     fbp = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
 
     ok = await _actor_can_approve(
-        db, "gm_or_opm", intruder.id, "requester", requester.id, rm, dept_gm_opm, fbp)
+        db, "gm_or_opm", intruder.id, "requester", dept_id, rm, dept_gm_opm, fbp)
     assert not ok, "a non-holder must not be authorized to approve a gm_or_opm step"
 
 
