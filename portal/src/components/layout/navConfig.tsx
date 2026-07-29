@@ -66,7 +66,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
     title: 'ADMIN',
     items: [
       { label: 'Admin',            icon: Settings,    href: 'admin',                          adminOnly: true },
-      { label: 'Data Maintenance', icon: Database,    href: 'portal:/admin/data-maintenance', adminOnly: true },
+      { label: 'Data Maintenance', icon: Database,    href: 'portal:/admin/data-maintenance', permission: 'data_maintenance' },
       { label: 'Access Control',   icon: ShieldCheck, href: 'portal:/admin/access-control',   adminOnly: true },
       { label: 'Approval Routing', icon: GitBranch,   href: 'portal:/admin/approval-routing', adminOnly: true },
     ],

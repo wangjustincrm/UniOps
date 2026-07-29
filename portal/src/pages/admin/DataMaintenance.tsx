@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useAuthStore } from '@/store/auth'
+import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { useAdminEntities } from '@/hooks/useAdmin'
 import type { EntitySchema } from '@/services/adminApi'
 import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
@@ -9,13 +10,16 @@ import { DeleteConfirm } from './data-maintenance/DeleteConfirm'
 
 export default function DataMaintenance() {
   const { user } = useAuthStore()
+  const perms = useRolePermissions().data?.permissions
   const { data: entities, isLoading } = useAdminEntities()
   const [activeKey, setActiveKey] = useState<string>('')
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null)
   const [deleting, setDeleting] = useState<Record<string, unknown> | null>(null)
 
   // UI-level gate; the backend independently enforces the data_maintenance permission.
-  if (user?.role !== 'system_admin') {
+  // Matches the sidebar gate (navConfig): the data_maintenance permission — granted
+  // via the Access Control matrix — drives visibility, not a hardcoded role.
+  if (user?.role !== 'system_admin' && !perms?.data_maintenance) {
     return <p className="p-6 text-sm text-red-600">You do not have access to Data Maintenance.</p>
   }
 
