@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useFactors, useBalance } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
+import { useDepartments } from '@/hooks/useDepartments'
 import { useCreatePr, usePr } from '@/hooks/usePrs'
 import { prService } from '@/services/pr'
 import { api } from '@/lib/api'
@@ -58,8 +59,11 @@ export default function PrCreatePage() {
   const { user } = useAuthStore()
   const { data: config } = useConfig()
   const { data: budgetData } = useBudgetOverview()
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | undefined>(user?.department_id ?? undefined)
+  const { data: departmentsData } = useDepartments()
+  const departments = (departmentsData?.items ?? []).filter((d) => d.is_active)
   const { data: costCentersData } = useCostCenters({
-    department_id: user?.department_id ?? undefined,
+    department_id: selectedDepartmentId,
     active_only: true,
   })
 
@@ -295,6 +299,7 @@ export default function PrCreatePage() {
         is_prepaid: formData.prepaymentRequired ?? false,
         project_code: formData.projectCode || undefined,
         cost_center_id: selectedCostCenterId,
+        department_id: selectedDepartmentId,
         budget_code: selectedL2 || undefined,
         factor_combo: accountFactors.length > 0 ? factorCombo : undefined,
         required_by: formData.requiredBy,
@@ -332,6 +337,7 @@ export default function PrCreatePage() {
         currency,
         vendor_id: selectedVendor?.id,
         cost_center_id: selectedCostCenterId,
+        department_id: selectedDepartmentId,
         budget_code: selectedL2 || undefined,
         // Drafts may have a partial combo; only send when all factors are picked
         // to satisfy the server-side shape check (drop empty values otherwise).
@@ -497,6 +503,28 @@ export default function PrCreatePage() {
                     {selectedVendor && (
                       <p className="text-xs text-success-600">✓ {selectedVendor.name} ({selectedVendor.code})</p>
                     )}
+                  </div>
+
+                  {/* Department — drives cost center / budget filtering and approval routing */}
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-sm font-medium text-neutral-700">
+                      Department <span className="text-danger-600">*</span>
+                    </label>
+                    <select
+                      value={selectedDepartmentId ?? ''}
+                      onChange={(e) => {
+                        setSelectedDepartmentId(e.target.value || undefined)
+                        // department changed → clear cost-center cascade (cc belongs to the old dept)
+                        setSelectedCostCenter(''); setSelectedCostCenterId(undefined)
+                        setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
+                      }}
+                      className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                    >
+                      <option value="">Select Department…</option>
+                      {departments.map((d) => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
                   </div>
 
                   {/* Budget — hidden for Type 1 */}

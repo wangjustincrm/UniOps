@@ -37,6 +37,7 @@ export interface ApiPr {
   is_prepaid: boolean
   cost_center_id?: string
   cost_center_name?: string
+  department_id?: string | null
   department_name?: string
   budget_code?: string
   factor_combo?: Record<string, string> | null
@@ -64,6 +65,7 @@ export interface CreatePrBody {
   is_prepaid?: boolean
   project_code?: string
   cost_center_id?: string
+  department_id?: string
   budget_code?: string
   factor_combo?: Record<string, string>
   required_by?: string
@@ -80,6 +82,7 @@ export interface UpdatePrBody {
   currency?: string
   vendor_id?: string
   cost_center_id?: string
+  department_id?: string
   budget_code?: string
   factor_combo?: Record<string, string> | null
   required_by?: string
