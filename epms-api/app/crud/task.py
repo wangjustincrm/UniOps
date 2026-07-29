@@ -177,6 +177,46 @@ async def _complete_stale_create_prepayment_pa_tasks(db: AsyncSession) -> None:
     await db.flush()
 
 
+async def _complete_stale_approve_tasks(db: AsyncSession) -> None:
+    """Auto-complete open approve_* tasks whose document already left the
+    approvable state (status not in submitted/in_review).
+
+    When a PR/PO/PA is approved, returned, cancelled or (for a PO) issued, the
+    approval engine completes its approve task in the same transaction. Drift
+    still happens — config re-syncs, imports, or status flips that bypass the
+    engine (e.g. a PO reaching 'issued', a PA paid via finance-api) — leaving an
+    OPEN approve task on a terminal document. That is a phantom "pending
+    approval" that 409s on click: it shows in the Task Inbox (which gates only on
+    is_completed) but NOT on the Dashboard (which additionally gates on doc
+    status), so the two surfaces disagree. This mirrors the on-demand cleanup in
+    approval-api engine._resync_document so they reconcile without a manual
+    re-sync. Only approve_* tasks are touched — never legitimate next-step work
+    (place_order / create_pa) on an already-done document.
+    """
+    approvable = ("submitted", "in_review")
+    doc_specs = (
+        ("pr", "approve_pr", PurchaseRequest),
+        ("po", "approve_po", PurchaseOrder),
+        ("pa", "approve_pa", PaymentApplication),
+    )
+    now = datetime.now(timezone.utc)
+    for doc_type, task_type, Model in doc_specs:
+        stale_q = (
+            select(Task)
+            .join(Model, Model.id == Task.document_id)
+            .where(
+                Task.type == task_type,
+                Task.document_type == doc_type,
+                Task.is_completed.is_(False),
+                Model.status.notin_(approvable),
+            )
+        )
+        for task in (await db.execute(stale_q)).scalars().all():
+            task.is_completed = True
+            task.completed_at = now
+    await db.flush()
+
+
 async def _complete_stale_create_po_tasks(db: AsyncSession) -> None:
     """Auto-complete any open create_po tasks where the linked PR already has a PO."""
     stale_q = (
@@ -444,6 +484,7 @@ async def get_for_role(
     # the request's transaction commits.
     await db.execute(text("SELECT pg_advisory_xact_lock(hashtext('epms:task_backfill'))"))
 
+    await _complete_stale_approve_tasks(db)
     await _complete_stale_create_po_tasks(db)
     await _complete_stale_create_pa_tasks(db)
     await _complete_orphan_create_pa_tasks(db)
