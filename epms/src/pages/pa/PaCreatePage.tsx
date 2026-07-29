@@ -27,8 +27,14 @@ export default function PaCreatePage() {
   const lockedFromSettle = Boolean(settleFromId)
   const { data: sourcePrepay } = usePa(settleFromId)
   // ── Step 1 — PO selection ──────────────────────────────────────────────────
+  // A Task Inbox "Create PA" task deep-links ?poId=<po>. Pre-select that PO and
+  // present it as already chosen (with a Change affordance) so the user isn't
+  // asked to pick it again. Settle mode (?settleFrom=) keeps its own locked PO.
+  const poIdFromUrl = searchParams.get('poId') ?? ''
   const [poSearch, setPoSearch]         = useState('')
-  const [selectedPoId, setSelectedPoId] = useState(searchParams.get('poId') ?? '')
+  const [selectedPoId, setSelectedPoId] = useState(poIdFromUrl)
+  const [changingPo, setChangingPo]     = useState(false)
+  const fromTask = Boolean(poIdFromUrl) && !lockedFromSettle
   // Tracks the PO we've already applied matched-invoice/GR defaults for, so the
   // auto-selection runs once per PO and never re-checks boxes the user cleared.
   const autoSelectedForPoRef = useRef<string | null>(null)
@@ -346,7 +352,7 @@ export default function PaCreatePage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
             <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
-              {lockedFromSettle ? 'Purchase Order' : 'Select Purchase Order'}
+              {lockedFromSettle || (fromTask && !changingPo) ? 'Purchase Order' : 'Select Purchase Order'}
             </h2>
 
             {lockedFromSettle ? (
@@ -362,6 +368,29 @@ export default function PaCreatePage() {
                 </div>
               ) : (
                 <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading prepayment…</p>
+              )
+            ) : fromTask && !changingPo && (selectedPo || posData === undefined) ? (
+              selectedPo ? (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-semibold text-primary-700">{selectedPo.number}</span>
+                    <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(selectedPo.total, selectedPo.currency)}</span>
+                  </div>
+                  <div className="text-sm text-neutral-700 mt-0.5">{selectedPo.title}</div>
+                  <div className="text-xs text-neutral-400 mt-0.5">{selectedPo.vendor_name}</div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <p className="text-[11px] text-neutral-400">Pre-filled from your task.</p>
+                    <button
+                      type="button"
+                      onClick={() => setChangingPo(true)}
+                      className="text-[11px] font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                    >
+                      Change PO
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading purchase order…</p>
               )
             ) : (
               <div className="flex flex-col gap-2">
