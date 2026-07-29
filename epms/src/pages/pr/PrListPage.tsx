@@ -8,10 +8,9 @@ import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate } from '@/lib/utils'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePrs } from '@/hooks/usePrs'
-import { useDepartments } from '@/hooks/useDepartments'
 import { useQuery } from '@tanstack/react-query'
 import { userService } from '@/services/users'
-import { useRolePermissions } from '@/hooks/useConfig'
+import { useRolePermissions, useScopedDepartments } from '@/hooks/useConfig'
 import { useAuthStore } from '@/stores/auth.store'
 
 const TYPE_LABELS: Record<number, string> = {
@@ -37,14 +36,6 @@ const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
 type SortField = 'number' | 'title' | 'amount' | 'status' | 'submitted_at' | 'is_prepaid'
 type SortDir = 'asc' | 'desc'
 
-// Roles that see PRs company-wide → their Requester picker isn't limited to one
-// department. Everyone else with broader-than-own visibility (e.g. Department
-// Admin, Dept Manager) is scoped to their own department's requesters.
-const COMPANY_WIDE_ROLES = new Set([
-  'procurement_officer', 'procurement_manager', 'gm', 'opm',
-  'finance_manager', 'finance_bp', 'cfo', 'auditor', 'system_admin',
-])
-
 export default function PrListPage() {
   const { user } = useAuthStore()
   // Effective roles = primary JWT role ∪ Role-Management assignments (a Requester
@@ -52,7 +43,6 @@ export default function PrListPage() {
   // back to the JWT role until the permissions query resolves.
   const roles = useRolePermissions().data?.roles ?? (user?.role ? [user.role] : [])
   const isRequesterOnly = roles.length > 0 && roles.every((r) => r === 'requester')
-  const seesAllDepts = roles.some((r) => COMPANY_WIDE_ROLES.has(r))
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -69,20 +59,33 @@ export default function PrListPage() {
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
   const navigate = useNavigate()
 
-  const { data: deptData } = useDepartments()
-  const departments = (deptData?.items ?? []).filter((d) => d.is_active)
+  // Department + Requester filters both draw from the SAME server-computed scope
+  // (GET /config/me/scoped-departments), which mirrors the PR list's own
+  // visibility. This replaces the old client-side guess (a hard-coded
+  // company-wide role set + the viewer's single JWT department) that under-scoped
+  // a multi-department Director to his own primary department and over-scoped a
+  // GM to every requester.
+  const { data: scopedDepts } = useScopedDepartments()
+  const departments = scopedDepts?.items ?? []          // active-only, already scoped
+  const seesAllDepts = scopedDepts?.unrestricted ?? false
+  const scopedDeptIds = departments.map((d) => d.id)
 
   // Requester picker options — active requesters via the non-admin /users/directory
   // (GET /users is system_admin-only and would 403 for a requester who is also a
-  // Department Admin). Scoped server-side to the viewer's own department unless
-  // they see PRs company-wide.
+  // Department Admin). Scoped to the caller's departments: all when unrestricted,
+  // otherwise exactly their scoped set (department_ids covers a Director's/GM's
+  // several departments — not just one).
   const { data: usersData } = useQuery({
-    queryKey: ['pr-requester-picker', seesAllDepts, user?.department_id],
+    queryKey: ['pr-requester-picker', seesAllDepts, scopedDeptIds],
     queryFn: () => userService.directory({
       role: 'requester',
-      department_id: seesAllDepts ? undefined : (user?.department_id ?? undefined),
+      department_ids: seesAllDepts ? undefined : scopedDeptIds,
     }),
-    enabled: !isRequesterOnly,
+    // Only fire once scope is known: unrestricted → company-wide query is
+    // correct; restricted → require a non-empty scoped set (a restricted user
+    // with NO departments must offer NO requesters, never fall through to an
+    // unscoped query that returns everyone).
+    enabled: !isRequesterOnly && (seesAllDepts || scopedDeptIds.length > 0),
     staleTime: 60_000,
   })
   const requesters = (usersData?.items ?? [])
