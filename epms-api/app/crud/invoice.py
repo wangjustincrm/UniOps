@@ -237,6 +237,11 @@ class LegacyMatchUnsupported(ValueError):
     allocation (→ HTTP 422)."""
 
 
+class FeeOnlyLinkRequired(ValueError):
+    """Raised when a fee-only invoice (no PO allocations) is confirmed without a
+    reference PO to link it to (→ HTTP 422)."""
+
+
 async def _normalize_allocations(invoice: Invoice, req: InvoiceMatchRequest) -> list[AllocationInput]:
     """Return the effective allocation list. Legacy single-PO requests become one
     PO-header-level allocation covering the full invoice total."""
@@ -274,8 +279,6 @@ async def match(
 ) -> Invoice:
     now = datetime.now(timezone.utc)
     allocs = await _normalize_allocations(invoice, req)
-    if not allocs:
-        raise ValueError("At least one allocation is required")
 
     # 0. 非PO费用行:排除出 PO 匹配,但其税前 line_total 计入平账(照付,随发票头
     # 走 AP)。每次 match 以入参为准重写标记 —— 未列出的行清除标记(支持 unmark)。
@@ -389,40 +392,58 @@ async def match(
             any_exception = True
 
     # 5. roll up to invoice header (summary + backward-compat single values)
-    first = allocs[0]
-    primary_po = po_cache[first.po_id]
-    invoice.po_id = primary_po.id
-    invoice.po_number = primary_po.number
     invoice.matched_at = now
     invoice.matched_by = matched_by
     invoice.matched_by_name = (await db.execute(
         select(User.full_name).where(User.id == matched_by)
     )).scalar_one_or_none()
 
-    seen: set[tuple] = set()
-    summary_reference = Decimal("0")
-    for row in new_rows:
-        key = (row.po_id, row.po_line_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        if row.po_line_id is not None:
-            summary_reference += (await db.execute(
-                select(PoLineItem.line_total).where(PoLineItem.id == row.po_line_id)
-            )).scalar_one()
-        else:
-            summary_reference += po_cache[row.po_id].subtotal
-    invoice.po_total = summary_reference
-    # Header variance measures only the PO-matched portion of the invoice: a
-    # non-PO fee line's pre-tax amount is not part of the PO reference, so it
-    # must be subtracted from the invoice side here or a perfectly-balanced
-    # mixed invoice (PO alloc + non-PO fee) would show a spurious variance and
-    # a misleading "Auto-matched within tolerance" exception_reason below.
-    invoice.variance = (invoice.amount - excluded_total) - summary_reference
-    invoice.variance_pct = (
-        (invoice.variance / summary_reference * 100).quantize(Decimal("0.0001"))
-        if summary_reference != Decimal("0") else Decimal("0")
-    )
+    if allocs:
+        first = allocs[0]
+        primary_po = po_cache[first.po_id]
+        invoice.po_id = primary_po.id
+        invoice.po_number = primary_po.number
+
+        seen: set[tuple] = set()
+        summary_reference = Decimal("0")
+        for row in new_rows:
+            key = (row.po_id, row.po_line_id)
+            if key in seen:
+                continue
+            seen.add(key)
+            if row.po_line_id is not None:
+                summary_reference += (await db.execute(
+                    select(PoLineItem.line_total).where(PoLineItem.id == row.po_line_id)
+                )).scalar_one()
+            else:
+                summary_reference += po_cache[row.po_id].subtotal
+        invoice.po_total = summary_reference
+        # Header variance measures only the PO-matched portion of the invoice: a
+        # non-PO fee line's pre-tax amount is not part of the PO reference, so it
+        # must be subtracted from the invoice side here or a perfectly-balanced
+        # mixed invoice (PO alloc + non-PO fee) would show a spurious variance.
+        invoice.variance = (invoice.amount - excluded_total) - summary_reference
+        invoice.variance_pct = (
+            (invoice.variance / summary_reference * 100).quantize(Decimal("0.0001"))
+            if summary_reference != Decimal("0") else Decimal("0")
+        )
+    else:
+        # Fee-only invoice: no PO allocations. Link it to a reference PO for
+        # traceability; the fees are paid in full via the AP header. There is no
+        # PO line reference to measure variance against, so variance is zero.
+        if req.reference_po_id is None:
+            raise FeeOnlyLinkRequired("Link a PO to confirm a fee-only invoice")
+        ref_po = (await db.execute(
+            select(PurchaseOrder).where(PurchaseOrder.id == req.reference_po_id)
+        )).scalar_one_or_none()
+        if ref_po is None:
+            raise ValueError(f"Purchase order {req.reference_po_id} not found")
+        invoice.po_id = ref_po.id
+        invoice.po_number = ref_po.number
+        invoice.po_total = Decimal("0")
+        invoice.variance = Decimal("0")
+        invoice.variance_pct = Decimal("0")
+
     invoice.matched_po_line_ids = None
     invoice.matched_reference_total = None
 

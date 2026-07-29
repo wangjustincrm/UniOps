@@ -507,3 +507,84 @@ async def test_non_po_fee_unmark_on_rematch_clears_flag(admin_client):
     ship2 = next(li for li in r2.json()["line_items"] if li["id"] == ship_line)
     assert ship2["non_po_fee"] is False           # unmark:标记已清
     assert ship2["non_po_note"] is None
+
+
+@pytest.mark.asyncio
+async def test_fee_only_invoice_links_to_po(admin_client):
+    """Freight-only invoice: single line marked non-PO fee, linked to a PO by
+    reference_po_id → matched, header carries the PO, no allocations, zero variance."""
+    v = await _make_vendor(admin_client, "VND-FEEONLY-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "Goods", "qty": "1", "unit": "EA", "unit_price": "1915.90"}])
+
+    inv = await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="132.52", tax_amount="17.23",
+        line_items=[{"description": "FREIGHT CHARGES", "quantity": "1",
+                     "unit_price": "132.52", "line_total": "132.52"}]))
+    inv = inv.json()
+    fee_line = inv["line_items"][0]["id"]
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [],
+        "non_po_lines": [{"line_id": fee_line, "note": "freight"}],
+        "reference_po_id": po["id"],
+    })
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "matched"
+    assert data["po_id"] == po["id"]
+    assert data["po_number"] == po["number"]
+    assert data["allocations"] == []
+    assert float(data["variance"]) == 0.0
+    assert float(data["po_total"]) == 0.0
+    fee = next(li for li in data["line_items"] if li["id"] == fee_line)
+    assert fee["non_po_fee"] is True
+
+
+@pytest.mark.asyncio
+async def test_fee_only_invoice_without_link_rejected(admin_client):
+    """Fee-only invoice with no reference_po_id → 422, cannot confirm."""
+    v = await _make_vendor(admin_client, "VND-FEEONLY-02")
+    inv = await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="132.52", tax_amount="0.00",
+        line_items=[{"description": "FREIGHT", "quantity": "1",
+                     "unit_price": "132.52", "line_total": "132.52"}]))
+    inv = inv.json()
+    fee_line = inv["line_items"][0]["id"]
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [],
+        "non_po_lines": [{"line_id": fee_line, "note": "freight"}],
+    })
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_fee_only_invoice_imbalanced_rejected(admin_client):
+    """Zero allocations but fees don't cover the full pre-tax amount → 422."""
+    v = await _make_vendor(admin_client, "VND-FEEONLY-03")
+    po = await _make_issued_po(admin_client, v["id"])
+    inv = await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="1000.00", tax_amount="0.00",
+        line_items=[
+            {"description": "part-a", "quantity": "1", "unit_price": "600.00", "line_total": "600.00"},
+            {"description": "part-b", "quantity": "1", "unit_price": "400.00", "line_total": "400.00"},
+        ]))
+    inv = inv.json()
+    only_line = inv["line_items"][0]["id"]   # mark only 600 of 1000 as fee
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [],
+        "non_po_lines": [{"line_id": only_line, "note": "partial fee"}],
+        "reference_po_id": po["id"],
+    })
+    assert r.status_code == 422, r.text
+
+
+def test_match_request_accepts_reference_po_id():
+    from app.schemas.invoice import InvoiceMatchRequest
+    import uuid
+    req = InvoiceMatchRequest(allocations=[], reference_po_id=uuid.uuid4())
+    assert req.reference_po_id is not None
+    # optional by default
+    assert InvoiceMatchRequest(allocations=[]).reference_po_id is None

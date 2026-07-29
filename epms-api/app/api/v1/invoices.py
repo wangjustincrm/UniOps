@@ -262,7 +262,7 @@ async def match_invoice(
     if inv.status not in ("unmatched", "exception"):
         raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
     require_review = not is_ap
-    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported
+    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired
     try:
         result = await invoice_crud.match(db, inv, body, matched_by=caller_id,
                                           require_review=require_review)
@@ -321,7 +321,7 @@ async def match_invoice(
 
         await _attach_match_assignees(db, [result])
         return result
-    except (AllocationImbalance, LegacyMatchUnsupported) as exc:
+    except (AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
