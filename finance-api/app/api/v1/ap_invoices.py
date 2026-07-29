@@ -10,13 +10,35 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
-from app.core.deps import CurrentUser
+from app.core.deps import _FINANCE_ROLES, CurrentUser
 from app.crud import ap_invoice as crud
+from app.crud import payment_execute
 from app.crud.ap_accrual import has_postings, post_invoice_accrual, reverse_invoice_accrual
 from app.db.base import get_db
 from app.models.ap_invoice import POSTED, VOID, ApInvoice
 
 router = APIRouter(prefix="/ap", tags=["accounts-payable-invoices"])
+
+
+async def _require_finance_role(db: AsyncSession, user: dict) -> None:
+    """Any finance role (primary JWT role or an additional identity role
+    assignment) may run the NC export — it is a routine AP handoff to NC65,
+    NOT chart-of-accounts management. This mirrors payments._authorize_read
+    ("who may see finance data", `_FINANCE_ROLES`); the export was wrongly
+    gated on coa._require_manage (finance.coa.manage → system_admin /
+    finance_manager only), which 403'd every ap_clerk. CurrentUser only
+    decodes the JWT, so this gate is what keeps a bare token (an OA-only
+    employee with no finance role) out of /ap/nc-export."""
+    role = user.get("role", "")
+    if role in _FINANCE_ROLES:
+        return
+    try:
+        user_id = uuid.UUID(str(user.get("sub", "")))
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Insufficient role to export AP invoices to NC")
+    codes = await payment_execute._user_role_codes(db, user_id, role)
+    if not codes & _FINANCE_ROLES:
+        raise HTTPException(status_code=403, detail="Insufficient role to export AP invoices to NC")
 
 
 class TaxLineIn(BaseModel):
@@ -150,7 +172,7 @@ async def nc_export(body: NcExportIn, user: CurrentUser,
     from app.models.nc_export import NcExportBatch
     from app.services.nc_ap_export import build_export_rows, write_xlsx
 
-    await _require_manage(db, user)
+    await _require_finance_role(db, user)
     heads, bodies, errors = await build_export_rows(db, body.ap_ids)
     if errors:
         raise HTTPException(status_code=409, detail={"errors": errors})
