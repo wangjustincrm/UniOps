@@ -13,7 +13,7 @@ import SystemAdminDashboard from './SystemAdminDashboard'
 
 export default function DashboardRouter() {
   const { user } = useAuthStore()
-  // Some backend roles (director, supervisor, department_admin) are first-class
+  // Some backend roles (director, supervisor, dept_admin) are first-class
   // scoped approvers that aren't in the frontend UserRole union — widen to string
   // so the switch can branch on them without a type error.
   const role: string = user?.role ?? 'requester'
@@ -26,7 +26,7 @@ export default function DashboardRouter() {
     case 'opm':
     case 'director':
     case 'supervisor':
-    case 'department_admin':
+    case 'dept_admin':
       return <ApproverDashboard />
     case 'procurement_officer':
     case 'procurement_manager':

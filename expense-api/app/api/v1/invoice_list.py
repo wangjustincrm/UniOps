@@ -162,7 +162,7 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
         po_selects.append(await _epms_po_subq_for_user(db, user_id))
         epms_own_uploads = True   # requester also sees their own unmatched uploads
 
-    if codes & {"dept_manager", "department_admin"}:
+    if codes & {"dept_manager", "dept_admin"}:
         dept_id_raw = user.get("department_id")
         if dept_id_raw:
             po_selects.append(await _epms_po_subq_for_dept(db, uuid.UUID(dept_id_raw)))
@@ -188,7 +188,7 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
         pr_subq = select(EpmsPurchaseRequest.id).where(EpmsPurchaseRequest.cost_center_id.in_(cc_subq))
         po_selects.append(select(EpmsPurchaseOrder.id).where(EpmsPurchaseOrder.pr_id.in_(pr_subq)))
 
-    recognized = (codes & {"requester", "dept_manager", "department_admin", "gm", "opm"}) or is_director
+    recognized = (codes & {"requester", "dept_manager", "dept_admin", "gm", "opm"}) or is_director
     if not recognized:
         # Unknown / unrecognised role — restrict to own uploads (unchanged fallback).
         epms_own_uploads = True

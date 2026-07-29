@@ -3,7 +3,7 @@
 Visibility rules:
   requester          → own PRs + linked POs / GRs / Invoices / PAs
   dept_manager /
-  department_admin   → department's PRs + linked POs / GRs / Invoices / PAs
+  dept_admin         → department's PRs + linked POs / GRs / Invoices / PAs
   gm / opm           → mapped departments' PRs + linked chain
   all other roles    → unrestricted (see everything)
 
@@ -67,7 +67,7 @@ def _task_chain_po_ids(user_id: uuid.UUID) -> Select:
 
 # Roles whose scope is restricted to their department / own documents.
 # Every role NOT in this set gets unrestricted visibility.
-_RESTRICTED_ROLES = {"requester", "dept_manager", "department_admin", "gm", "opm", "supervisor", "director"}
+_RESTRICTED_ROLES = {"requester", "dept_manager", "dept_admin", "gm", "opm", "supervisor", "director"}
 
 
 async def _user_dept_id(db: AsyncSession, user_id: uuid.UUID) -> uuid.UUID | None:
@@ -267,7 +267,7 @@ async def visible_pr_subquery(
     if "requester" in codes:
         conds.append(PurchaseRequest.created_by == user_id)
 
-    if codes & {"dept_manager", "department_admin"}:
+    if codes & {"dept_manager", "dept_admin"}:
         # A dept_manager sees PRs charged to their department's cost centers
         # (budget oversight) OR raised by a member of their department. (b) is
         # required to match approval routing: the engine assigns approve_pr by
@@ -319,7 +319,7 @@ async def scoped_department_ids(
 
     Mirror of `visible_pr_subquery`'s dept resolution, role-for-role:
       • any unrestricted role → None (all departments)
-      • requester / dept_manager / department_admin → own department
+      • requester / dept_manager / dept_admin → own department
       • gm / opm → `_mapped_dept_ids`
       • director → `_director_dept_ids`
       • supervisor → the departments of their direct reports
@@ -334,10 +334,10 @@ async def scoped_department_ids(
 
     dept_ids: set[uuid.UUID] = set()
 
-    # requester/dept_manager/department_admin are all keyed off the user's own
+    # requester/dept_manager/dept_admin are all keyed off the user's own
     # department (a requester can raise for other departments, but their own is
     # the natural default for the picker; pure requesters don't see it anyway).
-    if codes & {"requester", "dept_manager", "department_admin"}:
+    if codes & {"requester", "dept_manager", "dept_admin"}:
         own = await _user_dept_id(db, user_id)
         if own:
             dept_ids.add(own)
