@@ -2,6 +2,14 @@
 import uuid
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.crud import user as user_crud
+from app.models.po import PurchaseOrder
+from app.models.pr import PurchaseRequest
+from app.models.task import Task
+from app.schemas.auth import RegisterRequest
 
 INV_URL = "/api/v1/invoices"
 VENDOR_URL = "/api/v1/vendors"
@@ -31,6 +39,39 @@ async def _make_issued_po(client, vendor_id, lines=None):
     # unavailable in this test env (no CompanyConfig row → all perms default False).
     # match() loads the PO by id directly and does not check PO status/visibility.
     return po.json()
+
+
+async def _link_po_to_pr(test_engine, po_id: str):
+    """Insert a minimal PR row and point the given (already API-created) PO's
+    pr_id at it, so `_notify_requester_create_pa`'s `po.pr_id` lookup finds a
+    requester. A PR-less PO makes that helper return early at the `po.pr_id`
+    check, which would make a "no create_pa task" assertion pass trivially."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await user_crud.create(db, RegisterRequest(
+            email=f"feeonly-req-{uuid.uuid4().hex[:8]}@example.com",
+            password="TestPass1!", full_name="Fee Only Requester", role="requester"))
+        await db.commit()
+        pr = PurchaseRequest(number=f"PR-FEEONLY-{uuid.uuid4().hex[:6]}", title="Fee-only test PR",
+                              type=2, created_by=requester.id)
+        db.add(pr)
+        await db.commit()
+        await db.refresh(pr)
+        po = (await db.execute(
+            select(PurchaseOrder).where(PurchaseOrder.id == uuid.UUID(po_id))
+        )).scalar_one()
+        po.pr_id = pr.id
+        await db.commit()
+        return requester.id
+
+
+async def _create_pa_task_for_po(test_engine, po_id: str):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        return (await db.execute(select(Task).where(
+            Task.type == "create_pa", Task.document_type == "po",
+            Task.document_id == uuid.UUID(po_id),
+        ))).scalar_one_or_none()
 
 
 async def _ensure_company_config():
@@ -588,3 +629,115 @@ def test_match_request_accepts_reference_po_id():
     assert req.reference_po_id is not None
     # optional by default
     assert InvoiceMatchRequest(allocations=[]).reference_po_id is None
+
+
+@pytest.mark.asyncio
+async def test_allocated_match_to_pr_backed_po_creates_create_pa_task(admin_client, test_engine):
+    """Control for the fee-only negative below: a NORMAL (allocated) match to a
+    PR-backed PO DOES create a create_pa task for the PR's requester. Proves
+    _notify_requester_create_pa fires when it should, so the fee-only test's
+    "no task" assertion is meaningful rather than a trivial no-op."""
+    v = await _make_vendor(admin_client, "VND-FEEONLY-PA-01")
+    po = await _make_issued_po(admin_client, v["id"])
+    await _link_po_to_pr(test_engine, po["id"])
+
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(v["id"]))).json()
+    line_id = inv["line_items"][0]["id"]
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [{"invoice_line_id": line_id, "po_id": po["id"],
+                         "allocated_amount": "1000.00", "allocated_tax": "0.00"}],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"
+
+    task = await _create_pa_task_for_po(test_engine, po["id"])
+    assert task is not None
+
+
+@pytest.mark.asyncio
+async def test_fee_only_match_skips_create_pa_task(admin_client, test_engine):
+    """A fee-only match linked to a PR-backed PO must NOT spawn a create_pa
+    task: the fees are paid in full via the AP header, no PA is expected for
+    this PO on account of this invoice. (Regression: previously invoice.po_id
+    being set on the fee-only branch made _notify_requester_create_pa's
+    `if not invoice.po_id: return` guard falsely pass, spuriously creating a
+    create_pa task sized at the PO's full total.)"""
+    v = await _make_vendor(admin_client, "VND-FEEONLY-PA-02")
+    po = await _make_issued_po(admin_client, v["id"])
+    await _link_po_to_pr(test_engine, po["id"])
+
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="132.52", tax_amount="17.23",
+        line_items=[{"description": "FREIGHT", "quantity": "1",
+                     "unit_price": "132.52", "line_total": "132.52"}]))).json()
+    fee_line = inv["line_items"][0]["id"]
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [],
+        "non_po_lines": [{"line_id": fee_line, "note": "freight"}],
+        "reference_po_id": po["id"],
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"
+
+    task = await _create_pa_task_for_po(test_engine, po["id"])
+    assert task is None
+
+
+@pytest.mark.asyncio
+async def test_fee_only_invoice_cross_vendor_po_rejected(admin_client):
+    """reference_po_id pointing at a PO for a DIFFERENT vendor than the invoice
+    → 422 (the UI only ever offers same-vendor candidates; the API must not
+    silently trust an out-of-band mismatch)."""
+    v_invoice = await _make_vendor(admin_client, "VND-FEEONLY-XV-01")
+    v_po = await _make_vendor(admin_client, "VND-FEEONLY-XV-02")
+    po = await _make_issued_po(admin_client, v_po["id"])
+
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v_invoice["id"], amount="132.52", tax_amount="0.00",
+        line_items=[{"description": "FREIGHT", "quantity": "1",
+                     "unit_price": "132.52", "line_total": "132.52"}]))).json()
+    fee_line = inv["line_items"][0]["id"]
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [],
+        "non_po_lines": [{"line_id": fee_line, "note": "freight"}],
+        "reference_po_id": po["id"],
+    })
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_fee_only_rematch_clears_stale_exception_reason(admin_client):
+    """A previously-"exception" invoice that gets re-matched as fee-only must
+    not carry the old exception_reason forward — variance is definitionally 0
+    on the fee-only path."""
+    v = await _make_vendor(admin_client, "VND-FEEONLY-EX-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "L", "qty": "1", "unit": "EA", "unit_price": "100.00"}])
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "Overshoot", "quantity": "1",
+                     "unit_price": "1000.00", "line_total": "1000.00"}]))).json()
+    line_id = inv["line_items"][0]["id"]
+
+    # match #1: allocate the full 1000 against a PO line worth only 100 →
+    # massive overshoot → status "exception" with a non-null exception_reason.
+    r1 = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [{"invoice_line_id": line_id, "po_id": po["id"],
+                         "allocated_amount": "1000.00", "allocated_tax": "0.00"}],
+    })
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["status"] == "exception"
+    assert r1.json()["exception_reason"]
+
+    # match #2: re-match as fee-only, linked to the same (same-vendor) PO for
+    # traceability.
+    r2 = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [],
+        "non_po_lines": [{"line_id": line_id, "note": "reclassified as fee"}],
+        "reference_po_id": po["id"],
+    })
+    assert r2.status_code == 200, r2.text
+    data = r2.json()
+    assert data["status"] == "matched"
+    assert data["exception_reason"] is None

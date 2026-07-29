@@ -438,11 +438,17 @@ async def match(
         )).scalar_one_or_none()
         if ref_po is None:
             raise ValueError(f"Purchase order {req.reference_po_id} not found")
+        if ref_po.vendor_id != invoice.vendor_id:
+            raise FeeOnlyLinkRequired("Linked PO must belong to the same vendor as the invoice")
         invoice.po_id = ref_po.id
         invoice.po_number = ref_po.number
         invoice.po_total = Decimal("0")
         invoice.variance = Decimal("0")
         invoice.variance_pct = Decimal("0")
+        # Clear any stale reason from a previous (e.g. exception) match state —
+        # re-matching a previously-flagged invoice as fee-only shouldn't carry it
+        # forward now that variance is definitionally zero.
+        invoice.exception_reason = None
 
     invoice.matched_po_line_ids = None
     invoice.matched_reference_total = None
