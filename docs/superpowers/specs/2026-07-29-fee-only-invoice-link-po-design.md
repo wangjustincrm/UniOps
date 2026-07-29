@@ -86,8 +86,12 @@ Already syncs full amount + `po_id`. Verified sufficient.
 ## Frontend changes (epms)
 
 ### 1. `InvoiceAllocationPanel.tsx`
-- Add a **"Link this invoice to a PO"** `<select>` at the top of the panel, populated from
-  the existing `pos` candidate list (same vendor, issued/approved). New state `referencePoId`.
+- Add a **"Link this invoice to a PO"** `<select>` at the top of the panel, populated
+  **strictly from the existing `pos` prop** — the `match-candidates` list, already filtered
+  server-side to `PurchaseOrder.vendor_id == invoice.vendor_id` + matchable statuses
+  (`epms-api/app/api/v1/invoices.py:352`). **Do not add any new query that returns all POs**;
+  the dropdown must only ever offer same-vendor candidate POs, identical to the drag-drop
+  targets. New state `referencePoId`.
 - It is relevant only when there are **no** allocations (`assignedTotal === 0` / `Object.keys(assign).length === 0`).
   When there are allocations, hide it (PO comes from allocations).
 - Confirm enable rule:
