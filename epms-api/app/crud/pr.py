@@ -34,8 +34,13 @@ async def _resolve_names(
     db: AsyncSession,
     vendor_id: uuid.UUID | None,
     cost_center_id: uuid.UUID | None,
+    department_id: uuid.UUID | None = None,
 ) -> tuple[str | None, str | None, str | None]:
-    """Returns (vendor_name, cost_center_name, department_name)."""
+    """Returns (vendor_name, cost_center_name, department_name).
+
+    department_name is derived from the explicitly-selected department_id when
+    present; falls back to the cost center's department for legacy callers.
+    """
     vendor_name: str | None = None
     cost_center_name: str | None = None
     department_name: str | None = None
@@ -51,7 +56,13 @@ async def _resolve_names(
             cost_center_name = cc.name
             await db.refresh(cc, ["department"])
             if cc.department:
-                department_name = cc.department.name
+                department_name = cc.department.name  # fallback
+
+    if department_id:
+        from app.models.department import Department
+        dept = await db.get(Department, department_id)
+        if dept:
+            department_name = dept.name  # explicit selection wins
 
     return vendor_name, cost_center_name, department_name
 
@@ -204,7 +215,7 @@ async def create(
 ) -> PurchaseRequest:
     number = await _next_number(db)
     vendor_name, cost_center_name, department_name = await _resolve_names(
-        db, payload.vendor_id, payload.cost_center_id
+        db, payload.vendor_id, payload.cost_center_id, payload.department_id
     )
     pr_amount = _sum_items(payload.line_items)
     over_budget = await _compute_over_budget(
@@ -221,6 +232,7 @@ async def create(
         is_prepaid=getattr(payload, "is_prepaid", False) or False,
         cost_center_id=payload.cost_center_id,
         cost_center_name=cost_center_name,
+        department_id=payload.department_id,
         department_name=department_name,
         budget_code=payload.budget_code,
         factor_combo=payload.factor_combo,
@@ -255,12 +267,12 @@ async def update(
     *, bearer_token: str | None = None,
 ) -> PurchaseRequest:
     needs_name_refresh = False
-    for field in ("title", "type", "currency", "vendor_id", "cost_center_id",
+    for field in ("title", "type", "currency", "vendor_id", "cost_center_id", "department_id",
                   "budget_code", "factor_combo", "project_code", "required_by", "delivery_address", "notes", "is_prepaid"):
         val = getattr(payload, field)
         if val is not None:
             setattr(pr, field, val)
-            if field in ("vendor_id", "cost_center_id"):
+            if field in ("vendor_id", "cost_center_id", "department_id"):
                 needs_name_refresh = True
             if field == "factor_combo":
                 # JSONB: flag the SQLAlchemy ORM that the dict mutated so the change is persisted.
@@ -268,7 +280,7 @@ async def update(
                 flag_modified(pr, "factor_combo")
     if needs_name_refresh:
         vendor_name, cost_center_name, department_name = await _resolve_names(
-            db, pr.vendor_id, pr.cost_center_id
+            db, pr.vendor_id, pr.cost_center_id, pr.department_id
         )
         pr.vendor_name = vendor_name
         pr.cost_center_name = cost_center_name
