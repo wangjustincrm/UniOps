@@ -32,9 +32,10 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
     p.vendor_name.toLowerCase().includes(poSearch.toLowerCase())
   )
 
-  const handleMatch = (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[] }) => {
+  const handleMatch = (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[]; referencePoId: string | null }) => {
     matchInvoiceMutation.mutate(
-      { id: inv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines },
+      { id: inv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines,
+        reference_po_id: payload.referencePoId ?? undefined },
       {
         onSuccess: () => {
           onClose()

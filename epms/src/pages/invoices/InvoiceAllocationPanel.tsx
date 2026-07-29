@@ -11,7 +11,7 @@ export type AllocationAssignment = Record<string, { poId: string; poLineId: stri
 interface Props {
   invoice: ApiInvoice
   pos: ApiPo[]                 // candidate POs (issued/approved, same vendor)
-  onSubmit: (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[] }) => void
+  onSubmit: (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[]; referencePoId: string | null }) => void
   submitting?: boolean
   defaultAssignments?: AllocationAssignment  // prefill (e.g. AI-recognized PO on upload)
 }
@@ -27,6 +27,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
     return m
   })
   const [menu, setMenu] = useState<{ x: number; y: number; lineId: string } | null>(null)
+  const [referencePoId, setReferencePoId] = useState<string>('')
 
   const currency = invoice.currency
   // Allocations are pre-tax: invoice lines and PO lines are pre-tax, so we balance
@@ -77,6 +78,10 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
 
   const unallocated = total - assignedTotal - excludedTotal
   const balanced = Math.abs(unallocated) < 0.01
+  const hasAllocations = Object.keys(assign).length > 0
+  // Fee-only invoice (nothing allocated to a PO): must link a PO to confirm.
+  const needsReferencePo = balanced && !hasAllocations
+  const canSubmit = balanced && (hasAllocations || !!referencePoId)
 
   const drop = (poId: string, poLineId: string) => {
     if (!dragLineId) return
@@ -99,6 +104,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
   const submit = () => onSubmit({
     allocations: buildAllocations(),
     nonPoLines: Object.entries(nonPo).map(([line_id, note]) => ({ line_id, note })),
+    referencePoId: hasAllocations ? null : (referencePoId || null),
   })
 
   return (
@@ -120,6 +126,25 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         <span className="-mt-2 text-[11px] text-neutral-400">
           {formatAmount(excludedTotal, currency)} in non-PO fees excluded from matching
         </span>
+      )}
+
+      {!hasAllocations && (
+        <div className="flex flex-col gap-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5">
+          <label className="text-xs font-medium text-amber-800">Link this invoice to a PO</label>
+          <span className="text-[11px] text-amber-700">
+            This invoice has no PO line allocations. Link it to a purchase order (same vendor) for traceability — the charges are paid via the invoice header.
+          </span>
+          <select
+            value={referencePoId}
+            onChange={(e) => setReferencePoId(e.target.value)}
+            className="mt-1 h-8 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="">Select a purchase order…</option>
+            {pos.map((po) => (
+              <option key={po.id} value={po.id}>{po.number}</option>
+            ))}
+          </select>
+        </div>
       )}
 
       <div className="grid grid-cols-2 gap-4">
@@ -220,8 +245,11 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <Button onClick={submit} disabled={!balanced || submitting}>
+      <div className="flex flex-col items-end gap-1">
+        {needsReferencePo && !referencePoId && (
+          <span className="text-[11px] text-danger-600">Link a PO to confirm a fee-only invoice</span>
+        )}
+        <Button onClick={submit} disabled={!canSubmit || submitting}>
           {submitting ? 'Matching...' : 'Confirm allocation & match'}
         </Button>
       </div>

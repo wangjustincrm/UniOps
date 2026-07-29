@@ -124,6 +124,7 @@ export interface MatchInvoiceBody {
   gr_id?:        string
   gr_ids?:       string[]
   po_line_ids?:  string[]
+  reference_po_id?: string
 }
 
 export interface ResolveExceptionBody {

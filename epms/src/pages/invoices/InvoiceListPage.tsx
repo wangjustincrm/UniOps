@@ -323,10 +323,11 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       }
     }
 
-    const handleAllocSubmit = (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[] }) => {
+    const handleAllocSubmit = (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[]; referencePoId: string | null }) => {
       const linkedGr = matchedPo ? grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled') : undefined
       matchInvoiceMutation.mutate(
-        { id: createdInv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines, gr_id: linkedGr?.id },
+        { id: createdInv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines,
+          reference_po_id: payload.referencePoId ?? undefined, gr_id: linkedGr?.id },
         { onSuccess: () => onUploaded(createdInv.id) },
       )
     }
