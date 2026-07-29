@@ -11,8 +11,10 @@ import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useBalance, useFactors } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
+import { useDepartments } from '@/hooks/useDepartments'
 import { usePr, useUpdatePr, usePrAction } from '@/hooks/usePrs'
 import { useVendors } from '@/hooks/useVendors'
+import { useAuthStore } from '@/stores/auth.store'
 import type { ApiVendor } from '@/services/vendors'
 import type { ApiBudgetL1 } from '@/services/budget'
 import type { PrLineItem, Currency, ProcurementType } from '@/types'
@@ -38,10 +40,17 @@ const currentFiscalYear = new Date().getUTCFullYear()
 export default function PrEditPage() {
   const { id } = useParams()
   const replaceTab = useReplaceTab(epmsRoutes)
+  const { user } = useAuthStore()
   const { data: config } = useConfig()
   const { data: pr, isLoading } = usePr(id ?? '')
   const { data: budgetData } = useBudgetOverview()
-  const { data: costCentersData } = useCostCenters({ active_only: true })
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | undefined>(undefined)
+  const { data: departmentsData } = useDepartments()
+  const departments = (departmentsData?.items ?? []).filter((d) => d.is_active)
+  const { data: costCentersData } = useCostCenters({
+    department_id: selectedDepartmentId,
+    active_only: true,
+  })
   const updatePr = useUpdatePr()
   const prAction = usePrAction(id ?? '')
 
@@ -57,6 +66,7 @@ export default function PrEditPage() {
   const [justificationError, setJustificationError] = useState<string | null>(null)
   const [factorCombo, setFactorCombo] = useState<Record<string, string>>({})
   const [factorComboError, setFactorComboError] = useState<string | null>(null)
+  const [departmentError, setDepartmentError] = useState<string | null>(null)
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
 
@@ -102,6 +112,7 @@ export default function PrEditPage() {
     setIsPrepaid(pr.is_prepaid ?? false)
     setJustification(pr.over_budget_justification ?? '')
     setFactorCombo(pr.factor_combo ?? {})
+    setSelectedDepartmentId(pr.department_id ?? user?.department_id ?? undefined)
 
     // line items
     if (pr.line_items.length > 0) {
@@ -146,7 +157,7 @@ export default function PrEditPage() {
     }
 
     setInitialized(true)
-  }, [pr, initialized, budgetData, costCentersData])
+  }, [pr, initialized, budgetData, costCentersData, user])
 
   const procurementType = pr?.type as ProcurementType | undefined
   const hasMaterial = procurementType === 1 || procurementType === 3
@@ -184,6 +195,7 @@ export default function PrEditPage() {
     currency,
     vendor_id: selectedVendor?.id,
     cost_center_id: selectedCostCenterId,
+    department_id: selectedDepartmentId,
     budget_code: selectedL2 || undefined,
     project_code: projectCode || undefined,
     // Only send the combo when every factor is picked (satisfies the server-side
@@ -231,6 +243,12 @@ export default function PrEditPage() {
     // Hard-block guard — Submit button is already disabled, but guard the
     // programmatic path in case it's invoked some other way.
     if (isHardBlock) return
+    // Department is required at submit time: the approval engine raises when it
+    // can't resolve a dept_manager for a NULL department.
+    if (!selectedDepartmentId) {
+      setDepartmentError('Department is required')
+      return
+    }
     // Factor combo: when the selected Account has decomposition factors, every
     // factor must have a value picked.
     if (accountFactors.length > 0) {
@@ -343,6 +361,33 @@ export default function PrEditPage() {
                   </>
                 )}
               </div>
+            </div>
+
+            {/* Department — drives cost center / budget filtering and approval routing */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-neutral-700">
+                Department <span className="text-danger-600">*</span>
+              </label>
+              <select
+                value={selectedDepartmentId ?? ''}
+                onChange={(e) => {
+                  setSelectedDepartmentId(e.target.value || undefined)
+                  setDepartmentError(null)
+                  // department changed → clear cost-center cascade (cc belongs to the old dept)
+                  setSelectedCostCenter(''); setSelectedCostCenterId(undefined)
+                  setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
+                  setFactorCombo({}); setFactorComboError(null)
+                }}
+                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              >
+                <option value="">Select Department…</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+              {departmentError && (
+                <p className="text-xs text-danger-600">{departmentError}</p>
+              )}
             </div>
 
             {/* Cost Center + Budget */}
