@@ -526,6 +526,7 @@ export default function PrCreatePage() {
                         // department changed → clear cost-center cascade (cc belongs to the old dept)
                         setSelectedCostCenter(''); setSelectedCostCenterId(undefined)
                         setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
+                        setFactorCombo({}); setFactorComboError(null)
                       }}
                       className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                     >
