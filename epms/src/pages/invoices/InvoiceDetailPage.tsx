@@ -181,7 +181,18 @@ export default function InvoiceDetailPage() {
         ...(hasTaxLines ? {} : { tax_amount: taxNum }),
         currency: editCurrency,
         notes: editNotes.trim() || undefined,
-        line_items: editLineItems.length > 0 ? editLineItems : [],
+        // Recompute line_total from qty × unit_price at save time — the TOTAL cell is a
+        // live display computation that is only written back to state via updateEditLineItem
+        // (i.e. only if the user actually edits qty/unit_price). Without this, a row whose
+        // stored line_total disagrees with qty × unit_price (e.g. an OCR-uploaded invoice
+        // that came in tax-inclusive: unit_price 109 but line_total 123.17) would persist
+        // the stale value on save even though the form shows the corrected 109.00.
+        line_items: editLineItems.length > 0
+          ? editLineItems.map((li) => ({
+              ...li,
+              line_total: (parseFloat(String(li.quantity)) || 0) * (parseFloat(String(li.unit_price)) || 0),
+            }))
+          : [],
         // Always send gr_ids when the invoice has a linked PO so backend uses
         // the user's selection rather than the previous value
         ...(inv.po_id ? { gr_ids: editGrIds } : {}),
