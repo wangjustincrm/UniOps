@@ -155,8 +155,14 @@ async def list_invoices(
     # Access Control Matrix gate — return empty when view_invoice is disabled.
     if not scope["perms"].get("view_invoice", False):
         return InvoiceListResponse(items=[], total=0)
-    own_uploads = scope["user_id"] if scope["role"] == "requester" else None
-    # Only inject task_user_id when scope is restricted; unrestricted users see all.
+    # own_uploads/task_user_id only WIDEN an already-restricted scope (OR-ed into
+    # the PO-scope conditions in get_all). When the user is unrestricted
+    # (po_subq=None, restrict=False) they must see ALL invoices — gating both on
+    # restrict prevents own_uploads from collapsing the OR into
+    # "uploaded_by == me" and hiding everyone else's invoices from a
+    # requester-base user who also holds an unrestricted role (e.g. requester +
+    # procurement_manager). task_user_id was already gated; own_uploads was not.
+    own_uploads = scope["user_id"] if (scope["role"] == "requester" and scope["restrict"]) else None
     task_uid = uuid.UUID(user["sub"]) if scope["restrict"] else None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, search=search,
