@@ -91,10 +91,13 @@ export const userService = {
   listAll: (filters?: Omit<UserFilters, 'page' | 'page_size'>): Promise<UserListResponse> =>
     fetchAllPages((page, page_size) => userService.list({ ...filters, page, page_size })),
 
-  directory: (opts?: { search?: string; role?: string; department_id?: string }) =>
+  directory: (opts?: { search?: string; role?: string; department_id?: string; department_ids?: string[] }) =>
     api.get<UserBriefListResponse>('/users/directory', {
       search: opts?.search || undefined,
       role: opts?.role || undefined,
+      // department_ids (repeatable) scopes across MULTIPLE departments — used by
+      // the PR list Requester picker for a Director/GM covering several depts.
+      department_ids: opts?.department_ids && opts.department_ids.length ? opts.department_ids : undefined,
       department_id: opts?.department_id || undefined,
       page_size: 100,
     }),

@@ -303,6 +303,38 @@ async def get_my_assigned_roles(user: CurrentUserPayload, db: SessionDep):
     return {"role_codes": list(rows)}
 
 
+@router.get("/me/scoped-departments")
+async def get_my_scoped_departments(user: CurrentUserPayload, db: SessionDep):
+    """Departments the caller's document scope covers — the single source of
+    truth for the PR list's Department filter and Requester picker.
+
+    Returns active departments only, sorted by code, plus an `unrestricted`
+    flag. When `unrestricted` is True the caller may see every department
+    (procurement / finance / admin / … roles) and `items` is the full active
+    list; otherwise `items` is exactly the caller's scoped set (their own
+    department, their GM/OPM-mapped departments, the departments they direct,
+    or their reports' departments — see access_scope.scoped_department_ids,
+    which mirrors visible_pr_subquery). An empty `items` with unrestricted=False
+    means the caller has no department scope (e.g. a director with no routing
+    rows) and the filters should offer nothing.
+    """
+    from sqlalchemy import select
+    from app.core.access_scope import scoped_department_ids
+    from app.models.department import Department
+
+    def _brief(d: Department) -> dict:
+        return {"id": str(d.id), "name": d.name, "code": d.code, "is_active": d.is_active}
+
+    dept_ids = await scoped_department_ids(db, user)
+    q = select(Department).where(Department.is_active.is_(True)).order_by(Department.code)
+    if dept_ids is not None:
+        if not dept_ids:
+            return {"unrestricted": False, "items": []}
+        q = q.where(Department.id.in_(dept_ids))
+    rows = (await db.execute(q)).scalars().all()
+    return {"unrestricted": dept_ids is None, "items": [_brief(d) for d in rows]}
+
+
 @router.get("/authz-defs")
 async def get_authz_defs(_: CurrentUserPayload, token: BearerToken):
     """Proxy GET /authz/defs from identity (full defs: roles + permissions)."""

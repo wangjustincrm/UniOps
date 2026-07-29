@@ -99,6 +99,21 @@ export interface MyPermissions {
   roles: string[]
 }
 
+export interface ScopedDepartment {
+  id: string
+  name: string
+  code: string
+  is_active: boolean
+}
+
+export interface MyScopedDepartments {
+  /** true = caller may see every department (procurement/finance/admin/…);
+   *  items then holds the full active list. false = items is exactly the
+   *  caller's scoped set (own dept / GM-mapped / directed / reports'). */
+  unrestricted: boolean
+  items: ScopedDepartment[]
+}
+
 export interface CustomRole {
   code: string
   name: string
@@ -221,6 +236,12 @@ export const configService = {
   // Current user's effective permissions (primary ∪ additional roles).
   getMyPermissions: () =>
     api.get<MyPermissions>('/config/me/permissions'),
+
+  // Departments the caller's document scope covers — the single source of truth
+  // for the PR list Department filter and Requester picker (server-computed to
+  // match visible_pr_subquery, so the pickers offer exactly what the list shows).
+  getMyScopedDepartments: () =>
+    api.get<MyScopedDepartments>('/config/me/scoped-departments'),
 
   // Every user's ADDITIONAL roles only (identity user_roles assignments,
   // no primary role mixed in). Same proxy Portal's Access Control page uses.

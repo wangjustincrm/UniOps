@@ -36,6 +36,19 @@ export function useRolePermissions() {
   })
 }
 
+/** Departments the current user's document scope covers — the authoritative
+ *  source for the PR list Department filter and Requester picker. Replaces the
+ *  old client-side guess (hard-coded company-wide role set + single JWT
+ *  department), which under-scoped Directors and over-scoped GMs. */
+export function useScopedDepartments() {
+  return useQuery({
+    queryKey: ['my-scoped-departments'],
+    queryFn: () => configService.getMyScopedDepartments(),
+    staleTime: 60_000,
+    retry: 1,
+  })
+}
+
 /** Every user's ADDITIONAL roles only (identity user_roles assignments) —
  *  no primary role mixed in. ADMIN-ONLY (proxies identity's system_admin-
  *  gated /authz/user-roles) — only usable on admin-gated pages (e.g. Access

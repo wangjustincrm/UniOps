@@ -405,6 +405,20 @@ async def _all_roles_for_user(db: AsyncSession, base_role: str, user_id: uuid.UU
     return await _effective_role_codes(db, base_role, user_id)
 
 
+# Approval roles that are ALWAYS routed to a SPECIFIC user — the department's
+# Director / the requester's Supervisor — or the whole step is auto-skipped
+# (approval-api engine._should_skip_step). They are never a company-wide pool
+# the way gm/opm/procurement_manager/finance_* are, so a NULL-assignee task
+# carrying one of these roles is an anomaly (a stray re-sync / import / legacy
+# row), NOT something to broadcast. Broadcasting it put approval tasks for
+# departments a Director doesn't manage into every Director's inbox (the
+# cross-department task-leak). Excluded from the role-broadcast branch below;
+# holders still receive these tasks when assigned to them specifically. Mirrors
+# the dept_manager guard in approval-api (_create_approve_task raises rather than
+# leave a NULL-assignee dept_manager task).
+_PERSONAL_APPROVAL_ROLES = frozenset({"director", "supervisor"})
+
+
 async def get_for_role(
     db: AsyncSession,
     role: str,
@@ -415,7 +429,8 @@ async def get_for_role(
     """
     Return tasks where:
       - assigned_role matches ANY role the user holds (base + special roles from
-        Role Management), OR
+        Role Management) — EXCEPT the personal-routed roles (director/supervisor),
+        which never broadcast; only their specific assignee sees them — OR
       - assigned_user_id matches the user (for personally assigned tasks).
     system_admin sees all tasks.
     is_completed=None returns open tasks (default), True returns completed tasks.
@@ -442,9 +457,10 @@ async def get_for_role(
     q = select(Task)
     if role != "system_admin":
         all_roles = await _all_roles_for_user(db, role, user_id)
+        broadcast_roles = all_roles - _PERSONAL_APPROVAL_ROLES
         q = q.where(
             or_(
-                and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(all_roles)),
+                and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(broadcast_roles)),
                 Task.assigned_user_id == user_id,
             )
         )

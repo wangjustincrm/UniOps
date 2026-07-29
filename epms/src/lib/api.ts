@@ -73,7 +73,10 @@ function buildHeaders(hasBody: boolean): HeadersInit {
   return h
 }
 
-type Params = Record<string, string | number | boolean | null | undefined>
+type ParamScalar = string | number | boolean | null | undefined
+// Array values are emitted as REPEATED query params (?k=a&k=b), which is what
+// FastAPI's `list[...] = Query()` expects (e.g. /users/directory?department_ids).
+type Params = Record<string, ParamScalar | ParamScalar[]>
 
 async function request<T>(
   method: string,
@@ -84,7 +87,14 @@ async function request<T>(
   const url = new URL(`${BASE}${path}`, window.location.origin)
   if (params) {
     for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v))
+      if (v === undefined || v === null) continue
+      if (Array.isArray(v)) {
+        for (const item of v) {
+          if (item !== undefined && item !== null) url.searchParams.append(k, String(item))
+        }
+      } else {
+        url.searchParams.set(k, String(v))
+      }
     }
   }
 

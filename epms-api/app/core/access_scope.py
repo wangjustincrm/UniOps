@@ -302,6 +302,65 @@ async def visible_pr_subquery(
     return select(PurchaseRequest.id).where(or_(*conds))
 
 
+async def scoped_department_ids(
+    db: AsyncSession,
+    user: dict,
+) -> Optional[set[uuid.UUID]]:
+    """Department IDs whose PRs the user's scope covers, or None = unrestricted
+    (may see every department).
+
+    This is the department-level projection of `visible_pr_subquery`: the two MUST
+    agree on which departments a user is scoped to, because this powers the PR
+    list's Department filter and Requester picker — dropdowns that should offer
+    exactly the departments/requesters whose PRs the list will actually return.
+    Before this helper existed the frontend guessed (a hard-coded company-wide
+    role set + the viewer's single JWT department_id), which under-scoped a
+    Director to his own primary department and over-scoped a GM to all requesters.
+
+    Mirror of `visible_pr_subquery`'s dept resolution, role-for-role:
+      • any unrestricted role → None (all departments)
+      • requester / dept_manager / department_admin → own department
+      • gm / opm → `_mapped_dept_ids`
+      • director → `_director_dept_ids`
+      • supervisor → the departments of their direct reports
+    Keep this in lock-step with `visible_pr_subquery` above.
+    """
+    role = user.get("role", "")
+    user_id = uuid.UUID(user["sub"])
+    codes = await _effective_role_codes(db, role, user_id)
+
+    if any(c not in _RESTRICTED_ROLES for c in codes):
+        return None  # unrestricted
+
+    dept_ids: set[uuid.UUID] = set()
+
+    # requester/dept_manager/department_admin are all keyed off the user's own
+    # department (a requester can raise for other departments, but their own is
+    # the natural default for the picker; pure requesters don't see it anyway).
+    if codes & {"requester", "dept_manager", "department_admin"}:
+        own = await _user_dept_id(db, user_id)
+        if own:
+            dept_ids.add(own)
+
+    for gm_role in ("gm", "opm"):
+        if gm_role in codes:
+            dept_ids.update(await _mapped_dept_ids(db, gm_role))
+
+    if "director" in codes:
+        dept_ids.update(await _director_dept_ids(db, user_id))
+
+    if "supervisor" in codes:
+        rows = (await db.execute(
+            select(User.department_id).where(
+                User.supervisor_id == user_id,
+                User.department_id.isnot(None),
+            ).distinct()
+        )).scalars().all()
+        dept_ids.update(rows)
+
+    return dept_ids
+
+
 async def visible_po_subquery(
     db: AsyncSession,
     user: dict,
