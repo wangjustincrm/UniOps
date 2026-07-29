@@ -262,7 +262,7 @@ async def match_invoice(
     if inv.status not in ("unmatched", "exception"):
         raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
     require_review = not is_ap
-    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported
+    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired
     try:
         result = await invoice_crud.match(db, inv, body, matched_by=caller_id,
                                           require_review=require_review)
@@ -314,14 +314,24 @@ async def match_invoice(
             fire_and_forget_notify(review, db, extra_vars={"invoice_number": inv.internal_ref})
 
         if result.status == "matched":
-            await _notify_requester_create_pa(db, result)
+            # A reference-only (fee-only) match produces zero InvoicePoAllocation
+            # rows — that's the clean signal to skip the create_pa notification.
+            # Before this feature a "matched" invoice always had >=1 allocation,
+            # so this check changes nothing on the pre-existing PO-allocation path.
+            from app.models.invoice_allocation import InvoicePoAllocation
+            has_alloc = (await db.execute(
+                select(InvoicePoAllocation.id)
+                .where(InvoicePoAllocation.invoice_id == result.id).limit(1)
+            )).first() is not None
+            if has_alloc:
+                await _notify_requester_create_pa(db, result)
 
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
 
         await _attach_match_assignees(db, [result])
         return result
-    except (AllocationImbalance, LegacyMatchUnsupported) as exc:
+    except (AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

@@ -90,6 +90,10 @@ class InvoiceMatchRequest(BaseModel):
     gr_id: uuid.UUID | None = None
     gr_ids: list[uuid.UUID] | None = None
     po_line_ids: list[uuid.UUID] | None = None
+    # When there are NO PO allocations (fee-only invoice, e.g. standalone freight),
+    # the PO this invoice is associated with for traceability. Ignored when
+    # allocations are present. The fees are paid in full via the AP header.
+    reference_po_id: uuid.UUID | None = None
 
 
 class InvoiceExceptionRequest(BaseModel):
