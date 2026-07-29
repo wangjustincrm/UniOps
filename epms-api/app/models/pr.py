@@ -31,6 +31,10 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
     )
     cost_center_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="RESTRICT"),
+        nullable=True, index=True,
+    )
     budget_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # Selected decomposition factor combo for the referenced budget account.
     # Required client-side when the Account has decomposition_enabled=True; nullable
