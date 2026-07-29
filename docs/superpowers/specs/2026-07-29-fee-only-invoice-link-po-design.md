@@ -62,8 +62,13 @@ Replace the hard gate with a fee-only branch:
   - Require the invoice to be fully covered by non-PO fees. The existing header balance
     check already enforces `alloc_total(0) + excluded_total == invoice.amount`; if it does
     not balance → `AllocationImbalance` (422). Keep that check running for this branch.
-  - Require `req.reference_po_id`; else raise `ValueError("Link a PO to confirm a fee-only invoice")` (422).
-  - Load and validate the reference PO exists (reuse the existing "Purchase order … not found" error).
+  - Require `req.reference_po_id`; else raise a new `FeeOnlyLinkRequired(ValueError)`
+    ("Link a PO to confirm a fee-only invoice"). **Note:** a bare `ValueError` maps to **404**
+    in the endpoint; only `AllocationImbalance`/`LegacyMatchUnsupported` map to 422. So
+    `FeeOnlyLinkRequired` must be **added to the `except (...)` 422 tuple** in `match_invoice`
+    (and imported) to return 422.
+  - Load and validate the reference PO exists; if missing raise a plain
+    `ValueError(f"Purchase order {id} not found")` → **404** (consistent with existing "PO not found").
   - Set header association from the reference PO:
     - `invoice.po_id = ref_po.id`, `invoice.po_number = ref_po.number`
     - `invoice.po_total = Decimal("0")`, `invoice.variance = Decimal("0")`, `invoice.variance_pct = Decimal("0")`
