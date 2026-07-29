@@ -21,7 +21,7 @@ async def test_resolve_director_returns_active_mapped_user(engine_db_session):
     db.add_all([director, requester])
     await db.flush()
     mapping = {str(dept): str(director.id)}
-    assert await _resolve_director(db, requester.id, mapping) == director.id
+    assert await _resolve_director(db, dept, mapping) == director.id
 
 
 @pytest.mark.asyncio
@@ -31,7 +31,7 @@ async def test_resolve_director_none_when_unmapped(engine_db_session):
     requester = User(id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
     db.add(requester)
     await db.flush()
-    assert await _resolve_director(db, requester.id, {}) is None
+    assert await _resolve_director(db, dept, {}) is None
 
 
 @pytest.mark.asyncio
@@ -42,7 +42,7 @@ async def test_resolve_director_none_when_mapped_user_inactive(engine_db_session
     requester = User(id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
     db.add_all([director, requester])
     await db.flush()
-    assert await _resolve_director(db, requester.id, {str(dept): str(director.id)}) is None
+    assert await _resolve_director(db, dept, {str(dept): str(director.id)}) is None
 
 
 @pytest.mark.asyncio
