@@ -98,3 +98,91 @@ async def test_extract_invoice_truncated_output_raises_clear_error(anthropic_stu
 
     with pytest.raises(ValueError, match="truncated"):
         await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+
+# ── tax-inclusive line amount reconciliation ────────────────────────────────────
+# Regression: 2026-07 Amazon Prime invoice. OCR returned unit_price 109.00 but the
+# single line's `amount` = 123.17 (tax-inclusive). epms maps line `amount` ->
+# line_total; the PO-match panel balances Σ line_total against the pre-tax header
+# amount, so 123.17 vs 109 was off by exactly the tax and Match stayed disabled.
+
+def _amazon_json() -> dict:
+    field = lambda v: {"value": v, "confidence": 1.0}  # noqa: E731
+    return {
+        "vendor_name": field("Amazon"),
+        "invoice_number": field("ACCU-INV-CA-2026-101278366"),
+        "po_number": field(None),
+        "invoice_date": field("2026-06-17"),
+        "due_date": field("2026-07-17"),
+        "payment_terms_net_days": field(None),
+        "currency": field("CAD"),
+        "subtotal": field(109.00),
+        "tax_amount": field(14.17),
+        "total_amount": field(123.17),
+        "line_items": [
+            {  # amount is tax-INCLUSIVE (the bug); unit_price is pre-tax
+                "description": "Prime Business Annual Membership Fee - Essentials",
+                "quantity": 1,
+                "unit_price": 109.00,
+                "amount": 123.17,
+                "tax_amount": 0,
+            }
+        ],
+    }
+
+
+async def test_tax_inclusive_line_amount_is_corrected_to_pretax(anthropic_stub):
+    """A single line whose amount carries tax is rewritten to the pre-tax subtotal."""
+    anthropic_stub.response = _response(json.dumps(_amazon_json()))
+
+    result = await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+    line = result["line_items"][0]
+    assert line["amount"] == 109.00          # was 123.17
+    assert line["unit_price"] == 109.00      # untouched
+    # header stays authoritative for tax
+    assert result["subtotal"] == 109.00
+    assert result["tax_amount"] == 14.17
+
+
+def test_reconcile_fixes_tax_inclusive_single_line():
+    lines = [{"quantity": 1, "unit_price": 109.00, "amount": 123.17, "tax_amount": 0}]
+    out = ocr_service._reconcile_line_amounts(lines, 109.00, 14.17, 123.17)
+    assert out[0]["amount"] == 109.00
+
+
+def test_reconcile_fixes_tax_inclusive_multi_line():
+    """Multi-line invoice where every line amount carries tax → all rewritten pre-tax."""
+    lines = [
+        {"quantity": 2, "unit_price": 50.0, "amount": 113.0, "tax_amount": 0},  # 100 pre-tax
+        {"quantity": 1, "unit_price": 100.0, "amount": 113.0, "tax_amount": 0},  # 100 pre-tax
+    ]
+    out = ocr_service._reconcile_line_amounts(lines, 200.0, 26.0, 226.0)
+    assert [li["amount"] for li in out] == [100.0, 100.0]
+
+
+def test_reconcile_noop_when_lines_already_pretax():
+    """Healthy invoice (lines sum to subtotal) is left untouched."""
+    lines = [{"quantity": 1, "unit_price": 109.00, "amount": 109.00, "tax_amount": 0}]
+    out = ocr_service._reconcile_line_amounts(lines, 109.00, 14.17, 123.17)
+    assert out[0]["amount"] == 109.00
+
+
+def test_reconcile_noop_when_no_tax():
+    """No tax → pre-tax and tax-inclusive coincide; never touch amounts."""
+    lines = [{"quantity": 1, "unit_price": 50.0, "amount": 50.0, "tax_amount": 0}]
+    out = ocr_service._reconcile_line_amounts(lines, 50.0, 0, 50.0)
+    assert out[0]["amount"] == 50.0
+
+
+def test_reconcile_noop_when_unit_prices_also_tax_inclusive():
+    """If unit_price × qty matches the total (not the subtotal), we cannot trust it as
+    a pre-tax signal → leave amounts alone rather than mis-correct."""
+    lines = [{"quantity": 1, "unit_price": 123.17, "amount": 123.17, "tax_amount": 0}]
+    out = ocr_service._reconcile_line_amounts(lines, 109.00, 14.17, 123.17)
+    assert out[0]["amount"] == 123.17  # unchanged — signal ambiguous
+
+def test_reconcile_noop_when_header_totals_missing():
+    lines = [{"quantity": 1, "unit_price": 109.00, "amount": 123.17, "tax_amount": 0}]
+    out = ocr_service._reconcile_line_amounts(lines, None, 14.17, None)
+    assert out[0]["amount"] == 123.17
