@@ -25,6 +25,8 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     po_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     invoice_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Stamped by the engine's hasattr(doc,"approved_at") hook on approval.
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )

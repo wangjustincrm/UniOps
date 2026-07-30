@@ -878,7 +878,10 @@ async def execute_action(
                                        routing_dept_id=routing_dept_id, director_uid=director_uid,
                                        supervisor_uid=supervisor_uid)
         else:
+            # Workflow fully auto-skipped at submit → straight to approved.
             _set_status(meta, doc, "approved")
+            if hasattr(doc, "approved_at"):
+                doc.approved_at = now
 
     elif act == "approve":
         if _status_of(meta, doc) not in meta["valid_approve"]:

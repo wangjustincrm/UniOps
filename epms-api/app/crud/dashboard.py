@@ -356,13 +356,13 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     my_pr_ids = select(PurchaseRequest.id).where(PurchaseRequest.created_by == user_id)
     my_po_ids = select(PurchaseOrder.id).where(PurchaseOrder.pr_id.in_(my_pr_ids))
 
-    # Paid this month — processed PAs in my chain. NOTE: PA has no dedicated paid
-    # date, so this uses updated_at as a proxy for the processing month.
+    # Paid this month — processed PAs in my chain, keyed on paid_at (the real
+    # payment date; never bumped by unrelated writes like updated_at was).
     paid_result = await db.execute(
         select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
             PaymentApplication.po_id.in_(my_po_ids),
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.updated_at) ==
+            func.date_trunc("month", PaymentApplication.paid_at) ==
             func.date_trunc("month", func.now()),
         )
     )
@@ -493,7 +493,9 @@ async def build_warehouse(db: AsyncSession) -> DashboardResponse:
     done_r = await db.execute(
         select(func.count()).select_from(GoodsReceipt).where(
             GoodsReceipt.status.in_(["confirmed", "collected"]),
-            func.date_trunc("month", GoodsReceipt.updated_at) == func.date_trunc("month", func.now()),
+            # collected_at is stamped once at collect/confirm — unlike updated_at
+            # (onupdate=now), it is never bumped by later unrelated writes.
+            func.date_trunc("month", GoodsReceipt.collected_at) == func.date_trunc("month", func.now()),
         )
     )
 
@@ -539,7 +541,7 @@ async def build_ap_clerk(db: AsyncSession) -> DashboardResponse:
     pa_processed_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.updated_at) == func.date_trunc("month", func.now()),
+            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
         )
     )
 
@@ -575,7 +577,9 @@ async def build_finance_bp(db: AsyncSession) -> DashboardResponse:
     approved_today_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
             PaymentApplication.status == "approved",
-            func.date_trunc("day", PaymentApplication.updated_at) == func.date_trunc("day", func.now()),
+            # approved_at is stamped once at the approval transition (approval
+            # engine); updated_at would drift on any later edit/re-sync.
+            func.date_trunc("day", PaymentApplication.approved_at) == func.date_trunc("day", func.now()),
         )
     )
     pending_value_r = await db.execute(
@@ -586,7 +590,7 @@ async def build_finance_bp(db: AsyncSession) -> DashboardResponse:
     processed_month_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.updated_at) == func.date_trunc("month", func.now()),
+            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
         )
     )
 

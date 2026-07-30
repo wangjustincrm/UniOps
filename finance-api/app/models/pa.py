@@ -1,7 +1,7 @@
 """Read-only mirror of EPMS PaymentApplication — Finance Core reads for AP payables view."""
 import uuid
 from decimal import Decimal
-from sqlalchemy import Boolean, Numeric, String
+from sqlalchemy import Boolean, DateTime, Numeric, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base, UUIDPrimaryKey, TimestampMixin
@@ -25,6 +25,8 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=False)
     expected_settlement_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # Written by the payment executor when the PA is paid (see crud.payment_execute).
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     budget_account_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

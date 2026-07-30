@@ -311,6 +311,9 @@ async def finalize_settlement_reconciliation(
     Finance-owned ap_invoices are flipped separately by the API layer (fail-open).
     """
     settlement_pa.status = "processed"
+    # Zero-cash settlement: no payment executor runs, so stamp paid_at here so it
+    # shows in "Processed This Month" (dashboards key on paid_at, not updated_at).
+    settlement_pa.paid_at = datetime.now(timezone.utc)
     await _mark_invoices_paid(db, settlement_pa)
     await mark_prepayment_settled(db, settlement_pa, actor_id)
     await _complete_tasks(db, "pa", settlement_pa.id)

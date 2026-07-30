@@ -4,6 +4,7 @@
     (my PR → PO → PA), not PAs the requester personally created.
 """
 import uuid
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -62,18 +63,25 @@ async def test_requester_kpis_scope_and_active(test_engine):
         db.add_all([po_mine, po_other])
         await db.flush()
 
-        def pa(po_id, status, amt, creator):
+        this_month = datetime.now(timezone.utc)
+        prior_month = this_month - timedelta(days=90)   # unambiguously a past month
+
+        def pa(po_id, status, amt, creator, paid_at=None):
             a = PaymentApplication(id=uuid.uuid4(), pa_number=f"PA-{TAG}-{uuid.uuid4().hex[:4]}",
                                    title="t", po_id=po_id, vendor_id=vendor.id, vendor_name="V",
                                    subtotal=Decimal(amt), payment_amount=Decimal(amt), status=status,
-                                   created_by=creator)
+                                   created_by=creator, paid_at=paid_at)
             ids["pa"].append(a.id); return a
         db.add_all([
             # In my chain, created by someone else (an AP clerk) — must still count.
-            pa(po_mine.id, "processed", "100", other),   # paid this month (fresh insert → updated_at=now)
+            pa(po_mine.id, "processed", "100", other, paid_at=this_month),
             pa(po_mine.id, "in_review", "50", other),    # pending
             # Out of my chain but created by ME — must NOT count (old created_by logic would).
-            pa(po_other.id, "processed", "999", me),
+            pa(po_other.id, "processed", "999", me, paid_at=this_month),
+            # Regression: in my chain, processed, but PAID in a prior month. Fresh
+            # insert → updated_at = now (this month). The old updated_at-proxy would
+            # wrongly count this; keying on paid_at must exclude it.
+            pa(po_mine.id, "processed", "7777", other, paid_at=prior_month),
         ])
         await db.commit()
 
@@ -81,6 +89,8 @@ async def test_requester_kpis_scope_and_active(test_engine):
         async with sf() as db:
             resp = await dash.build_requester(db, me)
         assert _kpi(resp, "Active PRs") == "1"
+        # 100 (paid this month) only — NOT 7877: the prior-month payment is
+        # excluded even though its updated_at is now (paid_at, not updated_at).
         assert _kpi(resp, "Paid This Month") == "CAD 100.00"
         assert _kpi(resp, "Pending Payments") == "CAD 50.00"
     finally:

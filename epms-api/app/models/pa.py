@@ -64,6 +64,13 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
 
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set once when the PA is paid (finance-api payment executor / zero-cash
+    # settlement). Unlike updated_at (onupdate=now()) this is never bumped by
+    # unrelated writes — dashboards key their "Paid/Processed This Month" on it.
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Set once when the PA reaches approved (approval engine). Dashboards key
+    # "Approved Today" on it rather than the onupdate-bumped updated_at.
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Prepayment fields
     prepayment_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
