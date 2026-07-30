@@ -824,3 +824,27 @@ async def test_uploader_can_list_match_candidates(admin_client, requester_client
     r = await requester_client.get(f"{INV_URL}/{inv['id']}/match-candidates")
     assert r.status_code == 200, r.text
     assert len(r.json()["items"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_match_candidates_report_already_allocated_total(admin_client):
+    """A PO header-billed by one invoice reports already_allocated_total to the next."""
+    v = await _make_vendor(admin_client, "VND-ALLOCTOT-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "W", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    await _set_po_status(po["id"], "issued")  # match-candidates filters to matchable statuses
+    # invoice 1 total-matches the whole PO (header-level, legacy path)
+    inv1 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="600.00", tax_amount="0.00",
+        line_items=[{"description": "a", "quantity": "1", "unit_price": "600.00", "line_total": "600.00"}]))).json()
+    r1 = await admin_client.post(f"{INV_URL}/{inv1['id']}/match", json={"po_id": po["id"]})
+    assert r1.status_code == 200, r1.text
+    # invoice 2 asks for candidates → sees 600 already allocated on that PO
+    inv2 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="400.00", tax_amount="0.00",
+        line_items=[{"description": "b", "quantity": "1", "unit_price": "400.00", "line_total": "400.00"}]))).json()
+    cand = (await admin_client.get(f"{INV_URL}/{inv2['id']}/match-candidates")).json()
+    the_po = next(p for p in cand["items"] if p["id"] == po["id"])
+    assert float(the_po["already_allocated_total"]) == 600.0
+    # and it EXCLUDES the requesting invoice's own allocations (0 here)
+    cand_self = (await admin_client.get(f"{INV_URL}/{inv1['id']}/match-candidates")).json()
+    po_self = next(p for p in cand_self["items"] if p["id"] == po["id"])
+    assert float(po_self["already_allocated_total"] or 0) == 0.0

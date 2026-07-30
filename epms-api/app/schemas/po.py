@@ -149,5 +149,7 @@ class PoResponse(BaseModel):
     # Computed (detail view): created_by of the linked PR — the requester who may
     # confirm delivery (create GR) on a service/project PO. None for direct POs.
     pr_requester_id: uuid.UUID | None = None
+    # 该 PO 被【其他发票】累计分摊的总额(所有 po_line_id 之和,仅 match-candidates 端点填充)
+    already_allocated_total: Decimal | None = None
 
     model_config = {"from_attributes": True}

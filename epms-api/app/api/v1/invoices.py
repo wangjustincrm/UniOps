@@ -369,6 +369,7 @@ async def list_match_candidates(
     # 每条 PO line 被【其他发票】累计分摊的税前额 —— 前端据此显示真实 Remaining。
     # 排除当前发票自身(重匹配时它的旧分摊会整体重建,不应占额度)。
     if pos:
+        from decimal import Decimal
         from sqlalchemy import func as sa_func
         from app.models.invoice_allocation import InvoicePoAllocation
         sums = dict((await db.execute(
@@ -379,9 +380,19 @@ async def list_match_candidates(
                    InvoicePoAllocation.invoice_id != invoice_id)
             .group_by(InvoicePoAllocation.po_line_id)
         )).all())
+        # 每张 PO 被【其他发票】累计分摊的总额(所有 po_line_id 之和)—— 总额匹配模式下
+        # 前端据此显示该 PO 的真实 Remaining。
+        po_totals = dict((await db.execute(
+            select(InvoicePoAllocation.po_id,
+                   sa_func.sum(InvoicePoAllocation.allocated_amount))
+            .where(InvoicePoAllocation.po_id.in_([p.id for p in pos]),
+                   InvoicePoAllocation.invoice_id != invoice_id)
+            .group_by(InvoicePoAllocation.po_id)
+        )).all())
         for po in pos:
             for li in po.line_items:
                 li.already_allocated = sums.get(li.id)
+            po.already_allocated_total = po_totals.get(po.id) or Decimal("0")
     return PoListResponse(
         items=[PoResponse.model_validate(po) for po in pos],
         total=len(pos),
