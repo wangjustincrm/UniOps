@@ -7,6 +7,7 @@ import { StatusBadge } from '@/components/ui/badge'
 import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate, cn } from '@/lib/utils'
+import { compareByStatusThenStep } from '@/lib/currentStepSort'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePos } from '@/hooks/usePos'
 import { useDepartments } from '@/hooks/useDepartments'
@@ -79,6 +80,7 @@ export default function PoListPage() {
     let cmp = 0
     if (sortField === 'total') cmp = a.total - b.total
     else if (sortField === 'created_at') cmp = a.created_at.localeCompare(b.created_at)
+    else if (sortField === 'status') cmp = compareByStatusThenStep(a, b)
     else cmp = String(a[sortField as keyof typeof a]).localeCompare(String(b[sortField as keyof typeof b]))
     return sortDir === 'asc' ? cmp : -cmp
   })

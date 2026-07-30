@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, FileText, CreditCard, Filter, Loader2 } from 'lucide-react'
+import { Plus, Search, FileText, CreditCard, Filter, Loader2, ChevronUp, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { compareByStatusThenStep } from '@/lib/currentStepSort'
 import { usePas } from '@/hooks/usePas'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
@@ -59,6 +60,12 @@ function TypeBadge({ type }: { type: ApiPa['pa_type'] }) {
   return <span className={cn('inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide', c.cls)}>{c.label}</span>
 }
 
+// The PA list previously had no client-side sort at all. This page only gains
+// sorting for the Status column (status → approval step role → approver name),
+// matching PR/PO — other columns stay in server-returned (created_at desc) order.
+type SortField = 'status'
+type SortDir = 'asc' | 'desc'
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PaListPage() {
@@ -70,6 +77,8 @@ export default function PaListPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [sortField, setSortField] = useState<SortField | null>(null)
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
@@ -83,6 +92,27 @@ export default function PaListPage() {
   })
   const pas = data?.items ?? []
   const total = data?.total ?? 0
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortField(field); setSortDir('desc') }
+  }
+
+  // Only the Status column is sortable client-side; other columns keep the
+  // server-returned order (created_at desc).
+  const sorted = sortField === 'status'
+    ? [...pas].sort((a, b) => {
+        const cmp = compareByStatusThenStep(a, b)
+        return sortDir === 'asc' ? cmp : -cmp
+      })
+    : pas
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return <ChevronUp className="h-3 w-3 text-neutral-300" />
+    return sortDir === 'asc'
+      ? <ChevronUp className="h-3 w-3 text-primary-600" />
+      : <ChevronDown className="h-3 w-3 text-primary-600" />
+  }
 
   const canCreate = ['ap_clerk', 'procurement_officer', 'procurement_manager', 'requester', 'system_admin'].includes(user?.role ?? '')
 
@@ -164,12 +194,18 @@ export default function PaListPage() {
             <thead>
               <tr className="border-b border-neutral-100 bg-neutral-50">
                 {['PA #', 'Vendor', 'Type', 'Linked PO / Invoice', 'Amount', 'Created', 'Status', ''].map((h) => (
-                  <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>
+                    {h === 'Status' ? (
+                      <button onClick={() => handleSort('status')} className="flex items-center gap-1 hover:text-neutral-700">
+                        {h}<SortIcon field="status" />
+                      </button>
+                    ) : h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {pas.map((pa, idx) => (
+              {sorted.map((pa, idx) => (
                 <tr
                   key={pa.id}
                   onClick={() => navigate(`/pa/${pa.id}`)}
