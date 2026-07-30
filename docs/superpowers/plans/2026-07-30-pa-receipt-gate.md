@@ -29,7 +29,7 @@
 - `app/crud/pa.py` — `create()` 落库 `receipt_override*`。
 - `app/schemas/pa.py` — `PaCreate` 加 override 入参；`PaResponse` 加只读回显。
 - `app/models/pa.py` — `PaymentApplication` 加 3 列。
-- `alembic/versions/z5_add_receipt_override_to_pa.py` — 迁移。
+- `alembic/versions/af_add_receipt_override_to_pa.py` — 迁移。
 - `app/api/v1/invoices.py` — `_notify_requester_create_pa` → 改造为 `_on_invoice_matched` 分派器。
 - `app/crud/gr.py` — `create()` 尾部调 `_on_three_way_reached`；重连 `_create_pa_task`。
 - `app/crud/task.py` — `_backfill_create_pa_tasks` 收紧到 3-way。
@@ -188,9 +188,9 @@ git commit -m "feat(authz): add pa_override_receipt matrix permission"
 
 **Files:**
 - Modify: `epms-api/app/models/pa.py`
-- Create: `epms-api/alembic/versions/z5_add_receipt_override_to_pa.py`
+- Create: `epms-api/alembic/versions/af_add_receipt_override_to_pa.py`
 - Modify: `epms-api/app/schemas/pa.py`（`PaCreate` L45、`PaResponse` L97）
-- Test: `epms-api/tests/test_pa.py`
+- Verify-only: `epms-api/tests/test_pa.py`（跑现有用例确认模型不破坏建表；功能测试在 Task 4 写）
 
 **Interfaces:**
 - Produces: `PaymentApplication.receipt_override: bool`、`.receipt_override_reason: str|None`、`.receipt_override_by: uuid|None`。`PaCreate.receipt_override: bool=False`、`.receipt_override_reason: str|None=None`。`PaResponse` 回显三字段。
@@ -200,28 +200,11 @@ git commit -m "feat(authz): add pa_override_receipt matrix permission"
 ```bash
 cd epms-api && python -m alembic heads
 ```
-记下唯一 head（预期为 `z4` 系列；若非唯一/有分叉，先解决）。下面 `down_revision` 用该值（示例写 `z4_drop_temp_assignments`，以实际为准）。
+记下唯一 head（已实测唯一 head = `ae_add_approved_at_to_pa`，2026-07-30；若你执行时 heads 有变/分叉，以实测为准并相应改 down_revision）。
 
-- [ ] **Step 2: Write the failing test**（tests/test_pa.py 追加；沿用该文件既有 client/fixtures 风格）
+- [ ] **Step 2: （本任务不写功能测试）**
 
-```python
-async def test_create_pa_persists_receipt_override(app_client_and_ctx):
-    """Override 字段应落库并回显。"""
-    client, ctx = app_client_and_ctx
-    po = await ctx.make_three_way_po(client)          # 见 Task 4 的 fixture 说明
-    body = ctx.base_pa_body(po) | {
-        "receipt_override": True,
-        "receipt_override_reason": "urgent freight, goods in transit",
-    }
-    r = await client.post("/api/v1/pa", json=body, headers=ctx.finance_headers)
-    assert r.status_code == 201, r.text
-    data = r.json()
-    assert data["receipt_override"] is True
-    assert data["receipt_override_reason"] == "urgent freight, goods in transit"
-    assert data["receipt_override_by"] is not None
-```
-
-> 注：若 `test_pa.py` 尚无 `make_three_way_po` / `base_pa_body` 辅助，本步与 Task 4 共用；先在 Task 4 建好 helper，或本步临时内联构造。执行时以 Task 4 的 fixture 为准，本测试可后置到 Task 4 之后跑。
+落库/回显的功能测试 `test_create_pa_persists_receipt_override` 需要 3-way PO 与 finance 客户端 fixture（Task 4 建），故**在 Task 4 编写并运行**，不在本任务。本任务是结构性改动（model + migration + schema），验证见 Step 6（`alembic heads` 单头 + schema 导入 + 现有 `test_pa.py` 仍绿）。**不要**在本任务往 `test_pa.py` 加引用未定义 fixture 的测试，否则 collection 会报错。
 
 - [ ] **Step 3: 模型加列（app/models/pa.py）**
 
@@ -236,21 +219,21 @@ async def test_create_pa_persists_receipt_override(app_client_and_ctx):
 ```
 （确认文件顶部已 import `Boolean, Text` 及 `UUID`；缺则补 import。）
 
-- [ ] **Step 4: 写迁移（alembic/versions/z5_add_receipt_override_to_pa.py）**
+- [ ] **Step 4: 写迁移（alembic/versions/af_add_receipt_override_to_pa.py）**
 
 ```python
 """add receipt_override columns to payment_applications
 
-Revision ID: z5_add_receipt_override_to_pa
-Revises: z4_drop_temp_assignments
+Revision ID: af_add_receipt_override_to_pa
+Revises: ae_add_approved_at_to_pa
 Create Date: 2026-07-30
 """
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "z5_add_receipt_override_to_pa"
-down_revision = "z4_drop_temp_assignments"   # ← 用 Step 1 实测 head 覆盖
+revision = "af_add_receipt_override_to_pa"
+down_revision = "ae_add_approved_at_to_pa"   # 实测唯一 head(2026-07-30)
 branch_labels = None
 depends_on = None
 
@@ -287,20 +270,27 @@ def downgrade() -> None:
     receipt_override_by: uuid.UUID | None = None
 ```
 
-- [ ] **Step 6: 应用迁移到测试库并跑测试**
+- [ ] **Step 6: 验证（不触碰共享本地 dev 库）**
 
 ```bash
-cd epms-api && python -m alembic upgrade head
-# 本任务测试依赖 Task 4 fixture,可先仅验证迁移与 schema 导入:
-python -c "from app.schemas.pa import PaCreate, PaResponse; print(PaCreate.model_fields['receipt_override'])"
+cd epms-api
+# (a) 迁移链完整:加了 af 后仍是唯一 head = af,承接 ae
+python -m alembic heads          # 期望仅: af_add_receipt_override_to_pa (head)
+python -m alembic history -r ae_add_approved_at_to_pa:af_add_receipt_override_to_pa
+# (b) schema 字段可导入
+python -c "from app.schemas.pa import PaCreate, PaResponse; print('receipt_override' in PaCreate.model_fields, 'receipt_override_by' in PaResponse.model_fields)"
+# (c) 模型新列不破坏建表:现有 PA 套件仍绿(conftest 用 Base.metadata create_all 建 epms_test)
+python -m pytest tests/test_pa.py -q
 ```
-Expected: 打印字段定义，无导入错误。（`test_create_pa_persists_receipt_override` 在 Task 4 后跑。）
+Expected：(a) 唯一 head 为 `af_...`，history 显示 ae→af 链接；(b) 打印 `True True`；(c) test_pa.py 无新增 FAIL（对基线）。
+**不要**跑 `alembic upgrade head`——本地 dev `epms` 库是共享的，勿改它；迁移只需保证链正确、DDL 与模型一致（真实库在发布时由 migrate-prod.sh 应用）。
+`test_create_pa_persists_receipt_override` 依赖 Task 4 fixture，本任务不跑（Task 4 覆盖）。
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add epms-api/app/models/pa.py epms-api/alembic/versions/z5_add_receipt_override_to_pa.py epms-api/app/schemas/pa.py epms-api/tests/test_pa.py
-git commit -m "feat(pa): add receipt_override columns + schema fields + migration z5"
+git add epms-api/app/models/pa.py epms-api/alembic/versions/af_add_receipt_override_to_pa.py epms-api/app/schemas/pa.py
+git commit -m "feat(pa): add receipt_override columns + schema fields + migration af"
 ```
 
 ---
@@ -1021,7 +1011,7 @@ Expected: ≤ 59。
 ```bash
 git add -A && git commit -m "test: PA receipt-gate end-to-end regression green"
 ```
-向用户汇报：分支 `feature/pa-receipt-gate` 就绪、测试结果、**有迁移 z5**（发布须跑 `migrate-prod.sh`）、**部署后重跑 identity seed_authz**。等用户决定合并/发布（遵循 R4 单点汇合）。
+向用户汇报：分支 `feature/pa-receipt-gate` 就绪、测试结果、**有迁移 af**（发布须跑 `migrate-prod.sh`）、**部署后重跑 identity seed_authz**。等用户决定合并/发布（遵循 R4 单点汇合）。
 
 ---
 
