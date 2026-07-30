@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.current_step import CurrentStep
+
 PA_WORKFLOW = [
     {"step": 0, "role": "finance_bp",      "label": "Finance BP Review"},
     {"step": 1, "role": "finance_manager", "label": "Finance Manager Approval"},
@@ -133,6 +135,7 @@ class PaResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     line_items: list[PaLineItemResponse]
+    current_step: CurrentStep | None = None
 
     model_config = {"from_attributes": True}
 

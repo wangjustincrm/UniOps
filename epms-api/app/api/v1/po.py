@@ -14,6 +14,7 @@ from app.services.approval_client import delegate_action
 from app.crud import po as po_crud
 from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
+from app.crud.current_step import enrich_current_step
 from app.models.invoice import Invoice
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -55,6 +56,7 @@ async def list_pos(
         po_ids_subq=po_subq,
         page=page, page_size=page_size,
     )
+    await enrich_current_step(db, "po", items)
     unpaid_invoice_po_ids: set[uuid.UUID] = set()
     # Map each listed PO's linked PR to its requester (PR.created_by) so the
     # frontend can scope actions like PA creation to the requester's own POs.

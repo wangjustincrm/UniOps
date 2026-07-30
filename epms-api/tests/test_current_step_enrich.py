@@ -73,3 +73,22 @@ def test_role_maps_cover_default_workflow_roles():
                  "procurement_manager", "finance_bp", "finance_manager"):
         assert role in ROLE_LABELS
         assert role in ROLE_ORDER
+
+
+def test_pr_response_exposes_optional_current_step():
+    from app.schemas.pr import PrResponse
+    from app.schemas.current_step import CurrentStep
+    field = PrResponse.model_fields["current_step"]
+    assert field.default is None                    # optional, defaults null
+    cs = CurrentStep.model_validate({
+        "role": "gm_or_opm", "label": "GM / OPM",
+        "approver_name": "Zhang San", "since": datetime.now(timezone.utc),
+    })
+    assert cs.label == "GM / OPM" and cs.approver_name == "Zhang San"
+
+
+async def test_pr_list_endpoint_serializes_current_step_key(admin_client):
+    r = await admin_client.get("/api/v1/pr")
+    assert r.status_code == 200
+    for item in r.json()["items"]:
+        assert "current_step" in item          # field present on every row
