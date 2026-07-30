@@ -351,6 +351,7 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
     recent_matched_pos = select(Invoice.po_id).where(
         Invoice.status == "matched",
         Invoice.po_id.is_not(None),
+        Invoice.gr_id.is_not(None),
         Invoice.created_at >= _BACKFILL_MIN_CREATED,
     )
     candidates_q = select(PurchaseOrder).where(
