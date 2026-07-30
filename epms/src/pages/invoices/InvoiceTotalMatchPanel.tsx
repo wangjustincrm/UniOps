@@ -17,7 +17,10 @@ interface Props {
 export function InvoiceTotalMatchPanel({ invoice, pos, onSubmit, submitting }: Props) {
   const currency = invoice.currency
   const total = Number(invoice.amount)                       // pre-tax
-  const anchorLineId = invoice.line_items?.[0]?.id ?? ''
+  // Header-level anchor: real first-line id when available, else a synthesized
+  // uuid (invoice_line_id has no FK to a real line, so this is safe) — computed
+  // once so it stays stable across re-renders.
+  const [anchorLineId] = useState(() => invoice.line_items?.[0]?.id ?? crypto.randomUUID())
   const [assign, setAssign] = useState<TotalAssign>({})
   const [dragging, setDragging] = useState(false)
 
