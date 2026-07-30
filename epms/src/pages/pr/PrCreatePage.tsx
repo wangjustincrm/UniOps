@@ -85,6 +85,7 @@ export default function PrCreatePage() {
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
+  const [vendorError, setVendorError] = useState<string | null>(null)
   const [selectedL1, setSelectedL1] = useState('')
   const [selectedL2, setSelectedL2] = useState('')
   // Only active accounts are selectable; keep the current selection even if it went inactive.
@@ -260,6 +261,12 @@ export default function PrCreatePage() {
 
   const onSubmit = async (data: unknown) => {
     const formData = data as { title: string; requiredBy: string; deliveryAddress?: string; notes?: string; fixedAssetId?: string; projectCode?: string; serviceCompletionDate?: string; prepaymentRequired?: boolean; justification?: string }
+    // Vendor is required on Submit — the field lives in local state (not RHF), so
+    // guard it here (drafts stay lenient, matching handleDraftSave).
+    if (!selectedVendor) {
+      setVendorError('Please select a vendor')
+      return
+    }
     // Validate line items
     const errs = validateLineItems(lineItems)
     if (Object.keys(errs).length > 0) {
@@ -469,7 +476,7 @@ export default function PrCreatePage() {
                           value={selectedVendor ? selectedVendor.name : vendorQuery}
                           onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
                           onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true) }}
-                          className="h-10 w-full rounded-md border border-neutral-300 bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                          className={`h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 ${vendorError && !selectedVendor ? 'border-danger-500' : 'border-neutral-300'}`}
                         />
                         {selectedVendor && (
                           <button
@@ -490,7 +497,7 @@ export default function PrCreatePage() {
                                 key={v.id}
                                 type="button"
                                 className="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-primary-50 text-left"
-                                onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery('') }}
+                                onClick={() => { setSelectedVendor(v); setVendorOpen(false); setVendorQuery(''); setVendorError(null) }}
                               >
                                 <span className="font-mono text-xs rounded bg-neutral-100 px-1.5 py-0.5 text-neutral-600">{v.code}</span>
                                 {v.name}
@@ -510,6 +517,9 @@ export default function PrCreatePage() {
                     </div>
                     {selectedVendor && (
                       <p className="text-xs text-success-600">✓ {selectedVendor.name} ({selectedVendor.code})</p>
+                    )}
+                    {vendorError && !selectedVendor && (
+                      <p className="text-xs text-danger-600">{vendorError}</p>
                     )}
                   </div>
 

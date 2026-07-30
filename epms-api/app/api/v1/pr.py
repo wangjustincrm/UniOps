@@ -191,6 +191,14 @@ async def pr_action(
     pr = await pr_crud.get_by_id(db, pr_id)
     if pr is None:
         raise HTTPException(status_code=404, detail="PR not found")
+    # Vendor is required to submit. Guard here (before delegation): epms-api owns
+    # PR field-level rules, whereas approval-api only owns the state machine and
+    # never validates document fields. Mirrors the Create PR form's client guard.
+    if body.action.lower() == "submit" and pr.vendor_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail="A vendor is required before submitting this PR",
+        )
     try:
         await delegate_action("pr", str(pr_id), body.action, body.comment, token)
     except LookupError as exc:
