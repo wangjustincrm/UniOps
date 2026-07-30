@@ -299,40 +299,84 @@ git commit -m "feat(pa): add receipt_override columns + schema fields + migratio
 
 **Files:**
 - Modify: `epms-api/app/crud/po.py`
-- Test: `epms-api/tests/test_pa.py`（或新建 `tests/test_three_way_helper.py`）
+- Create: `epms-api/tests/test_three_way_helper.py`（自包含直接 DB 构造，范本 = `tests/test_gr_invoice_backfill.py`；**不**依赖不存在的 fixture）
 
 **Interfaces:**
 - Produces: `async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool` —— PO 有任一 `Invoice.status=="matched"` 且 `Invoice.gr_id IS NOT NULL` 时返回 True。被 Task 4/6/7/8 消费。
 
-- [ ] **Step 1: Write the failing test**（新建 tests/test_three_way_helper.py）
+- [ ] **Step 1: Write the failing test**（新建 tests/test_three_way_helper.py —— 自包含，套用 `test_gr_invoice_backfill.py` 的 `async with sm.AsyncSessionLocal() as db` + 直接建模式，**绕开 approval-api**）
 
 ```python
+"""po_has_three_way_matched_invoice: True 仅当 matched 发票已挂 gr_id。"""
 import uuid
+from datetime import date
+from decimal import Decimal
+
 import pytest
+
+import app.db.session as sm
+from app.crud import user as user_crud
 from app.crud.po import po_has_three_way_matched_invoice
 from app.models.invoice import Invoice
+from app.models.po import PurchaseOrder
+from app.models.vendor import Vendor
+from app.schemas.auth import RegisterRequest
+
+
+def _invoice(po_id, vendor_id, uploaded_by, *, ref, status, gr_id=None):
+    return Invoice(
+        internal_ref=ref, vendor_invoice_number=ref, vendor_id=vendor_id,
+        vendor_name="Acme", amount=Decimal("100"), tax_amount=Decimal("0"),
+        total_amount=Decimal("100"), invoice_date=date(2026, 1, 1),
+        due_date=date(2026, 2, 1), status=status, line_items=[],
+        po_id=po_id, gr_id=gr_id, uploaded_by=uploaded_by,
+    )
+
+
+async def _make_po(db):
+    user = await user_crud.create(db, RegisterRequest(
+        email=f"tw-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+        full_name="TW Tester", role="warehouse_staff",
+    ))
+    vendor = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme",
+                    category="supplier", contact_name="C", contact_email="c@x.com")
+    db.add(vendor)
+    await db.flush()
+    po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=2,
+                       vendor_id=vendor.id, vendor_name="Acme", status="issued",
+                       created_by=user.id)
+    db.add(po)
+    await db.flush()
+    return po, vendor, user
 
 
 @pytest.mark.asyncio
-async def test_three_way_true_only_when_matched_and_gr_linked(db_session, make_po, make_invoice):
-    po = await make_po(db_session)
-    # matched 但无 GR → 非 3-way
-    inv = await make_invoice(db_session, po_id=po.id, status="matched", gr_id=None)
-    assert await po_has_three_way_matched_invoice(db_session, po.id) is False
-    # 挂上 GR → 3-way
-    inv.gr_id = uuid.uuid4()
-    await db_session.flush()
-    assert await po_has_three_way_matched_invoice(db_session, po.id) is True
+async def test_three_way_true_only_when_matched_and_gr_linked():
+    async with sm.AsyncSessionLocal() as db:
+        po, vendor, user = await _make_po(db)
+        inv = _invoice(po.id, vendor.id, user.id, ref=f"I-{uuid.uuid4().hex[:6]}",
+                       status="matched", gr_id=None)
+        db.add(inv)
+        await db.flush()
+        # matched 但无 GR → 非 3-way
+        assert await po_has_three_way_matched_invoice(db, po.id) is False
+        # 挂上 GR(gr_id) → 3-way
+        inv.gr_id = uuid.uuid4()
+        await db.flush()
+        assert await po_has_three_way_matched_invoice(db, po.id) is True
 
 
 @pytest.mark.asyncio
-async def test_three_way_false_for_exception_status(db_session, make_po, make_invoice):
-    po = await make_po(db_session)
-    await make_invoice(db_session, po_id=po.id, status="exception", gr_id=uuid.uuid4())
-    assert await po_has_three_way_matched_invoice(db_session, po.id) is False
+async def test_three_way_false_for_exception_status():
+    async with sm.AsyncSessionLocal() as db:
+        po, vendor, user = await _make_po(db)
+        db.add(_invoice(po.id, vendor.id, user.id, ref=f"I-{uuid.uuid4().hex[:6]}",
+                        status="exception", gr_id=uuid.uuid4()))
+        await db.flush()
+        assert await po_has_three_way_matched_invoice(db, po.id) is False
 ```
 
-> `db_session/make_po/make_invoice` 用 `tests/conftest.py` 既有 fixtures；若无 `make_invoice`，在 conftest 加一个最小工厂（只需 po_id/status/gr_id + 必填 NOT NULL 列）。
+> 关键：`_invoice` 必须显式设 `gr_id`（`test_gr_invoice_backfill.py` 里只设 `gr_ids`，那对本 helper 不算数）。helper 查 `gr_id` 标量。
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -375,7 +419,7 @@ Expected: PASS（2 passed）。
 - [ ] **Step 5: Commit**
 
 ```bash
-git add epms-api/app/crud/po.py epms-api/tests/test_three_way_helper.py epms-api/tests/conftest.py
+git add epms-api/app/crud/po.py epms-api/tests/test_three_way_helper.py
 git commit -m "feat(po): add po_has_three_way_matched_invoice helper"
 ```
 
