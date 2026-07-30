@@ -237,6 +237,27 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         i.vendor_invoice_number.toLowerCase() === vendorInvoiceNumber.trim().toLowerCase()
     )
 
+  // Greedily pair each invoice line with an unused PO line of equal pre-tax amount.
+  // Returns line-level allocations ONLY if every invoice line is paired AND they
+  // sum to the invoice pre-tax total (a clean line-level match); else null.
+  const buildLineLevelAllocations = (inv: ApiInvoice, po: ApiPo): AllocationInput[] | null => {
+    const invLines = inv.line_items ?? []
+    if (invLines.length === 0) return null
+    const used = new Set<string>()
+    const allocs: AllocationInput[] = []
+    for (const l of invLines) {
+      if (!l.id) return null
+      const amt = Number(l.line_total)
+      const target = po.line_items.find((pl) => !used.has(pl.id) && Math.abs(Number(pl.line_total) - amt) < 0.01)
+      if (!target) return null
+      used.add(target.id)
+      allocs.push({ invoice_line_id: l.id, po_id: po.id, po_line_id: target.id, allocated_amount: amt, allocated_tax: 0 })
+    }
+    const sum = allocs.reduce((s, a) => s + a.allocated_amount, 0)
+    if (Math.abs(sum - Number(inv.amount)) > 0.01) return null
+    return allocs
+  }
+
   const handleSubmit = async () => {
     setSubmitted(true)
     setSubmitError(null)
@@ -271,17 +292,29 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         } catch (e) { console.error('Invoice attachment upload error:', e) }
       }
 
-      // If a valid PO was recognized and this user may match, continue into the
-      // allocation step (line-level flow) instead of auto-matching — the invoice
-      // stays unmatched until the user confirms the allocation. Users who can't
-      // match (or invoices without line items) land in the queue as unmatched.
-      const matcherRole = useAuthStore.getState().user?.role
-      const canMatch = !!matcherRole && MATCH_ROLES.has(matcherRole)
-      if (matchedPo && canMatch && (inv.line_items?.length ?? 0) > 0) {
-        setCreatedInv(inv)
+      // A recognized PO → auto-match immediately (no second action). Line-level
+      // when it balances cleanly, else whole-invoice total-value to that PO.
+      // On any match error, fall back to the manual allocation panel.
+      // Guard is intentionally `matchedPo` alone, not `&& canMatchInvoice`: the
+      // uploader here is always the current user, and Feature #4 lets an
+      // uploader match their own invoice regardless of canMatchInvoice's
+      // (AP-oriented) scope. Any residual server-side denial (e.g. an edge
+      // case canMatchInvoice doesn't model) is still caught by the
+      // onError → manual panel fallback below, so this can't silently fail.
+      if (matchedPo) {
+        const lineAllocs = buildLineLevelAllocations(inv, matchedPo)
+        const linkedGr = grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled')
+        matchInvoiceMutation.mutate(
+          lineAllocs
+            ? { id: inv.id, allocations: lineAllocs, gr_id: linkedGr?.id }
+            : { id: inv.id, po_id: matchedPo.id, gr_id: linkedGr?.id },
+          {
+            onSuccess: () => onUploaded(inv.id),
+            onError: () => setCreatedInv(inv),   // fall back to manual panel
+          },
+        )
         return
       }
-
       onUploaded(inv.id)
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Upload failed')
@@ -912,7 +945,8 @@ function UnmatchedTab() {
   const canDelete = user?.role === 'system_admin' || !!perms?.invoice_upload
   const isAp = !!user?.role && MATCH_ROLES.has(user.role)
   const canMatchInvoice = (inv: ApiInvoice) =>
-    isAp || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
+    isAp || inv.uploaded_by === user?.id ||
+    (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
 
   const unmatched = [...(data?.items ?? [])].sort(
     (a, b) => new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime()

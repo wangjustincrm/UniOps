@@ -741,3 +741,170 @@ async def test_fee_only_rematch_clears_stale_exception_reason(admin_client):
     data = r2.json()
     assert data["status"] == "matched"
     assert data["exception_reason"] is None
+
+
+import base64, json
+
+def _jwt_sub(client) -> str:
+    tok = client.headers["Authorization"].split(" ", 1)[1]
+    payload = tok.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))["sub"]
+
+
+async def _set_po_status(po_id, status):
+    """`_make_issued_po` (name notwithstanding) leaves the PO in its
+    post-creation default status ("draft"); `list_match_candidates` filters to
+    `_MATCHABLE_PO_STATUSES`, so tests exercising that endpoint must push the
+    PO into an issued-like status directly."""
+    import app.db.session as session_module
+    from sqlalchemy import update as sa_update
+    async with session_module.AsyncSessionLocal() as db:
+        await db.execute(sa_update(PurchaseOrder)
+                         .where(PurchaseOrder.id == uuid.UUID(po_id)).values(status=status))
+        await db.commit()
+
+
+async def _create_invoice_uploaded_by(admin_client, vendor_id, uploader_id, **overrides):
+    """Create an invoice row owned by `uploader_id` (bypasses the upload
+    permission gate — we are testing MATCH auth, not upload auth)."""
+    import uuid as _uuid
+    import app.db.session as session_module
+    from app.crud import invoice as invoice_crud
+    from app.schemas.invoice import InvoiceCreate
+    payload = _inv_payload(vendor_id, **overrides)
+    async with session_module.AsyncSessionLocal() as db:
+        inv = await invoice_crud.create(
+            db, InvoiceCreate(**{**payload, "vendor_id": _uuid.UUID(vendor_id)}),
+            vendor_name="Alloc Vendor", uploaded_by=_uuid.UUID(uploader_id))
+        await db.commit()
+        return {"id": str(inv.id), "line_items": [{"id": str(li.get("id"))} for li in (inv.line_items or [])]}
+
+
+@pytest.mark.asyncio
+async def test_uploader_can_match_own_invoice(admin_client, requester_client):
+    """A non-AP uploader can match their own invoice directly (no AP task)."""
+    v = await _make_vendor(admin_client, "VND-SELFMATCH-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "W", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    uploader_id = _jwt_sub(requester_client)
+    inv = await _create_invoice_uploaded_by(admin_client, v["id"], uploader_id,
+        amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"}])
+    # requester (uploader, non-AP) matches via the whole-invoice legacy path
+    r = await requester_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": po["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"          # exact vs subtotal, no match_review
+
+
+@pytest.mark.asyncio
+async def test_non_uploader_non_ap_cannot_match(admin_client, requester_client):
+    """A non-AP user who did NOT upload the invoice is still blocked (403)."""
+    v = await _make_vendor(admin_client, "VND-SELFMATCH-02")
+    po = await _make_issued_po(admin_client, v["id"])
+    # invoices.uploaded_by has an FK to users, so the "other" uploader must be a
+    # real user row — use the admin fixture's own id (not the requester's).
+    other_id = _jwt_sub(admin_client)
+    inv = await _create_invoice_uploaded_by(admin_client, v["id"], other_id,
+        amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"}])
+    r = await requester_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": po["id"]})
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_uploader_can_list_match_candidates(admin_client, requester_client):
+    v = await _make_vendor(admin_client, "VND-SELFMATCH-03")
+    po = await _make_issued_po(admin_client, v["id"])
+    await _set_po_status(po["id"], "issued")
+    uploader_id = _jwt_sub(requester_client)
+    inv = await _create_invoice_uploaded_by(admin_client, v["id"], uploader_id,
+        amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"}])
+    r = await requester_client.get(f"{INV_URL}/{inv['id']}/match-candidates")
+    assert r.status_code == 200, r.text
+    assert len(r.json()["items"]) >= 1
+
+
+@pytest.mark.asyncio
+async def test_match_candidates_report_already_allocated_total(admin_client):
+    """A PO header-billed by one invoice reports already_allocated_total to the next."""
+    v = await _make_vendor(admin_client, "VND-ALLOCTOT-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "W", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    await _set_po_status(po["id"], "issued")  # match-candidates filters to matchable statuses
+    # invoice 1 total-matches the whole PO (header-level, legacy path)
+    inv1 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="600.00", tax_amount="0.00",
+        line_items=[{"description": "a", "quantity": "1", "unit_price": "600.00", "line_total": "600.00"}]))).json()
+    r1 = await admin_client.post(f"{INV_URL}/{inv1['id']}/match", json={"po_id": po["id"]})
+    assert r1.status_code == 200, r1.text
+    # invoice 2 asks for candidates → sees 600 already allocated on that PO
+    inv2 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="400.00", tax_amount="0.00",
+        line_items=[{"description": "b", "quantity": "1", "unit_price": "400.00", "line_total": "400.00"}]))).json()
+    cand = (await admin_client.get(f"{INV_URL}/{inv2['id']}/match-candidates")).json()
+    the_po = next(p for p in cand["items"] if p["id"] == po["id"])
+    assert float(the_po["already_allocated_total"]) == 600.0
+    # and it EXCLUDES the requesting invoice's own allocations (0 here)
+    cand_self = (await admin_client.get(f"{INV_URL}/{inv1['id']}/match-candidates")).json()
+    po_self = next(p for p in cand_self["items"] if p["id"] == po["id"])
+    assert float(po_self["already_allocated_total"] or 0) == 0.0
+
+
+@pytest.mark.asyncio
+async def test_total_value_multi_po_balances_matched(admin_client):
+    """One invoice total-matched header-level across TWO POs (po_line_id null) balances → matched."""
+    v = await _make_vendor(admin_client, "VND-TOTMULTI-01")
+    po_a = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "A", "qty": "1", "unit": "EA", "unit_price": "600.00"}])
+    po_b = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "B", "qty": "1", "unit": "EA", "unit_price": "400.00"}])
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "combined", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"}]))).json()
+    anchor = inv["line_items"][0]["id"]
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": anchor, "po_id": po_a["id"], "po_line_id": None, "allocated_amount": "600.00", "allocated_tax": "0.00"},
+        {"invoice_line_id": anchor, "po_id": po_b["id"], "po_line_id": None, "allocated_amount": "400.00", "allocated_tax": "0.00"},
+    ]})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "matched"
+    assert len(data["allocations"]) == 2
+    assert all(a["po_line_id"] is None for a in data["allocations"])
+
+
+@pytest.mark.asyncio
+async def test_total_value_one_po_two_invoices_cumulative(admin_client):
+    """A PO header-billed by two invoices reconciles cumulatively → both matched, second not over-tolerance."""
+    v = await _make_vendor(admin_client, "VND-TOTCUML-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "W", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    inv1 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="600.00", tax_amount="0.00",
+        line_items=[{"description": "a", "quantity": "1", "unit_price": "600.00", "line_total": "600.00"}]))).json()
+    r1 = await admin_client.post(f"{INV_URL}/{inv1['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv1["line_items"][0]["id"], "po_id": po["id"], "po_line_id": None,
+         "allocated_amount": "600.00", "allocated_tax": "0.00"}]})
+    assert r1.status_code == 200, r1.text
+    assert r1.json()["status"] == "matched"          # partial (600<1000) still matched
+    inv2 = (await admin_client.post(INV_URL, json=_inv_payload(v["id"], amount="400.00", tax_amount="0.00",
+        line_items=[{"description": "b", "quantity": "1", "unit_price": "400.00", "line_total": "400.00"}]))).json()
+    r2 = await admin_client.post(f"{INV_URL}/{inv2['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv2["line_items"][0]["id"], "po_id": po["id"], "po_line_id": None,
+         "allocated_amount": "400.00", "allocated_tax": "0.00"}]})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["status"] == "matched"          # cumulative 600+400 == 1000, not over-tolerance
+
+
+@pytest.mark.asyncio
+async def test_self_match_over_tolerance_goes_to_exception(admin_client, requester_client):
+    """Uploader self-match with an over-tolerance variance → exception, never match_review."""
+    v = await _make_vendor(admin_client, "VND-SELFEXC-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "W", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    uploader_id = _jwt_sub(requester_client)
+    inv = await _create_invoice_uploaded_by(admin_client, v["id"], uploader_id,
+        amount="2000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1", "unit_price": "2000.00", "line_total": "2000.00"}])
+    r = await requester_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": po["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "exception"          # 2000 vs 1000 subtotal → +100% > tolerance
+    assert r.json()["status"] != "match_review"
