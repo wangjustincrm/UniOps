@@ -290,7 +290,7 @@ export default function InvoiceDetailPage() {
         {/* Header actions */}
         <div className="flex items-center gap-2">
           {!!inv && (inv.status === 'unmatched' || inv.status === 'exception') && !editing &&
-            (isAp || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)) && (
+            (isAp || inv.uploaded_by === user?.id || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)) && (
             <Button size="sm" className="gap-1.5" onClick={() => setShowMatchPanel((v) => !v)}>
               <GitMerge className="h-3.5 w-3.5" />
               Match to PO

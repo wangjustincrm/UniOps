@@ -912,7 +912,8 @@ function UnmatchedTab() {
   const canDelete = user?.role === 'system_admin' || !!perms?.invoice_upload
   const isAp = !!user?.role && MATCH_ROLES.has(user.role)
   const canMatchInvoice = (inv: ApiInvoice) =>
-    isAp || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
+    isAp || inv.uploaded_by === user?.id ||
+    (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
 
   const unmatched = [...(data?.items ?? [])].sort(
     (a, b) => new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime()
