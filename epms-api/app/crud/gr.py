@@ -173,6 +173,8 @@ async def create(
     # Line-item reverse-match: link this GR to any already-matched invoice billing
     # the same PO lines, and refresh its gr_value (convenience — no status change).
     await _autofill_gr_to_matched_invoices(db, gr, lines)
+    if gr.po_id is not None:
+        await _on_three_way_reached(db, gr.po_id)
     await db.refresh(gr)
     return gr
 
@@ -450,23 +452,46 @@ async def _autofill_gr_to_matched_invoices(
         inv.gr_value = total
 
 
-async def _create_pa_task(db: AsyncSession, gr: GoodsReceipt) -> None:
-    """Create a create_pa task for the PR requester after GR is collected/confirmed."""
-    requester_id = await _get_pr_requester_id(db, gr)
-    # Anchor the task on the PO (not the GR) so the frontend's ?poId=task.document_id
-    # navigation lands on the PO — matches the invoice-match create_pa path.
+async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
+    """GR 创建使 PO 达成 3-way 后:关掉催收货提醒,补建 create_pa(若尚无 PA/任务)。"""
+    from app.crud.po import po_has_three_way_matched_invoice
+    # 1) 关闭 confirm_receipt
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(select(Task).where(
+        Task.type == "confirm_receipt",
+        Task.document_type == "po",
+        Task.document_id == po_id,
+        Task.is_completed.is_(False),
+    ))).scalars().all()
+    for t in rows:
+        t.is_completed = True
+        t.completed_at = now
+    # 2) 若已 3-way 且无 PA 且无 open create_pa → 建 create_pa
+    if not await po_has_three_way_matched_invoice(db, po_id):
+        return
+    from app.models.pa import PaymentApplication
+    has_pa = (await db.execute(select(PaymentApplication.id).where(
+        PaymentApplication.po_id == po_id).limit(1))).scalar_one_or_none()
+    if has_pa is not None:
+        return
+    has_task = (await db.execute(select(Task.id).where(
+        Task.type == "create_pa", Task.document_type == "po",
+        Task.document_id == po_id, Task.is_completed.is_(False)).limit(1))).scalar_one_or_none()
+    if has_task is not None:
+        return
+    po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one_or_none()
+    if po is None:
+        return
+    requester_id = await get_pr_requester_id(db, po.pr_id)
     db.add(Task(
-        type="create_pa",
-        priority="normal",
-        document_type="po",
-        document_id=gr.po_id,
-        document_number=gr.po_number,
-        assigned_role="requester",
-        assigned_user_id=requester_id,
-        title=f"Create Payment Application: {gr.number} — {gr.title}",
-        description=f"GR {gr.number} has been completed. Please create a Payment Application to proceed with vendor payment.",
-        vendor=gr.vendor_name,
+        type="create_pa", priority="normal",
+        document_type="po", document_id=po_id, document_number=po.number,
+        assigned_role="requester", assigned_user_id=requester_id,
+        title=f"Create Payment Application for {po.number}",
+        description=f"Goods received for PO {po.number}. Please create a Payment Application.",
+        vendor=po.vendor_name, amount=po.total,
     ))
+    await db.flush()
 
 
 async def _attach_gr_pdf(
