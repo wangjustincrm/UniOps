@@ -226,12 +226,37 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
                        f"{', '.join(str(i) for i in need_alloc_check)}",
             )
 
+    # ── 收货闸门 —— 预付款先付后收豁免;其余类型须有 3-way matched 发票 ──
+    scope = await build_scope(db, user)
+    if body.pa_type != "prepayment":
+        if not await po_crud.po_has_three_way_matched_invoice(db, body.po_id):
+            if not body.receipt_override:
+                raise HTTPException(
+                    status_code=422,
+                    detail="No 3-way matched invoice for this PO (a matched invoice "
+                           "with a linked goods receipt). Create a goods receipt "
+                           "first, or override with a reason.",
+                )
+            if not scope["perms"].get("pa_override_receipt", False):
+                raise HTTPException(
+                    status_code=403,
+                    detail="You are not authorized to create a payment without goods receipt.",
+                )
+            if not (body.receipt_override_reason or "").strip():
+                raise HTTPException(
+                    status_code=422,
+                    detail="A reason is required to override the goods-receipt requirement.",
+                )
+
     created = await pa_crud.create(
         db, body,
         po_number=po.number,
         vendor_id=po.vendor_id,
         vendor_name=po.vendor_name,
         created_by=uuid.UUID(user["sub"]),
+        receipt_override=body.receipt_override,
+        receipt_override_reason=body.receipt_override_reason,
+        receipt_override_by=uuid.UUID(user["sub"]) if body.receipt_override else None,
     )
 
     # Settlement is net-aware. Net payable (created.payment_amount) is the cash to

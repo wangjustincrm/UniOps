@@ -146,6 +146,9 @@ async def create(
     vendor_id: uuid.UUID,
     vendor_name: str,
     created_by: uuid.UUID,
+    receipt_override: bool = False,
+    receipt_override_reason: str | None = None,
+    receipt_override_by: uuid.UUID | None = None,
 ) -> PaymentApplication:
     number = await _next_number(db)
     payment_amount = _compute_payment(payload)
@@ -176,6 +179,9 @@ async def create(
         expected_settlement_date=payload.expected_settlement_date,
         settlement_status="pending" if payload.pa_type == "prepayment" else None,
         created_by=created_by,
+        receipt_override=receipt_override,
+        receipt_override_reason=(receipt_override_reason or None) if receipt_override else None,
+        receipt_override_by=receipt_override_by if receipt_override else None,
     )
     db.add(pa)
     await db.flush()
