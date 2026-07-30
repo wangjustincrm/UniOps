@@ -934,29 +934,115 @@ git commit -m "feat(invoice): dispatch create_pa vs confirm_receipt on match by 
 ## Task 7: GR 创建交接（达成 3-way → 关催办 + 建 create_pa）
 
 **Files:**
-- Modify: `epms-api/app/crud/gr.py`（`create()` 尾部；`_create_pa_task` 重连）
-- Test: `epms-api/tests/test_gr.py` 或 `tests/test_gr_invoice_backfill.py`
+- Modify: `epms-api/app/crud/gr.py`（`create()` 尾部加调用；新增 `_on_three_way_reached`；旧死代码 `_create_pa_task` 可删）
+- Create: `epms-api/tests/test_gr_three_way_handoff.py`（自包含直调 `_on_three_way_reached`）
 
 **Interfaces:**
-- Consumes: `po_has_three_way_matched_invoice`（Task 3）、`_autofill_gr_to_matched_invoices`（已存在，先跑）。
+- Consumes: `po_has_three_way_matched_invoice`（Task 3）、`get_pr_requester_id`（gr.py 已有）。
 - Produces: `async def _on_three_way_reached(db, po_id)` —— 关闭 PO 所有未完成 `confirm_receipt`；若 PO 现有 3-way 发票且无 PA 且无未完成 create_pa → 建 create_pa。`gr.create()` 在 `_autofill_gr_to_matched_invoices` 之后调用它。
 
-- [ ] **Step 1: Write the failing test**
+> 直调式测试：`gr.create()` 全链（GrCreate schema + PDF + 附件 + 文件服务）难做单测，故**直调 `_on_three_way_reached(db, po_id)`**（`_autofill` 已由既有 `test_gr_invoice_backfill.py` 覆盖）；create() 里那一行 wiring 交代码审查。PR 必填列 = number/title/type/created_by；`invoice.gr_id` 需真实 GR 行；PA 必填列见 `test_pa.py::test_list_excludes_oa_direct_pas`。
+
+- [ ] **Step 1: Write the failing tests**（新建 tests/test_gr_three_way_handoff.py）
 
 ```python
-async def test_gr_creation_closes_confirm_receipt_and_creates_create_pa(...):
-    # 先有 matched 发票(gr_id=None) + 一条 confirm_receipt(open)
-    # 建 GR(覆盖该发票的 PO 行) → _autofill 写 gr_id → 3-way
-    # 断言:confirm_receipt.is_completed == True; 出现一条 open create_pa(type='create_pa', document_type='po')
-    ...
+"""_on_three_way_reached: 关 confirm_receipt + 建 create_pa(3-way);已有 PA 则幂等。"""
+import uuid
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import select
+
+import app.db.session as sm
+from app.crud import user as user_crud
+from app.crud.gr import _on_three_way_reached
+from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
+from app.models.pa import PaymentApplication
+from app.models.po import PurchaseOrder
+from app.models.pr import PurchaseRequest
+from app.models.task import Task
+from app.models.vendor import Vendor
+from app.schemas.auth import RegisterRequest
+
+
+async def _setup(db):
+    req = await user_crud.create(db, RegisterRequest(
+        email=f"r-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+        full_name="R", role="requester"))
+    v = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme", category="supplier",
+               contact_name="C", contact_email="c@x.com")
+    db.add(v); await db.flush()
+    pr = PurchaseRequest(number=f"PR-{uuid.uuid4().hex[:8]}", title="T", type=2, created_by=req.id)
+    db.add(pr); await db.flush()
+    po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=2,
+                       vendor_id=v.id, vendor_name="Acme", status="issued",
+                       created_by=req.id, pr_id=pr.id)
+    db.add(po); await db.flush()
+    return po, v, req
+
+
+async def _matched_inv_with_gr(db, po, v, req):
+    gr = GoodsReceipt(number=f"GR-{uuid.uuid4().hex[:8]}", title="G", po_id=po.id,
+                      po_number=po.number, vendor_id=v.id, vendor_name="Acme",
+                      gr_type="physical", procurement_type=2, status="collected", created_by=req.id)
+    db.add(gr); await db.flush()
+    inv = Invoice(internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+                  vendor_id=v.id, vendor_name="Acme", amount=Decimal("100"), tax_amount=Decimal("0"),
+                  total_amount=Decimal("100"), invoice_date=date(2026,1,1), due_date=date(2026,2,1),
+                  status="matched", line_items=[], po_id=po.id, gr_id=gr.id, uploaded_by=req.id)
+    db.add(inv); await db.flush()
+
+
+def _confirm_task(po):
+    return Task(type="confirm_receipt", priority="normal", document_type="po",
+                document_id=po.id, document_number=po.number,
+                assigned_role="warehouse_staff", title="Confirm goods receipt", vendor="Acme")
+
+
+async def _open(db, po_id, ttype):
+    return (await db.execute(select(Task).where(
+        Task.type == ttype, Task.document_id == po_id,
+        Task.is_completed.is_(False)))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_three_way_reached_closes_confirm_receipt_and_creates_create_pa():
+    async with sm.AsyncSessionLocal() as db:
+        po, v, req = await _setup(db)
+        db.add(_confirm_task(po)); await db.flush()
+        await _matched_inv_with_gr(db, po, v, req)          # 3-way
+        await _on_three_way_reached(db, po.id)
+        await db.flush()
+        assert await _open(db, po.id, "confirm_receipt") == []      # 关掉催办
+        cp = await _open(db, po.id, "create_pa")
+        assert len(cp) == 1
+        assert cp[0].assigned_user_id == req.id
+
+
+@pytest.mark.asyncio
+async def test_three_way_reached_idempotent_when_pa_exists():
+    async with sm.AsyncSessionLocal() as db:
+        po, v, req = await _setup(db)
+        db.add(_confirm_task(po)); await db.flush()
+        await _matched_inv_with_gr(db, po, v, req)
+        db.add(PaymentApplication(pa_number=f"PA-{uuid.uuid4().hex[:6]}", title="T", po_id=po.id,
+               po_number=po.number, vendor_id=v.id, vendor_name="Acme", subtotal=Decimal("100"),
+               payment_amount=Decimal("100"), currency="CAD", status="draft", created_by=req.id))
+        await db.flush()
+        await _on_three_way_reached(db, po.id)
+        await db.flush()
+        assert await _open(db, po.id, "confirm_receipt") == []      # 仍关催办
+        assert await _open(db, po.id, "create_pa") == []            # 已有 PA → 不建 create_pa
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd epms-api && python -m pytest tests/test_gr.py -k "closes_confirm_receipt" -v
+cd epms-api && python -m pytest tests/test_gr_three_way_handoff.py -v
 ```
-Expected: FAIL。
+Expected: FAIL（`ImportError: cannot import name '_on_three_way_reached'`）。
 
 - [ ] **Step 3: 加交接函数 + 在 create() 里调用（app/crud/gr.py）**
 
@@ -1013,24 +1099,24 @@ async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
 ```
 （`_create_pa_task`（旧死代码）可删或保留；本任务用内联建单，锚 PO 与 invoice 路径一致。若删除需确认无其它引用。）
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd epms-api && python -m pytest tests/test_gr.py -k "closes_confirm_receipt" -v
+cd epms-api && python -m pytest tests/test_gr_three_way_handoff.py -v
 ```
-Expected: PASS。
+Expected: 2 passed。
 
-- [ ] **Step 5: 回归 GR 套件**
+- [ ] **Step 5: 回归 GR 套件（对基线）**
 
 ```bash
-cd epms-api && python -m pytest tests/test_gr.py tests/test_gr_invoice_backfill.py -v
+cd epms-api && python -m pytest tests/test_gr_invoice_backfill.py -q 2>&1 | tail -6
 ```
-Expected: 无新增 FAIL。
+Expected: 无新增 FAIL（`test_gr.py` 是 HTTP 慢套件，若跑则后台跑并对基线核对；`_on_three_way_reached` 是纯 crud 加法，理论上不影响既有 GR 流程）。
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add epms-api/app/crud/gr.py epms-api/tests/
+git add epms-api/app/crud/gr.py epms-api/tests/test_gr_three_way_handoff.py
 git commit -m "feat(gr): on GR creation, close confirm_receipt and raise create_pa (3-way handoff)"
 ```
 
