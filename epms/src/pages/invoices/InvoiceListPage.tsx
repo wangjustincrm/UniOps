@@ -295,6 +295,12 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       // A recognized PO → auto-match immediately (no second action). Line-level
       // when it balances cleanly, else whole-invoice total-value to that PO.
       // On any match error, fall back to the manual allocation panel.
+      // Guard is intentionally `matchedPo` alone, not `&& canMatchInvoice`: the
+      // uploader here is always the current user, and Feature #4 lets an
+      // uploader match their own invoice regardless of canMatchInvoice's
+      // (AP-oriented) scope. Any residual server-side denial (e.g. an edge
+      // case canMatchInvoice doesn't model) is still caught by the
+      // onError → manual panel fallback below, so this can't silently fail.
       if (matchedPo) {
         const lineAllocs = buildLineLevelAllocations(inv, matchedPo)
         const linkedGr = grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled')
