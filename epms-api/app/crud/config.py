@@ -176,6 +176,13 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<b>Vendor:</b> {vendor}\n<b>Invoice Amount:</b> CAD {amount}\n\n"
         "<a href=\"{link}\">Create Payment Application</a>\n\n{company_name}",
     ),
+    "confirm_receipt": _DEFAULT_EMAIL_TEMPLATE(
+        "Invoice received for {po_number} — please confirm goods receipt",
+        "Hi {recipient_name},\n\nInvoice <b>{invoice_number}</b> from {vendor} has been matched to "
+        "PO <b>{po_number}</b>, but the goods/service has not been received yet. "
+        "Please confirm receipt and create a Goods Receipt.\n\n"
+        "<a href=\"{link}\">Create Goods Receipt</a>\n\n{company_name}",
+    ),
     "pa_approval_request": _DEFAULT_EMAIL_TEMPLATE(
         "Action Required: Approve PA {pa_number}",
         "Hi {recipient_name},\n\nPayment Application <b>{pa_number}</b> requires your approval.\n\n"
