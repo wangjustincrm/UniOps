@@ -101,6 +101,10 @@ export interface CreatePaBody {
   // Posted lines omit line_total — the backend recomputes it as qty × unit_price.
   line_items?: Omit<ApiPaLineItem, 'id' | 'line_total'>[]
   notes?: string
+  // Receipt gate — set when a non-prepayment PA is submitted without a matched,
+  // GR-backed invoice. Requires pa_override_receipt permission; backend re-checks.
+  receipt_override?: boolean
+  receipt_override_reason?: string | null
 }
 
 export interface UpdatePaBody {
