@@ -254,14 +254,15 @@ async def match_invoice(
 ):
     caller_id = uuid.UUID(user["sub"])
     is_ap = user.get("role") in _AP_ROLES
-    if not is_ap and not await _has_open_match_task(db, caller_id, invoice_id):
-        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    is_uploader = inv.uploaded_by == caller_id
+    if not is_ap and not is_uploader and not await _has_open_match_task(db, caller_id, invoice_id):
+        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
     if inv.status not in ("unmatched", "exception"):
         raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
-    require_review = not is_ap
+    require_review = not (is_ap or is_uploader)
     from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired
     try:
         result = await invoice_crud.match(db, inv, body, matched_by=caller_id,
@@ -354,7 +355,8 @@ async def list_match_candidates(
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     caller_id = uuid.UUID(user["sub"])
-    if user.get("role") not in _AP_ROLES and not await _has_open_match_task(db, caller_id, invoice_id):
+    is_uploader = inv.uploaded_by == caller_id
+    if user.get("role") not in _AP_ROLES and not is_uploader and not await _has_open_match_task(db, caller_id, invoice_id):
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
 
     pos = list((await db.execute(

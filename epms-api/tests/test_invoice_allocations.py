@@ -741,3 +741,86 @@ async def test_fee_only_rematch_clears_stale_exception_reason(admin_client):
     data = r2.json()
     assert data["status"] == "matched"
     assert data["exception_reason"] is None
+
+
+import base64, json
+
+def _jwt_sub(client) -> str:
+    tok = client.headers["Authorization"].split(" ", 1)[1]
+    payload = tok.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload))["sub"]
+
+
+async def _set_po_status(po_id, status):
+    """`_make_issued_po` (name notwithstanding) leaves the PO in its
+    post-creation default status ("draft"); `list_match_candidates` filters to
+    `_MATCHABLE_PO_STATUSES`, so tests exercising that endpoint must push the
+    PO into an issued-like status directly."""
+    import app.db.session as session_module
+    from sqlalchemy import update as sa_update
+    async with session_module.AsyncSessionLocal() as db:
+        await db.execute(sa_update(PurchaseOrder)
+                         .where(PurchaseOrder.id == uuid.UUID(po_id)).values(status=status))
+        await db.commit()
+
+
+async def _create_invoice_uploaded_by(admin_client, vendor_id, uploader_id, **overrides):
+    """Create an invoice row owned by `uploader_id` (bypasses the upload
+    permission gate — we are testing MATCH auth, not upload auth)."""
+    import uuid as _uuid
+    import app.db.session as session_module
+    from app.crud import invoice as invoice_crud
+    from app.schemas.invoice import InvoiceCreate
+    payload = _inv_payload(vendor_id, **overrides)
+    async with session_module.AsyncSessionLocal() as db:
+        inv = await invoice_crud.create(
+            db, InvoiceCreate(**{**payload, "vendor_id": _uuid.UUID(vendor_id)}),
+            vendor_name="Alloc Vendor", uploaded_by=_uuid.UUID(uploader_id))
+        await db.commit()
+        return {"id": str(inv.id), "line_items": [{"id": str(li.get("id"))} for li in (inv.line_items or [])]}
+
+
+@pytest.mark.asyncio
+async def test_uploader_can_match_own_invoice(admin_client, requester_client):
+    """A non-AP uploader can match their own invoice directly (no AP task)."""
+    v = await _make_vendor(admin_client, "VND-SELFMATCH-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "W", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    uploader_id = _jwt_sub(requester_client)
+    inv = await _create_invoice_uploaded_by(admin_client, v["id"], uploader_id,
+        amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"}])
+    # requester (uploader, non-AP) matches via the whole-invoice legacy path
+    r = await requester_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": po["id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"          # exact vs subtotal, no match_review
+
+
+@pytest.mark.asyncio
+async def test_non_uploader_non_ap_cannot_match(admin_client, requester_client):
+    """A non-AP user who did NOT upload the invoice is still blocked (403)."""
+    v = await _make_vendor(admin_client, "VND-SELFMATCH-02")
+    po = await _make_issued_po(admin_client, v["id"])
+    # invoices.uploaded_by has an FK to users, so the "other" uploader must be a
+    # real user row — use the admin fixture's own id (not the requester's).
+    other_id = _jwt_sub(admin_client)
+    inv = await _create_invoice_uploaded_by(admin_client, v["id"], other_id,
+        amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"}])
+    r = await requester_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": po["id"]})
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_uploader_can_list_match_candidates(admin_client, requester_client):
+    v = await _make_vendor(admin_client, "VND-SELFMATCH-03")
+    po = await _make_issued_po(admin_client, v["id"])
+    await _set_po_status(po["id"], "issued")
+    uploader_id = _jwt_sub(requester_client)
+    inv = await _create_invoice_uploaded_by(admin_client, v["id"], uploader_id,
+        amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1", "unit_price": "1000.00", "line_total": "1000.00"}])
+    r = await requester_client.get(f"{INV_URL}/{inv['id']}/match-candidates")
+    assert r.status_code == 200, r.text
+    assert len(r.json()["items"]) >= 1
