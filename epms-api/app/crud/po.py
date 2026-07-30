@@ -10,6 +10,7 @@ from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
+from app.models.invoice import Invoice
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -520,3 +521,20 @@ async def get_approval_events(
         )
         for ev, full_name in result.all()
     ]
+
+
+async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
+    """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已挂 GR(gr_id 非空)。
+
+    这是 PA 收货闸门 / create_pa 触发 / confirm_receipt 停发 的统一真相源。
+    GR 一创建即由 _autofill_gr_to_matched_invoices 写 gr_id → 立即达成 3-way,
+    不要求收货确认(collected/confirmed)。
+    """
+    row = (await db.execute(
+        select(Invoice.id).where(
+            Invoice.po_id == po_id,
+            Invoice.status == "matched",
+            Invoice.gr_id.is_not(None),
+        ).limit(1)
+    )).scalar_one_or_none()
+    return row is not None
