@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,6 +92,12 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False, index=True
     )
+
+    # 无收货 override(见 PA receipt gate):非预付 PA 在无 3-way matched 发票时,
+    # 授权角色可带理由强制创建。三列纯审计。
+    receipt_override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    receipt_override_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    receipt_override_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     line_items: Mapped[list["PaLineItem"]] = relationship(
         "PaLineItem", back_populates="pa", cascade="all, delete-orphan",

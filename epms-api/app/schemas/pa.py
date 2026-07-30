@@ -62,6 +62,8 @@ class PaCreate(BaseModel):
     prepayment_pct: Decimal | None = Field(default=None, ge=1, le=100)
     expected_settlement_date: date | None = None
     line_items: list[PaLineItemIn] = Field(default_factory=list)
+    receipt_override: bool = False
+    receipt_override_reason: str | None = Field(default=None, max_length=500)
 
 
 class PaUpdate(BaseModel):
@@ -133,6 +135,9 @@ class PaResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     line_items: list[PaLineItemResponse]
+    receipt_override: bool = False
+    receipt_override_reason: str | None = None
+    receipt_override_by: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 
