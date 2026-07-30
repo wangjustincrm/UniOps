@@ -1,5 +1,5 @@
 import { api, fetchAllPages } from '@/lib/api'
-import type { WorkflowNodeDef } from '@/types'
+import type { WorkflowNodeDef, CurrentStep } from '@/types'
 
 export type PrStatus =
   | 'draft'
@@ -55,6 +55,7 @@ export interface ApiPr {
   created_by_name?: string | null
   created_at: string
   updated_at: string
+  current_step?: CurrentStep | null
 }
 
 export interface CreatePrBody {

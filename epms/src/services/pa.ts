@@ -1,6 +1,6 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiEvent } from './pr'
-import type { WorkflowNodeDef } from '@/types'
+import type { WorkflowNodeDef, CurrentStep } from '@/types'
 
 export type PaStatus =
   | 'draft'
@@ -76,6 +76,7 @@ export interface ApiPa {
   created_by_name?: string | null
   created_at: string
   updated_at: string
+  current_step?: CurrentStep | null
 }
 
 export interface CreatePaBody {

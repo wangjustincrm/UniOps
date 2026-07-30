@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { Plus, Search, FileText, CreditCard, Filter, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { usePas } from '@/hooks/usePas'
@@ -195,7 +196,10 @@ export default function PaListPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(pa.created_at)}</td>
-                  <td className="px-4 py-3"><PaStatusBadge status={pa.status} /></td>
+                  <td className="px-4 py-3">
+                    <PaStatusBadge status={pa.status} />
+                    <CurrentStepHint current_step={pa.current_step} />
+                  </td>
                   <td className="px-4 py-3">
                     <Link
                       to={`/pa/${pa.id}`}

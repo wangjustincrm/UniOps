@@ -4,6 +4,7 @@ import { Search, Plus, ChevronUp, ChevronDown, Filter, Copy } from 'lucide-react
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
+import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate } from '@/lib/utils'
 import { SkeletonRow } from '@/components/ui/skeleton'
@@ -288,7 +289,10 @@ export default function PrListPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3"><StatusBadge status={pr.status} /></td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={pr.status} />
+                    <CurrentStepHint current_step={pr.current_step} />
+                  </td>
                   <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">{formatDate(pr.submitted_at ?? '')}</td>
                   <td className="px-4 py-3">
                     <Link to={`/pr/${pr.id}`}><Button variant="ghost" size="sm">View</Button></Link>
