@@ -436,58 +436,75 @@ git commit -m "feat(po): add po_has_three_way_matched_invoice helper"
 - Consumes: `po_has_three_way_matched_invoice`（Task 3）、`build_scope(...)["perms"]["pa_override_receipt"]`（Task 1）、`PaCreate.receipt_override*`（Task 2）。
 - Produces: 闸门行为 —— 非预付且无 3-way 发票时：无 override→422；有 override 但无权限→403；有 override 无理由→422；合法 override→201 且落库。
 
-- [ ] **Step 1: 建测试 fixtures（tests/test_pa.py 或 conftest）**
+> **测试环境铁律（务必读）**：`tests/conftest.py` 的测试矩阵**只种 17 个 matrix key，没种 `epms.pa.write`**；`require_permission("epms.pa.write")` 只有 **system_admin 短路通过**。故测试里 **只有 `admin_client`（system_admin）能 POST /pa**。所有闸门用例都用 `admin_client`。system_admin 同时持 `pa_override_receipt`，但闸门先看 `body.receipt_override` **标志**——admin 不带标志一样 422。
+> **3-way 状态直接建库**：套用 `tests/test_three_way_helper.py` 里已跑通的 `_invoice`（显式设 `gr_id`）+ `_make_gr`（真实 GR 行，满足 `invoice.gr_id` 的 FK）+ `tests/test_gr_invoice_backfill.py` 的建模式。**跨 session 必须 `await db.commit()`**（HTTP 端点用另一个 session，只 flush 看不到；参照 `test_list_excludes_oa_direct_pas`）。
 
-需要能构造：`make_three_way_po`（PO + 一张 matched+gr_id 发票）、`make_two_way_po`（PO + matched 但 gr_id=None）、`base_pa_body(po)`（合法 regular PA body）、`finance_headers`（持 pa_override_receipt 的角色，如 finance_manager）、`requester_headers`（PR 创建人、无 override 权限）。复用现有 auth/client fixtures。
+- [ ] **Step 1: 建两个 PO 构造 helper（tests/test_pa.py 顶部）**
 
-- [ ] **Step 2: Write the failing tests**
+- `_make_bare_po(admin_client, vendor_id)` = 现有 `_make_po`（PO via API，无发票，即"无 3-way"）。直接复用，别新建。
+- `_make_three_way_po(admin_client, test_engine, vendor_id)`：先 `_make_po` 建 PO，再用 `async with async_sessionmaker(test_engine, ...)() as db:` 直接插一张 `status="matched"` 且 `gr_id=<真实 GR.id>` 的 Invoice（GR 用真实行，FK 到 goods_receipts）；**`await db.commit()`**。返回 po dict。GR/Invoice 的必填列与 `created_by`/`uploaded_by`（若非空）照 `test_three_way_helper.py`/`test_gr_invoice_backfill.py` 填（可 `user_crud.create` 一个 warehouse_staff 用户做 created_by/uploaded_by）。
+
+- [ ] **Step 2: Write the failing tests**（全部 `admin_client`；用现有 `_make_vendor`/`_pa_payload`/`_make_prepayment`）
 
 ```python
-async def test_regular_pa_blocked_without_three_way(app_client_and_ctx):
-    client, ctx = app_client_and_ctx
-    po = await ctx.make_two_way_po(client)            # matched 但无 GR
-    r = await client.post("/api/v1/pa", json=ctx.base_pa_body(po), headers=ctx.requester_headers)
-    assert r.status_code == 422
-    assert "3-way" in r.json()["detail"] or "goods receipt" in r.json()["detail"].lower()
+@pytest.mark.asyncio
+async def test_regular_pa_blocked_without_three_way(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-BLOCK")
+    po = await _make_bare_po(admin_client, v["id"])          # matched 发票都没有 → 无 3-way
+    r = await admin_client.post(PA_URL, json=_pa_payload(po["id"]))   # 不带 override 标志
+    assert r.status_code == 422, r.text
+    assert "goods receipt" in r.json()["detail"].lower() or "3-way" in r.json()["detail"]
 
 
-async def test_regular_pa_allowed_with_three_way(app_client_and_ctx):
-    client, ctx = app_client_and_ctx
-    po = await ctx.make_three_way_po(client)
-    r = await client.post("/api/v1/pa", json=ctx.base_pa_body(po), headers=ctx.requester_headers)
+@pytest.mark.asyncio
+async def test_regular_pa_allowed_with_three_way(admin_client, test_engine):
+    v = await _make_vendor(admin_client, "VND-GATE-OK")
+    po = await _make_three_way_po(admin_client, test_engine, v["id"])
+    r = await admin_client.post(PA_URL, json=_pa_payload(po["id"]))
     assert r.status_code == 201, r.text
 
 
-async def test_prepayment_pa_exempt_from_gate(app_client_and_ctx):
-    client, ctx = app_client_and_ctx
-    po = await ctx.make_two_way_po(client)            # 无 3-way
-    body = ctx.prepayment_pa_body(po)                 # pa_type=prepayment, prepayment_pct 合法
-    r = await client.post("/api/v1/pa", json=body, headers=ctx.requester_headers)
+@pytest.mark.asyncio
+async def test_prepayment_pa_exempt_from_gate(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-PREPAY")
+    po = await _make_bare_po(admin_client, v["id"])          # 无 3-way
+    r = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="prepayment", prepayment_pct="50",
+        expected_settlement_date="2026-05-01", subtotal="100.00", tax_amount="0.00"))
+    assert r.status_code == 201, r.text                       # 预付豁免
+
+
+@pytest.mark.asyncio
+async def test_override_with_permission_persists(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-OVR")
+    po = await _make_bare_po(admin_client, v["id"])          # 无 3-way,但 admin 有 pa_override_receipt
+    r = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], receipt_override=True, receipt_override_reason="urgent freight in transit"))
     assert r.status_code == 201, r.text
+    data = r.json()
+    assert data["receipt_override"] is True
+    assert data["receipt_override_reason"] == "urgent freight in transit"
+    assert data["receipt_override_by"] is not None
 
 
-async def test_override_requires_permission(app_client_and_ctx):
-    client, ctx = app_client_and_ctx
-    po = await ctx.make_two_way_po(client)
-    body = ctx.base_pa_body(po) | {"receipt_override": True, "receipt_override_reason": "x"}
-    r = await client.post("/api/v1/pa", json=body, headers=ctx.requester_headers)  # 无权限
-    assert r.status_code == 403
-
-
-async def test_override_requires_reason(app_client_and_ctx):
-    client, ctx = app_client_and_ctx
-    po = await ctx.make_two_way_po(client)
-    body = ctx.base_pa_body(po) | {"receipt_override": True, "receipt_override_reason": "  "}
-    r = await client.post("/api/v1/pa", json=body, headers=ctx.finance_headers)   # 有权限但空理由
-    assert r.status_code == 422
+@pytest.mark.asyncio
+async def test_override_requires_reason(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-NOREASON")
+    po = await _make_bare_po(admin_client, v["id"])
+    r = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], receipt_override=True, receipt_override_reason="   "))   # 空白理由
+    assert r.status_code == 422, r.text
+    assert "reason" in r.json()["detail"].lower()
 ```
+
+> **省略 `test_override_requires_permission`（403 分支）**：本测试环境只有 system_admin 能过 `epms.pa.write`，而 system_admin 恒有 `pa_override_receipt`——**没有"有 pa.write 但无 override"的角色可用**，无法干净触发该 403。该分支逻辑简单（`if not scope["perms"].get("pa_override_receipt"): 403`），交由代码审查覆盖；在 report 里注明此覆盖缺口。**不要**为它硬造 seed（会牵动矩阵测试基建）。
 
 - [ ] **Step 3: Run tests to verify they fail**
 
 ```bash
-cd epms-api && python -m pytest tests/test_pa.py -k "three_way or override or exempt" -v
+cd epms-api && python -m pytest tests/test_pa.py -k "gate or three_way or override or exempt" -v
 ```
-Expected: FAIL（当前无闸门，block/403/422 都不触发）。
+Expected: FAIL（当前无闸门，422/持久化都不触发）。
 
 - [ ] **Step 4: 加闸门（app/api/v1/pa.py，create_pa 内，prepayment/settlement guard 之后、`pa_crud.create()` 之前）**
 
@@ -541,19 +558,29 @@ Expected: FAIL（当前无闸门，block/403/422 都不触发）。
         receipt_override_by=uuid.UUID(user["sub"]) if body.receipt_override else None,
 ```
 
+- [ ] **Step 5b: 修复被闸门打破的现有 settlement 测试**
+
+新闸门把 `settlement` 也纳入（非预付），故现有**期望 201** 的 4 个 settlement 测试会在无 3-way 的 PO 上变 422。它们不是测闸门、且用 `admin_client`（持 override 权限），给这 4 处 `_pa_payload(...)` 加 `receipt_override=True, receipt_override_reason="settlement test setup"`：
+  - `test_settlement_payment_amount_is_net_of_prepayment`
+  - `test_settlement_balance_marks_prepayment_settled`
+  - `test_settlement_net_zero_exact_auto_reconciles`
+  - `test_settlement_net_zero_overpaid_needs_confirmation`
+
+（`test_settlement_applied_exceeds_invoice_rejected` 与 `test_settlement_requires_valid_prepayment_ref` 期望 422、且在**闸门之前**的 settlement guard 触发，**不用改**。`_make_approved_po` 那 8 个用例是 approval-api 存量失败，**不改**。）
+
 - [ ] **Step 6: Run tests to verify they pass**
 
 ```bash
-cd epms-api && python -m pytest tests/test_pa.py -k "three_way or override or exempt or persists_receipt_override" -v
+cd epms-api && python -m pytest tests/test_pa.py -k "gate or three_way or override or exempt" -v
 ```
-Expected: PASS（含 Task 2 的 `test_create_pa_persists_receipt_override`）。
+Expected: 5 个新用例全 PASS。
 
-- [ ] **Step 7: 回归**
+- [ ] **Step 7: 回归 —— 对基线核对失败集**
 
 ```bash
-cd epms-api && python -m pytest tests/test_pa.py -v
+cd epms-api && python -m pytest tests/test_pa.py -v 2>&1 | tail -25
 ```
-Expected: 新增用例全 PASS；既有用例无新增 FAIL（对基线）。
+Expected：新 5 用例 PASS；4 个 settlement 用例（已补 override）仍 PASS；**失败集恰为基线那 8 个 `_make_approved_po`（approval-api）**，无新增。若某 settlement 用例变 422，说明 Step 5b 漏补。
 
 - [ ] **Step 8: Commit**
 
