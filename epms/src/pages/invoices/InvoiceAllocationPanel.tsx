@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { formatAmount } from '@/lib/utils'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
+import { InvoiceTotalMatchPanel } from './InvoiceTotalMatchPanel'
 
 // invoiceLineId -> { poId, poLineId }
 export type AllocationAssignment = Record<string, { poId: string; poLineId: string }>
@@ -28,6 +29,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
   })
   const [menu, setMenu] = useState<{ x: number; y: number; lineId: string } | null>(null)
   const [referencePoId, setReferencePoId] = useState<string>('')
+  const [mode, setMode] = useState<'line' | 'total'>('line')
 
   const currency = invoice.currency
   // Allocations are pre-tax: invoice lines and PO lines are pre-tax, so we balance
@@ -109,6 +111,16 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="inline-flex self-start rounded-lg border border-neutral-200 bg-neutral-50 p-0.5 text-xs">
+        <button onClick={() => setMode('line')}
+          className={`rounded-md px-3 py-1 ${mode === 'line' ? 'bg-white shadow-sm font-medium' : 'text-neutral-500'}`}>By line</button>
+        <button onClick={() => setMode('total')}
+          className={`rounded-md px-3 py-1 ${mode === 'total' ? 'bg-white shadow-sm font-medium' : 'text-neutral-500'}`}>By total amount</button>
+      </div>
+      {mode === 'total' ? (
+        <InvoiceTotalMatchPanel invoice={invoice} pos={pos} onSubmit={onSubmit} submitting={submitting} />
+      ) : (
+        <>
       <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-2.5">
         <div className="flex flex-col">
           <span className="text-xs text-neutral-500">Unallocated balance (pre-tax)</span>
@@ -150,7 +162,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
       <div className="grid grid-cols-2 gap-4">
         {/* Invoice lines (drag source) */}
         <div className="rounded-xl border border-neutral-200 bg-white p-4">
-          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">Invoice lines</h4>
+          <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-neutral-400">Invoice lines · Pretax total {formatAmount(total, currency)}</h4>
           <div className="flex max-h-[55vh] flex-col gap-2 overflow-y-auto pr-1">
             {lines.map((l) => {
               const a = l.id ? assign[l.id] : undefined
@@ -216,6 +228,9 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
             {pos.map((po) => (
               <div key={po.id}>
                 <p className="mb-1 font-mono text-xs text-neutral-500">{po.number}</p>
+                <p className="mb-1 text-[11px] text-neutral-400">
+                  Subtotal {formatAmount(Number(po.subtotal), po.currency)} · Remaining {formatAmount(Number(po.subtotal) - Number(po.already_allocated_total ?? 0), po.currency)}
+                </p>
                 {po.line_items.map((pl) => {
                   const allocatedHere = Object.entries(assign)
                     .filter(([, t]) => t.poLineId === pl.id)
@@ -269,6 +284,8 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
           </div>
         </div>,
         document.body,
+      )}
+        </>
       )}
     </div>
   )

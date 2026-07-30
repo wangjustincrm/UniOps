@@ -69,6 +69,8 @@ export interface ApiPo {
   created_by_name?: string | null
   created_at: string
   updated_at: string
+  // 该 PO 被其他发票累计分摊的税前总额(仅 match-candidates 端点返回)
+  already_allocated_total?: string | null
 }
 
 export interface CreatePoBody {
