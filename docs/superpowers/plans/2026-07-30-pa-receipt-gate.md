@@ -1125,30 +1125,92 @@ git commit -m "feat(gr): on GR creation, close confirm_receipt and raise create_
 ## Task 8: backfill 收紧到 3-way
 
 **Files:**
-- Modify: `epms-api/app/crud/task.py`（`_backfill_create_pa_tasks` L272）
-- Test: `epms-api/tests/`（backfill 相关）
+- Modify: `epms-api/app/crud/task.py`（`_backfill_create_pa_tasks` 的 `recent_matched_pos` 子查询）
+- Create: `epms-api/tests/test_backfill_three_way.py`（自包含直调 `_backfill_create_pa_tasks`）
 
 **Interfaces:**
 - Consumes: `Invoice.gr_id`。
 - Produces: 回填候选发票条件加 `Invoice.gr_id IS NOT NULL`（仅 3-way），不再给"仅 2-way"PO 造 create_pa。
 
-- [ ] **Step 1: Write the failing test**
+> 直调 `_backfill_create_pa_tasks(db)`；断言按**具体 po.id** 隔离（该函数会扫全库 payable PO，但只查自己建的 po.id 不受其它遗留数据影响）。backfill 无需 PR（回落 `po.created_by`）。`invoice.created_at` 默认 now ≥ floor(2026-06-01)。`gr_id` 需真实 GR 行。
+
+- [ ] **Step 1: Write the failing tests**（新建 tests/test_backfill_three_way.py）
 
 ```python
-async def test_backfill_skips_two_way_only_po(...):
-    # matched 但 gr_id=None 的发票 + payable PO + 无 PA → backfill 不应建 create_pa
-    ...
-async def test_backfill_creates_for_three_way_po(...):
-    # matched 且 gr_id 非空 → backfill 建 create_pa
-    ...
+"""_backfill_create_pa_tasks 只回填 3-way(matched + gr_id) 的 PO。"""
+import uuid
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import select
+
+import app.db.session as sm
+from app.crud import user as user_crud
+from app.crud.task import _backfill_create_pa_tasks
+from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
+from app.models.po import PurchaseOrder
+from app.models.task import Task
+from app.models.vendor import Vendor
+from app.schemas.auth import RegisterRequest
+
+
+async def _po_with_matched_invoice(db, *, with_gr):
+    u = await user_crud.create(db, RegisterRequest(
+        email=f"u-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+        full_name="U", role="requester"))
+    v = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme", category="supplier",
+               contact_name="C", contact_email="c@x.com")
+    db.add(v); await db.flush()
+    po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=2,
+                       vendor_id=v.id, vendor_name="Acme", status="issued", created_by=u.id)
+    db.add(po); await db.flush()
+    gr_id = None
+    if with_gr:
+        gr = GoodsReceipt(number=f"GR-{uuid.uuid4().hex[:8]}", title="G", po_id=po.id,
+                          po_number=po.number, vendor_id=v.id, vendor_name="Acme",
+                          gr_type="physical", procurement_type=2, status="collected", created_by=u.id)
+        db.add(gr); await db.flush()
+        gr_id = gr.id
+    inv = Invoice(internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+                  vendor_id=v.id, vendor_name="Acme", amount=Decimal("100"), tax_amount=Decimal("0"),
+                  total_amount=Decimal("100"), invoice_date=date(2026,1,1), due_date=date(2026,2,1),
+                  status="matched", line_items=[], po_id=po.id, gr_id=gr_id, uploaded_by=u.id)
+    db.add(inv); await db.flush()
+    return po
+
+
+async def _open_create_pa(db, po_id):
+    return (await db.execute(select(Task).where(
+        Task.type == "create_pa", Task.document_id == po_id,
+        Task.is_completed.is_(False)))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_two_way_only_po():
+    async with sm.AsyncSessionLocal() as db:
+        po = await _po_with_matched_invoice(db, with_gr=False)   # 2-way(无 GR)
+        await _backfill_create_pa_tasks(db)
+        await db.flush()
+        assert await _open_create_pa(db, po.id) == []
+
+
+@pytest.mark.asyncio
+async def test_backfill_creates_for_three_way_po():
+    async with sm.AsyncSessionLocal() as db:
+        po = await _po_with_matched_invoice(db, with_gr=True)    # 3-way(挂 GR)
+        await _backfill_create_pa_tasks(db)
+        await db.flush()
+        assert len(await _open_create_pa(db, po.id)) == 1
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd epms-api && python -m pytest tests/ -k "backfill and (two_way or three_way)" -v
+cd epms-api && python -m pytest tests/test_backfill_three_way.py -v
 ```
-Expected: FAIL（当前只按 status==matched 回填）。
+Expected: `test_backfill_skips_two_way_only_po` FAIL（当前无 gr_id 过滤，2-way 也会回填）；`test_backfill_creates_for_three_way_po` 可能已 PASS。
 
 - [ ] **Step 3: 收紧候选（app/crud/task.py，`recent_matched_pos` 子查询）**
 
@@ -1164,14 +1226,14 @@ Expected: FAIL（当前只按 status==matched 回填）。
 - [ ] **Step 4: Run tests to verify they pass**
 
 ```bash
-cd epms-api && python -m pytest tests/ -k "backfill and (two_way or three_way)" -v
+cd epms-api && python -m pytest tests/test_backfill_three_way.py -v
 ```
-Expected: PASS。
+Expected: 2 passed。
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add epms-api/app/crud/task.py epms-api/tests/
+git add epms-api/app/crud/task.py epms-api/tests/test_backfill_three_way.py
 git commit -m "fix(task): backfill create_pa only for 3-way matched POs"
 ```
 
