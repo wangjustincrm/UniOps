@@ -686,38 +686,143 @@ git commit -m "feat(notify): confirm_receipt template + New-GR deep link"
 ## Task 6: 发票匹配分派器（3-way→create_pa；否则→confirm_receipt）
 
 **Files:**
-- Modify: `epms-api/app/api/v1/invoices.py`（`_notify_requester_create_pa` L79 改为 `_on_invoice_matched`；调用点 L317、L545）
-- Test: `epms-api/tests/test_invoice_*`（新增或既有匹配测试文件）
+- Modify: `epms-api/app/api/v1/invoices.py`（`_notify_requester_create_pa` L79 改为 `_on_invoice_matched` + 抽出两个 helper；调用点 L317、L545）
+- Create: `epms-api/tests/test_invoice_match_dispatch.py`（自包含直调 `_on_invoice_matched`）
 
 **Interfaces:**
-- Consumes: `po_has_three_way_matched_invoice`（Task 3）、`is_physical`（schemas.gr）、`fire_and_forget_notify`。
-- Produces: `async def _on_invoice_matched(db, invoice)` —— 发票 match 后：本发票已挂 GR 且 status matched → 建/re-notify `create_pa`；否则 → 建/re-notify `confirm_receipt`（物理 role=warehouse_staff/user=None；服务 role=requester/user=PR.created_by），锚 PO，type="confirm_receipt"。每 PO 一条 confirm_receipt 去重。
+- Consumes: `is_physical`（schemas.gr）、`fire_and_forget_notify`。
+- Produces: `async def _on_invoice_matched(db, invoice)` —— 发票 match 后：本发票已挂 GR 且 status matched → `_create_or_renotify_create_pa`（保留原语义:**无 PR 不建**）；否则 → `_create_or_renotify_confirm_receipt`（物理 role=warehouse_staff/user=None；服务 role=requester/user=PR.created_by），锚 PO，type="confirm_receipt"，每 PO 一条去重。
 
-- [ ] **Step 1: Write the failing tests**
+> 直调式测试（范本 `test_three_way_helper.py`）：`async with sm.AsyncSessionLocal() as db` 建 vendor/PO/(PR)/invoice，调 `await _on_invoice_matched(db, inv)`，`flush` 后查 `tasks`。PR 必填列 = `number/title/type/created_by`（其余可空）。`invoice.gr_id` 需真实 GR 行（FK）。`fire_and_forget_notify` 在测试里安全（自建 session、吞异常）。
+
+- [ ] **Step 1: Write the failing tests**（新建 tests/test_invoice_match_dispatch.py）
 
 ```python
-async def test_matched_invoice_without_gr_creates_confirm_receipt_physical(...):
-    # 物理 PO,发票 matched 但 gr_id=None
-    # → 建 confirm_receipt(assigned_role='warehouse_staff', assigned_user_id=None, document_type='po')
-    # → 不建 create_pa
-    ...
+"""_on_invoice_matched: matched+GR → create_pa; matched+no GR → confirm_receipt
+(物理→warehouse_staff 池, 服务→PR requester)。"""
+import uuid
+from datetime import date
+from decimal import Decimal
 
-async def test_matched_invoice_without_gr_creates_confirm_receipt_service(...):
-    # 服务 PO(type 4) → confirm_receipt(assigned_role='requester', assigned_user_id=PR.created_by)
-    ...
+import pytest
+from sqlalchemy import select
 
-async def test_matched_invoice_with_gr_creates_create_pa(...):
-    # 发票 matched 且 gr_id 非空 → 建 create_pa,不建 confirm_receipt
-    ...
+import app.db.session as sm
+from app.api.v1.invoices import _on_invoice_matched
+from app.crud import user as user_crud
+from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
+from app.models.po import PurchaseOrder
+from app.models.pr import PurchaseRequest
+from app.models.task import Task
+from app.models.vendor import Vendor
+from app.schemas.auth import RegisterRequest
+
+
+async def _user(db, role):
+    return await user_crud.create(db, RegisterRequest(
+        email=f"{role}-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+        full_name=f"T {role}", role=role))
+
+
+async def _vendor(db):
+    v = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme", category="supplier",
+               contact_name="C", contact_email="c@x.com")
+    db.add(v); await db.flush()
+    return v
+
+
+async def _po(db, vendor, creator, *, po_type=2, pr_id=None):
+    po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=po_type,
+                       vendor_id=vendor.id, vendor_name="Acme", status="issued",
+                       created_by=creator.id, pr_id=pr_id)
+    db.add(po); await db.flush()
+    return po
+
+
+def _invoice(po_id, vendor_id, uploaded_by, *, gr_id=None, status="matched"):
+    return Invoice(
+        internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+        vendor_id=vendor_id, vendor_name="Acme", amount=Decimal("100"),
+        tax_amount=Decimal("0"), total_amount=Decimal("100"),
+        invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1), status=status,
+        line_items=[], po_id=po_id, gr_id=gr_id, uploaded_by=uploaded_by)
+
+
+async def _open(db, po_id, ttype):
+    return (await db.execute(select(Task).where(
+        Task.type == ttype, Task.document_id == po_id,
+        Task.is_completed.is_(False)))).scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_matched_no_gr_physical_creates_confirm_receipt_warehouse():
+    async with sm.AsyncSessionLocal() as db:
+        u = await _user(db, "warehouse_staff")
+        v = await _vendor(db)
+        po = await _po(db, v, u, po_type=2)                 # physical
+        inv = _invoice(po.id, v.id, u.id, gr_id=None)
+        db.add(inv); await db.flush()
+        await _on_invoice_matched(db, inv)
+        await db.flush()
+        cr = await _open(db, po.id, "confirm_receipt")
+        assert len(cr) == 1
+        assert cr[0].assigned_role == "warehouse_staff"
+        assert cr[0].assigned_user_id is None
+        assert cr[0].document_type == "po"
+        assert await _open(db, po.id, "create_pa") == []
+
+
+@pytest.mark.asyncio
+async def test_matched_no_gr_service_creates_confirm_receipt_requester():
+    async with sm.AsyncSessionLocal() as db:
+        req = await _user(db, "requester")
+        v = await _vendor(db)
+        pr = PurchaseRequest(number=f"PR-{uuid.uuid4().hex[:8]}", title="T",
+                             type=4, created_by=req.id)
+        db.add(pr); await db.flush()
+        po = await _po(db, v, req, po_type=4, pr_id=pr.id)  # service
+        inv = _invoice(po.id, v.id, req.id, gr_id=None)
+        db.add(inv); await db.flush()
+        await _on_invoice_matched(db, inv)
+        await db.flush()
+        cr = await _open(db, po.id, "confirm_receipt")
+        assert len(cr) == 1
+        assert cr[0].assigned_role == "requester"
+        assert cr[0].assigned_user_id == req.id
+
+
+@pytest.mark.asyncio
+async def test_matched_with_gr_creates_create_pa():
+    async with sm.AsyncSessionLocal() as db:
+        req = await _user(db, "requester")
+        v = await _vendor(db)
+        pr = PurchaseRequest(number=f"PR-{uuid.uuid4().hex[:8]}", title="T",
+                             type=2, created_by=req.id)
+        db.add(pr); await db.flush()
+        po = await _po(db, v, req, po_type=2, pr_id=pr.id)
+        gr = GoodsReceipt(number=f"GR-{uuid.uuid4().hex[:8]}", title="G", po_id=po.id,
+                          po_number=po.number, vendor_id=v.id, vendor_name="Acme",
+                          gr_type="physical", procurement_type=2, status="collected",
+                          created_by=req.id)
+        db.add(gr); await db.flush()
+        inv = _invoice(po.id, v.id, req.id, gr_id=gr.id)    # 3-way
+        db.add(inv); await db.flush()
+        await _on_invoice_matched(db, inv)
+        await db.flush()
+        cp = await _open(db, po.id, "create_pa")
+        assert len(cp) == 1
+        assert cp[0].assigned_role == "requester"
+        assert cp[0].assigned_user_id == req.id
+        assert await _open(db, po.id, "confirm_receipt") == []
 ```
-（用既有 invoice-match 测试的构造方式；断言查 `tasks` 表 type/assigned_role/assigned_user_id。）
 
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd epms-api && python -m pytest tests/ -k "confirm_receipt and (physical or service or create_pa)" -v
+cd epms-api && python -m pytest tests/test_invoice_match_dispatch.py -v
 ```
-Expected: FAIL。
+Expected: FAIL（`ImportError: cannot import name '_on_invoice_matched'`）。
 
 - [ ] **Step 3: 改造分派器（app/api/v1/invoices.py）**
 
@@ -746,7 +851,33 @@ async def _on_invoice_matched(db, invoice) -> None:
         await _create_or_renotify_confirm_receipt(db, po, pr, invoice, is_physical(po.type))
 ```
 
-`_create_or_renotify_create_pa` = 把原函数 L104-140 的去重/建 create_pa/notify 逻辑原样搬入（assigned_role="requester", assigned_user_id=pr.created_by if pr else None）。
+`_create_or_renotify_create_pa` = 把原 `_notify_requester_create_pa` 去重/建/notify 逻辑抽出，**保留"无 PR 不建"原语义**（原函数 `if po is None or not po.pr_id: return`）：
+
+```python
+async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
+    if pr is None:                       # 原逻辑:PO 无 PR → 不建 create_pa
+        return
+    existing = (await db.execute(select(Task).where(
+        Task.type == "create_pa", Task.document_type == "po",
+        Task.document_id == po.id, Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+    if existing is not None:
+        fire_and_forget_notify(existing, db, extra_vars={"invoice_number": invoice.internal_ref})
+        return
+    task = Task(
+        type="create_pa", priority="normal", document_type="po",
+        document_id=po.id, document_number=po.number,
+        assigned_role="requester", assigned_user_id=pr.created_by,
+        title=f"Create Payment Application for {po.number}",
+        description=(f"Invoice {invoice.internal_ref} has been matched to PO {po.number}. "
+                     f"Please create a Payment Application to proceed with vendor payment."),
+        vendor=po.vendor_name, amount=po.total,
+    )
+    db.add(task)
+    await db.flush()
+    await db.refresh(task)
+    fire_and_forget_notify(task, db, extra_vars={"invoice_number": invoice.internal_ref})
+```
 
 新增 `_create_or_renotify_confirm_receipt`：
 
@@ -780,19 +911,21 @@ async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: boo
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": invoice.internal_ref})
 ```
 
-改两处调用点（L317、L545）`await _notify_requester_create_pa(db, result)` → `await _on_invoice_matched(db, result)`。
+改两处调用点（原 L317、L545）`await _notify_requester_create_pa(db, result)` → `await _on_invoice_matched(db, result)`（grep 确认无其它调用点）。
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Run tests to verify they pass + 回归匹配相关套件**
 
 ```bash
-cd epms-api && python -m pytest tests/ -k "confirm_receipt and (physical or service or create_pa)" -v
+cd epms-api && python -m pytest tests/test_invoice_match_dispatch.py -v
+# 回归:确保重构没破坏既有匹配/发票测试(两处调用点在 invoices.py ~L334/L574)
+cd epms-api && python -m pytest tests/test_invoices.py tests/test_invoice_allocations.py tests/test_match_tolerance.py tests/test_gr_invoice_backfill.py -v 2>&1 | tail -20
 ```
-Expected: PASS。
+Expected: 新 3 用例 PASS；既有匹配/backfill 套件对基线无新增 FAIL。
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add epms-api/app/api/v1/invoices.py epms-api/tests/
+git add epms-api/app/api/v1/invoices.py epms-api/tests/test_invoice_match_dispatch.py
 git commit -m "feat(invoice): dispatch create_pa vs confirm_receipt on match by 3-way state"
 ```
 
