@@ -1245,27 +1245,30 @@ git commit -m "fix(task): backfill create_pa only for 3-way matched POs"
 - Modify: `epms/src/pages/pa/PaCreatePage.tsx`
 - 验证：`epms/src/pages/gr/GrCreatePage.tsx`（已支持 `?poId=`，仅校验）
 
-**Interfaces:**
-- Consumes: 后端 422/403（无 3-way / 无权限）、`PaResponse.receipt_override*`、用户权限 `pa_override_receipt`（前端权限来源沿用现有 usePermissions/authz 钩子）。
+**Interfaces（已核实的真实锚点）:**
+- Consumes: 后端 422/403、`PaResponse.receipt_override*`。
+- **数据现成**：`PaCreatePage` 已有 `poInvoices = invoicesData?.items ?? []`（每张发票带 `status` + `gr_id` + `gr_ids`），`paType` state，`user`（`useAuthStore`）。
+- **权限钩子**：`import { useRolePermissions } from '@/hooks/useConfig'`；`const perms = useRolePermissions().data?.permissions`（沿用 VendorsPage/InvoiceListPage 同款）。
 - Produces: 非预付 + 无 3-way 时阻断 Submit；授权用户可勾 Override + 填理由后提交，payload 带 `receipt_override`/`receipt_override_reason`。
 
 - [ ] **Step 1: 定位现有结构**
 
 ```bash
-cd epms && sed -n '1,80p' src/pages/pa/PaCreatePage.tsx   # 看 PO 拉取/发票关联/submit payload/权限钩子
+cd epms && grep -nE "poInvoices|paType|useAuthStore|handleSubmit|createPa|mutate|payload|invoice_ids|gr_ids" src/pages/pa/PaCreatePage.tsx | head -40
 ```
-确认：如何取当前 PO 的发票与 GR 关联（判断 3-way = 存在 matched 且挂 GR 的发票）、submit 的 body 组装处、如何读当前用户权限。
+确认：`poInvoices`（判 3-way）、submit 的 body 组装处（mutation payload）、`paType`。
 
 - [ ] **Step 2: 计算 3-way 状态 + 权限**
 
-在组件内基于已拉取的 PO 发票列表算：
+顶部 import 加 `useRolePermissions`（若未引），组件内：
 
 ```tsx
+const perms = useRolePermissions().data?.permissions
 const hasThreeWay = poInvoices.some(
-  (inv) => inv.status === 'matched' && !!inv.gr_id,
+  (inv) => inv.status === 'matched' && (!!inv.gr_id || (inv.gr_ids?.length ?? 0) > 0),
 )
 const isPrepayment = paType === 'prepayment'
-const canOverride = perms?.pa_override_receipt === true   // 沿用现有权限钩子
+const canOverride = user?.role === 'system_admin' || !!perms?.pa_override_receipt
 const receiptBlocked = !isPrepayment && !hasThreeWay
 ```
 
