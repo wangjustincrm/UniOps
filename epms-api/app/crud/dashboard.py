@@ -493,7 +493,9 @@ async def build_warehouse(db: AsyncSession) -> DashboardResponse:
     done_r = await db.execute(
         select(func.count()).select_from(GoodsReceipt).where(
             GoodsReceipt.status.in_(["confirmed", "collected"]),
-            func.date_trunc("month", GoodsReceipt.updated_at) == func.date_trunc("month", func.now()),
+            # collected_at is stamped once at collect/confirm — unlike updated_at
+            # (onupdate=now), it is never bumped by later unrelated writes.
+            func.date_trunc("month", GoodsReceipt.collected_at) == func.date_trunc("month", func.now()),
         )
     )
 
@@ -575,7 +577,9 @@ async def build_finance_bp(db: AsyncSession) -> DashboardResponse:
     approved_today_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
             PaymentApplication.status == "approved",
-            func.date_trunc("day", PaymentApplication.updated_at) == func.date_trunc("day", func.now()),
+            # approved_at is stamped once at the approval transition (approval
+            # engine); updated_at would drift on any later edit/re-sync.
+            func.date_trunc("day", PaymentApplication.approved_at) == func.date_trunc("day", func.now()),
         )
     )
     pending_value_r = await db.execute(
