@@ -76,67 +76,88 @@ async def _has_open_match_task(db, user_id: uuid.UUID, invoice_id: uuid.UUID) ->
     return row is not None
 
 
-async def _notify_requester_create_pa(db, invoice) -> None:
+async def _on_invoice_matched(db, invoice) -> None:
+    """发票 match 后按是否达成 3-way 分流:
+    - 已挂 GR(gr_id 非空) → create_pa 任务(Requester)
+    - 未挂 GR → confirm_receipt 催收货(物理→warehouse_staff 池 / 服务→Requester)
     """
-    After an invoice is matched to a PO, find the requester of the linked PR
-    and create a create_pa task for them (if one doesn't already exist for this PO).
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-
+    from app.schemas.gr import is_physical
     if not invoice.po_id:
         return
-
-    # Fetch PO to get pr_id and po_number
-    po_result = await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == invoice.po_id))
-    po = po_result.scalar_one_or_none()
-    if po is None or not po.pr_id:
+    po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == invoice.po_id))).scalar_one_or_none()
+    if po is None:
         return
+    pr = None
+    if po.pr_id:
+        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == po.pr_id))).scalar_one_or_none()
 
-    # Fetch PR to get requester
-    pr_result = await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == po.pr_id))
-    pr = pr_result.scalar_one_or_none()
-    if pr is None:
+    three_way = invoice.status == "matched" and invoice.gr_id is not None
+    if three_way:
+        await _create_or_renotify_create_pa(db, po, pr, invoice)   # = 原 create_pa 逻辑抽出
+    else:
+        await _create_or_renotify_confirm_receipt(db, po, pr, invoice, is_physical(po.type))
+
+
+async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
+    """
+    After an invoice is 3-way matched (has a GR), find the requester of the
+    linked PR and create a create_pa task for them (if one doesn't already
+    exist for this PO).
+    """
+    if pr is None:                       # 原逻辑:PO 无 PR → 不建 create_pa
         return
-
-    requester_id = pr.created_by
-
-    # Avoid duplicate: check if a pending create_pa task already exists for this PO
-    existing_result = await db.execute(
-        select(Task).where(
-            Task.type == "create_pa",
-            Task.document_type == "po",
-            Task.document_id == invoice.po_id,
-            Task.is_completed.is_(False),
-        )
-    )
-    existing_task = existing_result.scalar_one_or_none()
-    if existing_task is not None:
-        # Task already exists — re-notify with the new invoice number
-        fire_and_forget_notify(existing_task, db, extra_vars={"invoice_number": invoice.internal_ref})
+    existing = (await db.execute(select(Task).where(
+        Task.type == "create_pa", Task.document_type == "po",
+        Task.document_id == po.id, Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+    if existing is not None:
+        fire_and_forget_notify(existing, db, extra_vars={"invoice_number": invoice.internal_ref})
         return
-
-    # Create the task
     task = Task(
-        type="create_pa",
-        priority="normal",
-        document_type="po",
-        document_id=invoice.po_id,
-        document_number=po.number,
-        assigned_role="requester",
-        assigned_user_id=requester_id,
+        type="create_pa", priority="normal", document_type="po",
+        document_id=po.id, document_number=po.number,
+        assigned_role="requester", assigned_user_id=pr.created_by,
         title=f"Create Payment Application for {po.number}",
-        description=(
-            f"Invoice {invoice.internal_ref} has been matched to PO {po.number}. "
-            f"Please create a Payment Application to proceed with vendor payment."
-        ),
-        vendor=po.vendor_name,
-        amount=po.total,
+        description=(f"Invoice {invoice.internal_ref} has been matched to PO {po.number}. "
+                     f"Please create a Payment Application to proceed with vendor payment."),
+        vendor=po.vendor_name, amount=po.total,
     )
     db.add(task)
     await db.flush()
     await db.refresh(task)
+    fire_and_forget_notify(task, db, extra_vars={"invoice_number": invoice.internal_ref})
 
+
+async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: bool) -> None:
+    """
+    After an invoice is matched to a PO without a GR yet, nudge someone to
+    confirm receipt (physical → warehouse_staff pool; service → requester).
+    """
+    existing = (await db.execute(select(Task).where(
+        Task.type == "confirm_receipt",
+        Task.document_type == "po",
+        Task.document_id == po.id,
+        Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+    if existing is not None:
+        fire_and_forget_notify(existing, db, extra_vars={"invoice_number": invoice.internal_ref})
+        return
+    if physical:
+        assigned_role, assigned_user_id = "warehouse_staff", None
+    else:
+        assigned_role, assigned_user_id = "requester", (pr.created_by if pr else None)
+    task = Task(
+        type="confirm_receipt", priority="normal",
+        document_type="po", document_id=po.id, document_number=po.number,
+        assigned_role=assigned_role, assigned_user_id=assigned_user_id,
+        title=f"Confirm goods receipt for {po.number}",
+        description=(f"Invoice {invoice.internal_ref} has been matched to PO {po.number} "
+                     f"but goods/service is not received yet. Please confirm receipt and create a GR."),
+        vendor=po.vendor_name, amount=po.total,
+    )
+    db.add(task)
+    await db.flush()
+    await db.refresh(task)
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": invoice.internal_ref})
 
 
@@ -331,7 +352,7 @@ async def match_invoice(
                 .where(InvoicePoAllocation.invoice_id == result.id).limit(1)
             )).first() is not None
             if has_alloc:
-                await _notify_requester_create_pa(db, result)
+                await _on_invoice_matched(db, result)
 
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
@@ -571,7 +592,7 @@ async def match_review(
         fire_and_forget_notify(redo, db, extra_vars={"invoice_number": inv.internal_ref})
 
     if result.status == "matched":
-        await _notify_requester_create_pa(db, result)
+        await _on_invoice_matched(db, result)
     await finance_sync.sync_ap_invoice(db, result, token)
     await _attach_match_assignees(db, [result])
     return result
