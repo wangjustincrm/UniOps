@@ -44,6 +44,8 @@ PERMISSION_KEYS: list[str] = [
     "create_pr", "create_gr", "invoice_upload",
     "vendor_master", "parts_catalog", "admin_panel",
     "data_maintenance",
+    # 无收货 override:允许在无 3-way matched 发票时强制建 PA(带理由,落 PA 审计)。
+    "pa_override_receipt",
     # Portal Finance sidebar visibility. view_budget_dashboard / view_budget_plans
     # gate the two cross-module budget views (also visible to dept managers);
     # view_finance gates the rest of the FINANCE section (Account Catalog, Factor
@@ -240,14 +242,14 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     "director":             _P(view_pr=True, view_pa=True, **_BOOKING),
     "gm":                   _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BOOKING),
     "opm":                  _P(create_pr=True,  create_gr=True,  **_VIEW_ALL, **_BOOKING),
-    "procurement_officer":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, **_VIEW_ALL, **_BOOKING),
-    "procurement_manager":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, **_VIEW_ALL, **_BOOKING),
+    "procurement_officer":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, pa_override_receipt=True, **_VIEW_ALL, **_BOOKING),
+    "procurement_manager":  _P(create_gr=True,  vendor_master=True, parts_catalog=True, pa_override_receipt=True, **_VIEW_ALL, **_BOOKING),
     "warehouse_staff":      _P(create_gr=True,  view_gr=True, **_BOOKING),
     "ap_clerk":             _P(create_gr=True,  invoice_upload=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
-    "finance_bp":           _P(create_gr=True,  **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
-    "finance_manager":      _P(create_pr=True,  create_gr=True,  admin_panel=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_bp":           _P(create_gr=True,  pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_manager":      _P(create_pr=True,  create_gr=True,  admin_panel=True, pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "vendor_manager":       _P(vendor_master=True, admin_panel=True, **_BOOKING),
-    "cfo":                  _P(**_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "cfo":                  _P(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "auditor":              _P(**_VIEW_ALL, **_BOOKING),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
