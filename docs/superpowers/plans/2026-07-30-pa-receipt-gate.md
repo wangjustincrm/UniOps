@@ -81,6 +81,7 @@ git commit -m "docs: PA receipt-gate spec + plan"
 **Files:**
 - Modify: `epms-api/app/crud/config.py`（`PERMISSION_KEYS` ~L42、`_DEFAULT_ROLE_PERMISSIONS` ~L235）
 - Modify: `identity-api/scripts/seed_authz.py`（`MODULE_BY_KEY` ~L14、`DEFAULTS` ~L59）
+- Modify: `epms-api/tests/conftest.py`（`_MODULE_BY_KEY` ~L34、`_DEFAULTS` ~L80 —— 测试用的矩阵**第三份拷贝**，`_restore_default_matrix` fixture 用它给测试库播种；不同步则 Task 4 里 finance 角色在测试中拿不到 `pa_override_receipt`，override 用例会误 403）
 - Test: `epms-api/tests/test_admin.py`
 
 **Interfaces:**
@@ -147,12 +148,24 @@ Expected: FAIL（KeyError / assert False，因键未注册）。
     "cfo":                 _p(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
 ```
 
+- [ ] **Step 4b: 同步测试矩阵拷贝（epms-api/tests/conftest.py）**
+
+conftest 有一份独立的矩阵拷贝供测试库播种。`_MODULE_BY_KEY` 里 `"data_maintenance": "epms",` 后加 `"pa_override_receipt": "epms",`；`_DEFAULTS` 里对授权角色补 `pa_override_receipt=True`（与 config.py/seed_authz 完全一致：procurement_officer / procurement_manager / finance_bp / finance_manager / cfo；system_admin 已全 True）：
+
+```python
+    "procurement_officer": _p(create_gr=True, vendor_master=True, parts_catalog=True, pa_override_receipt=True, **_VIEW_ALL, **_BOOKING),
+    "procurement_manager": _p(create_gr=True, vendor_master=True, parts_catalog=True, pa_override_receipt=True, **_VIEW_ALL, **_BOOKING),
+    "finance_bp":          _p(create_gr=True, pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "finance_manager":     _p(create_pr=True, create_gr=True, admin_panel=True, pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+    "cfo":                 _p(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
+```
+
 - [ ] **Step 5: Run test to verify it passes**
 
 ```bash
 cd epms-api && python -m pytest tests/test_admin.py::test_pa_override_receipt_permission_registered -v
 ```
-Expected: PASS。
+Expected: PASS。（另可加一条断言 `_DEFAULTS["finance_manager"]["pa_override_receipt"] is True` 的 conftest 一致性测试，非必需。）
 
 - [ ] **Step 6: 部署待办记录（不写代码，写进 plan 备注即可）**
 
@@ -165,7 +178,7 @@ docker exec uniops_identity_api python -m scripts.seed_authz
 - [ ] **Step 7: Commit**
 
 ```bash
-git add epms-api/app/crud/config.py identity-api/scripts/seed_authz.py epms-api/tests/test_admin.py
+git add epms-api/app/crud/config.py identity-api/scripts/seed_authz.py epms-api/tests/conftest.py epms-api/tests/test_admin.py
 git commit -m "feat(authz): add pa_override_receipt matrix permission"
 ```
 
