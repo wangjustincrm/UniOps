@@ -283,7 +283,9 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
                 "summary": f"{ap.vendor_name or ''} {ap.po_number or ''}".strip(),
                 "pay_term": d["pay_term"], "obj_type": d["obj_type"],
                 "supplier": ap.vendor_name or "", "department": dept_code,
-                "cost_center": cc_nc, "employee": emp, "revexp": revexp_code,
+                # cost_center left blank: UniOps cost centres don't line up with
+                # NC's, so sending a code makes the NC import error out.
+                "cost_center": "", "employee": emp, "revexp": revexp_code,
                 "currency": ap.currency, "rate": "1",
                 "money": _s(notax_d + tax_d), "qty": "",
                 "tax_code": nc_tax_code, "tax_rate": rate,

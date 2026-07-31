@@ -166,8 +166,8 @@ async def test_build_rows_epms_allocations(db_session):
     # head department = first body row's dept CODE
     assert h["department"] == "0104"
     b1 = next(b for b in bodies if b["money"] == "67.80")
-    # cost_center: MOH-0104-P01 → 'P01' via NC_CC_BY_UNIOPS
-    assert b1["cost_center"] == "P01"
+    # cost_center always blank — UniOps CCs don't map to NC's
+    assert b1["cost_center"] == ""
     # revexp is the budget CODE directly
     assert b1["revexp"] == "CRM004"
     # notax/tax always emitted as zero — NC recomputes from money + tax_rate
@@ -213,8 +213,8 @@ async def test_build_rows_oa_pa_chain(db_session):
     heads, bodies, errors = await build_export_rows(db_session, [ap.id])
     assert errors == [] and len(bodies) == 1
     b = bodies[0]
-    # GA-0101 → 'HR' via NC_CC_BY_UNIOPS
-    assert b["cost_center"] == "HR"
+    # cost_center always blank — UniOps CCs don't map to NC's
+    assert b["cost_center"] == ""
     # revexp = budget CODE directly
     assert b["revexp"] == "CRM010"
     assert b["employee"] == "Alice Wong"
@@ -341,6 +341,16 @@ async def test_export_endpoint_allows_ap_clerk(client, db_session):
     r = await client.post("/finance/v1/ap/nc-export",
                           json={"ap_ids": [str(ap.id)]}, headers=_h(role="ap_clerk"))
     assert r.status_code == 200, r.text
+
+
+async def test_cors_exposes_content_disposition(client):
+    """Cross-origin fetch must be able to read the export filename (AP number);
+    without expose_headers the browser hides Content-Disposition and the frontend
+    falls back to a generic 'nc-export.xlsx'. Origin must be an allowed one."""
+    r = await client.get("/finance/v1/ap/nc-export/batches",
+                         headers={**_h(), "Origin": "http://localhost:5177"})
+    assert r.status_code == 200
+    assert "Content-Disposition" in r.headers.get("access-control-expose-headers", "")
 
 
 async def test_export_endpoint_guards(client, db_session):

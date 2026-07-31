@@ -17,6 +17,9 @@ app.add_middleware(
     CORSMiddleware, allow_origins=settings.allowed_origins, allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    # Content-Disposition must be exposed or cross-origin fetch() can't read the
+    # NC export filename (AP number) and falls back to a generic name.
+    expose_headers=["Content-Disposition"],
 )
 
 app.include_router(api_router, prefix="/finance/v1")
