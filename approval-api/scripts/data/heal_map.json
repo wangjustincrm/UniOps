@@ -1,0 +1,948 @@
+{
+ "pa": {
+  "PA-20260625-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20250908-0026": {
+   "role": "ap_clerk",
+   "step": 4,
+   "mode": "task",
+   "pms_status": "AP REVIEW"
+  },
+  "PA-20260701-0009": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260626-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260629-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260616-0012": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0014": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260706-0018": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260707-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260707-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260707-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260707-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260708-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260708-0004": {
+   "role": "ap_clerk",
+   "step": 4,
+   "mode": "task",
+   "pms_status": "AP REVIEW"
+  },
+  "PA-20260708-0006": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260706-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0015": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260710-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0016": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0006": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260421-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0012": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0012": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0012": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0016": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260716-0006": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0013": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0014": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0022": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260626-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0013": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0016": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0017": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0012": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0014": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0018": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260706-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260706-0014": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260706-0019": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260707-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260710-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260710-0003": {
+   "role": "dept_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "DEP MANAGER APPROVING"
+  },
+  "PA-20260710-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260708-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260713-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260713-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0009": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260720-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260722-0003": {
+   "role": "dept_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "DEP MANAGER APPROVING"
+  },
+  "PA-20260630-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0009": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260703-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260703-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260713-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260723-0002": {
+   "role": "finance_bp",
+   "step": 3,
+   "mode": "task",
+   "pms_status": "BP APPROVING"
+  },
+  "PA-20260706-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260709-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260709-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260709-0018": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260724-0002": {
+   "role": "dept_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "DEP MANAGER APPROVING"
+  },
+  "PA-20260714-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260714-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260714-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260720-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260720-0006": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260709-0009": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260709-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0006": {
+   "role": "ap_clerk",
+   "step": 4,
+   "mode": "task",
+   "pms_status": "AP REVIEW"
+  },
+  "PA-20260715-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0009": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260715-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260716-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260716-0009": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260716-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260716-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260720-0001": {
+   "role": "ap_clerk",
+   "step": 4,
+   "mode": "task",
+   "pms_status": "AP REVIEW"
+  },
+  "PA-20260720-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0006": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260720-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260721-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0017": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0015": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260703-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260624-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0011": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0010": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260713-0004": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260713-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260720-0002": {
+   "role": "ap_clerk",
+   "step": 4,
+   "mode": "task",
+   "pms_status": "AP REVIEW"
+  },
+  "PA-20260720-0008": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260717-0013": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260721-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260721-0003": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0006": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0017": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0006": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260626-0005": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0013": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260626-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260625-0018": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260701-0015": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0009": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260630-0001": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260317-0004": {
+   "role": "finance_bp",
+   "step": 3,
+   "mode": "task",
+   "pms_status": "BP APPROVING"
+  },
+  "PA-20260720-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260618-0016": {
+   "role": "dept_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "DEP MANAGER APPROVING"
+  },
+  "PA-20260618-0017": {
+   "role": "dept_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "DEP MANAGER APPROVING"
+  },
+  "PA-20260702-0019": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0020": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0002": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260702-0007": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  },
+  "PA-20260615-0015": {
+   "role": "finance_manager",
+   "step": 5,
+   "mode": "approve",
+   "pms_status": "FN MANAGER APPROVING"
+  }
+ },
+ "po": {
+  "PO-700-2405-02": {
+   "role": "procurement_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "SC MANAGER APPROVING"
+  },
+  "PO-195-2501-01": {
+   "role": "procurement_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "SC MANAGER APPROVING"
+  },
+  "PO-193-2501-01": {
+   "role": "procurement_manager",
+   "step": 0,
+   "mode": "task",
+   "pms_status": "SC MANAGER APPROVING"
+  },
+  "PO-296-2607-01": {
+   "role": "gm_or_opm",
+   "step": 1,
+   "mode": "task",
+   "pms_status": "OPM APPROVING"
+  }
+ },
+ "skip": [
+  {
+   "number": "PA-20241202-0001",
+   "type": "pa",
+   "reason": "PMS_CLOSED_skip",
+   "pms_status": "AP REVIEW",
+   "status0": "CLOSED"
+  },
+  {
+   "number": "PA-20260707-0001",
+   "type": "pa",
+   "reason": "NOT_FOUND_IN_PMS",
+   "pms_status": null,
+   "status0": null
+  },
+  {
+   "number": "PO-125-2607-01",
+   "type": "po",
+   "reason": "NOT_FOUND_IN_PMS",
+   "pms_status": null,
+   "status0": null
+  },
+  {
+   "number": "PO-404-2607-02",
+   "type": "po",
+   "reason": "NOT_FOUND_IN_PMS",
+   "pms_status": null,
+   "status0": null
+  }
+ ]
+}
