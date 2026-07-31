@@ -43,8 +43,8 @@ async def _make_issued_po(client, vendor_id, lines=None):
 
 async def _link_po_to_pr(test_engine, po_id: str):
     """Insert a minimal PR row and point the given (already API-created) PO's
-    pr_id at it, so `_notify_requester_create_pa`'s `po.pr_id` lookup finds a
-    requester. A PR-less PO makes that helper return early at the `po.pr_id`
+    pr_id at it, so `_on_invoice_matched`'s `po.pr_id` lookup finds a
+    requester. A PR-less PO makes that dispatch return early at the `po.pr_id`
     check, which would make a "no create_pa task" assertion pass trivially."""
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
@@ -71,6 +71,15 @@ async def _create_pa_task_for_po(test_engine, po_id: str):
         return (await db.execute(select(Task).where(
             Task.type == "create_pa", Task.document_type == "po",
             Task.document_id == uuid.UUID(po_id),
+        ))).scalar_one_or_none()
+
+
+async def _confirm_receipt_task_for_po(test_engine, po_id: str):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        return (await db.execute(select(Task).where(
+            Task.type == "confirm_receipt", Task.document_type == "po",
+            Task.document_id == uuid.UUID(po_id), Task.is_completed.is_(False),
         ))).scalar_one_or_none()
 
 
@@ -632,11 +641,13 @@ def test_match_request_accepts_reference_po_id():
 
 
 @pytest.mark.asyncio
-async def test_allocated_match_to_pr_backed_po_creates_create_pa_task(admin_client, test_engine):
+async def test_allocated_match_to_pr_backed_po_creates_confirm_receipt_task(admin_client, test_engine):
     """Control for the fee-only negative below: a NORMAL (allocated) match to a
-    PR-backed PO DOES create a create_pa task for the PR's requester. Proves
-    _notify_requester_create_pa fires when it should, so the fee-only test's
-    "no task" assertion is meaningful rather than a trivial no-op."""
+    PR-backed PO DOES fire the post-match dispatch hook. This PO has no GR yet,
+    so the match is not yet 3-way — the hook creates a confirm_receipt task
+    (not create_pa) for the PR's requester. Proves _on_invoice_matched fires
+    when it should, so the fee-only test's "no task" assertion is meaningful
+    rather than a trivial no-op."""
     v = await _make_vendor(admin_client, "VND-FEEONLY-PA-01")
     po = await _make_issued_po(admin_client, v["id"])
     await _link_po_to_pr(test_engine, po["id"])
@@ -650,7 +661,7 @@ async def test_allocated_match_to_pr_backed_po_creates_create_pa_task(admin_clie
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "matched"
 
-    task = await _create_pa_task_for_po(test_engine, po["id"])
+    task = await _confirm_receipt_task_for_po(test_engine, po["id"])
     assert task is not None
 
 

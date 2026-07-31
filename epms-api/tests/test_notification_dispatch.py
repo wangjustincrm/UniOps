@@ -451,3 +451,12 @@ async def test_shared_mailbox_delivery_is_logged_without_user(captured_emails):
     assert logs[0].user_id is None
     assert logs[0].recipient_email == SHARED_MAILBOX
     assert logs[0].status == "ok"
+
+
+def test_confirm_receipt_template_and_link():
+    from app.services.notification import _infer_template, _task_link
+    import uuid
+    pid = uuid.uuid4()
+    assert _infer_template("confirm_receipt", is_followup=False) == "confirm_receipt"
+    link = _task_link("po", pid, task_type="confirm_receipt")
+    assert link.endswith(f"/gr/new?poId={pid}")

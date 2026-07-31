@@ -442,3 +442,12 @@ async def test_pa_delete_clears_prepayment_self_reference(test_engine):
         ids = {r[0]: r[1] for r in rows}
         assert prepay_id not in ids
         assert ids.get(final_id) is None
+
+
+def test_pa_override_receipt_permission_registered():
+    from app.crud.config import PERMISSION_KEYS, _DEFAULT_ROLE_PERMISSIONS
+    assert "pa_override_receipt" in PERMISSION_KEYS
+    # 授权角色默认有,requester 默认无
+    assert _DEFAULT_ROLE_PERMISSIONS["finance_manager"]["pa_override_receipt"] is True
+    assert _DEFAULT_ROLE_PERMISSIONS["procurement_officer"]["pa_override_receipt"] is True
+    assert _DEFAULT_ROLE_PERMISSIONS["requester"]["pa_override_receipt"] is False

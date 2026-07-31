@@ -34,7 +34,11 @@ logger = logging.getLogger(__name__)
 # below plus OA expense-claim types (document_type = claim_type.lower(), which is
 # open-ended — custom forms included). Everything not explicitly mapped is
 # therefore an OA expense claim and deep-links to OA's /expenses/{id}.
-def _task_link(document_type: str, document_id: Any) -> str:
+def _task_link(document_type: str, document_id: Any, task_type: str | None = None) -> str:
+    # confirm_receipt: route the receiver straight to the New GR page, prefilled
+    # with the PO (frontend already supports ?poId=).
+    if task_type == "confirm_receipt":
+        return f"{settings.EPMS_URL}/gr/new?poId={document_id}"
     dt = (document_type or "").lower()
     routes: dict[str, tuple[str, str]] = {
         "pr":          (settings.EPMS_URL,    "/pr/{id}"),
@@ -231,13 +235,14 @@ async def _dispatch(
     # ── Common template variables ───────────────────────────────────────────
     # Deep-link resolves per module from the document_type (this notifier serves
     # every module, not just EPMS — see _task_link).
-    link = _task_link(task.document_type, task.document_id)
+    link = _task_link(task.document_type, task.document_id, task_type=task.type)
 
     base_vars: dict[str, Any] = {
         "company_name": cfg.name,
         "document_type": task.document_type.upper(),
         "document_number": task.document_number,
         "link": link,
+        "po_id": str(task.document_id) if task.document_type == "po" else "",
         # Convenience aliases so templates can use natural names
         "pr_number": task.document_number,
         "po_number": task.document_number,
@@ -380,6 +385,7 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "collect_goods": "gr_collection_ready",
         "confirm_service_gr": "service_gr_pending",
         "create_pa": "create_pa_reminder",
+        "confirm_receipt": "confirm_receipt",
         "approve_pa": "pa_approval_request",
         "settle_prepayment": "prepayment_settlement_overdue",
         "match_invoice": "match_invoice_assigned",

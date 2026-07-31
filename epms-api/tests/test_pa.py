@@ -30,6 +30,55 @@ async def _make_po(client, vendor_id):
     return po.json()
 
 
+# _make_bare_po = _make_po: creates a PO with no invoice at all → no 3-way match.
+_make_bare_po = _make_po
+
+
+async def _make_three_way_po(admin_client, test_engine, vendor_id):
+    """Build a PO that already satisfies the 3-way match gate: a real GoodsReceipt
+    row plus a 'matched' Invoice pointing at it (Invoice.gr_id is a FK to
+    goods_receipts.id). PO is created via the API (draft); the GR + matched
+    invoice are inserted directly on a committed session so the HTTP endpoint's
+    own session (a different connection) can see them."""
+    import uuid as _uuid
+    from datetime import date as _date
+    from decimal import Decimal as _Decimal
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud import user as user_crud
+    from app.models.gr import GoodsReceipt
+    from app.models.invoice import Invoice
+    from app.schemas.auth import RegisterRequest
+
+    po = await _make_po(admin_client, vendor_id)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        user = await user_crud.create(db, RegisterRequest(
+            email=f"tw-pa-{_uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+            full_name="TW PA Tester", role="warehouse_staff",
+        ))
+        gr = GoodsReceipt(
+            number=f"GR-{_uuid.uuid4().hex[:8]}", title="Test GR",
+            po_id=_uuid.UUID(po["id"]), po_number=po["number"],
+            vendor_id=_uuid.UUID(vendor_id), vendor_name="PA Vendor",
+            gr_type="standard", procurement_type=1, currency="CAD",
+            status="pending_ack", created_by=user.id,
+        )
+        db.add(gr)
+        await db.flush()
+        inv = Invoice(
+            internal_ref=f"I-{_uuid.uuid4().hex[:6]}", vendor_invoice_number=f"I-{_uuid.uuid4().hex[:6]}",
+            vendor_id=_uuid.UUID(vendor_id), vendor_name="PA Vendor",
+            amount=_Decimal("400"), tax_amount=_Decimal("52"), total_amount=_Decimal("452"),
+            invoice_date=_date(2026, 1, 1), due_date=_date(2026, 2, 1),
+            status="matched", line_items=[],
+            po_id=_uuid.UUID(po["id"]), gr_id=gr.id, uploaded_by=user.id,
+        )
+        db.add(inv)
+        await db.commit()
+    return po
+
+
 async def _make_approved_po(client, vendor_id):
     po = await client.post(PO_URL, json={
         "title": "PA Test PO", "type": 2, "vendor_id": vendor_id,
@@ -113,8 +162,12 @@ async def test_list_pas_search(admin_client, test_engine):
     v2.raise_for_status()
     po1 = await _make_po(admin_client, v1.json()["id"])
     po2 = await _make_po(admin_client, v2.json()["id"])
-    pa1 = await _create_pa(admin_client, po1["id"])
-    pa2 = await _create_pa(admin_client, po2["id"])
+    # Bare POs have no 3-way matched invoice; override the receipt gate — this
+    # test exercises search, not the gate itself.
+    pa1 = await _create_pa(admin_client, po1["id"],
+                           receipt_override=True, receipt_override_reason="search test setup")
+    pa2 = await _create_pa(admin_client, po2["id"],
+                           receipt_override=True, receipt_override_reason="search test setup")
 
     async def _numbers(term):
         r = await admin_client.get(PA_URL, params={"search": term})
@@ -304,6 +357,58 @@ async def _make_prepayment(client, po_id, subtotal="100.00", tax_amount="0.00"):
     return pa
 
 
+# ── Receipt gate (3-way match required for non-prepayment PAs) ────────────────
+
+@pytest.mark.asyncio
+async def test_regular_pa_blocked_without_three_way(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-BLOCK")
+    po = await _make_bare_po(admin_client, v["id"])          # 无 matched 发票 → 无 3-way
+    r = await admin_client.post(PA_URL, json=_pa_payload(po["id"]))   # 不带 override 标志
+    assert r.status_code == 422, r.text
+    assert "goods receipt" in r.json()["detail"].lower() or "3-way" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_regular_pa_allowed_with_three_way(admin_client, test_engine):
+    v = await _make_vendor(admin_client, "VND-GATE-OK")
+    po = await _make_three_way_po(admin_client, test_engine, v["id"])
+    r = await admin_client.post(PA_URL, json=_pa_payload(po["id"]))
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_prepayment_pa_exempt_from_gate(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-PREPAY")
+    po = await _make_bare_po(admin_client, v["id"])          # 无 3-way
+    r = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="prepayment", prepayment_pct="50",
+        expected_settlement_date="2026-05-01", subtotal="100.00", tax_amount="0.00"))
+    assert r.status_code == 201, r.text                       # 预付豁免
+
+
+@pytest.mark.asyncio
+async def test_override_with_permission_persists(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-OVR")
+    po = await _make_bare_po(admin_client, v["id"])          # 无 3-way,但 admin 有 pa_override_receipt
+    r = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], receipt_override=True, receipt_override_reason="urgent freight in transit"))
+    assert r.status_code == 201, r.text
+    data = r.json()
+    assert data["receipt_override"] is True
+    assert data["receipt_override_reason"] == "urgent freight in transit"
+    assert data["receipt_override_by"] is not None
+
+
+@pytest.mark.asyncio
+async def test_override_requires_reason(admin_client):
+    v = await _make_vendor(admin_client, "VND-GATE-NOREASON")
+    po = await _make_bare_po(admin_client, v["id"])
+    r = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], receipt_override=True, receipt_override_reason="   "))   # 空白理由
+    assert r.status_code == 422, r.text
+    assert "reason" in r.json()["detail"].lower()
+
+
 @pytest.mark.asyncio
 async def test_settlement_payment_amount_is_net_of_prepayment(admin_client):
     # prepaid 100; final invoice 500; applied 100 → net payable 400
@@ -316,6 +421,7 @@ async def test_settlement_payment_amount_is_net_of_prepayment(admin_client):
         prepayment_pa_id=prepay["id"],
         subtotal="500.00", tax_amount="0.00",
         prepayment_applied="100.00",
+        receipt_override=True, receipt_override_reason="settlement test setup",
     ))
     assert r.status_code == 201, r.text
     body = r.json()
@@ -341,6 +447,7 @@ async def test_settlement_balance_marks_prepayment_settled(admin_client, test_en
         prepayment_pa_id=prepay["id"],
         subtotal="500.00", tax_amount="0.00",
         prepayment_applied="100.00",
+        receipt_override=True, receipt_override_reason="settlement test setup",
     ))
     assert s.status_code == 201, s.text
     settlement_id = _uuid.UUID(s.json()["id"])
@@ -376,6 +483,7 @@ async def test_settlement_net_zero_exact_auto_reconciles(admin_client, test_engi
         prepayment_pa_id=prepay["id"],
         subtotal="500.00", tax_amount="0.00",
         prepayment_applied="500.00",
+        receipt_override=True, receipt_override_reason="settlement test setup",
     ))
     assert s.status_code == 201, s.text
     body = s.json()
@@ -407,6 +515,7 @@ async def test_settlement_net_zero_overpaid_needs_confirmation(admin_client, tes
         prepayment_pa_id=prepay["id"],
         subtotal="400.00", tax_amount="0.00",
         prepayment_applied="400.00",
+        receipt_override=True, receipt_override_reason="settlement test setup",
     ))
     assert s.status_code == 201, s.text
     sid = s.json()["id"]

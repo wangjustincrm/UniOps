@@ -12,6 +12,7 @@ import { usePos } from '@/hooks/usePos'
 import { useAuthStore } from '@/stores/auth.store'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useGrs } from '@/hooks/useGrs'
+import { useRolePermissions } from '@/hooks/useConfig'
 import type { ApiPo } from '@/services/po'
 
 export default function PaCreatePage() {
@@ -59,6 +60,8 @@ export default function PaCreatePage() {
   const [prepaymentApplied, setPrepaymentApplied] = useState('')
   const [notes, setNotes]               = useState('')
   const [submitted, setSubmitted]       = useState(false)
+  const [receiptOverride, setReceiptOverride]             = useState(false)
+  const [receiptOverrideReason, setReceiptOverrideReason] = useState('')
 
   // ── Derived ────────────────────────────────────────────────────────────────
   // A plain requester may only pay against POs linked to a PR they raised — even
@@ -87,6 +90,17 @@ export default function PaCreatePage() {
   const { data: grsData } = useGrs(selectedPoId ? { po_id: selectedPoId } : undefined)
   const { data: poActivePas } = usePas(selectedPoId ? { po_id: selectedPoId } : undefined)
   const poInvoices = invoicesData?.items ?? []
+
+  // Receipt gate — a non-prepayment PA normally requires a matched invoice backed
+  // by a goods receipt. Finance-authorized users can override with a reason.
+  const perms = useRolePermissions().data?.permissions
+  const hasThreeWay = poInvoices.some(
+    (inv) => inv.status === 'matched' && (!!inv.gr_id || (inv.gr_ids?.length ?? 0) > 0),
+  )
+  const isPrepayment = paType === 'prepayment'
+  const canOverride = user?.role === 'system_admin' || !!perms?.pa_override_receipt
+  const receiptBlocked = !isPrepayment && !hasThreeWay
+  const receiptOverrideMissing = receiptBlocked && (!canOverride || !receiptOverride || !receiptOverrideReason.trim())
 
   // settlement/balance「Original Prepayment PA」下拉数据源:本 PO 下未作废的预付 PA
   const linkablePrepayments = (poActivePas?.items ?? []).filter(
@@ -247,6 +261,12 @@ export default function PaCreatePage() {
       errors.push('Total payment amount must be greater than zero')
     if (isSettlementType && appliedNum > grossTotal + 0.01)
       errors.push('Prepayment applied cannot exceed the invoice total')
+    if (receiptOverrideMissing)
+      errors.push(
+        canOverride
+          ? 'Check the override box and provide a reason to proceed without a goods receipt'
+          : 'No goods receipt linked to a matched invoice — create a Goods Receipt first',
+      )
   }
 
   const toggleInvoice = (id: string) => {
@@ -281,6 +301,7 @@ export default function PaCreatePage() {
     if (isSettlementType && (appliedNum > grossTotal + 0.01)) return
     if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
     if (isSettlementType && !prepaymentPaId) return
+    if (receiptOverrideMissing) return
     try {
       const paLineItems = selectedPo.line_items
         .filter((l) => selectedLineIds.has(l.id))
@@ -317,6 +338,8 @@ export default function PaCreatePage() {
         prepayment_applied: isSettlementType ? (Math.min(appliedNum, prepaidAmount) || undefined) : undefined,
         line_items: paLineItems,
         notes: notes.trim() || undefined,
+        receipt_override: receiptBlocked && receiptOverride,
+        receipt_override_reason: receiptBlocked && receiptOverride ? receiptOverrideReason.trim() : null,
       })
       // net==0 settlements are finalized by the backend at creation (auto-reconciled
       // or queued for finance confirmation) and are no longer 'draft' — only submit
@@ -915,6 +938,36 @@ export default function PaCreatePage() {
             </div>
           )}
 
+          {/* Receipt gate — no matched, GR-backed invoice on this PO */}
+          {receiptBlocked && (
+            <div className="rounded-md border border-warning-300 bg-warning-50 px-4 py-3 flex flex-col gap-2">
+              <p className="text-sm font-medium text-warning-800">No goods receipt linked to a matched invoice yet.</p>
+              <p className="text-xs text-warning-700">
+                A Payment Application normally requires goods to be received. Create a Goods Receipt first.
+              </p>
+              {canOverride && (
+                <label className="flex items-start gap-2 text-xs text-warning-800">
+                  <input
+                    type="checkbox"
+                    checked={receiptOverride}
+                    onChange={(e) => setReceiptOverride(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span>Override — proceed without goods receipt (a reason is required).</span>
+                </label>
+              )}
+              {canOverride && receiptOverride && (
+                <textarea
+                  rows={2}
+                  value={receiptOverrideReason}
+                  onChange={(e) => setReceiptOverrideReason(e.target.value)}
+                  placeholder="Reason for override"
+                  className="px-3 py-2 rounded-lg border border-warning-300 text-xs focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+                />
+              )}
+            </div>
+          )}
+
           {/* Errors */}
           {errors.length > 0 && (
             <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
@@ -929,7 +982,7 @@ export default function PaCreatePage() {
           {/* Actions */}
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={() => replaceTab('/pa')}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!selectedPo} className="gap-2">
+            <Button onClick={handleSubmit} disabled={!selectedPo || receiptOverrideMissing} className="gap-2">
               <CreditCard className="h-4 w-4" />
               {isReconcileOnly ? 'Reconcile Prepayment' : 'Submit Payment Application'}
             </Button>
