@@ -275,7 +275,6 @@ export default function PrDetailPage() {
     pr.created_by_name,
   )
   const hasMaterial = pr.type === 1 || pr.type === 3
-  const hasSupplierItemId = pr.line_items.some((item) => item.supplier_item_id)
 
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
@@ -456,9 +455,8 @@ export default function PrDetailPage() {
                           {hasMaterial && (
                             <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-32">Material ID</th>
                           )}
-                          {hasSupplierItemId && (
-                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
-                          )}
+                          {/* Always shown for consistency with the Create PR page, which always exposes this input. */}
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-20">Qty</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-20">Unit</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
@@ -476,9 +474,7 @@ export default function PrDetailPage() {
                             {hasMaterial && (
                               <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.material_id || '—'}</td>
                             )}
-                            {hasSupplierItemId && (
-                              <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
-                            )}
+                            <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
                             <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
                             <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
                             <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, pr.currency ?? 'CAD')}</td>
@@ -489,7 +485,7 @@ export default function PrDetailPage() {
                       <tfoot>
                         <tr className="border-t-2 border-neutral-200 bg-neutral-50">
                           <td
-                            colSpan={5 + (hasMaterial ? 1 : 0) + (hasSupplierItemId ? 1 : 0)}
+                            colSpan={6 + (hasMaterial ? 1 : 0)}
                             className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500"
                           >
                             Total ({pr.currency ?? 'CAD'})

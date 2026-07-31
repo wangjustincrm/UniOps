@@ -97,13 +97,14 @@ def generate_po_pdf(
     td_r_style = _s("td_r", fontSize=8, textColor=_DARK, fontName="Helvetica",
                     leading=11, alignment=2)
 
-    col_w = [8 * mm, W * 0.42, 15 * mm, 14 * mm, 28 * mm, 28 * mm]
-    headers = ["#", "Description", "Qty", "Unit", "Unit Price", "Line Total"]
+    col_w = [8 * mm, W * 0.28, 26 * mm, 15 * mm, 14 * mm, 28 * mm, 28 * mm]
+    headers = ["#", "Description", "Supplier ID", "Qty", "Unit", "Unit Price", "Line Total"]
     rows: list = [[Paragraph(h, th_style) for h in headers]]
     for i, item in enumerate(po.line_items, 1):
         rows.append([
             Paragraph(str(i),                              td_style),
             Paragraph(item.description,                    td_style),
+            Paragraph(item.supplier_item_id or "",         td_style),
             Paragraph(str(item.qty),                       td_r_style),
             Paragraph(item.unit or "",                     td_style),
             Paragraph(f"{float(item.unit_price):,.2f}",    td_r_style),

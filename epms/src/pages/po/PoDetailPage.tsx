@@ -774,6 +774,8 @@ export default function PoDetailPage() {
                           {hasMaterial && (
                             <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-32">Material ID</th>
                           )}
+                          {/* Always shown for consistency with the Create PO page, which always exposes this input. */}
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-20">Qty</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-20">Unit</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
@@ -794,6 +796,7 @@ export default function PoDetailPage() {
                               {hasMaterial && (
                                 <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.material_id || '—'}</td>
                               )}
+                              <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
                               <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
                               <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
                               <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, po.currency)}</td>
@@ -818,7 +821,7 @@ export default function PoDetailPage() {
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                          <td colSpan={hasMaterial ? 6 : 5} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                          <td colSpan={hasMaterial ? 7 : 6} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
                             Subtotal
                           </td>
                           <td className="px-4 py-3 amount text-right text-base font-bold text-neutral-900">
