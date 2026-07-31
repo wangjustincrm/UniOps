@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import and_, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import count_polymorphic, purge_workflow_refs
@@ -108,6 +108,30 @@ async def _pa_delete(db: AsyncSession, pa) -> dict[str, int]:
     if pr_count:
         await db.execute(text("DELETE FROM payment_records WHERE pa_id = :pid"), {"pid": pa.id})
         summary["payment_records"] = pr_count
+    # Self-heal (mirror of crud.pa._complete_create_pa_tasks): creating a PA
+    # COMPLETES the PO's create_pa task(s). If this is the LAST PA for the PO,
+    # deleting it means no PA covers the PO anymore — reopen those tasks so the
+    # requester keeps an entry point to create a PA. Otherwise Data Maintenance
+    # delete strands the PO with a done create_pa task and no PA, and a requester
+    # (whose only path is that task) can no longer create one. Skip when another
+    # PA still covers the PO. During a PO cascade delete the reopened task is
+    # purged with the PO anyway, so this is harmless there.
+    if pa.po_id is not None:
+        others = (await db.execute(
+            select(func.count()).select_from(PaymentApplication)
+            .where(PaymentApplication.po_id == pa.po_id, PaymentApplication.id != pa.id)
+        )).scalar_one()
+        if others == 0:
+            gr_ids = select(GoodsReceipt.id).where(GoodsReceipt.po_id == pa.po_id)
+            reopened = (await db.execute(
+                update(Task)
+                .where(Task.type == "create_pa", Task.is_completed.is_(True),
+                       or_(and_(Task.document_type == "po", Task.document_id == pa.po_id),
+                           and_(Task.document_type == "gr", Task.document_id.in_(gr_ids))))
+                .values(is_completed=False, completed_at=None)
+            )).rowcount
+            if reopened:
+                summary["create_pa_tasks_reopened"] = reopened
     _merge(summary, await purge_workflow_refs(db, pa.id))
     await db.delete(pa)             # pa_line_items + pa_attachment cascade via FK
     return _merge(summary, {"payment_applications": 1})
