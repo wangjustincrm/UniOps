@@ -4,8 +4,10 @@ import { Search, Plus, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
+import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate, cn } from '@/lib/utils'
+import { compareByStatusThenStep } from '@/lib/currentStepSort'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePos } from '@/hooks/usePos'
 import { useDepartments } from '@/hooks/useDepartments'
@@ -78,6 +80,7 @@ export default function PoListPage() {
     let cmp = 0
     if (sortField === 'total') cmp = a.total - b.total
     else if (sortField === 'created_at') cmp = a.created_at.localeCompare(b.created_at)
+    else if (sortField === 'status') cmp = compareByStatusThenStep(a, b)
     else cmp = String(a[sortField as keyof typeof a]).localeCompare(String(b[sortField as keyof typeof b]))
     return sortDir === 'asc' ? cmp : -cmp
   })
@@ -249,6 +252,7 @@ export default function PoListPage() {
                   </td>
                   <td className="px-4 py-3">
                     <StatusBadge status={po.status as DocumentStatus} />
+                    <CurrentStepHint current_step={po.current_step} />
                   </td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{formatDate(po.created_at)}</td>
                   <td className="px-4 py-3">

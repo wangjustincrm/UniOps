@@ -6,6 +6,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.current_step import CurrentStep
+
 
 # Mirrors budget-api factor_code/value_code patterns
 _FACTOR_CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -188,6 +190,7 @@ class PrResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     line_items: list[PrLineItemResponse]
+    current_step: CurrentStep | None = None
 
     model_config = {"from_attributes": True}
 

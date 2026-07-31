@@ -1,6 +1,6 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiEvent } from './pr'
-import type { WorkflowNodeDef } from '@/types'
+import type { WorkflowNodeDef, CurrentStep } from '@/types'
 
 export type PoStatus =
   | 'draft'
@@ -71,6 +71,7 @@ export interface ApiPo {
   updated_at: string
   // 该 PO 被其他发票累计分摊的税前总额(仅 match-candidates 端点返回)
   already_allocated_total?: string | null
+  current_step?: CurrentStep | null
 }
 
 export interface CreatePoBody {

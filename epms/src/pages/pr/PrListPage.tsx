@@ -4,8 +4,10 @@ import { Search, Plus, ChevronUp, ChevronDown, Filter, Copy } from 'lucide-react
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
+import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate } from '@/lib/utils'
+import { compareByStatusThenStep } from '@/lib/currentStepSort'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePrs } from '@/hooks/usePrs'
 import { useQuery } from '@tanstack/react-query'
@@ -125,6 +127,7 @@ export default function PrListPage() {
     let cmp = 0
     if (sortField === 'amount') cmp = a.amount - b.amount
     else if (sortField === 'submitted_at') cmp = (a.submitted_at ?? '').localeCompare(b.submitted_at ?? '')
+    else if (sortField === 'status') cmp = compareByStatusThenStep(a, b)
     else cmp = String(a[sortField as keyof typeof a]).localeCompare(String(b[sortField as keyof typeof b]))
     return sortDir === 'asc' ? cmp : -cmp
   })
@@ -288,7 +291,10 @@ export default function PrListPage() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3"><StatusBadge status={pr.status} /></td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={pr.status} />
+                    <CurrentStepHint current_step={pr.current_step} />
+                  </td>
                   <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">{formatDate(pr.submitted_at ?? '')}</td>
                   <td className="px-4 py-3">
                     <Link to={`/pr/${pr.id}`}><Button variant="ghost" size="sm">View</Button></Link>

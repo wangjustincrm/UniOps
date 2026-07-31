@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.current_step import CurrentStep
+
 PA_WORKFLOW = [
     {"step": 0, "role": "finance_bp",      "label": "Finance BP Review"},
     {"step": 1, "role": "finance_manager", "label": "Finance Manager Approval"},
@@ -138,6 +140,7 @@ class PaResponse(BaseModel):
     receipt_override: bool = False
     receipt_override_reason: str | None = None
     receipt_override_by: uuid.UUID | None = None
+    current_step: CurrentStep | None = None
 
     model_config = {"from_attributes": True}
 

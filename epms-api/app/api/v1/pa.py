@@ -15,6 +15,7 @@ from app.services.approval_client import delegate_action
 from app.services import finance_client
 from app.crud import pa as pa_crud
 from app.crud import po as po_crud
+from app.crud.current_step import enrich_current_step
 from app.models.config import CompanyConfig
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -57,6 +58,7 @@ async def list_pas(
         po_ids_subq=scope["po_subq"],
         page=page, page_size=page_size,
     )
+    await enrich_current_step(db, "pa", items)
     return {"items": [PaResponse.model_validate(pa) for pa in items], "total": total}
 
 

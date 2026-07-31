@@ -142,6 +142,13 @@ export interface ApprovalStep {
   daysWaiting?: number
 }
 
+export interface CurrentStep {
+  role: string
+  label: string
+  approver_name: string | null
+  since: string
+}
+
 export interface WorkflowNodeDef {
   id: string        // stable UUID
   label: string     // display label, e.g. "Department Manager"

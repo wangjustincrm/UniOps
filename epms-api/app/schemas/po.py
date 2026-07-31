@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.current_step import CurrentStep
+
 PO_STATUSES = {
     "draft", "submitted", "in_review", "approved",
     "returned", "rejected", "issued", "closed", "cancelled",
@@ -151,5 +153,6 @@ class PoResponse(BaseModel):
     pr_requester_id: uuid.UUID | None = None
     # 该 PO 被【其他发票】累计分摊的总额(所有 po_line_id 之和,仅 match-candidates 端点填充)
     already_allocated_total: Decimal | None = None
+    current_step: CurrentStep | None = None
 
     model_config = {"from_attributes": True}

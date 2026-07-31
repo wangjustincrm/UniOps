@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.access_scope import build_scope
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
 from app.crud import pr as pr_crud
+from app.crud.current_step import enrich_current_step
 from app.models.task import Task
 from app.schemas.pr import (
     ApprovalEventResponse,
@@ -64,6 +65,7 @@ async def list_prs(
         page=page,
         page_size=page_size,
     )
+    await enrich_current_step(db, "pr", items)
     return PrListResponse(items=items, total=total)
 
 
