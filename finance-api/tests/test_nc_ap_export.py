@@ -165,14 +165,16 @@ async def test_build_rows_epms_allocations(db_session):
     assert h["seq"] == 0 and h["billno"] == "" and h["ap_number"] == "AP-2026-0100"
     # head department = first body row's dept CODE
     assert h["department"] == "0104"
-    b1 = next(b for b in bodies if b["notax"] == "60.00")
+    b1 = next(b for b in bodies if b["money"] == "67.80")
     # cost_center: MOH-0104-P01 → 'P01' via NC_CC_BY_UNIOPS
     assert b1["cost_center"] == "P01"
     # revexp is the budget CODE directly
     assert b1["revexp"] == "CRM004"
-    assert b1["tax"] == "7.80" and b1["money"] == "67.80"
+    # notax/tax always emitted as zero — NC recomputes from money + tax_rate
+    assert b1["notax"] == "0.00" and b1["tax"] == "0.00" and b1["money"] == "67.80"
     # account_path: MOH prefix → 510101
     assert b1["account_path"] == "510101"
+    # tax_rate still derived from the real amounts (7.80 / 60.00)
     assert b1["tax_code"] == "001" and b1["tax_rate"] == "13.00"
     # CAD → buysell '2'
     assert b1["buysell"] == "2"
@@ -180,7 +182,7 @@ async def test_build_rows_epms_allocations(db_session):
     assert b1["pay_term"] == "FH01"
     # obj_type code
     assert b1["obj_type"] == "1"
-    b2 = next(b for b in bodies if b["notax"] == "40.00")
+    b2 = next(b for b in bodies if b["money"] == "45.20")
     # no CC, Maintenance dept → unresolvable dept code → ''
     assert b2["cost_center"] == "" and b2["revexp"] == ""
     # Maintenance → no keyword match → 6602

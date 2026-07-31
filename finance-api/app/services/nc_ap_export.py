@@ -287,7 +287,10 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
                 "currency": ap.currency, "rate": "1",
                 "money": _s(notax_d + tax_d), "qty": "",
                 "tax_code": nc_tax_code, "tax_rate": rate,
-                "tax_price": "0.00000000", "notax": _s(notax_d), "tax": _s(tax_d),
+                # NC derives tax-excluded amount and tax from money (tax-inclusive)
+                # + tax_rate on import; sending them pre-filled makes the import
+                # error out, so notax/tax are always emitted as zero.
+                "tax_price": "0.00000000", "notax": "0.00", "tax": "0.00",
                 "taxtype": d["taxtype"], "department2": dept_code,
                 "buysell": buysell,
             })
