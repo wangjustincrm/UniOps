@@ -550,8 +550,14 @@ async def _create_approve_task(
             )
     elif role == "gm_or_opm":
         # GM vs OPM is decided by the routing department (PR's selected
-        # department, else the requester's own).
-        assigned_role, assigned_user_id = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
+        # department, else the requester's own). BROADCAST (assigned_user_id=None)
+        # to the resolved concrete post: gm/opm are SINGLETON posts, so the Task
+        # Inbox (get_for_role role-union) and _actor_can_approve (post_holder_ids
+        # membership) both resolve the CURRENT holder live. Pinning the task to the
+        # holder-at-creation-time would orphan it when the post is reassigned
+        # (prod incident: PO stuck on the previous OPM). Same treatment as the
+        # other singleton posts (finance_manager / procurement_manager / …).
+        assigned_role, _ = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
     elif role == "director":
         assigned_user_id = director_uid
     elif role == "supervisor":
@@ -1070,7 +1076,12 @@ async def execute_action(
 # rolls back (script dry-run).
 
 _GM_OPM_ROLES = {"gm", "opm", "gm_or_opm"}
-_USER_SPECIFIC_ROLES = {"dept_manager", "gm_or_opm", "director", "supervisor", "quality_manager"}
+# Roles whose approver is a SPECIFIC person resolved from document context (the
+# document's department / creator), so their tasks are PINNED (assigned_user_id
+# set) and resync re-points them to the current resolved person. gm_or_opm is
+# NOT here: gm/opm are singleton posts broadcast by role (assigned_user_id=None),
+# handled by the broadcast branch in resync Case C — same as finance_manager etc.
+_USER_SPECIFIC_ROLES = {"dept_manager", "director", "supervisor", "quality_manager"}
 
 
 def _step_index_for_task_role(workflow: list[dict], task_role: str) -> int | None:

@@ -245,6 +245,31 @@ async def test_without_shared_mailbox_every_member_is_emailed(captured_emails):
     assert SHARED_MAILBOX not in sent_to
 
 
+async def test_broadcast_email_reaches_secondary_role_holder(captured_emails):
+    """A broadcast task (e.g. the now-broadcast gm/opm step) must email every
+    holder of the role — including a user who holds it as a SECONDARY role via
+    identity's user_roles, not as their primary users.role. The Task Inbox
+    already shows the task to such a holder (get_for_role unions user_roles);
+    the email fan-out must reach the same set, or a GM/OPM who holds the post as
+    an additional role (real case: sivers = Department Manager + OPM) sees the
+    task in-app but never gets the email."""
+    from sqlalchemy import text
+
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only", role_shared_mailboxes={})
+        # Primary role is dept_manager; OPM is held as an ADDITIONAL role.
+        holder = await _make_user_with_role(db, "dept_manager", full_name="Sivers Holder")
+        await db.execute(
+            text("INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'opm')"),
+            {"u": str(holder.id)},
+        )
+        await db.commit()
+        await notification.dispatch_task_notification(_make_pool_task("opm"), db)
+
+    assert holder.email in _to(captured_emails), \
+        "a secondary-role OPM holder must receive the broadcast approval email"
+
+
 async def test_named_assignee_ignores_shared_mailbox(captured_emails):
     async with session_module.AsyncSessionLocal() as db:
         await _set_notif_settings(

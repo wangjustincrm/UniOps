@@ -15,7 +15,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -204,9 +204,23 @@ async def _dispatch(
             if user and user.is_active:
                 recipients.append(user)
         else:
-            # All active users with matching role
+            # All active holders of the role — PRIMARY (users.role) ∪ ADDITIONAL
+            # (identity's user_roles, same physical DB). Mirrors the Task Inbox's
+            # get_for_role role union (access_scope._effective_role_codes): a
+            # broadcast task (a singleton post like gm/opm, or a role pool) is
+            # visible in-app to every holder, INCLUDING those who hold the role as
+            # a SECONDARY role — so the email fan-out must reach the same set, or a
+            # GM/OPM holding the post as an additional role sees it in-app but gets
+            # no email.
+            secondary_ids = (await db.execute(
+                text("SELECT user_id FROM user_roles WHERE role_code = :rc"),
+                {"rc": task.assigned_role},
+            )).scalars().all()
             result = await db.execute(
-                select(User).where(User.role == task.assigned_role, User.is_active.is_(True))
+                select(User).where(
+                    User.is_active.is_(True),
+                    or_(User.role == task.assigned_role, User.id.in_(secondary_ids)),
+                )
             )
             recipients = list(result.scalars().all())
 

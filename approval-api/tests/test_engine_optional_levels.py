@@ -75,7 +75,7 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
-from app.crud.engine import execute_action
+from app.crud.engine import _resync_document, execute_action
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
 from app.models.pr import PurchaseRequest
@@ -217,10 +217,10 @@ async def test_director_skipped_when_unmapped(engine_db_session):
     await execute_action(db, "pr", pr.id, "submit", s["requester"].id, "requester")
     await execute_action(db, "pr", pr.id, "approve", s["manager"].id, "dept_manager")
 
-    # gm_or_opm step resolves to the concrete "gm" user for this dept mapping
+    # gm_or_opm step resolves to the concrete "gm" post, broadcast (not pinned)
     task = await _open_approve_task(db, pr.id)
     assert task.assigned_role == "gm"
-    assert task.assigned_user_id == s["gm"].id
+    assert task.assigned_user_id is None
 
     events = await _skip_events(db, pr.id, "director")
     assert len(events) == 1
@@ -268,14 +268,56 @@ async def test_inactive_director_skipped_with_reason(engine_db_session):
     await execute_action(db, "pr", pr.id, "submit", s["requester"].id, "requester")
     await execute_action(db, "pr", pr.id, "approve", s["manager"].id, "dept_manager")
 
-    # gm_or_opm step resolves to the concrete "gm" user for this dept mapping
+    # gm_or_opm step resolves to the concrete "gm" post, broadcast (not pinned)
     task = await _open_approve_task(db, pr.id)
     assert task.assigned_role == "gm"
-    assert task.assigned_user_id == s["gm"].id
+    assert task.assigned_user_id is None
 
     events = await _skip_events(db, pr.id, "director")
     assert len(events) == 1
     assert "configured Director is inactive" in (events[0].comment or "")
+
+
+@pytest.mark.asyncio
+async def test_gm_or_opm_task_is_broadcast(engine_db_session):
+    """The GM/OPM step must be a BROADCAST task (assigned_user_id is None) whose
+    assigned_role is the resolved concrete post (gm/opm). Authorization and the
+    Task Inbox both resolve the CURRENT post holder live, so broadcasting lets a
+    reassigned GM/OPM see and act on in-flight tasks. Pinning the task to the
+    holder-at-creation-time orphans it when the singleton post changes hands
+    (real prod incident: PO-089-2607-16 stuck on the previous OPM)."""
+    db = engine_db_session
+    s = await _seed(db, with_director=False)
+    pr = s["pr"]
+
+    await execute_action(db, "pr", pr.id, "submit", s["requester"].id, "requester")
+    await execute_action(db, "pr", pr.id, "approve", s["manager"].id, "dept_manager")
+
+    task = await _open_approve_task(db, pr.id)
+    assert task.assigned_role == "gm"        # concrete post resolved from dept mapping
+    assert task.assigned_user_id is None     # broadcast — tracks the live post holder
+
+
+@pytest.mark.asyncio
+async def test_resync_leaves_broadcast_gm_or_opm_untouched(engine_db_session):
+    """Idempotency: once the GM/OPM step is a broadcast task, a resync must NOT
+    reissue it. gm_or_opm must be treated as a broadcast (named) role by resync,
+    not a user-specific one — otherwise Case C sees des_uid != None while the
+    task's assigned_user_id IS None and reissues on EVERY run (infinite churn)."""
+    db = engine_db_session
+    s = await _seed(db, with_director=False)
+    pr = s["pr"]
+
+    await execute_action(db, "pr", pr.id, "submit", s["requester"].id, "requester")
+    await execute_action(db, "pr", pr.id, "approve", s["manager"].id, "dept_manager")
+    task_before = await _open_approve_task(db, pr.id)
+    assert task_before.assigned_role == "gm" and task_before.assigned_user_id is None
+
+    summary = await _resync_document(db, "pr", pr.id)
+
+    assert summary is None, f"resync should be a no-op for a correct broadcast task, got {summary}"
+    task_after = await _open_approve_task(db, pr.id)
+    assert task_after.id == task_before.id  # same task, not completed + reissued
 
 
 @pytest.mark.asyncio
