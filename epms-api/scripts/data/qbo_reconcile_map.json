@@ -1,0 +1,708 @@
+{
+ "generated": "2026-07-31",
+ "source": "QBO Bill List (qbo_bills+qbo_bill_payments) vs approved non-processed PAs; tax-aware doc_number+total match; QBO balance=0 (paid); paid_date=max qbo_bill_payments.txn_date",
+ "pa": {
+  "PA-20250206-0005": {
+   "paid_date": "2025-02-26",
+   "confidence": "tax13",
+   "payment_amount": "7659.14",
+   "qbo_bill_sum": "7659.14"
+  },
+  "PA-20251112-0006": {
+   "paid_date": "2025-12-02",
+   "confidence": "exact",
+   "payment_amount": "92.00",
+   "qbo_bill_sum": "92.00"
+  },
+  "PA-20260421-0011": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "95.52",
+   "qbo_bill_sum": "95.52"
+  },
+  "PA-20260522-0001": {
+   "paid_date": "2026-07-06",
+   "confidence": "tax13",
+   "payment_amount": "1695.00",
+   "qbo_bill_sum": "1695.00"
+  },
+  "PA-20260615-0015": {
+   "paid_date": "2026-06-22",
+   "confidence": "tax13",
+   "payment_amount": "603.42",
+   "qbo_bill_sum": "603.42"
+  },
+  "PA-20260618-0001": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "1078.92",
+   "qbo_bill_sum": "1078.92"
+  },
+  "PA-20260618-0002": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "5730.46",
+   "qbo_bill_sum": "5730.46"
+  },
+  "PA-20260618-0021": {
+   "paid_date": "2026-07-02",
+   "confidence": "eq_pay",
+   "payment_amount": "188.48",
+   "qbo_bill_sum": "188.48"
+  },
+  "PA-20260619-0001": {
+   "paid_date": "2026-07-06",
+   "confidence": "eq_pay",
+   "payment_amount": "464.70",
+   "qbo_bill_sum": "464.70"
+  },
+  "PA-20260624-0001": {
+   "paid_date": "2026-07-28",
+   "confidence": "tax13",
+   "payment_amount": "5660.30",
+   "qbo_bill_sum": "5660.30"
+  },
+  "PA-20260625-0002": {
+   "paid_date": "2026-07-13",
+   "confidence": "tax13",
+   "payment_amount": "43772.36",
+   "qbo_bill_sum": "43772.36"
+  },
+  "PA-20260625-0003": {
+   "paid_date": "2026-07-08",
+   "confidence": "tax13",
+   "payment_amount": "2577.24",
+   "qbo_bill_sum": "2577.24"
+  },
+  "PA-20260625-0011": {
+   "paid_date": "2026-07-21",
+   "confidence": "tax13",
+   "payment_amount": "1695.00",
+   "qbo_bill_sum": "1695.00"
+  },
+  "PA-20260625-0012": {
+   "paid_date": "2026-07-28",
+   "confidence": "tax13",
+   "payment_amount": "1695.00",
+   "qbo_bill_sum": "1692.43"
+  },
+  "PA-20260625-0013": {
+   "paid_date": "2026-07-21",
+   "confidence": "tax13",
+   "payment_amount": "1695.00",
+   "qbo_bill_sum": "1695.00"
+  },
+  "PA-20260625-0014": {
+   "paid_date": "2026-04-13",
+   "confidence": "eq_pay",
+   "payment_amount": "1695.00",
+   "qbo_bill_sum": "1695.00"
+  },
+  "PA-20260625-0016": {
+   "paid_date": "2026-07-24",
+   "confidence": "exact",
+   "payment_amount": "1037.33",
+   "qbo_bill_sum": "1037.33"
+  },
+  "PA-20260625-0017": {
+   "paid_date": "2026-07-08",
+   "confidence": "eq_pay",
+   "payment_amount": "362.70",
+   "qbo_bill_sum": "362.70"
+  },
+  "PA-20260625-0018": {
+   "paid_date": "2026-07-08",
+   "confidence": "tax13",
+   "payment_amount": "54.82",
+   "qbo_bill_sum": "54.82"
+  },
+  "PA-20260625-0022": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "66.97",
+   "qbo_bill_sum": "66.97"
+  },
+  "PA-20260626-0005": {
+   "paid_date": "2026-07-13",
+   "confidence": "eq_pay",
+   "payment_amount": "31.32",
+   "qbo_bill_sum": "31.33"
+  },
+  "PA-20260629-0003": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "18312.64",
+   "qbo_bill_sum": "18312.64"
+  },
+  "PA-20260630-0001": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "6.50",
+   "qbo_bill_sum": "6.50"
+  },
+  "PA-20260630-0002": {
+   "paid_date": "2026-07-13",
+   "confidence": "tax13",
+   "payment_amount": "368.32",
+   "qbo_bill_sum": "368.32"
+  },
+  "PA-20260630-0006": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "111.24",
+   "qbo_bill_sum": "111.24"
+  },
+  "PA-20260630-0008": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "98.54",
+   "qbo_bill_sum": "98.54"
+  },
+  "PA-20260630-0009": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "163.06",
+   "qbo_bill_sum": "163.06"
+  },
+  "PA-20260630-0011": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "310.31",
+   "qbo_bill_sum": "310.31"
+  },
+  "PA-20260701-0001": {
+   "paid_date": "2026-07-13",
+   "confidence": "eq_pay",
+   "payment_amount": "58.08",
+   "qbo_bill_sum": "58.08"
+  },
+  "PA-20260701-0002": {
+   "paid_date": "2026-07-08",
+   "confidence": "tax13",
+   "payment_amount": "166.09",
+   "qbo_bill_sum": "166.09"
+  },
+  "PA-20260701-0003": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "135.54",
+   "qbo_bill_sum": "135.54"
+  },
+  "PA-20260701-0004": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "247.21",
+   "qbo_bill_sum": "247.21"
+  },
+  "PA-20260701-0006": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "3717.52",
+   "qbo_bill_sum": "3717.52"
+  },
+  "PA-20260701-0007": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "1648.23",
+   "qbo_bill_sum": "1648.23"
+  },
+  "PA-20260701-0008": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "1716.91",
+   "qbo_bill_sum": "1716.91"
+  },
+  "PA-20260701-0010": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "1050.30",
+   "qbo_bill_sum": "1050.30"
+  },
+  "PA-20260701-0011": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "4121.89",
+   "qbo_bill_sum": "4121.89"
+  },
+  "PA-20260701-0012": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "1005.70",
+   "qbo_bill_sum": "1005.70"
+  },
+  "PA-20260701-0013": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "446.35",
+   "qbo_bill_sum": "683.65"
+  },
+  "PA-20260701-0014": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "183.06",
+   "qbo_bill_sum": "683.65"
+  },
+  "PA-20260701-0015": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "54.24",
+   "qbo_bill_sum": "683.65"
+  },
+  "PA-20260701-0016": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "542.40",
+   "qbo_bill_sum": "542.40"
+  },
+  "PA-20260701-0017": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "1695.00",
+   "qbo_bill_sum": "1695.00"
+  },
+  "PA-20260702-0001": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "1789.04",
+   "qbo_bill_sum": "1789.04"
+  },
+  "PA-20260702-0002": {
+   "paid_date": "2026-07-28",
+   "confidence": "eq_pay",
+   "payment_amount": "1073.50",
+   "qbo_bill_sum": "1073.50"
+  },
+  "PA-20260702-0003": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "807.59",
+   "qbo_bill_sum": "807.59"
+  },
+  "PA-20260702-0004": {
+   "paid_date": "2026-07-20",
+   "confidence": "eq_pay",
+   "payment_amount": "57.71",
+   "qbo_bill_sum": "57.71"
+  },
+  "PA-20260702-0005": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "3305.25",
+   "qbo_bill_sum": "3305.25"
+  },
+  "PA-20260702-0006": {
+   "paid_date": "2026-07-08",
+   "confidence": "eq_pay",
+   "payment_amount": "225.94",
+   "qbo_bill_sum": "225.95"
+  },
+  "PA-20260702-0007": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "327.59",
+   "qbo_bill_sum": "327.59"
+  },
+  "PA-20260702-0009": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "198.48",
+   "qbo_bill_sum": "198.48"
+  },
+  "PA-20260702-0010": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "228.48",
+   "qbo_bill_sum": "228.48"
+  },
+  "PA-20260702-0011": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "238.48",
+   "qbo_bill_sum": "238.48"
+  },
+  "PA-20260702-0012": {
+   "paid_date": "2026-07-14",
+   "confidence": "eq_pay",
+   "payment_amount": "556.85",
+   "qbo_bill_sum": "556.85"
+  },
+  "PA-20260702-0013": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "474.60",
+   "qbo_bill_sum": "474.60"
+  },
+  "PA-20260702-0014": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "106.79",
+   "qbo_bill_sum": "106.79"
+  },
+  "PA-20260702-0015": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "96.05",
+   "qbo_bill_sum": "96.05"
+  },
+  "PA-20260702-0016": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "214.93",
+   "qbo_bill_sum": "214.93"
+  },
+  "PA-20260702-0017": {
+   "paid_date": "2026-07-20",
+   "confidence": "eq_pay",
+   "payment_amount": "1281.07",
+   "qbo_bill_sum": "1281.07"
+  },
+  "PA-20260702-0018": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "10396.00",
+   "qbo_bill_sum": "10396.00"
+  },
+  "PA-20260702-0019": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "4294.00",
+   "qbo_bill_sum": "4294.00"
+  },
+  "PA-20260702-0020": {
+   "paid_date": "2026-07-27",
+   "confidence": "eq_pay",
+   "payment_amount": "3039.70",
+   "qbo_bill_sum": "3039.70"
+  },
+  "PA-20260703-0001": {
+   "paid_date": "2026-07-20",
+   "confidence": "eq_pay",
+   "payment_amount": "209.30",
+   "qbo_bill_sum": "209.30"
+  },
+  "PA-20260703-0002": {
+   "paid_date": "2026-07-20",
+   "confidence": "eq_pay",
+   "payment_amount": "219.81",
+   "qbo_bill_sum": "219.81"
+  },
+  "PA-20260703-0003": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "2547.02",
+   "qbo_bill_sum": "2547.02"
+  },
+  "PA-20260703-0004": {
+   "paid_date": "2026-07-28",
+   "confidence": "tax13",
+   "payment_amount": "282.38",
+   "qbo_bill_sum": "282.38"
+  },
+  "PA-20260703-0006": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "142.32",
+   "qbo_bill_sum": "142.32"
+  },
+  "PA-20260706-0001": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "630.00",
+   "qbo_bill_sum": "630.00"
+  },
+  "PA-20260706-0003": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "258.78",
+   "qbo_bill_sum": "258.78"
+  },
+  "PA-20260706-0010": {
+   "paid_date": "2026-07-28",
+   "confidence": "tax13",
+   "payment_amount": "849.76",
+   "qbo_bill_sum": "849.76"
+  },
+  "PA-20260706-0012": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "1283.23",
+   "qbo_bill_sum": "1283.23"
+  },
+  "PA-20260706-0014": {
+   "paid_date": "2026-07-20",
+   "confidence": "tax13",
+   "payment_amount": "980.84",
+   "qbo_bill_sum": "980.84"
+  },
+  "PA-20260706-0018": {
+   "paid_date": "2026-07-24",
+   "confidence": "tax13",
+   "payment_amount": "3.62",
+   "qbo_bill_sum": "3.62"
+  },
+  "PA-20260707-0002": {
+   "paid_date": "2026-07-27",
+   "confidence": "tax13",
+   "payment_amount": "3456.22",
+   "qbo_bill_sum": "3456.22"
+  },
+  "PA-20260707-0004": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "223.31",
+   "qbo_bill_sum": "223.31"
+  },
+  "PA-20260707-0005": {
+   "paid_date": "2026-07-29",
+   "confidence": "eq_pay",
+   "payment_amount": "1080.00",
+   "qbo_bill_sum": "1080.00"
+  },
+  "PA-20260707-0008": {
+   "paid_date": "2026-07-16",
+   "confidence": "eq_pay",
+   "payment_amount": "22.59",
+   "qbo_bill_sum": "22.59"
+  },
+  "PA-20260708-0003": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "8427.91",
+   "qbo_bill_sum": "8427.91"
+  },
+  "PA-20260708-0006": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "23.13",
+   "qbo_bill_sum": "23.13"
+  },
+  "PA-20260708-0010": {
+   "paid_date": "2026-07-24",
+   "confidence": "eq_pay",
+   "payment_amount": "42.65",
+   "qbo_bill_sum": "42.65"
+  },
+  "PA-20260709-0009": {
+   "paid_date": "2026-07-16",
+   "confidence": "tax13",
+   "payment_amount": "4252.47",
+   "qbo_bill_sum": "4252.47"
+  },
+  "PA-20260709-0011": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "627.82",
+   "qbo_bill_sum": "627.82"
+  },
+  "PA-20260709-0018": {
+   "paid_date": "2026-07-22",
+   "confidence": "exact",
+   "payment_amount": "42.56",
+   "qbo_bill_sum": "42.56"
+  },
+  "PA-20260710-0002": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "100.67",
+   "qbo_bill_sum": "100.67"
+  },
+  "PA-20260710-0004": {
+   "paid_date": "2026-07-30",
+   "confidence": "exact",
+   "payment_amount": "354.36",
+   "qbo_bill_sum": "354.36"
+  },
+  "PA-20260713-0001": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "420.36",
+   "qbo_bill_sum": "420.36"
+  },
+  "PA-20260713-0002": {
+   "paid_date": "2026-07-24",
+   "confidence": "tax13",
+   "payment_amount": "46.78",
+   "qbo_bill_sum": "46.78"
+  },
+  "PA-20260713-0004": {
+   "paid_date": "2026-07-27",
+   "confidence": "tax13",
+   "payment_amount": "187.33",
+   "qbo_bill_sum": "187.33"
+  },
+  "PA-20260714-0002": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "291.59",
+   "qbo_bill_sum": "291.59"
+  },
+  "PA-20260714-0003": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "4407.00",
+   "qbo_bill_sum": "4407.00"
+  },
+  "PA-20260715-0002": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "427.03",
+   "qbo_bill_sum": "427.03"
+  },
+  "PA-20260715-0003": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "1790.73",
+   "qbo_bill_sum": "1790.73"
+  },
+  "PA-20260715-0005": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "24.42",
+   "qbo_bill_sum": "24.42"
+  },
+  "PA-20260715-0007": {
+   "paid_date": "2026-07-22",
+   "confidence": "exact",
+   "payment_amount": "1791.05",
+   "qbo_bill_sum": "1791.05"
+  },
+  "PA-20260715-0008": {
+   "paid_date": "2026-07-27",
+   "confidence": "eq_pay",
+   "payment_amount": "121.99",
+   "qbo_bill_sum": "122.00"
+  },
+  "PA-20260715-0009": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "29.33",
+   "qbo_bill_sum": "29.34"
+  },
+  "PA-20260715-0010": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "20.96",
+   "qbo_bill_sum": "20.96"
+  },
+  "PA-20260715-0011": {
+   "paid_date": "2026-07-22",
+   "confidence": "eq_pay",
+   "payment_amount": "4423.95",
+   "qbo_bill_sum": "4423.95"
+  },
+  "PA-20260716-0003": {
+   "paid_date": "2026-07-27",
+   "confidence": "eq_pay",
+   "payment_amount": "12.58",
+   "qbo_bill_sum": "12.58"
+  },
+  "PA-20260716-0004": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "21.42",
+   "qbo_bill_sum": "21.42"
+  },
+  "PA-20260716-0006": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "294.09",
+   "qbo_bill_sum": "294.09"
+  },
+  "PA-20260716-0008": {
+   "paid_date": "2026-07-29",
+   "confidence": "eq_pay",
+   "payment_amount": "1886.31",
+   "qbo_bill_sum": "1886.31"
+  },
+  "PA-20260716-0010": {
+   "paid_date": "2026-07-22",
+   "confidence": "tax13",
+   "payment_amount": "806.82",
+   "qbo_bill_sum": "806.82"
+  },
+  "PA-20260717-0002": {
+   "paid_date": "2026-07-23",
+   "confidence": "tax13",
+   "payment_amount": "630.54",
+   "qbo_bill_sum": "630.54"
+  },
+  "PA-20260717-0003": {
+   "paid_date": "2026-07-23",
+   "confidence": "tax13",
+   "payment_amount": "1591.04",
+   "qbo_bill_sum": "1591.04"
+  },
+  "PA-20260717-0004": {
+   "paid_date": "2026-07-23",
+   "confidence": "tax13",
+   "payment_amount": "7322.40",
+   "qbo_bill_sum": "7322.40"
+  },
+  "PA-20260717-0005": {
+   "paid_date": "2026-07-27",
+   "confidence": "tax13",
+   "payment_amount": "561.61",
+   "qbo_bill_sum": "561.61"
+  },
+  "PA-20260717-0006": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "4772.84",
+   "qbo_bill_sum": "4772.84"
+  },
+  "PA-20260717-0007": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "10736.76",
+   "qbo_bill_sum": "10736.76"
+  },
+  "PA-20260717-0008": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "1401.20",
+   "qbo_bill_sum": "1401.20"
+  },
+  "PA-20260717-0009": {
+   "paid_date": "2026-07-27",
+   "confidence": "tax13",
+   "payment_amount": "361.60",
+   "qbo_bill_sum": "361.60"
+  },
+  "PA-20260717-0010": {
+   "paid_date": "2026-07-30",
+   "confidence": "tax13",
+   "payment_amount": "7159.68",
+   "qbo_bill_sum": "7159.68"
+  },
+  "PA-20260720-0007": {
+   "paid_date": "2026-07-24",
+   "confidence": "tax13",
+   "payment_amount": "5.64",
+   "qbo_bill_sum": "5.64"
+  },
+  "PA-20260720-0008": {
+   "paid_date": "2026-07-24",
+   "confidence": "tax13",
+   "payment_amount": "49.70",
+   "qbo_bill_sum": "49.70"
+  },
+  "PA-20260721-0001": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "126.55",
+   "qbo_bill_sum": "126.55"
+  },
+  "PA-20260721-0002": {
+   "paid_date": "2026-07-24",
+   "confidence": "eq_pay",
+   "payment_amount": "21.46",
+   "qbo_bill_sum": "21.46"
+  },
+  "PA-20260721-0003": {
+   "paid_date": "2026-07-30",
+   "confidence": "eq_pay",
+   "payment_amount": "203.40",
+   "qbo_bill_sum": "203.40"
+  }
+ }
+}
