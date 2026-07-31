@@ -349,4 +349,82 @@ def write_xlsx(heads: list, bodies: list) -> bytes:
 
     buf = io.BytesIO()
     wb.save(buf)
-    return buf.getvalue()
+    return _rewrite_inline_strings_as_shared(buf.getvalue())
+
+
+def _rewrite_inline_strings_as_shared(data: bytes) -> bytes:
+    """openpyxl writes text cells as inline strings (t="inlineStr") and omits
+    sharedStrings.xml. NC's import parser only reads the shared-strings table
+    (t="s"), so a freshly generated file errors on import until Excel re-saves it
+    (Excel pools strings into sharedStrings.xml). Rewrite every inline string into
+    a shared-strings entry and register the part, producing a file NC accepts
+    without a manual Excel round-trip."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    from xml.sax.saxutils import escape
+
+    NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    q = lambda tag: f"{{{NS}}}{tag}"          # noqa: E731
+    ET.register_namespace("", NS)
+
+    zin = zipfile.ZipFile(io.BytesIO(data))
+    parts = {n: zin.read(n) for n in zin.namelist()}
+
+    strings: list[str] = []
+    index: dict[str, int] = {}
+    total_refs = 0
+
+    for name in list(parts):
+        if not (name.startswith("xl/worksheets/") and name.endswith(".xml")):
+            continue
+        root = ET.fromstring(parts[name])
+        touched = False
+        for c in root.iter(q("c")):
+            if c.get("t") != "inlineStr":
+                continue
+            is_el = c.find(q("is"))
+            text = ""
+            if is_el is not None:
+                t_el = is_el.find(q("t"))
+                if t_el is not None and t_el.text is not None:
+                    text = t_el.text
+                c.remove(is_el)
+            if text not in index:
+                index[text] = len(strings)
+                strings.append(text)
+            c.set("t", "s")
+            ET.SubElement(c, q("v")).text = str(index[text])
+            total_refs += 1
+            touched = True
+        if touched:
+            parts[name] = (b"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n"
+                           + ET.tostring(root, encoding="unicode").encode("utf-8"))
+
+    if total_refs == 0:
+        return data
+
+    sst = ("<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n"
+           f'<sst xmlns="{NS}" count="{total_refs}" uniqueCount="{len(strings)}">'
+           + "".join(f'<si><t xml:space="preserve">{escape(s)}</t></si>' for s in strings)
+           + "</sst>")
+    parts["xl/sharedStrings.xml"] = sst.encode("utf-8")
+
+    ct = parts["[Content_Types].xml"].decode("utf-8")
+    if "sharedStrings.xml" not in ct:
+        parts["[Content_Types].xml"] = ct.replace("</Types>",
+            '<Override PartName="/xl/sharedStrings.xml" ContentType='
+            '"application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
+            "</Types>").encode("utf-8")
+
+    rels = parts["xl/_rels/workbook.xml.rels"].decode("utf-8")
+    if "sharedStrings.xml" not in rels:
+        parts["xl/_rels/workbook.xml.rels"] = rels.replace("</Relationships>",
+            '<Relationship Id="rIdSharedStrings" Type='
+            '"http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" '
+            'Target="sharedStrings.xml"/></Relationships>').encode("utf-8")
+
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name, content in parts.items():
+            zout.writestr(name, content)
+    return out.getvalue()

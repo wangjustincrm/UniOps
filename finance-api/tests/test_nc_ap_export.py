@@ -316,6 +316,33 @@ def test_write_xlsx_structure(tmp_path):
     assert ws["U7"].value == "60.00"                              # notax col
 
 
+def test_write_xlsx_uses_shared_strings(tmp_path):
+    """NC's importer only reads the shared-strings table; openpyxl's default inline
+    strings make the file error on import until Excel re-saves it. The writer must
+    emit sharedStrings.xml and zero inline strings, and still round-trip through
+    openpyxl (pooled values readable)."""
+    import zipfile
+    import openpyxl
+    from app.services.nc_ap_export import write_xlsx
+    heads = [{"seq": 0, "ap_number": "AP-1", "supplier": "ACME", "currency": "CAD",
+              "department": "0104", "revexp": "CRM004"}]
+    bodies = [{"seq": 0, "account_path": "510101", "supplier": "ACME",
+               "cost_center": "", "currency": "CAD", "money": "67.80",
+               "notax": "0.00", "tax": "0.00", "tax_rate": "13.00"}]
+    p = tmp_path / "out.xlsx"
+    p.write_bytes(write_xlsx(heads, bodies))
+    z = zipfile.ZipFile(p)
+    assert "xl/sharedStrings.xml" in z.namelist()
+    sheet = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert 't="inlineStr"' not in sheet and 't="s"' in sheet
+    assert "sharedStrings.xml" in z.read("[Content_Types].xml").decode("utf-8")
+    assert "sharedStrings.xml" in z.read("xl/_rels/workbook.xml.rels").decode("utf-8")
+    # pooled strings round-trip: openpyxl reads the account code back intact.
+    # 1 head + 1 body → body data lands on row 6 (head r3, blank r4→5, tech r5, body r6)
+    ws = openpyxl.load_workbook(p)["Sheet1"]
+    assert ws["B6"].value == "510101"
+
+
 async def test_export_endpoint_streams_and_marks(client, db_session):
     from app.models.nc_export import NcExportBatch
     ap = await _mk_ap(db_session, number="AP-2026-0200")
