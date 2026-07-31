@@ -270,6 +270,40 @@ async def _normalize_allocations(invoice: Invoice, req: InvoiceMatchRequest) -> 
     )]
 
 
+async def _apply_gr_selection(
+    db: AsyncSession, invoice: Invoice, gr_ids: list[uuid.UUID] | None,
+) -> None:
+    """Derive the scalar gr_id / gr_number / gr_value (and the normalized gr_ids)
+    on the invoice from a GR selection. Shared by match() and update() so a GR
+    selection lands consistently even for fee-only / reference-only invoices,
+    which carry no InvoicePoAllocation rows and therefore never flow through
+    rematch_from_existing → match() (which returns early when there are no
+    allocations, leaving gr_id NULL and breaking the 3-Way Match view + the PA
+    receipt gate). An empty list clears the selection. Idempotent — sets absolute
+    values, never appends, so a later match() recomputing the same GRs is a no-op."""
+    effective = list(gr_ids or [])
+    if not effective:
+        invoice.gr_id = None
+        invoice.gr_number = None
+        invoice.gr_value = None
+        invoice.gr_ids = None
+        return
+    gr_value_total = Decimal("0")
+    gr_numbers: list[str] = []
+    first_gr_id: uuid.UUID | None = None
+    for gid in effective:
+        gr_obj = (await db.execute(select(GoodsReceipt).where(GoodsReceipt.id == gid))).scalar_one_or_none()
+        if gr_obj:
+            if first_gr_id is None:
+                first_gr_id = gr_obj.id
+            gr_numbers.append(gr_obj.number)
+            gr_value_total += sum((it.line_total for it in gr_obj.line_items), Decimal("0"))
+    invoice.gr_id = first_gr_id
+    invoice.gr_number = ", ".join(gr_numbers) if gr_numbers else None
+    invoice.gr_value = gr_value_total
+    invoice.gr_ids = [str(gid) for gid in effective]
+
+
 async def match(
     db: AsyncSession,
     invoice: Invoice,
@@ -459,26 +493,7 @@ async def match(
         effective_gr_ids = list(req.gr_ids)
     elif req.gr_id:
         effective_gr_ids = [req.gr_id]
-    if effective_gr_ids:
-        gr_value_total = Decimal("0")
-        gr_numbers: list[str] = []
-        first_gr_id: uuid.UUID | None = None
-        for gid in effective_gr_ids:
-            gr_obj = (await db.execute(select(GoodsReceipt).where(GoodsReceipt.id == gid))).scalar_one_or_none()
-            if gr_obj:
-                if first_gr_id is None:
-                    first_gr_id = gr_obj.id
-                gr_numbers.append(gr_obj.number)
-                gr_value_total += sum((it.line_total for it in gr_obj.line_items), Decimal("0"))
-        invoice.gr_id = first_gr_id
-        invoice.gr_number = ", ".join(gr_numbers) if gr_numbers else None
-        invoice.gr_value = gr_value_total
-        invoice.gr_ids = [str(gid) for gid in effective_gr_ids]
-    else:
-        invoice.gr_id = None
-        invoice.gr_number = None
-        invoice.gr_value = None
-        invoice.gr_ids = None
+    await _apply_gr_selection(db, invoice, effective_gr_ids)
 
     all_zero = all((row.variance or Decimal("0")) == Decimal("0") for row in new_rows)
     if require_review and not all_zero:
@@ -618,11 +633,15 @@ async def update(db: AsyncSession, invoice: Invoice, payload: InvoiceUpdate) -> 
         invoice.notes = payload.notes
     if payload.line_items is not None:
         invoice.line_items = [item.model_dump(mode="json") for item in payload.line_items]
-    # GR selection from the edit form (only sent when a PO is linked). Persist it
-    # here so the subsequent rematch_from_existing → match() re-derives gr_id /
-    # gr_number / gr_value. [] means "clear all GRs".
+    # GR selection from the edit form (only sent when a PO is linked). Derive the
+    # scalar gr_id / gr_number / gr_value here rather than relying solely on the
+    # later rematch_from_existing → match() to re-derive them: that path returns
+    # early for fee-only / reference-only invoices (no allocation rows), which
+    # would leave gr_id NULL and break the 3-Way Match view + PA receipt gate.
+    # match() recomputes the same values idempotently for allocated invoices.
+    # [] means "clear all GRs".
     if payload.gr_ids is not None:
-        invoice.gr_ids = [str(g) for g in payload.gr_ids]
+        await _apply_gr_selection(db, invoice, list(payload.gr_ids))
     invoice.total_amount = invoice.amount + invoice.tax_amount
     await db.flush()
     await db.refresh(invoice)
