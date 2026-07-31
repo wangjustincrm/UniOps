@@ -123,7 +123,8 @@ def generate_pr_pdf(
     elements.append(Paragraph("Line Items", sec_style))
 
     has_material = any(item.material_id for item in pr.line_items)
-    has_supplier = any(item.supplier_item_id for item in pr.line_items)
+    # Always show Supplier ID for consistency with the Create PR page, which always exposes it.
+    has_supplier = True
 
     col_headers = ["#", "Description"]
     if has_material:
