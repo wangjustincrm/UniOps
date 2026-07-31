@@ -119,6 +119,15 @@ export default function PaCreatePage() {
   const selectedPoLines = selectedPo ? selectedPo.line_items.filter((l) => selectedLineIds.has(l.id)) : []
   const autoSubtotal = selectedPoLines.reduce((s, l) => s + Number(l.line_total), 0)
 
+  // Selected-invoice aggregates. The PA pays these invoices, so their real
+  // pre-tax/tax are the source of truth for the charge breakdown — a PO whose
+  // snapshotted tax_rate is 0/null (e.g. a freight vendor set up without a rate)
+  // would otherwise auto-fill 0 tax even when the matched invoice carries HST.
+  const selectedInvoices  = poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))
+  const hasLinkedInvoices = selectedInvoices.length > 0
+  const invoiceSubtotal   = selectedInvoices.reduce((s, inv) => s + Number(inv.amount), 0)
+  const invoiceTax        = selectedInvoices.reduce((s, inv) => s + Number(inv.tax_amount), 0)
+
   // Per-line received qty (sum across all GRs for this PO)
   const receivedQtyByPoLineId: Record<string, number> = {}
   for (const gr of poGrs) {
@@ -223,23 +232,28 @@ export default function PaCreatePage() {
     }
   }, [selectedPoId, selectedPo?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fill subtotal from selected PO lines
+  // Auto-fill pre-tax: prefer the linked invoices' real pre-tax; fall back to the
+  // selected PO lines when the PA links no invoice (GR-only / manual payment).
   useEffect(() => {
-    if (autoSubtotal > 0) {
-      setSubtotal(String(autoSubtotal))
+    const auto = hasLinkedInvoices ? invoiceSubtotal : autoSubtotal
+    if (auto > 0) {
+      setSubtotal(String(Number(auto.toFixed(2))))
     }
-  }, [autoSubtotal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasLinkedInvoices, invoiceSubtotal, autoSubtotal]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fill tax at the PO's tax rate (from Finance Tax Settings) when currency
-  // is CAD and the user hasn't manually overridden the amount.
+  // Auto-fill tax. When invoices are linked, use their real tax — authoritative
+  // and survives a PO whose snapshotted tax_rate is 0/null. Otherwise fall back
+  // to the PO's tax rate × pre-tax for CAD. Skipped once the user edits tax.
   useEffect(() => {
     if (taxManuallyEdited) return
-    if (selectedPo?.currency === 'CAD' && subtotalNum > 0) {
+    if (hasLinkedInvoices) {
+      setTaxAmount(invoiceTax.toFixed(2))
+    } else if (selectedPo?.currency === 'CAD' && subtotalNum > 0) {
       setTaxAmount((subtotalNum * paTaxRate).toFixed(2))
-    } else if (!taxManuallyEdited) {
+    } else {
       setTaxAmount('')
     }
-  }, [subtotalNum, selectedPo?.currency, paTaxRate, taxManuallyEdited]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasLinkedInvoices, invoiceTax, subtotalNum, selectedPo?.currency, paTaxRate, taxManuallyEdited]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Validation
   const errors: string[] = []
@@ -319,7 +333,12 @@ export default function PaCreatePage() {
         subtotal: subtotalNum,
         tax_amount: taxNum,
         tax_code: taxNum > 0 ? paTaxCode ?? undefined : null,
-        tax_rate: taxNum > 0 ? paTaxRate : null,
+        // Keep the rate snapshot consistent with the actual tax: use the PO rate
+        // when it's usable, otherwise derive it from the invoice-driven amounts so
+        // we never persist tax_amount > 0 alongside a 0 rate.
+        tax_rate: taxNum > 0
+          ? (paTaxRate > 0 ? paTaxRate : subtotalNum > 0 ? Number((taxNum / subtotalNum).toFixed(4)) : null)
+          : null,
         shipping_amount: shippingNum || undefined,
         other_charges: otherNum || undefined,
         other_charges_note: otherNum > 0 ? otherChargesNote.trim() || undefined : undefined,
@@ -803,8 +822,11 @@ export default function PaCreatePage() {
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-neutral-700">
                       Tax Amount <span className="text-danger-600">*</span>
-                      {!taxManuallyEdited && selectedPo?.currency === 'CAD' && subtotalNum > 0 && (
-                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">13% HST</span>
+                      {!taxManuallyEdited && hasLinkedInvoices && (
+                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">from invoice</span>
+                      )}
+                      {!taxManuallyEdited && !hasLinkedInvoices && selectedPo?.currency === 'CAD' && subtotalNum > 0 && (
+                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">{`${(paTaxRate * 100).toFixed(0)}% HST`}</span>
                       )}
                     </label>
                     <input
