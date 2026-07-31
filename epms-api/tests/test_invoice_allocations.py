@@ -591,6 +591,79 @@ async def test_fee_only_invoice_links_to_po(admin_client):
     assert fee["non_po_fee"] is True
 
 
+async def _make_gr(test_engine, *, po_id, po_number, vendor_id, line_total="35.00"):
+    """Insert a real GoodsReceipt (with one line) so match()/update() can look it
+    up by id and derive gr_id / gr_number / gr_value from a gr_ids selection."""
+    from decimal import Decimal
+    from app.models.gr import GoodsReceipt, GrLineItem
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        creator = await user_crud.create(db, RegisterRequest(
+            email=f"gr-{uuid.uuid4().hex[:8]}@example.com",
+            password="TestPass1!", full_name="GR Creator", role="requester"))
+        await db.commit()
+        gr = GoodsReceipt(
+            number=f"GR-{uuid.uuid4().hex[:8]}", title="GR", po_id=uuid.UUID(po_id),
+            po_number=po_number, vendor_id=uuid.UUID(vendor_id), vendor_name="Alloc Vendor",
+            gr_type="physical", procurement_type=2, status="collected", created_by=creator.id,
+        )
+        gr.line_items = [GrLineItem(
+            description="Goods", qty_ordered=Decimal("1"), qty_received=Decimal("1"),
+            unit="EA", unit_price=Decimal(line_total), line_total=Decimal(line_total), sort_order=0,
+        )]
+        db.add(gr)
+        await db.commit()
+        await db.refresh(gr)
+        return str(gr.id), gr.number
+
+
+@pytest.mark.asyncio
+async def test_fee_only_invoice_gr_selection_sets_gr_id(admin_client, test_engine):
+    """Regression: selecting a GR on a FEE-ONLY (zero-allocation) invoice must set
+    the scalar gr_id/gr_number/gr_value — not only gr_ids. Previously update()
+    persisted gr_ids and delegated gr_id derivation to rematch_from_existing →
+    match(), which bails out early for invoices with no InvoicePoAllocation rows.
+    That left gr_id NULL, so the 3-Way Match GR row showed a warning and the PA
+    receipt gate (Invoice.gr_id IS NOT NULL) blocked Create PA."""
+    await _ensure_company_config()
+    v = await _make_vendor(admin_client, "VND-FEEONLY-GRID-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "Goods", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="35.00", tax_amount="0.00",
+        line_items=[{"description": "FREIGHT CHARGES", "quantity": "1",
+                     "unit_price": "35.00", "line_total": "35.00"}]))).json()
+    fee_line = inv["line_items"][0]["id"]
+    matched = (await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "allocations": [],
+        "non_po_lines": [{"line_id": fee_line, "note": "freight"}],
+        "reference_po_id": po["id"],
+    })).json()
+    assert matched["status"] == "matched"
+    assert matched["allocations"] == []          # fee-only: no allocation rows
+    assert matched["gr_id"] is None              # no GR yet
+
+    gr_id, gr_number = await _make_gr(
+        test_engine, po_id=po["id"], po_number=po["number"], vendor_id=v["id"], line_total="35.00")
+
+    r = await admin_client.patch(f"{INV_URL}/{inv['id']}", json={"gr_ids": [gr_id]})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "matched"
+    assert data["gr_ids"] == [gr_id]
+    # The scalar fields every downstream consumer keys off must be populated:
+    assert data["gr_id"] == gr_id                # 3-Way Match link + PA receipt gate
+    assert data["gr_number"] == gr_number        # 3-Way Match reference cell
+    assert float(data["gr_value"]) == 35.0       # 3-Way Match `ok={gr_value != null}`
+
+    # And the PO now satisfies the three-way receipt gate.
+    from app.crud.po import po_has_three_way_matched_invoice
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        assert await po_has_three_way_matched_invoice(db, uuid.UUID(po["id"])) is True
+
+
 @pytest.mark.asyncio
 async def test_fee_only_invoice_without_link_rejected(admin_client):
     """Fee-only invoice with no reference_po_id → 422, cannot confirm."""
