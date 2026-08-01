@@ -83,6 +83,29 @@ def _attach_matched_invoice(cur, nc_pk):
          Decimal("100"), uid, po_id, gr_id))
 
 
+def _attach_invoice_with_status(cur, nc_pk, status):
+    """Attach an invoice in a downstream payment-flow status (e.g. 'paid',
+    'partially_paid') with a gr_id set — as it would look once payment executed.
+    The old matched-only guard (status='matched' AND gr_id) would treat these as
+    NOT consumed and let an incremental upsert overwrite a PO a payment was built
+    on; the broadened ANY-invoice guard must freeze them."""
+    cur.execute("select id, vendor_id, vendor_name from purchase_orders "
+                "where nc_source_pk=%s and source='nc'", (nc_pk,))
+    po_id, vid, vname = cur.fetchone()
+    cur.execute("select id from goods_receipts where source='nc' limit 1")
+    gr_id = cur.fetchone()[0]
+    cur.execute("select id from users where email=%s", ("nc-sync@epms.local",))
+    uid = cur.fetchone()[0]
+    cur.execute(
+        "insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
+        " vendor_name, amount, tax_amount, total_amount, currency, invoice_date, "
+        " due_date, status, line_items, uploaded_by, po_id, gr_id) "
+        "values (%s,%s,%s,%s,%s,%s,0,%s,'CAD', current_date, current_date, "
+        " %s, '[]'::jsonb, %s, %s, %s)",
+        (uuid.uuid4(), f"INV-{status}-{nc_pk}", f"VINV-{status}", vid, vname,
+         Decimal("100"), Decimal("100"), status, uid, po_id, gr_id))
+
+
 def _attach_unmatched_invoice(cur, nc_pk):
     """An invoice that references the NC PO but is NOT consumed (unmatched, no
     gr_id) — invoices.po_id is ON DELETE RESTRICT, so a full reload must still
@@ -149,6 +172,43 @@ def test_upsert_skips_consumed_po(pg_cur, seeded_vendor, system_user_id):
     qty, unit_price = pg_cur.fetchone()
     assert qty == Decimal("10.0000") and unit_price == Decimal("10.00")   # children untouched
     assert counts["skipped_consumed"] >= 1
+
+
+@pytest.mark.parametrize("status", ["paid", "partially_paid"])
+def test_upsert_skips_po_in_payment_flow(pg_cur, seeded_vendor, system_user_id, status):
+    """Once payment executes, the invoice moves matched -> partially_paid -> paid.
+    A PAID/PARTIALLY-PAID NC PO must stay frozen against re-sync overwrite — the
+    old matched-only guard let an incremental upsert rewrite its header/lines,
+    corrupting data a payment was built on."""
+    from app.services.nc_purchase_sync import writer
+    writer.upsert(pg_cur, _mini_payload(seeded_vendor), system_user_id)
+    _attach_invoice_with_status(pg_cur, "O1", status)
+    payload = _mini_payload(seeded_vendor)
+    payload["orders"][0]["total"] = Decimal("999")
+    payload["order_lines"][0]["qty"] = Decimal("555")
+    payload["order_lines"][0]["unit_price"] = Decimal("777")
+    counts = writer.upsert(pg_cur, payload, system_user_id)
+    pg_cur.execute("select total from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone()[0] != Decimal("999")     # header not overwritten
+    pg_cur.execute("select qty, unit_price from po_line_items where nc_source_pk='OL1'")
+    qty, unit_price = pg_cur.fetchone()
+    assert qty == Decimal("10.0000") and unit_price == Decimal("10.00")   # children untouched
+    assert counts["skipped_consumed"] >= 1
+
+
+def test_upsert_heartbeat_called_during_write(pg_cur, seeded_vendor, system_user_id):
+    """FIX 3: upsert invokes the heartbeat callable so a long full load can refresh
+    its run row and dodge the stale sweep. Threshold is every ~500 rows, so force a
+    payload past it and assert the callback fired."""
+    from app.services.nc_purchase_sync import writer
+    payload = _mini_payload(seeded_vendor)
+    base_line = payload["order_lines"][0]
+    payload["order_lines"] = [
+        {**base_line, "nc_source_pk": f"OL{i}", "sort_order": i} for i in range(600)
+    ]
+    beats = []
+    writer.upsert(pg_cur, payload, system_user_id, heartbeat=lambda: beats.append(1))
+    assert len(beats) >= 1
 
 
 def test_upsert_persists_realistic_composite_gr_key(pg_cur, seeded_vendor, system_user_id):

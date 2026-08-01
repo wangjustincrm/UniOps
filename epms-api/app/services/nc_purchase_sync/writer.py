@@ -2,9 +2,10 @@
 
 Resolves po_id / po_line_id / gr_id via each row's nc_source_pk (natural key),
 so a re-run updates in place instead of duplicating. Refuses destructive updates
-to a PO once it has been CONSUMED downstream (a matched invoice with a gr_id —
-same condition as the 3-way gate in crud/po.py) so the sync can never rewrite a
-document a human has already acted on.
+to a PO once it has been CONSUMED downstream (referenced by ANY invoice — the
+same broad exclusion service._full_reload_delete uses) so the sync can never
+rewrite a document a human/payment has already acted on, even after the invoice
+has advanced matched -> partially_paid -> paid.
 
 System-user ensure mirrors scripts/import_pms/load.py (find-by-email, else
 insert a locked system_admin using app.core.security.hash_password).
@@ -40,20 +41,37 @@ def ensure_system_user_sync(cur) -> uuid.UUID:
 
 
 def _po_consumed(cur, po_id) -> bool:
-    """A PO is consumed once a matched invoice with a gr_id points at it —
-    the same shape as the 3-way match gate. Consumed POs are never rewritten."""
-    cur.execute("select 1 from invoices where po_id=%s and status='matched' "
-                "and gr_id is not null limit 1", (po_id,))
+    """A PO is consumed once ANY invoice references it — the same broad exclusion
+    the full-reload delete-guard uses (service._full_reload_delete). Once a NC PO
+    has entered the invoice/payment flow it must be frozen against re-sync
+    overwrite: the invoice moves matched -> partially_paid -> paid as payment
+    executes, so a matched-only guard would let an incremental upsert rewrite the
+    header/lines of a PAID PO if NC bumped its modifiedtime — corrupting data a
+    payment was built on. This is the safe superset (matched, partially_paid,
+    paid, and even draft/unmatched — all frozen)."""
+    cur.execute("select 1 from invoices where po_id=%s limit 1", (po_id,))
     return cur.fetchone() is not None
 
 
-def upsert(cur, payload: dict, system_user_id) -> dict:
+def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
+    """Idempotent mirror write. ``heartbeat`` (optional) is a zero-arg callable
+    invoked every ~500 processed rows so a long-running full load can refresh its
+    run row's updated_at and not be swept as stale mid-flight."""
     counts = dict(pos_upserted=0, po_lines_upserted=0, grs_upserted=0,
                   gr_lines_upserted=0, skipped_consumed=0)
     po_id_by_ncpk, po_line_id_by_ncpk, gr_id_by_ncpk = {}, {}, {}
     consumed_pks: set = set()
 
+    _processed = 0
+
+    def _beat():
+        nonlocal _processed
+        _processed += 1
+        if heartbeat is not None and _processed % 500 == 0:
+            heartbeat()
+
     for po in payload["orders"]:
+        _beat()
         cur.execute("select id from purchase_orders where nc_source_pk=%s and source='nc'",
                     (po["nc_source_pk"],))
         row = cur.fetchone()
@@ -85,6 +103,7 @@ def upsert(cur, payload: dict, system_user_id) -> dict:
         counts["pos_upserted"] += 1
 
     for ln in payload["order_lines"]:
+        _beat()
         if ln["po_nc_pk"] in consumed_pks:   # consumed parent — never touch its lines
             continue
         pid = po_id_by_ncpk.get(ln["po_nc_pk"])
@@ -111,6 +130,7 @@ def upsert(cur, payload: dict, system_user_id) -> dict:
         counts["po_lines_upserted"] += 1
 
     for gr in payload["grs"]:
+        _beat()
         if gr["po_nc_pk"] in consumed_pks:   # consumed parent — don't insert GRs
             continue
         pid = po_id_by_ncpk.get(gr["po_nc_pk"])
@@ -135,6 +155,7 @@ def upsert(cur, payload: dict, system_user_id) -> dict:
         gr_id_by_ncpk[gr["nc_source_pk"]] = gid
 
     for gl in payload["gr_lines"]:
+        _beat()
         gid = gr_id_by_ncpk.get(gl["gr_nc_pk"])
         if gid is None:
             continue

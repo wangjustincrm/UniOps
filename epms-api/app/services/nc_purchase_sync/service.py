@@ -72,11 +72,14 @@ def ensure_system_user_sync(cur) -> uuid.UUID:
 
 
 def _mark(dsn, run_id, **fields):
-    """Small autocommit update on the run row (progress counters)."""
+    """Small autocommit update on the run row over its OWN connection (the worker's
+    main connection is mid-transaction). With no fields it is a bare heartbeat that
+    only refreshes updated_at, keeping a legitimately-long run from being swept as
+    stale by start_run's STALE_AFTER sweep."""
     con = psycopg2.connect(dsn); con.autocommit = True
     cur = con.cursor()
-    sets = ", ".join(f"{k} = %s" for k in fields)
-    cur.execute(f"update nc_purchase_sync_runs set {sets}, updated_at = now() where id = %s",
+    sets = "".join(f"{k} = %s, " for k in fields)
+    cur.execute(f"update nc_purchase_sync_runs set {sets}updated_at = now() where id = %s",
                 (*fields.values(), run_id))
     con.close()
 
@@ -162,7 +165,11 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
 
         full_skipped = _full_reload_delete(cur) if mode == "full" else 0
 
-        counts = writer.upsert(cur, payload, system_user_id)
+        # Heartbeat the run row every ~500 rows so the initial full load (~1680
+        # orders / 6011 arrival lines, row-by-row) refreshes updated_at and isn't
+        # swept as stale (STALE_AFTER) mid-run.
+        counts = writer.upsert(cur, payload, system_user_id,
+                               heartbeat=lambda: _mark(dsn, run_id))
 
         # superseded-run guard: if the sweeper already marked us abandoned, bail
         # without committing so we don't resurrect a dead run.
