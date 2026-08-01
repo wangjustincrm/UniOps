@@ -733,8 +733,7 @@ def upsert(cur, payload: dict, system_user_id) -> dict:
             cur.execute("update po_line_items set description=%s,material_id=%s,qty=%s,unit=%s,"
                         "unit_price=%s,line_total=%s,received_qty=%s,sort_order=%s where id=%s",
                         (ln["description"], ln["material_id"], ln["qty"], ln["unit"],
-                         ln["unit_price"], ln["unit_price"], ln["received_qty"], ln["sort_order"], lid))
-            # note: line_total column below on insert; keep parity
+                         ln["unit_price"], ln["line_total"], ln["received_qty"], ln["sort_order"], lid))
         else:
             lid = uuid.uuid4()
             cur.execute(
