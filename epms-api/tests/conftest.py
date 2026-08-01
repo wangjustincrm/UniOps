@@ -391,3 +391,82 @@ async def finance_client(test_engine):
 async def requester_client(test_engine):
     async with await _authenticated_client(test_engine, "requester") as c:
         yield c
+
+
+# ── psycopg2 fixtures for the NC purchase writer/service (Task 4) ─────────────
+# writer.py / service.py talk to Postgres over psycopg2 (bulk upsert + run
+# registry), NOT the async ORM. These fixtures connect to the SAME epms_test DB
+# the async suite uses, but only AFTER `test_engine` has created the schema —
+# every psycopg2 fixture depends on `test_engine` so the tables exist first.
+import psycopg2 as _psycopg2  # noqa: E402
+from psycopg2.extras import register_uuid as _register_uuid  # noqa: E402
+from sqlalchemy.engine.url import make_url as _make_url  # noqa: E402
+
+_register_uuid()
+
+
+def _test_pg_dsn() -> str:
+    """psycopg2 keyword DSN for epms_test, derived from the same URL conftest
+    uses for the async engine (strips the +asyncpg driver)."""
+    u = _make_url(_TEST_DB_URL)
+    return (f"host={u.host} port={u.port or 5432} dbname={u.database} "
+            f"user={u.username} password={u.password}")
+
+
+@pytest.fixture
+def test_pg_dsn(test_engine):
+    """The epms_test psycopg2 DSN string (schema guaranteed by test_engine)."""
+    return _test_pg_dsn()
+
+
+@pytest.fixture
+def pg_conn(test_engine):
+    """A psycopg2 connection on epms_test. Rolled back on teardown so writer
+    tests that never commit leave the DB clean (per-test isolation)."""
+    conn = _psycopg2.connect(_test_pg_dsn())
+    yield conn
+    conn.rollback()
+    conn.close()
+
+
+@pytest.fixture
+def pg_cur(pg_conn):
+    cur = pg_conn.cursor()
+    yield cur
+    cur.close()
+
+
+@pytest.fixture
+def seeded_vendor(pg_cur):
+    """A business_partners supplier row with erp_id='0000415' (uncommitted in
+    pg_conn's txn). Returns (id, name)."""
+    vid = uuid.uuid4()
+    pg_cur.execute(
+        "insert into business_partners "
+        "(id, code, erp_id, name, category, contact_name, contact_email, "
+        " payment_terms, currency, is_active, is_supplier, is_customer) "
+        "values (%s,%s,%s,%s,%s,%s,%s,'net30','CAD',true,true,false)",
+        (vid, "NCV-0000415", "0000415", "NC Vendor 415", "supplier",
+         "NC Contact", "nc-vendor@example.com"))
+    return vid, "NC Vendor 415"
+
+
+@pytest.fixture
+def system_user_id(pg_cur):
+    """The nc-sync system user id (created via writer.ensure_system_user_sync,
+    uncommitted in pg_conn's txn)."""
+    from app.services.nc_purchase_sync import writer
+    return writer.ensure_system_user_sync(pg_cur)
+
+
+@pytest.fixture
+def clean_nc_sync_runs(test_engine):
+    """Truncate nc_purchase_sync_runs before and after — service tests use their
+    own autocommit connections, so their run rows persist outside pg_conn's txn."""
+    def _truncate():
+        c = _psycopg2.connect(_test_pg_dsn()); c.autocommit = True
+        c.cursor().execute("truncate nc_purchase_sync_runs")
+        c.close()
+    _truncate()
+    yield
+    _truncate()
