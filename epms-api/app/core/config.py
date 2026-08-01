@@ -139,6 +139,11 @@ class Settings(BaseSettings):
     nc_service: str | None = None
     nc_user: str | None = None
     nc_password: str | None = None
+    # Earliest NC order date to import ('YYYY-MM-DD HH:MM:SS'). Read by
+    # app.services.nc_purchase_sync.service._cutover() — the ONE source of
+    # truth for the cutover; None falls back to that module's wide-open
+    # default. Do not add a second cutover setting.
+    nc_purchase_cutover: str | None = None
 
 
 @lru_cache

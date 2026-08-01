@@ -13,6 +13,7 @@ from app.api.v1.gr_attachments import router as gr_attachments_router
 from app.api.v1.health import router as health_router
 from app.api.v1.invoices import router as invoices_router
 from app.api.v1.invoice_tax import router as invoice_tax_router
+from app.api.v1.nc_purchase_sync import router as nc_purchase_sync_router
 from app.api.v1.pa import router as pa_router
 from app.api.v1.pa_attachments import router as pa_attachments_router
 from app.api.v1.parts import router as parts_router
@@ -50,4 +51,9 @@ api_router.include_router(config_router)
 api_router.include_router(pms_import_router)
 api_router.include_router(dashboard_router)
 api_router.include_router(reports_router)
+# nc_purchase_sync_router (prefix /admin/nc-purchase-sync) MUST be registered
+# before admin_router — admin_router's catch-all /admin/{entity}/{record_id}
+# and /admin/{entity} routes would otherwise shadow it (FastAPI matches
+# routers in registration order).
+api_router.include_router(nc_purchase_sync_router)
 api_router.include_router(admin_router)
