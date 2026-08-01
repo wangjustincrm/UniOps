@@ -51,13 +51,17 @@ def upsert(cur, payload: dict, system_user_id) -> dict:
     counts = dict(pos_upserted=0, po_lines_upserted=0, grs_upserted=0,
                   gr_lines_upserted=0, skipped_consumed=0)
     po_id_by_ncpk, po_line_id_by_ncpk, gr_id_by_ncpk = {}, {}, {}
+    consumed_pks: set = set()
 
     for po in payload["orders"]:
         cur.execute("select id from purchase_orders where nc_source_pk=%s and source='nc'",
                     (po["nc_source_pk"],))
         row = cur.fetchone()
         if row and _po_consumed(cur, row[0]):
-            po_id_by_ncpk[po["nc_source_pk"]] = row[0]
+            # A consumed PO and ALL its children are left untouched: record its
+            # nc_source_pk but DON'T map it — the line/GR loops below skip it, so
+            # the data the 3-way match relied on is never rewritten.
+            consumed_pks.add(po["nc_source_pk"])
             counts["skipped_consumed"] += 1
             continue
         if row:
@@ -81,8 +85,10 @@ def upsert(cur, payload: dict, system_user_id) -> dict:
         counts["pos_upserted"] += 1
 
     for ln in payload["order_lines"]:
+        if ln["po_nc_pk"] in consumed_pks:   # consumed parent — never touch its lines
+            continue
         pid = po_id_by_ncpk.get(ln["po_nc_pk"])
-        if pid is None:      # parent skipped (consumed or no-vendor)
+        if pid is None:      # parent skipped (no-vendor / not in this batch)
             continue
         cur.execute("select id from po_line_items where nc_source_pk=%s", (ln["nc_source_pk"],))
         row = cur.fetchone()
@@ -105,6 +111,8 @@ def upsert(cur, payload: dict, system_user_id) -> dict:
         counts["po_lines_upserted"] += 1
 
     for gr in payload["grs"]:
+        if gr["po_nc_pk"] in consumed_pks:   # consumed parent — don't insert GRs
+            continue
         pid = po_id_by_ncpk.get(gr["po_nc_pk"])
         if pid is None:
             continue

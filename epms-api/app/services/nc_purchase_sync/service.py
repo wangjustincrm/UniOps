@@ -95,20 +95,27 @@ def _mark_terminal(dsn, run_id, **fields):
 
 def _full_reload_delete(cur) -> int:
     """Delete the NC-sourced mirror ahead of a full reload, but PRESERVE any NC
-    PO already consumed downstream (matched invoice with a gr_id). Returns the
-    number of consumed POs kept. GRs are deleted before POs (goods_receipts.po_id
-    is ON DELETE RESTRICT); po_line_items / gr_line_items cascade."""
-    cur.execute("select id from purchase_orders where source='nc'")
-    consumed = [pid for (pid,) in cur.fetchall() if writer._po_consumed(cur, pid)]
-    if consumed:
+    PO a human/downstream doc already touched. Returns the number of POs kept.
+
+    "Touched" = referenced by ANY invoice row, not just a consumed (matched+gr)
+    one. `invoices.po_id` is ON DELETE RESTRICT, so deleting a PO that any invoice
+    points at (even a draft/unmatched one) would raise and abort the whole run —
+    so the exclusion has to be broader than the writer's per-row consumed guard.
+    GRs are deleted before POs (goods_receipts.po_id is ON DELETE RESTRICT);
+    po_line_items / gr_line_items cascade."""
+    cur.execute(
+        "select id from purchase_orders po where po.source='nc' "
+        "and exists (select 1 from invoices i where i.po_id = po.id)")
+    protected = [pid for (pid,) in cur.fetchall()]
+    if protected:
         cur.execute("delete from goods_receipts where source='nc' "
-                    "and not (po_id = any(%s))", (consumed,))
+                    "and not (po_id = any(%s))", (protected,))
         cur.execute("delete from purchase_orders where source='nc' "
-                    "and not (id = any(%s))", (consumed,))
+                    "and not (id = any(%s))", (protected,))
     else:
         cur.execute("delete from goods_receipts where source='nc'")
         cur.execute("delete from purchase_orders where source='nc'")
-    return len(consumed)
+    return len(protected)
 
 
 def start_run(mode: str, started_by, *, fetch=None, pg_dsn: str | None = None,

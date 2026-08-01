@@ -83,6 +83,25 @@ def _attach_matched_invoice(cur, nc_pk):
          Decimal("100"), uid, po_id, gr_id))
 
 
+def _attach_unmatched_invoice(cur, nc_pk):
+    """An invoice that references the NC PO but is NOT consumed (unmatched, no
+    gr_id) — invoices.po_id is ON DELETE RESTRICT, so a full reload must still
+    preserve this PO or the DELETE would FK-fail."""
+    cur.execute("select id, vendor_id, vendor_name from purchase_orders "
+                "where nc_source_pk=%s and source='nc'", (nc_pk,))
+    po_id, vid, vname = cur.fetchone()
+    cur.execute("select id from users where email=%s", ("nc-sync@epms.local",))
+    uid = cur.fetchone()[0]
+    cur.execute(
+        "insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
+        " vendor_name, amount, tax_amount, total_amount, currency, invoice_date, "
+        " due_date, status, line_items, uploaded_by, po_id) "
+        "values (%s,%s,%s,%s,%s,%s,0,%s,'CAD', current_date, current_date, "
+        " 'unmatched', '[]'::jsonb, %s, %s)",
+        (uuid.uuid4(), f"INVU-{nc_pk}", "VINV-2", vid, vname, Decimal("50"),
+         Decimal("50"), uid, po_id))
+
+
 # ── writer.upsert ────────────────────────────────────────────────────────────
 
 def test_upsert_inserts_po_and_gr(pg_cur, seeded_vendor, system_user_id):
@@ -117,12 +136,35 @@ def test_upsert_skips_consumed_po(pg_cur, seeded_vendor, system_user_id):
     from app.services.nc_purchase_sync import writer
     writer.upsert(pg_cur, _mini_payload(seeded_vendor), system_user_id)
     _attach_matched_invoice(pg_cur, "O1")
+    # Second run tries to rewrite BOTH the header total AND the line qty/price —
+    # a consumed PO must leave header and children untouched.
     payload = _mini_payload(seeded_vendor)
     payload["orders"][0]["total"] = Decimal("999")
+    payload["order_lines"][0]["qty"] = Decimal("555")
+    payload["order_lines"][0]["unit_price"] = Decimal("777")
     counts = writer.upsert(pg_cur, payload, system_user_id)
     pg_cur.execute("select total from purchase_orders where nc_source_pk='O1'")
-    assert pg_cur.fetchone()[0] != Decimal("999")     # not overwritten
+    assert pg_cur.fetchone()[0] != Decimal("999")     # header not overwritten
+    pg_cur.execute("select qty, unit_price from po_line_items where nc_source_pk='OL1'")
+    qty, unit_price = pg_cur.fetchone()
+    assert qty == Decimal("10.0000") and unit_price == Decimal("10.00")   # children untouched
     assert counts["skipped_consumed"] >= 1
+
+
+def test_upsert_persists_realistic_composite_gr_key(pg_cur, seeded_vendor, system_user_id):
+    """GR nc_source_pk is transform's "{arr_pk}:{ord_pk}" — ~41 chars on real
+    20-char NC pks. Must persist without truncation (fails against String(20))."""
+    from app.services.nc_purchase_sync import writer
+    long_pk = "1001A1100000003CIP7S:1001A1100000003CGZLN"   # 41 chars, two 20-char pks
+    assert len(long_pk) == 41
+    payload = _mini_payload(seeded_vendor)
+    payload["grs"][0]["nc_source_pk"] = long_pk
+    payload["gr_lines"][0]["gr_nc_pk"] = long_pk
+    writer.upsert(pg_cur, payload, system_user_id)
+    pg_cur.execute("select nc_source_pk from goods_receipts "
+                   "where source='nc' and nc_source_pk=%s", (long_pk,))
+    row = pg_cur.fetchone()
+    assert row is not None and row[0] == long_pk     # no truncation
 
 
 # ── service orchestration ────────────────────────────────────────────────────
@@ -232,6 +274,26 @@ def test_full_reload_preserves_consumed_po(committed_nc_env):
     cur = con.cursor()
     cur.execute("select count(*) from purchase_orders where nc_source_pk='O1'")
     assert cur.fetchone()[0] == 1     # consumed PO survived the full reload
+    cur.execute("select status, skipped_consumed from nc_purchase_sync_runs where id=%s", (rid,))
+    status, skipped = cur.fetchone()
+    assert status == "success"
+    assert skipped >= 1
+
+
+def test_full_reload_preserves_invoice_linked_po(committed_nc_env):
+    """A NC PO referenced by a NON-consumed invoice (unmatched, no gr) must also
+    survive a full reload — invoices.po_id is ON DELETE RESTRICT, so deleting it
+    would abort the run. The run succeeds and the PO is kept."""
+    from app.services.nc_purchase_sync import service
+    dsn, vid, vname, uid, con = committed_nc_env
+    service.start_run("incremental", uid, fetch=_raw_fetch(), pg_dsn=dsn, run_worker=True)
+    _attach_unmatched_invoice(con.cursor(), "O1")     # invoice-linked but NOT consumed
+
+    rid = service.start_run("full", uid, fetch=_raw_fetch("2026-08-03 09:00:00"),
+                            pg_dsn=dsn, run_worker=True)
+    cur = con.cursor()
+    cur.execute("select count(*) from purchase_orders where nc_source_pk='O1'")
+    assert cur.fetchone()[0] == 1     # kept despite non-matched invoice; run didn't FK-fail
     cur.execute("select status, skipped_consumed from nc_purchase_sync_runs where id=%s", (rid,))
     status, skipped = cur.fetchone()
     assert status == "success"

@@ -16,14 +16,14 @@ depends_on = None
 def upgrade() -> None:
     for tbl in ("purchase_orders", "goods_receipts"):
         op.add_column(tbl, sa.Column("source", sa.String(length=10), nullable=True))
-        op.add_column(tbl, sa.Column("nc_source_pk", sa.String(length=20), nullable=True))
+        op.add_column(tbl, sa.Column("nc_source_pk", sa.String(length=50), nullable=True))
         op.create_index(f"ix_{tbl}_source", tbl, ["source"])
         op.create_index(
             f"uq_{tbl}_nc_source_pk", tbl, ["nc_source_pk"],
             unique=True, postgresql_where=sa.text("source = 'nc'"),
         )
     for tbl in ("po_line_items", "gr_line_items"):
-        op.add_column(tbl, sa.Column("nc_source_pk", sa.String(length=20), nullable=True))
+        op.add_column(tbl, sa.Column("nc_source_pk", sa.String(length=50), nullable=True))
         op.create_index(
             f"uq_{tbl}_nc_source_pk", tbl, ["nc_source_pk"],
             unique=True, postgresql_where=sa.text("nc_source_pk IS NOT NULL"),

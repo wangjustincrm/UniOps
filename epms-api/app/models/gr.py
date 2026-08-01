@@ -49,7 +49,7 @@ class GoodsReceipt(UUIDPrimaryKey, TimestampMixin, Base):
 
     # NC ERP provenance (NULL for non-NC GRs)
     source: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
-    nc_source_pk: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    nc_source_pk: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acknowledged_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -90,7 +90,7 @@ class GrLineItem(UUIDPrimaryKey, Base):
     # good | discrepancy | damaged
     condition: Mapped[str] = mapped_column(String(20), nullable=False, default="good")
     discrepancy_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    nc_source_pk: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    nc_source_pk: Mapped[str | None] = mapped_column(String(50), nullable=True)
     actual_qty: Mapped[Decimal | None] = mapped_column(Numeric(15, 4), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
