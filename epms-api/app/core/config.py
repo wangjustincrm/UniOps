@@ -133,6 +133,13 @@ class Settings(BaseSettings):
     SP_TENANT: str = "canadaroyalmilk.ca"
     SP_SITE: str = "https://canadaroyalmilk.sharepoint.com/sites/pr2"
 
+    # ── NC65 Oracle (read-only source for nc_purchase_sync) ─────────────────
+    nc_host: str | None = None
+    nc_port: int = 1521
+    nc_service: str | None = None
+    nc_user: str | None = None
+    nc_password: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
