@@ -58,15 +58,28 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
             continue
         grp[(al["pk_arriveorder"], al["pk_order"])].append(al)
 
+    # per-arrival order sets, used to decide whether THIS arrival spans multiple
+    # orders (global grp size is irrelevant — other unrelated arrivals in the same
+    # batch must not affect this arrival's GR number).
+    orders_per_arrival = defaultdict(set)
+    for arr_pk, ord_pk in grp:
+        orders_per_arrival[arr_pk].add(ord_pk)
+
     grs, gr_lines = [], []
     for (arr_pk, ord_pk), lines in grp.items():
         ah = arrivals.get(arr_pk)
         if not ah:
             continue
         gr_pk = f"{arr_pk}:{ord_pk}"          # composite, unique per split GR
+        arrival_orders = orders_per_arrival[arr_pk]
+        if len(arrival_orders) > 1:
+            idx = sorted(arrival_orders).index(ord_pk) + 1
+            number = f"{ah['vbillcode']}-{idx}"
+        else:
+            number = ah["vbillcode"]
         grs.append({
             "nc_source_pk": gr_pk, "po_nc_pk": ord_pk,
-            "number": ah["vbillcode"] if len(grp) == 1 else f"{ah['vbillcode']}-{ord_pk[-4:]}",
+            "number": number,
             "title": ah["vbillcode"], "gr_type": "physical", "procurement_type": 1,
             "status": "confirmed", "source": "nc",
         })

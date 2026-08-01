@@ -74,8 +74,13 @@ def test_transform_skips_order_without_vendor():
 
 
 def test_transform_received_qty_rolled_up_to_po_line():
-    r = transform(_raw(), VEND)
-    assert r["order_lines"][0]["received_qty"] == Decimal("19000")
+    raw = _raw()
+    # second arrival line against the same PO line -> received_qty must be the SUM,
+    # not just the last line's qty.
+    raw["arrival_lines"].append({**raw["arrival_lines"][0], "pk_arriveorder_b": "AL1b",
+                                 "nastnum": Decimal("5000")})
+    r = transform(raw, VEND)
+    assert r["order_lines"][0]["received_qty"] == Decimal("19000") + Decimal("5000")
 
 
 def test_transform_splits_arrival_spanning_two_orders_into_two_grs():
@@ -87,3 +92,24 @@ def test_transform_splits_arrival_spanning_two_orders_into_two_grs():
     r = transform(raw, VEND)
     grs_for_a1 = [g for g in r["grs"] if g["nc_source_pk"].startswith("A1")]
     assert len(grs_for_a1) == 2  # one GR per (arrival, order)
+    # a genuinely order-spanning arrival gets distinct, deterministic 1-based
+    # suffixes ordered by pk_order, not the last-4-chars of pk_order.
+    numbers = sorted(g["number"] for g in grs_for_a1)
+    assert numbers == ["DH2021-1", "DH2021-2"]
+
+
+def test_transform_independent_non_splitting_arrivals_not_suffixed():
+    # A1->O1 and A2->O2 are two SEPARATE arrivals, each mapping to only one order.
+    # len(grp) across the whole batch is 2, but neither arrival individually spans
+    # multiple orders, so neither GR number should get a "-N" suffix (regression
+    # guard: suffix decision must be scoped per-arrival, not to the global batch).
+    raw = _raw()
+    raw["orders"].append({**raw["orders"][0], "pk_order": "O2", "vbillcode": "PO-011"})
+    raw["order_lines"].append({**raw["order_lines"][0], "pk_order_b": "OL2", "pk_order": "O2"})
+    raw["arrivals"].append({**raw["arrivals"][0], "pk_arriveorder": "A2", "vbillcode": "DH2022"})
+    raw["arrival_lines"].append({**raw["arrival_lines"][0], "pk_arriveorder_b": "AL2",
+                                 "pk_arriveorder": "A2", "pk_order": "O2", "pk_order_b": "OL2"})
+    r = transform(raw, VEND)
+    numbers = {g["nc_source_pk"]: g["number"] for g in r["grs"]}
+    assert numbers["A1:O1"] == "DH2021"
+    assert numbers["A2:O2"] == "DH2022"
