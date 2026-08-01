@@ -7,7 +7,7 @@ import {
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/ui/badge'
+import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
 import { OA_BASE_URL } from '@/lib/api'
@@ -616,6 +616,11 @@ export default function PoDetailPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-bold text-neutral-900">{po.number}</h1>
               <StatusBadge status={po.status as DocumentStatus} />
+              {po.source === 'nc' && (
+                <span title="This PO was mirrored from NC ERP — read-only origin context">
+                  <Badge variant="neutral">Synced from NC ERP</Badge>
+                </span>
+              )}
               {po.is_prepaid && (
                 <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
                   Prepayment

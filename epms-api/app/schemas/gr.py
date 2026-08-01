@@ -108,6 +108,9 @@ class GrResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     line_items: list[GrLineItemResponse]
+    # NC ERP provenance — 'nc' for GRs mirrored from NC arrivals, None for GRs
+    # created natively in UniOps. Read-only context surfaced on detail pages.
+    source: str | None = None
 
     model_config = {"from_attributes": True}
 

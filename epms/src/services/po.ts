@@ -72,6 +72,9 @@ export interface ApiPo {
   // 该 PO 被其他发票累计分摊的税前总额(仅 match-candidates 端点返回)
   already_allocated_total?: string | null
   current_step?: CurrentStep | null
+  // NC ERP provenance — 'nc' for POs mirrored from NC purchase orders, null/undefined
+  // for POs created natively in UniOps.
+  source?: string | null
 }
 
 export interface CreatePoBody {

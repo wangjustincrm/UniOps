@@ -154,5 +154,8 @@ class PoResponse(BaseModel):
     # 该 PO 被【其他发票】累计分摊的总额(所有 po_line_id 之和,仅 match-candidates 端点填充)
     already_allocated_total: Decimal | None = None
     current_step: CurrentStep | None = None
+    # NC ERP provenance — 'nc' for POs mirrored from NC purchase orders, None for
+    # POs created natively in UniOps. Read-only context surfaced on PO detail.
+    source: str | None = None
 
     model_config = {"from_attributes": True}
