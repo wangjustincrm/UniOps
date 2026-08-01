@@ -549,15 +549,25 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
             continue
         grp[(al["pk_arriveorder"], al["pk_order"])].append(al)
 
+    # per-arrival order sets → suffix ONLY when THIS arrival spans >1 order
+    orders_per_arrival = defaultdict(set)
+    for (arr_pk, ord_pk) in grp:
+        orders_per_arrival[arr_pk].add(ord_pk)
+
     grs, gr_lines = [], []
     for (arr_pk, ord_pk), lines in grp.items():
         ah = arrivals.get(arr_pk)
         if not ah:
             continue
         gr_pk = f"{arr_pk}:{ord_pk}"          # composite, unique per split GR
+        ords = orders_per_arrival[arr_pk]
+        if len(ords) > 1:
+            idx = sorted(ords).index(ord_pk) + 1   # stable across re-syncs, short
+            number = f"{ah['vbillcode']}-{idx}"
+        else:
+            number = ah["vbillcode"]
         grs.append({
-            "nc_source_pk": gr_pk, "po_nc_pk": ord_pk,
-            "number": ah["vbillcode"] if len(grp) == 1 else f"{ah['vbillcode']}-{ord_pk[-4:]}",
+            "nc_source_pk": gr_pk, "po_nc_pk": ord_pk, "number": number,
             "title": ah["vbillcode"], "gr_type": "physical", "procurement_type": 1,
             "status": "confirmed", "source": "nc",
         })
