@@ -1,7 +1,10 @@
 import uuid
 from decimal import Decimal
 
-from app.services.nc_purchase_sync.reader import nc_configured
+from app.services.nc_purchase_sync.reader import (
+    nc_configured,
+    select_incremental_order_pks,
+)
 from app.services.nc_purchase_sync.transform import transform
 
 
@@ -16,6 +19,55 @@ def test_nc_configured_true_when_all_set(monkeypatch):
     for f, v in [("nc_host", "h"), ("nc_service", "ORCL"), ("nc_user", "u"), ("nc_password", "p")]:
         monkeypatch.setattr(settings, f, v, raising=False)
     assert nc_configured() is True
+
+
+# ── FIX 2: incremental order-set union (arrival-only changes) ────────────────
+#
+# The reader hits real Oracle, so we unit-test the pure decision helper it
+# delegates to: given the candidate order rows and arrival rows an incremental
+# run pulled (already SQL-filtered by watermark), which order pks must be fetched?
+# The critical case: a NEW arrival posted against an already-synced order whose
+# order.modifiedtime did NOT advance (NC doesn't reliably bump it) — VERIFIED in
+# prod (139 status-3 orders have order.modifiedtime EARLIER than their latest
+# arrival). An order-only watermark filter would miss it and the GR would never
+# mirror. NC timestamps are 'YYYY-MM-DD HH24:MI:SS' strings (lexicographic == chronological).
+WM = "2026-05-02 00:00:00"
+
+
+def test_select_incremental_includes_order_modified_after_wm():
+    order_rows = [{"pk_order": "O1", "modifiedtime": "2026-05-03 09:00:00"}]
+    assert select_incremental_order_pks(order_rows, [], WM) == {"O1"}
+
+
+def test_select_incremental_arrival_only_change_is_picked_up():
+    # O9's own header did NOT move (modifiedtime BEFORE wm) but a new arrival was
+    # posted (creationtime AFTER wm). Must be fetched so its GR gets mirrored.
+    order_rows = [{"pk_order": "O9", "modifiedtime": "2026-04-01 00:00:00"}]
+    arrival_rows = [{"pk_order": "O9", "modifiedtime": "2026-04-01 00:00:00",
+                     "creationtime": "2026-05-03 08:00:00"}]
+    # order-only filter would drop O9; the union recovers it via the arrival.
+    assert select_incremental_order_pks([], arrival_rows, WM) == {"O9"}
+    assert select_incremental_order_pks(order_rows, arrival_rows, WM) == {"O9"}
+
+
+def test_select_incremental_arrival_modifiedtime_also_qualifies():
+    arrival_rows = [{"pk_order": "O5", "modifiedtime": "2026-05-04 00:00:00",
+                     "creationtime": "2026-04-01 00:00:00"}]
+    assert select_incremental_order_pks([], arrival_rows, WM) == {"O5"}
+
+
+def test_select_incremental_union_of_order_and_arrival_sets():
+    order_rows = [{"pk_order": "O1", "modifiedtime": "2026-05-03 09:00:00"}]
+    arrival_rows = [{"pk_order": "O2", "modifiedtime": None,
+                     "creationtime": "2026-05-03 08:00:00"}]
+    assert select_incremental_order_pks(order_rows, arrival_rows, WM) == {"O1", "O2"}
+
+
+def test_select_incremental_excludes_everything_below_wm():
+    order_rows = [{"pk_order": "Oold", "modifiedtime": "2026-01-01 00:00:00"}]
+    arrival_rows = [{"pk_order": "Oold", "modifiedtime": "2026-01-01 00:00:00",
+                     "creationtime": "2026-01-01 00:00:00"}]
+    assert select_incremental_order_pks(order_rows, arrival_rows, WM) == set()
 
 
 VEND = {"0000415": (uuid.uuid4(), "Lactalis Canada")}
