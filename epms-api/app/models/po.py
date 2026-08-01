@@ -39,6 +39,10 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
     delivery_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # NC ERP provenance (NULL for non-NC POs)
+    source: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
+    nc_source_pk: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     approval_step_idx: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     # Source PR (optional — PO can be created without a PR)
@@ -84,6 +88,7 @@ class PoLineItem(UUIDPrimaryKey, Base):
     line_total: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     received_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False, default=Decimal("0"))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nc_source_pk: Mapped[str | None] = mapped_column(String(20), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     po: Mapped["PurchaseOrder"] = relationship("PurchaseOrder", back_populates="line_items")
