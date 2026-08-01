@@ -55,3 +55,28 @@ async def test_trigger_409_when_already_running(admin_client, monkeypatch):
     monkeypatch.setattr("app.services.nc_purchase_sync.service.start_run", _boom)
     r = await admin_client.post("/api/v1/admin/nc-purchase-sync", json={"mode": "incremental"})
     assert r.status_code == 409
+
+
+def test_nc_purchase_sync_registered_before_admin_catchall():
+    """Guards the fix for a real bug: admin_router's data-maintenance catch-alls
+    (`GET /admin/{entity}`, `GET /admin/{entity}/{record_id}`) silently swallowed
+    `/admin/nc-purchase-sync/*` when that router was registered after admin_router
+    in app/api/v1/__init__.py — FastAPI matches routes in registration order, so
+    the generic `{entity}`/`{record_id}` path params matched first. If a future
+    edit reorders the include_router(...) calls, this must fail."""
+    from app.api.v1 import api_router
+
+    nc_idx = min(
+        i for i, r in enumerate(api_router.routes)
+        if "nc-purchase-sync" in getattr(r, "path", "")
+    )
+    catchall_idx = min(
+        i for i, r in enumerate(api_router.routes)
+        if getattr(r, "path", "") == "/admin/{entity}"
+    )
+    assert nc_idx < catchall_idx, (
+        "nc-purchase-sync router must be registered before admin_router's "
+        "/admin/{entity} catch-all in app/api/v1/__init__.py, or "
+        "/admin/nc-purchase-sync/* requests will be swallowed by the "
+        "data-maintenance routes instead of reaching this router"
+    )

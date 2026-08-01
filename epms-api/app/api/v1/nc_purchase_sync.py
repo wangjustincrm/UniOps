@@ -11,18 +11,23 @@ just passes reader.fetch_nc straight through and echoes the effective cutover.
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, text
 
-from app.core.deps import CurrentUserPayload, SessionDep
+from app.core.deps import CurrentUserPayload, SessionDep, require_roles
 from app.models.nc_purchase_sync import RUNNING, NcPurchaseSyncRun
 from app.services.nc_purchase_sync import reader
 from app.services.nc_purchase_sync import service as svc
 
 router = APIRouter(prefix="/admin/nc-purchase-sync", tags=["nc-purchase-sync"])
+
+# Reuse the existing system_admin dependency (same pattern as projects.py /
+# users.py) — applies to the POST trigger only. GET /status stays open to any
+# authenticated user; it computes can_sync from the caller's own role.
+AdminDep = Annotated[dict, Depends(require_roles("system_admin"))]
 
 
 class SyncIn(BaseModel):
@@ -70,9 +75,7 @@ async def status(user: CurrentUserPayload, db: SessionDep):
 
 
 @router.post("", status_code=202)
-async def trigger(body: SyncIn, user: CurrentUserPayload):
-    if user.get("role") != "system_admin":
-        raise HTTPException(status_code=403, detail="system_admin only")
+async def trigger(body: SyncIn, user: AdminDep):
     if not svc.nc_configured():
         raise HTTPException(status_code=503, detail="NC connection is not configured")
     if body.mode == "full" and body.confirm != svc.FULL_CONFIRM:
