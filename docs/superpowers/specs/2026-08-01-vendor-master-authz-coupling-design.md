@@ -128,3 +128,11 @@ const permissions = useMemo(
 - 不动 mdm 网关语义、不加通用权限隐含/捆绑框架。
 - 不处理 `mdm.finance.write` 或其它 MDM 权限的类似合并（如需另开）。
 - 不清理 epms-api 里已退休的硬编码 `PERMISSION_KEYS` 死路径（无害，另议）。
+
+## 9. 已知follow-up（本分支不做，另开）
+
+**★ seed 未编码不变量**：本方案建立不变量「持 `vendor_master` 的角色必也持 `mdm.vendor.write`」，但只靠 §4.1 联动（未来切换）+ §4.2 回填（现存生产）落实；**seed 脚本 `seed_phase2_keys.py:PHASE2_DEFAULTS` 仍按被替代的老网关授权**（`mdm.vendor.write` 只给 system_admin/vendor_manager/finance_manager，procurement_officer/manager 只有 `vendor_master`）。→ **全新环境/DR 重建/重跑 seed 会重现建 Vendor 403**。
+
+未在本分支修复的原因：直接把 procurement_officer/manager 加入 `PHASE2_DEFAULTS["mdm.vendor.write"]` 会与 §4.4 回填测试前置（断言 procurement_officer 回填前**没有** `mdm.vendor.write`）冲突，并波及 `verify_gate_parity.py`（该脚本核对 seed 默认 == 被替代网关的准入集）——属另一处成体系的改动。
+
+follow-up 方案（另开分支）：把 `vendor_master` 的默认持有者并入 `PHASE2_DEFAULTS["mdm.vendor.write"]`，同步更新 `verify_gate_parity.py` 注释说明「此 key 故意偏离老网关以编码耦合不变量」，并重构回填测试改用一个「手工建 vendor_master 行、无 mdm.vendor.write」的角色作为被测对象（而非依赖 seed 默认）。生产不受影响（已 seed，靠本分支回填）。
