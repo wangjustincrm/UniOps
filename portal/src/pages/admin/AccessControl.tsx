@@ -31,6 +31,16 @@ interface AuthzDefs {
 /** role_code → { permission_key: bool }. Legacy shape used by GET/PATCH /config/role-permissions. */
 type Matrix = Record<string, Record<string, boolean>>
 
+/**
+ * Permission keys hidden from the matrix because they are coupled to another,
+ * visible checkbox and granted automatically by the backend. `mdm.vendor.write`
+ * is granted whenever the EPMS "Vendor Master" row is ticked (identity
+ * patch_matrix couples them), so showing it as a separate toggle would let an
+ * admin desync the two. See
+ * docs/superpowers/specs/2026-08-01-vendor-master-authz-coupling-design.md
+ */
+const HIDDEN_PERMISSION_KEYS = new Set<string>(['mdm.vendor.write'])
+
 interface ApiUser {
   id: string
   email: string
@@ -195,7 +205,9 @@ function PermissionMatrixTab() {
     [defsQ.data],
   )
   const permissions = useMemo(
-    () => [...(defsQ.data?.permissions ?? [])].sort((a, b) => a.sort - b.sort),
+    () => [...(defsQ.data?.permissions ?? [])]
+      .filter((p) => !HIDDEN_PERMISSION_KEYS.has(p.key))
+      .sort((a, b) => a.sort - b.sort),
     [defsQ.data],
   )
 
