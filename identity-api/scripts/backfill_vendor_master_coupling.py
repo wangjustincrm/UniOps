@@ -14,11 +14,12 @@ from app.db.base import AsyncSessionLocal
 
 
 async def backfill_vendor_master_coupling(session) -> dict:
-    # updated_by is nullable; copying the source row's value (NULL for seeded
-    # grants) is fine. One-directional: only vendor_master holders get the row.
+    # One-directional: only vendor_master holders get the mdm.vendor.write row.
+    # updated_by is left NULL (default), matching seed_phase2_keys / seed_authz
+    # precedent — don't inherit the source row's grantor.
     r = await session.execute(sa.text(
-        "INSERT INTO role_permissions (role_code, permission_key, updated_by) "
-        "SELECT rp.role_code, 'mdm.vendor.write', rp.updated_by "
+        "INSERT INTO role_permissions (role_code, permission_key) "
+        "SELECT rp.role_code, 'mdm.vendor.write' "
         "FROM role_permissions rp "
         "WHERE rp.permission_key = 'vendor_master' "
         "ON CONFLICT (role_code, permission_key) DO NOTHING"))
