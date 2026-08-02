@@ -83,6 +83,11 @@ async def patch_matrix(body: MatrixPatch, db: SessionDep, user: CurrentUserPaylo
     for role, kv in body.changes.items():
         for key, val in kv.items():
             await _apply_grant(db, role, key, val, actor)
+            # mdm.vendor.write is driven SOLELY by vendor_master here (its own
+            # matrix row is hidden in the UI), so mirroring val symmetrically is
+            # safe: a revoke also clears any independent grant, and a delta never
+            # carries both keys with conflicting values. This single-switch model
+            # is what makes the revoke blast-radius and dict-ordering edges benign.
             coupled = COUPLED_PERMISSIONS.get(key)
             # Guard on perm_keys: only mirror when the coupled key is a
             # registered permission_def, else the FK insert would blow up an

@@ -104,3 +104,24 @@ async def test_coupling_does_not_bypass_locks(seeded_full, db_session):
                           json={"changes": {role: {"vendor_master": False}}})
         assert r.status_code == 409
     assert await _has(db_session, role, "mdm.vendor.write")  # not revoked
+
+
+async def test_coupling_skipped_when_mdm_key_unregistered(db_session):
+    # Only seed_authz here — mdm.vendor.write is NOT a registered permission_def,
+    # so the `coupled in perm_keys` guard must skip the mirror (no FK failure).
+    await db_session.execute(sa.text(
+        "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS role_permissions jsonb DEFAULT '{}'::jsonb"))
+    await db_session.execute(sa.text(
+        "ALTER TABLE company_config ADD COLUMN IF NOT EXISTS custom_roles jsonb DEFAULT '[]'::jsonb"))
+    # Ensure the phase-2 key is absent regardless of test ordering (session-scoped DB).
+    await db_session.execute(sa.text("DELETE FROM role_permissions WHERE permission_key='mdm.vendor.write'"))
+    await db_session.execute(sa.text("DELETE FROM permission_defs WHERE key='mdm.vendor.write'"))
+    await db_session.commit()
+    await seed_authz(db_session)
+    await db_session.commit()
+    async with _admin_client() as c:
+        r = await c.patch(f"{BASE}/authz/matrix",
+                          json={"changes": {"auditor": {"vendor_master": True}}})
+        assert r.status_code == 200
+    assert await _has(db_session, "auditor", "vendor_master")
+    assert not await _has(db_session, "auditor", "mdm.vendor.write")
