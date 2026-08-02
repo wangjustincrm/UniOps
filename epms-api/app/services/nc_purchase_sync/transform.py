@@ -2,6 +2,15 @@
 from collections import defaultdict
 from decimal import Decimal
 
+# NC supplier-code aliases: NC has dirty duplicate supplier records for the same
+# real company. Map the duplicate code to the canonical one so its orders resolve
+# to the canonical company's UniOps vendor. NC data itself is never modified (we
+# are read-only on NC); this only affects how the sync resolves the vendor.
+#   0000012A "1Zhong bai ..."  ->  0000012 "Zhong bai Xingye Food Technology"
+_SUPPLIER_CODE_ALIASES = {
+    "0000012A": "0000012",
+}
+
 
 def _num(v):
     return Decimal(str(v)) if v is not None else Decimal("0")
@@ -22,6 +31,8 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
     kept_order_pks = set()
     for o in raw["orders"]:
         code = sup.get(o["pk_supplier"])
+        if code:
+            code = _SUPPLIER_CODE_ALIASES.get(code, code)
         vend = vendor_by_erp.get(code) if code else None
         if not vend:
             skipped.append(o["vbillcode"])
