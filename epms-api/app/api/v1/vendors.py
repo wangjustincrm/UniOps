@@ -215,8 +215,12 @@ async def import_vendors_from_erp(
             if not supplier:
                 errors.append(ErpVendorImportError(erp_supplier_code=code, reason="ERP supplier not in mdm-api mirror"))
                 continue
-            if await vendor_crud.get_by_code(db, code):
-                errors.append(ErpVendorImportError(erp_supplier_code=code, reason=f"vendor already exists for code={code}"))
+            # Dedup by ERP id (the exact ERP supplier code we store in erp_id),
+            # NOT get_by_code: get_by_code strips leading zeros, so an ERP code like
+            # "0000415" would falsely match an unrelated vendor whose internal code
+            # is "415" and wrongly block the import.
+            if await vendor_crud.get_by_erp_id(db, code):
+                errors.append(ErpVendorImportError(erp_supplier_code=code, reason=f"vendor already exists for erp_id={code}"))
                 continue
             try:
                 await mdm.create_partner({
