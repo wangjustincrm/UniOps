@@ -53,12 +53,27 @@ def _po_consumed(cur, po_id) -> bool:
     return cur.fetchone() is not None
 
 
+def _number_conflict(cur, number, nc_source_pk) -> bool:
+    """True if purchase_orders already holds this document number on a row that is
+    NOT this NC order — e.g. a PMS-imported PO that shares the same PO-xxx code.
+    purchase_orders.number is UNIQUE, so inserting a colliding NC order would abort
+    the whole run; instead the caller SKIPS that order (and its children) so the
+    sync completes and the pre-existing PO is never clobbered."""
+    cur.execute(
+        "select 1 from purchase_orders where number=%s "
+        "and (source is distinct from 'nc' or nc_source_pk is distinct from %s) limit 1",
+        (number, nc_source_pk),
+    )
+    return cur.fetchone() is not None
+
+
 def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
     """Idempotent mirror write. ``heartbeat`` (optional) is a zero-arg callable
     invoked every ~500 processed rows so a long-running full load can refresh its
     run row's updated_at and not be swept as stale mid-flight."""
     counts = dict(pos_upserted=0, po_lines_upserted=0, grs_upserted=0,
-                  gr_lines_upserted=0, skipped_consumed=0)
+                  gr_lines_upserted=0, skipped_consumed=0, skipped_number_collision=0)
+    collisions: list = []
     po_id_by_ncpk, po_line_id_by_ncpk, gr_id_by_ncpk = {}, {}, {}
     consumed_pks: set = set()
 
@@ -89,6 +104,15 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
                         (po["number"], po["title"], po["status"], po["currency"], po["total"],
                          po["vendor_id"], po["vendor_name"], po["notes"], pid))
         else:
+            if _number_conflict(cur, po["number"], po["nc_source_pk"]):
+                # Another PO already owns this number (e.g. PMS import). Skip this
+                # NC order and ALL its children so the run completes without
+                # aborting on the UNIQUE(number) constraint and without clobbering
+                # the pre-existing PO.
+                consumed_pks.add(po["nc_source_pk"])
+                counts["skipped_number_collision"] += 1
+                collisions.append(po["number"])
+                continue
             pid = uuid.uuid4()
             cur.execute(
                 "insert into purchase_orders (id,number,title,type,status,currency,subtotal,"
@@ -171,4 +195,7 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
              gl["qty_received"], "EA", gl["unit_price"], gl["line_total"], gl["sort_order"],
              gl["nc_source_pk"]))
         counts["gr_lines_upserted"] += 1
+    if collisions:
+        print(f"[nc_purchase_sync] skipped {len(collisions)} PO(s) on number collision "
+              f"with an existing non-NC PO: {collisions[:20]}", flush=True)
     return counts
