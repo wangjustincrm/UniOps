@@ -2,7 +2,7 @@
 import logging
 import uuid
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
@@ -10,8 +10,11 @@ from sqlalchemy.exc import ProgrammingError
 # Postgres SQLSTATE for "undefined_table" — the ONLY DB error we tolerate below.
 _UNDEFINED_TABLE = "42P01"
 
-from app.core.deps import CurrentUserDep, SessionDep
+from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud import expense as expense_crud
+from app.models.expense import ExpenseAttachment
+from app.services.attachment_helper import upload_to_file_server
+from app.services.pdf_tra import build_travel_application_pdf
 
 log = logging.getLogger(__name__)
 
@@ -72,3 +75,21 @@ async def user_directory(db: SessionDep, _: CurrentUserDep, q: str = ""):
             "expected in this service's test DB, returning []")
         return []
     return [DirectoryUser(id=r[0], full_name=r[1] or "", email=r[2]) for r in rows]
+
+
+@router.post("/travel-applications/{claim_id}/pdf")
+async def regenerate_tra_pdf(claim_id: uuid.UUID, db: SessionDep,
+                             user: CurrentUserDep, token: BearerTokenDep):
+    claim = await expense_crud.get_by_id(db, claim_id)
+    if not claim or claim.claim_type != "TRA":
+        raise HTTPException(status_code=404, detail="Travel Application not found")
+    data = build_travel_application_pdf(claim)
+    filename = f"{claim.claim_number}.pdf"
+    storage_key = await upload_to_file_server(
+        data, filename, "application/pdf", "tra", claim.id, token)
+    att = ExpenseAttachment(claim_id=claim.id, file_id=str(storage_key),
+                            file_name=filename, file_size_bytes=len(data),
+                            mime_type="application/pdf")
+    db.add(att)
+    await db.commit()
+    return {"file_name": filename, "file_id": str(storage_key)}
