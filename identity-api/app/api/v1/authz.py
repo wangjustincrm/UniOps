@@ -12,6 +12,12 @@ from app.models.user import User
 
 router = APIRouter(tags=["authz"])
 
+# Granting the EPMS "Vendor Master" permission must also grant the mdm-layer
+# key that actually gates vendor create/update, so one Access Control checkbox
+# works end to end. See
+# docs/superpowers/specs/2026-08-01-vendor-master-authz-coupling-design.md
+COUPLED_PERMISSIONS: dict[str, str] = {"vendor_master": "mdm.vendor.write"}
+
 
 def _require_admin(user: dict) -> uuid.UUID:
     if user.get("role") != "system_admin":
@@ -44,6 +50,19 @@ class MatrixPatch(BaseModel):
     changes: dict[str, dict[str, bool]]
 
 
+async def _apply_grant(db, role: str, key: str, val: bool, actor: uuid.UUID) -> None:
+    if val:
+        await db.execute(text(
+            "INSERT INTO role_permissions(role_code,permission_key,updated_by) "
+            "VALUES (:r,:k,:u) ON CONFLICT (role_code,permission_key) "
+            "DO UPDATE SET updated_by=:u, updated_at=now()"),
+            {"r": role, "k": key, "u": str(actor)})
+    else:
+        await db.execute(delete(RolePermission).where(
+            RolePermission.role_code == role,
+            RolePermission.permission_key == key))
+
+
 @router.patch("/authz/matrix")
 async def patch_matrix(body: MatrixPatch, db: SessionDep, user: CurrentUserPayload) -> dict:
     actor = _require_admin(user)
@@ -63,16 +82,18 @@ async def patch_matrix(body: MatrixPatch, db: SessionDep, user: CurrentUserPaylo
         raise HTTPException(status_code=409, detail={"locked": hit_locks})
     for role, kv in body.changes.items():
         for key, val in kv.items():
-            if val:
-                await db.execute(text(
-                    "INSERT INTO role_permissions(role_code,permission_key,updated_by) "
-                    "VALUES (:r,:k,:u) ON CONFLICT (role_code,permission_key) "
-                    "DO UPDATE SET updated_by=:u, updated_at=now()"),
-                    {"r": role, "k": key, "u": str(actor)})
-            else:
-                await db.execute(delete(RolePermission).where(
-                    RolePermission.role_code == role,
-                    RolePermission.permission_key == key))
+            await _apply_grant(db, role, key, val, actor)
+            # mdm.vendor.write is driven SOLELY by vendor_master here (its own
+            # matrix row is hidden in the UI), so mirroring val symmetrically is
+            # safe: a revoke also clears any independent grant, and a delta never
+            # carries both keys with conflicting values. This single-switch model
+            # is what makes the revoke blast-radius and dict-ordering edges benign.
+            coupled = COUPLED_PERMISSIONS.get(key)
+            # Guard on perm_keys: only mirror when the coupled key is a
+            # registered permission_def, else the FK insert would blow up an
+            # env where phase-2 keys were never seeded.
+            if coupled and coupled in perm_keys:
+                await _apply_grant(db, role, coupled, val, actor)
     return _matrix(*await _load(db))
 
 
