@@ -52,7 +52,17 @@ def _pg_dsn() -> str:
             f"user={u.username} password={u.password}")
 
 
-def _cutover() -> str:
+def _cutover(cur=None) -> str:
+    """Effective cutover. Prefer the admin-set value in company_config (read via
+    the given psycopg2 cursor); fall back to the env setting, then the default."""
+    if cur is not None:
+        try:
+            cur.execute("select nc_purchase_cutover from company_config limit 1")
+            row = cur.fetchone()
+            if row and row[0]:
+                return row[0]
+        except Exception:
+            pass
     return getattr(settings, "nc_purchase_cutover", None) or _DEFAULT_CUTOVER
 
 
@@ -157,7 +167,7 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         con = psycopg2.connect(dsn); con.autocommit = False
         cur = con.cursor()
         prev_wm = latest_watermark(cur)
-        raw = fetch(_cutover(), prev_wm if mode == "incremental" else None)
+        raw = fetch(_cutover(cur), prev_wm if mode == "incremental" else None)
 
         vendor_by_erp = writer.load_vendor_map(cur)
         payload = transform(raw, vendor_by_erp)

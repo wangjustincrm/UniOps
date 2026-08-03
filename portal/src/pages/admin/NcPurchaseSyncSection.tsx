@@ -45,6 +45,7 @@ export interface NcPurchaseSyncRun {
 export interface NcPurchaseSyncStatus {
   configured: boolean
   can_sync: boolean
+  can_set_cutover?: boolean
   cutover: string | null
   current_run: NcPurchaseSyncRun | null
   last_run: NcPurchaseSyncRun | null
@@ -82,12 +83,29 @@ export function NcPurchaseSyncSection() {
   const [confirm, setConfirm] = useState('')
   const [err, setErr] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
+  const [cutoverEdit, setCutoverEdit] = useState<string | null>(null)
+  const [cutoverSaving, setCutoverSaving] = useState(false)
 
   const { data: status } = useQuery({
     queryKey: ['nc-purchase-sync-status'],
     queryFn: () => epmsApi.get<NcPurchaseSyncStatus>('/admin/nc-purchase-sync/status'),
     refetchInterval: (q) => (q.state.data?.current_run ? 2000 : false),
   })
+
+  async function saveCutover() {
+    if (!cutoverEdit) return
+    setCutoverSaving(true)
+    setErr(null)
+    try {
+      await epmsApi.patch('/admin/nc-purchase-sync/cutover', { cutover: cutoverEdit })
+      setCutoverEdit(null)
+      qc.invalidateQueries({ queryKey: ['nc-purchase-sync-status'] })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save cutover')
+    } finally {
+      setCutoverSaving(false)
+    }
+  }
   const running = status?.current_run ?? null
 
   const start = async () => {
@@ -125,8 +143,32 @@ export function NcPurchaseSyncSection() {
         ) : (
           <>
             <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-              <span className="font-medium text-neutral-700">Cutover date:</span>{' '}
-              {status.cutover ?? '—'}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-neutral-700">Cutover date:</span>
+                <span>{(status.cutover ?? '—').slice(0, 10)}</span>
+                {status.can_set_cutover && (
+                  <>
+                    <span className="mx-1 text-neutral-300">|</span>
+                    <input
+                      type="date"
+                      className="rounded border border-neutral-300 px-2 py-1 text-xs"
+                      value={cutoverEdit ?? (status.cutover ?? '').slice(0, 10)}
+                      onChange={(e) => setCutoverEdit(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={saveCutover}
+                      disabled={cutoverSaving || !cutoverEdit || cutoverEdit === (status.cutover ?? '').slice(0, 10)}
+                      className="rounded bg-primary-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+                    >
+                      {cutoverSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-neutral-400">
+                Only NC purchase orders with an order date on/after this are imported. Run a Full reload after changing it.
+              </p>
             </div>
 
             {status.last_run && !running && <RunSummary run={status.last_run} label="Last sync" />}

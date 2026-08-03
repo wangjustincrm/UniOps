@@ -49,6 +49,11 @@ class CompanyConfig(Base):
         Numeric(5, 2), nullable=False, default=Decimal("5"), server_default="5"
     )
 
+    # ── NC purchase sync ────────────────────────────────────────────────────
+    # Cutover: only NC POs with order date >= this are imported. 'YYYY-MM-DD
+    # HH:MM:SS' (or date). NULL falls back to the env/default in the sync service.
+    nc_purchase_cutover: Mapped[str | None] = mapped_column(String(19), nullable=True)
+
     # ── Security ────────────────────────────────────────────────────────────
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     password_expiry_days: Mapped[int | None] = mapped_column(Integer, nullable=True, default=90)
