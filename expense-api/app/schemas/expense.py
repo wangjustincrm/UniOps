@@ -51,6 +51,19 @@ class TripItemResponse(TripItemCreate):
     id: uuid.UUID
 
 
+# ── Traveler (TRA) ────────────────────────────────────────────────────────────
+
+class TravelerCreate(BaseModel):
+    user_id: uuid.UUID
+    user_name: str
+    seq: int = 0
+
+
+class TravelerResponse(TravelerCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: uuid.UUID
+
+
 # ── Attachment ────────────────────────────────────────────────────────────────
 
 class AttachmentResponse(BaseModel):
@@ -93,6 +106,13 @@ class ExpenseClaimCreate(BaseModel):
     travel_from_date: Optional[date] = None
     travel_to_date: Optional[date] = None
     travel_destination: Optional[str] = None
+    # TRA only
+    transport_modes: list[str] = []
+    leave_from_date: Optional[date] = None
+    leave_to_date: Optional[date] = None
+    travelers: list[TravelerCreate] = []
+    # TRV only — reference to an approved TRA
+    travel_application_id: Optional[uuid.UUID] = None
     # Line items (EXP + TRV use line_items; MIL uses trip_items)
     line_items: list[LineItemCreate] = []
     trip_items: list[TripItemCreate] = []
@@ -109,6 +129,11 @@ class ExpenseClaimUpdate(BaseModel):
     travel_from_date: Optional[date] = None
     travel_to_date: Optional[date] = None
     travel_destination: Optional[str] = None
+    transport_modes: Optional[list[str]] = None
+    leave_from_date: Optional[date] = None
+    leave_to_date: Optional[date] = None
+    travelers: Optional[list[TravelerCreate]] = None
+    travel_application_id: Optional[uuid.UUID] = None
     line_items: Optional[list[LineItemCreate]] = None
     trip_items: Optional[list[TripItemCreate]] = None
 
@@ -150,6 +175,10 @@ class ExpenseClaimResponse(BaseModel):
     travel_from_date: Optional[date]
     travel_to_date: Optional[date]
     travel_destination: Optional[str]
+    transport_modes: list[str] = []
+    leave_from_date: Optional[date] = None
+    leave_to_date: Optional[date] = None
+    travel_application_id: Optional[uuid.UUID] = None
 
     total_amount: Decimal
     tax_amount: Decimal
@@ -169,6 +198,7 @@ class ExpenseClaimResponse(BaseModel):
 
     line_items: list[LineItemResponse] = []
     trip_items: list[TripItemResponse] = []
+    travelers: list[TravelerResponse] = []
     attachments: list[AttachmentResponse] = []
     approval_events: list[ApprovalEventResponse] = []
 
