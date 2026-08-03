@@ -260,6 +260,20 @@ async def count_pending(db: AsyncSession) -> int:
     return result.scalar_one()
 
 
+async def list_eligible_travel_apps(db: AsyncSession, user_id: uuid.UUID) -> list[ExpenseClaim]:
+    """Approved TRAs on which `user_id` is a listed traveler (for the TRV picker)."""
+    q = (
+        select(ExpenseClaim)
+        .join(ExpenseTraveler, ExpenseTraveler.claim_id == ExpenseClaim.id)
+        .where(ExpenseClaim.claim_type == "TRA",
+               ExpenseClaim.status == "approved",
+               ExpenseTraveler.user_id == user_id)
+        .order_by(ExpenseClaim.travel_from_date.desc().nullslast(),
+                  ExpenseClaim.created_at.desc())
+    )
+    return list((await db.execute(q)).scalars().unique().all())
+
+
 
 # NOTE (Phase a A0): after_payment / _book_budget moved to finance-api's
 # unified payment executor (payment_execute._book_claim_budget + audit row).
