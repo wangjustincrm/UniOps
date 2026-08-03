@@ -24,10 +24,12 @@ from app.services.nc_purchase_sync import service as svc
 
 router = APIRouter(prefix="/admin/nc-purchase-sync", tags=["nc-purchase-sync"])
 
-# Reuse the existing system_admin dependency (same pattern as projects.py /
-# users.py) — applies to the POST trigger only. GET /status stays open to any
-# authenticated user; it computes can_sync from the caller's own role.
-AdminDep = Annotated[dict, Depends(require_roles("system_admin"))]
+# Incremental sync may be triggered by a Procurement Officer (day-to-day) or a
+# system_admin. Full reload stays system_admin-only (enforced in trigger()).
+# GET /status stays open to any authenticated user; it computes can_sync from
+# the caller's own role.
+_SYNC_ROLES = ("system_admin", "procurement_officer")
+SyncDep = Annotated[dict, Depends(require_roles(*_SYNC_ROLES))]
 
 
 class SyncIn(BaseModel):
@@ -67,7 +69,7 @@ async def status(user: CurrentUserPayload, db: SessionDep):
         .order_by(NcPurchaseSyncRun.started_at.desc()).limit(1))).scalars().first()
     return {
         "configured": svc.nc_configured(),
-        "can_sync": user.get("role") == "system_admin",
+        "can_sync": user.get("role") in _SYNC_ROLES,
         "cutover": svc._cutover(),
         "current_run": _run_out(current),
         "last_run": _run_out(last),
@@ -75,12 +77,16 @@ async def status(user: CurrentUserPayload, db: SessionDep):
 
 
 @router.post("", status_code=202)
-async def trigger(body: SyncIn, user: AdminDep):
+async def trigger(body: SyncIn, user: SyncDep):
     if not svc.nc_configured():
         raise HTTPException(status_code=503, detail="NC connection is not configured")
-    if body.mode == "full" and body.confirm != svc.FULL_CONFIRM:
-        raise HTTPException(status_code=422,
-                            detail=f'full reload requires confirm="{svc.FULL_CONFIRM}"')
+    if body.mode == "full":
+        # Full reload is destructive — restrict to system_admin.
+        if user.get("role") != "system_admin":
+            raise HTTPException(status_code=403, detail="full reload is system_admin only")
+        if body.confirm != svc.FULL_CONFIRM:
+            raise HTTPException(status_code=422,
+                                detail=f'full reload requires confirm="{svc.FULL_CONFIRM}"')
     dsn = svc._pg_dsn()
     try:
         # gate + insert the running row synchronously (fast, DB-only)…
