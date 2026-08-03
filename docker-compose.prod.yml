@@ -73,6 +73,15 @@ services:
       IDENTITY_API_URL: http://identity-api:8009
       MDM_API_URL: http://mdm-api:8002
       MDM_API_TIMEOUT_SECONDS: "30"
+      # NC65 read-only connection for the NC Purchase Sync page — reuses the same
+      # NC65_* .env values finance-api already uses (connectivity is proven by
+      # Finance's NC sync). Missing values = feature hidden. Cutover is set in the
+      # UI (company_config), not here.
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
       # Legacy PMS (SharePoint) import — enables the admin "PMS Data Import" page.
       # Secrets come from the (gitignored) .env on the app server; tenant/site
       # fall back to config.py defaults when unset.

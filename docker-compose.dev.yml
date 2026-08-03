@@ -99,6 +99,13 @@ services:
       IDENTITY_API_URL: http://identity-api:8009
       MDM_API_URL: http://mdm-api:8002
       MDM_API_TIMEOUT_SECONDS: "30"
+      # NC65 read-only connection for the NC Purchase Sync page — same NC65_*
+      # root-.env values finance-api uses. Missing = feature hidden.
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
