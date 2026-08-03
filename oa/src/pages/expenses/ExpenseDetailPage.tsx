@@ -199,6 +199,18 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
     }
   }
 
+  // Authenticated blob download — a plain <a href> to the relative download_url
+  // carries no bearer token and (in prod) resolves against the OA origin, whose
+  // nginx SPA-fallback returns index.html (the main page) instead of the file.
+  // Mirrors InvoiceDetailPage / PaDetailPage.
+  const download = async (att: Attachment) => {
+    const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = att.file_name; a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function formatSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
@@ -250,10 +262,10 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {att.download_url && (
-                  <a href={att.download_url} target="_blank" rel="noreferrer"
+                  <button type="button" onClick={() => download(att)}
                     className="flex items-center gap-1 text-xs font-medium text-primary-600 hover:text-primary-800">
                     <Download className="h-3.5 w-3.5" />Download
-                  </a>
+                  </button>
                 )}
                 {canUpload && (
                   <button onClick={() => deleteMutation.mutate(att.id)}
