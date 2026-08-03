@@ -58,7 +58,8 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
         materials = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
 
         _order_cols = ("pk_order, vbillcode, dbilldate, pk_supplier, corigcurrencyid, "
-                       "ntotalorigmny, forderstatus, modifiedtime, vmemo")
+                       "ntotalorigmny, forderstatus, modifiedtime, vmemo, "
+                       "bfinalclose, dclosedate, creationtime, vtrantypecode")
         if watermark:
             # INCREMENTAL: union of (a) orders whose OWN modifiedtime advanced and
             # (b) orders that have a new arrival (NC may not bump order.modifiedtime
@@ -99,12 +100,14 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             order_pks = [o["pk_order"] for o in orders]
 
         order_lines, arrivals, arrival_lines = [], [], []
+        invoiced_arrivals: set = set()
         for chunk in _chunks(order_pks, 900):
             ph = ",".join(f":p{i}" for i in range(len(chunk)))
             b = {f"p{i}": v for i, v in enumerate(chunk)}
             cur.execute(
                 "select pk_order_b, pk_order, crowno, pk_material, vvendinventoryname, "
-                "castunitid, nastnum, norigtaxprice, ntaxrate, ctaxcodeid, norigtaxmny, norigmny, ntax "
+                "castunitid, nastnum, norigtaxprice, ntaxrate, ctaxcodeid, norigtaxmny, norigmny, ntax, "
+                "bpayclose, binvoiceclose "
                 f"from NCSC.PO_ORDER_B where pk_order in ({ph})", b)
             lcols = [c[0].lower() for c in cur.description]
             order_lines += [dict(zip(lcols, r)) for r in cur.fetchall()]
@@ -121,6 +124,19 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
                 f"from NCSC.PO_ARRIVEORDER_B where pk_order in ({ph})", b)
             albcols = [c[0].lower() for c in cur.description]
             arrival_lines += [dict(zip(albcols, r)) for r in cur.fetchall()]
+            # Which arrivals (GRs) are already invoiced downstream in NC. NC pays
+            # via 到货->采购入库单->采购发票, so an arrival is "invoiced/paid" (per
+            # the user's proxy: has any downstream invoice) when a stock-in line
+            # (ic_purchasein_b.csourcebillbid = this arrival line) has an invoice
+            # line (po_invoice_b.csourcebid = that stock-in line's cgeneralbid).
+            # NC uses '~' as a null placeholder and CHAR-pads pks, hence trim().
+            cur.execute(
+                "select distinct ab.pk_arriveorder from NCSC.PO_ARRIVEORDER_B ab "
+                f"where ab.pk_order in ({ph}) and exists("
+                "select 1 from NCSC.IC_PURCHASEIN_B ic "
+                "join NCSC.PO_INVOICE_B vb on trim(vb.csourcebid)=trim(ic.cgeneralbid) "
+                "where trim(ic.csourcebillbid)=trim(ab.pk_arriveorder_b))", b)
+            invoiced_arrivals.update(r[0] for r in cur.fetchall())
         # Advance the watermark to the TRUE max across orders AND arrivals — an
         # arrival can be newer than every order.modifiedtime (the whole reason the
         # order-only watermark missed arrival-only changes), so an orders-only max
@@ -131,6 +147,7 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
         return {
             "orders": orders, "order_lines": order_lines,
             "arrivals": arrivals, "arrival_lines": arrival_lines,
+            "invoiced_arrivals": invoiced_arrivals,
             "suppliers": suppliers, "materials": materials, "uoms": uoms,
             "currencies": currencies, "max_modifiedtime": maxmt,
         }

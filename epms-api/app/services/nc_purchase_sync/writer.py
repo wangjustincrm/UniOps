@@ -100,8 +100,10 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
         if row:
             pid = row[0]
             cur.execute("update purchase_orders set number=%s,title=%s,status=%s,currency=%s,"
-                        "total=%s,vendor_id=%s,vendor_name=%s,notes=%s,updated_at=now() where id=%s",
-                        (po["number"], po["title"], po["status"], po["currency"], po["total"],
+                        "subtotal=%s,tax_rate=%s,tax_amount=%s,total=%s,"
+                        "vendor_id=%s,vendor_name=%s,notes=%s,updated_at=now() where id=%s",
+                        (po["number"], po["title"], po["status"], po["currency"],
+                         po["subtotal"], po["tax_rate"], po["tax_amount"], po["total"],
                          po["vendor_id"], po["vendor_name"], po["notes"], pid))
         else:
             if _number_conflict(cur, po["number"], po["nc_source_pk"]):
@@ -118,11 +120,13 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
                 "insert into purchase_orders (id,number,title,type,status,currency,subtotal,"
                 "tax_rate,tax_amount,total,vendor_id,vendor_name,is_prepaid,approval_step_idx,"
                 "pr_id,created_by,place_order_method,place_order_reference,source,nc_source_pk,"
-                "notes,created_at,updated_at) values (%s,%s,%s,1,%s,%s,0,0,0,%s,%s,%s,false,0,"
-                "NULL,%s,'nc',%s,'nc',%s,%s,now(),now())",
-                (pid, po["number"], po["title"], po["status"], po["currency"], po["total"],
+                "notes,created_at,updated_at) values (%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s,false,0,"
+                "NULL,%s,'nc',%s,'nc',%s,%s,coalesce(%s::timestamptz, now()),now())",
+                (pid, po["number"], po["title"], po["status"], po["currency"],
+                 po["subtotal"], po["tax_rate"], po["tax_amount"], po["total"],
                  po["vendor_id"], po["vendor_name"], system_user_id,
-                 po["place_order_reference"], po["nc_source_pk"], po["notes"]))
+                 po["place_order_reference"], po["nc_source_pk"], po["notes"],
+                 po.get("created_at")))
         po_id_by_ncpk[po["nc_source_pk"]] = pid
         counts["pos_upserted"] += 1
 
@@ -169,12 +173,19 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
             gid = uuid.uuid4()
             cur.execute("select number, vendor_id, vendor_name, currency from purchase_orders where id=%s", (pid,))
             _num, vid, vname, ccy = cur.fetchone()
+            # NC arrivals are already-received goods: mirror as a fully collected
+            # GR with the whole receipt lifecycle timestamped from the NC arrival
+            # date (avoids null acknowledged/collected fields in the UI).
+            rat = gr.get("received_at")
             cur.execute(
                 "insert into goods_receipts (id,number,title,po_id,po_number,pr_id,vendor_id,"
-                "vendor_name,gr_type,procurement_type,currency,status,created_by,source,nc_source_pk,"
-                "created_at,updated_at) values (%s,%s,%s,%s,%s,NULL,%s,%s,'physical',1,%s,%s,%s,'nc',%s,now(),now())",
+                "vendor_name,gr_type,procurement_type,currency,status,notes,"
+                "received_at,received_by,acknowledged_at,acknowledged_by,collected_at,collected_by,"
+                "created_by,source,nc_source_pk,created_at,updated_at) "
+                "values (%s,%s,%s,%s,%s,NULL,%s,%s,'physical',1,%s,%s,%s,"
+                "%s,'NC ERP',%s,'NC ERP',%s,'NC ERP',%s,'nc',%s,coalesce(%s::timestamptz, now()),now())",
                 (gid, gr["number"], gr["title"], pid, _num, vid, vname, ccy, gr["status"],
-                 system_user_id, gr["nc_source_pk"]))
+                 gr.get("notes"), rat, rat, rat, system_user_id, gr["nc_source_pk"], rat))
             counts["grs_upserted"] += 1
         gr_id_by_ncpk[gr["nc_source_pk"]] = gid
 

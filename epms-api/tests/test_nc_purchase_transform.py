@@ -78,7 +78,8 @@ def _raw():
         "orders": [{"pk_order": "O1", "vbillcode": "PO-010-2105-03",
                     "dbilldate": "2026-05-01 00:00:00", "pk_supplier": "S1",
                     "corigcurrencyid": "C1", "ntotalorigmny": Decimal("100"),
-                    "forderstatus": 3, "modifiedtime": "2026-05-01 09:00:00", "vmemo": None}],
+                    "forderstatus": 3, "modifiedtime": "2026-05-01 09:00:00", "vmemo": None,
+                    "vtrantypecode": "21-Cxx-CRM01"}],
         "order_lines": [{"pk_order_b": "OL1", "pk_order": "O1", "crowno": "10",
                          "pk_material": "M1", "vvendinventoryname": "Lactose",
                          "castunitid": "U1", "nastnum": Decimal("38000"),
@@ -165,3 +166,51 @@ def test_transform_independent_non_splitting_arrivals_not_suffixed():
     numbers = {g["nc_source_pk"]: g["number"] for g in r["grs"]}
     assert numbers["A1:O1"] == "DH2021"
     assert numbers["A2:O2"] == "DH2022"
+
+
+def test_derive_status_finally_closed():
+    from app.services.nc_purchase_sync.transform import _derive_status_and_note
+    st, note = _derive_status_and_note(
+        {"bfinalclose": "Y", "dclosedate": "2026-03-15 10:00:00", "vmemo": "orig"},
+        {"lines": 2, "paid": 0, "invoiced": 0})
+    assert st == "closed" and "NC Closed 2026-03-15" in note and note.startswith("orig")
+
+
+def test_derive_status_all_paid():
+    from app.services.nc_purchase_sync.transform import _derive_status_and_note
+    st, note = _derive_status_and_note(
+        {"bfinalclose": "N", "vmemo": None},
+        {"lines": 3, "paid": 3, "invoiced": 3})
+    assert st == "closed" and "NC Paid" in note
+
+
+def test_derive_status_open_partial_paid():
+    from app.services.nc_purchase_sync.transform import _derive_status_and_note
+    st, note = _derive_status_and_note(
+        {"bfinalclose": "N", "vmemo": None},
+        {"lines": 3, "paid": 1, "invoiced": 0})
+    assert st == "issued" and "NC Partially Paid" in note
+
+
+def test_derive_status_open_unpaid():
+    from app.services.nc_purchase_sync.transform import _derive_status_and_note
+    st, note = _derive_status_and_note(
+        {"bfinalclose": "N", "vmemo": None},
+        {"lines": 2, "paid": 0, "invoiced": 0})
+    assert st == "issued" and note is None
+
+
+def test_transform_raw_milk_gets_nc_milk_status():
+    raw = _raw()
+    raw["orders"][0]["vtrantypecode"] = "21-Cxx-CRM05"   # not raw-material -> raw milk
+    r = transform(raw, VEND)
+    po = r["orders"][0]
+    assert po["status"] == "nc_milk"
+    assert "Milk / 21-Cxx-CRM05" in po["notes"]
+
+
+def test_transform_po_subtotal_and_tax_from_lines():
+    r = transform(_raw(), VEND)
+    po = r["orders"][0]
+    assert po["subtotal"] == Decimal("95") and po["tax_amount"] == Decimal("5")
+    assert po["total"] == Decimal("100")

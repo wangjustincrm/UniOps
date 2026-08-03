@@ -242,7 +242,7 @@ def _raw_fetch(max_mt="2026-08-01 10:00:00"):
         return {
             "orders": [{"pk_order": "O1", "vbillcode": "PO-NC-O1", "pk_supplier": "SUP1",
                         "corigcurrencyid": "C1", "ntotalorigmny": Decimal("100"),
-                        "vmemo": "memo"}],
+                        "vmemo": "memo", "vtrantypecode": "21-Cxx-CRM01"}],
             "order_lines": [{"pk_order_b": "OL1", "pk_order": "O1", "crowno": "1",
                              "pk_material": "M1", "vvendinventoryname": "Widget",
                              "castunitid": "U1", "nastnum": Decimal("10"),

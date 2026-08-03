@@ -11,13 +11,57 @@ _SUPPLIER_CODE_ALIASES = {
     "0000012A": "0000012",
 }
 
+# NC PO trade-type code for raw-material/packaging procurement (the normal
+# UniOps payment flow). Every other NC PO type is raw-milk procurement.
+_RAW_MATERIAL_TRANTYPE = "21-Cxx-CRM01"
+
 
 def _num(v):
     return Decimal(str(v)) if v is not None else Decimal("0")
 
 
+def _derive_status_and_note(order: dict, pay: dict) -> tuple:
+    """Derive the mirrored PO (status, notes) from NC closure/payment flags.
+
+    - NC finally closed (bfinalclose='Y') OR every line payment-closed
+      (bpayclose='Y') -> UniOps status 'closed' (excluded from the payment
+      worklist / not invoice-matchable), imported read-only for archive.
+    - otherwise 'issued' (open, actionable by UniOps payment).
+    A human-readable NC marker (已付 / 部分已付 / 已开票 / 已关闭 <date>) is
+    appended to notes so finance can see the NC state on the record.
+    ``pay`` = {'lines','paid','invoiced'} counts for this order's lines.
+    """
+    finally_closed = (order.get("bfinalclose") == "Y")
+    n = pay.get("lines", 0)
+    all_paid = n > 0 and pay.get("paid", 0) == n
+    any_paid = pay.get("paid", 0) > 0
+    all_invoiced = n > 0 and pay.get("invoiced", 0) == n
+
+    status = "closed" if (finally_closed or all_paid) else "issued"
+
+    markers = []
+    if all_paid:
+        markers.append("NC Paid")
+    elif any_paid:
+        markers.append("NC Partially Paid")
+    if all_invoiced and not all_paid:
+        markers.append("NC Invoiced")
+    if finally_closed:
+        cd = (order.get("dclosedate") or "")[:10]
+        markers.append(f"NC Closed {cd}".strip())
+
+    base = order.get("vmemo") or ""
+    if markers:
+        tag = "[" + "; ".join(markers) + "]"
+        notes = f"{base} {tag}".strip() if base else tag
+    else:
+        notes = base or None
+    return status, notes
+
+
 def transform(raw: dict, vendor_by_erp: dict) -> dict:
     sup, mat, uom, ccy = raw["suppliers"], raw["materials"], raw["uoms"], raw["currencies"]
+    inv_arrivals = raw.get("invoiced_arrivals") or set()
 
     # dedupe arrivals (per-chunk EXISTS may repeat)
     arrivals = {a["pk_arriveorder"]: a for a in raw["arrivals"]}
@@ -26,6 +70,20 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
     recv = defaultdict(lambda: Decimal("0"))
     for al in raw["arrival_lines"]:
         recv[al["pk_order_b"]] += _num(al["nastnum"])
+
+    # per-order NC payment/invoice-close tally + pre-tax/tax money (from order lines)
+    pay_by_order = defaultdict(lambda: {"lines": 0, "paid": 0, "invoiced": 0})
+    money_by_order = defaultdict(lambda: {"subtotal": Decimal("0"), "tax": Decimal("0")})
+    for ln in raw["order_lines"]:
+        p = pay_by_order[ln["pk_order"]]
+        p["lines"] += 1
+        if ln.get("bpayclose") == "Y":
+            p["paid"] += 1
+        if ln.get("binvoiceclose") == "Y":
+            p["invoiced"] += 1
+        m = money_by_order[ln["pk_order"]]
+        m["subtotal"] += _num(ln.get("norigmny"))   # pre-tax line amount
+        m["tax"] += _num(ln.get("ntax"))            # line tax amount
 
     orders, order_lines, skipped = [], [], []
     kept_order_pks = set()
@@ -38,15 +96,30 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
             skipped.append(o["vbillcode"])
             continue
         kept_order_pks.add(o["pk_order"])
+        status, notes = _derive_status_and_note(o, pay_by_order.get(o["pk_order"], {}))
+        # Only NC PO type 21-Cxx-CRM01 is raw-material/packaging (the normal
+        # UniOps payment flow). All other types are raw-milk procurement, whose
+        # receipt + stock-in are done separately/manually in NC, so they never
+        # close via the flag logic. Mark them 'nc_milk' — a read-only status not
+        # in the invoice-matchable set, so they don't sit as perpetually-open POs
+        # nor accept UniOps invoices/payment.
+        if o.get("vtrantypecode") != _RAW_MATERIAL_TRANTYPE:
+            status = "nc_milk"
+            tag = f"[Milk / {o.get('vtrantypecode') or '?'}]"
+            notes = f"{notes} {tag}".strip() if notes else tag
+        _m = money_by_order.get(o["pk_order"], {"subtotal": Decimal("0"), "tax": Decimal("0")})
+        _sub, _tax = _m["subtotal"], _m["tax"]
+        _rate = (_tax / _sub).quantize(Decimal("0.0001")) if _sub else Decimal("0")
         orders.append({
             "nc_source_pk": o["pk_order"], "number": o["vbillcode"], "title": o["vbillcode"],
-            "type": 1, "status": "issued", "source": "nc",
+            "type": 1, "status": status, "source": "nc",
             "currency": ccy.get(o["corigcurrencyid"], "CAD"),
-            "total": _num(o["ntotalorigmny"]), "subtotal": Decimal("0"),
-            "tax_rate": Decimal("0"), "tax_amount": Decimal("0"),
+            "total": _num(o["ntotalorigmny"]), "subtotal": _sub,
+            "tax_rate": _rate, "tax_amount": _tax,
             "vendor_id": vend[0], "vendor_name": vend[1],
             "pr_id": None, "place_order_method": "nc",
-            "place_order_reference": o["vbillcode"], "notes": o.get("vmemo"),
+            "place_order_reference": o["vbillcode"], "notes": notes,
+            "created_at": o.get("creationtime"),   # NC record creation time
         })
 
     for ln in raw["order_lines"]:
@@ -92,7 +165,11 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
             "nc_source_pk": gr_pk, "po_nc_pk": ord_pk,
             "number": number,
             "title": ah["vbillcode"], "gr_type": "physical", "procurement_type": 1,
-            "status": "confirmed", "source": "nc",
+            "status": "collected", "source": "nc",
+            "received_at": ah.get("dbilldate"),   # NC arrival date
+            # NC pays via 到货->入库->发票; a GR with any downstream invoice is
+            # treated as paid (user's proxy).
+            "notes": "[NC Paid]" if arr_pk in inv_arrivals else None,
         })
         for al in lines:
             mcode, mname = mat.get(al["pk_material"], (None, ""))
