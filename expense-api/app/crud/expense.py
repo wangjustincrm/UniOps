@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.crud._numbering import next_number
 from app.models.expense import (
     ExpenseApprovalEvent, ExpenseAttachment, ExpenseClaim,
-    ExpenseLineItem, ExpenseTripItem,
+    ExpenseLineItem, ExpenseTraveler, ExpenseTripItem,
 )
 from app.schemas.expense import (
     ExpenseClaimCreate, ExpenseClaimUpdate, ExpenseActionRequest,
@@ -89,6 +89,10 @@ async def create_claim(
         travel_from_date=data.travel_from_date,
         travel_to_date=data.travel_to_date,
         travel_destination=data.travel_destination,
+        transport_modes=data.transport_modes,
+        leave_from_date=data.leave_from_date,
+        leave_to_date=data.leave_to_date,
+        travel_application_id=data.travel_application_id,
         status="draft",
         created_by=user_id,
     )
@@ -146,8 +150,19 @@ async def create_claim(
             t, tx, net = _compute_totals_exp(claim.line_items)
             claim.total_amount, claim.tax_amount, claim.net_amount = t, tx, net
 
+    elif data.claim_type == "TRA":
+        # Travel Application: no money; persist traveler roster. Totals stay 0.
+        for i, tr in enumerate(data.travelers):
+            db.add(ExpenseTraveler(
+                claim_id=claim.id, user_id=tr.user_id,
+                user_name=tr.user_name, seq=tr.seq if tr.seq is not None else i))
+        claim.total_amount = Decimal("0.00")
+        claim.tax_amount = Decimal("0.00")
+        claim.net_amount = Decimal("0.00")
+        await db.flush()
+
     await db.flush()
-    await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
+    await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events", "travelers"])
     return claim
 
 
@@ -204,6 +219,7 @@ async def get_by_id(db: AsyncSession, claim_id: uuid.UUID) -> ExpenseClaim | Non
             selectinload(ExpenseClaim.trip_items),
             selectinload(ExpenseClaim.attachments),
             selectinload(ExpenseClaim.approval_events),
+            selectinload(ExpenseClaim.travelers),
         )
     )
     return result.scalar_one_or_none()

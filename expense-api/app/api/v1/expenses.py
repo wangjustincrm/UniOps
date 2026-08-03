@@ -230,7 +230,7 @@ async def create_expense(
     db: SessionDep,
     user: CurrentUserDep,
 ):
-    allowed = ("EXP", "MIL", "TRV")
+    allowed = ("EXP", "MIL", "TRV", "TRA")
     if body.claim_type not in allowed and not body.claim_type.startswith("CFM"):
         raise HTTPException(status_code=400, detail=f"claim_type must be one of {allowed} or CFM_<code>")
 
