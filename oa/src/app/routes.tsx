@@ -45,4 +45,5 @@ export const oaRoutes: RouteDef[] = [
 
   { path: '/travel', element: <TravelApplicationsListPage />, tab: { title: 'Travel Applications', icon: 'Plane', keyStrategy: 'static' } },
   { path: '/travel/new', element: <TraCreatePage />, tab: { title: 'New Travel Application', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/travel/:id', element: <ExpenseDetailPage />, tab: { title: (p) => `Travel ${short(p.id)}`, icon: 'Plane', keyStrategy: 'param', paramName: 'id' } },
 ]

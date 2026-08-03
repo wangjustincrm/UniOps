@@ -70,6 +70,15 @@ interface ExpenseClaim {
   line_items: LineItem[]
   trip_items: TripItem[]
   approval_events: ApprovalEvent[]
+  // TRA (Travel Application) fields
+  travelers?: { id: string; user_name: string }[]
+  transport_modes?: string[]
+  travel_destination?: string | null
+  travel_from_date?: string | null
+  travel_to_date?: string | null
+  leave_from_date?: string | null
+  leave_to_date?: string | null
+  purpose?: string | null
 }
 
 interface Attachment {
@@ -388,6 +397,12 @@ export default function ExpenseDetailPage() {
     onSuccess: () => { setActiveAction(null); invalidateAll() },
   })
 
+  // TRA-only: regenerate the Travel Application PDF and refresh the attachments card.
+  const regenPdf = useMutation({
+    mutationFn: () => api.post(`/api/v1/travel-applications/${id}/pdf`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['expense-attachments', id] }),
+  })
+
   if (isLoading) {
     return <div className="flex items-center justify-center py-24 text-sm text-neutral-400">Loading…</div>
   }
@@ -396,7 +411,7 @@ export default function ExpenseDetailPage() {
   }
 
   const TYPE_LABELS: Record<string, string> = {
-    EXP: 'General Expense', MIL: 'Mileage Claim', TRV: 'Travel Expense',
+    EXP: 'General Expense', MIL: 'Mileage Claim', TRV: 'Travel Expense', TRA: 'Travel Application',
   }
   const typeLabel = TYPE_LABELS[claim.claim_type]
     ?? (claim.claim_type.startsWith('CFM') ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
@@ -541,8 +556,36 @@ export default function ExpenseDetailPage() {
       {/* Approval status — who has approved, who is pending */}
       <ApprovalStatusCard claimId={claim.id} />
 
-      {/* Line items (EXP / TRV / CFM — MIL uses the trip log below) */}
-      {claim.claim_type !== 'MIL' && claim.line_items.length > 0 && (
+      {/* Travel Application details (TRA — no money/line items, has its own PDF) */}
+      {claim.claim_type === 'TRA' && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-neutral-700">Travel Application</h2>
+            <button onClick={() => regenPdf.mutate()} disabled={regenPdf.isPending}
+              className="text-xs font-medium text-primary-700 hover:text-primary-900 disabled:opacity-50">
+              {regenPdf.isPending ? 'Generating…' : 'Regenerate PDF'}
+            </button>
+          </div>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            <div><dt className="text-neutral-500">Travelers</dt>
+              <dd>{(claim.travelers ?? []).map((t) => t.user_name).join(', ') || '—'}</dd></div>
+            <div><dt className="text-neutral-500">Number of Persons</dt>
+              <dd>{(claim.travelers ?? []).length}</dd></div>
+            <div><dt className="text-neutral-500">Destination</dt><dd>{claim.travel_destination || '—'}</dd></div>
+            <div><dt className="text-neutral-500">Dates</dt>
+              <dd>{claim.travel_from_date} → {claim.travel_to_date}</dd></div>
+            <div className="sm:col-span-2"><dt className="text-neutral-500">Reasons</dt><dd>{claim.purpose || '—'}</dd></div>
+            <div className="sm:col-span-2"><dt className="text-neutral-500">Transportation & Accommodation</dt>
+              <dd>{(claim.transport_modes ?? []).join(', ') || '—'}</dd></div>
+            <div><dt className="text-neutral-500">Leave</dt>
+              <dd>{claim.leave_from_date ? `${claim.leave_from_date} → ${claim.leave_to_date}` : '—'}</dd></div>
+            <div className="sm:col-span-2"><dt className="text-neutral-500">Remarks</dt><dd>{claim.notes || '—'}</dd></div>
+          </dl>
+        </div>
+      )}
+
+      {/* Line items (EXP / TRV / CFM — MIL uses the trip log below, TRA has no line items) */}
+      {claim.claim_type !== 'MIL' && claim.claim_type !== 'TRA' && claim.line_items.length > 0 && (
         <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
           <div className="border-b border-neutral-100 px-5 py-3">
             <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
