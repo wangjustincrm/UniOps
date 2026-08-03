@@ -240,6 +240,21 @@ async def create_expense(
     dept_id = uuid.UUID(dept_id_raw) if dept_id_raw else None
     dept_name = user.get("department_name", "")
 
+    # TRV reimbursement gate: must reference an APPROVED TRA the user travels on.
+    if body.claim_type == "TRV":
+        if not body.travel_application_id:
+            raise HTTPException(status_code=400,
+                detail="A Travel Application is required for travel expense claims")
+        tra = await expense_crud.get_by_id(db, body.travel_application_id)
+        if not tra or tra.claim_type != "TRA":
+            raise HTTPException(status_code=404, detail="Travel Application not found")
+        if tra.status != "approved":
+            raise HTTPException(status_code=400,
+                detail="The selected Travel Application is not approved yet")
+        if user_id not in {t.user_id for t in tra.travelers}:
+            raise HTTPException(status_code=403,
+                detail="You are not listed as a traveler on this Travel Application")
+
     claim = await expense_crud.create_claim(
         db,
         data=body,

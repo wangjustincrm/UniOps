@@ -7,7 +7,7 @@ from app.models.expense import ExpenseClaim, ExpenseTraveler
 
 async def test_tra_claim_persists_travelers_and_transport(db_session):
     claim = ExpenseClaim(
-        claim_number="TRA-20260803-0001", claim_type="TRA",
+        claim_number=f"TRA-MODEL-{uuid.uuid4().hex[:8]}", claim_type="TRA",
         employee_id=uuid.uuid4(), employee_name="Alice",
         department_name="Ops", submission_date=date(2026, 8, 3),
         transport_modes=["airplane", "accommodation"],
