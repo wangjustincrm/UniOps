@@ -237,10 +237,39 @@ async def create_expense(
         raise HTTPException(status_code=400, detail=f"claim_type must be one of {allowed} or CFM_<code>")
 
     user_id = uuid.UUID(user["sub"])
-    user_name = user.get("full_name") or user.get("name") or user.get("email", "")
+    user_name = user.get("full_name") or user.get("name") or ""
     dept_id_raw = user.get("department_id")
     dept_id = uuid.UUID(dept_id_raw) if dept_id_raw else None
-    dept_name = user.get("department_name", "")
+    dept_name = user.get("department_name") or ""
+
+    # The access token carries only {sub, role, type} — full_name / department are
+    # NOT in it (identity-api create_access_token). Resolve them from the shared
+    # users/departments tables so the claim records a real employee & department;
+    # otherwise the Expense Claims list shows a blank Employee column (prod claims
+    # EXP-20260729-0001/0002, 2026-08-03). Best-effort — never block creation if
+    # the identity tables are unavailable (mirrors the actor-name lookup below).
+    if not user_name or not dept_name or dept_id is None:
+        try:
+            # SAVEPOINT so a failed lookup (e.g. identity tables absent) rolls
+            # back cleanly and never poisons the outer create transaction.
+            async with db.begin_nested():
+                row = (await db.execute(
+                    sa.text(
+                        "SELECT u.full_name, u.department_id, d.name AS department_name "
+                        "FROM users u LEFT JOIN departments d ON d.id = u.department_id "
+                        "WHERE u.id = :uid"
+                    ),
+                    {"uid": user_id},
+                )).first()
+        except Exception:
+            row = None
+        if row is not None:
+            user_name = user_name or (row.full_name or "")
+            if dept_id is None:
+                dept_id = row.department_id
+            dept_name = dept_name or (row.department_name or "")
+
+    user_name = user_name or user.get("email", "")
 
     # TRV reimbursement gate: must reference an APPROVED TRA the user travels on.
     if body.claim_type == "TRV":
