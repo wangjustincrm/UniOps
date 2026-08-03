@@ -30,6 +30,7 @@ export type DocumentStatus =
   | 'matched'
   | 'paid'
   | 'closed'
+  | 'nc_milk'
 
 export type ProcurementType = 1 | 2 | 3 | 4 | 5 | 6
 

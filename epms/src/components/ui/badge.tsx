@@ -26,10 +26,11 @@ const STATUS_CONFIG: Record<
   matched: { label: 'Matched', variant: 'success', dot: 'bg-success-600' },
   paid: { label: 'Paid', variant: 'dark', dot: 'bg-neutral-400' },
   closed: { label: 'Closed', variant: 'dark', dot: 'bg-neutral-400' },
+  nc_milk: { label: 'Milk / NC', variant: 'info', dot: 'bg-primary-500' },
 }
 
 export function StatusBadge({ status, label }: { status: DocumentStatus; label?: string }) {
-  const config = STATUS_CONFIG[status]
+  const config = STATUS_CONFIG[status] ?? { label: String(status), variant: 'neutral' as BadgeVariant, dot: 'bg-neutral-400' }
   return (
     <Badge variant={config.variant}>
       <span className={cn('size-1.5 rounded-full', config.dot)} />

@@ -88,7 +88,7 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
   }
   const approvalNodes: ApprovalStep[] = nodes.map((node, i) => {
     let s: ApprovalStep['status']
-    if (['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(status)) {
+    if (['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(status)) {
       s = 'completed'
     } else if (status === 'cancelled') {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'

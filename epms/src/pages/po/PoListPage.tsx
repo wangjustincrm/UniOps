@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Plus, ChevronUp, ChevronDown, ExternalLink } from 'lucide-react'
+import { Search, Plus, ChevronUp, ChevronDown, ExternalLink, RefreshCw } from 'lucide-react'
+import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
@@ -57,7 +58,7 @@ export default function PoListPage() {
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
 
-  const { data, isLoading } = usePos({
+  const { data, isLoading, refetch } = usePos({
     search: search || undefined,
     status: statusFilter !== 'all' ? (statusFilter as PoStatus) : undefined,
     department_id: deptFilter !== 'all' ? deptFilter : undefined,
@@ -70,6 +71,26 @@ export default function PoListPage() {
   const total = data?.total ?? 0
 
   const canCreate = user?.role === 'procurement_officer' || user?.role === 'procurement_manager' || user?.role === 'system_admin'
+  const canSyncNc = user?.role === 'procurement_officer' || user?.role === 'system_admin'
+
+  const [ncSyncing, setNcSyncing] = useState(false)
+  const [ncMsg, setNcMsg] = useState<string | null>(null)
+
+  async function handleSyncNc() {
+    setNcSyncing(true)
+    setNcMsg(null)
+    try {
+      await api.post('/admin/nc-purchase-sync', { mode: 'incremental' })
+      setNcMsg('NC sync started — refreshing shortly…')
+      // the worker runs in the background (a few seconds); refresh the list after.
+      setTimeout(() => { refetch(); setNcMsg(null) }, 8000)
+    } catch (e) {
+      setNcMsg(e instanceof Error ? e.message : 'NC sync failed')
+      setTimeout(() => setNcMsg(null), 6000)
+    } finally {
+      setNcSyncing(false)
+    }
+  }
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -97,14 +118,23 @@ export default function PoListPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">Purchase Orders</h1>
-        {canCreate && (
-          <Link to="/po/new">
-            <Button>
-              <Plus className="h-4 w-4" />
-              New PO
+        <div className="flex items-center gap-2">
+          {ncMsg && <span className="text-xs text-neutral-500">{ncMsg}</span>}
+          {canSyncNc && (
+            <Button variant="secondary" onClick={handleSyncNc} disabled={ncSyncing}>
+              <RefreshCw className={cn('h-4 w-4', ncSyncing && 'animate-spin')} />
+              {ncSyncing ? 'Syncing…' : 'Sync NC'}
             </Button>
-          </Link>
-        )}
+          )}
+          {canCreate && (
+            <Link to="/po/new">
+              <Button>
+                <Plus className="h-4 w-4" />
+                New PO
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Filters */}

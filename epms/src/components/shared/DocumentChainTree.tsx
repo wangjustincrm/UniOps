@@ -73,6 +73,8 @@ const PO_STATUS_LABELS: Record<string, string> = {
   partially_received:'Partially Received',
   fully_received:    'Fully Received',
   cancelled:         'Cancelled',
+  closed:            'Closed',
+  nc_milk:           'Milk / NC',
 }
 
 function grStatusToDoc(s: GrStatus): DocumentStatus {
@@ -159,7 +161,7 @@ function AnchorCard({
  *  whether that ancestor's vertical line should continue past this row (i.e. the
  *  ancestor has more siblings below). This lets PA rows nest under an invoice. */
 function TreeRow({
-  icon, label, number, meta, statusDoc, statusLabel, href, hrefExternal = false, isLast, isCurrent = false, ancestorLines = [],
+  icon, label, number, meta, statusDoc, statusLabel, extraBadge, href, hrefExternal = false, isLast, isCurrent = false, ancestorLines = [],
 }: {
   icon: React.ReactNode
   label: string
@@ -167,6 +169,7 @@ function TreeRow({
   meta?: string
   statusDoc?: DocumentStatus
   statusLabel?: string
+  extraBadge?: React.ReactNode
   href?: string
   hrefExternal?: boolean
   isLast: boolean
@@ -200,7 +203,10 @@ function TreeRow({
           )}>
             {number ?? <span className="italic font-sans font-normal text-neutral-400">{label}</span>}
           </span>
-          {statusDoc && <StatusBadge status={statusDoc} label={statusLabel} />}
+          <div className="flex items-center gap-1 shrink-0">
+            {extraBadge}
+            {statusDoc && <StatusBadge status={statusDoc} label={statusLabel} />}
+          </div>
         </div>
         {meta && <p className="text-[10px] text-neutral-400 mt-0.5 truncate">{meta}</p>}
       </div>
@@ -417,6 +423,7 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
               meta={`${gr.gr_type === 'physical' ? 'Physical' : 'Service'} · ${new Date(gr.received_at).toLocaleDateString('en-CA')}`}
               statusDoc={grStatusToDoc(gr.status)}
               statusLabel={GR_STATUS_LABELS[gr.status]}
+              extraBadge={gr.notes?.includes('NC Paid') ? <StatusBadge status="paid" label="Paid" /> : undefined}
               href={`/gr/${gr.id}`}
               isLast={idx === last}
             />,
