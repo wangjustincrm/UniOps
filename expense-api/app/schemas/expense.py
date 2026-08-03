@@ -212,6 +212,7 @@ class ExpenseClaimListItem(BaseModel):
     employee_name: str
     department_name: str
     submission_date: date
+    travel_destination: Optional[str] = None
     total_amount: Decimal
     net_amount: Decimal
     currency: str

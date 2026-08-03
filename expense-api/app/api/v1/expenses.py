@@ -187,7 +187,7 @@ async def list_expenses(
     conditions = [EC.employee_id == user_id]  # own submissions (any status)
 
     type_conds = []
-    for ct, key in (("EXP", "exp"), ("MIL", "mil"), ("TRV", "trv")):
+    for ct, key in (("EXP", "exp"), ("MIL", "mil"), ("TRV", "trv"), ("TRA", "tra")):
         if role in _roles_for(key):
             type_conds.append(EC.claim_type == ct)
     if role in _roles_for("cfm"):
