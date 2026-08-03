@@ -8,7 +8,7 @@
  * - Selected users shown as removable chips
  * - Already-selected users excluded from results
  */
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { X, Search } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -21,21 +21,32 @@ export function TravelerPicker({ value, onChange }: {
 }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
-  const [results, setResults] = useState<DirectoryUser[]>([])
+  // Raw directory results for the current query — NOT filtered against `value` here.
+  // Filtering happens client-side in `results` below so that chip add/remove doesn't
+  // trigger a redundant network request.
+  const [rawResults, setRawResults] = useState<DirectoryUser[]>([])
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
   const overlayRef = useRef<HTMLDivElement>(null)
 
-  // debounced directory search (q >= 2 chars)
+  // debounced directory search (q >= 2 chars). Depends on `q` only — adding/removing
+  // a chip must not re-fetch, only re-filter (see `results` below).
   useEffect(() => {
-    if (q.trim().length < 2) { setResults([]); return }
+    if (q.trim().length < 2) { setRawResults([]); return }
+    let cancelled = false
     const h = setTimeout(async () => {
       const rows = await api.get<DirectoryUser[]>(`/api/v1/users/directory?q=${encodeURIComponent(q.trim())}`)
-      const chosen = new Set(value.map(v => v.user_id))
-      setResults(rows.filter(r => !chosen.has(r.id)))
+      if (!cancelled) setRawResults(rows)
     }, 300)
-    return () => clearTimeout(h)
-  }, [q, value])
+    return () => { clearTimeout(h); cancelled = true }
+  }, [q])
+
+  // Exclude already-selected travelers from the raw results, client-side, so
+  // selecting/removing a chip re-filters without re-fetching.
+  const results = useMemo(() => {
+    const chosen = new Set(value.map(v => v.user_id))
+    return rawResults.filter(r => !chosen.has(r.id))
+  }, [rawResults, value])
 
   const reposition = () => {
     const r = triggerRef.current?.getBoundingClientRect()
@@ -59,7 +70,7 @@ export function TravelerPicker({ value, onChange }: {
   }, [open])
 
   const add = (u: DirectoryUser) => {
-    onChange([...value, { user_id: u.id, user_name: u.full_name }]); setQ(''); setResults([])
+    onChange([...value, { user_id: u.id, user_name: u.full_name }]); setQ(''); setRawResults([]); setOpen(false)
   }
   const remove = (id: string) => onChange(value.filter(v => v.user_id !== id))
 
@@ -81,7 +92,7 @@ export function TravelerPicker({ value, onChange }: {
         {value.map(t => (
           <span key={t.user_id} className="inline-flex items-center gap-1 rounded-full bg-primary-100 px-2.5 py-1 text-xs font-medium text-primary-700">
             {t.user_name}
-            <button type="button" onClick={() => remove(t.user_id)} className="text-primary-400 hover:text-danger-500">
+            <button type="button" onClick={() => remove(t.user_id)} aria-label={`Remove ${t.user_name}`} className="text-primary-400 hover:text-danger-500">
               <X className="h-3 w-3" />
             </button>
           </span>
