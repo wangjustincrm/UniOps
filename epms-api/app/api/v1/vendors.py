@@ -50,7 +50,7 @@ async def list_vendors(
     category: str | None = Query(default=None),
     active_only: bool = False,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=5, le=500),
+    page_size: int = Query(default=20, ge=5, le=2000),
 ):
     items, total = await vendor_crud.get_all(
         db, search=search, category=category, active_only=active_only,
