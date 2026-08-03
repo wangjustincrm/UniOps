@@ -31,14 +31,14 @@ _CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "system_admin"}
 _INBOX_STEP_ROLES: dict[int, set[str]] = {
     0: {"dept_manager", "system_admin"},
     1: {"finance_bp", "finance_manager", "system_admin"},
-    2: {"finance_manager", "system_admin"},
+    2: {"finance_manager", "gm", "system_admin"},
 }
 
 
 def _action_key(claim_type: str) -> str:
     """Map claim_type to approval-api action key."""
     ct = claim_type.upper()
-    mapping = {"EXP": "exp", "MIL": "mil", "TRV": "trv"}
+    mapping = {"EXP": "exp", "MIL": "mil", "TRV": "trv", "TRA": "tra"}
     if ct in mapping:
         return mapping[ct]
     if ct.startswith("CFM"):
@@ -49,7 +49,7 @@ def _action_key(claim_type: str) -> str:
 
 
 # Base workflow action key (for participation/step lookup in company_config.workflow_defs).
-_BASE_WF_KEY = {"EXP": "exp", "MIL": "mil", "TRV": "trv"}
+_BASE_WF_KEY = {"EXP": "exp", "MIL": "mil", "TRV": "trv", "TRA": "tra"}
 
 
 def _workflow_key(claim_type: str) -> str:
