@@ -15,6 +15,7 @@ from app.crud import expense as expense_crud
 from app.models.expense import ExpenseAttachment
 from app.services.attachment_helper import upload_to_file_server
 from app.services.pdf_tra import build_travel_application_pdf
+from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim, _user_role_codes
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +88,22 @@ async def regenerate_tra_pdf(claim_id: uuid.UUID, db: SessionDep,
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim or claim.claim_type != "TRA":
         raise HTTPException(status_code=404, detail="Travel Application not found")
+
+    # Document-level authz: only the owner, an approver of the claim, or a
+    # finance/admin role may regenerate/attach a PDF.
+    user_id = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+    codes = await _user_role_codes(db, user_id, role)
+    authorized = (
+        user_id == claim.employee_id
+        or role == "system_admin"
+        or role in _CAN_PAY
+        or "finance_bp" in codes
+        or "finance_manager" in codes
+        or await _can_act_on_claim(db, claim, user_id, role)
+    )
+    if not authorized:
+        raise HTTPException(status_code=403, detail="Not authorized to regenerate this document")
 
     # Real approval history lives in the shared approval_events table (mirrored here
     # as ApprovalEventMirror) — `claim.approval_events` (ExpenseApprovalEvent) is never

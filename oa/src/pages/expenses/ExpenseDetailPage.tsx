@@ -425,16 +425,20 @@ export default function ExpenseDetailPage() {
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
 
+  // TRA claims live under the Travel Applications section, not Expense Claims.
+  const backHref = claim.claim_type === 'TRA' ? '/travel' : '/expenses'
+  const backLabel = claim.claim_type === 'TRA' ? 'Travel Applications' : 'Expense Claims'
+
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
       {/* Back + header */}
       <div>
         <button
-          onClick={() => navigate('/expenses')}
+          onClick={() => navigate(backHref)}
           className="mb-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700"
         >
           <ArrowLeft className="h-4 w-4" />
-          Expense Claims
+          {backLabel}
         </button>
         <div className="flex items-start justify-between gap-4">
           <div>

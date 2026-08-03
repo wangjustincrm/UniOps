@@ -196,8 +196,10 @@ async def list_expenses(
         conditions.append(or_(*type_conds) & (EC.status != "draft"))
 
     # Pay roles also see approved claims (payment stage) even when not an approver step.
+    # TRA is excluded — an approved Travel Application has total_amount 0 and never
+    # enters the payment path, so it must not surface in pay-role visibility.
     if role in _CAN_PAY:
-        conditions.append(EC.status == "approved")
+        conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
 
     # Fallback: any claim the user personally acted on (covers cfm_<code> overrides and
     # workflow drift) — actor_id is recorded by approval-api in shared approval_events.
@@ -283,8 +285,10 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
             (EC.status.in_(["submitted", "in_review"])) &
             (EC.approval_step_idx == step)
         )
+    # TRA is excluded — an approved Travel Application has total_amount 0 and never
+    # enters the payment path, so it must not surface as a pay-action inbox item.
     if role in _CAN_PAY:
-        conditions.append(EC.status == "approved")
+        conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
 
     if not conditions:
         return ExpenseClaimListResponse(items=[], total=0)
@@ -333,7 +337,7 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
         can_approve = is_admin or await _can_act_on_claim(db, claim, user_id, role)
 
     can_pay = False
-    if claim.status == "approved":
+    if claim.status == "approved" and claim.claim_type != "TRA":
         codes = await _user_role_codes(db, user_id, role)
         can_pay = (
             is_admin
@@ -539,6 +543,10 @@ async def record_payment(
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
+
+    # An approved TRA has total_amount 0 and must never enter the payment path.
+    if claim.claim_type == "TRA":
+        raise HTTPException(status_code=409, detail="Travel Applications are not payable")
 
     try:
         await finance_client.execute_payment(
