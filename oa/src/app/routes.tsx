@@ -15,6 +15,8 @@ import InvoicesPage from '@/pages/invoices/InvoicesPage'
 import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
 import ExpenseConfigPage from '@/pages/admin/ExpenseConfigPage'
 import CfmAdminPage from '@/pages/admin/CfmAdminPage'
+import TravelApplicationsListPage from '@/pages/travel/TravelApplicationsListPage'
+import TraCreatePage from '@/pages/travel/TraCreatePage'
 
 // Short, distinguishable title for an id-keyed detail tab (UUIDs are too long).
 const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id)
@@ -40,4 +42,8 @@ export const oaRoutes: RouteDef[] = [
 
   { path: '/admin/expense-config', element: <ExpenseConfigPage />, tab: { title: 'Expense Config', icon: 'Settings', keyStrategy: 'static' } },
   { path: '/admin/custom-forms', element: <CfmAdminPage />, tab: { title: 'Custom Forms', icon: 'FileText', keyStrategy: 'static' } },
+
+  { path: '/travel', element: <TravelApplicationsListPage />, tab: { title: 'Travel Applications', icon: 'Plane', keyStrategy: 'static' } },
+  { path: '/travel/new', element: <TraCreatePage />, tab: { title: 'New Travel Application', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/travel/:id', element: <ExpenseDetailPage />, tab: { title: (p) => `Travel ${short(p.id)}`, icon: 'Plane', keyStrategy: 'param', paramName: 'id' } },
 ]

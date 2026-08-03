@@ -31,14 +31,14 @@ _CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "system_admin"}
 _INBOX_STEP_ROLES: dict[int, set[str]] = {
     0: {"dept_manager", "system_admin"},
     1: {"finance_bp", "finance_manager", "system_admin"},
-    2: {"finance_manager", "system_admin"},
+    2: {"finance_manager", "gm", "system_admin"},
 }
 
 
 def _action_key(claim_type: str) -> str:
     """Map claim_type to approval-api action key."""
     ct = claim_type.upper()
-    mapping = {"EXP": "exp", "MIL": "mil", "TRV": "trv"}
+    mapping = {"EXP": "exp", "MIL": "mil", "TRV": "trv", "TRA": "tra"}
     if ct in mapping:
         return mapping[ct]
     if ct.startswith("CFM"):
@@ -49,7 +49,7 @@ def _action_key(claim_type: str) -> str:
 
 
 # Base workflow action key (for participation/step lookup in company_config.workflow_defs).
-_BASE_WF_KEY = {"EXP": "exp", "MIL": "mil", "TRV": "trv"}
+_BASE_WF_KEY = {"EXP": "exp", "MIL": "mil", "TRV": "trv", "TRA": "tra"}
 
 
 def _workflow_key(claim_type: str) -> str:
@@ -187,7 +187,7 @@ async def list_expenses(
     conditions = [EC.employee_id == user_id]  # own submissions (any status)
 
     type_conds = []
-    for ct, key in (("EXP", "exp"), ("MIL", "mil"), ("TRV", "trv")):
+    for ct, key in (("EXP", "exp"), ("MIL", "mil"), ("TRV", "trv"), ("TRA", "tra")):
         if role in _roles_for(key):
             type_conds.append(EC.claim_type == ct)
     if role in _roles_for("cfm"):
@@ -196,8 +196,10 @@ async def list_expenses(
         conditions.append(or_(*type_conds) & (EC.status != "draft"))
 
     # Pay roles also see approved claims (payment stage) even when not an approver step.
+    # TRA is excluded — an approved Travel Application has total_amount 0 and never
+    # enters the payment path, so it must not surface in pay-role visibility.
     if role in _CAN_PAY:
-        conditions.append(EC.status == "approved")
+        conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
 
     # Fallback: any claim the user personally acted on (covers cfm_<code> overrides and
     # workflow drift) — actor_id is recorded by approval-api in shared approval_events.
@@ -230,7 +232,7 @@ async def create_expense(
     db: SessionDep,
     user: CurrentUserDep,
 ):
-    allowed = ("EXP", "MIL", "TRV")
+    allowed = ("EXP", "MIL", "TRV", "TRA")
     if body.claim_type not in allowed and not body.claim_type.startswith("CFM"):
         raise HTTPException(status_code=400, detail=f"claim_type must be one of {allowed} or CFM_<code>")
 
@@ -239,6 +241,21 @@ async def create_expense(
     dept_id_raw = user.get("department_id")
     dept_id = uuid.UUID(dept_id_raw) if dept_id_raw else None
     dept_name = user.get("department_name", "")
+
+    # TRV reimbursement gate: must reference an APPROVED TRA the user travels on.
+    if body.claim_type == "TRV":
+        if not body.travel_application_id:
+            raise HTTPException(status_code=400,
+                detail="A Travel Application is required for travel expense claims")
+        tra = await expense_crud.get_by_id(db, body.travel_application_id)
+        if not tra or tra.claim_type != "TRA":
+            raise HTTPException(status_code=404, detail="Travel Application not found")
+        if tra.status != "approved":
+            raise HTTPException(status_code=400,
+                detail="The selected Travel Application is not approved yet")
+        if user_id not in {t.user_id for t in tra.travelers}:
+            raise HTTPException(status_code=403,
+                detail="You are not listed as a traveler on this Travel Application")
 
     claim = await expense_crud.create_claim(
         db,
@@ -268,8 +285,10 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
             (EC.status.in_(["submitted", "in_review"])) &
             (EC.approval_step_idx == step)
         )
+    # TRA is excluded — an approved Travel Application has total_amount 0 and never
+    # enters the payment path, so it must not surface as a pay-action inbox item.
     if role in _CAN_PAY:
-        conditions.append(EC.status == "approved")
+        conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
 
     if not conditions:
         return ExpenseClaimListResponse(items=[], total=0)
@@ -318,7 +337,7 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
         can_approve = is_admin or await _can_act_on_claim(db, claim, user_id, role)
 
     can_pay = False
-    if claim.status == "approved":
+    if claim.status == "approved" and claim.claim_type != "TRA":
         codes = await _user_role_codes(db, user_id, role)
         can_pay = (
             is_admin
@@ -524,6 +543,10 @@ async def record_payment(
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
+
+    # An approved TRA has total_amount 0 and must never enter the payment path.
+    if claim.claim_type == "TRA":
+        raise HTTPException(status_code=409, detail="Travel Applications are not payable")
 
     try:
         await finance_client.execute_payment(

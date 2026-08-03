@@ -1,6 +1,6 @@
 """Approval Engine — unified workflow execution for all UniOps modules.
 
-Supports action keys: pr, po, pa, pa_dir, exp, mil, trv, cfm, cfm_<code>, vms_visit
+Supports action keys: pr, po, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<code>, vms_visit
 Each action key binds to a configurable workflow stored in CompanyConfig.workflow_defs.
 """
 import uuid
@@ -115,6 +115,7 @@ _DOC_META: dict[str, dict] = {
     "exp": _expense_meta("EXP"),
     "mil": _expense_meta("MIL"),
     "trv": _expense_meta("TRV"),
+    "tra": _expense_meta("TRA"),
     "cfm": _expense_meta("CFM"),
     # ── VMS visitor appointments (S2-B) ───────────────────────────────────────
     # Engine reads `approval_status`, not `status` — VMS owns a separate
@@ -237,6 +238,11 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
     "trv": [
         {"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"},
         {"id": "finance_bp",   "role": "finance_bp",   "label": "Finance BP"},
+    ],
+    "tra": [
+        {"id": "dept_manager", "role": "dept_manager",    "label": "Department Manager"},
+        {"id": "finance_mgr",  "role": "finance_manager", "label": "Finance Manager"},
+        {"id": "gm",           "role": "gm",              "label": "General Manager"},
     ],
     "cfm": [
         {"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"},
@@ -722,6 +728,14 @@ async def _post_approve_exp(db: AsyncSession, claim: ExpenseClaim) -> None:
     ))
 
 
+async def _post_approve_tra(db: AsyncSession, claim: ExpenseClaim) -> None:
+    """Travel Application approved: no reimbursement, no money, no task. The
+    approval itself unlocks TRV creation for the roster (enforced in expense-api).
+    Deliberately a no-op — do NOT reuse _post_approve_exp, which would create a
+    finance_bp reimbursement task for a non-financial document."""
+    return None
+
+
 async def _post_approve_budget_plan(db: AsyncSession, plan: BudgetPlan) -> None:
     """When a budget-plan revision is approved, flip is_current from parent → this row.
 
@@ -770,6 +784,7 @@ _POST_APPROVE: dict[str, Any] = {
     "exp":    _post_approve_exp,
     "mil":    _post_approve_exp,
     "trv":    _post_approve_exp,
+    "tra":    _post_approve_tra,
     "cfm":    _post_approve_exp,
     "budget_plan":  _post_approve_budget_plan,
     "vms_visit":    _post_approve_vms_visit,

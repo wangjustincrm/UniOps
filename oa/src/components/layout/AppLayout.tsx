@@ -6,7 +6,7 @@ import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import {
   CreditCard, Receipt, FileText, ArrowLeft, Menu,
-  Settings, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, CheckSquare,
+  Settings, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, CheckSquare, Plane,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -34,6 +34,7 @@ const NAV = [
   { label: 'Task Inbox',            href: '/tasks',    icon: CheckSquare },
   { label: 'Payment Applications',  href: '/pa',       icon: CreditCard  },
   { label: 'Expense Claims',        href: '/expenses', icon: Receipt     },
+  { label: 'Travel Applications',   href: '/travel',   icon: Plane       },
   { label: 'Invoices',              href: '/invoices', icon: FileText    },
 ]
 

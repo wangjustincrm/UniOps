@@ -4,7 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -39,6 +39,16 @@ class ExpenseClaim(UUIDPrimaryKey, TimestampMixin, Base):
     travel_to_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     travel_destination: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # TRA-specific (Travel Application)
+    transport_modes: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    leave_from_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    leave_to_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # TRV → approved TRA reference (self-referential within expense_claims)
+    travel_application_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("expense_claims.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
+
     # Financials (computed at submit)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
     tax_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
@@ -71,6 +81,10 @@ class ExpenseClaim(UUIDPrimaryKey, TimestampMixin, Base):
     approval_events: Mapped[list["ExpenseApprovalEvent"]] = relationship(
         "ExpenseApprovalEvent", back_populates="claim", cascade="all, delete-orphan",
         order_by="ExpenseApprovalEvent.created_at"
+    )
+    travelers: Mapped[list["ExpenseTraveler"]] = relationship(
+        "ExpenseTraveler", back_populates="claim", cascade="all, delete-orphan",
+        order_by="ExpenseTraveler.seq",
     )
 
 
@@ -127,6 +141,21 @@ class ExpenseTripItem(UUIDPrimaryKey, Base):
     budget_account_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     claim: Mapped["ExpenseClaim"] = relationship("ExpenseClaim", back_populates="trip_items")
+
+
+class ExpenseTraveler(UUIDPrimaryKey, Base):
+    """Traveler roster for TRA (Travel Application). Members may reimburse against it."""
+    __tablename__ = "expense_travelers"
+
+    claim_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("expense_claims.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    user_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    claim: Mapped["ExpenseClaim"] = relationship("ExpenseClaim", back_populates="travelers")
 
 
 class ExpenseAttachment(UUIDPrimaryKey, Base):

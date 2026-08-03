@@ -22,7 +22,7 @@ interface WorkflowNodeDef {
   role: string
 }
 
-type ActionKey = 'pr' | 'po' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -1332,7 +1332,7 @@ function RemittanceSettings() {
 
 // ── Approval Workflows ───────────────────────────────────────────────────────
 
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'cfm', 'budget_plan', 'vms_visit']
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
@@ -1342,6 +1342,7 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   exp:         'General Expense',
   mil:         'Mileage Claim',
   trv:         'Travel Expense',
+  tra:         'Travel Application',
   cfm:         'Custom Form',
   budget_plan: 'Budget Plan',
   vms_visit:   'VMS Visit',
@@ -1372,6 +1373,7 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   exp:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
   mil:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
   trv:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
+  tra:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }, { id: 'gm', role: 'gm', label: 'General Manager' }],
   cfm:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
   budget_plan: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   // VMS visit: default single-step. Admin adds a `quality_manager` row for

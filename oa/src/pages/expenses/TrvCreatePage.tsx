@@ -24,6 +24,11 @@ interface BudgetAccount {
   annual_budget?: number; committed?: number; actual_spent?: number; available?: number
 }
 
+interface EligibleApp {
+  id: string; claim_number: string; travel_destination?: string | null
+  travel_from_date?: string | null; travel_to_date?: string | null; purpose?: string | null
+}
+
 interface TrvLineItem {
   line_number: number
   expense_date: string
@@ -270,9 +275,15 @@ export default function TrvCreatePage() {
   const [currency, setCurrency] = useState('CAD')
   const [lines, setLines] = useState<TrvLineItem[]>([])
   const [error, setError] = useState('')
+  const [travelApplicationId, setTravelApplicationId] = useState('')
 
   // flat counter for unique line_numbers
   const [counter, setCounter] = useState(1)
+
+  const { data: eligibleApps = [] } = useQuery<EligibleApp[]>({
+    queryKey: ['eligible-travel-apps'],
+    queryFn: () => api.get<EligibleApp[]>('/api/v1/travel-applications/eligible'),
+  })
 
   const { data: policy } = useQuery<Policy>({
     queryKey: ['expense-policy'],
@@ -343,6 +354,7 @@ export default function TrvCreatePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    if (!travelApplicationId) { setError('A Travel Application is required'); return }
     if (!destination.trim()) { setError('Travel destination is required'); return }
     if (!purpose.trim()) { setError('Travel purpose is required'); return }
     if (lines.length === 0) { setError('Add at least one expense line'); return }
@@ -350,6 +362,7 @@ export default function TrvCreatePage() {
 
     mutation.mutate({
       claim_type: 'TRV',
+      travel_application_id: travelApplicationId,
       submission_date: today(),
       currency,
       purpose,
@@ -393,6 +406,35 @@ export default function TrvCreatePage() {
           </div>
         </div>
       )}
+
+      {/* Travel Application selector */}
+      <div className="rounded-xl border border-neutral-200 bg-white p-5">
+        <label className="mb-1 block text-xs font-medium text-neutral-600">Travel Application *</label>
+        <select required value={travelApplicationId}
+          onChange={e => {
+            const id = e.target.value; setTravelApplicationId(id)
+            const app = eligibleApps.find(a => a.id === id)
+            if (app) {
+              if (app.travel_destination) setDestination(app.travel_destination)
+              if (app.travel_from_date) setFromDate(app.travel_from_date)
+              if (app.travel_to_date) setToDate(app.travel_to_date)
+              if (app.purpose) setPurpose(app.purpose)
+            }
+          }}
+          className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+          <option value="">— Select an approved travel application —</option>
+          {eligibleApps.map(a => (
+            <option key={a.id} value={a.id}>
+              {a.claim_number}{a.travel_destination ? ` — ${a.travel_destination}` : ''}
+            </option>
+          ))}
+        </select>
+        {eligibleApps.length === 0 && (
+          <p className="mt-1 text-xs text-warning-700">
+            No approved travel applications available. Submit and get a Travel Application approved first.
+          </p>
+        )}
+      </div>
 
       {/* Trip header */}
       <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-4">
