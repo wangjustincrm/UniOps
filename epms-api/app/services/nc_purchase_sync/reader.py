@@ -54,8 +54,13 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
         suppliers = lookup("select pk_supplier, code from NCSC.BD_SUPPLIER")
         uoms = lookup("select pk_measdoc, code from NCSC.BD_MEASDOC")
         currencies = lookup("select pk_currtype, code from NCSC.BD_CURRTYPE")
-        cur.execute("select pk_material, code, name from NCSC.BD_MATERIAL")
-        materials = {r[0]: (r[1], r[2]) for r in cur.fetchall()}
+        # Prefer the English material name (ename); fall back to name when a
+        # material has no English name.
+        cur.execute("select pk_material, code, name, ename from NCSC.BD_MATERIAL")
+        materials = {
+            r[0]: (r[1], (r[3].strip() if r[3] and r[3].strip() else r[2]))
+            for r in cur.fetchall()
+        }
 
         _order_cols = ("pk_order, vbillcode, dbilldate, pk_supplier, corigcurrencyid, "
                        "ntotalorigmny, forderstatus, modifiedtime, vmemo, "
