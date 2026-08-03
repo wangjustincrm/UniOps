@@ -5,7 +5,10 @@ import uuid
 from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import ProgrammingError
+
+# Postgres SQLSTATE for "undefined_table" — the ONLY DB error we tolerate below.
+_UNDEFINED_TABLE = "42P01"
 
 from app.core.deps import CurrentUserDep, SessionDep
 from app.crud import expense as expense_crud
@@ -46,8 +49,12 @@ async def user_directory(db: SessionDep, _: CurrentUserDep, q: str = ""):
     """Search active users by name/email (shared users table). Limit 20.
 
     Best-effort like the actor-name lookup in app/api/v1/expenses.py: the
-    `users` table is identity-owned and absent in this service's test DB, so a
-    missing table (or any query error) returns `[]` instead of 500ing.
+    `users` table is identity-owned and absent from this service's test DB.
+    Only that specific, expected condition (SQLSTATE 42P01 / undefined_table)
+    is tolerated and degrades to `[]`. Any other DB error (dropped connection,
+    permission error, a future SQL typo, etc.) is a genuine incident and must
+    surface as a 500 — swallowing it here would silently mask a real outage
+    behind "no search results".
     """
     like = f"%{q.strip()}%"
     try:
@@ -55,8 +62,13 @@ async def user_directory(db: SessionDep, _: CurrentUserDep, q: str = ""):
             "SELECT id, full_name, email FROM users "
             "WHERE is_active = true AND (full_name ILIKE :like OR email ILIKE :like) "
             "ORDER BY full_name LIMIT 20"), {"like": like})).all()
-    except DBAPIError:
+    except ProgrammingError as exc:
+        sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
+        if sqlstate != _UNDEFINED_TABLE:
+            raise
         await db.rollback()
-        log.warning("user_directory: `users` table query failed (missing table?)", exc_info=True)
+        log.warning(
+            "user_directory: `users` table not found (SQLSTATE 42P01) — "
+            "expected in this service's test DB, returning []")
         return []
     return [DirectoryUser(id=r[0], full_name=r[1] or "", email=r[2]) for r in rows]
