@@ -134,17 +134,21 @@ expense-api 侧同步：
 - Portal `navConfig` 加「Travel Applications」入口（anyPermission 门禁按现有 expense 模块规范）。
 - 遵循 UI 全英文、PortalChromeLayout、浮层选择器 createPortal 等既有规范。
 
-## 7. PDF（expense-api）
+## 7. PDF（expense-api）— 仅英文
 
-> **重要**：expense-api 当前**无任何 PDF 基础设施**（无 reportlab/weasyprint，requirements 里没有）。PO/PR/PA 的 PDF 在 epms-api（用 `reportlab==4.2.5` + `pdf_template.py`，且这些是纯英文单据，字体用 Helvetica、**未注册 CJK 字体**）。所以 TRA PDF 是给 expense-api **首次引入 PDF 渲染**。
+> **重要**：expense-api 当前**无任何 PDF 基础设施**（无 reportlab/weasyprint，requirements 里没有）。PO/PR/PA 的 PDF 在 epms-api（用 `reportlab==4.2.5` + `pdf_template.py`，纯英文单据、字体 Helvetica）。所以 TRA PDF 是给 expense-api **首次引入 PDF 渲染**。
+
+**决策（已确认）**：TRA PDF **只出英文，不做中英双语**。标签取纸质单的英文栏名（Application of Travel / Department / Time of Application / Staff / Number of Persons / Location / Reasons and Explanation / Period off / Transportation and Accommodation / Head of Department / Approved by Finance Department / Approved by General Manager）。
 
 新增 `app/services/pdf_tra.py`（参照 epms-api `pdf_po.py`/`pdf_pr.py` 的 reportlab 用法，非像素级还原纸质格式，只参照内容）：
 - **依赖**：expense-api `requirements.txt` 增加 `reportlab==4.2.5`（与 epms-api 对齐版本）。
-- **中文字体**：出差审批表是中英双语，Helvetica 无法渲染中文。用 reportlab 内置 CID 字体 `UnicodeCIDFont('STSong-Light')`（无需随镜像携带 TTF）注册后用于中文文本；英文可继续用 Helvetica。
+- **字体**：标签与正文默认 Helvetica（与现有 epms-api PDF 一致，无双语、无需注册 CJK 字体）。
 - 内容：部门、申请时间、出差人员+人数、出差地点、时间、事由、请销假时间、交通住宿勾选、备注。
-- 三个签字栏（部门负责人/财务领导/总经理）用 `expense_approval_events`（approval-api 写入的审批记录）填充审批人姓名与时间。
+- 三个签字栏（Head of Department / Finance / General Manager）用 `expense_approval_events`（approval-api 写入的审批记录）填充审批人姓名与时间。
 - 详情页提供"生成/重新生成 PDF"，附件存储复用现有 expense attachments 机制。
 - API：新增 `POST /api/v1/expenses/{id}/regenerate-pdf`（或 TRA 专用端点），生成后作为附件挂到该 TRA。
+
+> **数据侧中文风险（待定，低成本兜底）**：标签虽全英文，但用户填的数据（出差人员姓名、出差地点、事由、备注）可能含中文字符，纯 Helvetica 会渲染成方框。兜底方案：仅对这些**数据字段**注册 reportlab 内置 CID 字体 `UnicodeCIDFont('STSong-Light')`（无需携带 TTF，零额外依赖），标签仍走 Helvetica。默认**采用此兜底**以避免方框；若你确定数据也全英文，可去掉。
 
 ## 8. 权限与边界
 
