@@ -21,9 +21,12 @@ interface ErpVendorImportDrawerProps {
   onClose: () => void
 }
 
+const PAGE_SIZE = 50
+
 export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorImportDrawerProps) {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
   const [excludeImported, setExcludeImported] = useState(true)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const initialCategory = vendorCategories.length > 0 ? vendorCategories[0] : 'other'
@@ -36,21 +39,26 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
 
   const { data: existingVendors } = useQuery<{ items: ExistingVendor[]; total: number }>({
     queryKey: ['vendors-for-erp-import'],
-    queryFn: () => api.get('/vendors', { page: 1, page_size: 1000 }),
+    queryFn: () => api.get('/vendors', { page: 1, page_size: 2000 }),
     enabled: excludeImported,
   })
   const importedCodes = (existingVendors?.items || [])
     .map((v) => v.erp_id)
     .filter((c): c is string => !!c)
 
-  const params: Record<string, string | number> = { page: 1, page_size: 50 }
+  const params: Record<string, string | number> = { page, page_size: PAGE_SIZE }
   if (search) params.search = search
   if (excludeImported && importedCodes.length) params.exclude_codes = importedCodes.join(',')
 
   const { data, isLoading } = useQuery<{ items: ErpSupplierRow[]; total: number }>({
-    queryKey: ['erp-import-suppliers', search, excludeImported, importedCodes.join(',')],
+    queryKey: ['erp-import-suppliers', search, excludeImported, importedCodes.join(','), page],
     queryFn: () => mdmApi.get('/erp/suppliers', params),
   })
+
+  const total = data?.total ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
+  const rangeEnd = Math.min(page * PAGE_SIZE, total)
 
   const toggle = (code: string) => {
     setSelected(prev => {
@@ -123,9 +131,9 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
               </div>
               <div className="flex items-center gap-2">
                 <input className="flex-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm"
-                  placeholder="Search code or name…" value={search} onChange={(e) => setSearch(e.target.value)} />
+                  placeholder="Search code or name…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
                 <label className="flex items-center gap-1 text-xs text-neutral-600">
-                  <input type="checkbox" checked={excludeImported} onChange={e => setExcludeImported(e.target.checked)} />
+                  <input type="checkbox" checked={excludeImported} onChange={e => { setExcludeImported(e.target.checked); setPage(1) }} />
                   Only not-imported
                 </label>
               </div>
@@ -155,6 +163,21 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
                     </tbody>
                   </table>
               }
+            </div>
+
+            <div className="border-t border-neutral-200 px-4 py-2 flex items-center justify-between text-xs text-neutral-500">
+              <span>{total === 0 ? 'No suppliers' : `Showing ${rangeStart}–${rangeEnd} of ${total.toLocaleString()}`}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page <= 1 || isLoading}
+                  className="rounded border border-neutral-200 px-2 py-1 disabled:opacity-40">Prev</button>
+                <span>Page {page} / {totalPages}</span>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages || isLoading}
+                  className="rounded border border-neutral-200 px-2 py-1 disabled:opacity-40">Next</button>
+              </div>
             </div>
 
             <div className="border-t border-neutral-200 px-4 py-3 flex items-center justify-between">

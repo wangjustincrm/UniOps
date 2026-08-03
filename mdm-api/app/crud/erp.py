@@ -44,7 +44,7 @@ async def list_suppliers(
         q = q.where(~ErpSupplier.erp_supplier_code.in_(exclude_codes))
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     items = list((await db.execute(
-        q.order_by(ErpSupplier.supplier_name).offset((page - 1) * page_size).limit(page_size)
+        q.order_by(ErpSupplier.erp_supplier_code).offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
     return items, total
 
