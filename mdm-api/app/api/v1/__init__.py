@@ -3,6 +3,7 @@ from app.api.v1.vendors import router as vendors_router
 from app.api.v1.departments import router as departments_router
 from app.api.v1.cost_centers import router as cost_centers_router
 from app.api.v1.parts import router as parts_router
+from app.api.v1.materials import router as materials_router
 from app.api.v1.users import router as users_router
 from app.api.v1.companies import router as companies_router
 from app.api.v1.health import router as health_router
@@ -17,6 +18,7 @@ api_router.include_router(vendors_router)
 api_router.include_router(departments_router)
 api_router.include_router(cost_centers_router)
 api_router.include_router(parts_router)
+api_router.include_router(materials_router)
 api_router.include_router(users_router)
 api_router.include_router(companies_router)
 api_router.include_router(erp_router)
