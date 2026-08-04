@@ -285,7 +285,12 @@ def _map_uom_conversion(rec: dict) -> dict | None:
     rate = _to_decimal(_lookup(rec, "unit_RATE", "unit_rate"))
     if not from_uom or not to_uom or rate is None:
         return None
-    return {"from_uom": str(from_uom), "to_uom": str(to_uom), "rate": rate}
+    return {
+        "from_uom": str(from_uom),
+        "to_uom": str(to_uom),
+        "rate": rate,
+        "erp_rowversion": _parse_dt(_lookup(rec, "rowversion", "modifiedtime")),
+    }
 
 
 async def sync_uom_conversions(
@@ -320,11 +325,14 @@ async def sync_uom_conversions(
     now = datetime.now(timezone.utc)
     inserted = 0
     updated = 0
+    max_rowversion: datetime | None = None
 
     for rec in records:
-        row = _map_uom_conversion(rec)
-        if row is None:
+        mapped = _map_uom_conversion(rec)
+        if mapped is None:
             continue
+        rv = mapped.pop("erp_rowversion")
+        row = mapped
 
         exists_q = select(UomConversion.id).where(
             UomConversion.from_uom == row["from_uom"],
@@ -343,8 +351,10 @@ async def sync_uom_conversions(
         else:
             inserted += 1
 
-    new_last_ts = state.last_ts if state else None
-    new_last_ts = new_last_ts or now
+        if rv is not None and (max_rowversion is None or rv > max_rowversion):
+            max_rowversion = rv
+
+    new_last_ts = max_rowversion or (state.last_ts if state else None) or now
     await _write_state(
         db, kind=kind, status="success", message="ok",
         last_ts=new_last_ts, row_count=len(records),
