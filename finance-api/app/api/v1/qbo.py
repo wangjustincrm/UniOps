@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
 from app.db.base import get_db
+from app.models.mirrors import BusinessPartner
 from app.models.qbo import (
     RUNNING, QboAccount, QboAttachment, QboAttachmentLink, QboBill,
     QboBillLine, QboBillPayment, QboBillPaymentLine, QboCreditMemo,
@@ -76,6 +77,69 @@ async def trigger_sync(body: SyncIn, user: CurrentUser, db: AsyncSession = Depen
         raise HTTPException(status_code=409, detail="a sync is already running")
     svc.launch_sync(mode=body.mode, entities=body.entities, with_attachments=body.with_attachments)
     return {"status": "started"}
+
+
+# ── vendor email backfill ───────────────────────────────────────────────
+# POST is safe next to the GET-only /{entity} catch-alls — method+path routing
+# means this never shadows browse/detail.
+
+@router.post("/vendor-emails/backfill")
+async def backfill_vendor_emails(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Copy qbo_vendors.email into EMPTY business_partners.remittance_email,
+    matched on lower(trim(name)) == lower(trim(display_name)). Fill-only
+    (human-entered values are never overwritten) and idempotent; ambiguous
+    names on either side are skipped and reported, never guessed."""
+    def norm(s: str | None) -> str:
+        return (s or "").strip().lower()
+
+    qbo_rows = (await db.execute(
+        select(QboVendor).where(QboVendor.deleted_at.is_(None))
+        .order_by(QboVendor.qbo_id))).scalars().all()
+    emails_by_key: dict[str, set[str]] = {}
+    display_by_key: dict[str, str] = {}   # first-seen trimmed display name
+    for v in qbo_rows:
+        key = norm(v.display_name)
+        email = (v.email or "").strip()
+        if not key or not email:
+            continue
+        display_by_key.setdefault(key, (v.display_name or "").strip())
+        emails_by_key.setdefault(key, set()).add(email)
+
+    partners = (await db.execute(
+        select(BusinessPartner).where(BusinessPartner.is_supplier.is_(True))
+        .order_by(BusinessPartner.code))).scalars().all()
+    partners_by_key: dict[str, list[BusinessPartner]] = {}
+    for p in partners:
+        key = norm(p.name)
+        if key:
+            partners_by_key.setdefault(key, []).append(p)
+
+    updated: list[dict] = []
+    ambiguous: list[dict] = []
+    unmatched: list[str] = []
+    skipped_has_value = 0
+    for key in sorted(emails_by_key):
+        emails = emails_by_key[key]
+        if len(emails) > 1:
+            ambiguous.append({"side": "qbo", "name": display_by_key[key]})
+            continue
+        matches = partners_by_key.get(key)
+        if not matches:
+            unmatched.append(display_by_key[key])
+            continue
+        if len(matches) > 1:
+            ambiguous.append({"side": "epms", "name": matches[0].name.strip()})
+            continue
+        partner = matches[0]
+        if (partner.remittance_email or "").strip():
+            skipped_has_value += 1
+            continue
+        partner.remittance_email = next(iter(emails))
+        updated.append({"code": partner.code, "name": partner.name,
+                        "email": partner.remittance_email})
+    await db.commit()
+    return {"updated": updated, "skipped_has_value": skipped_has_value,
+            "ambiguous": ambiguous, "unmatched_qbo": unmatched}
 
 
 # ── entity browse + detail ──────────────────────────────────────────────
