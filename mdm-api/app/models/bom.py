@@ -22,6 +22,16 @@ the task-5-brief's guessed field names:
   - Every table carries a unique `nc_source_pk` (CBOMID / CBOM_BID /
     CBOM_REPLACEID respectively) so the sync service can upsert
     idempotently, matching the nc_bom mirror's pattern.
+  - `bom_lines.qty_per_secondary`/`uom_secondary` (migration 0014, PATCH 3):
+    S-prefixed finished-good BOM lines carry a SECOND unit alongside the
+    main `qty_per`/`uom` (<- NC BD_BOM_B.NASSITEMNUM/CASSMEASUREID, e.g.
+    main unit KG + secondary unit PIECES, business-confirmed conversion
+    lives in the material master). Both nullable — most lines are
+    single-unit and never populate these. `uom`/`uom_secondary` now hold a
+    real BD_MEASDOC unit CODE (e.g. 'KGM'), not the raw measure-doc PK the
+    original sync left them as (PATCH 2); NC's EA/PIECES codes are
+    normalized to one canonical 'EA' at transform time (PATCH 4) — see
+    app/services/nc_bom_sync/transform.py's `_UOM_NORMALIZE`.
 """
 from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -62,7 +72,9 @@ class BomLine(Base, UUIDPrimaryKey, TimestampMixin):
     line_no: Mapped[int] = mapped_column(Integer, default=0)  # <- VROWNO, string->int
     component_material_code: Mapped[str] = mapped_column(String(50), index=True)
     qty_per: Mapped[object] = mapped_column(Numeric(18, 6))  # <- NITEMNUM, taken as-is (IBASENUM/VCHANGERATE observed 1:1)
-    uom: Mapped[str | None] = mapped_column(String(20))  # <- CMEASUREID (opaque NC measdoc pk; no code join done here)
+    uom: Mapped[str | None] = mapped_column(String(20))  # <- CMEASUREID, resolved to a BD_MEASDOC unit code (e.g. 'KGM'); EA/PIECES normalized to 'EA'
+    qty_per_secondary: Mapped[object | None] = mapped_column(Numeric(18, 6))  # <- NASSITEMNUM, assistant-unit qty (S* finished goods only; null for single-unit lines)
+    uom_secondary: Mapped[str | None] = mapped_column(String(20))  # <- CASSMEASUREID, resolved unit code; same EA/PIECES normalization as `uom`
     scrap_rate: Mapped[object] = mapped_column(Numeric(10, 4), default=0)  # always 0 in this NC instance, see docstring
     effective_from: Mapped[object | None] = mapped_column(Date)  # <- CBEGINPERIOD
     effective_to: Mapped[object | None] = mapped_column(Date)  # <- CENDPERIOD (often 2999-12-31 = "long-term valid")

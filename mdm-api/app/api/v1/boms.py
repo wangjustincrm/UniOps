@@ -76,6 +76,8 @@ class BomLineResponse(BaseModel):
     component_material_code: str
     qty_per: Decimal
     uom: str | None
+    qty_per_secondary: Decimal | None = None
+    uom_secondary: str | None = None
     scrap_rate: Decimal
     effective_from: date_type | None
     effective_to: date_type | None

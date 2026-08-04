@@ -25,7 +25,12 @@ def fetch_nc_bom() -> dict:
     caller drops columns the mirror models don't carry, e.g. the VDEF*/VFREE*
     custom-field slots) plus a `material_codes` pk->code lookup so Task 5's
     normalization step can resolve HCMATERIALID/CMATERIALID/CREPLMATERIALOID
-    to material codes without a second NC round-trip.
+    to material codes without a second NC round-trip, and a `uoms` pk->code
+    lookup (NCSC.BD_MEASDOC) so it can likewise resolve BD_BOM_B's
+    CMEASUREID/CASSMEASUREID measure-doc PKs to real unit codes (e.g. 'KGM',
+    'EA') instead of leaving them as opaque PKs — see
+    epms-api/app/services/nc_purchase_sync/reader.py's `uoms = lookup(...)`
+    for the precedent this follows (PATCH 2, 2026-08-04 defect fix).
     """
     import oracledb
     oracledb.defaults.fetch_decimals = True
@@ -51,6 +56,12 @@ def fetch_nc_bom() -> dict:
         cur.execute("select pk_material, code from NCSC.BD_MATERIAL")
         material_codes = {pk: code for pk, code in cur.fetchall()}
 
-        return {"headers": headers, "lines": lines, "repl": repl, "material_codes": material_codes}
+        cur.execute("select pk_measdoc, code from NCSC.BD_MEASDOC")
+        uoms = {pk: code for pk, code in cur.fetchall()}
+
+        return {
+            "headers": headers, "lines": lines, "repl": repl,
+            "material_codes": material_codes, "uoms": uoms,
+        }
     finally:
         con.close()
