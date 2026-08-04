@@ -10,6 +10,7 @@ import { api, epmsApi } from '@/lib/api'
 import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
+import { ActionModal } from '@/components/ui/ActionModal'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -197,67 +198,6 @@ function ActionArea({
   }
 
   return null
-}
-
-// ── Action modal (approve / return / reject with comment) ────────────────────
-
-function ActionModal({
-  action, onConfirm, onClose, loading, error,
-}: {
-  action: string
-  onConfirm: (comment: string) => void
-  onClose: () => void
-  loading: boolean
-  error: string
-}) {
-  const [comment, setComment] = useState('')
-  const labels: Record<string, { title: string; color: string }> = {
-    [ACTION.APPROVE]: { title: 'Approve Payment', color: 'bg-success-600 text-white' },
-    [ACTION.RETURN]:  { title: 'Return for Revision', color: 'bg-warning-500 text-white' },
-    [ACTION.REJECT]:  { title: 'Reject Payment', color: 'bg-danger-600 text-white' },
-  }
-  const cfg = labels[action] ?? { title: action, color: 'bg-neutral-800 text-white' }
-  const commentRequired = action === ACTION.RETURN || action === ACTION.REJECT
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white shadow-xl">
-        <div className="p-5">
-          <h3 className="text-base font-semibold text-neutral-900">{cfg.title}</h3>
-          <div className="mt-3">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">
-              Comment {commentRequired ? '(required)' : '(optional)'}
-            </label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              rows={3}
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none"
-              placeholder="Add a comment…"
-            />
-          </div>
-          {error && <div className="mt-3"><ErrorBanner message={error} /></div>}
-        </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={loading || (commentRequired && !comment.trim())}
-            onClick={() => onConfirm(comment)}
-            className={cn('rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50', cfg.color)}
-          >
-            {loading ? 'Processing…' : cfg.title}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function ErrorBanner({ message }: { message: string }) {
@@ -817,6 +757,7 @@ export default function PaDetailPage() {
       {activeModal && activeModal !== ACTION.PAY && (
         <ActionModal
           action={activeModal}
+          docNumber={pa.pa_number}
           loading={acting}
           error={actError}
           onClose={() => setActiveModal(null)}
