@@ -202,3 +202,35 @@ async def test_serve_invoice_attachment_ok_for_uploader(test_engine):
     async with _client(_make_token("requester", str(uploader))) as c:
         r = await c.get(f"/api/v1/invoice-attachments/{aid}/file")
     assert r.status_code in (200, 410, 502)   # passes authz; may 410/502 because file-api is unreachable in tests, but never 403/404
+
+
+@pytest.mark.asyncio
+async def test_non_admin_only_sees_active_custom_forms(test_engine):
+    # 用唯一 code 避免与并发/既有数据碰撞;大写因为 CustomFormCreate 会把 code 规范化成大写
+    suffix = uuid.uuid4().hex[:6].upper()
+    active_code = f"CFM_ACT_{suffix}"
+    inactive_code = f"CFM_INACT_{suffix}"
+    async with _client(_make_token("system_admin")) as admin:
+        r1 = await admin.post("/api/v1/expenses/custom-forms", json={
+            "code": active_code, "name": "Active Test Form",
+        })
+        assert r1.status_code == 201, r1.text
+        r2 = await admin.post("/api/v1/expenses/custom-forms", json={
+            "code": inactive_code, "name": "Inactive Test Form",
+        })
+        assert r2.status_code == 201, r2.text
+        r3 = await admin.patch(f"/api/v1/expenses/custom-forms/{inactive_code}", json={"is_active": False})
+        assert r3.status_code == 200, r3.text
+
+    async with _client(_make_token("requester")) as user:
+        resp = await user.get("/api/v1/expenses/custom-forms")
+    assert resp.status_code == 200
+    codes = {f["code"] for f in resp.json()}
+    assert active_code in codes
+    assert inactive_code not in codes   # 非管理员看不到未激活表单
+
+    # admin 不加 active_only 能看到两者
+    async with _client(_make_token("system_admin")) as admin2:
+        resp2 = await admin2.get("/api/v1/expenses/custom-forms")
+    codes2 = {f["code"] for f in resp2.json()}
+    assert inactive_code in codes2
