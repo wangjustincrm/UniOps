@@ -75,24 +75,35 @@ async def test_bom_sync_upserts_canonical_tables(client, db_session, monkeypatch
     resp = await client.post("/mdm/v1/boms/sync")
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {"boms": 4, "lines": 5, "substitutes": 1, "skipped": 0, "warnings": 0, "tombstoned": 0}
+    assert body == {
+        "boms": 4, "lines": 5, "substitutes": 1, "skipped": 0, "warnings": 0,
+        "tombstoned": 0, "tombstone_skipped": [],
+    }
 
-    # Re-run must not duplicate rows (idempotent upsert by nc_source_pk) and
-    # must not tombstone anything (same extract -> same resolved set).
+    # Re-run must not duplicate rows (idempotent upsert by nc_source_pk),
+    # must not tombstone anything (same extract -> same resolved set), and
+    # must not skip any table's tombstone (every layer resolves non-empty
+    # both times in this fixture — see the dedicated empty-layer tests below
+    # for the skip-on-empty guard itself).
     resp2 = await client.post("/mdm/v1/boms/sync")
-    assert resp2.json() == {"boms": 4, "lines": 5, "substitutes": 1, "skipped": 0, "warnings": 0, "tombstoned": 0}
+    assert resp2.json() == {
+        "boms": 4, "lines": 5, "substitutes": 1, "skipped": 0, "warnings": 0,
+        "tombstoned": 0, "tombstone_skipped": [],
+    }
 
 
 @pytest.mark.anyio
 async def test_bom_sync_tombstones_rows_dropped_from_nc_extract(client, db_session, monkeypatch):
-    """Upsert alone is append/update-only — a header deleted in NC, or a
-    line/substitute removed from a still-live header, must actually
-    disappear from boms/bom_lines/bom_substitutes on the next sync, not be
-    planned forever. Sync once with header H1 (one line) + header H2 (one
-    line + one substitute), then re-sync with H1 entirely gone and H2's
-    line/substitute gone too — every dropped row must vanish, H2 itself
-    must survive (with zero lines), and the response must report the
-    tombstoned count."""
+    """Upsert alone is append/update-only — a header deleted in NC, a line
+    removed from a still-live header, and a substitute removed from a
+    still-live line must all actually disappear from boms/bom_lines/
+    bom_substitutes on the next sync, not be planned forever. Sync once with
+    three headers (H1/H2/H3, one line each, two of the lines carrying a
+    substitute), then re-sync with H1 entirely gone, L1's cascade gone with
+    it, and S2 (one of the two substitutes) dropped — while H2/L2/S1 and
+    H3/L3 all still resolve normally (every layer's resolved set stays
+    NON-empty both syncs, so this exercises real partial tombstoning, not
+    the empty-layer skip guard — see the dedicated tests below for that)."""
     from sqlalchemy import func, select
 
     from app.models.bom import Bom, BomLine, BomSubstitute
@@ -103,54 +114,172 @@ async def test_bom_sync_tombstones_rows_dropped_from_nc_extract(client, db_sessi
             "headers": [
                 {"cbomid": "H1", "hcmaterialid": "MA", "hversion": "1.0", "fbillstatus": 1},
                 {"cbomid": "H2", "hcmaterialid": "MB", "hversion": "1.0", "fbillstatus": 1},
+                {"cbomid": "H3", "hcmaterialid": "ME", "hversion": "1.0", "fbillstatus": 1},
             ],
             "lines": [
                 {"cbom_bid": "L1", "cbomid": "H1", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"},
                 {"cbom_bid": "L2", "cbomid": "H2", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"},
+                {"cbom_bid": "L3", "cbomid": "H3", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"},
             ],
             "repl": [
                 {"cbom_replaceid": "S1", "cbom_bid": "L2", "creplmaterialoid": "MD", "vrowno": "10"},
+                {"cbom_replaceid": "S2", "cbom_bid": "L3", "creplmaterialoid": "MD", "vrowno": "10"},
             ],
-            "material_codes": {"MA": "CS0001", "MB": "CS0002", "MC": "CR0001", "MD": "CR0002"},
+            "material_codes": {
+                "MA": "CS0001", "MB": "CS0002", "ME": "CS0003", "MC": "CR0001", "MD": "CR0002",
+            },
         }
 
     monkeypatch.setattr(canonical_sync, "fetch_nc_bom", extract_v1)
     r1 = await client.post("/mdm/v1/boms/sync")
     assert r1.status_code == 200
     body1 = r1.json()
-    assert body1["boms"] == 2 and body1["lines"] == 2 and body1["substitutes"] == 1
+    assert body1["boms"] == 3 and body1["lines"] == 3 and body1["substitutes"] == 2
     assert body1["tombstoned"] == 0  # nothing to tombstone from an empty DB
+    assert body1["tombstone_skipped"] == []  # every layer resolved non-empty
 
     n_boms = (await db_session.execute(select(func.count()).select_from(Bom))).scalar()
-    assert n_boms == 2
+    assert n_boms == 3
 
-    # v2: H1 dropped entirely; H2 survives but its line (and therefore its
-    # substitute) is gone from the NC extract.
+    # v2: H1 (and its line L1) dropped entirely; H2/L2/S1 and H3/L3 survive
+    # unchanged, EXCEPT S2 (L3's substitute) is gone. Every layer's resolved
+    # set is still non-empty this round (boms={H2,H3}, lines={L2,L3},
+    # substitutes={S1}), so real tombstoning must still fire everywhere.
     def extract_v2():
         return {
             "headers": [
                 {"cbomid": "H2", "hcmaterialid": "MB", "hversion": "1.0", "fbillstatus": 1},
+                {"cbomid": "H3", "hcmaterialid": "ME", "hversion": "1.0", "fbillstatus": 1},
             ],
-            "lines": [],
-            "repl": [],
-            "material_codes": {"MA": "CS0001", "MB": "CS0002", "MC": "CR0001", "MD": "CR0002"},
+            "lines": [
+                {"cbom_bid": "L2", "cbomid": "H2", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"},
+                {"cbom_bid": "L3", "cbomid": "H3", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"},
+            ],
+            "repl": [
+                {"cbom_replaceid": "S1", "cbom_bid": "L2", "creplmaterialoid": "MD", "vrowno": "10"},
+            ],
+            "material_codes": {
+                "MA": "CS0001", "MB": "CS0002", "ME": "CS0003", "MC": "CR0001", "MD": "CR0002",
+            },
         }
 
     monkeypatch.setattr(canonical_sync, "fetch_nc_bom", extract_v2)
     r2 = await client.post("/mdm/v1/boms/sync")
     assert r2.status_code == 200
     body2 = r2.json()
-    assert body2["boms"] == 1 and body2["lines"] == 0 and body2["substitutes"] == 0
+    assert body2["boms"] == 2 and body2["lines"] == 2 and body2["substitutes"] == 1
     assert body2["tombstoned"] > 0
+    assert body2["tombstone_skipped"] == []  # real tombstoning, nothing refused
 
     remaining_boms = (await db_session.execute(select(Bom.nc_source_pk))).scalars().all()
-    assert set(remaining_boms) == {"H2"}
+    assert set(remaining_boms) == {"H2", "H3"}
 
+    remaining_lines = (await db_session.execute(select(BomLine.nc_source_pk))).scalars().all()
+    assert set(remaining_lines) == {"L2", "L3"}
+
+    remaining_subs = (await db_session.execute(select(BomSubstitute.nc_source_pk))).scalars().all()
+    assert set(remaining_subs) == {"S1"}
+
+
+@pytest.mark.anyio
+async def test_bom_sync_skips_tombstone_when_one_layer_extract_is_empty(client, db_session, monkeypatch):
+    """CRITICAL regression: a transient/partial NC read that returns zero
+    rows for exactly ONE layer (here: `repl`, i.e. no substitutes at all)
+    WITHOUT raising must NOT wipe that whole canonical table.
+    SQLAlchemy's `notin_(<empty set>)` compiles to an always-TRUE predicate,
+    so `_tombstone()` must refuse to even issue the DELETE when the
+    resolved set is empty, rather than trusting notin_'s semantics — this
+    test is exactly what would have caught the bug (an unguarded version
+    deletes every bom_substitutes row here, cascaded or not, even though
+    headers/lines still fully resolve and report zero real changes)."""
+    from sqlalchemy import func, select
+
+    from app.models.bom import BomSubstitute
+    from app.services.nc_bom_sync import canonical_sync
+
+    def extract_with_substitutes():
+        return {
+            "headers": [{"cbomid": "H1", "hcmaterialid": "MA", "hversion": "1.0", "fbillstatus": 1}],
+            "lines": [{"cbom_bid": "L1", "cbomid": "H1", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"}],
+            "repl": [{"cbom_replaceid": "S1", "cbom_bid": "L1", "creplmaterialoid": "MD", "vrowno": "10"}],
+            "material_codes": {"MA": "CS0001", "MC": "CR0001", "MD": "CR0002"},
+        }
+
+    monkeypatch.setattr(canonical_sync, "fetch_nc_bom", extract_with_substitutes)
+    r1 = await client.post("/mdm/v1/boms/sync")
+    assert r1.status_code == 200
+    assert r1.json()["substitutes"] == 1
+
+    def extract_empty_repl_only():
+        # headers/lines identical and fully resolving; repl came back empty
+        # this round (e.g. a partial NC read) — NOT a real "all substitutes
+        # deleted" signal.
+        return {
+            "headers": [{"cbomid": "H1", "hcmaterialid": "MA", "hversion": "1.0", "fbillstatus": 1}],
+            "lines": [{"cbom_bid": "L1", "cbomid": "H1", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"}],
+            "repl": [],
+            "material_codes": {"MA": "CS0001", "MC": "CR0001", "MD": "CR0002"},
+        }
+
+    monkeypatch.setattr(canonical_sync, "fetch_nc_bom", extract_empty_repl_only)
+    r2 = await client.post("/mdm/v1/boms/sync")
+    assert r2.status_code == 200
+    body2 = r2.json()
+    assert body2["substitutes"] == 0  # nothing resolved THIS sync...
+    assert body2["tombstone_skipped"] == ["bom_substitutes"]  # ...but refused to wipe
+
+    # The pre-existing substitute row must still be there.
+    remaining = (await db_session.execute(select(BomSubstitute.nc_source_pk))).scalars().all()
+    assert remaining == ["S1"]
+    n = (await db_session.execute(select(func.count()).select_from(BomSubstitute))).scalar()
+    assert n == 1
+
+
+@pytest.mark.anyio
+async def test_bom_sync_skips_all_tombstones_when_headers_extract_is_empty(client, db_session, monkeypatch):
+    """The most severe form of the same bug: an entirely empty `headers`
+    layer (NC read timeout/partial failure that doesn't raise) cascades to
+    empty `lines`/`substitutes` resolved sets too (transform() can't resolve
+    lines/substitutes without a resolved parent header) — an unguarded
+    tombstone would wipe boms, bom_lines, AND bom_substitutes in one sync.
+    Every table must be left untouched and every table name must be
+    reported in `tombstone_skipped`."""
+    from sqlalchemy import func, select
+
+    from app.models.bom import Bom, BomLine, BomSubstitute
+    from app.services.nc_bom_sync import canonical_sync
+
+    def extract_v1():
+        return {
+            "headers": [{"cbomid": "H1", "hcmaterialid": "MA", "hversion": "1.0", "fbillstatus": 1}],
+            "lines": [{"cbom_bid": "L1", "cbomid": "H1", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"}],
+            "repl": [{"cbom_replaceid": "S1", "cbom_bid": "L1", "creplmaterialoid": "MD", "vrowno": "10"}],
+            "material_codes": {"MA": "CS0001", "MC": "CR0001", "MD": "CR0002"},
+        }
+
+    monkeypatch.setattr(canonical_sync, "fetch_nc_bom", extract_v1)
+    r1 = await client.post("/mdm/v1/boms/sync")
+    assert r1.status_code == 200
+    assert r1.json() == {
+        "boms": 1, "lines": 1, "substitutes": 1, "skipped": 0, "warnings": 0,
+        "tombstoned": 0, "tombstone_skipped": [],
+    }
+
+    def extract_empty():
+        return {"headers": [], "lines": [], "repl": [], "material_codes": {}}
+
+    monkeypatch.setattr(canonical_sync, "fetch_nc_bom", extract_empty)
+    r2 = await client.post("/mdm/v1/boms/sync")
+    assert r2.status_code == 200
+    body2 = r2.json()
+    assert body2["boms"] == 0 and body2["lines"] == 0 and body2["substitutes"] == 0
+    assert body2["tombstoned"] == 0
+    assert set(body2["tombstone_skipped"]) == {"boms", "bom_lines", "bom_substitutes"}
+
+    n_boms = (await db_session.execute(select(func.count()).select_from(Bom))).scalar()
     n_lines = (await db_session.execute(select(func.count()).select_from(BomLine))).scalar()
-    assert n_lines == 0
-
     n_subs = (await db_session.execute(select(func.count()).select_from(BomSubstitute))).scalar()
-    assert n_subs == 0
+    assert (n_boms, n_lines, n_subs) == (1, 1, 1), "an empty headers extract must not delete anything"
 
 
 @pytest.mark.anyio

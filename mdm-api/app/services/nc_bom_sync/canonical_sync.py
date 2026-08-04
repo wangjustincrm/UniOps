@@ -25,6 +25,9 @@ raw mirror sync first, then transform):
      re-fetch, would otherwise be planned forever. Runs in the SAME
      transaction as the upserts (one `db.commit()` at the end) so a
      mid-tombstone failure rolls back the whole sync, not just the deletes.
+     Per-table empty-set guard: if a table's resolved set is empty this
+     sync, its tombstone is SKIPPED (existing rows kept) rather than wiping
+     the table — see `_tombstone()`'s docstring for why.
 """
 from __future__ import annotations
 
@@ -39,29 +42,47 @@ from app.services.nc_bom_sync.transform import transform
 from app.services.upsert import chunked_upsert_returning
 
 
-async def _tombstone(db: AsyncSession, model, current_pks: set) -> int:
+async def _tombstone(db: AsyncSession, model, current_pks: set) -> tuple[int, bool]:
     """Delete rows of `model` whose nc_source_pk is NOT in `current_pks`
     (this sync's resolved set) — the canonical-table half of snapshot
-    semantics. `current_pks` empty means nothing in this table resolved this
-    sync (e.g. NC returned zero rows for that layer); in that case every
-    existing row is, correctly, "absent from the current extract" and gets
-    tombstoned too — there is no separate empty-extract guard here the way
-    mrp-api's WMS sync has one (see wms_sync/service.py's `run_wms_sync`):
-    NC's BOM tables are known to always be non-trivially populated (survey:
-    1016/10169/664 rows), so an empty layer here signals a real deletion
-    cascade (e.g. every header became unresolvable), not a flaky/partial
-    extract to defend against."""
+    semantics. Returns (rows_deleted, skipped).
+
+    `current_pks` empty is a REFUSAL case, not a "delete everything" case —
+    same rationale as mrp-api's WMS empty-extract guard (wms_sync/service.py's
+    `run_wms_sync`). An earlier version of this function reasoned that NC's
+    BOM tables are always non-trivially populated (survey: 1016/10169/664
+    rows) so an empty resolved set could only mean a genuine deletion
+    cascade — but that is a diagnostic *expectation* about NC's data, not a
+    technical guarantee: a transient/partial NC read for just ONE layer
+    (headers, lines, or repl) that returns zero rows WITHOUT raising would
+    make that layer's resolved set empty too, and SQLAlchemy's
+    `notin_(<empty set>)` compiles to an always-TRUE predicate (`col NOT IN
+    (NULL)) OR (1=1)` in practice — the exact wrong behavior: wiping the
+    whole table (and cascading via FK to its children) instead of doing
+    nothing. So: an empty `current_pks` here means "skip this table's
+    tombstone, keep whatever rows already exist," full stop — never issue
+    the DELETE at all when the set is empty, regardless of how SQLAlchemy
+    would render the predicate.
+    """
+    if not current_pks:
+        return 0, True
     stmt = model.__table__.delete().where(model.nc_source_pk.notin_(current_pks))
     result = await db.execute(stmt)
-    return result.rowcount or 0
+    return result.rowcount or 0, False
 
 
 async def sync_boms(db: AsyncSession) -> dict:
     """Full canonical sync. Returns row counts + skip/warning tallies so a
     caller can see resolution failures without digging through logs:
     {"boms": n, "lines": n, "substitutes": n, "skipped": n, "warnings": n,
-    "tombstoned": n} — `tombstoned` is the total rows deleted across all
-    three tables for having fallen out of the current NC extract."""
+    "tombstoned": n, "tombstone_skipped": [table_name, ...]} —
+    `tombstoned` is the total rows deleted across all three tables for
+    having fallen out of the current NC extract; `tombstone_skipped` names
+    any table whose tombstone was REFUSED this run because its resolved set
+    came back empty (see `_tombstone()`'s docstring) — existing rows in
+    that table were left untouched, and a caller/operator should treat a
+    non-empty `tombstone_skipped` as a warning worth investigating (did NC
+    really return zero rows for that layer, or was the read partial?)."""
     # fetch_nc_bom() is a blocking oracledb call (sync driver, thin mode) — run
     # it off the event loop so a slow/hung NC read doesn't stall every other
     # request this service (also serving EPMS/OA/Finance lookups) is handling
@@ -104,9 +125,22 @@ async def sync_boms(db: AsyncSession) -> dict:
     # tallies meaningful (no double-counting rows the parent delete already
     # removed).
     n_tombstoned = 0
-    n_tombstoned += await _tombstone(db, BomSubstitute, set(sub_id_by_pk))
-    n_tombstoned += await _tombstone(db, BomLine, set(line_id_by_pk))
-    n_tombstoned += await _tombstone(db, Bom, set(bom_id_by_pk))
+    tombstone_skipped: list[str] = []
+
+    n, skipped = await _tombstone(db, BomSubstitute, set(sub_id_by_pk))
+    n_tombstoned += n
+    if skipped:
+        tombstone_skipped.append("bom_substitutes")
+
+    n, skipped = await _tombstone(db, BomLine, set(line_id_by_pk))
+    n_tombstoned += n
+    if skipped:
+        tombstone_skipped.append("bom_lines")
+
+    n, skipped = await _tombstone(db, Bom, set(bom_id_by_pk))
+    n_tombstoned += n
+    if skipped:
+        tombstone_skipped.append("boms")
 
     await db.commit()
     return {
@@ -116,4 +150,5 @@ async def sync_boms(db: AsyncSession) -> dict:
         "skipped": len(t["skipped"]),
         "warnings": len(t["warnings"]),
         "tombstoned": n_tombstoned,
+        "tombstone_skipped": tombstone_skipped,
     }

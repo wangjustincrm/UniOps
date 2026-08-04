@@ -105,6 +105,7 @@ class BomSyncResponse(BaseModel):
     skipped: int
     warnings: int
     tombstoned: int
+    tombstone_skipped: list[str] = []
 
 
 def _version_key(version: str | None) -> tuple:
