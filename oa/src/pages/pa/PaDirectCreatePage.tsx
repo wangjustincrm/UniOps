@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -979,11 +979,10 @@ function Step3PaForm({
 
       {error && <ErrorBanner message={error} />}
 
-      <button type="submit" disabled={saving || !vendorName}
-        className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
+      <Button type="submit" size="sm" disabled={saving || !vendorName}>
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
         {saving ? 'Creating…' : 'Create Payment Application'}
-      </button>
+      </Button>
     </form>
   )
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronRight, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
@@ -514,10 +514,9 @@ export default function TrvCreatePage() {
 
       {error && <ErrorBanner message={error} />}
 
-      <button type="submit" disabled={mutation.isPending}
-        className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors self-start">
+      <Button type="submit" size="sm" disabled={mutation.isPending} className="self-start">
         {mutation.isPending ? 'Saving…' : 'Save Draft'}
-      </button>
+      </Button>
     </form>
   )
 }

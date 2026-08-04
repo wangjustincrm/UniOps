@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
@@ -168,20 +168,12 @@ export default function MilCreatePage() {
           <p className="mt-0.5 text-sm text-neutral-500">Personal vehicle reimbursement at ${currentRate}/km</p>
         </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => replaceTab('/expenses')}
-            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
-          >
+          <Button type="button" variant="secondary" size="sm" onClick={() => replaceTab('/expenses')}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={createMutation.isPending}
-            className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors disabled:opacity-50"
-          >
+          </Button>
+          <Button type="submit" size="sm" disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Saving…' : 'Save as Draft'}
-          </button>
+          </Button>
         </div>
       </div>
 
