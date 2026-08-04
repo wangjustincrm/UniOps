@@ -12,7 +12,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
-from app.db.session import AsyncSessionLocal
+from app.crud.config import get_or_create as get_config
+from app.db import session as session_module
 from app.models.task import Task
 from app.services.notification import dispatch_task_notification
 
@@ -20,10 +21,23 @@ logger = logging.getLogger(__name__)
 
 
 async def run_daily_followup() -> None:
-    """Query all open tasks and dispatch follow-up notifications."""
+    """Query all open tasks and dispatch follow-up notifications.
+
+    Gated by the admin toggle ``notification_settings.daily_followup_enabled``
+    (Portal → Admin → Notification Settings). OFF — including rows created
+    before the key existed — skips the run entirely; read per-run so flipping
+    the toggle takes effect without a restart.
+    """
     logger.info("Daily follow-up: starting notification run")
     try:
-        async with AsyncSessionLocal() as db:
+        # 惰性属性访问而非 from-import:测试 conftest 会把
+        # session_module.AsyncSessionLocal 重绑到测试库。
+        async with session_module.AsyncSessionLocal() as db:
+            cfg = await get_config(db)
+            if not (cfg.notification_settings or {}).get("daily_followup_enabled", False):
+                logger.info("Daily follow-up: disabled by admin toggle — skipping run")
+                await db.commit()
+                return
             result = await db.execute(
                 select(Task).where(Task.is_completed.is_(False))
             )
