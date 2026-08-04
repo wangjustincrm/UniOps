@@ -2,9 +2,11 @@
 task 6). Phase 1 purchase-suggestion logic picks the default supplier + lead
 time for a material via `is_primary`.
 
-Reads: any authenticated role (materials.py/boms.py idiom). Writes: gated
-require_permission("data_maintenance"), same as materials.py's POST
-/materials/sync — this is hand-maintained reference data, not sync output.
+Reads: any authenticated role (materials.py/boms.py idiom). Writes: gated on
+require_any_permission("data_maintenance", "mdm.bom.write") — same rationale
+as boms.py's POST /sync (see that module's docstring): this table is
+material/supplier governance data, so it accepts the narrower `mdm.bom.write`
+key too, without dropping the pre-existing `data_maintenance` admins.
 """
 import uuid
 from decimal import Decimal
@@ -16,14 +18,14 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.authz import require_permission
+from app.core.authz import require_any_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.material_supplier import MaterialSupplier
 
 router = APIRouter(prefix="/material-suppliers", tags=["material-suppliers"])
 
-WriteDep = Annotated[dict, Depends(require_permission("data_maintenance"))]
+WriteDep = Annotated[dict, Depends(require_any_permission("data_maintenance", "mdm.bom.write"))]
 
 
 class MaterialSupplierCreate(BaseModel):
@@ -132,12 +134,23 @@ async def update_material_supplier(
         raise HTTPException(status_code=404, detail="material_suppliers row not found")
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(row, k, v)
+    # Capture BEFORE flush: after a flush raises, the session's transaction
+    # is left in a state that requires rollback before any further ORM
+    # attribute access — reading `row.material_code`/`row.partner_code` in
+    # the `except` branch below would trigger an implicit re-SELECT (an
+    # expired attribute load) against that dead transaction and raise
+    # PendingRollbackError instead of cleanly returning 409. This path was
+    # previously unreachable (the old, unfiltered material_code+partner_code
+    # unique constraint could never be hit by a PATCH, which doesn't touch
+    # either field) — the new partial `is_primary` index (migration 0013)
+    # makes it reachable, so it needs to actually work now.
+    material_code, partner_code = row.material_code, row.partner_code
     try:
         await db.flush()
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=_conflict_detail(row.material_code, row.partner_code),
+            detail=_conflict_detail(material_code, partner_code),
         )
     await db.commit()
     return row

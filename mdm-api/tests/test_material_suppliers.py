@@ -90,6 +90,51 @@ async def test_patch_updates_mutable_fields(client: AsyncClient):
 
 
 @pytest.mark.anyio
+async def test_only_one_primary_supplier_per_material_on_create(client: AsyncClient, db_session):
+    """Partial unique index (migration 0013): at most one is_primary=true
+    row per material_code — a second CREATE with is_primary=True for the
+    same material must conflict (409), not silently create two "defaults"
+    that Phase 1's purchase-suggestion logic would then pick between
+    arbitrarily."""
+    first = await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CM0050", "partner_code": "0000140", "is_primary": True,
+    })
+    assert first.status_code == 201, first.text
+
+    # A second, non-primary supplier for the same material is fine —
+    # multiple candidate suppliers are the normal case.
+    second = await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CM0050", "partner_code": "0000141", "is_primary": False,
+    })
+    assert second.status_code == 201, second.text
+
+    # A second PRIMARY supplier for the same material must conflict.
+    third = await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CM0050", "partner_code": "0000142", "is_primary": True,
+    })
+    assert third.status_code == 409, third.text
+
+
+@pytest.mark.anyio
+async def test_only_one_primary_supplier_per_material_on_patch(client: AsyncClient, db_session):
+    """The same constraint must fire on PATCH: promoting a second supplier
+    to is_primary=True for a material that already has one must conflict."""
+    existing_primary = await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CM0051", "partner_code": "0000150", "is_primary": True,
+    })
+    assert existing_primary.status_code == 201, existing_primary.text
+
+    other = await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CM0051", "partner_code": "0000151", "is_primary": False,
+    })
+    assert other.status_code == 201, other.text
+    other_id = other.json()["id"]
+
+    promoted = await client.patch(f"/mdm/v1/material-suppliers/{other_id}", json={"is_primary": True})
+    assert promoted.status_code == 409, promoted.text
+
+
+@pytest.mark.anyio
 async def test_delete_removes_row(client: AsyncClient, db_session):
     created = await client.post("/mdm/v1/material-suppliers", json={
         "material_code": "CM0043",
