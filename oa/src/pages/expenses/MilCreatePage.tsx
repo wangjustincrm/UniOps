@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useReplaceTab } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
@@ -79,6 +79,21 @@ export default function MilCreatePage() {
   const [trips, setTrips] = useState<TripItem[]>([
     emptyTrip(1, rate, defaultAccountId, null, null),
   ])
+
+  // policy 到达后，回填仍是默认费率/无科目的行（费率非用户可编辑字段，统一按组织费率）
+  useEffect(() => {
+    if (!policy) return
+    setTrips((prev) => prev.map((t) => {
+      const patch: Partial<TripItem> = {}
+      if (t.rate_per_km !== rate) patch.rate_per_km = rate
+      if (t.budget_account_id == null && defaultAccountId != null) patch.budget_account_id = defaultAccountId
+      if (!Object.keys(patch).length) return t
+      const merged = { ...t, ...patch }
+      merged.amount = calcAmount(merged.distance_km, merged.rate_per_km, merged.is_round_trip)
+      return merged
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policy])
 
   // Sync rate when policy loads
   const currentRate = rate
