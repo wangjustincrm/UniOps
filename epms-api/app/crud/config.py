@@ -19,7 +19,7 @@ BUILT_IN_ROLES: frozenset[str] = frozenset({
     "requester", "dept_admin", "dept_manager", "gm", "opm",
     "procurement_officer", "procurement_manager", "warehouse_staff",
     "ap_clerk", "finance_bp", "finance_manager", "vendor_manager",
-    "cfo", "auditor", "system_admin",
+    "cfo", "auditor", "erp_pa_officer", "system_admin",
 })
 
 # Permissions that cannot be disabled for the given role (enforced server-side).
@@ -33,6 +33,7 @@ LOCKED_PERMISSIONS: dict[str, set[str]] = {
     "ap_clerk":             {"view_invoice", "view_pa"},
     "finance_bp":           {"view_pa"},
     "finance_manager":      {"view_pa"},
+    "erp_pa_officer":       {"view_po", "view_pa"},
     "system_admin":         {"admin_panel"},
 }
 
@@ -258,6 +259,7 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     "vendor_manager":       _P(vendor_master=True, admin_panel=True, **_BOOKING),
     "cfo":                  _P(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "auditor":              _P(**_VIEW_ALL, **_BOOKING),
+    "erp_pa_officer":       _P(**_VIEW_ALL, **_BOOKING),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 

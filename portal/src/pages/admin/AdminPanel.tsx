@@ -94,6 +94,7 @@ const ROLE_LABELS: Record<string,string> = {
   procurement_officer:'Procurement Officer', procurement_manager:'Procurement Manager',
   warehouse_staff:'Warehouse Staff', ap_clerk:'AP Clerk', finance_manager:'Finance Manager',
   finance_bp:'Finance BP', cfo:'CFO', auditor:'Auditor', vendor_manager:'Vendor Manager',
+  erp_pa_officer:'ERP PA Officer',
   system_admin:'System Admin',
 }
 

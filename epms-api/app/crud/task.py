@@ -365,21 +365,28 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
         return
 
     for po in pos:
-        requester_id = None
-        if po.pr_id:
-            requester_id = (await db.execute(
-                select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
-            )).scalar_one_or_none()
-        if requester_id is None:
-            requester_id = po.created_by
+        # NC-imported POs have no PR/requester → route to the erp_pa_officer pool
+        # (broadcast, NULL assignee), matching the live invoice-match hook. Only
+        # NC POs; other PR-less (direct) POs keep the requester/PO-creator route.
+        if po.source == "nc":
+            assigned_role, assigned_user_id = "erp_pa_officer", None
+        else:
+            requester_id = None
+            if po.pr_id:
+                requester_id = (await db.execute(
+                    select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
+                )).scalar_one_or_none()
+            if requester_id is None:
+                requester_id = po.created_by
+            assigned_role, assigned_user_id = "requester", requester_id
         db.add(Task(
             type="create_pa",
             priority="normal",
             document_type="po",
             document_id=po.id,
             document_number=po.number,
-            assigned_role="requester",
-            assigned_user_id=requester_id,
+            assigned_role=assigned_role,
+            assigned_user_id=assigned_user_id,
             title=f"Create Payment Application for {po.number}",
             description=f"Invoices matched to PO {po.number} await a Payment Application.",
             amount=po.total,
