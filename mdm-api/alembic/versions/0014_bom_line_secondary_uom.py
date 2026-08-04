@@ -6,14 +6,14 @@ secondary unit PIECES; conversion is maintained in the material master).
 Both nullable — most bom_lines are single-unit and never populate these.
 
 Revision ID: 0014_bom_line_secondary_uom
-Revises: 0013_material_suppliers_one_primary
+Revises: 0013_supplier_one_primary
 Create Date: 2026-08-04
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "0014_bom_line_secondary_uom"
-down_revision = "0013_material_suppliers_one_primary"
+down_revision = "0013_supplier_one_primary"
 branch_labels = None
 depends_on = None
 
