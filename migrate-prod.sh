@@ -19,7 +19,12 @@ COMPOSE="docker compose -f docker-compose.prod.yml"
 # with an explicit RuntimeError if run out of order).
 # approval-api runs right after identity-api: its routing tables have no FKs,
 # but its migrations start depending on identity's user_roles being seeded.
-SERVICES="finance-api mdm-api epms-api identity-api approval-api budget-api expense-api vms-api booking-api"
+# mrp-api owns its own alembic_version_mrp table and its first migration has
+# down_revision=None (no dependency on any other service's schema) — its
+# position in this list is unconstrained, appended here so a release can
+# never ship the mrp-api image without its tables (WMS_* inventory-lot mirror)
+# while /health still reports healthy.
+SERVICES="finance-api mdm-api epms-api identity-api approval-api budget-api expense-api vms-api booking-api mrp-api"
 
 for svc in $SERVICES; do
   echo ">> alembic upgrade head: ${svc}"

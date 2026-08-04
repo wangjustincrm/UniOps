@@ -401,6 +401,57 @@ Additional one-time steps are required before the first booking release:
 
 ---
 
+## MRP Module Release Steps
+
+`mrp-api` (`:8011`) and `mdm-api`'s BOM sync (`nc_bom*` raw mirror + canonical
+`boms`/`bom_lines`/`bom_substitutes`) follow the same build/push/deploy pattern
+as the other services. Two one-time steps are required for the first MRP
+release:
+
+1. **mrp-api is in `migrate-prod.sh`** — it owns its own `alembic_version_mrp`
+   table (independent from `alembic_version_mdm`/the shared `alembic_version`),
+   and its first migration has `down_revision=None`, so its position in the
+   ordered `SERVICES` list is unconstrained. It IS included in the list —
+   **do not remove it**: a release that ships the `mrp-api` image without
+   running its migration deploys a service whose `/health` reports healthy
+   with no tables underneath (every `wms_inventory_lots` read then 500s).
+
+2. **WMS (Flux) Oracle read-only connection** — `mrp-api`'s inventory-lot sync
+   needs `WMS_HOST` / `WMS_PORT` / `WMS_SERVICE` / `WMS_USER` / `WMS_PASSWORD`
+   in `.env` (see `.env.prod.example` / `.env.lan.example`). `docker-compose.prod.yml`
+   reads these as `${WMS_HOST:-}` etc. — leaving them blank does not fail the
+   deploy, it just leaves the sync endpoint reporting "not configured" (503)
+   until real values are filled in.
+
+3. **Seed the 8 MRP + 1 mdm permission keys** — the MRP phase-0 permission
+   keys (`mrp.demand.write`, `mrp.run.execute`, `mrp.proposal.confirm`,
+   `mrp.proposal.export`, `mrp.exception.handle`, `mrp.param.write`,
+   `mrp.report.view`, `mdm.bom.write`) are defined in code
+   (`identity-api/scripts/seed_authz.py`'s `MODULE_BY_KEY`) but only exist in
+   the DB — and therefore only appear in the Portal Access Control matrix and
+   only gate anything — after this script has run against production:
+
+   ```bash
+   # On the app server, inside the identity-api container:
+   docker compose -f docker-compose.prod.yml exec identity-api python -m scripts.seed_authz
+   ```
+
+   This is idempotent for *new* keys/roles (`ON CONFLICT DO NOTHING` on
+   `permission_defs`/`role_defs`) and safe to run on every MRP-touching
+   release. **Caveat — do not run it speculatively on unrelated releases**:
+   `seed_authz.py` also re-inserts each role's *default* grants
+   (`role_permissions`) for every key in `MODULE_BY_KEY`, and `ON CONFLICT DO
+   NOTHING` cannot tell "this grant was never inserted" apart from "an admin
+   explicitly unchecked this grant in the Access Control UI after a previous
+   seed". Re-running the script will silently **resurrect** any default grant
+   an admin has since revoked (for any of the keys in `MODULE_BY_KEY`, not
+   just the new MRP ones) — it does not touch grants that were never part of
+   `DEFAULTS`/`LOCKED` at all. Only run it when a release adds new keys/roles
+   that actually need seeding, and re-check the Access Control matrix
+   afterward for any revoked grant that came back.
+
+---
+
 ## Security Notes
 
 - PostgreSQL and Redis must only be accessible on the **internal network** (no public port exposure)
