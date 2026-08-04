@@ -234,14 +234,30 @@ async def patch_direct_pa(
 
 async def _can_view_pa(db: AsyncSession, pa, user_id: uuid.UUID, role: str) -> bool:
     """Object-level authz for PA read endpoints (IDOR fix): a user may view a PA iff
-    they are the creator, system_admin, hold a _CAN_PAY role, or are an approval
-    participant (same tasks-table check as get_pa_permissions/_can_act_on_claim)."""
+    they are the creator, system_admin, hold a _CAN_PAY role, hold a role that is a
+    step in the pa_dir workflow (for any non-draft PA — mirrors list_pas), have ever
+    acted on it (ApprovalEventMirror — covers a completed task an open-tasks-only
+    check like _can_act_on_claim would miss), or are a current approval participant
+    (tasks-table check, same as get_pa_permissions/_can_act_on_claim)."""
     if pa.created_by == user_id or role == "system_admin":
         return True
-    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim
+    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim, _get_workflow_defs
     if role in _CAN_PAY:
         return True
-    return await _can_act_on_claim(db, pa, user_id)
+    wf = await _get_workflow_defs(db)
+    pa_dir_roles = {s.get("role") for s in (wf.get("pa_dir") or [])}
+    if role in pa_dir_roles and pa.status != "draft":
+        return True
+    from sqlalchemy import select as sa_select, func as sa_func
+    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
+    acted = (await db.execute(
+        sa_select(sa_func.count()).select_from(AEM).where(
+            AEM.document_id == pa.id, AEM.actor_id == user_id
+        )
+    )).scalar_one()
+    if acted:
+        return True
+    return await _can_act_on_claim(db, pa, user_id, role)
 
 
 @router.get("/{pa_id}", response_model=PaResponse)

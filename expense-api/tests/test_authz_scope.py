@@ -66,6 +66,19 @@ async def test_by_po_filters_out_unrelated_pas(test_engine):
     assert r.json()["total"] == 0
 
 
+@pytest.mark.asyncio
+async def test_get_pa_ok_for_past_actor(test_engine):
+    """Parity fix: _can_view_pa must include the "ever-acted" branch (not just
+    open tasks). A non-finance approver whose task is already completed (e.g.
+    under a customized pa_dir workflow) still must be able to view the PA."""
+    approver = uuid.uuid4()
+    pa_id = await _seed_pa(test_engine, created_by=uuid.uuid4(), status="approved")
+    await _seed_event(test_engine, pa_id, approver)
+    async with _client(_make_token("requester", str(approver))) as c:
+        r = await c.get(f"/api/v1/pa/{pa_id}")
+    assert r.status_code == 200
+
+
 from app.models.expense import ExpenseClaim
 from datetime import date
 
