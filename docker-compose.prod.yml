@@ -130,6 +130,13 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       ERP_BASE_URL: ${ERP_BASE_URL}
       ERP_TIMEOUT_SECONDS: "60"
+      # NC65 read-only connection for the BOM raw mirror sync (values live in the
+      # gitignored .env as NC65_*; missing values = feature hidden).
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
     ports: ["8002:8002"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8002
     healthcheck:

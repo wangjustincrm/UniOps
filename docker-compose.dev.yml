@@ -165,6 +165,13 @@ services:
       PORT: "8002"
       ERP_BASE_URL: http://10.10.95.66
       ERP_TIMEOUT_SECONDS: "60"
+      # NC65 read-only connection for the BOM raw mirror sync (values live in the
+      # gitignored root .env as NC65_*; missing values = feature hidden).
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)"]
