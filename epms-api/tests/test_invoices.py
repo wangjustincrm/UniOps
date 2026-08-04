@@ -63,6 +63,20 @@ async def test_create_invoice(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_create_invoice_with_negative_discount_line(admin_client):
+    """供应商发票可含折扣/返利负价行(镜像 PO 的负单价行);头部 amount 仍须为正。"""
+    v = await _make_vendor(admin_client, "VND-INV-NEG-01")
+    inv = await _create_inv(admin_client, v["id"], line_items=[
+        {"description": "Widget", "quantity": "10", "unit": "EA",
+         "unit_price": "100.00", "line_total": "1000.00"},
+        {"description": "30% Discount", "quantity": "1", "unit": "EA",
+         "unit_price": "-100.00", "line_total": "-100.00"},
+    ], amount="900.00", tax_amount="117.00")
+    assert float(inv["line_items"][1]["unit_price"]) == -100.00
+    assert float(inv["line_items"][1]["line_total"]) == -100.00
+
+
+@pytest.mark.asyncio
 async def test_create_after_delete_does_not_collide_internal_ref(admin_client):
     """删除一张发票后再新建曾 500:_next_ref 用 count+1,硬删除让 count 回退,
     新编号撞上现存最大号的 unique 约束(生产复现:detail Remove → 重新 Upload)。"""

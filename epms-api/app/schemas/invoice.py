@@ -12,8 +12,10 @@ class InvoiceLineItem(BaseModel):
     description: str = Field(min_length=1, max_length=500)
     quantity: Decimal = Field(default=Decimal("1"), ge=0)
     unit: str | None = Field(default=None, max_length=50)
-    unit_price: Decimal = Field(default=Decimal("0"), ge=0)
-    line_total: Decimal = Field(default=Decimal("0"), ge=0)
+    # unit_price / line_total may be negative, mirroring PO lines: vendor invoices
+    # carry the same discount / rebate / credit lines (header amount stays > 0).
+    unit_price: Decimal = Field(default=Decimal("0"))
+    line_total: Decimal = Field(default=Decimal("0"))
     # 非PO费用标记(shipping/packaging 等):不参与 PO 匹配,金额照付(随发票头)
     non_po_fee: bool = False
     non_po_note: str | None = Field(default=None, max_length=500)

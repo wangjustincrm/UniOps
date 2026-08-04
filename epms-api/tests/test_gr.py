@@ -72,6 +72,53 @@ async def test_create_gr(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_create_gr_with_negative_discount_line(admin_client, test_engine):
+    """PO 放宽了负单价折扣行(cad9d17),GR 镜像同一 PO 行时必须同样放行,
+    否则仓库对带折扣行的 PO 无法收货(生产复现:POST /gr 422)。
+    PO 直接在库里翻成 issued,避免依赖本地不可用的 approval-api。"""
+    import uuid as _uuid
+    from sqlalchemy import select as _select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.models.po import PurchaseOrder
+
+    v = await admin_client.post(VENDOR_URL, json={
+        "code": "VND-GR-NEG-01", "name": "GR Vendor", "category": "Parts",
+        "contact_name": "Alice", "contact_email": "alice@vendor.com",
+        "payment_terms": "net30", "currency": "CAD",
+    })
+    v.raise_for_status()
+    po = await admin_client.post(PO_URL, json={
+        "title": "Discounted PO", "type": 3, "vendor_id": v.json()["id"],
+        "currency": "CAD", "tax_rate": "0",
+        "line_items": [
+            _PO_LINE,
+            {"description": "30% Discount", "qty": "1", "unit": "EA", "unit_price": "-100.00"},
+        ],
+    })
+    po.raise_for_status()
+    po_id = po.json()["id"]
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = (await db.execute(
+            _select(PurchaseOrder).where(PurchaseOrder.id == _uuid.UUID(po_id))
+        )).scalar_one()
+        row.status = "issued"
+        await db.commit()
+
+    resp = await admin_client.post(GR_URL, json=_gr_payload(po_id, line_items=[
+        {"description": "Hydraulic Pump", "qty_ordered": "2", "qty_received": "2",
+         "unit": "EA", "unit_price": "350.00", "condition": "good"},
+        {"description": "30% Discount", "qty_ordered": "1", "qty_received": "1",
+         "unit": "EA", "unit_price": "-100.00", "condition": "good"},
+    ]))
+    assert resp.status_code == 201, resp.text
+    lines = resp.json()["line_items"]
+    assert float(lines[1]["unit_price"]) == -100.00
+    assert float(lines[1]["line_total"]) == -100.00
+
+
+@pytest.mark.asyncio
 async def test_create_gr_requires_issued_po(admin_client):
     v = await admin_client.post(VENDOR_URL, json={
         "code": "VND-GR-DRAFT-01", "name": "D", "category": "C",
