@@ -128,5 +128,8 @@ human worklist. `updated` carries code+email so the operator can spot-check.
 ## Deployment
 
 Standard release flow (all 15 images at one sha). No migration, no env/config change,
-no Caddyfile change. After deploy: open Finance → QuickBooks → Vendors tab → click
-the button once; work through `unmatched_qbo`/`ambiguous` manually in EPMS.
+no Caddyfile change. After deploy: run (or confirm a recent) **full** QBO sync first —
+soft-deletes are only stamped in full mode, so a stale mirror can let a vendor
+deactivated in QBO contribute its (old but genuine) email. Then open Finance →
+QuickBooks → Vendors tab → click the button once; work through
+`unmatched_qbo`/`ambiguous` manually in EPMS.
