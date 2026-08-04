@@ -354,6 +354,45 @@ services:
       retries: 5
       start_period: 15s
 
+  mrp-api:
+    <<: *python-base
+    build:
+      context: .
+      dockerfile: mrp-api/Dockerfile
+    container_name: uniops_mrp_api
+    ports:
+      - "8011:8011"
+    volumes:
+      - ./mrp-api:/app
+      - ./packages/authz:/packages/authz
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      APP_NAME: UniOps MRP API
+      APP_VERSION: 0.1.0
+      DEBUG: "true"
+      ENVIRONMENT: development
+      API_V1_PREFIX: /api/v1
+      APPROVAL_API_URL: http://approval-api:8003/approval/v1
+      EPMS_API_URL: http://epms-api:8000
+      # WMS(Flux) Oracle read-only connection (values live in the gitignored
+      # root .env as WMS_*; missing values = feature hidden). See wms_conn.env.
+      WMS_HOST: ${WMS_HOST:-}
+      WMS_PORT: ${WMS_PORT:-1521}
+      WMS_SERVICE: ${WMS_SERVICE:-}
+      WMS_USER: ${WMS_USER:-}
+      WMS_PASSWORD: ${WMS_PASSWORD:-}
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8011/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   vms-api:
     <<: *python-base
     build:

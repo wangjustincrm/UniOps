@@ -260,6 +260,36 @@ services:
       retries: 5
       start_period: 20s
 
+  mrp-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-mrp-api:${TAG:-latest}
+    build: { context: ., dockerfile: mrp-api/Dockerfile }
+    environment:
+      <<: *db-env
+      APP_NAME: UniOps MRP API
+      APP_VERSION: 0.1.0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      APPROVAL_API_URL: http://approval-api:8003/approval/v1
+      EPMS_API_URL: http://epms-api:8000
+      # WMS(Flux) Oracle read-only connection (values live in the gitignored
+      # .env as WMS_*; missing values = feature hidden).
+      WMS_HOST: ${WMS_HOST:-}
+      WMS_PORT: ${WMS_PORT:-1521}
+      WMS_SERVICE: ${WMS_SERVICE:-}
+      WMS_USER: ${WMS_USER:-}
+      WMS_PASSWORD: ${WMS_PASSWORD:-}
+    ports: ["8011:8011"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8011
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8011/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   vms-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-vms-api:${TAG:-latest}
