@@ -11,7 +11,7 @@ from app.db.base import Base
 from app.models import (  # noqa: F401
     vendor, department, cost_center, part, user, company,
     erp_material, erp_supplier, erp_person, erp_sync_state, tax,
-    business_partner, uom, material, uom_conversion, nc_bom, bom,
+    business_partner, uom, material, uom_conversion, nc_bom, bom, material_supplier,
 )
 
 

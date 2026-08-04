@@ -13,6 +13,7 @@ from app.api.v1.partners import router as partners_router
 from app.api.v1.uom import router as uom_router
 from app.api.v1.uom_conversions import router as uom_conversions_router
 from app.api.v1.boms import router as boms_router
+from app.api.v1.material_suppliers import router as material_suppliers_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
@@ -29,3 +30,4 @@ api_router.include_router(partners_router)
 api_router.include_router(uom_router)
 api_router.include_router(uom_conversions_router)
 api_router.include_router(boms_router)
+api_router.include_router(material_suppliers_router)
