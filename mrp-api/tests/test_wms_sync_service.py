@@ -82,6 +82,39 @@ async def test_wms_sync_maps_status_from_db_table(db_session, monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_wms_sync_expiry_cutoff_is_utc(db_session, monkeypatch):
+    """The expiry cutoff (`today` in run_wms_sync) must come from
+    datetime.now(timezone.utc).date(), not container-local time — otherwise
+    which lots flip to 'expired' would depend on the host/container TZ.
+    Asserted by spying on every `datetime.now()` call the sync makes
+    (cutoff, sync_batch_id, sync_state timestamps) and requiring all of them
+    pass `tz=timezone.utc` explicitly, never a bare/local call."""
+    from datetime import datetime as real_datetime, timezone
+
+    from app.services.wms_sync import service
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+
+    seen_tzs: list = []
+    real_now = real_datetime.now
+
+    class _SpyDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            seen_tzs.append(tz)
+            return real_now(tz)
+
+    monkeypatch.setattr(service, "datetime", _SpyDateTime)
+
+    await service.run_wms_sync(db_session)
+
+    assert seen_tzs, "datetime.now() was never called during sync"
+    assert all(tz is timezone.utc for tz in seen_tzs), (
+        f"every datetime.now() call in run_wms_sync must pass timezone.utc explicitly, got {seen_tzs}"
+    )
+
+
+@pytest.mark.anyio
 async def test_wms_sync_records_last_error_on_failure(db_session, monkeypatch):
     from app.services.wms_sync import service
     from app.models.sync_state import MrpSyncState

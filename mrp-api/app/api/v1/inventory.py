@@ -54,6 +54,8 @@ class WmsInventoryLotResponse(BaseModel):
 class WmsInventoryLotListResponse(BaseModel):
     items: list[WmsInventoryLotResponse]
     total: int
+    page: int
+    page_size: int
 
 
 @router.get("/lots", response_model=WmsInventoryLotListResponse)
@@ -78,4 +80,4 @@ async def list_lots(
     stmt = stmt.order_by(WmsInventoryLot.material_code, WmsInventoryLot.lot_no)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     items = (await db.execute(stmt)).scalars().all()
-    return {"items": items, "total": total}
+    return {"items": items, "total": total, "page": page, "page_size": page_size}

@@ -28,7 +28,7 @@ untouched — see the `except` branch below, which rolls back before writing
 """
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import delete, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -77,7 +77,10 @@ async def run_wms_sync(db: AsyncSession) -> dict:
     try:
         raw_rows = fetch_inventory()
         mapping = await _load_mapping(db)
-        today = date.today()
+        # UTC, not container-local time — which lots flip to 'expired' must
+        # not depend on the host/container TZ (see transform_lot's expiry
+        # override, which compares expiry_date < today).
+        today = datetime.now(timezone.utc).date()
         batch_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
 
         rows = [transform_lot(raw, mapping, today) for raw in raw_rows]
