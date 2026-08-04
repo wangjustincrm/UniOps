@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useReplaceTab } from '@uniops/shell'
 import { useMutation } from '@tanstack/react-query'
-import { ArrowLeft, AlertTriangle } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { oaRoutes } from '@/app/routes'
 import { api } from '@/lib/api'
 import { TravelerPicker, type Traveler } from '@/components/TravelerPicker'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 const TRANSPORT = [
   ['airplane', 'Airplane'], ['train', 'Train'], ['ship', 'Ship'], ['car', 'Car'],
@@ -129,11 +130,7 @@ export default function TraCreatePage() {
         </div>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
+      {error && <ErrorBanner message={error} />}
       <button type="submit" disabled={mutation.isPending}
         className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-6 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 self-start">
         {mutation.isPending ? 'Saving…' : 'Save Draft'}

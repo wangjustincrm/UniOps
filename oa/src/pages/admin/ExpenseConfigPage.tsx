@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, Loader2, AlertTriangle } from 'lucide-react'
+import { Check, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 interface Policy {
   id: string
@@ -156,11 +157,7 @@ export default function ExpenseConfigPage() {
         </div>
       </section>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
+      {error && <ErrorBanner message={error} />}
 
       <div className="flex items-center gap-3">
         <button type="submit" disabled={mutation.isPending}

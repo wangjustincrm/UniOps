@@ -11,6 +11,7 @@ import { api, budgetApi, epmsApi } from '@/lib/api'
 import { useOaAuth } from '@/store/auth'
 import { parseInvoiceFile, type ParsedInvoiceFields, type ParsedLineItem } from '@/lib/invoice-parser'
 import { useUomCodes } from '@/hooks/useUoms'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -264,11 +265,7 @@ function Step1Upload({
         )}
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
+      {error && <ErrorBanner message={error} />}
     </div>
   )
 }
@@ -980,11 +977,7 @@ function Step3PaForm({
         <p className="text-info-700">Direct payments always require <strong>Finance Manager</strong> approval.</p>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
+      {error && <ErrorBanner message={error} />}
 
       <button type="submit" disabled={saving || !vendorName}
         className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">

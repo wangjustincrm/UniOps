@@ -8,6 +8,7 @@ import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
 import { ActionModal } from '@/components/ui/ActionModal'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -191,8 +192,8 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
       </div>
 
       {uploadError && (
-        <div className="mx-5 mt-3 flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{uploadError}
+        <div className="mx-5 mt-3">
+          <ErrorBanner message={uploadError} />
         </div>
       )}
 

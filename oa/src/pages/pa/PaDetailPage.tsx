@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Loader2, CheckCircle2, RotateCcw, XCircle,
-  AlertTriangle, Paperclip, Clock, Download, FileText, CreditCard, Pencil,
+  Paperclip, Clock, Download, FileText, CreditCard, Pencil,
 } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api, epmsApi } from '@/lib/api'
@@ -11,6 +11,7 @@ import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
 import { ActionModal } from '@/components/ui/ActionModal'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -198,14 +199,6 @@ function ActionArea({
   }
 
   return null
-}
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-      <AlertTriangle className="h-4 w-4 shrink-0" />{message}
-    </div>
-  )
 }
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
@@ -510,11 +503,7 @@ function AttachmentsTab({ pa, perms }: { pa: Pa; perms: PaPermissions | undefine
         </div>
       )}
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
+      {error && <ErrorBanner message={error} />}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-neutral-400" /></div>
