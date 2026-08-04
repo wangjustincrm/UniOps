@@ -10,6 +10,7 @@
 **V1.6 修订（WMS 接入信息落地）**：WMS 数据库 = **Oracle `10.10.95.43:1521/wmsdb`，用户 FEIHE_WMS**（凭据存 `c:/Project/wms_conn.env`，不入设计文档/git，仿 nc65_conn.env 惯例）。实测：① dev 机 TCP 1521 连通 ✅；② **服务端为老版本 Oracle（≤11g，thin 模式报 DPY-3010 不支持）→ mrp-api 的 WMS reader 必须用 python-oracledb thick 模式 + Oracle Instant Client 19c（Dockerfile 需打入 instantclient，19c 客户端兼容 11g 服务端；NC65 直连不受影响仍走 thin）**。
 **V1.7 修订（WMS 表结构调研完成 ✅）**：凭据修正后已完成只读调研，**WMS = 富勒 Flux WMS**，Phase 0 的 WMS 部分基本完成，结果见附录 A。库存状态映射可直接预填：`QLT_STS 02=Release→available / 01=Block→hold / 04=Under Inspection→hold / 过期由失效日期派生`。
 **V1.8 修订（用户补充 BOM 级联结构）**：**一个产品的 BOM 是级联三层：制粉 BOM → 干混 BOM（可选）→ 包装 BOM**。检索成品只能看到包装 BOM；包装 BOM 的组件中含半成品粉，半成品粉再关联制粉 BOM 或干混 BOM。设计影响：① 规范化 `boms` 表增加 `bom_type` 字段（milling 制粉 / drymix 干混 / packaging 包装，NC 侧区分方式由 Phase 0 调研确认）；② 引擎展开必须**按组件递归逐层展开**（成品→包装 BOM→半成品粉→干混/制粉 BOM→原料），与既有 LLC 逐层展开设计一致，禁止只展开成品一层；③ `GET /boms/effective` 按"产品物料 code"查单层，多层链路由引擎/前端逐层跟随组件递归查询。
+**V1.9 修订（Phase 0 出口验收 ✅）**：Phase 0 已在分支 `feature/mrp-phase0-foundations` 实施完成（2026-08-04），出口标准（测试基线/三层 BOM 级联真数据/WMS 库存时效）验证通过，记录见本任务 commit message（`docs(mrp): phase0 exit criteria verified`）。
 
 ---
 
