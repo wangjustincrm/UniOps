@@ -46,6 +46,15 @@ def _to_decimal(value: Any) -> Decimal | None:
         return None
 
 
+def _to_int(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return None
+
+
 def _lookup(rec: dict, *keys: str) -> Any:
     """Return the first present value, matching key case-insensitively."""
     lower = {k.lower(): v for k, v in rec.items()}
@@ -77,6 +86,8 @@ def _map_material(rec: dict) -> dict:
         "volume": _to_decimal(_lookup(rec, "volume")),
         "part_status": _to_str(_lookup(rec, "part_STATUS", "part_status")),
         "item_mes_type": _to_str(_lookup(rec, "itemMESType", "itemmestype")),
+        "exp": _to_int(_lookup(rec, "exp")),
+        "part_product_family": _to_str(_lookup(rec, "part_PRODUCT_FAMILY", "part_product_family")),
         "raw_payload": rec,
         "erp_rowversion": _parse_dt(_lookup(rec, "rowversion", "modifiedtime")),
     }

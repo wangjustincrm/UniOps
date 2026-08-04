@@ -2,8 +2,13 @@
 
 erp_material's real columns (app/models/erp_material.py) differ from the
 guessed ones in the task brief: erp_part_no/description/unit_meas/dim_quality/
-item_mes_type, no exp/part_product_family. See material_sync.py's docstring
-for the resulting mapping decisions.
+item_mes_type. See material_sync.py's docstring for the resulting mapping
+decisions.
+
+Task 3 scope extension: the NC ERP material interface also returns `exp`
+(shelf-life months) and `part_PRODUCT_FAMILY` (product family), mirrored onto
+erp_materials.exp / erp_materials.part_product_family and promoted onto
+materials.shelf_life_months / materials.product_family by material_sync.
 """
 from datetime import datetime, timezone
 
@@ -23,6 +28,8 @@ async def test_material_sync_upserts_from_erp_mirror(client: AsyncClient, db_ses
         unit_meas="KGM",
         dim_quality="25kg",
         item_mes_type="10",
+        exp=24,
+        part_product_family="Dairy",
         raw_payload={"part_NO": "CF0086"},
         synced_at=datetime.now(timezone.utc),
     ))
@@ -39,6 +46,8 @@ async def test_material_sync_upserts_from_erp_mirror(client: AsyncClient, db_ses
     assert m.spec == "25kg"
     assert m.erp_item_type == "10"
     assert m.erp_id == "CF0086"
+    assert m.shelf_life_months == 24
+    assert m.product_family == "Dairy"
 
     # idempotent: second run updates the existing row, doesn't duplicate
     resp2 = await client.post("/mdm/v1/materials/sync")
