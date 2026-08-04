@@ -13,6 +13,7 @@ from app.models.erp_material import ErpMaterial
 from app.models.erp_supplier import ErpSupplier
 from app.models.erp_person import ErpPerson
 from app.models.erp_sync_state import ErpSyncState
+from app.models.uom_conversion import UomConversion
 from app.services.erp_client import ErpClient, ErpError
 
 
@@ -242,6 +243,108 @@ async def sync_kind(
             max_rowversion = rv
 
     new_last_ts = max_rowversion or (state.last_ts if state else None) or now
+    await _write_state(
+        db, kind=kind, status="success", message="ok",
+        last_ts=new_last_ts, row_count=len(records),
+    )
+    await db.commit()
+
+    return {
+        "kind": kind,
+        "mode": mode,
+        "total": len(records),
+        "inserted": inserted,
+        "updated": updated,
+        "last_ts": new_last_ts.isoformat(),
+        "status": "success",
+        "message": "ok",
+    }
+
+
+_UOM_CONVERSION_KIND = "uom_conversion"
+
+
+async def fetch_unit_tranf(
+    ts: datetime, *, client: ErpClient | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch the NC ERP unitTranf interface, opening a client if none is given.
+
+    A thin module-level wrapper (rather than calling ErpClient directly from
+    sync_uom_conversions) so tests can monkeypatch
+    `erp_sync.fetch_unit_tranf` without needing a real ErpClient/httpx stub.
+    """
+    if client is not None:
+        return await client.fetch_unit_tranf(ts)
+    async with ErpClient() as c:
+        return await c.fetch_unit_tranf(ts)
+
+
+def _map_uom_conversion(rec: dict) -> dict | None:
+    from_uom = _lookup(rec, "unit_CODE", "unit_code")
+    to_uom = _lookup(rec, "unit_TYPE", "unit_type")
+    rate = _to_decimal(_lookup(rec, "unit_RATE", "unit_rate"))
+    if not from_uom or not to_uom or rate is None:
+        return None
+    return {"from_uom": str(from_uom), "to_uom": str(to_uom), "rate": rate}
+
+
+async def sync_uom_conversions(
+    db: AsyncSession,
+    *,
+    full: bool = False,
+    client: ErpClient | None = None,
+) -> dict:
+    """Sync uom_conversions from the NC ERP unitTranf interface.
+
+    Upserts by (from_uom, to_uom) — a composite key, unlike sync_kind's
+    single-column mirrors — so this lives as its own function rather than
+    another _KIND_CONFIG entry.
+    """
+    kind = _UOM_CONVERSION_KIND
+    state = await db.get(ErpSyncState, kind)
+    if full or state is None or state.last_ts is None:
+        ts = _EPOCH
+        mode = "full"
+    else:
+        ts = state.last_ts
+        mode = "incremental"
+
+    try:
+        records = await fetch_unit_tranf(ts, client=client)
+    except ErpError as e:
+        await _write_state(db, kind=kind, status="failed", message=str(e),
+                           last_ts=state.last_ts if state else None, row_count=0)
+        await db.commit()
+        raise
+
+    now = datetime.now(timezone.utc)
+    inserted = 0
+    updated = 0
+
+    for rec in records:
+        row = _map_uom_conversion(rec)
+        if row is None:
+            continue
+
+        exists_q = select(UomConversion.id).where(
+            UomConversion.from_uom == row["from_uom"],
+            UomConversion.to_uom == row["to_uom"],
+        )
+        existed = (await db.execute(exists_q)).scalar_one_or_none() is not None
+
+        stmt = pg_insert(UomConversion).values(**row).on_conflict_do_update(
+            index_elements=["from_uom", "to_uom"],
+            set_={"rate": row["rate"]},
+        )
+        await db.execute(stmt)
+
+        if existed:
+            updated += 1
+        else:
+            inserted += 1
+
+    new_last_ts = state.last_ts if state else None
+    new_last_ts = new_last_ts or now
     await _write_state(
         db, kind=kind, status="success", message="ok",
         last_ts=new_last_ts, row_count=len(records),

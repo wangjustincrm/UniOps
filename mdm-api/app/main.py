@@ -5,7 +5,7 @@ from app.api.v1 import api_router
 from app.db.base import engine, Base
 from app.core.config import settings
 # Import models so Alembic/metadata can see them
-from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, uom, material  # noqa: F401
+from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, uom, material, uom_conversion  # noqa: F401
 
 
 @asynccontextmanager
