@@ -38,9 +38,18 @@ Key decisions baked in here (each justified in the survey, cited by section):
   - A header whose parent material code can't be resolved via
     `material_codes` is skipped entirely (its `nc_source_pk` lands in
     `skipped`); its component lines are dropped too rather than becoming
-    orphan `bom_lines` with no `boms` row to attach to. Same cascade for a
-    line skipped for an unresolvable component code, and for a substitute
-    whose parent line was dropped.
+    orphan `bom_lines` with no `boms` row to attach to — the dropped line's
+    own `nc_source_pk` also lands in `skipped` (not silently discarded), so a
+    caller can see the true fan-out of one unresolved header without digging
+    through logs. Same cascade for a line skipped for an unresolvable
+    component code, and for a substitute whose parent line was dropped (its
+    `nc_source_pk` lands in `skipped` too).
+  - NC's soft-delete flag DR (1 = logically deleted, never physically
+    removed — the survey's own sample header has DR=1) is filtered out at
+    the reader's SQL level (`nvl(dr,0)=0`); `_is_deleted()` is a
+    defense-in-depth re-check inside `transform()` itself for callers/
+    fixtures that bypass the reader. A DR<>0 row's `nc_source_pk` lands in
+    `skipped`.
   - `bom_lines`/`bom_substitutes` rows carry a synthetic
     `bom_nc_source_pk`/`bom_line_nc_source_pk` key (the parent's CBOMID /
     CBOM_BID) instead of a real `bom_id`/`bom_line_id` FK — this is a pure
@@ -128,6 +137,23 @@ def _line_no(raw) -> int:
         return 0
 
 
+def _is_deleted(rec: dict) -> bool:
+    """NC's soft-delete flag: DR=1 means "logically deleted" (never
+    physically removed — the survey's own sample header has DR=1). The
+    reader already filters `nvl(dr,0)=0` at the SQL level, but transform()
+    is also called directly against fixtures/tests and, if the nc_bom* raw
+    mirror ever holds stale DR<>0 rows synced before the reader filter
+    existed, against those too — so this is a second, defense-in-depth
+    check, not a duplicate of the SQL filter."""
+    dr = rec.get("dr")
+    if dr is None:
+        return False
+    try:
+        return Decimal(str(dr)) != 0
+    except (InvalidOperation, ValueError):
+        return False
+
+
 def transform(raw: dict) -> dict:
     """raw: {"headers": [...], "lines": [...], "repl": [...],
     "material_codes": {pk: code}} -> {"boms": [...], "lines": [...],
@@ -147,6 +173,10 @@ def transform(raw: dict) -> dict:
 
     for h in headers:
         pk = h.get("cbomid")
+        if _is_deleted(h):
+            if pk:
+                skipped.append(pk)
+            continue
         code = material_codes.get(h.get("hcmaterialid"))
         if not pk or not code:
             if pk:
@@ -178,8 +208,12 @@ def transform(raw: dict) -> dict:
         line_pk = ln.get("cbom_bid")
         if not line_pk:
             continue  # no PK to upsert/key on -> can't be synced, same as the raw mirror's own rule
+        if _is_deleted(ln):
+            skipped.append(line_pk)
+            continue
         if bom_pk not in resolved_bom_pks:
-            continue  # parent header unresolved/skipped -> no orphan line
+            skipped.append(line_pk)  # parent header unresolved/skipped -> no orphan line
+            continue
         code = material_codes.get(ln.get("cmaterialid"))
         if not code:
             if line_pk:
@@ -204,8 +238,12 @@ def transform(raw: dict) -> dict:
         sub_pk = r.get("cbom_replaceid")
         if not sub_pk:
             continue  # no PK to upsert/key on -> can't be synced, same as the raw mirror's own rule
+        if _is_deleted(r):
+            skipped.append(sub_pk)
+            continue
         if line_pk not in resolved_line_pks:
-            continue  # parent line unresolved/dropped -> no orphan substitute
+            skipped.append(sub_pk)  # parent line unresolved/dropped -> no orphan substitute
+            continue
         code = material_codes.get(r.get("creplmaterialoid"))
         if not code:
             if sub_pk:

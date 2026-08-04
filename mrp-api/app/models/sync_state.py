@@ -15,7 +15,7 @@ class MrpSyncState(Base):
     __tablename__ = "mrp_sync_state"
 
     source: Mapped[str] = mapped_column(String(20), primary_key=True)  # 'wms' (Task 8); future sources add rows
-    status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'success' | 'failed'
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'success' | 'failed' | 'empty_extract'
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

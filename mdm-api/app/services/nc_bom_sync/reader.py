@@ -39,9 +39,14 @@ def fetch_nc_bom() -> dict:
             names = [c[0].lower() for c in cur.description]
             return [dict(zip(names, r)) for r in cur.fetchall()]
 
-        headers = rows("select * from NCSC.BD_BOM")
-        lines = rows("select * from NCSC.BD_BOM_B")
-        repl = rows("select * from NCSC.BD_BOM_REPL")
+        # nvl(dr,0)=0 excludes NC's soft-deleted rows (DR=1 means "logically
+        # deleted", never physically removed — the survey's own sample header
+        # has DR=1). Without this filter a "deleted" BOM/line/substitute in NC
+        # keeps upserting into the raw mirror (and, via Task 5, into the
+        # canonical tables) forever.
+        headers = rows("select * from NCSC.BD_BOM where nvl(dr,0)=0")
+        lines = rows("select * from NCSC.BD_BOM_B where nvl(dr,0)=0")
+        repl = rows("select * from NCSC.BD_BOM_REPL where nvl(dr,0)=0")
 
         cur.execute("select pk_material, code from NCSC.BD_MATERIAL")
         material_codes = {pk: code for pk, code in cur.fetchall()}

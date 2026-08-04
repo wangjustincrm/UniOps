@@ -115,6 +115,36 @@ async def test_wms_sync_expiry_cutoff_is_utc(db_session, monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_wms_sync_refuses_to_replace_snapshot_with_empty_extract(db_session, monkeypatch):
+    """An empty live extract must NOT delete-all + insert-0 the previous
+    snapshot — Phase 1's purchase-suggestion logic reads wms_inventory_lots
+    as "current stock"; a silent empty overwrite would make it propose
+    buying material that is actually sitting in the warehouse. Seed a real
+    snapshot first, then re-sync against an empty extract and assert
+    nothing was deleted."""
+    from app.models.sync_state import MrpSyncState
+    from app.models.wms_inventory import WmsInventoryLot
+    from app.services.wms_sync import service
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    first = await service.run_wms_sync(db_session)
+    assert first["lots"] == 2
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: [])
+    second = await service.run_wms_sync(db_session)
+    assert second.get("skipped") is True
+    assert second["lots"] == 2  # reports the KEPT count, not 0
+
+    n = (await db_session.execute(select(func.count()).select_from(WmsInventoryLot))).scalar()
+    assert n == 2, "previous snapshot must survive an empty extract untouched"
+
+    state = await db_session.get(MrpSyncState, "wms")
+    assert state.status == "empty_extract"
+    assert state.row_count == 2
+    assert "0 rows" in state.last_error
+
+
+@pytest.mark.anyio
 async def test_wms_sync_records_last_error_on_failure(db_session, monkeypatch):
     from app.services.wms_sync import service
     from app.models.sync_state import MrpSyncState

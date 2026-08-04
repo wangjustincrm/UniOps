@@ -28,9 +28,10 @@ untouched — see the `except` branch below, which rolls back before writing
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,14 +69,23 @@ async def _write_sync_state(
 
 
 async def run_wms_sync(db: AsyncSession) -> dict:
-    """Full snapshot sync. Returns {"lots": n, "synced_at": iso-ts}.
+    """Full snapshot sync. Returns {"lots": n, "synced_at": iso-ts} — or, if
+    the live extract came back with zero rows, {"lots": <kept count>,
+    "synced_at": ..., "skipped": True} WITHOUT touching wms_inventory_lots
+    (see the empty-extract guard below).
 
     On any failure (reader/transform/DB), rolls back so the previous
     snapshot is left intact, records `last_error` on `mrp_sync_state`
     (source='wms') in a fresh transaction, and re-raises.
     """
     try:
-        raw_rows = fetch_inventory()
+        # fetch_inventory() is a blocking oracledb call (sync driver, thin
+        # mode) — run it off the event loop so a slow/hung WMS read doesn't
+        # stall every other request this service is handling concurrently.
+        # Same idiom as mdm-api/app/services/nc_bom_sync/canonical_sync.py's
+        # fetch_nc_bom() wrapping (modern equivalent of epms-api/app/api/v1/
+        # nc_purchase_sync.py's run_in_executor(None, ...)).
+        raw_rows = await asyncio.to_thread(fetch_inventory)
         mapping = await _load_mapping(db)
         # UTC, not container-local time — which lots flip to 'expired' must
         # not depend on the host/container TZ (see transform_lot's expiry
@@ -84,6 +94,30 @@ async def run_wms_sync(db: AsyncSession) -> dict:
         batch_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
 
         rows = [transform_lot(raw, mapping, today) for raw in raw_rows]
+
+        if not rows:
+            # Refuse to replace a real snapshot with an empty one. A
+            # delete-all + insert-0 here would silently write
+            # status='success' row_count=0 to mrp_sync_state, which Phase
+            # 1's purchase-suggestion logic would read as "zero stock
+            # everywhere" and propose buying material that is actually
+            # sitting in the warehouse. Record the refusal (status=
+            # 'empty_extract') and leave wms_inventory_lots untouched —
+            # this is a distinct, non-exception early return (not routed
+            # through the `except` branch below) so it doesn't get
+            # re-recorded as a generic status='failed'/row_count=0 error.
+            kept = (await db.execute(
+                select(func.count()).select_from(WmsInventoryLot))).scalar()
+            synced_at = await _write_sync_state(
+                db, status="empty_extract", row_count=kept,
+                last_error=(
+                    "WMS extract returned 0 rows; refused to replace the "
+                    f"snapshot (previous snapshot of {kept} lot(s) kept)."
+                ),
+            )
+            await db.commit()
+            return {"lots": kept, "synced_at": synced_at.isoformat(), "skipped": True}
+
         for row in rows:
             row["sync_batch_id"] = batch_id
 

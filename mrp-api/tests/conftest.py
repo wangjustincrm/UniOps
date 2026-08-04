@@ -35,6 +35,19 @@ SYNC_URL = f"postgresql+psycopg2://{TEST_USER}:{TEST_PASSWORD}@{TEST_HOST}:{TEST
 
 def _migrate():
     """Reset the public schema and run alembic upgrade head against the test DB."""
+    # Guard against DROP SCHEMA CASCADE ever running against a non-test
+    # database. TEST_MRP_DB is env-controlled and this repo has a documented
+    # history of a host .env pointing POSTGRES_* at the shared production DB
+    # (feedback_uniops_host_env_points_at_prod) — a typo'd/missing override
+    # here must fail loudly, not drop whatever database the name resolves
+    # to. Mirrors mdm-api's/budget-api's test-db safety convention.
+    if not TEST_DB.endswith("_test"):
+        raise RuntimeError(
+            f"refusing to DROP SCHEMA on database {TEST_DB!r} — TEST_MRP_DB "
+            "must end in '_test' (got a name that doesn't look like a test "
+            "database; this guard exists because a misconfigured env has "
+            "pointed at production before)"
+        )
     eng = sa.create_engine(SYNC_URL, isolation_level="AUTOCOMMIT")
     with eng.connect() as conn:
         conn.execute(sa.text("DROP SCHEMA public CASCADE"))

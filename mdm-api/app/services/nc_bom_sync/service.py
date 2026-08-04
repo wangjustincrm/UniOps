@@ -11,16 +11,17 @@ the `reader` module) specifically so tests can `monkeypatch.setattr(service,
 Upsert key: the synthetic `nc_source_pk` column each model carries (see
 app/models/nc_bom.py docstring) — populated here from the row's real NC PK
 column (cbomid / cbom_bid / cbom_replaceid) so one upsert helper covers all
-three tables regardless of their differing native PK column names.
+three tables regardless of their differing native PK column names. The
+chunked-upsert mechanics themselves live in `app/services/upsert.py`, shared
+with `canonical_sync.py` (Task 5) — see that module's docstring.
 """
 from __future__ import annotations
 
-from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.nc_bom import NcBom, NcBomB, NcBomRepl
 from app.services.nc_bom_sync.reader import fetch_nc_bom, nc_configured  # noqa: F401 (re-exported)
+from app.services.upsert import chunked_upsert_count
 
 _RESERVED = {"id", "nc_source_pk", "created_at", "updated_at"}
 
@@ -49,32 +50,6 @@ def _row(rec: dict, cols: set[str], pk_field: str) -> dict | None:
     return row
 
 
-_PG_MAX_PARAMS = 32767  # asyncpg's hard per-statement bind-parameter limit
-
-
-async def _upsert_all(db: AsyncSession, model, rows: list[dict]) -> int:
-    """Chunked upsert-by-nc_source_pk. nc_bom_b alone is ~58 cols x 10169 rows
-    (~590k parameters) in one INSERT — asyncpg refuses anything over 32767
-    bind params per statement, so a single `.values(rows)` call blows up
-    against the real NC volumes (only fake-fixture tests, which use 1-row
-    batches, would ever pass without this). Chunk to a row count that keeps
-    every batch safely under the limit regardless of the model's column count.
-    """
-    if rows:
-        n_cols = len(rows[0])
-        chunk_size = max(1, (_PG_MAX_PARAMS // 2) // n_cols)
-        for i in range(0, len(rows), chunk_size):
-            batch = rows[i:i + chunk_size]
-            stmt = pg_insert(model).values(batch)
-            update_cols = {
-                c.name: getattr(stmt.excluded, c.name)
-                for c in model.__table__.columns if c.name not in ("id", "nc_source_pk")
-            }
-            stmt = stmt.on_conflict_do_update(index_elements=["nc_source_pk"], set_=update_cols)
-            await db.execute(stmt)
-    return (await db.execute(select(func.count()).select_from(model))).scalar()
-
-
 async def sync_nc_bom(db: AsyncSession, extract: dict | None = None) -> dict:
     """Full mirror sync. Returns {"headers": n, "lines": n, "repl": n} — total
     row counts in each mirror table after the sync (idempotent: re-running
@@ -95,9 +70,9 @@ async def sync_nc_bom(db: AsyncSession, extract: dict | None = None) -> dict:
     repl = [row for rec in extract.get("repl", [])
             if (row := _row(rec, _REPL_COLS, "cbom_replaceid")) is not None]
 
-    n_headers = await _upsert_all(db, NcBom, headers)
-    n_lines = await _upsert_all(db, NcBomB, lines)
-    n_repl = await _upsert_all(db, NcBomRepl, repl)
+    n_headers = await chunked_upsert_count(db, NcBom, headers)
+    n_lines = await chunked_upsert_count(db, NcBomB, lines)
+    n_repl = await chunked_upsert_count(db, NcBomRepl, repl)
 
     await db.commit()
     return {"headers": n_headers, "lines": n_lines, "repl": n_repl}
