@@ -21,18 +21,11 @@ from app.services import finance_client
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
-# Roles that can trigger the pay action (kept for my_actions inbox logic)
+# Roles that can trigger the pay action (kept for my_actions inbox logic).
+# Intentionally fixed — payment authority is a hardcoded financial-role set,
+# not part of the configurable approval workflow (unlike the step→role
+# lookups in my_actions below, which are derived from workflow_defs).
 _CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "system_admin"}
-
-# Step-index → role mapping for my_actions task inbox.
-# These reflect the default workflow_defs["exp"] steps (dept_manager→finance_bp).
-# If the workflow is customised this may drift; a future improvement would read
-# from workflow_defs at request time.
-_INBOX_STEP_ROLES: dict[int, set[str]] = {
-    0: {"dept_manager", "system_admin"},
-    1: {"finance_bp", "finance_manager", "system_admin"},
-    2: {"finance_manager", "gm", "system_admin"},
-}
 
 
 def _action_key(claim_type: str) -> str:
@@ -300,23 +293,37 @@ async def create_expense(
 @router.get("/my-actions", response_model=ExpenseClaimListResponse)
 async def my_actions(db: SessionDep, user: CurrentUserDep):
     """Returns expense claims where the current user needs to take action.
-    Used by Portal task inbox aggregation.
+    Used by Portal task inbox aggregation. Approver steps are derived from the
+    configured workflow_defs (per claim type) at request time — not a hardcoded
+    step→role map — so a customised approval flow stays consistent here.
     """
     from sqlalchemy import or_, select
     from app.models.expense import ExpenseClaim as EC
 
     role = user.get("role", "")
-    steps = _INBOX_STEP_ROLES.get(role, set()) if role in _INBOX_STEP_ROLES else set()
+    user_id = uuid.UUID(user["sub"])
+    roles = await _user_role_codes(db, user_id, role)   # multi-role union
+    wf = await _get_workflow_defs(db)
 
     conditions = []
-    for step in steps:
-        conditions.append(
-            (EC.status.in_(["submitted", "in_review"])) &
-            (EC.approval_step_idx == step)
-        )
-    # TRA is excluded — an approved Travel Application has total_amount 0 and never
+
+    def _add(ct_filter, key):
+        for idx, step in enumerate(wf.get(key) or []):
+            if step.get("role") in roles:
+                conditions.append(
+                    ct_filter
+                    & (EC.status.in_(["submitted", "in_review"]))
+                    & (EC.approval_step_idx == idx)
+                )
+
+    _add(EC.claim_type == "EXP", "exp")
+    _add(EC.claim_type == "MIL", "mil")
+    _add(EC.claim_type == "TRV", "trv")
+    _add(EC.claim_type.like("CFM%"), "cfm")
+
+    # TRA excluded — an approved Travel Application has total_amount 0 and never
     # enters the payment path, so it must not surface as a pay-action inbox item.
-    if role in _CAN_PAY:
+    if any(r in _CAN_PAY for r in roles):
         conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
 
     if not conditions:
@@ -332,11 +339,34 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     )
 
 
+async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
+    if claim.employee_id == user_id or role == "system_admin":
+        return True
+    if role in _CAN_PAY:
+        return True
+    wf = await _get_workflow_defs(db)
+    wf_roles = {s.get("role") for s in (wf.get(_workflow_key(claim.claim_type)) or [])}
+    if role in wf_roles:
+        return True
+    from sqlalchemy import select as sa_select, func as sa_func
+    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
+    acted = (await db.execute(
+        sa_select(sa_func.count()).select_from(AEM).where(
+            AEM.document_id == claim.id, AEM.actor_id == user_id
+        )
+    )).scalar_one()
+    if acted:
+        return True
+    return await _can_act_on_claim(db, claim, user_id, role)
+
+
 @router.get("/{claim_id}", response_model=ExpenseClaimResponse)
-async def get_expense(claim_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+async def get_expense(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
     return ExpenseClaimResponse.model_validate(claim)
 
 
@@ -391,7 +421,7 @@ class ApprovalStepOut(BaseModel):
 
 
 @router.get("/{claim_id}/approval-status", response_model=list[ApprovalStepOut])
-async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     """Approval chain for a claim: each workflow step + who approved / who is pending.
 
     Steps come from company_config.workflow_defs (the configured chain); states are
@@ -404,6 +434,9 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, _: CurrentUse
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
+
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
 
     wf = await _get_workflow_defs(db)
     steps = wf.get(_action_key(claim.claim_type)) or wf.get(_workflow_key(claim.claim_type)) or []

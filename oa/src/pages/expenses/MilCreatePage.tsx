@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useReplaceTab } from '@uniops/shell'
+import { useState, useEffect } from 'react'
+import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle } from 'lucide-react'
@@ -80,6 +80,21 @@ export default function MilCreatePage() {
     emptyTrip(1, rate, defaultAccountId, null, null),
   ])
 
+  // policy 到达后，回填仍是默认费率/无科目的行（费率非用户可编辑字段，统一按组织费率）
+  useEffect(() => {
+    if (!policy) return
+    setTrips((prev) => prev.map((t) => {
+      const patch: Partial<TripItem> = {}
+      if (t.rate_per_km !== rate) patch.rate_per_km = rate
+      if (t.budget_account_id == null && defaultAccountId != null) patch.budget_account_id = defaultAccountId
+      if (!Object.keys(patch).length) return t
+      const merged = { ...t, ...patch }
+      merged.amount = calcAmount(merged.distance_km, merged.rate_per_km, merged.is_round_trip)
+      return merged
+    }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [policy])
+
   // Sync rate when policy loads
   const currentRate = rate
 
@@ -153,20 +168,12 @@ export default function MilCreatePage() {
           <p className="mt-0.5 text-sm text-neutral-500">Personal vehicle reimbursement at ${currentRate}/km</p>
         </div>
         <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => replaceTab('/expenses')}
-            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors"
-          >
+          <Button type="button" variant="secondary" size="sm" onClick={() => replaceTab('/expenses')}>
             Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={createMutation.isPending}
-            className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 transition-colors disabled:opacity-50"
-          >
+          </Button>
+          <Button type="submit" size="sm" disabled={createMutation.isPending}>
             {createMutation.isPending ? 'Saving…' : 'Save as Draft'}
-          </button>
+          </Button>
         </div>
       </div>
 

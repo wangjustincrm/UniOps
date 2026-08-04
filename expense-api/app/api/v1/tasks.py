@@ -44,24 +44,24 @@ class OaTaskListResponse(BaseModel):
     total: int
 
 
-# ── Role→step mappings (mirrors expense workflow defaults) ────────────────────
-
-# Expense step → roles that are the designated approver at that step
-_EXP_STEP_ROLES: dict[int, set[str]] = {
-    0: {"dept_manager"},
-    1: {"finance_bp", "finance_manager"},
-    2: {"finance_manager"},
-}
-
-# PA step → roles (covers both PA-PO and PA-DIR defaults)
-_PA_STEP_ROLES: dict[int, set[str]] = {
-    0: {"dept_manager", "finance_bp"},    # PA-PO step 0 | PA-DIR step 0
-    1: {"gm_or_opm", "finance_manager"},  # PA-PO step 1 | PA-DIR step 1
-    2: {"finance_bp"},                    # PA-PO step 2
-    3: {"finance_manager"},               # PA-PO step 3
-}
+# ── Role→step mappings ──────────────────────────────────────────────────────
+# Derived at request time from company_config.workflow_defs (see _steps_from_wf
+# / list_tasks below) instead of hardcoded step→role maps, so a customised
+# approval flow stays consistent with the OA Task List.
 
 _CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "system_admin"}
+
+
+def _steps_from_wf(wf: dict, *keys: str) -> dict[int, set[str]]:
+    """{step_idx: {roles}} unioned across the given workflow_defs chains.
+    Replaces hardcoded step→role maps so a customised approval flow stays consistent."""
+    out: dict[int, set[str]] = {}
+    for key in keys:
+        for idx, step in enumerate(wf.get(key) or []):
+            r = step.get("role")
+            if r:
+                out.setdefault(idx, set()).add(r)
+    return out
 
 
 def _exp_task_type(
@@ -69,14 +69,14 @@ def _exp_task_type(
     step_idx: int,
     is_own: bool,
     role: str,
+    step_roles: dict[int, set[str]],
 ) -> str | None:
     if status == "returned" and is_own:
         return "revise_expense"
     if status == "approved" and role in _CAN_PAY:
         return "pay_expense"
     if status in ("submitted", "in_review") and not is_own:
-        step_roles = _EXP_STEP_ROLES.get(step_idx, set())
-        if role in step_roles or role == "system_admin":
+        if role in step_roles.get(step_idx, set()) or role == "system_admin":
             return "approve_expense"
         return None
     if status in ("submitted", "in_review") and is_own:
@@ -89,14 +89,14 @@ def _pa_task_type(
     step_idx: int,
     is_own: bool,
     role: str,
+    step_roles: dict[int, set[str]],
 ) -> str | None:
     if status == "returned" and is_own:
         return "revise_pa"
     if status == "approved" and role in _CAN_PAY:
         return "pay_pa"
     if status in ("submitted", "in_review") and not is_own:
-        step_roles = _PA_STEP_ROLES.get(step_idx, set())
-        if role in step_roles or role == "system_admin":
+        if role in step_roles.get(step_idx, set()) or role == "system_admin":
             return "approve_pa"
         return None
     if status in ("submitted", "in_review") and is_own:
@@ -118,9 +118,13 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     from sqlalchemy import or_, select
     from app.models.expense import ExpenseClaim as EC
     from app.models.pa import PaymentApplication as PA
+    from app.api.v1.expenses import _get_workflow_defs
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
+    wf = await _get_workflow_defs(db)
+    exp_step_roles = _steps_from_wf(wf, "exp", "mil", "trv", "cfm")
+    pa_step_roles = _steps_from_wf(wf, "pa", "pa_dir")
     tasks: list[OaTaskItem] = []
 
     # ── Expense claims ────────────────────────────────────────────────────────
@@ -128,7 +132,7 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     exp_conditions = [
         (EC.employee_id == user_id) & (EC.status.in_(["submitted", "in_review", "returned"])),
     ]
-    for step, roles in _EXP_STEP_ROLES.items():
+    for step, roles in exp_step_roles.items():
         if role in roles or role == "system_admin":
             exp_conditions.append(
                 (EC.status.in_(["submitted", "in_review"])) & (EC.approval_step_idx == step)
@@ -150,7 +154,7 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         if claim.id in seen_exp:
             continue
         is_own = claim.employee_id == user_id
-        tt = _exp_task_type(claim.status, claim.approval_step_idx, is_own, role)
+        tt = _exp_task_type(claim.status, claim.approval_step_idx, is_own, role, exp_step_roles)
         if tt is None:
             continue
         seen_exp.add(claim.id)
@@ -179,7 +183,7 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     pa_conditions = [
         (PA.created_by == user_id) & (PA.status.in_(["submitted", "in_review", "returned"])),
     ]
-    for step, roles in _PA_STEP_ROLES.items():
+    for step, roles in pa_step_roles.items():
         if role in roles or role == "system_admin":
             pa_conditions.append(
                 (PA.status.in_(["submitted", "in_review"])) & (PA.approval_step_idx == step)
@@ -201,7 +205,7 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         if pa.id in seen_pa:
             continue
         is_own = pa.created_by == user_id
-        tt = _pa_task_type(pa.status, pa.approval_step_idx, is_own, role)
+        tt = _pa_task_type(pa.status, pa.approval_step_idx, is_own, role, pa_step_roles)
         if tt is None:
             continue
         seen_pa.add(pa.id)
