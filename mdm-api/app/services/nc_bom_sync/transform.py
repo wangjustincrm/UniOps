@@ -12,10 +12,49 @@ supersedes the brief.
 
 Key decisions baked in here (each justified in the survey, cited by section):
   - `bom_type` is derived from the parent material CODE PREFIX (CS->milling,
-    CW->drymix, CF->packaging), never from any NC column — FBOMTYPE is not a
-    reliable layer discriminator (survey §3). An unrecognized prefix maps to
-    'unknown' and is recorded in `warnings` (nc_source_pk + resolved code),
-    never silently dropped from the sync.
+    CW->drymix, CF->packaging, S->packaging), never from any NC column —
+    FBOMTYPE is not a reliable layer discriminator (survey §3). `S*` is a
+    second, business-confirmed spelling of "finished good" alongside `CF*`
+    (legacy coding) — S0093's real BOM is structurally identical to CF0092's
+    (dry-mix powder + packaging items), verified against live NC data
+    2026-08-04 (PATCH 1). An unrecognized prefix maps to 'unknown' and is
+    recorded in `warnings` (nc_source_pk + resolved code), never silently
+    dropped from the sync.
+  - `uom`/`uom_secondary` are resolved from BD_BOM_B's CMEASUREID/
+    CASSMEASUREID measure-doc PKs via the `uoms` (BD_MEASDOC pk->code)
+    lookup the reader now provides — NOT stored as the raw PK anymore
+    (PATCH 2). A present-but-unresolvable PK leaves the field null and is
+    recorded in `warnings` (never a crash, never silently dropped from the
+    line). A blank/absent PK (no secondary unit on this line) resolves to
+    None with no warning — that's the normal case for any line that isn't a
+    two-unit finished-good line.
+  - `qty_per_secondary` (<- NASSITEMNUM) is the assistant-unit quantity S*
+    finished-good BOM lines carry alongside the main-unit `qty_per` (<-
+    NITEMNUM) — e.g. main unit KG, secondary unit PIECES, business-confirmed
+    conversion lives in the material master (PATCH 3). Populated only when
+    NC actually supplies a value; left None (not 0) when absent, since most
+    non-finished-good lines carry only a single unit and 0 would misread as
+    "zero pieces" instead of "not a two-unit line."
+  - `_UOM_NORMALIZE` collapses NC's `EA`/`PIECES` unit codes to one
+    canonical `EA` (business-confirmed: both mean "个" for packaging
+    materials — PATCH 4) so downstream unit math never has to reconcile two
+    codes that mean the same thing. Applied to both `uom` and
+    `uom_secondary` after the BD_MEASDOC PK is resolved to a code.
+  - CM (standardized milk) is deprecated ~2 years ago and excluded from the
+    canonical sync as dead-data hygiene, not a live-planning change (PATCH
+    5, business-confirmed: the CM-touching BOMs are stale v1.0 rows for 25
+    legacy CF products with zero production in the last 12 months; no live
+    production order touches CM at any BOM depth). Two distinct exclusions:
+    (a) a BOM HEADER whose PARENT material is CM-prefixed is skipped
+    entirely, same bucket as any other unresolved header (`skipped`) — its
+    lines never get a `boms` row to attach to, same cascade as an
+    unresolved parent code; (b) a BOM LINE whose COMPONENT material is
+    CM-prefixed is dropped from `bom_lines` but recorded in `warnings`
+    (distinct from `skipped` — this is a visible exclusion of a resolvable
+    row, not an unresolvable one) rather than silently vanishing. Neither
+    path attempts to explode through/around a CM component — there is no
+    live BOM that needs it (see the patch's own note not to add a
+    fallback).
   - `status`: FBILLSTATUS 1->'approved', -1->'draft', any other/unparsable
     value->'inactive' (only 1/-1 were observed in the full-table survey scan
     — survey §6).
@@ -62,7 +101,24 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-_BOM_TYPE_PREFIXES = {"CS": "milling", "CW": "drymix", "CF": "packaging"}
+_BOM_TYPE_PREFIXES_2 = {"CS": "milling", "CW": "drymix", "CF": "packaging"}
+# S-prefixed materials (e.g. S0093) are a second, current-day spelling of
+# "finished good" alongside the legacy CF coding — business-owner-confirmed,
+# verified against live NC data 2026-08-04 (S0093's BOM = CW dry-mix powder
+# + CP packaging items, structurally identical to CF0092's). Checked as a
+# single-character prefix so it doesn't collide with the 2-char CS/CW/CF/CM
+# table above (all of which start with 'C', never 'S').
+_BOM_TYPE_PREFIX_1 = {"S": "packaging"}
+
+# Business rule (owner-confirmed 2026-08-03/04): NC's `EA` and `PIECES` unit
+# codes both mean "个" (a single packaging piece) — treat them as ONE
+# canonical unit so downstream unit math (e.g. MRP quantity conversion)
+# never has to reconcile two codes that denote the same thing. Canonical
+# code = 'EA'. Applied after a BD_MEASDOC PK resolves to a code, to both the
+# primary (`uom`) and secondary (`uom_secondary`) fields.
+_UOM_NORMALIZE = {"PIECES": "EA"}
+
+_CM_PREFIX = "CM"  # standardized milk, deprecated ~2 years ago — PATCH 5
 
 
 def _clean(v):
@@ -75,8 +131,41 @@ def _clean(v):
 
 
 def _bom_type(material_code: str) -> str:
-    prefix = material_code[:2].upper()
-    return _BOM_TYPE_PREFIXES.get(prefix, "unknown")
+    code = material_code.upper()
+    if code[:2] in _BOM_TYPE_PREFIXES_2:
+        return _BOM_TYPE_PREFIXES_2[code[:2]]
+    if code[:1] in _BOM_TYPE_PREFIX_1:
+        return _BOM_TYPE_PREFIX_1[code[:1]]
+    return "unknown"
+
+
+def _is_cm(material_code: str | None) -> bool:
+    return bool(material_code) and material_code.upper()[:2] == _CM_PREFIX
+
+
+def _normalize_uom(code: str | None) -> str | None:
+    if code is None:
+        return None
+    c = code.strip().upper()
+    return _UOM_NORMALIZE.get(c, c)
+
+
+def _resolve_uom(pk_measdoc, uoms: dict, nc_source_pk: str, warnings: list, field: str):
+    """BD_MEASDOC pk -> normalized unit code. A blank/absent pk resolves to
+    None with no warning (the normal case: not every line carries a
+    secondary unit). A present-but-unresolvable pk resolves to None AND is
+    recorded in `warnings` — never a crash, never silently dropped."""
+    pk = _clean(pk_measdoc)
+    if not pk:
+        return None
+    code = uoms.get(pk)
+    if code is None:
+        warnings.append({
+            "nc_source_pk": nc_source_pk, "reason": "unresolved_uom_pk",
+            "field": field, "measdoc_pk": pk,
+        })
+        return None
+    return _normalize_uom(code)
 
 
 def _status(fbillstatus) -> str:
@@ -115,6 +204,19 @@ def _parse_qty(raw) -> Decimal:
         return Decimal(str(raw))
     except InvalidOperation:
         return Decimal("0")
+
+
+def _parse_qty_or_none(raw) -> Decimal | None:
+    """Like `_parse_qty`, but absent/unparsable -> None, not 0 — used for
+    `qty_per_secondary`, where None means "this line has no assistant-unit
+    quantity" (the common case) and 0 would misread as "zero pieces."""
+    v = _clean(raw)
+    if v is None:
+        return None
+    try:
+        return Decimal(str(v))
+    except InvalidOperation:
+        return None
 
 
 def _parse_date(raw) -> date | None:
@@ -159,6 +261,7 @@ def transform(raw: dict) -> dict:
     "material_codes": {pk: code}} -> {"boms": [...], "lines": [...],
     "substitutes": [...], "skipped": [nc_source_pk, ...], "warnings": [...]}."""
     material_codes: dict = raw.get("material_codes") or {}
+    uoms: dict = raw.get("uoms") or {}
     headers = raw.get("headers") or []
     lines = raw.get("lines") or []
     repl = raw.get("repl") or []
@@ -181,6 +284,16 @@ def transform(raw: dict) -> dict:
         if not pk or not code:
             if pk:
                 skipped.append(pk)
+            continue
+        if _is_cm(code):
+            # PATCH 5(a): a BOM whose PARENT is CM-prefixed (standardized
+            # milk, deprecated ~2 years ago) is dead data — 55 such headers
+            # observed live, all stale v1.0 rows for legacy CF products with
+            # zero production in the last 12 months. Same bucket as any
+            # other unresolved header (`skipped`); its lines cascade-drop
+            # below via the existing "parent not resolved" path — no
+            # separate CM check needed there.
+            skipped.append(pk)
             continue
         bt = _bom_type(code)
         if bt == "unknown":
@@ -219,12 +332,30 @@ def transform(raw: dict) -> dict:
             if line_pk:
                 skipped.append(line_pk)
             continue
+        if _is_cm(code):
+            # PATCH 5(b): a BOM line whose COMPONENT is CM-prefixed
+            # (standardized milk, deprecated) is dropped from canonical
+            # bom_lines — but unlike an unresolvable code, this component
+            # DID resolve; it's being deliberately excluded as dead-data
+            # hygiene, so it must be visible (warnings), not folded into the
+            # same `skipped` bucket as a genuine resolution failure. No
+            # fallback/explosion through CM — the business confirms no live
+            # BOM depth needs it.
+            warnings.append({
+                "nc_source_pk": line_pk, "reason": "cm_component_excluded",
+                "component_material_code": code,
+            })
+            continue
         bom_lines.append({
             "bom_nc_source_pk": bom_pk,
             "line_no": _line_no(ln.get("vrowno")),
             "component_material_code": code,
             "qty_per": _parse_qty(ln.get("nitemnum")),
-            "uom": _clean(ln.get("cmeasureid")),
+            "uom": _resolve_uom(ln.get("cmeasureid"), uoms, line_pk, warnings, "uom"),
+            "qty_per_secondary": _parse_qty_or_none(ln.get("nassitemnum")),
+            "uom_secondary": _resolve_uom(
+                ln.get("cassmeasureid"), uoms, line_pk, warnings, "uom_secondary"
+            ),
             "scrap_rate": Decimal("0"),  # NC has no loss data in this instance — survey §7
             "effective_from": _parse_date(ln.get("cbeginperiod")),
             "effective_to": _parse_date(ln.get("cendperiod")),

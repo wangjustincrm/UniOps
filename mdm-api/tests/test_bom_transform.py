@@ -37,7 +37,7 @@ def test_transform_maps_header_and_lines():
             "nitemnum": Decimal("1.05"), "vrowno": "10",
             "cbeginperiod": "2019-09-01 00:00:00", "cendperiod": "2999-12-31 23:59:59",
         }],
-        material_codes={"M1": "CF0086", "M2": "CM0040"},
+        material_codes={"M1": "CF0086", "M2": "CW0040"},
     )
     out = transform(raw)
 
@@ -47,7 +47,7 @@ def test_transform_maps_header_and_lines():
     assert b["status"] == "approved"
 
     ln = out["lines"][0]
-    assert ln["component_material_code"] == "CM0040"
+    assert ln["component_material_code"] == "CW0040"
     assert ln["qty_per"] == Decimal("1.05")
     assert ln["scrap_rate"] == Decimal("0")
     assert ln["line_no"] == 10
@@ -125,7 +125,7 @@ def test_scrap_rate_always_zero_no_nc_source_data():
             "nitemnum": 100, "vrowno": "10",
             "nbfixshrinknum": None, "ndissipationum": None,
         }],
-        material_codes={"M1": "CF0001", "M2": "CM0001"},
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
     )
     out = transform(raw)
     assert out["lines"][0]["scrap_rate"] == Decimal("0")
@@ -162,7 +162,7 @@ def test_line_effective_window_parsed_and_nc_tilde_placeholder_is_blank():
             "nitemnum": 1, "vrowno": "20",
             "cbeginperiod": "~", "cendperiod": "~",
         }],
-        material_codes={"M1": "CF0001", "M2": "CM0001"},
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
     )
     out = transform(raw)
     from datetime import date
@@ -182,12 +182,223 @@ def test_substitutes_mapped_and_orphans_dropped():
             # Orphan: parent line PKB-MISSING never made it into `lines`.
             {"cbom_replaceid": "R2", "cbom_bid": "PKB-MISSING", "creplmaterialoid": "M3", "vrowno": "10"},
         ],
-        material_codes={"M1": "CF0001", "M2": "CM0001", "M3": "CM0002"},
+        material_codes={"M1": "CF0001", "M2": "CR0001", "M3": "CR0002"},
     )
     out = transform(raw)
     assert len(out["substitutes"]) == 1
     sub = out["substitutes"][0]
-    assert sub["substitute_material_code"] == "CM0002"
+    assert sub["substitute_material_code"] == "CR0002"
     assert sub["priority"] == 10
     assert sub["mode"] == "suggest"
     assert sub["nc_source_pk"] == "R1"
+
+
+# ---------------------------------------------------------------------------
+# PATCH 1: S-prefixed finished goods must map to bom_type='packaging', not
+# 'unknown'. Verified live: S0093's BOM = CW dry-mix powder + 7 CP packaging
+# items, structurally identical to CF0092's.
+# ---------------------------------------------------------------------------
+
+def test_s_prefix_finished_good_maps_to_packaging_bom_type():
+    raw = _raw(
+        headers=[
+            {"cbomid": "PK-S", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1},
+        ],
+        material_codes={"MS": "S0093"},
+    )
+    out = transform(raw)
+    b = out["boms"][0]
+    assert b["bom_type"] == "packaging"
+    # Must not be double-counted as an "unknown prefix" warning.
+    assert out["warnings"] == []
+
+
+def test_s_prefix_does_not_collide_with_two_char_cs_cw_cf_prefixes():
+    """'S' is checked as a 1-char prefix specifically so it can't shadow the
+    2-char CS/CW/CF table — a code starting with 'C' must never fall into
+    the S bucket."""
+    raw = _raw(
+        headers=[
+            {"cbomid": "PK-CS", "hcmaterialid": "MCS", "hversion": "1.0", "fbillstatus": 1},
+        ],
+        material_codes={"MCS": "CS0026"},
+    )
+    out = transform(raw)
+    assert out["boms"][0]["bom_type"] == "milling"
+
+
+# ---------------------------------------------------------------------------
+# PATCH 2: bom_lines.uom must resolve BD_MEASDOC pks to real unit codes, not
+# store the raw NC pk. Unresolvable pks -> null + warning, never a crash.
+# ---------------------------------------------------------------------------
+
+def test_uom_resolved_from_measdoc_pk_lookup():
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2",
+            "nitemnum": 1, "vrowno": "10", "cmeasureid": "PK-MEAS-KGM",
+        }],
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
+    )
+    raw["uoms"] = {"PK-MEAS-KGM": "KGM"}
+    out = transform(raw)
+    ln = out["lines"][0]
+    assert ln["uom"] == "KGM"
+    assert out["warnings"] == []
+
+
+def test_unresolvable_uom_pk_leaves_null_and_warns_without_crashing():
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2",
+            "nitemnum": 1, "vrowno": "10", "cmeasureid": "PK-MEAS-GHOST",
+        }],
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
+    )
+    raw["uoms"] = {}  # ghost pk never resolves
+    out = transform(raw)
+    ln = out["lines"][0]
+    assert ln["uom"] is None
+    assert any(
+        w["nc_source_pk"] == "PKB1" and w["reason"] == "unresolved_uom_pk" and w["field"] == "uom"
+        for w in out["warnings"]
+    )
+
+
+def test_blank_uom_pk_resolves_to_none_without_warning():
+    """A line that simply has no cmeasureid at all is the normal case, not a
+    resolution failure — must not spuriously warn."""
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{"cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2", "nitemnum": 1, "vrowno": "10"}],
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
+    )
+    out = transform(raw)
+    assert out["lines"][0]["uom"] is None
+    assert out["warnings"] == []
+
+
+# ---------------------------------------------------------------------------
+# PATCH 3: secondary (assistant) unit qty/uom from NASSITEMNUM/CASSMEASUREID
+# must be captured, not dropped.
+# ---------------------------------------------------------------------------
+
+def test_secondary_qty_and_uom_populated_for_two_unit_lines():
+    raw = _raw(
+        headers=[{"cbomid": "PK-S", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK-S", "cmaterialid": "M2",
+            "nitemnum": Decimal("610"), "vrowno": "10",
+            "cmeasureid": "PK-KGM", "nassitemnum": Decimal("610"), "cassmeasureid": "PK-EA",
+        }],
+        material_codes={"MS": "S0093", "M2": "CP0115"},
+    )
+    raw["uoms"] = {"PK-KGM": "KGM", "PK-EA": "EA"}
+    out = transform(raw)
+    ln = out["lines"][0]
+    assert ln["qty_per"] == Decimal("610")
+    assert ln["uom"] == "KGM"
+    assert ln["qty_per_secondary"] == Decimal("610")
+    assert ln["uom_secondary"] == "EA"
+
+
+def test_secondary_qty_and_uom_none_when_absent_not_zero():
+    """A single-unit line (no NASSITEMNUM/CASSMEASUREID at all) must get
+    None, not 0/blank — 0 would misread as 'zero pieces'."""
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{"cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2", "nitemnum": 1, "vrowno": "10"}],
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
+    )
+    out = transform(raw)
+    ln = out["lines"][0]
+    assert ln["qty_per_secondary"] is None
+    assert ln["uom_secondary"] is None
+
+
+# ---------------------------------------------------------------------------
+# PATCH 4: NC's EA and PIECES both mean "个" for packaging materials — must
+# normalize to the single canonical code EA, on both uom fields.
+# ---------------------------------------------------------------------------
+
+def test_ea_and_pieces_normalize_to_canonical_ea_on_both_uom_fields():
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2",
+            "nitemnum": 1, "vrowno": "10",
+            "cmeasureid": "PK-PIECES", "nassitemnum": 1, "cassmeasureid": "PK-EA",
+        }],
+        material_codes={"M1": "CF0001", "M2": "CP0001"},
+    )
+    raw["uoms"] = {"PK-PIECES": "PIECES", "PK-EA": "EA"}
+    out = transform(raw)
+    ln = out["lines"][0]
+    assert ln["uom"] == "EA"          # was 'PIECES' pre-normalization
+    assert ln["uom_secondary"] == "EA"  # already 'EA', unaffected
+    assert out["warnings"] == []
+
+
+# ---------------------------------------------------------------------------
+# PATCH 5: CM (standardized milk, deprecated ~2 years ago) exclusion —
+# (a) a header whose PARENT is CM-prefixed never syncs at all (skipped);
+# (b) a line whose COMPONENT is CM-prefixed is dropped but visibly counted
+#     in `warnings`, not silently discarded and not folded into `skipped`.
+# No fallback/explosion through CM is expected or exercised here.
+# ---------------------------------------------------------------------------
+
+def test_cm_prefixed_parent_header_excluded_entirely():
+    raw = _raw(
+        headers=[
+            {"cbomid": "PK-CM", "hcmaterialid": "MCM", "hversion": "1.0", "fbillstatus": 1},
+            {"cbomid": "PK-CF", "hcmaterialid": "MCF", "hversion": "1.0", "fbillstatus": 1},
+        ],
+        lines=[
+            # A line under the CM header must never surface as an orphan.
+            {"cbom_bid": "PKB-CM", "cbomid": "PK-CM", "cmaterialid": "MCR", "nitemnum": 1, "vrowno": "10"},
+        ],
+        material_codes={"MCM": "CM0001", "MCF": "CF0001", "MCR": "CR0001"},
+    )
+    out = transform(raw)
+    assert [b["nc_source_pk"] for b in out["boms"]] == ["PK-CF"]
+    assert "PK-CM" in out["skipped"]
+    assert out["lines"] == []
+    assert "PKB-CM" in out["skipped"]
+
+
+def test_cm_prefixed_component_line_dropped_and_counted_in_warnings():
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[
+            {"cbom_bid": "PKB-CM", "cbomid": "PK1", "cmaterialid": "MCM", "nitemnum": 1, "vrowno": "10"},
+            {"cbom_bid": "PKB-CR", "cbomid": "PK1", "cmaterialid": "MCR", "nitemnum": 1, "vrowno": "20"},
+        ],
+        material_codes={"M1": "CF0001", "MCM": "CM0002", "MCR": "CR0001"},
+    )
+    out = transform(raw)
+    # The CM component is gone from canonical lines...
+    assert [ln["nc_source_pk"] for ln in out["lines"]] == ["PKB-CR"]
+    # ...but visibly counted in warnings, not silently discarded, and NOT in
+    # the unresolvable-code `skipped` bucket (it resolved fine, it's excluded).
+    assert "PKB-CM" not in out["skipped"]
+    assert any(
+        w["nc_source_pk"] == "PKB-CM" and w["reason"] == "cm_component_excluded"
+        and w["component_material_code"] == "CM0002"
+        for w in out["warnings"]
+    )
+
+
+def test_cm_component_substitute_cascades_dropped_via_skipped():
+    """A substitute row pointing at a CM-excluded line has no parent line to
+    attach to — same orphan cascade as any other dropped line."""
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{"cbom_bid": "PKB-CM", "cbomid": "PK1", "cmaterialid": "MCM", "nitemnum": 1, "vrowno": "10"}],
+        repl=[{"cbom_replaceid": "R1", "cbom_bid": "PKB-CM", "creplmaterialoid": "MCR", "vrowno": "10"}],
+        material_codes={"M1": "CF0001", "MCM": "CM0002", "MCR": "CR0001"},
+    )
+    out = transform(raw)
+    assert out["substitutes"] == []
+    assert "R1" in out["skipped"]

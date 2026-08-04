@@ -425,6 +425,62 @@ async def test_effective_factory_code_filter_and_deterministic_tiebreak(client, 
 
 
 @pytest.mark.anyio
+async def test_effective_exposes_secondary_uom_and_cm_exclusions(client, db_session, monkeypatch):
+    """End-to-end coverage for PATCH 2/3/4/5: a two-unit S-prefixed finished
+    good line resolves both units (with EA/PIECES normalized), a CM-prefixed
+    parent header never syncs, and a CM-prefixed component line is dropped
+    but visibly counted in `warnings`."""
+    from app.services.nc_bom_sync import canonical_sync
+
+    def extract():
+        return {
+            "headers": [
+                {"cbomid": "H-S", "hcmaterialid": "M-S", "hversion": "1.0",
+                 "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+                {"cbomid": "H-CM", "hcmaterialid": "M-CM", "hversion": "1.0",
+                 "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+            ],
+            "lines": [
+                {"cbom_bid": "L-S-1", "cbomid": "H-S", "cmaterialid": "M-CP",
+                 "nitemnum": 610, "vrowno": "10", "cmeasureid": "PK-KGM",
+                 "nassitemnum": 610, "cassmeasureid": "PK-PIECES",
+                 "cbeginperiod": "2019-01-01 00:00:00", "cendperiod": "2999-12-31 23:59:59"},
+                {"cbom_bid": "L-S-2", "cbomid": "H-S", "cmaterialid": "M-CM",
+                 "nitemnum": 5, "vrowno": "20", "cmeasureid": None, "nassitemnum": None, "cassmeasureid": None,
+                 "cbeginperiod": "2019-01-01 00:00:00", "cendperiod": "2999-12-31 23:59:59"},
+                # Line under the excluded CM header — must never surface.
+                {"cbom_bid": "L-CM-1", "cbomid": "H-CM", "cmaterialid": "M-CR",
+                 "nitemnum": 1, "vrowno": "10", "cmeasureid": None, "nassitemnum": None, "cassmeasureid": None,
+                 "cbeginperiod": None, "cendperiod": None},
+            ],
+            "repl": [],
+            "material_codes": {
+                "M-S": "S0093", "M-CP": "CP0115", "M-CM": "CM0001", "M-CR": "CR0001",
+            },
+            "uoms": {"PK-KGM": "KGM", "PK-PIECES": "PIECES"},
+        }
+
+    monkeypatch.setattr(canonical_sync, "fetch_nc_bom", extract)
+    sync_resp = await client.post("/mdm/v1/boms/sync")
+    assert sync_resp.status_code == 200
+    body = sync_resp.json()
+    assert body["boms"] == 1  # H-CM excluded entirely
+    assert body["lines"] == 1  # L-S-2 (CM component) dropped; L-CM-1 orphaned by header exclusion
+    assert body["skipped"] >= 1  # H-CM (+ its cascaded line L-CM-1)
+    assert body["warnings"] >= 1  # L-S-2's cm_component_excluded warning
+
+    resp = await client.get("/mdm/v1/boms/effective", params={"product": "S0093", "date": "2026-08-04"})
+    assert resp.status_code == 200
+    eff = resp.json()
+    assert eff["bom_type"] == "packaging"
+    assert {ln["component_material_code"] for ln in eff["lines"]} == {"CP0115"}
+    line = eff["lines"][0]
+    assert line["uom"] == "KGM"
+    assert Decimal(str(line["qty_per_secondary"])) == Decimal("610")
+    assert line["uom_secondary"] == "EA"  # PIECES normalized to canonical EA
+
+
+@pytest.mark.anyio
 async def test_bom_sync_503_when_nc_not_configured(client, db_session, monkeypatch):
     """POST /boms/sync must refuse (503) rather than fall through to
     fetch_nc_bom() and surface an opaque oracledb/DSN error as a 500 —
