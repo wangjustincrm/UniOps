@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 from app.db.base import Base
 from app.core.config import settings
-from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, material  # noqa: F401
+from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, material, nc_bom, bom  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:

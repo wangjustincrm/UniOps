@@ -75,11 +75,18 @@ async def _upsert_all(db: AsyncSession, model, rows: list[dict]) -> int:
     return (await db.execute(select(func.count()).select_from(model))).scalar()
 
 
-async def sync_nc_bom(db: AsyncSession) -> dict:
+async def sync_nc_bom(db: AsyncSession, extract: dict | None = None) -> dict:
     """Full mirror sync. Returns {"headers": n, "lines": n, "repl": n} — total
     row counts in each mirror table after the sync (idempotent: re-running
-    with the same extract upserts in place, counts stay the same)."""
-    extract = fetch_nc_bom()
+    with the same extract upserts in place, counts stay the same).
+
+    `extract` lets a caller pass an already-fetched `fetch_nc_bom()` result
+    instead of triggering a second live NC round trip — used by Task 5's
+    canonical_sync.sync_boms(), which needs the same extract's
+    `material_codes` for the transform step right after refreshing this raw
+    mirror."""
+    if extract is None:
+        extract = fetch_nc_bom()
 
     headers = [row for rec in extract.get("headers", [])
                if (row := _row(rec, _HEADER_COLS, "cbomid")) is not None]
