@@ -539,7 +539,7 @@ export default function ExpenseDetailPage() {
             <p className="mt-0.5 text-sm font-medium text-neutral-800">{claim.vehicle_description}</p>
           </div>
         )}
-        {claim.total_km && (
+        {claim.total_km != null && (
           <div>
             <p className="text-xs font-medium text-neutral-500">Total km</p>
             <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>

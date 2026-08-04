@@ -1,4 +1,6 @@
 import type { RouteDef } from '@uniops/shell'
+import type { ReactNode } from 'react'
+import { useOaAuth } from '@/store/auth'
 import TaskListPage from '@/pages/tasks/TaskListPage'
 import PaListPage from '@/pages/pa/PaListPage'
 import PaDetailPage from '@/pages/pa/PaDetailPage'
@@ -21,6 +23,14 @@ import TraCreatePage from '@/pages/travel/TraCreatePage'
 // Short, distinguishable title for an id-keyed detail tab (UUIDs are too long).
 const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id)
 
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const role = useOaAuth((s) => s.user?.role)
+  if (role !== 'system_admin') {
+    return <div className="p-8 text-sm text-neutral-500">You don't have access to this page.</div>
+  }
+  return <>{children}</>
+}
+
 export const oaRoutes: RouteDef[] = [
   { path: '/tasks', element: <TaskListPage />, tab: { title: 'Task Inbox', icon: 'CheckSquare', keyStrategy: 'static', pinned: true } },
 
@@ -40,8 +50,8 @@ export const oaRoutes: RouteDef[] = [
   { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/invoices/:source/:id', element: <InvoiceDetailPage />, tab: { title: (p) => `Invoice ${short(p.id)}`, icon: 'FileText', keyStrategy: 'param', paramName: 'id' } },
 
-  { path: '/admin/expense-config', element: <ExpenseConfigPage />, tab: { title: 'Expense Config', icon: 'Settings', keyStrategy: 'static' } },
-  { path: '/admin/custom-forms', element: <CfmAdminPage />, tab: { title: 'Custom Forms', icon: 'FileText', keyStrategy: 'static' } },
+  { path: '/admin/expense-config', element: <RequireAdmin><ExpenseConfigPage /></RequireAdmin>, tab: { title: 'Expense Config', icon: 'Settings', keyStrategy: 'static' } },
+  { path: '/admin/custom-forms', element: <RequireAdmin><CfmAdminPage /></RequireAdmin>, tab: { title: 'Custom Forms', icon: 'FileText', keyStrategy: 'static' } },
 
   { path: '/travel', element: <TravelApplicationsListPage />, tab: { title: 'Travel Applications', icon: 'Plane', keyStrategy: 'static' } },
   { path: '/travel/new', element: <TraCreatePage />, tab: { title: 'New Travel Application', icon: 'Plus', keyStrategy: 'static' } },
