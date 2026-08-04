@@ -4,7 +4,6 @@ import { useOaAuth } from '@/store/auth'
 import TaskListPage from '@/pages/tasks/TaskListPage'
 import PaListPage from '@/pages/pa/PaListPage'
 import PaDetailPage from '@/pages/pa/PaDetailPage'
-import PaCreatePage from '@/pages/pa/PaCreatePage'
 import PaDirectCreatePage from '@/pages/pa/PaDirectCreatePage'
 import PaDirectEditPage from '@/pages/pa/PaDirectEditPage'
 import ExpenseListPage from '@/pages/expenses/ExpenseListPage'
@@ -35,7 +34,6 @@ export const oaRoutes: RouteDef[] = [
   { path: '/tasks', element: <TaskListPage />, tab: { title: 'Task Inbox', icon: 'CheckSquare', keyStrategy: 'static', pinned: true } },
 
   { path: '/pa', element: <PaListPage />, tab: { title: 'Payment Applications', icon: 'CreditCard', keyStrategy: 'static' } },
-  { path: '/pa/new', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static' } },
   { path: '/pa/new/direct', element: <PaDirectCreatePage />, tab: { title: 'New Direct PA', icon: 'Plus', keyStrategy: 'static' } },
   { path: '/pa/:id/edit', element: <PaDirectEditPage />, tab: { title: (p) => `Edit PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },
   { path: '/pa/:id', element: <PaDetailPage />, tab: { title: (p) => `PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },

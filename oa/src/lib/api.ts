@@ -110,25 +110,6 @@ export const api = {
   getBlob,
 }
 
-// Paginated list endpoints default to page_size=20 (cap 200) on the server, so
-// any caller that needs the complete list must page through. Fetches page 1 to
-// learn the total, then the remaining pages in parallel.
-export async function fetchAllPages<T>(
-  fetchPage: (page: number, pageSize: number) => Promise<{ items: T[]; total: number }>,
-  pageSize = 200,
-): Promise<{ items: T[]; total: number }> {
-  const first = await fetchPage(1, pageSize)
-  const items = [...first.items]
-  const totalPages = Math.ceil(first.total / pageSize)
-  if (totalPages > 1) {
-    const rest = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, i) => fetchPage(i + 2, pageSize)),
-    )
-    for (const r of rest) items.push(...r.items)
-  }
-  return { items, total: items.length }
-}
-
 async function epmsRequest<T>(path: string): Promise<T> {
   const res = await authFetch(`${EPMS_BASE}${path}`, {})
   if (!res.ok) throw await toApiError(res)
