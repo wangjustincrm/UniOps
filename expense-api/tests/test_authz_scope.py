@@ -392,3 +392,51 @@ async def test_my_actions_custom_role_not_in_default_map(test_engine):
         assert str(c0) in {i["id"] for i in r.json()["items"]}
     finally:
         await _restore_workflow_defs(test_engine, previous)
+
+
+# ── C2: GET /api/v1/tasks (OA Task List) — approver step-roles derived from
+# workflow_defs, replacing the hardcoded _EXP_STEP_ROLES / _PA_STEP_ROLES maps
+# that lived in tasks.py (drift risk when a customised chain differs from the
+# hardcoded defaults). Behaviour is unchanged for the default config; a
+# customised chain now surfaces correctly here too. ─────────────────────────
+
+@pytest.mark.asyncio
+async def test_tasks_expense_approver_from_workflow_defs(test_engine):
+    # Custom: step 0 approver = gm (the old hardcoded table's step 0 was dept_manager)
+    previous = await _set_workflow_defs(test_engine, {"exp": [
+        {"id": "s0", "role": "gm", "label": "GM"},
+        {"id": "s1", "role": "finance_bp", "label": "Finance BP"},
+    ]})
+    try:
+        c0 = await _seed_claim_at_step(test_engine, uuid.uuid4(), "EXP", 0)
+        async with _client(_make_token("gm", str(uuid.uuid4()))) as c:
+            r = await c.get("/api/v1/tasks")
+        items = r.json()["items"]
+        assert any(i["doc_id"] == str(c0) and i["task_type"] == "approve_expense" for i in items)
+        # dept_manager should no longer see it at step 0 (config's step 0 isn't dept_manager)
+        async with _client(_make_token("dept_manager", str(uuid.uuid4()))) as c2:
+            r2 = await c2.get("/api/v1/tasks")
+        assert not any(i["doc_id"] == str(c0) for i in r2.json()["items"])
+    finally:
+        await _restore_workflow_defs(test_engine, previous)
+
+
+@pytest.mark.asyncio
+async def test_tasks_pa_approver_from_workflow_defs(test_engine):
+    # Custom: PA-DIR step 0 approver = gm (old hardcoded table's step 0 was
+    # {dept_manager, finance_bp}).
+    previous = await _set_workflow_defs(test_engine, {"pa_dir": [
+        {"id": "s0", "role": "gm", "label": "GM"},
+    ]})
+    try:
+        pa_id = await _seed_pa(test_engine, created_by=uuid.uuid4(), status="in_review")
+        async with _client(_make_token("gm", str(uuid.uuid4()))) as c:
+            r = await c.get("/api/v1/tasks")
+        items = r.json()["items"]
+        assert any(i["doc_id"] == str(pa_id) and i["task_type"] == "approve_pa" for i in items)
+        # dept_manager should no longer see it at step 0 (config's step 0 isn't dept_manager)
+        async with _client(_make_token("dept_manager", str(uuid.uuid4()))) as c2:
+            r2 = await c2.get("/api/v1/tasks")
+        assert not any(i["doc_id"] == str(pa_id) for i in r2.json()["items"])
+    finally:
+        await _restore_workflow_defs(test_engine, previous)
