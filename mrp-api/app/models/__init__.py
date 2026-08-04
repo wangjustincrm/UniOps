@@ -1,4 +1,4 @@
-"""Import all models so Alembic + SQLAlchemy can register them.
-
-Empty for now — Task 8 adds the first migration (mrp01) and its model(s).
-"""
+"""Import all models so Alembic + SQLAlchemy can register them."""
+from app.models.wms_inventory import WmsInventoryLot  # noqa: F401
+from app.models.status_mapping import MrpStatusMapping  # noqa: F401
+from app.models.sync_state import MrpSyncState  # noqa: F401
