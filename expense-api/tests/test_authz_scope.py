@@ -247,3 +247,49 @@ async def test_non_admin_only_sees_active_custom_forms(test_engine):
         resp2 = await admin2.get("/api/v1/expenses/custom-forms")
     codes2 = {f["code"] for f in resp2.json()}
     assert inactive_code in codes2
+
+
+from app.models.invoice import ExpenseInvoice
+
+
+async def _seed_invoice(test_engine, created_by: uuid.UUID) -> uuid.UUID:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    iid = uuid.uuid4()
+    async with factory() as s:
+        s.add(ExpenseInvoice(id=iid, file_name="i.pdf", file_mime_type="application/pdf",
+                             file_size_bytes=10, created_by=created_by))
+        await s.commit()
+    return iid
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_forbidden_for_unrelated_user(test_engine):
+    iid = await _seed_invoice(test_engine, created_by=uuid.uuid4())
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.get(f"/api/v1/invoices/{iid}")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_ok_for_creator(test_engine):
+    creator = uuid.uuid4()
+    iid = await _seed_invoice(test_engine, created_by=creator)
+    async with _client(_make_token("requester", str(creator))) as c:
+        r = await c.get(f"/api/v1/invoices/{iid}")
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_ok_for_finance(test_engine):
+    iid = await _seed_invoice(test_engine, created_by=uuid.uuid4())
+    async with _client(_make_token("finance_manager", str(uuid.uuid4()))) as c:
+        r = await c.get(f"/api/v1/invoices/{iid}")
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_vendor_suggestions_forbidden_for_unrelated_user(test_engine):
+    iid = await _seed_invoice(test_engine, created_by=uuid.uuid4())
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.get(f"/api/v1/invoices/{iid}/vendor-suggestions?q=abc")
+    assert r.status_code == 403
