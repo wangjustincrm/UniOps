@@ -724,6 +724,8 @@ function Step3PaForm({
   const [extraFiles, setExtraFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [createdInvoiceId, setCreatedInvoiceId] = useState<string | null>(null)
+  const [attachmentsUploaded, setAttachmentsUploaded] = useState(false)
   const extraFileInputRef = useRef<HTMLInputElement>(null)
 
   const total = (fields.amount ?? 0) + (fields.taxAmount ?? 0)
@@ -732,47 +734,51 @@ function Step3PaForm({
     e.preventDefault()
     setSaving(true); setError('')
     try {
-      // 1. Create invoice record (JSON — no binary upload)
-      const inv = await api.post<InvoiceRecord>('/api/v1/invoices', {
-        file_name: file.name,
-        file_mime_type: file.type || 'application/octet-stream',
-        file_size_bytes: file.size,
-        invoice_number: fields.vendorInvoiceNumber || null,
-        vendor_id: vendorId || null,          // ← required for dedup check
-        vendor_name: vendorName || null,
-        invoice_date: fields.invoiceDate || null,
-        due_date: fields.dueDate || null,
-        currency: fields.currency || 'CAD',
-        subtotal: fields.amount ?? 0,
-        tax_amount: fields.taxAmount ?? 0,
-        total_amount: total,
-        lines: (fields.lineItems ?? []).map((li, i) => ({
-          line_number: i + 1,
-          description: li.description,
-          quantity: li.quantity,
-          unit: li.unit,
-          unit_price: li.unit_price,
-          amount: li.line_total,
-          tax_amount: 0,
-        })),
-      })
-
-      // 2. Upload invoice file + extra attachments (non-fatal).
-      //    Use api.postForm (absolute VITE_API_URL) — OA runs in Docker where the
-      //    relative-fetch Vite proxy is dead.
-      const uploadAttachment = async (f: File) => {
-        const form = new FormData()
-        form.append('file', f)
-        await api.postForm(`/api/v1/invoice-attachments?invoice_id=${inv.id}&invoice_source=oa`, form)
+      // 1. 建发票（重试时复用已建的，避免 dedup 409 锁死）
+      let invoiceId = createdInvoiceId
+      if (!invoiceId) {
+        const inv = await api.post<InvoiceRecord>('/api/v1/invoices', {
+          file_name: file.name,
+          file_mime_type: file.type || 'application/octet-stream',
+          file_size_bytes: file.size,
+          invoice_number: fields.vendorInvoiceNumber || null,
+          vendor_id: vendorId || null,
+          vendor_name: vendorName || null,
+          invoice_date: fields.invoiceDate || null,
+          due_date: fields.dueDate || null,
+          currency: fields.currency || 'CAD',
+          subtotal: fields.amount ?? 0,
+          tax_amount: fields.taxAmount ?? 0,
+          total_amount: total,
+          lines: (fields.lineItems ?? []).map((li, i) => ({
+            line_number: i + 1,
+            description: li.description,
+            quantity: li.quantity,
+            unit: li.unit,
+            unit_price: li.unit_price,
+            amount: li.line_total,
+            tax_amount: 0,
+          })),
+        })
+        invoiceId = inv.id
+        setCreatedInvoiceId(invoiceId)
       }
-      await uploadAttachment(file).catch(() => {})
 
-      // 3. Upload extra attachments (non-fatal)
-      for (const f of extraFiles) { await uploadAttachment(f).catch(() => {}) }
+      // 2. 上传发票文件 + 附加附件（non-fatal，只传一次）
+      if (!attachmentsUploaded) {
+        const uploadAttachment = async (f: File) => {
+          const form = new FormData()
+          form.append('file', f)
+          await api.postForm(`/api/v1/invoice-attachments?invoice_id=${invoiceId}&invoice_source=oa`, form)
+        }
+        await uploadAttachment(file).catch(() => {})
+        for (const f of extraFiles) { await uploadAttachment(f).catch(() => {}) }
+        setAttachmentsUploaded(true)
+      }
 
-      // 4. Create PA-DIR linked to the invoice
+      // 3. 建 PA-DIR
       const pa = await api.post<{ id: string; pa_number: string }>('/api/v1/pa/direct', {
-        invoice_id: inv.id,
+        invoice_id: invoiceId,
         vendor_id: vendorId,
         vendor_name: vendorName,
         payment_amount: total,
@@ -785,13 +791,7 @@ function Step3PaForm({
 
       onCreated(pa.id)
     } catch (err: any) {
-      const detail = err.message || 'Failed to create PA'
-      // Handle duplicate invoice error
-      if (detail.includes('already recorded') || err.status === 409) {
-        setError(detail)
-      } else {
-        setError(detail)
-      }
+      setError(err.message || 'Failed to create PA')
     } finally { setSaving(false) }
   }
 
