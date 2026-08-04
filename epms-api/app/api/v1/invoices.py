@@ -100,11 +100,15 @@ async def _on_invoice_matched(db, invoice) -> None:
 
 async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
     """
-    After an invoice is 3-way matched (has a GR), find the requester of the
-    linked PR and create a create_pa task for them (if one doesn't already
-    exist for this PO).
+    After an invoice is 3-way matched (has a GR), raise a create_pa task.
+
+    Normal POs route to the linked PR's requester (personal assignee). NC-imported
+    POs have no PR/requester, so they route to the erp_pa_officer pool
+    (assigned_role + NULL assignee → broadcast to every holder of that role).
+    A non-NC PO without a PR still gets no task (unchanged legacy behaviour).
     """
-    if pr is None:                       # 原逻辑:PO 无 PR → 不建 create_pa
+    is_nc_orphan = pr is None and po.source == "nc"
+    if pr is None and not is_nc_orphan:   # non-NC PO with no PR → don't build create_pa
         return
     existing = (await db.execute(select(Task).where(
         Task.type == "create_pa", Task.document_type == "po",
@@ -113,10 +117,14 @@ async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
     if existing is not None:
         fire_and_forget_notify(existing, db, extra_vars={"invoice_number": invoice.internal_ref})
         return
+    if is_nc_orphan:
+        assigned_role, assigned_user_id = "erp_pa_officer", None
+    else:
+        assigned_role, assigned_user_id = "requester", pr.created_by
     task = Task(
         type="create_pa", priority="normal", document_type="po",
         document_id=po.id, document_number=po.number,
-        assigned_role="requester", assigned_user_id=pr.created_by,
+        assigned_role=assigned_role, assigned_user_id=assigned_user_id,
         title=f"Create Payment Application for {po.number}",
         description=(f"Invoice {invoice.internal_ref} has been matched to PO {po.number}. "
                      f"Please create a Payment Application to proceed with vendor payment."),

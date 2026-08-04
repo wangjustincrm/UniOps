@@ -32,10 +32,10 @@ async def _vendor(db):
     return v
 
 
-async def _po(db, vendor, creator, *, po_type=2, pr_id=None):
+async def _po(db, vendor, creator, *, po_type=2, pr_id=None, source=None):
     po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=po_type,
                        vendor_id=vendor.id, vendor_name="Acme", status="issued",
-                       created_by=creator.id, pr_id=pr_id)
+                       created_by=creator.id, pr_id=pr_id, source=source)
     db.add(po); await db.flush()
     return po
 
@@ -115,3 +115,46 @@ async def test_matched_with_gr_creates_create_pa():
         assert cp[0].assigned_role == "requester"
         assert cp[0].assigned_user_id == req.id
         assert await _open(db, po.id, "confirm_receipt") == []
+
+
+@pytest.mark.asyncio
+async def test_nc_imported_po_matched_creates_create_pa_pool_task():
+    """NC-imported PO has no PR/requester → create_pa routes to the
+    erp_pa_officer pool (broadcast, NULL assignee), not to a person."""
+    async with sm.AsyncSessionLocal() as db:
+        u = await _user(db, "procurement_officer")
+        v = await _vendor(db)
+        po = await _po(db, v, u, po_type=1, pr_id=None, source="nc")  # NC, no PR
+        gr = GoodsReceipt(number=f"GR-{uuid.uuid4().hex[:8]}", title="G", po_id=po.id,
+                          po_number=po.number, vendor_id=v.id, vendor_name="Acme",
+                          gr_type="physical", procurement_type=1, status="collected",
+                          created_by=u.id)
+        db.add(gr); await db.flush()
+        inv = _invoice(po.id, v.id, u.id, gr_id=gr.id)      # 3-way
+        db.add(inv); await db.flush()
+        await _on_invoice_matched(db, inv)
+        await db.flush()
+        cp = await _open(db, po.id, "create_pa")
+        assert len(cp) == 1
+        assert cp[0].assigned_role == "erp_pa_officer"
+        assert cp[0].assigned_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_non_nc_po_without_pr_still_creates_no_create_pa():
+    """A PR-less PO that is NOT NC-imported keeps the legacy behaviour: no
+    create_pa task (only NC orphans get the pool route)."""
+    async with sm.AsyncSessionLocal() as db:
+        u = await _user(db, "requester")
+        v = await _vendor(db)
+        po = await _po(db, v, u, po_type=1, pr_id=None, source=None)  # direct, no PR
+        gr = GoodsReceipt(number=f"GR-{uuid.uuid4().hex[:8]}", title="G", po_id=po.id,
+                          po_number=po.number, vendor_id=v.id, vendor_name="Acme",
+                          gr_type="physical", procurement_type=1, status="collected",
+                          created_by=u.id)
+        db.add(gr); await db.flush()
+        inv = _invoice(po.id, v.id, u.id, gr_id=gr.id)
+        db.add(inv); await db.flush()
+        await _on_invoice_matched(db, inv)
+        await db.flush()
+        assert await _open(db, po.id, "create_pa") == []

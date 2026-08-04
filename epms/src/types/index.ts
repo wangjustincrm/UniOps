@@ -12,6 +12,7 @@ export type UserRole =
   | 'cfo'
   | 'auditor'
   | 'vendor_manager'
+  | 'erp_pa_officer'
   | 'system_admin'
 
 export type DocumentStatus =

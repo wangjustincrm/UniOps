@@ -23,7 +23,7 @@ MODULE_BY_KEY = {
 }
 PERMISSION_KEYS = list(MODULE_BY_KEY)  # keeps epms UI order
 
-ROLE_LABELS = {  # built-in 17
+ROLE_LABELS = {  # built-in 18
     "requester": "Requester", "dept_admin": "Department Admin",
     "dept_manager": "Department Manager", "supervisor": "Supervisor",
     "director": "Director", "gm": "General Manager", "opm": "Operations Manager",
@@ -32,6 +32,10 @@ ROLE_LABELS = {  # built-in 17
     "warehouse_staff": "Warehouse Staff", "ap_clerk": "AP Clerk",
     "finance_bp": "Finance BP", "finance_manager": "Finance Manager",
     "vendor_manager": "Vendor Manager", "cfo": "CFO", "auditor": "Auditor",
+    # erp_pa_officer: an ADDITIONAL role (grantable to many, never a base login
+    # role) that owns the Create-PA task for ERP-imported, PR-less POs (NC). It
+    # is unrestricted for visibility (not in access_scope._RESTRICTED_ROLES).
+    "erp_pa_officer": "ERP PA Officer",
     "system_admin": "System Admin",
 }
 
@@ -43,6 +47,8 @@ LOCKED = {
     "ap_clerk": {"view_invoice", "view_pa"},
     "finance_bp": {"view_pa"},
     "finance_manager": {"view_pa"},
+    # ERP PA Officer must see the imported PO + its PA to pay it.
+    "erp_pa_officer": {"view_po", "view_pa"},
     "system_admin": {"admin_panel"},
 }
 
@@ -74,6 +80,10 @@ DEFAULTS = {
     "vendor_manager":      _p(vendor_master=True, admin_panel=True, **_BOOKING),
     "cfo":                 _p(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "auditor":             _p(**_VIEW_ALL, **_BOOKING),
+    # ERP PA Officer: read the whole procurement chain so imported POs/PAs are
+    # visible; epms.pa.write (the actual PA-create gate) is granted separately in
+    # seed_phase2_keys.py / migration 0004.
+    "erp_pa_officer":      _p(**_VIEW_ALL, **_BOOKING),
     "system_admin":        {k: True for k in PERMISSION_KEYS},
 }
 
