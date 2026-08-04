@@ -671,7 +671,7 @@ function HistoryTab({ paId }: { paId: string }) {
     <div className="flex flex-col gap-0 pt-5">
       {events.map((ev, i) => {
         const actionLabel = ev.action.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-        const roleLabel = ev.actor_role.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+        const roleLabel = (ev.actor_role ?? '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
         const isLast = i === events.length - 1
 
         return (
@@ -738,7 +738,7 @@ export default function PaDetailPage() {
   const invalidateAll = async () => {
     await queryClient.invalidateQueries({ queryKey: ['pa', id] })
     await queryClient.invalidateQueries({ queryKey: ['pa-permissions', id] })
-    await queryClient.invalidateQueries({ queryKey: ['pa-list'] })
+    await queryClient.invalidateQueries({ queryKey: ['pa-list-dir'] })
     await queryClient.invalidateQueries({ queryKey: ['pa-history', id] })
     await queryClient.invalidateQueries({ queryKey: ['oa-tasks'] })
   }
