@@ -108,3 +108,27 @@ async def test_get_expense_approval_status_forbidden_for_unrelated_user(test_eng
     async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
         r = await c.get(f"/api/v1/expenses/{cid}/approval-status")
     assert r.status_code == 403
+
+
+from app.models.approval_event_mirror import ApprovalEventMirror
+
+
+async def _seed_event(test_engine, claim_id: uuid.UUID, actor_id: uuid.UUID) -> None:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as s:
+        s.add(ApprovalEventMirror(
+            id=uuid.uuid4(), document_type="expense", document_id=claim_id,
+            document_number="EC-EVT", action="approve",
+            actor_id=actor_id, actor_role="dept_manager",
+        ))
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_get_expense_ok_for_past_actor(test_engine):
+    approver = uuid.uuid4()
+    cid = await _seed_claim(test_engine, employee_id=uuid.uuid4(), status="approved")
+    await _seed_event(test_engine, cid, approver)
+    async with _client(_make_token("requester", str(approver))) as c:
+        r = await c.get(f"/api/v1/expenses/{cid}")
+    assert r.status_code == 200

@@ -341,6 +341,15 @@ async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     wf_roles = {s.get("role") for s in (wf.get(_workflow_key(claim.claim_type)) or [])}
     if role in wf_roles:
         return True
+    from sqlalchemy import select as sa_select, func as sa_func
+    from app.models.approval_event_mirror import ApprovalEventMirror as AEM
+    acted = (await db.execute(
+        sa_select(sa_func.count()).select_from(AEM).where(
+            AEM.document_id == claim.id, AEM.actor_id == user_id
+        )
+    )).scalar_one()
+    if acted:
+        return True
     return await _can_act_on_claim(db, claim, user_id, role)
 
 
