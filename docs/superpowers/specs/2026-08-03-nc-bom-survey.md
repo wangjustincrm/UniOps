@@ -179,7 +179,7 @@ VREPLACEINDEX:VARCHAR2; VROWNO:VARCHAR2; VNOTE:VARCHAR2
 
 ## 级联验证：真实成品 3 层链路全量数据
 
-**成品**: `CF0092` "700g(251)牛芮思_1婴儿奶粉"（`PK_MATERIAL=1001A1100000003GZAG6`... 母件实际 pk 见下）
+**成品**: `CF0092` "700g(251)牛芮思_1婴儿奶粉"（`BD_MATERIAL.PK_MATERIAL=1001A1100000003G6F45`，`select pk_material,code,name from NCSC.BD_MATERIAL where code='CF0092'` 实测复核）
 
 ### Layer 3（顶层/包装层，查询成品直接看到的 BOM）——`CF0092` 自身的 BD_BOM（CBOMID=`1001A1100000003GZAG6`，v1.2，已审核）
 
@@ -282,7 +282,7 @@ VREPLACEINDEX:VARCHAR2; VROWNO:VARCHAR2; VNOTE:VARCHAR2
 ## 增量水位与审批状态字段小结（brief 明确要求单独列出）
 
 - **增量水位**：`BD_BOM.TS` / `BD_BOM_B.TS` / `BD_BOM_REPL.TS`（CHAR，`'YYYY-MM-DD HH24:MI:SS'`，始终有值，可靠）。`MODIFIEDTIME` 仅二次编辑后才非空，不适合做同步游标。
-- **审批状态**：`BD_BOM.FBILLSTATUS`（NUMBER）。观测值：`1`=已审核（1015 个头里 854 个）、`-1`=未审核/草稿（162 个）。已审核行 `APPROVER` 列同时非空（NC 用 `'~'` 表示空值占位符，非 SQL NULL）。
+- **审批状态**：`BD_BOM.FBILLSTATUS`（NUMBER）。观测值：`1`=已审核（1016 个头里 854 个）、`-1`=未审核/草稿（162 个）。已审核行 `APPROVER` 列同时非空（NC 用 `'~'` 表示空值占位符，非 SQL NULL）。
 
 ---
 
