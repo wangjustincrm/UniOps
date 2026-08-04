@@ -114,12 +114,19 @@ async def list_pas(
 
 
 @router.get("/by-po/{po_id}", response_model=PaListResponse)
-async def list_pas_by_po(po_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
-    """Read PAs linked to a specific PO — called by EPMS DocumentChainTree."""
+async def list_pas_by_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
+    """Read PAs linked to a specific PO — called by EPMS DocumentChainTree.
+
+    Object-level authz (IDOR fix): filter to PAs the caller may view (owner /
+    system_admin / _CAN_PAY / approval participant) — same rule as get_pa.
+    """
     items = await pa_crud.get_by_po_id(db, po_id)
+    uid = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+    visible = [p for p in items if await _can_view_pa(db, p, uid, role)]
     return PaListResponse(
-        items=[PaResponse.model_validate(p) for p in items],
-        total=len(items),
+        items=[PaResponse.model_validate(p) for p in visible],
+        total=len(visible),
     )
 
 
@@ -225,11 +232,25 @@ async def patch_direct_pa(
     return PaResponse.model_validate(pa)
 
 
+async def _can_view_pa(db: AsyncSession, pa, user_id: uuid.UUID, role: str) -> bool:
+    """Object-level authz for PA read endpoints (IDOR fix): a user may view a PA iff
+    they are the creator, system_admin, hold a _CAN_PAY role, or are an approval
+    participant (same tasks-table check as get_pa_permissions/_can_act_on_claim)."""
+    if pa.created_by == user_id or role == "system_admin":
+        return True
+    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim
+    if role in _CAN_PAY:
+        return True
+    return await _can_act_on_claim(db, pa, user_id)
+
+
 @router.get("/{pa_id}", response_model=PaResponse)
-async def get_pa(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PA not found")
+    if not await _can_view_pa(db, pa, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this PA")
     return PaResponse.model_validate(pa)
 
 
@@ -275,10 +296,16 @@ async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUser
 
 
 @router.get("/{pa_id}/history", response_model=list[ApprovalEventOut])
-async def get_pa_history(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+async def get_pa_history(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     """Return approval events for this PA from the shared approval_events table."""
     from sqlalchemy import select
     from app.models.approval_event_mirror import ApprovalEventMirror
+
+    pa = await pa_crud.get_by_id(db, pa_id)
+    if not pa:
+        raise HTTPException(status_code=404, detail="PA not found")
+    if not await _can_view_pa(db, pa, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this PA")
 
     result = await db.execute(
         select(ApprovalEventMirror)
