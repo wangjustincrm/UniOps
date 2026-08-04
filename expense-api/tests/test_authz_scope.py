@@ -293,3 +293,102 @@ async def test_vendor_suggestions_forbidden_for_unrelated_user(test_engine):
     async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
         r = await c.get(f"/api/v1/invoices/{iid}/vendor-suggestions?q=abc")
     assert r.status_code == 403
+
+
+# ── Task C1: my_actions derives approver steps from workflow_defs ──────────────
+# Locks in the audit-② remediation: /expenses/my-actions used to consult a
+# hardcoded step-index -> role map (_INBOX_STEP_ROLES) that could drift from
+# the actually-configured company_config.workflow_defs. It now reads
+# workflow_defs at request time (per claim_type, multi-role union via
+# _user_role_codes), so a customised chain (e.g. a role not in the old
+# hardcoded map) surfaces correctly.
+#
+# company_config is a single shared row read by other test modules too
+# (test_pa_permissions.py, test_travel_application_list.py) under the same
+# session-scoped test_engine — so _set_workflow_defs upserts (merging onto
+# the existing dict, like test_travel_application_list.py's helper) and the
+# tests restore the previous value afterward rather than deleting the row.
+
+from app.models.company_config_mirror import EpmsCompanyConfig
+from sqlalchemy import select as _cc_select
+
+
+async def _set_workflow_defs(test_engine, defs: dict) -> dict:
+    """Upsert workflow_defs onto the shared company_config row (merging with
+    whatever other test modules left there), returning the previous value so
+    the caller can restore it."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as s:
+        existing = (await s.execute(_cc_select(EpmsCompanyConfig))).scalars().all()
+        if existing:
+            cfg = existing[0]
+            previous = dict(cfg.workflow_defs or {})
+            cfg.workflow_defs = defs
+        else:
+            previous = {}
+            s.add(EpmsCompanyConfig(
+                id=uuid.uuid4(), dept_gm_opm_mapping={}, role_management={},
+                workflow_defs=defs,
+            ))
+        await s.commit()
+    return previous
+
+
+async def _restore_workflow_defs(test_engine, previous: dict) -> None:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as s:
+        existing = (await s.execute(_cc_select(EpmsCompanyConfig))).scalars().all()
+        if existing:
+            existing[0].workflow_defs = previous
+            await s.commit()
+
+
+async def _seed_claim_at_step(test_engine, employee_id: uuid.UUID, claim_type: str,
+                               step_idx: int, status: str = "in_review") -> uuid.UUID:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    cid = uuid.uuid4()
+    async with factory() as s:
+        s.add(ExpenseClaim(
+            id=cid, claim_number=f"EC-T-{cid.hex[:8]}", claim_type=claim_type,
+            employee_id=employee_id, employee_name="Test Emp",
+            submission_date=date(2026, 8, 3), status=status,
+            approval_step_idx=step_idx, created_by=employee_id,
+        ))
+        await s.commit()
+    return cid
+
+
+@pytest.mark.asyncio
+async def test_my_actions_derives_approver_step_from_workflow_defs(test_engine):
+    # dept_manager is step 0 in the exp chain; finance_bp is step 1.
+    previous = await _set_workflow_defs(test_engine, {"exp": [
+        {"id": "s0", "role": "dept_manager", "label": "Dept Manager"},
+        {"id": "s1", "role": "finance_bp", "label": "Finance BP"},
+    ]})
+    try:
+        c0 = await _seed_claim_at_step(test_engine, uuid.uuid4(), "EXP", 0)  # at step 0
+        c1 = await _seed_claim_at_step(test_engine, uuid.uuid4(), "EXP", 1)  # at step 1
+        async with _client(_make_token("dept_manager", str(uuid.uuid4()))) as c:
+            r = await c.get("/api/v1/expenses/my-actions")
+        assert r.status_code == 200
+        ids = {i["id"] for i in r.json()["items"]}
+        assert str(c0) in ids and str(c1) not in ids   # dept_manager only sees step 0
+    finally:
+        await _restore_workflow_defs(test_engine, previous)
+
+
+@pytest.mark.asyncio
+async def test_my_actions_custom_role_not_in_default_map(test_engine):
+    # A customised chain assigns step 0 to a role absent from the old hardcoded
+    # map ("gm") -> that role must still see the claim in its inbox.
+    previous = await _set_workflow_defs(test_engine, {"exp": [
+        {"id": "s0", "role": "gm", "label": "GM"},
+    ]})
+    try:
+        c0 = await _seed_claim_at_step(test_engine, uuid.uuid4(), "EXP", 0)
+        async with _client(_make_token("gm", str(uuid.uuid4()))) as c:
+            r = await c.get("/api/v1/expenses/my-actions")
+        assert r.status_code == 200
+        assert str(c0) in {i["id"] for i in r.json()["items"]}
+    finally:
+        await _restore_workflow_defs(test_engine, previous)
