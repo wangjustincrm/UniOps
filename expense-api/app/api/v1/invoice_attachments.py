@@ -31,6 +31,11 @@ class AttachmentMeta(BaseModel):
     download_url: str | None = None
 
 
+def _can_access_invoice_attachment(att: InvoiceAttachment, user_id: uuid.UUID, role: str) -> bool:
+    from app.api.v1.expenses import _CAN_PAY
+    return att.uploaded_by == user_id or role == "system_admin" or role in _CAN_PAY
+
+
 def _meta(att: InvoiceAttachment, base_url: str = "") -> AttachmentMeta:
     dl = f"{base_url}/api/v1/invoice-attachments/{att.id}/file" if att.storage_key else None
     return AttachmentMeta(
@@ -89,7 +94,7 @@ async def upload_attachment(
 @router.get("", response_model=list[AttachmentMeta])
 async def list_attachments(
     db: SessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
     invoice_id: uuid.UUID = Query(...),
     invoice_source: str = Query("oa"),
 ):
@@ -101,20 +106,24 @@ async def list_attachments(
         )
         .order_by(InvoiceAttachment.uploaded_at)
     )
-    return [_meta(a) for a in result.scalars()]
+    uid = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+    return [_meta(a) for a in result.scalars() if _can_access_invoice_attachment(a, uid, role)]
 
 
 @router.get("/{attachment_id}/file")
 async def serve_attachment(
     attachment_id: uuid.UUID,
     db: SessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
     token: BearerTokenDep,
 ):
     """Proxy file download from file-api."""
     att = await db.get(InvoiceAttachment, attachment_id)
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    if not _can_access_invoice_attachment(att, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to access this attachment")
     if not att.storage_key:
         raise HTTPException(status_code=410, detail="File not available (legacy record without storage key)")
     return await proxy_download(att.storage_key, token)
@@ -124,12 +133,14 @@ async def serve_attachment(
 async def delete_attachment(
     attachment_id: uuid.UUID,
     db: SessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
     token: BearerTokenDep,
 ):
     att = await db.get(InvoiceAttachment, attachment_id)
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    if not _can_access_invoice_attachment(att, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to access this attachment")
     if att.storage_key:
         await delete_from_file_server(att.storage_key, token)
     await db.delete(att)

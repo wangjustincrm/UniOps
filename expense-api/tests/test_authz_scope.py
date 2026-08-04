@@ -132,3 +132,73 @@ async def test_get_expense_ok_for_past_actor(test_engine):
     async with _client(_make_token("requester", str(approver))) as c:
         r = await c.get(f"/api/v1/expenses/{cid}")
     assert r.status_code == 200
+
+
+from app.models.invoice_attachment import InvoiceAttachment
+from app.models.expense import ExpenseAttachment
+
+
+async def _seed_claim_attachment(test_engine, claim_id: uuid.UUID) -> uuid.UUID:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    aid = uuid.uuid4()
+    async with factory() as s:
+        s.add(ExpenseAttachment(id=aid, claim_id=claim_id, file_id=str(uuid.uuid4()),
+                                file_name="r.pdf", mime_type="application/pdf",
+                                file_size_bytes=10))
+        await s.commit()
+    return aid
+
+
+async def _seed_invoice_attachment(test_engine, uploaded_by: uuid.UUID) -> uuid.UUID:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    aid = uuid.uuid4()
+    async with factory() as s:
+        s.add(InvoiceAttachment(id=aid, invoice_id=uuid.uuid4(), invoice_source="oa",
+                                file_name="inv.pdf", content_type="application/pdf",
+                                file_size_bytes=10, storage_key=uuid.uuid4(),
+                                uploaded_by=uploaded_by))
+        await s.commit()
+    return aid
+
+
+@pytest.mark.asyncio
+async def test_list_claim_attachments_forbidden_for_unrelated_user(test_engine):
+    cid = await _seed_claim(test_engine, employee_id=uuid.uuid4())
+    await _seed_claim_attachment(test_engine, cid)
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.get(f"/api/v1/expenses/{cid}/attachments")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_claim_attachment_forbidden_for_non_owner(test_engine):
+    cid = await _seed_claim(test_engine, employee_id=uuid.uuid4(), status="draft")
+    aid = await _seed_claim_attachment(test_engine, cid)
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.delete(f"/api/v1/expenses/{cid}/attachments/{aid}")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_serve_invoice_attachment_forbidden_for_unrelated_user(test_engine):
+    aid = await _seed_invoice_attachment(test_engine, uploaded_by=uuid.uuid4())
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.get(f"/api/v1/invoice-attachments/{aid}/file")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_invoice_attachment_forbidden_for_unrelated_user(test_engine):
+    aid = await _seed_invoice_attachment(test_engine, uploaded_by=uuid.uuid4())
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.delete(f"/api/v1/invoice-attachments/{aid}")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_serve_invoice_attachment_ok_for_uploader(test_engine):
+    uploader = uuid.uuid4()
+    aid = await _seed_invoice_attachment(test_engine, uploaded_by=uploader)
+    async with _client(_make_token("requester", str(uploader))) as c:
+        r = await c.get(f"/api/v1/invoice-attachments/{aid}/file")
+    assert r.status_code in (200, 410, 502)   # passes authz; may 410/502 because file-api is unreachable in tests, but never 403/404

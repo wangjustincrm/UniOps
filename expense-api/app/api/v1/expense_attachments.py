@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
+from app.api.v1.expenses import _can_view_claim
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud.expense import get_by_id as get_claim
 from app.models.expense import ExpenseAttachment
@@ -40,7 +41,12 @@ def _out(att: ExpenseAttachment) -> AttachmentOut:
 
 
 @router.get("", response_model=list[AttachmentOut])
-async def list_claim_attachments(claim_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+async def list_claim_attachments(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
+    claim = await get_claim(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this claim's attachments")
     result = await db.execute(
         select(ExpenseAttachment)
         .where(ExpenseAttachment.claim_id == claim_id)
@@ -101,13 +107,18 @@ async def download_claim_attachment(
     claim_id: uuid.UUID,
     att_id: uuid.UUID,
     db: SessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
     token: BearerTokenDep,
 ):
     """Proxy file download from file-api."""
     att = await db.get(ExpenseAttachment, att_id)
     if not att or att.claim_id != claim_id:
         raise HTTPException(status_code=404, detail="Attachment not found")
+    claim = await get_claim(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this claim's attachments")
     if not att.file_id:
         raise HTTPException(status_code=410, detail="File reference missing")
     return await proxy_download(uuid.UUID(att.file_id), token)
@@ -125,6 +136,8 @@ async def delete_claim_attachment(
     if not att or att.claim_id != claim_id:
         raise HTTPException(status_code=404, detail="Attachment not found")
     claim = await get_claim(db, claim_id)
+    if claim and claim.employee_id != uuid.UUID(user["sub"]) and user.get("role", "") != "system_admin":
+        raise HTTPException(status_code=403, detail="Only the owner can delete this attachment")
     if claim and claim.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail="Cannot delete attachment from submitted claim")
     if att.file_id:
