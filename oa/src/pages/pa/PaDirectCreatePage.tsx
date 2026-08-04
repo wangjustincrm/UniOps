@@ -330,12 +330,13 @@ function Step2Review({
   // Auto-select when server returns an exact or close match
   useEffect(() => {
     if (selectedVendorId || vendors.length === 0) return
-    const extractedName = (initial.vendorName ?? '').toLowerCase()
+    const extractedName = (initial.vendorName ?? '').trim().toLowerCase()
+    if (extractedName.length < 3) return   // OCR 无名/太短 → 不自动匹配（避免 includes('') 恒真误配 vendors[0]）
     const exact = vendors.find(v => v.name.toLowerCase() === extractedName)
-    const partial = vendors.find(v =>
-      v.name.toLowerCase().includes(extractedName) ||
-      extractedName.includes(v.name.toLowerCase())
-    )
+    const partial = vendors.find(v => {
+      const n = v.name.toLowerCase()
+      return n.includes(extractedName) || extractedName.includes(n)
+    })
     const match = exact ?? partial
     if (match) setSelectedVendorId(match.id)
   }, [vendors])
