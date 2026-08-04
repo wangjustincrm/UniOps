@@ -20,8 +20,28 @@ MODULE_BY_KEY = {
     "view_budget_dashboard": "finance", "view_budget_plans": "finance",
     "view_finance": "finance",
     "view_booking": "booking", "manage_meeting_rooms": "booking",
+    # MRP phase-0 module keys (design: 2026-08-03-mrp-subsystem-design.md).
+    # Not pre-granted to any role — Portal Access Control matrix grants them.
+    "mrp.demand.write": "mrp", "mrp.run.execute": "mrp",
+    "mrp.proposal.confirm": "mrp", "mrp.proposal.export": "mrp",
+    "mrp.exception.handle": "mrp", "mrp.param.write": "mrp",
+    "mrp.report.view": "mrp", "mdm.bom.write": "mdm",
 }
 PERMISSION_KEYS = list(MODULE_BY_KEY)  # keeps epms UI order
+
+# Auto-derived labels (key.replace("_", " ").title()) only work for flat
+# snake_case keys. Namespaced dotted keys (module.action.verb, matching the
+# phase-2 key style in seed_phase2_keys.py) need an explicit English label.
+LABEL_OVERRIDES = {
+    "mrp.demand.write": "Demand import / maintenance / freeze",
+    "mrp.run.execute": "Start / stop MRP runs",
+    "mrp.proposal.confirm": "Confirm / lock / ignore proposals",
+    "mrp.proposal.export": "Export / notify purchase proposals",
+    "mrp.exception.handle": "Close / ignore / annotate exceptions",
+    "mrp.param.write": "Planning parameters, status mapping, calendars",
+    "mrp.report.view": "Reports, supply-demand detail, BOM browsing",
+    "mdm.bom.write": "BOM / material governance fields",
+}
 
 ROLE_LABELS = {  # built-in 17
     "requester": "Requester", "dept_admin": "Department Admin",
@@ -114,7 +134,7 @@ async def seed_authz(session) -> dict:
             {"c": cr["code"], "l": cr.get("label", cr["code"]), "a": cr.get("is_active", True)})
 
     for i, (key, module) in enumerate(MODULE_BY_KEY.items()):
-        label = key.replace("_", " ").title()
+        label = LABEL_OVERRIDES.get(key) or key.replace("_", " ").title()
         await session.execute(sa.text(
             "INSERT INTO permission_defs(key,module,label,sort) VALUES (:k,:m,:l,:s) "
             "ON CONFLICT (key) DO NOTHING"), {"k": key, "m": module, "l": label, "s": i})
