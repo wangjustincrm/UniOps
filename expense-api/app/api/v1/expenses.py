@@ -332,11 +332,25 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     )
 
 
+async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
+    if claim.employee_id == user_id or role == "system_admin":
+        return True
+    if role in _CAN_PAY:
+        return True
+    wf = await _get_workflow_defs(db)
+    wf_roles = {s.get("role") for s in (wf.get(_workflow_key(claim.claim_type)) or [])}
+    if role in wf_roles:
+        return True
+    return await _can_act_on_claim(db, claim, user_id, role)
+
+
 @router.get("/{claim_id}", response_model=ExpenseClaimResponse)
-async def get_expense(claim_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+async def get_expense(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
     return ExpenseClaimResponse.model_validate(claim)
 
 
@@ -391,7 +405,7 @@ class ApprovalStepOut(BaseModel):
 
 
 @router.get("/{claim_id}/approval-status", response_model=list[ApprovalStepOut])
-async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, _: CurrentUserDep):
+async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep):
     """Approval chain for a claim: each workflow step + who approved / who is pending.
 
     Steps come from company_config.workflow_defs (the configured chain); states are
@@ -404,6 +418,9 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, _: CurrentUse
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
+
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
 
     wf = await _get_workflow_defs(db)
     steps = wf.get(_action_key(claim.claim_type)) or wf.get(_workflow_key(claim.claim_type)) or []

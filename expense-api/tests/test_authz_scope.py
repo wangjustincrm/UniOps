@@ -64,3 +64,47 @@ async def test_by_po_filters_out_unrelated_pas(test_engine):
         r = await c.get(f"/api/v1/pa/by-po/{po_id}")
     assert r.status_code == 200
     assert r.json()["total"] == 0
+
+
+from app.models.expense import ExpenseClaim
+from datetime import date
+
+
+async def _seed_claim(test_engine, employee_id: uuid.UUID, claim_type: str = "EXP",
+                      status: str = "submitted") -> uuid.UUID:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    cid = uuid.uuid4()
+    async with factory() as s:
+        s.add(ExpenseClaim(
+            id=cid, claim_number=f"EC-T-{cid.hex[:8]}", claim_type=claim_type,
+            employee_id=employee_id, employee_name="Test Emp",
+            submission_date=date(2026, 8, 3), status=status,
+            created_by=employee_id,
+        ))
+        await s.commit()
+    return cid
+
+
+@pytest.mark.asyncio
+async def test_get_expense_forbidden_for_unrelated_user(test_engine):
+    cid = await _seed_claim(test_engine, employee_id=uuid.uuid4())
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.get(f"/api/v1/expenses/{cid}")
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_get_expense_ok_for_owner(test_engine):
+    owner = uuid.uuid4()
+    cid = await _seed_claim(test_engine, employee_id=owner)
+    async with _client(_make_token("requester", str(owner))) as c:
+        r = await c.get(f"/api/v1/expenses/{cid}")
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_get_expense_approval_status_forbidden_for_unrelated_user(test_engine):
+    cid = await _seed_claim(test_engine, employee_id=uuid.uuid4())
+    async with _client(_make_token("requester", str(uuid.uuid4()))) as c:
+        r = await c.get(f"/api/v1/expenses/{cid}/approval-status")
+    assert r.status_code == 403
