@@ -1,8 +1,8 @@
 """
 Daily follow-up scheduler — re-notifies users about open tasks.
 
-Runs at 08:00 server time every day via an asyncio background loop.
-Started in app/main.py lifespan.
+Runs once a day at ``notification_settings.followup_time`` (UTC, default
+08:00) via an asyncio background loop. Started in app/main.py lifespan.
 """
 from __future__ import annotations
 
@@ -61,14 +61,51 @@ def _seconds_until_next_run(hour: int = 8, minute: int = 0) -> float:
     return (target - now).total_seconds()
 
 
-async def daily_followup_loop(hour: int = 8, minute: int = 0) -> None:
+def _parse_followup_time(value) -> tuple[int, int]:
+    """Parse a ``"HH:MM"`` config value; anything unparseable → (8, 0)."""
+    try:
+        hh, mm = str(value).strip().split(":")
+        hour, minute = int(hh), int(mm)
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return hour, minute
+    except (ValueError, AttributeError):
+        pass
+    logger.warning("Daily follow-up: invalid followup_time %r — falling back to 08:00Z", value)
+    return 8, 0
+
+
+async def _load_schedule() -> tuple[int, int]:
+    """Read notification_settings.followup_time from company config → (hour, minute) UTC."""
+    try:
+        async with session_module.AsyncSessionLocal() as db:
+            cfg = await get_config(db)
+            raw = (cfg.notification_settings or {}).get("followup_time")
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 — a broken DB must not kill the loop
+        logger.error("Daily follow-up: failed to load schedule, using 08:00Z: %s", exc)
+        return 8, 0
+    return _parse_followup_time(raw) if raw is not None else (8, 0)
+
+
+# Config poll cap: while far from the target time the loop only naps this long
+# before re-reading followup_time, so an admin change applies within ~15 min
+# instead of after the previously scheduled (up to 24 h away) run.
+_RECHECK_SECONDS = 900
+
+
+async def daily_followup_loop() -> None:
     """
-    Infinite asyncio loop that fires run_daily_followup() once per day at hour:minute UTC.
+    Infinite asyncio loop that fires run_daily_followup() once per day at the
+    configured followup_time (UTC).
 
     Run as: asyncio.create_task(daily_followup_loop())
     """
     while True:
+        hour, minute = await _load_schedule()
         wait = _seconds_until_next_run(hour, minute)
+        if wait > _RECHECK_SECONDS:
+            await asyncio.sleep(_RECHECK_SECONDS)
+            continue
         logger.info("Daily follow-up: next run in %.0f seconds (at %02d:%02dZ)", wait, hour, minute)
         await asyncio.sleep(wait)
         await run_daily_followup()

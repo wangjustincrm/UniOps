@@ -908,7 +908,8 @@ function NotificationSettings() {
   const ns = cfg?.notification_settings
   const channelVal = channel || ns?.default_channel || 'email_only'
   const webhookVal = webhook !== '' ? webhook : (ns?.teams_webhook_url ?? '')
-  const followupVal = followup || ns?.followup_time || '09:00'
+  // '08:00' mirrors the backend default (_DEFAULT_NOTIFICATION_SETTINGS / scheduler fallback).
+  const followupVal = followup || ns?.followup_time || '08:00'
   const dailyFollowupVal = dailyFollowup ?? ns?.daily_followup_enabled ?? false
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
@@ -1077,7 +1078,7 @@ function NotificationSettings() {
           <span className="text-xs text-neutral-500">{dailyFollowupVal ? 'On — daily reminders are sent' : 'Off — no daily reminders'}</span>
         </div>
       </Field>
-      <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day.">
+      <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
 
