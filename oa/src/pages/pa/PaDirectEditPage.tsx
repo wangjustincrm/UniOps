@@ -5,6 +5,7 @@ import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react'
 import { api, epmsApi, budgetApi } from '@/lib/api'
+import { isEditable } from '@/lib/status'
 import { useOaAuth } from '@/store/auth'
 
 interface Pa {
@@ -85,7 +86,7 @@ export default function PaDirectEditPage() {
     <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-400" /></div>
   )
   if (!pa) return <div className="py-16 text-center text-sm text-danger-500">Payment application not found</div>
-  if (!['draft', 'returned'].includes(pa.status)) return (
+  if (!isEditable(pa.status)) return (
     <div className="flex flex-col gap-4 max-w-2xl">
       <a href={`/pa/${id}`} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700">
         <ArrowLeft className="h-4 w-4" />Back to PA

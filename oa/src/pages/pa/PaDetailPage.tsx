@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api, epmsApi } from '@/lib/api'
+import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
 
@@ -113,7 +114,7 @@ function ActionArea({
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
 
-  if ((status === 'draft' || status === 'returned') && isOwner) {
+  if (isEditable(status) && isOwner) {
     return (
       <div className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -123,17 +124,17 @@ function ActionArea({
               <Pencil className="h-4 w-4" />Edit
             </a>
           )}
-          <button onClick={() => onAction('submit')} disabled={acting}
+          <button onClick={() => onAction(ACTION.SUBMIT)} disabled={acting}
             className="flex items-center gap-2 rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
             {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-            {status === 'returned' ? 'Resubmit for Approval' : 'Submit for Approval'}
+            {status === STATUS.RETURNED ? 'Resubmit for Approval' : 'Submit for Approval'}
           </button>
-          <button onClick={() => onAction('cancel')} disabled={acting}
+          <button onClick={() => onAction(ACTION.CANCEL)} disabled={acting}
             className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 transition-colors">
             <XCircle className="h-4 w-4" />Cancel
           </button>
         </div>
-        {status === 'returned' && (
+        {status === STATUS.RETURNED && (
           <p className="text-xs text-warning-600 bg-warning-50 border border-warning-200 rounded-lg px-3 py-2">
             This PA was returned for revision. Check the History tab for comments before resubmitting.
           </p>
@@ -143,20 +144,20 @@ function ActionArea({
     )
   }
 
-  if (status === 'submitted' || status === 'in_review') {
+  if (isInApproval(status)) {
     if (canApprove) {
       return (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <button onClick={() => onOpenModal('approve')} disabled={acting}
+            <button onClick={() => onOpenModal(ACTION.APPROVE)} disabled={acting}
               className="flex items-center gap-2 rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50 transition-colors">
               <CheckCircle2 className="h-4 w-4" />Approve
             </button>
-            <button onClick={() => onOpenModal('return')} disabled={acting}
+            <button onClick={() => onOpenModal(ACTION.RETURN)} disabled={acting}
               className="flex items-center gap-2 rounded-lg border border-warning-200 bg-white px-4 py-2 text-sm font-medium text-warning-700 hover:bg-warning-50 disabled:opacity-50 transition-colors">
               <RotateCcw className="h-4 w-4" />Return
             </button>
-            <button onClick={() => onOpenModal('reject')} disabled={acting}
+            <button onClick={() => onOpenModal(ACTION.REJECT)} disabled={acting}
               className="flex items-center gap-2 rounded-lg border border-danger-200 bg-white px-4 py-2 text-sm font-medium text-danger-600 hover:bg-danger-50 disabled:opacity-50 transition-colors">
               <XCircle className="h-4 w-4" />Reject
             </button>
@@ -168,7 +169,7 @@ function ActionArea({
     if (isOwner) {
       return (
         <div className="flex flex-col gap-3">
-          <button onClick={() => onAction('recall')} disabled={acting}
+          <button onClick={() => onAction(ACTION.RECALL)} disabled={acting}
             className="flex items-center gap-2 self-start rounded-lg border border-warning-200 bg-warning-50 px-4 py-2 text-sm font-medium text-warning-700 hover:bg-warning-100 disabled:opacity-50 transition-colors">
             {acting ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
             Recall to Draft
@@ -183,10 +184,10 @@ function ActionArea({
     return null
   }
 
-  if (status === 'approved' && canPay) {
+  if (status === STATUS.APPROVED && canPay) {
     return (
       <div className="flex flex-col gap-3">
-        <button onClick={() => onOpenModal('pay')} disabled={acting}
+        <button onClick={() => onOpenModal(ACTION.PAY)} disabled={acting}
           className="flex items-center gap-2 self-start rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700 disabled:opacity-50 transition-colors">
           <CreditCard className="h-4 w-4" />Mark as Processed
         </button>
@@ -211,12 +212,12 @@ function ActionModal({
 }) {
   const [comment, setComment] = useState('')
   const labels: Record<string, { title: string; color: string }> = {
-    approve: { title: 'Approve Payment', color: 'bg-success-600 text-white' },
-    return:  { title: 'Return for Revision', color: 'bg-warning-500 text-white' },
-    reject:  { title: 'Reject Payment', color: 'bg-danger-600 text-white' },
+    [ACTION.APPROVE]: { title: 'Approve Payment', color: 'bg-success-600 text-white' },
+    [ACTION.RETURN]:  { title: 'Return for Revision', color: 'bg-warning-500 text-white' },
+    [ACTION.REJECT]:  { title: 'Reject Payment', color: 'bg-danger-600 text-white' },
   }
   const cfg = labels[action] ?? { title: action, color: 'bg-neutral-800 text-white' }
-  const commentRequired = action === 'return' || action === 'reject'
+  const commentRequired = action === ACTION.RETURN || action === ACTION.REJECT
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -612,13 +613,13 @@ function AttachmentsTab({ pa, perms }: { pa: Pa; perms: PaPermissions | undefine
 // ── History tab ───────────────────────────────────────────────────────────────
 
 const ACTION_COLORS: Record<string, string> = {
-  submit:   'bg-info-100 text-info-700',
-  approve:  'bg-success-100 text-success-700',
-  return:   'bg-warning-100 text-warning-700',
-  reject:   'bg-danger-100 text-danger-700',
-  cancel:   'bg-danger-100 text-danger-500',
-  recall:   'bg-warning-100 text-warning-700',
-  process:  'bg-success-100 text-success-700',
+  [ACTION.SUBMIT]:  'bg-info-100 text-info-700',
+  [ACTION.APPROVE]: 'bg-success-100 text-success-700',
+  [ACTION.RETURN]:  'bg-warning-100 text-warning-700',
+  [ACTION.REJECT]:  'bg-danger-100 text-danger-700',
+  [ACTION.CANCEL]:  'bg-danger-100 text-danger-500',
+  [ACTION.RECALL]:  'bg-warning-100 text-warning-700',
+  process:  'bg-success-100 text-success-700', // PA-specific pay outcome; not in ACTION enum
 }
 
 function HistoryTab({ paId }: { paId: string }) {
@@ -800,9 +801,9 @@ export default function PaDetailPage() {
 
         {/* Action buttons — visibility resolved server-side via /permissions */}
         {(
-          (['draft', 'returned'].includes(pa.status) && perms?.is_owner) ||
-          (['submitted', 'in_review'].includes(pa.status) && (perms?.is_owner || perms?.can_approve)) ||
-          (pa.status === 'approved' && perms?.can_pay)
+          (isEditable(pa.status) && perms?.is_owner) ||
+          (isInApproval(pa.status) && (perms?.is_owner || perms?.can_approve)) ||
+          (pa.status === STATUS.APPROVED && perms?.can_pay)
         ) && (
           <div className="border-t border-neutral-100 pt-4">
             <ActionArea pa={pa} perms={perms} onAction={handleAction}
@@ -813,7 +814,7 @@ export default function PaDetailPage() {
       </div>
 
       {/* Approve / Return / Reject modal */}
-      {activeModal && activeModal !== 'pay' && (
+      {activeModal && activeModal !== ACTION.PAY && (
         <ActionModal
           action={activeModal}
           loading={acting}
@@ -824,7 +825,7 @@ export default function PaDetailPage() {
       )}
 
       {/* Mark as Processed modal */}
-      {activeModal === 'pay' && (
+      {activeModal === ACTION.PAY && (
         <ProcessPaymentModal
           docNumber={pa.pa_number}
           currency={pa.currency}
