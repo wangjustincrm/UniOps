@@ -22,7 +22,9 @@ class GrLineItemIn(BaseModel):
     qty_ordered: Decimal = Field(gt=0)
     qty_received: Decimal = Field(ge=0)
     unit: str = Field(min_length=1, max_length=30)
-    unit_price: Decimal = Field(ge=0)
+    # unit_price may be 0 or negative, mirroring PO lines: a discount / rebate /
+    # credit line carries a negative price so its line_total nets down the total.
+    unit_price: Decimal
     condition: str = Field(default="good", max_length=20)
     discrepancy_notes: str | None = None
     actual_qty: Decimal | None = Field(default=None, ge=0)

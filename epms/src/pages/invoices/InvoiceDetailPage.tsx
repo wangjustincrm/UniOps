@@ -820,7 +820,6 @@ export default function InvoiceDetailPage() {
                             <td className="py-1.5 px-1">
                               <input
                                 type="number"
-                                min="0"
                                 step="0.01"
                                 value={item.unit_price}
                                 onChange={(e) => updateEditLineItem(idx, { unit_price: parseFloat(e.target.value) || 0 })}

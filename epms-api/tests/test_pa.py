@@ -127,6 +127,19 @@ async def test_create_pa(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_create_pa_with_negative_discount_line(admin_client):
+    """PA 行由前端直传 PO 行(含负单价折扣行);头部 subtotal 仍须非负。"""
+    v = await _make_vendor(admin_client, "VND-PA-NEG-01")
+    po = await _make_po(admin_client, v["id"])
+    pa = await _create_pa(admin_client, po["id"], line_items=[
+        {"description": "Filter Set", "qty": "5", "unit": "EA", "unit_price": "80.00"},
+        {"description": "30% Discount", "qty": "1", "unit": "EA", "unit_price": "-100.00"},
+    ], subtotal="300.00", tax_amount="39.00",
+        receipt_override=True, receipt_override_reason="negative line test setup")
+    assert float(pa["line_items"][1]["unit_price"]) == -100.00
+
+
+@pytest.mark.asyncio
 async def test_list_pas(admin_client):
     v = await _make_vendor(admin_client, "VND-PA-LIST-01")
     po = await _make_approved_po(admin_client, v["id"])

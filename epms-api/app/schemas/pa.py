@@ -20,7 +20,9 @@ class PaLineItemIn(BaseModel):
     description: str = Field(min_length=1, max_length=500)
     qty: Decimal = Field(gt=0)
     unit: str = Field(min_length=1, max_length=30)
-    unit_price: Decimal = Field(ge=0)
+    # unit_price may be 0 or negative, mirroring PO lines: a discount / rebate /
+    # credit line carries a negative price (header subtotal stays >= 0).
+    unit_price: Decimal
     notes: str | None = None
 
     @property
