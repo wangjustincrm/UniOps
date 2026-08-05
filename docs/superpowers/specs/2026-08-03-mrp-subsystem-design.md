@@ -1,6 +1,8 @@
 # MRP 子系统设计（UniOps 单工厂一期）
 
-日期：2026-08-03 ｜ 状态：V1.7 待用户评审 ｜ 依据：`奶粉企业MRP子系统PRD_单工厂一期.md` V1.0 + UniOps 现有架构
+日期：2026-08-03（V2.0 修订 2026-08-04）｜ 状态：**V2.0** ｜ 依据：`奶粉企业MRP子系统PRD_单工厂一期.md` V1.0 + UniOps 现有架构 + 用户业务澄清
+
+> **V2.0 是当前有效版本。** Phase 0 已实施完成（见第五部分）；**第六部分是 Phase 1 的重新设计**——经与业务方确认，MRP 之前还有一层此前未纳入范围的「产能受限主生产计划（MPS）」，那才是 MRP 的真正输入。V1.1–V1.8 修订记录保留在下方作为决策溯源。
 
 **V1.1 修订（按用户拍板）**：① BOM 从 ERP 数据库直连拉取；② WMS 库存从 WMS 数据库直连拉取；③ **MRP 只出采购建议、不建采购单**——原料采购在 NC 执行，UniOps 从 NC 拉采购单做付款（复用已上线的 NC 采购镜像链路）。
 **V1.2 修订**：经核实 `nc_purchase_sync` 代码（main），NC 采购镜像**已覆盖全部已审批 PO**（原奶+原料/包材），无需扩展镜像范围。
@@ -10,7 +12,6 @@
 **V1.6 修订（WMS 接入信息落地）**：WMS 数据库 = **Oracle `10.10.95.43:1521/wmsdb`，用户 FEIHE_WMS**（凭据存 `c:/Project/wms_conn.env`，不入设计文档/git，仿 nc65_conn.env 惯例）。实测：① dev 机 TCP 1521 连通 ✅；② **服务端为老版本 Oracle（≤11g，thin 模式报 DPY-3010 不支持）→ mrp-api 的 WMS reader 必须用 python-oracledb thick 模式 + Oracle Instant Client 19c（Dockerfile 需打入 instantclient，19c 客户端兼容 11g 服务端；NC65 直连不受影响仍走 thin）**。
 **V1.7 修订（WMS 表结构调研完成 ✅）**：凭据修正后已完成只读调研，**WMS = 富勒 Flux WMS**，Phase 0 的 WMS 部分基本完成，结果见附录 A。库存状态映射可直接预填：`QLT_STS 02=Release→available / 01=Block→hold / 04=Under Inspection→hold / 过期由失效日期派生`。
 **V1.8 修订（用户补充 BOM 级联结构）**：**一个产品的 BOM 是级联三层：制粉 BOM → 干混 BOM（可选）→ 包装 BOM**。检索成品只能看到包装 BOM；包装 BOM 的组件中含半成品粉，半成品粉再关联制粉 BOM 或干混 BOM。设计影响：① 规范化 `boms` 表增加 `bom_type` 字段（milling 制粉 / drymix 干混 / packaging 包装，NC 侧区分方式由 Phase 0 调研确认）；② 引擎展开必须**按组件递归逐层展开**（成品→包装 BOM→半成品粉→干混/制粉 BOM→原料），与既有 LLC 逐层展开设计一致，禁止只展开成品一层；③ `GET /boms/effective` 按"产品物料 code"查单层，多层链路由引擎/前端逐层跟随组件递归查询。
-**V1.9 修订（Phase 0 出口验收 ✅）**：Phase 0 已在分支 `feature/mrp-phase0-foundations` 实施完成（2026-08-04），出口标准（测试基线/三层 BOM 级联真数据/WMS 库存时效）验证通过，记录见本任务 commit message（`docs(mrp): phase0 exit criteria verified`）。
 
 ---
 
@@ -224,3 +225,252 @@ mrp/ 前端(5179) ──> mrp-api；portal navConfig 注册入口
 ---
 
 *本设计文档未提交 git（commit 需用户同意）。评审通过后进入 writing-plans 出实施计划（Phase 0 先行）。*
+
+---
+
+## 第五部分：Phase 0 实施结果（已完成 2026-08-04）
+
+分支 `feature/mrp-phase0-foundations`（worktree `c:/Project/uniops-mrp-phase0`），19 commits，**未合并未 push**。
+
+交付：mdm-api 迁移 0007–0013（materials 主数据 / erp_material 扩 exp+product_family / uom_conversions / NC BOM 三表原始镜像 / 规范化 boms+bom_lines+bom_substitutes + `/boms/effective` / material_suppliers + 主供应商偏唯一索引）；**新服务 mrp-api:8011**（`alembic_version_mrp`，Dockerfile 打入 Instant Client 19c 走 thick 模式，`wms_inventory_lots` + `mrp_status_mapping` + `mrp_sync_state`）；identity-api 8 个 mrp 权限键。
+
+真实数据验证：BOM 三层级联 CF0092(包装 v1.3)→CW0001(干混 v1.1)→CS0026(制粉 v1.6)→16 条 CR 原料；WMS 镜像 3532 批次（available 2708 / hold 525 / expired 299）；materials 2567 条。测试 mdm 72 / mrp 14 全通过。
+
+上生产必做：`migrate-prod.sh` 已含 mrp-api；**须手动跑 `seed_authz`**（DEPLOYMENT.md 已记，注意重跑会复活管理员取消过的授权）；发布镜像数 15→16。
+
+**Phase 0 补丁（2026-08-04 实测发现，随分支修复）**：① `bom_type` 前缀映射补 S→packaging（S 是当前成品编码，CF 是早期编码，31 张被误判 unknown）；② `bom_lines.uom` 存的是 NC `pk_measdoc` 裸主键，reader 须补 `BD_MEASDOC` 映射；③ 补辅单位量（NC `NASSITEMNUM`）——S 成品主单位 KG、辅单位 PIECES，BOM 两个单位的值都有；④ `EA` 与 `PIECES` 语义相同（个），归一为 `EA`；⑤ CM（标准化奶）两年前已弃用，母件 BOM 55 张排除、CM 组件行计入 warnings。
+
+---
+
+## 第六部分：Phase 1 重新设计（V2.0 核心）
+
+### 6.1 为什么重新设计
+
+原设计把 MRP 的输入简化为「需求导入」。与业务方确认后，真实链路在 MRP 之前还有一整层：**销售预测 → 扣库存得净需求 → 受产能约束编制生产计划（含提前生产）→ 生产计划才是 MRP 的输入**。这一层不是 PRD 排除的「详细有限产能排程」（排到工序/设备/班次），而是月度粗产能校验 + 提前生产（RCCP + MPS），**必须做，否则 MRP 没有输入**。
+
+另经实测确认（`demand-source-survey.md`）：**全厂没有任何系统持有前瞻需求**——NC 的预测/MPS 表全部 0 行，销售订单与生产订单都无未来日期，WMS 出库单 1575 张里仅 1 张未来日期。因此销售预测**必须由 UniOps 自建表单承载**，不是降级方案而是唯一方案。
+
+### 6.2 端到端链路
+
+```
+① 销售预测（18 个月 x 产品 x 月度量）      <- 系统内建网格表单 + 导入导出，月度滚动版本
+        |  扣减
+② 可用库存 = WMS 本地库存（自动 30 分钟）
+           + 代储仓库存（单个主仓，成品，周度人工录入：产品+数量+盘点日期+批次号）
+           + 已排产未入库
+        v
+③ 净需求（月 x 产品）
+        |  受产能规则约束压缩／前移（保质期硬校验）
+        v
+④ 生产计划 MPS（产品 x 月 x 数量 x 计划生产日期，标注是否提前生产）
+        |  计划员调整 -> 确认发布
+        v
+⑤ MRP 运算：按 BOM 逐层展开（S/CF 包装 -> CW 干混(可选) -> CS 制粉 -> CR 原料 / CP 包材）
+        v
+⑥ 采购建议 -> 导出/通知采购员 -> NC 下单 -> NC 采购镜像回流成在途
+        v
+⑦ 月末：实际产出回填（NC MM_MO.NINNUM 预填 + 人工确认）-> 计划达成率 + 差欠结转决策
+```
+
+### 6.3 关键业务规则（实测确认，实现不得简化）
+
+| 规则 | 内容 |
+| --- | --- |
+| 成品编码双轨 | `CF*` 早期编码、`S*` 当前 SKU 编码，**两者都是成品**，BOM 结构一致 |
+| 双单位 | S 成品主单位 **KG**、辅单位 **PIECES**，物料表有换算关系，BOM 行两个单位的值都有。**计划口径统一 KG**（WMS 实际也用 KG；ERP 物料主数据把多数 S0 标为 PIECES，以 WMS/KG 为准） |
+| 吨位 | ERP `weight_NET` 全库 100% 为空，不可用；CF/CS/CW/CR 本位单位即 KGM，吨 = 数量 / 1000 直接可算 |
+| 包材单位 | `EA` 等同 `PIECES`（个），归一 |
+| CM 弃用 | 标准化奶两年前弃用，BOM 全部忽略；实证：涉及 CM 的 25 个成品近 12 个月零生产，73 张在产工单按其实际 BOM 版本走无一触及 CM |
+| 版本选择 | 同母件多个已审版本并存，取 **HVERSION 数值最大**（1.94 大于 1.9，禁止字符串比较）+ 行级生效窗口覆盖查询日期 |
+| 实际产出 | **绝不作为库存加项**——产出已进 WMS，再加一次会使可用库存翻倍导致严重少采购。用途仅限达成率分析与差欠结转决策 |
+| 代储仓效期 | 录入只需批次号；效期由批次号反查 WMS `INV_LOT_ATT`（23973 条 > 在库 3532 条，历史批次属性保留）自动带出，带不出则留空并提示 |
+
+### 6.4 新增数据模型（mrp-api）
+
+| 表 | 关键字段 | 说明 |
+| --- | --- | --- |
+| `mrp_forecast_versions` | version_no, status(draft/confirmed/superseded), horizon_start_month, horizon_months(默认18), created_by, confirmed_at, note | 预测版本头，月度滚动 |
+| `mrp_forecast_lines` | version_id, material_code, month(YYYY-MM), qty, uom(默认KG), freeze_flag | 预测明细（界面是行=产品列=月，落库为行式） |
+| `mrp_consignment_stock` | warehouse_code, material_code, lot_no, qty, count_date, expiry_date(反查WMS自动带出,可空), entered_by | 代储仓周度盘点，单个主仓，仅成品 |
+| `mrp_capacity_rules` | scope_type(factory/product_family/line), scope_ref, constraint_type(max_sku_count/max_output_qty), limit_value, uom, effective_from, effective_to, is_active | **产能可定制**：规则行而非硬编码 |
+| `mrp_mps_runs` | run_no, forecast_version_id, horizon, status, generated_at, generated_by, stats(jsonb) | MPS 生成批次 |
+| `mrp_mps_lines` | run_id, material_code, demand_month, plan_month, plan_date, qty, is_prebuild, prebuild_reason, shelf_life_ok, locked_by_planner, manual_adjusted, status(draft/confirmed/released) | 生产计划行；demand_month 不等于 plan_month 即提前生产 |
+| `mrp_actual_output` | material_code, month, planned_qty, actual_qty, source(nc_prefill/manual), variance, carry_forward_qty, confirmed_by, confirmed_at | 实际产出与差异；carry_forward_qty 由计划员决定 |
+
+原 V1 设计的 `mrp_demands` 改为**由 MPS 发布结果生成**（`demand_type='mps'`），不再直接由人工导入；`mrp_supplies` / `mrp_pab` / `mrp_proposals` / `mrp_exceptions` 沿用 V1 设计。
+
+### 6.5 MPS 生成算法
+
+输入：净需求（月 x 产品）、生效产能规则、物料保质期、已锁定的计划行。
+
+```
+按需求月份升序遍历：
+  1. 装载当月净需求到当月产能
+  2. 若违反任一约束（品种数 > 上限 或 总量 > 上限）：
+       挑选可前移的产品（按 保质期余量 降序、批量 降序）
+       逐个向前月推，每次推前校验：
+         a. 目标月剩余产能足够
+         b. 保质期硬校验：提前月数 <= 保质期 - 安全余量（参数）
+       推不动则标记为「产能缺口」异常，不静默丢弃
+  3. 计划员锁定的行不参与自动调整
+输出：计划行 + 是否提前生产 + 提前原因 + 产能占用明细
+```
+
+计划员可手工改数量/月份/锁定，改后可重算（锁定行保持不变）。确认发布后写入 `mrp_demands` 成为 MRP 输入。
+
+### 6.6 前端 UI 设计
+
+**技术基线**：新建 `mrp/` Vite app（端口 5179），React + TS + Tailwind + `@uniops/shell`（现有导出：多页签 `TabHost/TabBar/TabRouterSync/useTabDirty` + UI 原语 `button/card/badge/input/label/form-field/skeleton/Pagination` + `tokens.css`）。**shell 没有网格组件**——矩阵录入以 `epms/src/pages/budget/BreakdownMatrixModal.tsx`（1296 行，已含粘贴 + undo/redo + 稀疏 Map 状态）为蓝本，在 mrp app 内实现，**不引入 ag-grid/handsontable 等第三方表格库**（样式体系与 Tailwind/EPMS 冲突，且部分为商业授权）。若后续 MPS 页也需要同款网格，再抽到 `@uniops/shell`。**样式对照 EPMS 模板**，页面包 `PortalChromeLayout`，状态徽章用统一 `StatusBadge`，浮层用 `createPortal` 到 body，Decimal 字段前端 `Number()` 转换，**user-facing 文案全英文**。
+
+**通用交互规则**（源自 UX 规则库，均为 High/Medium 级）：
+- 表格宽内容包 `overflow-x-auto`，页面本体禁止横向滚动
+- 校验 **onBlur** 即时反馈，错误显示在**出错单元格旁**，不只在顶部汇总；错误容器带 `role="alert"`，不只靠红框（视觉之外须有可读文本）
+- 所有提交动作走 loading -> success/error 三态，成功给 toast，禁止静默成功
+- 批量操作用勾选列 + 顶部动作条，不做逐行重复按钮
+- 交互目标不小于 44x44px，动效 150-300ms 且只用于表达含义
+
+#### 页面 1：Sales Forecast（预测录入，本期最重的交互）
+
+```
++- Sales Forecast --------------------------------------- [v2026-08 draft v] -+
+| [Import Excel] [Export] [Download Template]        [Save Draft] [Confirm]   |
++------------+-------+-------+-------+-------+--- 18 months ---+--------------+
+| Product v  |2026-09|2026-10|2026-11|2026-12| ...             | Total (kg)   |
++------------+-------+-------+-------+-------+-----------------+--------------+
+| S0093 700g | 20,000| 20,000|[20,000]| 18,000| ...            |      318,000 |
+| S0060 300g | 12,000| 12,000| 12,000| 12,000| ...             |      210,000 |
++------------+-------+-------+-------+-------+-----------------+--------------+
+| Monthly Sum| 32,000| 32,000| 32,000| 30,000|                 |      528,000 |
++------------+-------+-------+-------+-------+-----------------+--------------+
+```
+
+- **行 = 产品，列 = 18 个月**，单元格直接编辑（点击进入、Tab/方向键移动、Enter 下移）
+- **★复制粘贴（必做，计划员的实际工作方式就是从 Excel 整块搬）——直接沿用 `epms/src/pages/budget/BreakdownMatrixModal.tsx` 的成熟实现，不要重新发明**：
+  - 该文件已实现「以焦点单元格为锚点的矩形块粘贴」（第 327–370 行）+ 完整 undo/redo 历史栈（第 116–151 行 `Snapshot`/`commitSnapshot`/`undo`/`redo`），是同类「行×列矩阵录入」场景，模式可整体照搬
+  - 关键做法（照抄）：`window` 级 `paste` 监听 + 锚点单元格判空；**只拦截多单元格粘贴**（内容含 `\t` 或 `\n`），单格粘贴放行给原生 input 保留默认行为；解析按 `\r` 剥离 → 尾部空行剔除 → `\n` 分行 → `\t` 分列；数值清洗 `trim()` 后剥离 `,` 与 `$`，`parseFloat` 后校验 `Number.isFinite`；**越界自动裁剪**（`rowIdx + r < rows.length`）；计算列/合计列跳过不写入
+  - 本模块补充规则：① 空单元格视为「跳过不改」而非清零（与预算模块一致，避免误清数据）；② 落在**冻结月份**的单元格跳过并汇总提示「N cells skipped (frozen)」；③ 非数值单元格标红并计入粘贴报告，不中断整块粘贴；④ 粘贴影响 > 100 格时先弹确认摘要（影响行数/列数/格数）
+  - **粘贴必须可撤销**：整块粘贴作为一次 snapshot 进 undo 栈，Ctrl+Z 一次撤回整块（预算模块已是此语义）
+  - 复制方向同样支持：选中区域 Ctrl+C 输出 TSV，可直接粘回 Excel
+- 首列产品名 + 月份表头 **sticky**，横向滚动时不丢失定位
+- **行合计、列合计实时更新**——计划员靠总量判断合理性
+- 单元格状态用背景色 + 图标双通道表达：已冻结（锁图标）、本次修改未保存（左上角小三角）、校验失败（红边 + 单元格下方错误文本）
+- 版本切换器在右上角，可对比上一版本（差异用 +/-% 角标）
+- 导入：上传 -> **预览校验报告**（哪一行哪一列错、错在哪）-> 确认导入；错行不导致整批失败
+- 产品多时行虚拟化，避免一次渲染上千行
+
+#### 页面 2：Capacity Rules（产能规则维护）
+
+标准列表 + 抽屉表单。列：适用范围 / 约束类型 / 上限值 / 单位 / 生效期 / 状态。新增规则时按 `constraint_type` 渐进展示对应字段（选「月度品种数」就不显示单位选择）。生效期重叠给 inline 警告而非硬拦截（业务上可能有意覆盖）。
+
+#### 页面 3：Production Plan / MPS（生成与调整，本期最有价值的界面）
+
+```
++- Production Plan  [Forecast v2026-08 v]        [Generate] [Recalculate] ---+
+| !  2026-11: 15 SKUs / 300t requested -> limit 12 SKUs / 160t              |
+|    3 products pre-built to 2026-09/10 . 1 product has capacity gap        |
++---------------------------------------------------------------------------+
+| Capacity 2026-09 [########..] 128/160t . 9/12 SKUs                        |
+| Capacity 2026-10 [##########] 160/160t . 12/12 SKUs   <- full             |
+| Capacity 2026-11 [########..] 152/160t . 12/12 SKUs                       |
++----+---------+----------+----------+--------+---------+--------+----------+
+| [] | Product |Demand Mon| Plan Mon |  Qty   |Pre-build| Shelf  | Status   |
++----+---------+----------+----------+--------+---------+--------+----------+
+| [] | S0093   | 2026-11  | 2026-09  | 20,000 | ^ 2 mo  | OK     | Locked   |
+| [] | S0060   | 2026-11  | 2026-11  | 12,000 |   -     | OK     |          |
+| [] | S0074   | 2026-11  |    -     | 18,000 |   -     | GAP    | Blocked  |
++----+---------+----------+----------+--------+---------+--------+----------+
+    [Lock selected] [Unlock] [Adjust...] [Confirm & Release ->]
+```
+
+- **顶部产能条**是这个页面的核心：每月产能占用一眼可见，满载/超限用色彩 + 文字双通道
+- 提前生产行标 `^ n mo` 并在悬浮/展开时给出原因（如「2026-11 超总量上限 140t」）
+- 保质期校验独立成列，不合规的行禁止发布并给出可读原因
+- 计划员改动：勾选行 -> 批量锁定/解锁；单行 `Adjust...` 打开抽屉改数量或计划月，改完可重算（锁定行不动）
+- **产能缺口**不静默吞掉，落成异常行并计入异常中心
+- `Confirm & Release` 前弹确认摘要（几个产品、总量、几个提前生产、有无缺口）
+
+#### 页面 4：Consignment Stock（代储仓周度录入）
+
+轻量表单 + 本周已录列表。字段：产品（带搜索的下拉）、批次号、数量、盘点日期。**批次号失焦即反查 WMS 批次属性**，命中则自动带出生产日期/失效日期并置灰显示（来源标注 from WMS），未命中则提示「批次未在 WMS 找到，效期将留空」但不阻断保存。列表顶部显示**数据新鲜度**（Last counted: 2026-08-01, 3 days ago），超过一周变黄提醒。
+
+#### 页面 5：Actual Output（实际产出回填）
+
+行 = 产品，列 = 计划量 / NC 预填实际量 / 确认实际量（可编辑）/ 差异 / 差异率 / 结转决定。NC 预填值置灰显示为参考，计划员在「确认实际量」列录入或直接采纳。差异用 +/- 与颜色双通道，超过阈值（参数）高亮。最右列 `Carry forward?` 让计划员逐行决定差欠是否进下月净需求——**默认不结转**，必须显式勾选。
+
+#### 页面 6：BOM Explorer（BOM 级联查看）
+
+**这不只是一个查看器——它内部就是 MRP 的 BOM 展开引擎。** Phase 1C 的物料展开与本页共用同一套展开逻辑（同一个服务函数），先建于此可提前把展开算法验证在真实数据上，等于给 1C 去风险。目前后端只有单层 `GET /mdm/v1/boms/effective`，多层展开需新增。
+
+**后端新增两个端点（mdm-api）**
+
+| 端点 | 作用 | 关键要求 |
+| --- | --- | --- |
+| `GET /mdm/v1/boms/explode?product=&date=&max_depth=` | 一次返回整棵级联树 | ① **环检测**（NC 数据可能存在 A→B→A，必须防死循环，命中即截断并在节点上标注）；② `max_depth` 兜底（默认 10）；③ 每个节点返回**累计用量**（相对顶层成品 1 单位，逐层按 `qty_per × (1+scrap_rate) ÷ yield_rate` 累乘）与本层用量两个值；④ 主/辅单位量都带出；⑤ **选版透明**：节点标注实际选中的版本号与候选版本总数（如 `v1.6 (7 approved)`），因为同母件多版本并存是常态，计划员需要知道系统选了哪个；⑥ 组件应有 BOM 却查不到时（如 `-R` 返工变体）标 `missing_bom`，不静默当叶子节点 |
+| `GET /mdm/v1/boms/where-used?component=&date=` | 反查：某物料被哪些成品用到 | 影响分析用——原料涨价/断货/质量问题时，一眼看出波及哪些成品。返回路径链而不只是顶层成品 |
+
+**前端页面**
+
+```
++- BOM Explorer -------------------- [Product: S0093 v] [As of: 2026-08-04] -+
+| [Expand all] [Collapse all]              [Export Excel]  [Where-used mode] |
++---------------------------------------------------------------------------+
+| S0093  Infant Formula 700g              packaging  v1.3 (2 approved)       |
+|  |  per 1 kg finished                                    main / secondary  |
+|  +- CW0001  Dry-mix Powder      drymix v1.1 (1)   0.984 kg    -            |
+|  |   +- CS0026  Silo Powder     milling v1.6 (7)  0.990 kg    -            |
+|  |   |   +- CR0031  Skim Milk Powder    raw       0.412 kg    -            |
+|  |   |   +- CR0044  Lactose             raw       0.287 kg    -            |
+|  |   |   +- ... (14 more)                                                  |
+|  |   +- CR0031-2 Nucleotide Premix      raw       0.004 kg    -            |
+|  +- CP0115-1  Tin 700g          --                1.000 ea    1 ea         |
+|  +- CP0110    Lid                --                1.000 ea    1 ea        |
+|  +- CP0132    Carton             --                0.083 ea    1 ea        |
++---------------------------------------------------------------------------+
+| ! S0074-R: milling BOM missing in NC (rework variant) — cannot explode      |
++---------------------------------------------------------------------------+
+```
+
+- 树形展开/折叠，层级用缩进 + 连接线；`bom_type` 徽章用统一 `StatusBadge`（milling / drymix / packaging / raw / packaging-material）
+- **两列用量**：本层用量 + 相对顶层成品的累计用量——后者才是计划员真正关心的（"做 1 吨成品要多少脱脂奶粉"）
+- **as-of 日期选择器**：BOM 按日期取版，改日期整棵树重算
+- 版本标注 `v1.6 (7 approved)`，点击可展开候选版本列表与各自生效窗口——**这是数据可信度的关键**，多版本并存时计划员必须能确认系统选对了
+- `missing_bom` 节点用警示样式 + 可读原因，不静默当叶子
+- 环检测命中的节点明确标注并截断
+- **Where-used 模式**切换后，输入原料码反查被哪些成品使用，展示完整路径（`CR0031 → CS0026 → CW0001 → S0093`）
+- 导出 Excel（含缩进层级与累计用量），计划员要拿去和生产/采购对账
+
+**Sync 按钮（从 NC 同步 BOM）**
+
+页面右上角放 `Sync from NC`，调用 Phase 0 已建好的 `POST /mdm/v1/boms/sync`（会先拉 NC 原始镜像再转换规范化表）。要点：
+
+- **权限分离**：查看只需 `mrp.report.view`，**Sync 按钮需 `mdm.bom.write`**——无此权限时不显示按钮（而非点了报 403）
+- **⚠️ 后端缺口（须补）**：当前 BOM 同步**不记录任何同步状态**（`nc_bom_sync` 全量扫描、无水位、无 last-synced 记录），页面就无法显示"上次同步于何时"，Sync 按钮等于盲按。须新增同步状态记录（仿 mrp-api 的 `mrp_sync_state`：source / last_success_at / last_error / 本次统计），并加读端点供页面展示
+- **数据新鲜度常驻可见**：标题旁显示 `Last synced: 2026-08-04 10:22 (2 hours ago)`，超过约定时长（如 24 小时）变黄提示
+- **长耗时反馈**：一次全量拉 1016 表头 + 10169 行 + 664 替代料 + 2590 物料映射，不是秒级。按钮点击后立即进 loading 态并禁用，避免重复提交；完成前给"Syncing from NC…"进度提示
+- **并发守卫**：多人同时点会让 delete+insert 事务相互阻塞。同步入口加 `pg_advisory_lock`（EPMS 单据号生成已有此惯例），已有同步在跑时第二个请求返回明确提示而不是排队干等
+- **结果摘要**：同步端点已返回 `boms / lines / substitutes / skipped / warnings / tombstoned`，完成后以 toast + 可展开明细呈现；**`warnings` 与 `skipped` 必须可见**（当前真实数据里 warnings=54，含 41 条 CM 组件排除 + 13 条未知前缀），否则数据静默丢失无人察觉
+- **未配置 NC 时**：`nc_configured()` 为假则按钮置灰并说明原因（"NC connection not configured"），不是点了报错
+
+**权限**：查看 `mrp.report.view`，同步 `mdm.bom.write`。BOM 本身不可编辑（NC 为唯一权威），页面显式标注数据来源与最近同步时间。
+
+#### 页面 7 及以后：沿用 V1 设计
+
+Planning Workbench（工作台 + KPI，兼驾驶舱）、MRP Run Console（运算 + 同步状态）、Material Supply/Demand Detail（逐期间 PAB 双口径 + 批次 + BOM 展开路径）、Purchase Proposals、Exception Center、Reports。
+
+#### 导航与权限
+
+Portal `navConfig` 加 MRP 分组（`anyPermission`），组内条目按权限键各自门禁：Forecast(`mrp.demand.write`)、Capacity(`mrp.param.write`)、Production Plan(`mrp.run.execute` / `mrp.proposal.confirm`)、Consignment Stock(`mrp.demand.write`)、Actual Output(`mrp.demand.write`)、Workbench/Reports(`mrp.report.view`)。
+
+### 6.7 Phase 1 阶段划分
+
+| 阶段 | 内容 | 出口标准 |
+| --- | --- | --- |
+| **1A 需求与库存底账 + BOM Explorer** | 预测版本/明细模型 + 网格表单（含 Excel 粘贴/undo）+ 导入导出 + 代储仓录入（含批次反查效期）+ 净需求计算；**BOM Explorer（多层展开端点 + where-used + Sync 按钮 + 同步状态记录）** | 导入一份真实 18 个月预测，能算出逐月净需求，三个库存来源可追溯且新鲜度可见；**BOM Explorer 能对真实成品展开完整级联树并显示累计用量，Sync 按钮可用且同步时间可见** |
+| **1B MPS 产能平衡** | 产能规则维护 + MPS 生成算法（提前生产 + 保质期校验）+ 计划调整/锁定/重算 + 确认发布 | 用真实场景跑通：15 品/300t 压到 12 品/160t 内，超出部分前移且保质期合规，缺口成异常 |
+| **1C MRP 物料展开** | 吃 1B 发布的计划 -> BOM 逐层展开 -> PAB -> 采购建议 -> 导出通知 + 实际产出回填 | 真实一个月数据回放，成品计划推出原料/包材采购建议；月末产出回填算出达成率 |
+
+### 6.8 仍待确认
+
+- 销售预测由谁提供、多久滚动一次（决定 1A 的模板定稿与提醒机制）
+- 产能约束除品种数与总吨数外是否还有产线/产品族维度（结构已留好，加规则行即可）
+- 提前生产的保质期安全余量取值（参数，默认建议保质期的 1/3）
