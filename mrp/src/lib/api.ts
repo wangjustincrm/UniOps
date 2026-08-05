@@ -102,14 +102,33 @@ async function getBlob(path: string): Promise<Blob> {
   return res.blob()
 }
 
+// Content-Disposition header parsing for file downloads (template/export) —
+// the backend sets `attachment; filename="forecast-export-FCV-....xlsx"`;
+// callers use this so the saved file gets the server's real name instead of
+// a generic one.
+function filenameFromContentDisposition(res: Response): string | null {
+  const cd = res.headers.get('Content-Disposition')
+  if (!cd) return null
+  const match = /filename="?([^";]+)"?/i.exec(cd)
+  return match ? match[1] : null
+}
+
+async function getBlobWithFilename(path: string): Promise<{ blob: Blob; filename: string | null }> {
+  const res = await authFetch(`${BASE}/api/v1${path}`, {})
+  if (!res.ok) throw await toApiError(res)
+  return { blob: await res.blob(), filename: filenameFromContentDisposition(res) }
+}
+
 /** mrp-api client. */
 export const api = {
   get:    <T>(path: string)                => request<T>('GET', path),
   post:   <T>(path: string, body: unknown) => request<T>('POST', path, body),
+  put:    <T>(path: string, body: unknown) => request<T>('PUT', path, body),
   patch:  <T>(path: string, body: unknown) => request<T>('PATCH', path, body),
   delete: <T>(path: string)                => request<T>('DELETE', path),
   postForm,
   getBlob,
+  getBlobWithFilename,
 }
 
 async function epmsRequest<T>(path: string): Promise<T> {

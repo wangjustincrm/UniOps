@@ -40,6 +40,12 @@ export function cellKey(rowId: string, colId: string): string {
   return `${rowId}::${colId}`
 }
 
+/** Inverse of cellKey() — splits on the first `::` (row ids don't contain it). */
+export function parseCellKey(key: string): { rowId: string; colId: string } {
+  const idx = key.indexOf('::')
+  return idx === -1 ? { rowId: key, colId: '' } : { rowId: key.slice(0, idx), colId: key.slice(idx + 2) }
+}
+
 /** Anchor cell (top-left of the paste block), by grid index. */
 export interface PasteAnchor {
   rowIdx: number
