@@ -5,7 +5,13 @@ GET  /boms/effective — single effective BOM (header + nested lines +
 POST /boms/sync      — refresh nc_bom mirror (Task 4) then transform into
      boms/bom_lines/bom_substitutes (Task 5).
 
-Reads: any authenticated role (materials.py/uom_conversions.py idiom).
+Reads (/effective, /explode, /where-used, /sync-state): gated
+`mrp.report.view` — NOT authentication-only. A BOM is a trade secret (full
+formulation of every finished product); `mrp.report.view` is literally
+defined as "...BOM browsing" (identity-api/scripts/seed_authz.py), so any
+role without it (e.g. requester, vendor_manager, auditor) must be refused,
+not merely required to be logged in. (Materials/UOM reads elsewhere in this
+service are intentionally open to any authenticated role — BOMs are not.)
 Writes (sync): gated on require_any_permission("data_maintenance",
 "mdm.bom.write") — the pre-existing broad `data_maintenance` key (so
 existing EPMS Data Maintenance admins keep working unchanged) OR the
@@ -50,7 +56,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.authz import require_any_permission, require_permission
-from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.bom import Bom, BomLine
 from app.models.sync_state import NcSyncState
@@ -62,10 +67,12 @@ from app.services.nc_bom_sync.reader import nc_configured
 router = APIRouter(prefix="/boms", tags=["boms"])
 
 SyncDep = Annotated[dict, Depends(require_any_permission("data_maintenance", "mdm.bom.write"))]
-# Task 7: GET /sync-state is gated narrower than /effective|/explode|/where-
-# used (any authenticated role) — design spec §6.6 explicitly calls out
-# `mrp.report.view` for this one, matching mrp-api's own report endpoints
-# (consignment.py/forecast.py/inventory.py's ReadDep).
+# GET /sync-state, /effective, /explode and /where-used all share this same
+# gate — `mrp.report.view`, matching mrp-api's own report endpoints
+# (consignment.py/forecast.py/inventory.py's ReadDep). /sync-state has
+# always used it (design spec §6.6); /effective|/explode|/where-used were
+# previously authentication-only (any logged-in role, via CurrentUser) —
+# see the module docstring's "Reads" paragraph for why that was a gap.
 ReportViewDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
 
 
@@ -138,7 +145,7 @@ async def get_effective_bom(
         description="optional NC org (PK_ORG) filter; omit to search across all orgs",
     ),
     db: AsyncSession = Depends(get_db),
-    _: CurrentUser = ...,
+    _: ReportViewDep = ...,
 ):
     conditions = [Bom.product_material_code == product, Bom.status == "approved"]
     if factory_code is not None:
@@ -189,16 +196,20 @@ async def explode_bom_endpoint(
         description="hard stop on total nodes materialized (root inclusive) — guards diamond-heavy graphs",
     ),
     db: AsyncSession = Depends(get_db),
-    _: CurrentUser = ...,
+    _: ReportViewDep = ...,
 ):
     """Multi-level BOM explosion — the same engine Phase 1C's material
-    requirements calculation reuses (see app/services/bom_explode.py). Read
-    gate matches /effective: any authenticated role. Unlike /effective, a
-    product with zero approved BOMs is not a 404 — it comes back as a
-    single root node with `missing_bom`/`version_candidates_count=0`, since
-    the caller asked to explode a tree and an empty tree is still an answer
-    (the same reasoning `explode_bom` applies to every missing component
-    node deeper in the tree, not just the root)."""
+    requirements calculation reuses (see app/services/bom_explode.py). Gated
+    `mrp.report.view`, matching /effective/where-used/sync-state — this
+    exposes the complete formulation of every finished product, so
+    authentication alone is not enough (see the I4 review finding: any
+    logged-in employee, including a vendor_manager or auditor, could
+    otherwise pull and reverse-map the entire product portfolio). Unlike
+    /effective, a product with zero approved BOMs is not a 404 — it comes
+    back as a single root node with `missing_bom`/`version_candidates_count=0`,
+    since the caller asked to explode a tree and an empty tree is still an
+    answer (the same reasoning `explode_bom` applies to every missing
+    component node deeper in the tree, not just the root)."""
     return await explode_bom(db, product, date, max_depth=max_depth, max_nodes=max_nodes)
 
 
@@ -212,15 +223,17 @@ async def where_used_endpoint(
         description="hard stop on total frontier entries expanded — guards wide fan-in graphs",
     ),
     db: AsyncSession = Depends(get_db),
-    _: CurrentUser = ...,
+    _: ReportViewDep = ...,
 ):
     """Reverse of /explode (see app/services/bom_explode.py's find_where_used
     docstring for the full version/date-selection-parity argument). Read
-    gate matches /effective and /explode: any authenticated role. A
-    component nobody uses (or that isn't a real material code at all) is
-    not an error — it comes back as its own single-entry top (path=[component],
-    levels=0), the same "empty tree is still an answer" reasoning /explode
-    applies at its root."""
+    gate matches /effective, /explode and /sync-state: `mrp.report.view` —
+    reverse-resolving a component to every finished product that consumes it
+    is exactly as trade-secret-sensitive as /explode, so it gets the same
+    gate, not bare authentication. A component nobody uses (or that isn't a
+    real material code at all) is not an error — it comes back as its own
+    single-entry top (path=[component], levels=0), the same "empty tree is
+    still an answer" reasoning /explode applies at its root."""
     return await find_where_used(db, component, date, max_depth=max_depth, max_nodes=max_nodes)
 
 
