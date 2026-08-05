@@ -35,6 +35,39 @@ N+1 guard: `explode_bom` walks the tree breadth-first, one query-pair
 one query pair per node. A 4-level real cascade (S0093 -> CW -> CS -> CR/CP)
 costs on the order of 4 x 2 queries + 1 name lookup per level, not one query
 per component (CS0026 alone can fan out into 16+ raw-material lines).
+
+Accumulation formula (2026-08-04, PATCH 6 follow-up — read this before
+"fixing" the missing `÷ yield_rate` the design spec's §6.5/§408 formula
+mentions):
+
+    child.qty_accumulated = parent.qty_accumulated * child.qty_per * (1 + child.scrap_rate)
+
+DELIBERATELY does NOT divide by `bom.yield_rate`, even though
+docs/superpowers/specs/2026-08-03-mrp-subsystem-design.md §6.5/§408 write
+the formula as `qty_per × (1+scrap_rate) ÷ yield_rate`. That spec text
+predates the 2026-08-04 survey finding that in THIS NC65 instance,
+`yield_rate` (<- HVCHANGERATE, parsed as a "num/den" ratio) is not an
+independent production-yield/loss factor at all — it is a redundant STRING
+encoding of the exact same `HNPARENTNUM/HNASSPARENTNUM` batch-divisor pair
+that `nc_bom_sync/transform.py`'s PATCH 6 already divides `qty_per` by at
+sync time (confirmed against all 46 distinct live (HVCHANGERATE,
+HNPARENTNUM, HNASSPARENTNUM) combinations across 911 live headers on
+2026-08-04, zero exceptions — e.g. S0093's header: HNPARENTNUM=420,
+HNASSPARENTNUM=100, HVCHANGERATE='4.2/1' = 420/100 exactly).
+
+Worked example (S0093, real data): header HNPARENTNUM=420. Its CW0001 line
+carries NITEMNUM=420, which `transform()` already normalizes to
+`qty_per=1.0` (420/420). If this function ALSO divided by
+`yield_rate` (=4.2 for this header), the accumulated quantity for CW0001
+would come out `1.0 / 4.2 ≈ 0.238` per kg of S0093 — wrong; the correct,
+already-normalized answer is `1.0` per kg (1 kg of dry-mix powder per kg of
+finished product). Applying both the transform-time divide AND an
+explode-time `÷ yield_rate` double-counts the exact same batch-scale
+factor — this is a live variant of the very qty_per bug PATCH 6 fixed, not
+a faithful implementation of the design spec's generic (pre-survey)
+assumption. `bom.yield_rate` is still stored (and still worth keeping,
+since it doubles as the header's primary/secondary UOM conversion ratio),
+it is simply not an input to THIS formula.
 """
 from __future__ import annotations
 
@@ -166,6 +199,10 @@ async def explode_bom(
             for ln in selected_lines:
                 child_code = ln.component_material_code
                 child_scrap = ln.scrap_rate if ln.scrap_rate is not None else Decimal(0)
+                # No `÷ bom.yield_rate` here — see this module's docstring
+                # ("Accumulation formula") for why that would double-count
+                # the batch-scale normalization transform.py's PATCH 6
+                # already applied to `qty_per` at sync time.
                 child_accumulated = node.qty_accumulated * ln.qty_per * (Decimal(1) + child_scrap)
                 is_cycle = child_code in ancestors
                 child = ExplodeNode(
