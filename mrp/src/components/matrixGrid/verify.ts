@@ -67,6 +67,11 @@ check('"abc" -> invalid', eq(parseNumericCell('abc'), { kind: 'invalid' }))
 // for stray trailing characters. Only a cell with NO leading numeric prefix
 // (e.g. "abc") is flagged invalid.
 check('"12abc" -> value 12 (parseFloat leading-prefix behaviour, matches blueprint)', eq(parseNumericCell('12abc'), { kind: 'value', value: 12 }))
+// Deliberate deviation from the epms budget blueprint (BreakdownMatrixModal.tsx
+// rejects `value < 0`): this module accepts negatives — see the file header
+// comment for why. Pinned here so a future "helpfully" re-added `value < 0`
+// rejection shows up as a failing check, not a silent behaviour change.
+check('"-500" -> value -500 (negatives accepted, unlike the budget blueprint)', eq(parseNumericCell('-500'), { kind: 'value', value: -500 }))
 
 // ── planPaste: scenario 1 — 3x4 block lands correctly, "20,000" -> 20000 ──
 console.log('planPaste: 3x4 block at anchor')
@@ -121,6 +126,27 @@ console.log('planPaste: >100 cell threshold (caller decides to confirm)')
   const bigBlock = Array.from({ length: 15 }, () => Array.from({ length: 10 }, () => '1').join('\t')).join('\n')
   const plan = planPaste(bigBlock, { rowIdx: 0, colIdx: 0 }, bigRows, bigCols, new Set())
   check('15x10 = 150 totalCells (> 100 -> caller must confirm)', plan.totalCells === 150)
+}
+
+// ── planPaste: exact threshold boundary — MatrixGrid.tsx gates on
+// `plan.totalCells > CONFIRM_THRESHOLD` (strictly greater), not >=. Pinning
+// both sides of that boundary here as a pure-logic check is what's left of
+// the MatrixGrid confirmation-gating fix that's expressible outside React —
+// the "lock cell edits / ignore a second paste while confirmPlan is open"
+// half of that fix is component state (useEffect/disabled-input gating),
+// not a pure function, so it isn't and can't be re-verified by this script;
+// see MatrixGrid.tsx's `locked` comment for that half instead.
+console.log('planPaste: exact 100/101 threshold boundary (MatrixGrid gates on totalCells > 100)')
+{
+  const boundaryRows: GridRow[] = Array.from({ length: 20 }, (_, i) => ({ id: `br${i}`, label: `BR${i}` }))
+  const boundaryCols: GridCol[] = Array.from({ length: 20 }, (_, i) => ({ id: `bc${i}`, label: `BC${i}` }))
+  const block10x10 = Array.from({ length: 10 }, () => Array.from({ length: 10 }, () => '1').join('\t')).join('\n')
+  const planAt100 = planPaste(block10x10, { rowIdx: 0, colIdx: 0 }, boundaryRows, boundaryCols, new Set())
+  check('10x10 = exactly 100 totalCells (boundary: must NOT trigger confirm)', planAt100.totalCells === 100)
+
+  const block10x11 = Array.from({ length: 10 }, () => Array.from({ length: 11 }, () => '1').join('\t')).join('\n')
+  const planAt110 = planPaste(block10x11, { rowIdx: 0, colIdx: 0 }, boundaryRows, boundaryCols, new Set())
+  check('10x11 = 110 totalCells (just over boundary: must trigger confirm)', planAt110.totalCells === 110)
 }
 
 // ── applyPasteUpdates: 0 deletes the sparse entry ─────────────────────────

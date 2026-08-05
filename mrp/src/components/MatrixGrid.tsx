@@ -36,6 +36,7 @@ import {
   selectionToTsv, normalizeRange,
   type GridRow, type GridCol, type PastePlan, type PasteAnchor, type RangeSelection,
 } from './matrixGrid/pasteLogic'
+import { ConfirmDialog } from './ConfirmDialog'
 
 export type { GridRow, GridCol }
 
@@ -89,7 +90,20 @@ export function MatrixGrid({
   const [selEnd, setSelEnd] = useState<FocusCell | null>(null)
   const [invalidByKey, setInvalidByKey] = useState<Map<string, string>>(new Map())
   const [report, setReport] = useState<string | null>(null)
+  // A pending >100-cell paste confirmation (see the paste handler below).
+  // GATING CHOICE (documented here, not just at each call site): while this
+  // is non-null the whole grid is locked — no cell edits commit and no
+  // further paste is intercepted — rather than the alternative of silently
+  // replacing/invalidating the pending plan with whatever the user does
+  // next. Replacing-on-new-action was rejected because it lets a second,
+  // smaller paste commit *underneath* a confirmation dialog that still
+  // describes the first (now-discarded) plan — the user would confirm
+  // something that no longer matches what's on screen. Locking means the
+  // dialog's summary is always an accurate description of what Confirm
+  // will do; the user must Confirm or Cancel it before touching anything
+  // else. `locked` below is the single source of truth for this gate.
   const [confirmPlan, setConfirmPlan] = useState<PastePlan | null>(null)
+  const locked = confirmPlan !== null
 
   // Emit changes to the parent on every committed history step.
   const lastEmitted = useRef(cells)
@@ -107,6 +121,12 @@ export function MatrixGrid({
   const setCellValue = useCallback((rowIdx: number, colIdx: number, v: number) => {
     const key = cellKey(rows[rowIdx].id, cols[colIdx].id)
     if (frozen.has(key)) return
+    // Belt-and-suspenders: the <input> is also rendered `disabled` while
+    // `locked` (see MatrixCell), which normally prevents this from firing
+    // at all. But disabling a focused input forces a native blur first,
+    // which would otherwise commit whatever was mid-edit at the moment the
+    // lock engaged — guard here too so that edit never lands.
+    if (locked) return
     applyUpdater((prev) => {
       const next = new Map(prev)
       if (v === 0) next.delete(key)
@@ -119,7 +139,7 @@ export function MatrixGrid({
       n.delete(key)
       return n
     })
-  }, [rows, cols, frozen, applyUpdater])
+  }, [rows, cols, frozen, applyUpdater, locked])
 
   // ── Selection helpers ────────────────────────────────────────────────────
 
@@ -182,6 +202,11 @@ export function MatrixGrid({
     if (readOnly) return
     const handler = (e: ClipboardEvent) => {
       if (!focus) return
+      // A previous large paste is still awaiting Confirm/Cancel — ignore
+      // this paste entirely rather than planning and applying it under the
+      // dialog. See the `locked`/`confirmPlan` comment above for why
+      // "block" was chosen over "replace the pending plan".
+      if (locked) return
       const text = e.clipboardData?.getData('text/plain') ?? ''
       if (!isMultiCellPaste(text)) return
       e.preventDefault()
@@ -196,7 +221,7 @@ export function MatrixGrid({
     }
     window.addEventListener('paste', handler)
     return () => window.removeEventListener('paste', handler)
-  }, [readOnly, focus, rows, cols, frozen, applyPlan])
+  }, [readOnly, focus, rows, cols, frozen, applyPlan, locked])
 
   // ── Copy — Ctrl+C emits TSV for the current selection ───────────────────
   const copySelection = useCallback(() => {
@@ -213,11 +238,15 @@ export function MatrixGrid({
       if (!mod) return
       const key = e.key.toLowerCase()
       if (key === 'z' && !e.shiftKey) {
-        if (readOnly) return
+        // Undo/redo mutate history — blocked while a paste confirmation is
+        // open for the same reason cell edits are (see the `locked`
+        // comment above): the confirmation's summary must stay an
+        // accurate description of what Confirm will apply.
+        if (readOnly || locked) return
         e.preventDefault()
         setHistory((h) => undoHistory(h))
       } else if (key === 'y' || (key === 'z' && e.shiftKey)) {
-        if (readOnly) return
+        if (readOnly || locked) return
         e.preventDefault()
         setHistory((h) => redoHistory(h))
       } else if (key === 'c') {
@@ -225,6 +254,7 @@ export function MatrixGrid({
         // data-matrix-input="true" (see MatrixCell) — only intercept Ctrl+C
         // when focus is actually inside this grid, so Ctrl+C on some other
         // input elsewhere on the page keeps native text-selection copy.
+        // Copy is read-only, so it stays allowed even while `locked`.
         const target = e.target as HTMLElement | null
         if (!target?.closest('[data-matrix-input="true"]')) return
         e.preventDefault()
@@ -233,7 +263,7 @@ export function MatrixGrid({
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [readOnly, copySelection])
+  }, [readOnly, copySelection, locked])
 
   const isCellModified = useCallback((rowIdx: number, colIdx: number): boolean => {
     const key = cellKey(rows[rowIdx].id, cols[colIdx].id)
@@ -322,7 +352,7 @@ export function MatrixGrid({
         <div className="flex items-center gap-2">
           <Button
             type="button" size="icon-sm" variant="secondary"
-            disabled={!canUndo}
+            disabled={!canUndo || locked}
             onClick={() => setHistory((h) => undoHistory(h))}
             title="Undo (Ctrl+Z)"
             aria-label="Undo"
@@ -331,7 +361,7 @@ export function MatrixGrid({
           </Button>
           <Button
             type="button" size="icon-sm" variant="secondary"
-            disabled={!canRedo}
+            disabled={!canRedo || locked}
             onClick={() => setHistory((h) => redoHistory(h))}
             title="Redo (Ctrl+Y)"
             aria-label="Redo"
@@ -361,14 +391,36 @@ export function MatrixGrid({
       )}
 
       {confirmPlan && (
-        <PasteConfirmDialog
-          plan={confirmPlan}
+        // Reuses the shared ConfirmDialog (portal + backdrop) instead of the
+        // inline banner this used to be — the backdrop is also what makes
+        // the "gate mouse interaction with the grid" half of `locked` work
+        // for free; the disabled-input / effect-level checks above handle
+        // the keyboard half a backdrop alone can't cover.
+        <ConfirmDialog
+          title="Large paste — confirm before applying"
+          confirmLabel={`Apply ${confirmPlan.updates.length} cell${confirmPlan.updates.length === 1 ? '' : 's'}`}
           onCancel={() => setConfirmPlan(null)}
           onConfirm={() => {
             applyPlan(confirmPlan)
             setConfirmPlan(null)
           }}
-        />
+        >
+          <p className="flex items-start gap-1.5 text-warning-800">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              This paste affects <strong>{confirmPlan.affectedRows}</strong> row{confirmPlan.affectedRows === 1 ? '' : 's'} x{' '}
+              <strong>{confirmPlan.affectedCols}</strong> column{confirmPlan.affectedCols === 1 ? '' : 's'} ={' '}
+              <strong>{confirmPlan.totalCells}</strong> cells.
+              {confirmPlan.skippedFrozen > 0 && <> {confirmPlan.skippedFrozen} of those are frozen and will be skipped.</>}
+              {confirmPlan.invalidCells.length > 0 && <> {confirmPlan.invalidCells.length} cell(s) are not valid numbers and will be flagged, not applied.</>}
+            </span>
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {confirmPlan.skippedFrozen > 0 && <Badge variant="neutral">{confirmPlan.skippedFrozen} frozen skipped</Badge>}
+            {confirmPlan.invalidCells.length > 0 && <Badge variant="danger">{confirmPlan.invalidCells.length} invalid</Badge>}
+            {(confirmPlan.clippedRows || confirmPlan.clippedCols) && <Badge variant="warning">clipped to grid bounds</Badge>}
+          </div>
+        </ConfirmDialog>
       )}
 
       <div className="overflow-x-auto rounded-lg border border-neutral-200">
@@ -423,6 +475,7 @@ export function MatrixGrid({
                           hasEntry={cells.has(key)}
                           frozen={isFrozen}
                           readOnly={readOnly}
+                          locked={locked}
                           modified={isCellModified(rowIdx, colIdx)}
                           invalidRaw={invalidRaw}
                           selected={isInSelection(rowIdx, colIdx)}
@@ -486,7 +539,7 @@ const EMPTY_FROZEN: ReadonlySet<string> = new Set()
 type NavDir = 'up' | 'down' | 'left' | 'right' | 'tab' | 'enter'
 
 function MatrixCell({
-  cellKeyAttr, registerRef, value, hasEntry, frozen, readOnly, modified, invalidRaw, selected, formatValue,
+  cellKeyAttr, registerRef, value, hasEntry, frozen, readOnly, locked, modified, invalidRaw, selected, formatValue,
   onSelect, onCommit, onNavigate,
 }: {
   /** `${rowId}::${colId}` — exposed as data-testid for automated/manual verification, not used by the component itself. */
@@ -497,6 +550,8 @@ function MatrixCell({
   hasEntry: boolean
   frozen: boolean
   readOnly: boolean
+  /** True while a >100-cell paste confirmation is open (see MatrixGrid's `locked`). Disables the input so it can neither receive nor commit an edit until the confirmation is resolved. */
+  locked: boolean
   modified: boolean
   invalidRaw: string | undefined
   selected: boolean
@@ -582,6 +637,7 @@ function MatrixCell({
         type="text"
         inputMode="decimal"
         value={local}
+        disabled={locked}
         aria-invalid={!!invalidRaw}
         data-testid={`matrix-cell-${cellKeyAttr}`}
         data-matrix-input="true"
@@ -599,49 +655,10 @@ function MatrixCell({
           else if (e.key === 'ArrowRight' && (e.currentTarget.selectionStart === local.length)) { commit(); onNavigate('right') }
         }}
         placeholder="0"
-        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-white"
+        className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
       />
       {invalidRaw && <span className="sr-only">{`Pasted value "${invalidRaw}" was not a valid number and was not applied.`}</span>}
     </td>
   )
 }
 
-// ── Paste confirmation (>100 cells) ─────────────────────────────────────
-
-function PasteConfirmDialog({
-  plan, onCancel, onConfirm,
-}: {
-  plan: PastePlan
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  return (
-    <div
-      role="alertdialog"
-      aria-label="Confirm large paste"
-      className="rounded-lg border border-warning-300 bg-warning-50 px-4 py-3 flex flex-col gap-2 text-sm"
-    >
-      <p className="font-medium text-warning-800 flex items-center gap-1.5">
-        <AlertTriangle className="h-4 w-4" /> Large paste — confirm before applying
-      </p>
-      <p className="text-xs text-warning-700">
-        This paste affects <strong>{plan.affectedRows}</strong> row{plan.affectedRows === 1 ? '' : 's'} x{' '}
-        <strong>{plan.affectedCols}</strong> column{plan.affectedCols === 1 ? '' : 's'} ={' '}
-        <strong>{plan.totalCells}</strong> cells.
-        {plan.skippedFrozen > 0 && <> {plan.skippedFrozen} of those are frozen and will be skipped.</>}
-        {plan.invalidCells.length > 0 && <> {plan.invalidCells.length} cell(s) are not valid numbers and will be flagged, not applied.</>}
-      </p>
-      <div className="flex items-center gap-2 flex-wrap">
-        {plan.skippedFrozen > 0 && <Badge variant="neutral">{plan.skippedFrozen} frozen skipped</Badge>}
-        {plan.invalidCells.length > 0 && <Badge variant="danger">{plan.invalidCells.length} invalid</Badge>}
-        {(plan.clippedRows || plan.clippedCols) && <Badge variant="warning">clipped to grid bounds</Badge>}
-      </div>
-      <div className="flex justify-end gap-2 pt-1">
-        <Button type="button" size="sm" variant="secondary" onClick={onCancel}>Cancel</Button>
-        <Button type="button" size="sm" onClick={onConfirm}>
-          Apply {plan.updates.length} cell{plan.updates.length === 1 ? '' : 's'}
-        </Button>
-      </div>
-    </div>
-  )
-}

@@ -17,6 +17,17 @@
  *   - skip computed/total cells (handled by the caller — MatrixGrid has no
  *     computed cells of its own, only frozen ones)
  *
+ * One deliberate deviation from the blueprint: BreakdownMatrixModal.tsx
+ * additionally rejects `value < 0` (budget amounts can't be negative).
+ * `parseNumericCell` here does NOT reject negatives — this module is
+ * generic across MRP grids, and the Sales Forecast page (design spec
+ * §6.6 page 1) has no stated rule against a negative forecast quantity
+ * (e.g. a planner backing out an over-forecast via a negative adjustment
+ * cell is a legitimate, if rare, entry — same reasoning the codebase
+ * already applies to PO/PR unit price allowing 0/negative). If a future
+ * grid needs the budget module's non-negative rule, add it as a
+ * caller-supplied validator rather than hardcoding it back in here.
+ *
  * Module-specific additions (design spec §6.6, page 1):
  *   - a blank pasted cell is skipped, not zeroed (protects existing data)
  *   - a cell landing on a frozen key is skipped and counted separately
