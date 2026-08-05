@@ -119,12 +119,15 @@ export default function BomExplorerPage() {
   }
 
   // ── Export ───────────────────────────────────────────────────────────────
-  function handleExport() {
+  // async: exportExplodeTree/exportWhereUsed dynamically import('xlsx') on
+  // first use (M9, final-phase review) rather than paying its ~1.3MB in the
+  // main bundle for every page load.
+  async function handleExport() {
     if (mode === 'explode' && explodeQuery.data) {
-      exportExplodeTree(explodeQuery.data, asOfDate)
+      await exportExplodeTree(explodeQuery.data, asOfDate)
       toasts.success('Export downloaded.')
     } else if (mode === 'where-used' && queriedComponent && whereUsedQuery.data) {
-      exportWhereUsed(queriedComponent, asOfDate, whereUsedQuery.data)
+      await exportWhereUsed(queriedComponent, asOfDate, whereUsedQuery.data)
       toasts.success('Export downloaded.')
     }
   }

@@ -8,7 +8,13 @@
 // client-side (all others proxy a backend export endpoint), but no backend
 // endpoint exists here to proxy, and a bare CSV wouldn't satisfy "indent
 // level" as a real column planners can group/filter by in Excel.
-import * as XLSX from 'xlsx'
+//
+// `xlsx` (~1.3MB) is loaded via a dynamic `import()` inside each export
+// function below, NOT a static top-level import (M9, final-phase review):
+// this file is statically reachable from routes.tsx (BomExplorerPage ->
+// exportBom.ts), so a top-level `import * as XLSX from 'xlsx'` put the
+// whole library in the main chunk for every user on every page, not just
+// the ones who click "Export" on the BOM Explorer.
 import { displayBomType } from './bomType'
 import type { ExplodeNode, WhereUsedResult } from './bomApi'
 
@@ -55,7 +61,8 @@ function flatten(node: ExplodeNode, rows: ExplodeRow[]): void {
   for (const child of node.children) flatten(child, rows)
 }
 
-export function exportExplodeTree(root: ExplodeNode, asOfDate: string): void {
+export async function exportExplodeTree(root: ExplodeNode, asOfDate: string): Promise<void> {
+  const XLSX = await import('xlsx')
   const rows: ExplodeRow[] = []
   flatten(root, rows)
   const sheet = XLSX.utils.json_to_sheet(rows)
@@ -72,7 +79,10 @@ interface WhereUsedRow {
   'Cycle Detected': string
 }
 
-export function exportWhereUsed(component: string, asOfDate: string, results: WhereUsedResult[]): void {
+export async function exportWhereUsed(
+  component: string, asOfDate: string, results: WhereUsedResult[],
+): Promise<void> {
+  const XLSX = await import('xlsx')
   const rows: WhereUsedRow[] = results.map((r) => ({
     'Top Product': r.top_product,
     Path: r.path.join(' → '),
