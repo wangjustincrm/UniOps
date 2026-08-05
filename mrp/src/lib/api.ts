@@ -5,6 +5,14 @@
 // trap has burned this project before.
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:8011'
 const EPMS_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
+// mdm-api (materials master, for the Consignment Stock product picker — see
+// lib/materials.ts). No VITE_MDM_API_URL is wired into mrp's docker-compose
+// service yet (only epms/oa/portal/finance/booking got it) — the fallback
+// matches mdm-api's fixed dev port (docker-compose.dev.yml maps 8002:8002)
+// and mdm-api's ALLOWED_ORIGINS already includes localhost:5179 (mrp's own
+// dev port), so this works without touching compose. Same pattern as
+// EPMS_BASE above.
+const MDM_BASE = (import.meta.env.VITE_MDM_API_URL as string | undefined) || 'http://localhost:8002'
 
 function getToken(): string | null {
   try {
@@ -140,4 +148,15 @@ async function epmsRequest<T>(path: string): Promise<T> {
 /** epms-api client (used for public branding — see hooks/useBranding.ts). */
 export const epmsApi = {
   get: <T>(path: string) => epmsRequest<T>(path),
+}
+
+async function mdmRequest<T>(path: string): Promise<T> {
+  const res = await authFetch(`${MDM_BASE}${path}`, {})
+  if (!res.ok) throw await toApiError(res)
+  return res.json()
+}
+
+/** mdm-api client (materials master — see lib/materials.ts). Mounted under /mdm/v1, unlike mrp-api's /api/v1 — pass the full `/mdm/v1/...` path. */
+export const mdmApi = {
+  get: <T>(path: string) => mdmRequest<T>(path),
 }
