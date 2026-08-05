@@ -49,18 +49,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.authz import require_any_permission
+from app.core.authz import require_any_permission, require_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.bom import Bom, BomLine
+from app.models.sync_state import NcSyncState
 from app.services.bom_common import covers_date, version_key
 from app.services.bom_explode import ExplodeNode, WhereUsedResult, explode_bom, find_where_used
-from app.services.nc_bom_sync.canonical_sync import sync_boms
+from app.services.nc_bom_sync.canonical_sync import BomSyncInProgress, sync_boms
 from app.services.nc_bom_sync.reader import nc_configured
 
 router = APIRouter(prefix="/boms", tags=["boms"])
 
 SyncDep = Annotated[dict, Depends(require_any_permission("data_maintenance", "mdm.bom.write"))]
+# Task 7: GET /sync-state is gated narrower than /effective|/explode|/where-
+# used (any authenticated role) — design spec §6.6 explicitly calls out
+# `mrp.report.view` for this one, matching mrp-api's own report endpoints
+# (consignment.py/forecast.py/inventory.py's ReadDep).
+ReportViewDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
 
 
 class BomSubstituteResponse(BaseModel):
@@ -218,6 +224,36 @@ async def where_used_endpoint(
     return await find_where_used(db, component, date, max_depth=max_depth, max_nodes=max_nodes)
 
 
+class BomSyncStateResponse(BaseModel):
+    source: str
+    last_success_at: str | None = None
+    last_error: str | None = None
+    last_stats: dict | None = None
+    updated_at: str | None = None
+
+
+@router.get("/sync-state", response_model=BomSyncStateResponse)
+async def get_bom_sync_state(
+    db: AsyncSession = Depends(get_db),
+    _: ReportViewDep = ...,
+):
+    """Task 7: so the BOM Explorer page can show "Last synced: … (N hours
+    ago)" instead of Sync being a blind button (design spec §6.6's flagged
+    backend gap). No row yet (never synced in this environment) is not a
+    404 — comes back with every field null so the UI can render "Never
+    synced" instead of special-casing an error response."""
+    state = await db.get(NcSyncState, "nc_bom")
+    if state is None:
+        return BomSyncStateResponse(source="nc_bom")
+    return BomSyncStateResponse(
+        source=state.source,
+        last_success_at=state.last_success_at.isoformat() if state.last_success_at else None,
+        last_error=state.last_error,
+        last_stats=state.last_stats,
+        updated_at=state.updated_at.isoformat() if state.updated_at else None,
+    )
+
+
 @router.post("/sync", response_model=BomSyncResponse)
 async def trigger_bom_sync(
     db: AsyncSession = Depends(get_db),
@@ -231,4 +267,11 @@ async def trigger_bom_sync(
     # their own NC sync triggers.
     if not nc_configured():
         raise HTTPException(status_code=503, detail="NC connection is not configured")
-    return await sync_boms(db)
+    try:
+        return await sync_boms(db)
+    except BomSyncInProgress as e:
+        # Non-blocking concurrency guard (Task 7, design spec §6.6): two
+        # planners double-clicking Sync must not queue behind each other's
+        # delete+insert transaction — the second gets an immediate, clear
+        # answer instead of a hung request.
+        raise HTTPException(status_code=409, detail=str(e))

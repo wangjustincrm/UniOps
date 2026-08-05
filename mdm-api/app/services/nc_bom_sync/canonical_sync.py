@@ -32,14 +32,55 @@ raw mirror sync first, then transform):
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.bom import Bom, BomLine, BomSubstitute
+from app.models.sync_state import NcSyncState
 from app.services.nc_bom_sync.reader import fetch_nc_bom
 from app.services.nc_bom_sync.service import sync_nc_bom as sync_raw_mirror
 from app.services.nc_bom_sync.transform import transform
 from app.services.upsert import chunked_upsert_returning
+
+_SYNC_SOURCE = "nc_bom"
+_LOCK_KEY = "nc_bom_sync"
+
+
+class BomSyncInProgress(RuntimeError):
+    """Raised when the concurrency guard's advisory lock is already held by
+    another in-flight sync (see `sync_boms`'s docstring for why this is a
+    SESSION-scoped `pg_try_advisory_lock`, not the `pg_try_advisory_xact_
+    lock` the design spec/task brief literally suggest). `app/api/v1/
+    boms.py`'s `POST /sync` catches this and returns 409 — non-blocking by
+    design: the caller gets an immediate, clear signal instead of queueing
+    behind the lock (and behind the other sync's multi-second NC round
+    trip) only to time out."""
+
+
+async def _record_sync_state(
+    db: AsyncSession, *, success: bool, error: str | None = None, stats: dict | None = None,
+) -> None:
+    """Upsert nc_sync_state (source='nc_bom') — Task 7. On success:
+    `last_success_at` advances to now, `last_error` is cleared, `last_stats`
+    holds this run's boms/lines/substitutes/skipped/warnings/tombstoned
+    tallies (the exact dict `sync_boms` returns). On failure: only
+    `last_error`/`updated_at` change — `last_success_at`/`last_stats` are
+    left at whatever the last GOOD run set them to, so the UI can still show
+    "last synced N hours ago" even while flagging that the most recent
+    attempt failed, rather than losing that history to a transient error."""
+    now = datetime.now(timezone.utc)
+    values: dict = {"source": _SYNC_SOURCE, "updated_at": now, "last_error": error}
+    if success:
+        values["last_success_at"] = now
+        values["last_stats"] = stats
+    stmt = pg_insert(NcSyncState).values(**values).on_conflict_do_update(
+        index_elements=["source"],
+        set_={k: v for k, v in values.items() if k != "source"},
+    )
+    await db.execute(stmt)
 
 
 async def _tombstone(db: AsyncSession, model, current_pks: set) -> tuple[int, bool]:
@@ -82,73 +123,127 @@ async def sync_boms(db: AsyncSession) -> dict:
     came back empty (see `_tombstone()`'s docstring) — existing rows in
     that table were left untouched, and a caller/operator should treat a
     non-empty `tombstone_skipped` as a warning worth investigating (did NC
-    really return zero rows for that layer, or was the read partial?)."""
-    # fetch_nc_bom() is a blocking oracledb call (sync driver, thin mode) — run
-    # it off the event loop so a slow/hung NC read doesn't stall every other
-    # request this service (also serving EPMS/OA/Finance lookups) is handling
-    # concurrently. asyncio.to_thread is the modern equivalent of the
-    # run_in_executor(None, ...) idiom epms-api/app/api/v1/nc_purchase_sync.py
-    # uses for the same class of call.
-    extract = await asyncio.to_thread(fetch_nc_bom)
-    await sync_raw_mirror(db, extract=extract)
+    really return zero rows for that layer, or was the read partial?).
 
-    t = transform(extract)
+    Task 7 additions — concurrency guard + sync-state recording:
 
-    bom_id_by_pk = await chunked_upsert_returning(db, Bom, t["boms"])
+    Concurrency guard uses a SESSION-scoped `pg_try_advisory_lock` (acquired
+    here, released in `finally`), not the `pg_try_advisory_xact_lock` the
+    design spec/task brief literally name. Reason: this function is NOT one
+    transaction — `sync_raw_mirror()` (Task 4's raw nc_bom/nc_bom_b/
+    nc_bom_repl mirror) commits internally before this function even starts
+    transforming/upserting the canonical tables, so an xact-scoped lock
+    taken at the top would already be released (by that FIRST commit)
+    before reaching the actual delete+insert phase the brief is worried
+    about (`_tombstone()`'s deletes + the canonical upserts below) — the
+    exact phase two concurrent runs would otherwise block each other on. A
+    session-scoped lock, held for this whole call and explicitly released
+    in `finally` (so it can never leak onto the pooled connection for an
+    unrelated future request), actually covers both phases.
 
-    line_rows = []
-    for row in t["lines"]:
-        row = dict(row)
-        bom_pk = row.pop("bom_nc_source_pk")
-        bom_id = bom_id_by_pk.get(bom_pk)
-        if bom_id is None:
-            continue  # shouldn't happen — transform() already drops orphan lines
-        row["bom_id"] = bom_id
-        line_rows.append(row)
-    line_id_by_pk = await chunked_upsert_returning(db, BomLine, line_rows)
+    Every exit path (success, a mid-sync exception, or the lock not being
+    acquired at all) is recorded to `nc_sync_state` via `_record_sync_state`
+    EXCEPT the lock-not-acquired case — that is a benign "someone else is
+    already syncing" signal, not a data-sync failure, and must not overwrite
+    the last real success/error history with a `BomSyncInProgress` message
+    every time two people click Sync close together."""
+    got_lock = (await db.execute(
+        text("SELECT pg_try_advisory_lock(hashtext(:key))"), {"key": _LOCK_KEY}
+    )).scalar()
+    if not got_lock:
+        raise BomSyncInProgress("A BOM sync is already running — try again shortly.")
 
-    sub_rows = []
-    for row in t["substitutes"]:
-        row = dict(row)
-        line_pk = row.pop("bom_line_nc_source_pk")
-        line_id = line_id_by_pk.get(line_pk)
-        if line_id is None:
-            continue  # shouldn't happen — transform() already drops orphan substitutes
-        row["bom_line_id"] = line_id
-        sub_rows.append(row)
-    sub_id_by_pk = await chunked_upsert_returning(db, BomSubstitute, sub_rows)
+    try:
+        # fetch_nc_bom() is a blocking oracledb call (sync driver, thin mode) — run
+        # it off the event loop so a slow/hung NC read doesn't stall every other
+        # request this service (also serving EPMS/OA/Finance lookups) is handling
+        # concurrently. asyncio.to_thread is the modern equivalent of the
+        # run_in_executor(None, ...) idiom epms-api/app/api/v1/nc_purchase_sync.py
+        # uses for the same class of call.
+        extract = await asyncio.to_thread(fetch_nc_bom)
+        await sync_raw_mirror(db, extract=extract)
 
-    # Tombstone child-to-parent: a bom_substitute/bom_line orphaned by a
-    # cascading DB-level ondelete="CASCADE" (see app/models/bom.py) on a
-    # parent deleted below is already gone by the time that DELETE runs, so
-    # order doesn't affect correctness — child-first just keeps the rowcount
-    # tallies meaningful (no double-counting rows the parent delete already
-    # removed).
-    n_tombstoned = 0
-    tombstone_skipped: list[str] = []
+        t = transform(extract)
 
-    n, skipped = await _tombstone(db, BomSubstitute, set(sub_id_by_pk))
-    n_tombstoned += n
-    if skipped:
-        tombstone_skipped.append("bom_substitutes")
+        bom_id_by_pk = await chunked_upsert_returning(db, Bom, t["boms"])
 
-    n, skipped = await _tombstone(db, BomLine, set(line_id_by_pk))
-    n_tombstoned += n
-    if skipped:
-        tombstone_skipped.append("bom_lines")
+        line_rows = []
+        for row in t["lines"]:
+            row = dict(row)
+            bom_pk = row.pop("bom_nc_source_pk")
+            bom_id = bom_id_by_pk.get(bom_pk)
+            if bom_id is None:
+                continue  # shouldn't happen — transform() already drops orphan lines
+            row["bom_id"] = bom_id
+            line_rows.append(row)
+        line_id_by_pk = await chunked_upsert_returning(db, BomLine, line_rows)
 
-    n, skipped = await _tombstone(db, Bom, set(bom_id_by_pk))
-    n_tombstoned += n
-    if skipped:
-        tombstone_skipped.append("boms")
+        sub_rows = []
+        for row in t["substitutes"]:
+            row = dict(row)
+            line_pk = row.pop("bom_line_nc_source_pk")
+            line_id = line_id_by_pk.get(line_pk)
+            if line_id is None:
+                continue  # shouldn't happen — transform() already drops orphan substitutes
+            row["bom_line_id"] = line_id
+            sub_rows.append(row)
+        sub_id_by_pk = await chunked_upsert_returning(db, BomSubstitute, sub_rows)
 
-    await db.commit()
-    return {
-        "boms": len(bom_id_by_pk),
-        "lines": len(line_id_by_pk),
-        "substitutes": len(sub_id_by_pk),
-        "skipped": len(t["skipped"]),
-        "warnings": len(t["warnings"]),
-        "tombstoned": n_tombstoned,
-        "tombstone_skipped": tombstone_skipped,
-    }
+        # Tombstone child-to-parent: a bom_substitute/bom_line orphaned by a
+        # cascading DB-level ondelete="CASCADE" (see app/models/bom.py) on a
+        # parent deleted below is already gone by the time that DELETE runs, so
+        # order doesn't affect correctness — child-first just keeps the rowcount
+        # tallies meaningful (no double-counting rows the parent delete already
+        # removed).
+        n_tombstoned = 0
+        tombstone_skipped: list[str] = []
+
+        n, skipped = await _tombstone(db, BomSubstitute, set(sub_id_by_pk))
+        n_tombstoned += n
+        if skipped:
+            tombstone_skipped.append("bom_substitutes")
+
+        n, skipped = await _tombstone(db, BomLine, set(line_id_by_pk))
+        n_tombstoned += n
+        if skipped:
+            tombstone_skipped.append("bom_lines")
+
+        n, skipped = await _tombstone(db, Bom, set(bom_id_by_pk))
+        n_tombstoned += n
+        if skipped:
+            tombstone_skipped.append("boms")
+
+        result = {
+            "boms": len(bom_id_by_pk),
+            "lines": len(line_id_by_pk),
+            "substitutes": len(sub_id_by_pk),
+            "skipped": len(t["skipped"]),
+            "warnings": len(t["warnings"]),
+            "tombstoned": n_tombstoned,
+            "tombstone_skipped": tombstone_skipped,
+        }
+        # Success state is written in the SAME transaction as the canonical
+        # data (one final commit for both) — still under the lock, so a
+        # concurrent reader of GET /sync-state can never observe a moment
+        # where the canonical tables reflect this run but the state row
+        # doesn't yet (or vice versa).
+        await _record_sync_state(db, success=True, stats=result)
+        await db.commit()
+        return result
+    except Exception as exc:
+        # Roll back whatever this attempt half-wrote, THEN record the
+        # failure in its own fresh transaction — must not be swallowed
+        # (still re-raised below) and must not silently vanish if the
+        # exception itself came from mid-transaction (rollback first is
+        # what makes the state write possible at all in that case).
+        await db.rollback()
+        await _record_sync_state(db, success=False, error=str(exc)[:2000])
+        await db.commit()
+        raise
+    finally:
+        # Always release, whether we returned or raised — a leaked
+        # session-scoped lock would otherwise sit on this pooled connection
+        # and permanently 409 every future sync until the connection
+        # happens to be recycled.
+        await db.execute(text("SELECT pg_advisory_unlock(hashtext(:key))"), {"key": _LOCK_KEY})
+        await db.commit()
