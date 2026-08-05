@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Plus, ChevronDown, Receipt, Car, Plane, FileText } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
 
@@ -49,7 +50,7 @@ function TypeBadge({ type }: { type: string }) {
 
 // ── Filter tabs ───────────────────────────────────────────────────────────────
 
-const TABS = ['all', 'draft', 'submitted', 'in_review', 'approved', 'paid'] as const
+const TABS = ['all', STATUS.DRAFT, STATUS.SUBMITTED, STATUS.IN_REVIEW, STATUS.APPROVED, STATUS.PAID] as const
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 

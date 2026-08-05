@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
-from app.core.access_scope import build_scope
+from app.core.access_scope import build_scope, _effective_role_codes
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services import finance_client
@@ -86,10 +86,18 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
                 select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
             )).scalar_one_or_none()
         if pr_requester_id != uuid.UUID(user["sub"]):
-            raise HTTPException(
-                status_code=403,
-                detail="You can only create payments for purchase orders linked to your own requisitions.",
-            )
+            # A base-requester may still pay a PR-less NC-imported PO if they hold
+            # the erp_pa_officer pool role — these POs have no requisitioner to own
+            # them, so ownership can't apply; fall through to the pa.write gate.
+            allowed_via_erp_pool = False
+            if po.pr_id is None and po.source == "nc":
+                roles = await _effective_role_codes(db, "requester", uuid.UUID(user["sub"]))
+                allowed_via_erp_pool = "erp_pa_officer" in roles
+            if not allowed_via_erp_pool:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only create payments for purchase orders linked to your own requisitions.",
+                )
 
     # ── Prepayment-specific guards ─────────────────────────────────────────────
     if body.pa_type == "prepayment":

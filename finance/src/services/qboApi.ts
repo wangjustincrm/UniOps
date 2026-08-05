@@ -18,6 +18,12 @@ export interface QboDetail {
   lines: Record<string, unknown>[]
   attachments: { attachment_qbo_id: string; txn_type: string | null }[]
 }
+export interface QboBackfillResult {
+  updated: { code: string; name: string; email: string }[]
+  skipped_has_value: number
+  ambiguous: { side: 'qbo' | 'epms'; name: string }[]
+  unmatched_qbo: string[]
+}
 
 export const ENTITY_TABS: { slug: string; label: string }[] = [
   { slug: 'bills', label: 'Bills' },
@@ -44,5 +50,7 @@ export const qboApi = {
     return financeApi.get<QboPage>(`/qbo/${entity}?${qs.toString()}`)
   },
   detail: (entity: string, id: string) => financeApi.get<QboDetail>(`/qbo/${entity}/${id}`),
+  backfillVendorEmails: () =>
+    financeApi.post<QboBackfillResult>('/qbo/vendor-emails/backfill', {}),
   fileUrl: (attachmentId: string) => `/qbo/attachments/${attachmentId}/file`,
 }

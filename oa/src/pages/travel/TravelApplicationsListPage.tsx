@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Plus, Plane } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
 
@@ -23,7 +24,7 @@ interface TravelAppList { items: TravelApp[]; total: number }
 
 // ── Filter tabs ───────────────────────────────────────────────────────────────
 
-const TABS = ['all', 'draft', 'submitted', 'in_review', 'approved'] as const
+const TABS = ['all', STATUS.DRAFT, STATUS.SUBMITTED, STATUS.IN_REVIEW, STATUS.APPROVED] as const
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 

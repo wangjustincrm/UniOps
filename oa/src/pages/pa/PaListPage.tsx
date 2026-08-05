@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
 
@@ -66,7 +67,7 @@ export default function PaListPage() {
 
       {/* Filter tabs */}
       <div className="flex gap-1 border-b border-neutral-200">
-        {['all', 'submitted', 'in_review', 'approved', 'processed'].map((s) => (
+        {['all', STATUS.SUBMITTED, STATUS.IN_REVIEW, STATUS.APPROVED, STATUS.PROCESSED].map((s) => (
           <button
             key={s}
             onClick={() => { setParams(s === 'all' ? {} : { status: s }); setPage(1) }}

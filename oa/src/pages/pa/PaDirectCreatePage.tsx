@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
-import { useReplaceTab } from '@uniops/shell'
+import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -11,6 +11,7 @@ import { api, budgetApi, epmsApi } from '@/lib/api'
 import { useOaAuth } from '@/store/auth'
 import { parseInvoiceFile, type ParsedInvoiceFields, type ParsedLineItem } from '@/lib/invoice-parser'
 import { useUomCodes } from '@/hooks/useUoms'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import * as pdfjsLib from 'pdfjs-dist'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -264,11 +265,7 @@ function Step1Upload({
         )}
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
+      {error && <ErrorBanner message={error} />}
     </div>
   )
 }
@@ -330,12 +327,13 @@ function Step2Review({
   // Auto-select when server returns an exact or close match
   useEffect(() => {
     if (selectedVendorId || vendors.length === 0) return
-    const extractedName = (initial.vendorName ?? '').toLowerCase()
+    const extractedName = (initial.vendorName ?? '').trim().toLowerCase()
+    if (extractedName.length < 3) return   // OCR 无名/太短 → 不自动匹配（避免 includes('') 恒真误配 vendors[0]）
     const exact = vendors.find(v => v.name.toLowerCase() === extractedName)
-    const partial = vendors.find(v =>
-      v.name.toLowerCase().includes(extractedName) ||
-      extractedName.includes(v.name.toLowerCase())
-    )
+    const partial = vendors.find(v => {
+      const n = v.name.toLowerCase()
+      return n.includes(extractedName) || extractedName.includes(n)
+    })
     const match = exact ?? partial
     if (match) setSelectedVendorId(match.id)
   }, [vendors])
@@ -723,6 +721,8 @@ function Step3PaForm({
   const [extraFiles, setExtraFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [createdInvoiceId, setCreatedInvoiceId] = useState<string | null>(null)
+  const [attachmentsUploaded, setAttachmentsUploaded] = useState(false)
   const extraFileInputRef = useRef<HTMLInputElement>(null)
 
   const total = (fields.amount ?? 0) + (fields.taxAmount ?? 0)
@@ -731,47 +731,51 @@ function Step3PaForm({
     e.preventDefault()
     setSaving(true); setError('')
     try {
-      // 1. Create invoice record (JSON — no binary upload)
-      const inv = await api.post<InvoiceRecord>('/api/v1/invoices', {
-        file_name: file.name,
-        file_mime_type: file.type || 'application/octet-stream',
-        file_size_bytes: file.size,
-        invoice_number: fields.vendorInvoiceNumber || null,
-        vendor_id: vendorId || null,          // ← required for dedup check
-        vendor_name: vendorName || null,
-        invoice_date: fields.invoiceDate || null,
-        due_date: fields.dueDate || null,
-        currency: fields.currency || 'CAD',
-        subtotal: fields.amount ?? 0,
-        tax_amount: fields.taxAmount ?? 0,
-        total_amount: total,
-        lines: (fields.lineItems ?? []).map((li, i) => ({
-          line_number: i + 1,
-          description: li.description,
-          quantity: li.quantity,
-          unit: li.unit,
-          unit_price: li.unit_price,
-          amount: li.line_total,
-          tax_amount: 0,
-        })),
-      })
-
-      // 2. Upload invoice file + extra attachments (non-fatal).
-      //    Use api.postForm (absolute VITE_API_URL) — OA runs in Docker where the
-      //    relative-fetch Vite proxy is dead.
-      const uploadAttachment = async (f: File) => {
-        const form = new FormData()
-        form.append('file', f)
-        await api.postForm(`/api/v1/invoice-attachments?invoice_id=${inv.id}&invoice_source=oa`, form)
+      // 1. 建发票（重试时复用已建的，避免 dedup 409 锁死）
+      let invoiceId = createdInvoiceId
+      if (!invoiceId) {
+        const inv = await api.post<InvoiceRecord>('/api/v1/invoices', {
+          file_name: file.name,
+          file_mime_type: file.type || 'application/octet-stream',
+          file_size_bytes: file.size,
+          invoice_number: fields.vendorInvoiceNumber || null,
+          vendor_id: vendorId || null,
+          vendor_name: vendorName || null,
+          invoice_date: fields.invoiceDate || null,
+          due_date: fields.dueDate || null,
+          currency: fields.currency || 'CAD',
+          subtotal: fields.amount ?? 0,
+          tax_amount: fields.taxAmount ?? 0,
+          total_amount: total,
+          lines: (fields.lineItems ?? []).map((li, i) => ({
+            line_number: i + 1,
+            description: li.description,
+            quantity: li.quantity,
+            unit: li.unit,
+            unit_price: li.unit_price,
+            amount: li.line_total,
+            tax_amount: 0,
+          })),
+        })
+        invoiceId = inv.id
+        setCreatedInvoiceId(invoiceId)
       }
-      await uploadAttachment(file).catch(() => {})
 
-      // 3. Upload extra attachments (non-fatal)
-      for (const f of extraFiles) { await uploadAttachment(f).catch(() => {}) }
+      // 2. 上传发票文件 + 附加附件（non-fatal，只传一次）
+      if (!attachmentsUploaded) {
+        const uploadAttachment = async (f: File) => {
+          const form = new FormData()
+          form.append('file', f)
+          await api.postForm(`/api/v1/invoice-attachments?invoice_id=${invoiceId}&invoice_source=oa`, form)
+        }
+        await uploadAttachment(file).catch(() => {})
+        for (const f of extraFiles) { await uploadAttachment(f).catch(() => {}) }
+        setAttachmentsUploaded(true)
+      }
 
-      // 4. Create PA-DIR linked to the invoice
+      // 3. 建 PA-DIR
       const pa = await api.post<{ id: string; pa_number: string }>('/api/v1/pa/direct', {
-        invoice_id: inv.id,
+        invoice_id: invoiceId,
         vendor_id: vendorId,
         vendor_name: vendorName,
         payment_amount: total,
@@ -784,13 +788,7 @@ function Step3PaForm({
 
       onCreated(pa.id)
     } catch (err: any) {
-      const detail = err.message || 'Failed to create PA'
-      // Handle duplicate invoice error
-      if (detail.includes('already recorded') || err.status === 409) {
-        setError(detail)
-      } else {
-        setError(detail)
-      }
+      setError(err.message || 'Failed to create PA')
     } finally { setSaving(false) }
   }
 
@@ -979,17 +977,12 @@ function Step3PaForm({
         <p className="text-info-700">Direct payments always require <strong>Finance Manager</strong> approval.</p>
       </div>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{error}
-        </div>
-      )}
+      {error && <ErrorBanner message={error} />}
 
-      <button type="submit" disabled={saving || !vendorName}
-        className="flex items-center justify-center gap-2 rounded-lg bg-primary-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 transition-colors">
+      <Button type="submit" size="sm" disabled={saving || !vendorName}>
         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
         {saving ? 'Creating…' : 'Create Payment Application'}
-      </button>
+      </Button>
     </form>
   )
 }

@@ -8,8 +8,8 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, RefreshCw, X } from 'lucide-react'
-import { qboApi, ENTITY_TABS, type QboDetail } from '@/services/qboApi'
+import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, Mail, RefreshCw, X } from 'lucide-react'
+import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
@@ -204,6 +204,7 @@ function QboTabs() {
             Search
           </button>
         </form>
+        {tab === 'vendors' && <VendorEmailBackfill />}
       </div>
 
       <div className="overflow-auto rounded-lg border border-neutral-200 max-h-[70vh]">
@@ -364,5 +365,124 @@ function DetailModal({ entity, id, onClose }: { entity: string; id: string; onCl
       </div>
     </div>,
     document.body,
+  )
+}
+
+function VendorEmailBackfill() {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<QboBackfillResult | null>(null)
+
+  async function run() {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await qboApi.backfillVendorEmails()
+      setResult(r)
+      setConfirming(false)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <button className={secondaryBtn} onClick={() => { setError(null); setConfirming(true) }}>
+        <Mail className="h-4 w-4" /> Fill Remittance Emails
+      </button>
+
+      {confirming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => !busy && setConfirming(false)}>
+          <div className="w-full max-w-md space-y-3 rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
+              <Mail className="h-4 w-4 text-[#085E5E]" /> Fill Remittance Emails
+            </h2>
+            <p className="text-sm text-neutral-600">
+              Copies each QuickBooks vendor email into the matching EPMS vendor's
+              Remittance Email — only where it is currently empty. Existing values
+              are never overwritten.
+            </p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
+              <button className={secondaryBtn} disabled={busy} onClick={() => setConfirming(false)}>Cancel</button>
+              <button className={primaryBtn} disabled={busy} onClick={run}>
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Fill emails
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={() => setResult(null)}>
+          <div className="max-h-[85vh] w-full max-w-2xl space-y-4 overflow-auto rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+              <h2 className="text-base font-semibold text-neutral-800">Backfill result</h2>
+              <button onClick={() => setResult(null)} className="rounded p-1 text-neutral-400 hover:text-neutral-700">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-neutral-600">
+              {result.updated.length} filled · {result.skipped_has_value} already had a value ·{' '}
+              {result.ambiguous.length} ambiguous · {result.unmatched_qbo.length} unmatched
+            </p>
+
+            {result.updated.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-sm font-semibold text-neutral-700">Filled</h3>
+                <div className="overflow-hidden rounded-lg border border-neutral-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Code</th>
+                        <th className="px-3 py-2 font-medium">Vendor</th>
+                        <th className="px-3 py-2 font-medium">Email</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.updated.map((u) => (
+                        <tr key={u.code} className="border-t border-neutral-100">
+                          <td className="whitespace-nowrap px-3 py-1.5">{u.code}</td>
+                          <td className="px-3 py-1.5">{u.name}</td>
+                          <td className="px-3 py-1.5">{u.email}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {result.ambiguous.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-sm font-semibold text-neutral-700">
+                  Ambiguous names (skipped — resolve manually)
+                </h3>
+                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-neutral-600">
+                  {result.ambiguous.map((a, i) => (
+                    <li key={i}>{a.name} <span className="text-xs text-neutral-400">({a.side === 'qbo' ? 'duplicate in QuickBooks' : 'duplicate in EPMS'})</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {result.unmatched_qbo.length > 0 && (
+              <div>
+                <h3 className="mb-1 text-sm font-semibold text-neutral-700">
+                  No matching EPMS vendor
+                </h3>
+                <ul className="max-h-40 space-y-0.5 overflow-auto text-sm text-neutral-600">
+                  {result.unmatched_qbo.map((n) => <li key={n}>{n}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   )
 }

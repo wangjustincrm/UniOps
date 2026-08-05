@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { STATUS } from '@/lib/status'
 import { groupTasks } from '@/lib/groupTasks'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -198,9 +199,9 @@ function TaskCard({ task }: { task: OaTaskItem }) {
             </span>
             <span className={cn(
               'rounded-full px-1.5 py-0.5 text-[11px] font-medium',
-              task.status === 'returned'
+              task.status === STATUS.RETURNED
                 ? 'bg-warning-100 text-warning-700'
-                : task.status === 'approved'
+                : task.status === STATUS.APPROVED
                 ? 'bg-success-100 text-success-700'
                 : 'bg-neutral-100 text-neutral-600',
             )}>

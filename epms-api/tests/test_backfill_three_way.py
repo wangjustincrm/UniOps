@@ -17,7 +17,7 @@ from app.models.vendor import Vendor
 from app.schemas.auth import RegisterRequest
 
 
-async def _po_with_matched_invoice(db, *, with_gr):
+async def _po_with_matched_invoice(db, *, with_gr, source=None, pr_id=None):
     u = await user_crud.create(db, RegisterRequest(
         email=f"u-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
         full_name="U", role="requester"))
@@ -25,7 +25,8 @@ async def _po_with_matched_invoice(db, *, with_gr):
                contact_name="C", contact_email="c@x.com")
     db.add(v); await db.flush()
     po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=2,
-                       vendor_id=v.id, vendor_name="Acme", status="issued", created_by=u.id)
+                       vendor_id=v.id, vendor_name="Acme", status="issued",
+                       created_by=u.id, source=source, pr_id=pr_id)
     db.add(po); await db.flush()
     gr_id = None
     if with_gr:
@@ -63,4 +64,21 @@ async def test_backfill_creates_for_three_way_po():
         po = await _po_with_matched_invoice(db, with_gr=True)    # 3-way(挂 GR)
         await _backfill_create_pa_tasks(db)
         await db.flush()
-        assert len(await _open_create_pa(db, po.id)) == 1
+        tasks = await _open_create_pa(db, po.id)
+        assert len(tasks) == 1
+        assert tasks[0].assigned_role == "requester"            # non-NC → requester
+        assert tasks[0].assigned_user_id == po.created_by
+
+
+@pytest.mark.asyncio
+async def test_backfill_routes_nc_po_to_erp_pa_officer_pool():
+    """A 3-way NC-imported PO (no PR) backfills a create_pa task to the
+    erp_pa_officer pool (broadcast, NULL assignee), not the nc-sync PO creator."""
+    async with sm.AsyncSessionLocal() as db:
+        po = await _po_with_matched_invoice(db, with_gr=True, source="nc")
+        await _backfill_create_pa_tasks(db)
+        await db.flush()
+        tasks = await _open_create_pa(db, po.id)
+        assert len(tasks) == 1
+        assert tasks[0].assigned_role == "erp_pa_officer"
+        assert tasks[0].assigned_user_id is None

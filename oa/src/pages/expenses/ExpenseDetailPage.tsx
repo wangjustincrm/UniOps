@@ -4,8 +4,11 @@ import { useState, useRef } from 'react'
 import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
+import { ActionModal } from '@/components/ui/ActionModal'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -102,71 +105,11 @@ interface ApprovalStep {
 // ── Badges ────────────────────────────────────────────────────────────────────
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
-  submit:  <CheckCircle className="h-4 w-4 text-info-500" />,
-  approve: <CheckCircle className="h-4 w-4 text-success-500" />,
-  reject:  <XCircle className="h-4 w-4 text-danger-500" />,
-  return:  <RotateCcw className="h-4 w-4 text-warning-500" />,
-  pay:     <Banknote className="h-4 w-4 text-success-500" />,
-}
-
-// ── Action modal ──────────────────────────────────────────────────────────────
-
-function ActionModal({
-  action, onConfirm, onClose, loading,
-}: {
-  action: string
-  onConfirm: (comment: string) => void
-  onClose: () => void
-  loading: boolean
-}) {
-  const [comment, setComment] = useState('')
-  const labels: Record<string, { title: string; color: string }> = {
-    submit:  { title: 'Submit for Approval', color: 'bg-primary-700 text-white' },
-    approve: { title: 'Approve Claim', color: 'bg-success-600 text-white' },
-    reject:  { title: 'Reject Claim', color: 'bg-danger-600 text-white' },
-    return:  { title: 'Return for Revision', color: 'bg-warning-500 text-white' },
-    pay:     { title: 'Record Payment', color: 'bg-success-600 text-white' },
-  }
-  const cfg = labels[action] ?? { title: action, color: 'bg-neutral-800 text-white' }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white shadow-xl">
-        <div className="p-5">
-          <h3 className="text-base font-semibold text-neutral-900">{cfg.title}</h3>
-          <div className="mt-3">
-            <label className="mb-1 block text-xs font-medium text-neutral-600">
-              Comment {action === 'return' || action === 'reject' ? '(required)' : '(optional)'}
-            </label>
-            <textarea
-              value={comment}
-              onChange={(e) => setComment(e.target.value)}
-              rows={3}
-              className="w-full rounded border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none"
-              placeholder="Add a comment…"
-            />
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 border-t border-neutral-100 px-5 py-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={loading || ((action === 'return' || action === 'reject') && !comment.trim())}
-            onClick={() => onConfirm(comment)}
-            className={cn('rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50', cfg.color)}
-          >
-            {loading ? 'Processing…' : cfg.title}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
+  [ACTION.SUBMIT]:  <CheckCircle className="h-4 w-4 text-info-500" />,
+  [ACTION.APPROVE]: <CheckCircle className="h-4 w-4 text-success-500" />,
+  [ACTION.REJECT]:  <XCircle className="h-4 w-4 text-danger-500" />,
+  [ACTION.RETURN]:  <RotateCcw className="h-4 w-4 text-warning-500" />,
+  [ACTION.PAY]:     <Banknote className="h-4 w-4 text-success-500" />,
 }
 
 // ── Attachments card ──────────────────────────────────────────────────────────
@@ -249,8 +192,8 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
       </div>
 
       {uploadError && (
-        <div className="mx-5 mt-3 flex items-center gap-2 rounded-lg bg-danger-50 border border-danger-200 px-3 py-2 text-sm text-danger-700">
-          <AlertTriangle className="h-4 w-4 shrink-0" />{uploadError}
+        <div className="mx-5 mt-3">
+          <ErrorBanner message={uploadError} />
         </div>
       )}
 
@@ -430,7 +373,7 @@ export default function ExpenseDetailPage() {
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
   const requiresAttachment = ['EXP', 'TRV'].includes(claim.claim_type)
-  const missingAttachment = requiresAttachment && claim.status === 'draft' && attachments.length === 0
+  const missingAttachment = requiresAttachment && claim.status === STATUS.DRAFT && attachments.length === 0
 
   // Permissions resolved server-side (see the /permissions query above).
   const isOwner = perms?.is_owner ?? false
@@ -471,9 +414,9 @@ export default function ExpenseDetailPage() {
 
           {/* Action buttons */}
           <div className="flex gap-2">
-            {claim.status === 'draft' && isOwner && (
+            {claim.status === STATUS.DRAFT && isOwner && (
               <button
-                onClick={() => setActiveAction('submit')}
+                onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
                 title={missingAttachment ? 'Attach at least one receipt before submitting' : undefined}
                 className="rounded-lg bg-primary-700 px-4 py-2 text-sm font-medium text-white hover:bg-primary-800 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -481,7 +424,7 @@ export default function ExpenseDetailPage() {
                 Submit
               </button>
             )}
-            {claim.status === 'returned' && isOwner && (
+            {claim.status === STATUS.RETURNED && isOwner && (
               <button
                 onClick={() => navigate(`/expenses/edit/${claim.id}`)}
                 className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
@@ -489,31 +432,31 @@ export default function ExpenseDetailPage() {
                 Edit
               </button>
             )}
-            {(claim.status === 'submitted' || claim.status === 'in_review') && canApprove && (
+            {isInApproval(claim.status) && canApprove && (
               <>
                 <button
-                  onClick={() => setActiveAction('return')}
+                  onClick={() => setActiveAction(ACTION.RETURN)}
                   className="rounded-lg border border-warning-200 px-4 py-2 text-sm font-medium text-warning-700 hover:bg-warning-50"
                 >
                   Return
                 </button>
                 <button
-                  onClick={() => setActiveAction('reject')}
+                  onClick={() => setActiveAction(ACTION.REJECT)}
                   className="rounded-lg border border-danger-200 px-4 py-2 text-sm font-medium text-danger-600 hover:bg-danger-50"
                 >
                   Reject
                 </button>
                 <button
-                  onClick={() => setActiveAction('approve')}
+                  onClick={() => setActiveAction(ACTION.APPROVE)}
                   className="rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
                 >
                   Approve
                 </button>
               </>
             )}
-            {claim.status === 'approved' && canPay && (
+            {claim.status === STATUS.APPROVED && canPay && (
               <button
-                onClick={() => setActiveAction('pay')}
+                onClick={() => setActiveAction(ACTION.PAY)}
                 className="rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
               >
                 Mark as Processed
@@ -539,7 +482,7 @@ export default function ExpenseDetailPage() {
             <p className="mt-0.5 text-sm font-medium text-neutral-800">{claim.vehicle_description}</p>
           </div>
         )}
-        {claim.total_km && (
+        {claim.total_km != null && (
           <div>
             <p className="text-xs font-medium text-neutral-500">Total km</p>
             <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>
@@ -682,7 +625,7 @@ export default function ExpenseDetailPage() {
       )}
 
       {/* Attachments */}
-      <AttachmentsCard claimId={claim.id} canUpload={['draft', 'returned'].includes(claim.status)} />
+      <AttachmentsCard claimId={claim.id} canUpload={isEditable(claim.status)} />
 
       {/* Approval timeline */}
       {claim.approval_events.length > 0 && (
@@ -712,7 +655,7 @@ export default function ExpenseDetailPage() {
       )}
 
       {/* Mark as Processed modal */}
-      {activeAction === 'pay' && (
+      {activeAction === ACTION.PAY && (
         <ProcessPaymentModal
           docNumber={claim.claim_number}
           currency={claim.currency}
@@ -724,20 +667,15 @@ export default function ExpenseDetailPage() {
       )}
 
       {/* Action modal (submit / approve / return / reject) */}
-      {activeAction && activeAction !== 'pay' && (
+      {activeAction && activeAction !== ACTION.PAY && (
         <ActionModal
           action={activeAction}
+          docNumber={claim.claim_number}
           onClose={() => setActiveAction(null)}
           loading={actionMutation.isPending}
+          error={actionMutation.isError ? (actionMutation.error as Error).message : undefined}
           onConfirm={(comment) => actionMutation.mutate({ action: activeAction, comment })}
         />
-      )}
-
-      {/* Action error */}
-      {actionMutation.isError && (
-        <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
-          {(actionMutation.error as Error).message}
-        </div>
       )}
     </div>
   )

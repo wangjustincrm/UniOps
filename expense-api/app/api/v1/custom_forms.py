@@ -19,9 +19,11 @@ _ADMIN_ROLES = ("system_admin", "finance_manager")
 @router.get("", response_model=list[CustomFormResponse])
 async def list_custom_forms(
     db: SessionDep,
-    _: CurrentUserDep,
+    user: CurrentUserDep,
     active_only: bool = Query(False),
 ):
+    if user.get("role") not in _ADMIN_ROLES:
+        active_only = True
     return await cf_crud.list_forms(db, active_only=active_only)
 
 

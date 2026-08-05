@@ -18,14 +18,6 @@ function getToken(): string | null {
   } catch { return null }
 }
 
-function headers(hasBody = false): HeadersInit {
-  const h: Record<string, string> = {}
-  const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
-  if (hasBody) h['Content-Type'] = 'application/json'
-  return h
-}
-
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 export const EPMS_URL = (import.meta.env.VITE_EPMS_URL as string | undefined) || 'http://localhost:5173'
 
@@ -63,54 +55,48 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(detailToMessage(detail, `HTTP ${res.status}`), res.status, detail)
 }
 
+async function authFetch(
+  url: string,
+  opts: { method?: string; body?: unknown; form?: FormData; handle401?: boolean } = {},
+): Promise<Response> {
+  const h: Record<string, string> = {}
+  const token = getToken()
+  if (token) h['Authorization'] = `Bearer ${token}`
+
+  let bodyInit: BodyInit | undefined
+  if (opts.form) {
+    bodyInit = opts.form                 // multipart — let the browser set the boundary
+  } else if (opts.body !== undefined) {
+    h['Content-Type'] = 'application/json'
+    bodyInit = JSON.stringify(opts.body)
+  }
+
+  const res = await fetch(url, { method: opts.method ?? 'GET', headers: h, body: bodyInit })
+
+  if (opts.handle401 !== false && res.status === 401) {
+    localStorage.removeItem('oa-auth')
+    window.location.href = `${PORTAL_URL}/logout`
+    throw new Error('Session expired. Redirecting to portal…')
+  }
+  return res
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: headers(!!body),
-    body: body ? JSON.stringify(body) : undefined,
-  })
-  if (res.status === 401) {
-    localStorage.removeItem('oa-auth')
-    window.location.href = `${PORTAL_URL}/logout`
-    throw new Error('Session expired. Redirecting to portal…')
-  }
-  if (!res.ok) {
-    throw await toApiError(res)
-  }
+  const res = await authFetch(`${BASE}${path}`, { method, body })
+  if (!res.ok) throw await toApiError(res)
   if (res.status === 204) return undefined as T
   return res.json()
 }
 
-// Multipart upload — do NOT set Content-Type so the browser adds the boundary.
 async function postForm<T>(path: string, form: FormData): Promise<T> {
-  const h: Record<string, string> = {}
-  const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: h, body: form })
-  if (res.status === 401) {
-    localStorage.removeItem('oa-auth')
-    window.location.href = `${PORTAL_URL}/logout`
-    throw new Error('Session expired. Redirecting to portal…')
-  }
-  if (!res.ok) {
-    throw await toApiError(res)
-  }
+  const res = await authFetch(`${BASE}${path}`, { method: 'POST', form })
+  if (!res.ok) throw await toApiError(res)
   if (res.status === 204) return undefined as T
   return res.json()
 }
 
-// Authenticated binary fetch — needed for file downloads, since an <a href> to an
-// auth-required endpoint carries no bearer token and (in prod) points at the wrong origin.
 async function getBlob(path: string): Promise<Blob> {
-  const h: Record<string, string> = {}
-  const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${BASE}${path}`, { headers: h })
-  if (res.status === 401) {
-    localStorage.removeItem('oa-auth')
-    window.location.href = `${PORTAL_URL}/logout`
-    throw new Error('Session expired. Redirecting to portal…')
-  }
+  const res = await authFetch(`${BASE}${path}`, {})
   if (!res.ok) throw await toApiError(res)
   return res.blob()
 }
@@ -124,34 +110,9 @@ export const api = {
   getBlob,
 }
 
-// Paginated list endpoints default to page_size=20 (cap 200) on the server, so
-// any caller that needs the complete list must page through. Fetches page 1 to
-// learn the total, then the remaining pages in parallel.
-export async function fetchAllPages<T>(
-  fetchPage: (page: number, pageSize: number) => Promise<{ items: T[]; total: number }>,
-  pageSize = 200,
-): Promise<{ items: T[]; total: number }> {
-  const first = await fetchPage(1, pageSize)
-  const items = [...first.items]
-  const totalPages = Math.ceil(first.total / pageSize)
-  if (totalPages > 1) {
-    const rest = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, i) => fetchPage(i + 2, pageSize)),
-    )
-    for (const r of rest) items.push(...r.items)
-  }
-  return { items, total: items.length }
-}
-
-// Separate client for epms-api (vendors, POs, etc.)
 async function epmsRequest<T>(path: string): Promise<T> {
-  const h: Record<string, string> = {}
-  const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${EPMS_BASE}${path}`, { headers: h })
-  if (!res.ok) {
-    throw await toApiError(res)
-  }
+  const res = await authFetch(`${EPMS_BASE}${path}`, {})
+  if (!res.ok) throw await toApiError(res)
   return res.json()
 }
 
@@ -159,18 +120,9 @@ export const epmsApi = {
   get: <T>(path: string) => epmsRequest<T>(path),
 }
 
-// Separate client for budget-api (:8007) — catalog hierarchy, balance, etc.
 async function budgetRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const h: Record<string, string> = {}
-  const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
-  if (body) h['Content-Type'] = 'application/json'
-  const res = await fetch(`${BUDGET_BASE}/api/v1${path}`, {
-    method, headers: h, body: body ? JSON.stringify(body) : undefined,
-  })
-  if (!res.ok) {
-    throw await toApiError(res)
-  }
+  const res = await authFetch(`${BUDGET_BASE}/api/v1${path}`, { method, body })
+  if (!res.ok) throw await toApiError(res)
   if (res.status === 204) return undefined as T
   return res.json()
 }
@@ -182,26 +134,16 @@ export const budgetApi = {
   delete: <T>(path: string)                 => budgetRequest<T>('DELETE', path),
 }
 
-// mdm-api (:8002) — tax codes from the B2 tax engine (A5 ITC line coding)
 async function mdmRequest<T>(path: string): Promise<T> {
-  const h: Record<string, string> = {}
-  const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${MDM_BASE}/mdm/v1${path}`, { headers: h })
-  if (!res.ok) {
-    throw await toApiError(res)
-  }
+  const res = await authFetch(`${MDM_BASE}/mdm/v1${path}`, {})
+  if (!res.ok) throw await toApiError(res)
   return res.json()
 }
 
 export const mdmApi = { get: <T>(path: string) => mdmRequest<T>(path) }
 
-// finance-api (:8004) — bank/card accounts for the payment-source picker
 async function financeRequest<T>(path: string): Promise<T> {
-  const h: Record<string, string> = {}
-  const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
-  const res = await fetch(`${FINANCE_BASE}/finance/v1${path}`, { headers: h })
+  const res = await authFetch(`${FINANCE_BASE}/finance/v1${path}`, {})
   if (!res.ok) throw await toApiError(res)
   return res.json()
 }
