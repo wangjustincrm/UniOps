@@ -271,3 +271,172 @@ async def explode_bom(
         level += 1
 
     return root
+
+
+class WhereUsedResult(BaseModel):
+    """One upward path from a queried component to a top-level product that
+    is not itself used anywhere further (design spec §6.6's where-used
+    mode). `path` runs component-first, top-last — `[component, ..., top]`
+    — matching the brief's worked example literally (`CR0031 → CS0026 →
+    CW0001 → S0093`). `qty_accumulated` is the SAME kind of number
+    `ExplodeNode.qty_accumulated` reports (how much of `path[0]` one unit of
+    `top_product` needs), computed by multiplying the identical
+    `qty_per * (1 + scrap_rate)` factors `explode_bom` would multiply
+    walking the same edges downward — see this function's docstring for why
+    that makes the two directions provably agree, not just "usually agree".
+    `levels` is the number of BOM levels climbed (`len(path) - 1`; 0 means
+    the queried component IS the top itself — nobody uses it further)."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    top_product: str
+    path: list[str]
+    qty_accumulated: Decimal
+    levels: int
+    cycle_detected: bool = False
+
+
+async def find_where_used(
+    db: AsyncSession,
+    component_code: str,
+    on_date: date_type,
+    max_depth: int = 10,
+    max_nodes: int = 5000,
+) -> list[WhereUsedResult]:
+    """Reverse of `explode_bom`: starting from `component_code`, walk UP the
+    same canonical bom_lines/boms tables, breadth-first, collecting every
+    root-to-top path until each branch reaches a product that is itself used
+    by nobody (a genuine top-level finished good) — or is stopped early by
+    the same two guards `explode_bom` uses (`max_depth`; `max_nodes`, a
+    running budget on total frontier entries expanded, shared across all
+    branches so a wide fan-in graph can't blow up combinatorially even
+    within the depth limit).
+
+    Version/date selection MUST exactly match `/effective` and `explode_bom`
+    (same `version_key`/`covers_date` helpers) or forward and reverse would
+    silently disagree — e.g. a component could reverse-resolve to a top
+    product whose CURRENT effective BOM (the one `/explode` would actually
+    walk down) doesn't reference that component at all, because a NEWER,
+    date-covering version superseded the one that does. So a raw
+    `component_material_code` match is only a CANDIDATE edge: for every
+    product touched by a candidate line, this replicates the exact same
+    "highest version, tiebroken by nc_source_pk, whose lines cover on_date"
+    selection `explode_bom`/`GET /effective` run, and only follows the edge
+    if it belongs to that product's WINNING bom+line — never a losing/
+    shadowed version's line, even if that line's own dates cover on_date.
+
+    Accumulation walks the exact same qty_per*(1+scrap_rate) factors
+    `explode_bom` would multiply walking the resulting path downward — just
+    applied in ascending order. Multiplication is commutative, so the two
+    directions produce the identical number for the identical path, not
+    independently-computed values that happen to usually agree.
+
+    Cycle guard: identical shape to `explode_bom`'s — each branch tracks the
+    set of codes already visited on ITS OWN path (root component inclusive);
+    a parent edge that lands back on one of those codes is reported (with
+    `cycle_detected=True`, so a genuine cycle is visible rather than
+    silently dropped) but NOT expanded further, exactly mirroring
+    `explode_bom`'s "flag it, stop there" contract for A->B->A loops NC data
+    can contain."""
+    results: list[WhereUsedResult] = []
+    total_nodes = 1  # the queried component itself counts against the budget too
+    # frontier entries: (code, path-from-component-to-here inclusive, qty_accumulated, ancestor codes on this path)
+    frontier: list[tuple[str, list[str], Decimal, frozenset[str]]] = [
+        (component_code, [component_code], Decimal(1), frozenset({component_code}))
+    ]
+
+    level = 0
+    while frontier and level < max_depth:
+        codes = {code for code, _, _, _ in frontier}
+
+        # Candidate upward edges: any APPROVED bom_line whose component is
+        # one of this level's codes, date-effective. Each is only a
+        # CANDIDATE until confirmed against its product's winning bom/version
+        # below — see docstring.
+        line_rows = (await db.execute(
+            select(BomLine, Bom)
+            .join(Bom, BomLine.bom_id == Bom.id)
+            .where(BomLine.component_material_code.in_(codes), Bom.status == "approved")
+        )).all()
+        candidate_lines = [(ln, b) for ln, b in line_rows if covers_date(ln, on_date)]
+
+        # For every product touched by a candidate, resolve ITS OWN winning
+        # bom+lines the identical way explode_bom/GET /effective do — needs
+        # every approved candidate for that product (not just the ones
+        # holding our target component), since a higher, non-matching
+        # version can still be the one that wins and shadows the candidate.
+        products = {b.product_material_code for _, b in candidate_lines}
+        winner_by_product: dict[str, tuple[Bom, set]] = {}
+        if products:
+            all_candidates = (await db.execute(
+                select(Bom).where(Bom.product_material_code.in_(products), Bom.status == "approved")
+            )).scalars().all()
+            candidates_by_product: dict[str, list[Bom]] = defaultdict(list)
+            for b in all_candidates:
+                candidates_by_product[b.product_material_code].append(b)
+
+            cand_bom_ids = [b.id for b in all_candidates]
+            lines_by_bom: dict = defaultdict(list)
+            if cand_bom_ids:
+                all_lines = (await db.execute(
+                    select(BomLine).where(BomLine.bom_id.in_(cand_bom_ids))
+                )).scalars().all()
+                for ln in all_lines:
+                    lines_by_bom[ln.bom_id].append(ln)
+
+            for product, cands in candidates_by_product.items():
+                ordered = sorted(cands, key=lambda b: b.nc_source_pk)
+                ordered.sort(key=lambda b: version_key(b.version), reverse=True)
+                for cand in ordered:
+                    eff_ids = {ln.id for ln in lines_by_bom.get(cand.id, []) if covers_date(ln, on_date)}
+                    if eff_ids:
+                        winner_by_product[product] = (cand, eff_ids)
+                        break
+
+        next_frontier: list[tuple[str, list[str], Decimal, frozenset[str]]] = []
+        for code, path, qty_acc, ancestors in frontier:
+            found_parent = False
+            for ln, b in candidate_lines:
+                if ln.component_material_code != code:
+                    continue
+                winner = winner_by_product.get(b.product_material_code)
+                if winner is None or winner[0].id != b.id or ln.id not in winner[1]:
+                    continue  # shadowed by a higher version — not a real edge
+                found_parent = True
+                scrap = ln.scrap_rate if ln.scrap_rate is not None else Decimal(0)
+                new_qty = qty_acc * ln.qty_per * (Decimal(1) + scrap)
+                parent_code = b.product_material_code
+                new_path = path + [parent_code]
+                if parent_code in ancestors:
+                    results.append(WhereUsedResult(
+                        top_product=parent_code, path=new_path,
+                        qty_accumulated=new_qty, levels=len(path), cycle_detected=True,
+                    ))
+                    continue
+                if total_nodes >= max_nodes:
+                    results.append(WhereUsedResult(
+                        top_product=parent_code, path=new_path,
+                        qty_accumulated=new_qty, levels=len(path),
+                    ))
+                    continue
+                total_nodes += 1
+                next_frontier.append((parent_code, new_path, new_qty, ancestors | {parent_code}))
+            if not found_parent:
+                # Nobody uses `code` further (as of on_date) — it IS the top
+                # of this branch, possibly the queried component itself.
+                results.append(WhereUsedResult(
+                    top_product=code, path=list(path), qty_accumulated=qty_acc, levels=len(path) - 1,
+                ))
+
+        frontier = next_frontier
+        level += 1
+
+    # max_depth exhausted with branches still live: truncated, not genuinely
+    # top-level, but still reported so a caller can see the branch exists
+    # rather than have it silently vanish.
+    for code, path, qty_acc, _ in frontier:
+        results.append(WhereUsedResult(
+            top_product=code, path=list(path), qty_accumulated=qty_acc, levels=len(path) - 1,
+        ))
+
+    return results

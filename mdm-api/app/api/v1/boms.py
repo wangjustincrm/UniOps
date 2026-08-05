@@ -54,7 +54,7 @@ from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.bom import Bom, BomLine
 from app.services.bom_common import covers_date, version_key
-from app.services.bom_explode import ExplodeNode, explode_bom
+from app.services.bom_explode import ExplodeNode, WhereUsedResult, explode_bom, find_where_used
 from app.services.nc_bom_sync.canonical_sync import sync_boms
 from app.services.nc_bom_sync.reader import nc_configured
 
@@ -194,6 +194,28 @@ async def explode_bom_endpoint(
     (the same reasoning `explode_bom` applies to every missing component
     node deeper in the tree, not just the root)."""
     return await explode_bom(db, product, date, max_depth=max_depth, max_nodes=max_nodes)
+
+
+@router.get("/where-used", response_model=list[WhereUsedResult])
+async def where_used_endpoint(
+    component: str = Query(..., description="component_material_code to reverse-resolve"),
+    date: date_type = Query(..., description="as-of date, YYYY-MM-DD"),
+    max_depth: int = Query(default=10, ge=1, le=50, description="hard stop on levels climbed"),
+    max_nodes: int = Query(
+        default=5000, ge=1, le=50000,
+        description="hard stop on total frontier entries expanded — guards wide fan-in graphs",
+    ),
+    db: AsyncSession = Depends(get_db),
+    _: CurrentUser = ...,
+):
+    """Reverse of /explode (see app/services/bom_explode.py's find_where_used
+    docstring for the full version/date-selection-parity argument). Read
+    gate matches /effective and /explode: any authenticated role. A
+    component nobody uses (or that isn't a real material code at all) is
+    not an error — it comes back as its own single-entry top (path=[component],
+    levels=0), the same "empty tree is still an answer" reasoning /explode
+    applies at its root."""
+    return await find_where_used(db, component, date, max_depth=max_depth, max_nodes=max_nodes)
 
 
 @router.post("/sync", response_model=BomSyncResponse)

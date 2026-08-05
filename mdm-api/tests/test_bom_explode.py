@@ -333,6 +333,126 @@ async def test_multiple_versions_report_count_and_pick_highest_numeric_version(d
     assert [c.material_code for c in node.children] == ["CR_TARGET"]
 
 
+@pytest_asyncio.fixture
+async def seed_where_used_multi_top(db_session):
+    """RAW_SHARED reached two different ways: TOPA -> MIDA -> RAW_SHARED
+    (a 2-level climb) AND TOPB -> RAW_SHARED directly (a 1-level climb) —
+    "a component used by multiple top products" (task 6 brief)."""
+    topa = _bom("TOPA", "packaging", "1.0", "H-TOPA")
+    db_session.add(topa)
+    await db_session.flush()
+    db_session.add(_line(topa.id, 10, "MIDA", "2.0", "L-TOPA-1"))
+
+    mida = _bom("MIDA", "milling", "1.0", "H-MIDA")
+    db_session.add(mida)
+    await db_session.flush()
+    db_session.add(_line(mida.id, 10, "RAW_SHARED", "3.0", "L-MIDA-1"))
+
+    topb = _bom("TOPB", "packaging", "1.0", "H-TOPB")
+    db_session.add(topb)
+    await db_session.flush()
+    db_session.add(_line(topb.id, 10, "RAW_SHARED", "5.0", "L-TOPB-1"))
+
+    await db_session.commit()
+
+
+@pytest.mark.anyio
+async def test_where_used_resolves_real_cascade(db_session, seed_cascade):
+    """The brief's worked example: CR0031 reverse-resolves to S0093 via
+    CS0026 -> CW0001, path component-first / top-last, qty_accumulated
+    matching the SAME product of factors the forward explosion computes
+    for this exact fixture (test_explode_walks_three_levels_and_accumulates
+    asserts raw.qty_accumulated == powder.qty_per * silo.qty_per *
+    raw.qty_per for this cascade — multiplication is commutative, so this
+    must equal that same product)."""
+    from datetime import date
+
+    from decimal import Decimal
+
+    from app.services.bom_explode import find_where_used
+
+    results = await find_where_used(db_session, "CR0031", date(2026, 8, 4))
+    assert len(results) == 1
+    r = results[0]
+    assert r.top_product == "S0093"
+    assert r.path == ["CR0031", "CS0026", "CW0001", "S0093"]
+    assert r.levels == 3
+    assert r.cycle_detected is False
+    assert r.qty_accumulated == Decimal("3.0") * Decimal("2.0") * Decimal("0.5")
+
+
+@pytest.mark.anyio
+async def test_where_used_cycle_is_detected_not_infinite(db_session, seed_cyclic_bom):
+    """Mirrors explode_bom's own cycle fixture in reverse: CYC_A's only
+    upward edge leads to CYC_B, whose only upward edge leads back to CYC_A
+    — already on this path. Must terminate (not hang) and flag the loop
+    rather than silently treating CYC_B as a genuine top-level product."""
+    from datetime import date
+
+    from app.services.bom_explode import find_where_used
+
+    results = await find_where_used(db_session, "CYC_A", date(2026, 8, 4))
+    assert len(results) == 1
+    r = results[0]
+    assert r.path == ["CYC_A", "CYC_B", "CYC_A"]
+    assert r.cycle_detected is True
+
+
+@pytest.mark.anyio
+async def test_where_used_reports_every_top_for_a_shared_component(db_session, seed_where_used_multi_top):
+    from datetime import date
+
+    from decimal import Decimal
+
+    from app.services.bom_explode import find_where_used
+
+    results = await find_where_used(db_session, "RAW_SHARED", date(2026, 8, 4))
+    by_top = {r.top_product: r for r in results}
+    assert set(by_top) == {"TOPA", "TOPB"}
+
+    via_mida = by_top["TOPA"]
+    assert via_mida.path == ["RAW_SHARED", "MIDA", "TOPA"]
+    assert via_mida.qty_accumulated == Decimal("3.0") * Decimal("2.0")
+    assert via_mida.levels == 2
+
+    direct = by_top["TOPB"]
+    assert direct.path == ["RAW_SHARED", "TOPB"]
+    assert direct.qty_accumulated == Decimal("5.0")
+    assert direct.levels == 1
+
+
+@pytest.mark.anyio
+async def test_where_used_component_used_by_nobody_is_its_own_top(db_session, seed_cascade):
+    """S0093 itself (the root of seed_cascade) is never a component of
+    anything else — reverse lookup on it must report itself as its own
+    top, not an empty result."""
+    from datetime import date
+    from decimal import Decimal
+
+    from app.services.bom_explode import find_where_used
+
+    results = await find_where_used(db_session, "S0093", date(2026, 8, 4))
+    assert len(results) == 1
+    r = results[0]
+    assert r.top_product == "S0093"
+    assert r.path == ["S0093"]
+    assert r.qty_accumulated == Decimal("1")
+    assert r.levels == 0
+
+
+@pytest.mark.anyio
+async def test_where_used_endpoint_returns_path(client, db_session, seed_cascade):
+    resp = await client.get(
+        "/mdm/v1/boms/where-used",
+        params={"component": "CR0031", "date": "2026-08-04"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["top_product"] == "S0093"
+    assert body[0]["path"] == ["CR0031", "CS0026", "CW0001", "S0093"]
+
+
 @pytest.mark.anyio
 async def test_explode_endpoint_returns_tree(client, db_session, seed_cascade):
     """Endpoint wiring: GET /mdm/v1/boms/explode serializes the same tree
