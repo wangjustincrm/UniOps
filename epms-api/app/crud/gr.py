@@ -1,5 +1,6 @@
 """CRUD + workflow for Goods Receipt (GR)."""
 import base64
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -18,6 +19,8 @@ from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.schemas.gr import GrCreate, GrActionRequest, is_physical
 from app.services.pdf_gr import generate_gr_pdf
+
+logger = logging.getLogger(__name__)
 
 
 # ── Number generation ──────────────────────────────────────────────────────────
@@ -161,8 +164,17 @@ async def create(
                 file_data=file_bytes,
             ))
 
-    # Create acknowledge task for the PR requester / general role
-    await _create_ack_task(db, gr)
+    # Create acknowledge task for the PR requester. Imported POs (PMS/NC) have no
+    # linked PR → no requester exists; a requester-role task would then fall back
+    # to a role-wide broadcast (2026-08-05: 59 people emailed twice). Instead the
+    # requester steps are skipped entirely and system admins get an alert.
+    requester_id = await get_pr_requester_id(db, po.pr_id)
+    if requester_id is not None:
+        await _create_ack_task(db, gr)
+    else:
+        await _auto_complete_requester_steps(
+            db, gr, actor_id=created_by, lines=lines, token=token,
+        )
 
     # Notify Procurement Officer if any line arrived damaged or with discrepancy
     damaged_lines = [item for item in payload.line_items if item.condition not in ("good", None)]
@@ -204,8 +216,23 @@ async def action(
         await _complete_tasks(db, gr.id)
         gr.acknowledged_at = now
         gr.acknowledged_by = req.acknowledged_by or str(actor_id)
-        await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
-        if gr.gr_type == "physical":
+        # Best-effort: acknowledging must not fail because the file server is
+        # down — fall back to inline DB storage for the PDF.
+        try:
+            await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GR %s acknowledge: PDF upload failed (%s); storing inline", gr.number, exc)
+            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
+        requester_id = await _get_pr_requester_id(db, gr)
+        if requester_id is None:
+            # Legacy no-PR GR (created before requester-less POs skipped the ack
+            # step): there is nobody to collect/confirm — finish the chain now
+            # instead of creating a requester-role broadcast task.
+            gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
+            gr.collected_at = now
+            gr.collected_by = req.acknowledged_by or str(actor_id)
+            await _update_po_received_qty(db, gr)
+        elif gr.gr_type == "physical":
             gr.status = "collection_pending"
             await _create_collect_task(db, gr)
         else:
@@ -271,9 +298,14 @@ async def action(
 
 # ── PO received_qty sync ───────────────────────────────────────────────────────
 
-async def _update_po_received_qty(db: AsyncSession, gr: GoodsReceipt) -> None:
-    """Add confirmed GR quantities to PO line received_qty, then update PO receipt status."""
-    for gr_line in gr.line_items:
+async def _update_po_received_qty(
+    db: AsyncSession, gr: GoodsReceipt, lines: list[GrLineItem] | None = None,
+) -> None:
+    """Add confirmed GR quantities to PO line received_qty, then update PO receipt status.
+
+    ``lines`` lets callers that already hold the (possibly not-yet-loaded) GR line
+    objects pass them explicitly instead of relying on the relationship."""
+    for gr_line in (lines if lines is not None else gr.line_items):
         if gr_line.po_line_id is None:
             continue
         result = await db.execute(
@@ -330,6 +362,56 @@ async def get_pr_requester_id(db: AsyncSession, pr_id: uuid.UUID | None) -> uuid
 async def _get_pr_requester_id(db: AsyncSession, gr: GoodsReceipt) -> uuid.UUID | None:
     """Return the created_by (requester) of the PR linked to this GR, or None if not found."""
     return await get_pr_requester_id(db, gr.pr_id)
+
+
+async def _auto_complete_requester_steps(
+    db: AsyncSession,
+    gr: GoodsReceipt,
+    *,
+    actor_id: uuid.UUID,
+    lines: list[GrLineItem] | None = None,
+    token: str | None = None,
+) -> None:
+    """Skip the requester chain (acknowledge → collect/confirm) when the GR's PO
+    has no PR requester (imported POs). The warehouse/procurement user creating
+    the GR has already received the goods, so the GR jumps straight to its
+    terminal status; system admins are alerted so the missing PR link gets fixed.
+    """
+    now = datetime.now(timezone.utc)
+    gr.acknowledged_at = now
+    gr.acknowledged_by = "auto (no PR requester)"
+    gr.collected_at = now
+    gr.collected_by = str(actor_id)
+    gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
+
+    cfg = await _get_config(db)
+    company_name = cfg.name if cfg else "EPMS"
+    await db.flush()
+    await db.refresh(gr)   # load line_items for the PDF renderer (runs sync)
+    # PDF is best-effort here — GR creation must not fail because the file
+    # server is down; fall back to inline DB storage, then give up quietly.
+    try:
+        await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("GR %s auto-complete: PDF upload failed (%s); storing inline", gr.number, exc)
+        try:
+            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
+        except Exception as exc2:  # noqa: BLE001
+            logger.error("GR %s auto-complete: inline PDF attach failed too: %s", gr.number, exc2)
+    await _update_po_received_qty(db, gr, lines=lines)
+
+    from app.services import notification as notification_service
+    notification_service.fire_and_forget_admin_alert(
+        f"[EPMS] GR {gr.number} auto-completed — PO {gr.po_number} has no linked PR",
+        (
+            f"Goods Receipt <b>{gr.number}</b> was created for PO <b>{gr.po_number}</b>, "
+            f"which has no linked PR — there is no requester to acknowledge it, so the "
+            f"requester steps (acknowledge/collect/confirm) were skipped and the GR was "
+            f"marked <b>{gr.status}</b>.\n\n"
+            f"Imported POs (PMS migration / NC sync) can lose their PR link. Please "
+            f"verify this PO and restore the link if the PR exists."
+        ),
+    )
 
 
 async def _create_ack_task(db: AsyncSession, gr: GoodsReceipt) -> None:
@@ -483,10 +565,13 @@ async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
     if po is None:
         return
     requester_id = await get_pr_requester_id(db, po.pr_id)
+    # No PR → no requester; route to the ERP PA officers (the role that owns PA
+    # creation for imported no-PR POs) instead of a requester-wide broadcast.
     db.add(Task(
         type="create_pa", priority="normal",
         document_type="po", document_id=po_id, document_number=po.number,
-        assigned_role="requester", assigned_user_id=requester_id,
+        assigned_role="requester" if requester_id else "erp_pa_officer",
+        assigned_user_id=requester_id,
         title=f"Create Payment Application for {po.number}",
         description=f"Goods received for PO {po.number}. Please create a Payment Application.",
         vendor=po.vendor_name, amount=po.total,

@@ -207,6 +207,34 @@ async def _dispatch(
             user = await db.get(User, task.assigned_user_id)
             if user and user.is_active:
                 recipients.append(user)
+        elif task.assigned_role == "requester":
+            # 'requester' 不是角色池:requester 任务没有具体受理人 = 单据丢了 PR
+            # 链(导入 PO)。走池群发会给全公司每个 requester 发邮件(2026-08-05:
+            # PMS 导入 PO 的 GR ack 群发 59 人×2 轮)。抑制群发,改为报警 admin。
+            logger.warning(
+                "Requester task %s (%s %s) has no assignee — suppressing role-wide "
+                "fan-out, alerting admins instead",
+                task.id, task.type, task.document_number,
+            )
+            doc_link = _task_link(task.document_type, task.document_id, task_type=task.type)
+            subject = f"[EPMS] Requester task has no assignee — {task.document_number}"
+            body = (
+                f"Task <b>{task.title}</b> for {task.document_type.upper()} "
+                f"<b>{task.document_number}</b> is addressed to the requester role but has "
+                f"no concrete assignee — the document has no linked PR (typically an "
+                f"imported PO), so there is no requester to notify.\n\n"
+                f"The role-wide email fan-out was suppressed. Please review the document "
+                f"and either link its PR or reassign the task.\n\n"
+                f'<a href="{doc_link}">Open document</a>'
+            )
+            for admin in await _admin_recipients(db):
+                await _send_with_retry(
+                    "email", task, admin, "admin_requester_broadcast_alert", db,
+                    send_fn=(lambda a=admin: send_email(
+                        a.email, subject, _build_email_html(body), **_smtp_kwargs(cfg))),
+                    max_retries=max_retries,
+                )
+            return
         else:
             # All active holders of the role — PRIMARY (users.role) ∪ ADDITIONAL
             # (identity's user_roles, same physical DB). Mirrors the Task Inbox's
@@ -391,6 +419,55 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "match_invoice": "match_invoice_assigned",
         "review_match": "match_review_request",
     }.get(task_type, "pr_approval_request")
+
+
+# ── Admin alerting ────────────────────────────────────────────────────────────
+
+async def _admin_recipients(db: AsyncSession) -> list[User]:
+    """Active system_admin holders (primary users.role ∪ additional user_roles)
+    that have an email address."""
+    secondary_ids = (await db.execute(
+        text("SELECT user_id FROM user_roles WHERE role_code = 'system_admin'")
+    )).scalars().all()
+    result = await db.execute(
+        select(User).where(
+            User.is_active.is_(True),
+            or_(User.role == "system_admin", User.id.in_(secondary_ids)),
+        )
+    )
+    return [u for u in result.scalars().all() if u.email]
+
+
+async def send_admin_alert(subject: str, body_html: str, db: AsyncSession | None = None) -> None:
+    """Email every active system admin. Never raises; honors the company-wide
+    default_channel='none' master switch. Task-independent (no NotificationLog)."""
+    try:
+        if db is None:
+            from app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                await send_admin_alert(subject, body_html, db=session)
+            return
+
+        from app.services.email import send_email
+        from app.crud.config import get_or_create as get_config
+
+        cfg = await get_config(db)
+        if (cfg.notification_settings or {}).get("default_channel") == "none":
+            logger.info("Admin alert suppressed (default_channel=none): %s", subject)
+            return
+        html = _build_email_html(body_html)
+        for admin in await _admin_recipients(db):
+            try:
+                await send_email(admin.email, subject, html, **_smtp_kwargs(cfg))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Admin alert to %s failed: %s", admin.email, exc)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("send_admin_alert failed (%s): %s", subject, exc)
+
+
+def fire_and_forget_admin_alert(subject: str, body_html: str) -> None:
+    """Schedule an admin alert email in the background (own DB session)."""
+    asyncio.create_task(send_admin_alert(subject, body_html))
 
 
 # ── Convenience fire-and-forget helper ───────────────────────────────────────

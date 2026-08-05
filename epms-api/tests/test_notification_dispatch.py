@@ -135,6 +135,27 @@ async def test_default_channel_email_still_sends(captured_emails):
     assert _to(captured_emails).count(user.email) == 1
 
 
+async def test_requester_task_without_assignee_never_broadcasts(captured_emails):
+    """'requester' is not a role pool. A requester-addressed task with no concrete
+    assignee means the document lost its PR link (imported PO) — fanning out
+    would email every requester in the company (2026-08-05: a GR ack on a
+    PMS-imported PO mailed 59 people). Suppress the fan-out and alert admins."""
+    async with session_module.AsyncSessionLocal() as db:
+        requester = await _make_user(db)                      # role=requester
+        admin = await _make_user_with_role(db, "system_admin", "Alert Admin")
+        task = _make_task(requester)
+        task.assigned_user_id = None                          # broadcast shape
+        db.add(task)
+        await db.commit()
+        await notification.dispatch_task_notification(task, db)
+        await db.commit()
+
+    assert requester.email not in _to(captured_emails), \
+        "requester-role broadcast must be suppressed"
+    assert admin.email in _to(captured_emails), \
+        "admins must be alerted when a requester task has no assignee"
+
+
 # ── Role shared mailbox ──────────────────────────────────────────────────────
 
 from app.crud.config import role_display_name  # noqa: E402
