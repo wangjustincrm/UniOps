@@ -74,8 +74,17 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
   {
     title: 'MRP',
     items: [
-      { label: 'Forecast',           icon: TrendingUp,    href: 'mrp:/forecast',            permission: 'mrp.demand.write' },
-      { label: 'Consignment Stock',  icon: PackageSearch, href: 'mrp:/consignment-stock',   permission: 'mrp.demand.write' },
+      // Gated on mrp.report.view, not mrp.demand.write: every read these two
+      // pages perform on load (grid/list fetches) requires mrp.report.view,
+      // and packages/authz has no write⇒read implication — a planner
+      // granted only mrp.demand.write (as the nav previously advertised)
+      // would see the page appear, then have every fetch 403 forever (I5,
+      // final-phase review). mrp.demand.write is still required for the
+      // in-page write actions (create version, upsert cells, confirm,
+      // import, create/edit stock rows); this only controls whether the nav
+      // item — and the page behind it — is reachable at all.
+      { label: 'Forecast',           icon: TrendingUp,    href: 'mrp:/forecast',            permission: 'mrp.report.view' },
+      { label: 'Consignment Stock',  icon: PackageSearch, href: 'mrp:/consignment-stock',   permission: 'mrp.report.view' },
       { label: 'BOM Explorer',       icon: Network,       href: 'mrp:/bom-explorer',        permission: 'mrp.report.view' },
     ],
   },
