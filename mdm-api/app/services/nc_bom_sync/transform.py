@@ -89,6 +89,43 @@ Key decisions baked in here (each justified in the survey, cited by section):
     defense-in-depth re-check inside `transform()` itself for callers/
     fixtures that bypass the reader. A DR<>0 row's `nc_source_pk` lands in
     `skipped`.
+  - PATCH 6 (2026-08-04, CRITICAL defect fix): `bom_lines.qty_per`/
+    `qty_per_secondary` are now NORMALIZED TO PER-ONE-UNIT-OF-PARENT —
+    `qty_per = NITEMNUM / HNPARENTNUM`, `qty_per_secondary = NASSITEMNUM /
+    HNASSPARENTNUM` — not `NITEMNUM`/`NASSITEMNUM` taken as-is. The survey's
+    own mapping recommendation ("样本中两者恒相等，直接取 NITEMNUM 作为
+    qty_per", survey §BD_BOM_B) missed that `NITEMNUM` is a whole-BATCH
+    quantity, not a per-unit one — the batch size lives on the HEADER
+    (`BD_BOM.HNPARENTNUM`/`HNASSPARENTNUM`, "头级基本产出数量", survey line
+    ~55), never captured before this patch. Symptom: BOM explosion
+    (app/services/bom_explode.py) multiplied raw batch-scaled quantities
+    down the cascade and produced quantities wrong by orders of magnitude
+    (one real smoke test: ~113 million units of a component for 1 unit of
+    finished good). Verified against live NC65 (2026-08-04, 911 approved+
+    draft headers spot-checked): `HNPARENTNUM` is NOT always 1 (distribution
+    includes 1000, 1, 4.8, 42, 3, ...); S0093's header has HNPARENTNUM=420,
+    HNASSPARENTNUM=100 — its CW0001 (dry-mix powder) line's NITEMNUM=420
+    normalizes to `qty_per=1.0` (1 kg powder per kg finished, correct), and
+    its CP0115-1 (tin) line's NITEMNUM=610 normalizes to `qty_per≈1.4524`
+    (≈688g/tin, matching the real product spec — previously this line
+    reported a *raw* 610, off by 420x). `HNASSPARENTNUM` is the assistant-
+    unit counterpart used for `qty_per_secondary`'s divisor (not
+    `HNPARENTNUM` again) because the two can legitimately differ (S0093:
+    420 vs 100) — confirmed identical to `HVCHANGERATE`'s own
+    numerator/denominator (`HVCHANGERATE` is a redundant string encoding of
+    `HNPARENTNUM/HNASSPARENTNUM`, verified across all 46 distinct live
+    combinations with zero exceptions; see bom_explode.py's docstring for
+    why this means `yield_rate` must NOT also be divided into the
+    explosion's accumulated quantity — that would double-count this exact
+    normalization). A live full-table check found ZERO headers with a NULL
+    or non-positive `HNPARENTNUM`/`HNASSPARENTNUM`, so `_resolve_divisor`'s
+    None/<=0 -> fallback-to-1-with-a-warning path is defensive, not a real
+    observed case — but it's still guarded, never a crash or a silent
+    divide-by-zero. Results are `.quantize()`d to `_QTY_QUANT` (10 decimal
+    places, matching migration 0015's widened `Numeric(24,10)` columns) —
+    6 decimal places would badly round a real, legitimate small ratio (e.g.
+    S0093's CP0132 line: `1/420 = 0.00238095238...` needs more than 6dp to
+    not lose most of its significant digits).
   - `bom_lines`/`bom_substitutes` rows carry a synthetic
     `bom_nc_source_pk`/`bom_line_nc_source_pk` key (the parent's CBOMID /
     CBOM_BID) instead of a real `bom_id`/`bom_line_id` FK — this is a pure
@@ -99,7 +136,7 @@ Key decisions baked in here (each justified in the survey, cited by section):
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 _BOM_TYPE_PREFIXES_2 = {"CS": "milling", "CW": "drymix", "CF": "packaging"}
 # S-prefixed materials (e.g. S0093) are a second, current-day spelling of
@@ -119,6 +156,13 @@ _BOM_TYPE_PREFIX_1 = {"S": "packaging"}
 _UOM_NORMALIZE = {"PIECES": "EA"}
 
 _CM_PREFIX = "CM"  # standardized milk, deprecated ~2 years ago — PATCH 5
+
+# Scale for `qty_per`/`qty_per_secondary` after the PATCH 6 batch-size
+# normalization — matches migration 0015's widened `Numeric(24,10)` columns.
+# 10 fractional digits comfortably represents NC's real repeating-decimal
+# ratios (e.g. 1/420 = 0.0023809523809...) without the precision loss a
+# narrower 6dp scale would cause on a genuinely small, legitimate ratio.
+_QTY_QUANT = Decimal("1e-10")
 
 
 def _clean(v):
@@ -219,6 +263,29 @@ def _parse_qty_or_none(raw) -> Decimal | None:
         return None
 
 
+def _resolve_divisor(
+    raw_value: Decimal | None, fallback: Decimal, nc_source_pk: str, warnings: list, field: str,
+) -> Decimal:
+    """HNPARENTNUM/HNASSPARENTNUM ("头级基本产出数量" — survey line ~55): the
+    BOM header's own batch-output quantity that BD_BOM_B's NITEMNUM/
+    NASSITEMNUM are scaled AGAINST, not a per-unit quantity by themselves —
+    see PATCH 6 in this module's docstring for the full defect writeup.
+
+    None/<=0/unparsable -> `fallback`, AND a warning: a live NC65 full-table
+    spot-check (2026-08-04, 911 approved+draft headers) found ZERO rows with
+    a NULL or non-positive HNPARENTNUM/HNASSPARENTNUM, so landing here is a
+    genuine data anomaly worth surfacing to whoever runs the sync, not
+    routine defensive noise — but it still never crashes or silently
+    divides by zero either way."""
+    if raw_value is None or raw_value <= 0:
+        warnings.append({
+            "nc_source_pk": nc_source_pk, "reason": "invalid_batch_divisor", "field": field,
+            "raw": None if raw_value is None else str(raw_value),
+        })
+        return fallback
+    return raw_value
+
+
 def _parse_date(raw) -> date | None:
     """'YYYY-MM-DD HH24:MI:SS' or 'YYYY-MM-DD' -> date; blank/'~' -> None."""
     v = _clean(raw)
@@ -273,6 +340,18 @@ def transform(raw: dict) -> dict:
     warnings: list[dict] = []
 
     resolved_bom_pks: set[str] = set()
+    # PATCH 6: raw header dicts for resolved headers, keyed by pk, so the
+    # line loop below can read HNPARENTNUM/HNASSPARENTNUM lazily (only for
+    # headers that actually have a surviving line) instead of resolving a
+    # divisor for every header up front — a header with zero lines (or whose
+    # only lines all get dropped for other reasons, e.g. CM exclusion) never
+    # needs a divisor and must never generate a spurious warning for one.
+    header_by_pk: dict[str, dict] = {}
+    # Memoized resolved divisors, populated lazily the first time a line
+    # under that header actually needs one — so a header with N lines
+    # generates at most one "invalid_batch_divisor" warning per field, not N.
+    primary_divisors: dict[str, Decimal] = {}
+    secondary_divisors: dict[str, Decimal] = {}
 
     for h in headers:
         pk = h.get("cbomid")
@@ -310,9 +389,15 @@ def transform(raw: dict) -> dict:
             "effective_from": None,
             "effective_to": None,
             "yield_rate": _parse_ratio(h.get("hvchangerate")),
+            # Raw HNPARENTNUM, kept for traceability (planners/Phase 1C need
+            # to see the source batch size) — distinct from the *divisor*
+            # the line loop below resolves from it, which is always a safe
+            # positive Decimal even when this is None (PATCH 6).
+            "batch_output_qty": _parse_qty_or_none(h.get("hnparentnum")),
             "nc_source_pk": pk,
         })
         resolved_bom_pks.add(pk)
+        header_by_pk[pk] = h
 
     resolved_line_pks: set[str] = set()
 
@@ -346,13 +431,41 @@ def transform(raw: dict) -> dict:
                 "component_material_code": code,
             })
             continue
+        # PATCH 6: NITEMNUM/NASSITEMNUM are whole-BATCH quantities, not
+        # per-unit ones — normalize against this line's parent header's
+        # HNPARENTNUM/HNASSPARENTNUM. Divisors are resolved lazily (only
+        # once actually needed) and memoized per header/field, so a header
+        # with several lines warns at most once per field, and a header
+        # whose lines never carry a secondary unit never touches
+        # HNASSPARENTNUM (or warns about it) at all.
+        if bom_pk not in primary_divisors:
+            primary_divisors[bom_pk] = _resolve_divisor(
+                _parse_qty_or_none(header_by_pk[bom_pk].get("hnparentnum")),
+                Decimal("1"), bom_pk, warnings, "hnparentnum",
+            )
+        primary_divisor = primary_divisors[bom_pk]
+        nitemnum_val = _parse_qty(ln.get("nitemnum"))
+        qty_per = (nitemnum_val / primary_divisor).quantize(_QTY_QUANT, rounding=ROUND_HALF_UP)
+
+        nassitemnum_val = _parse_qty_or_none(ln.get("nassitemnum"))
+        if nassitemnum_val is not None:
+            if bom_pk not in secondary_divisors:
+                secondary_divisors[bom_pk] = _resolve_divisor(
+                    _parse_qty_or_none(header_by_pk[bom_pk].get("hnassparentnum")),
+                    primary_divisor, bom_pk, warnings, "hnassparentnum",
+                )
+            qty_per_secondary = (nassitemnum_val / secondary_divisors[bom_pk]).quantize(
+                _QTY_QUANT, rounding=ROUND_HALF_UP
+            )
+        else:
+            qty_per_secondary = None
         bom_lines.append({
             "bom_nc_source_pk": bom_pk,
             "line_no": _line_no(ln.get("vrowno")),
             "component_material_code": code,
-            "qty_per": _parse_qty(ln.get("nitemnum")),
+            "qty_per": qty_per,
             "uom": _resolve_uom(ln.get("cmeasureid"), uoms, line_pk, warnings, "uom"),
-            "qty_per_secondary": _parse_qty_or_none(ln.get("nassitemnum")),
+            "qty_per_secondary": qty_per_secondary,
             "uom_secondary": _resolve_uom(
                 ln.get("cassmeasureid"), uoms, line_pk, warnings, "uom_secondary"
             ),

@@ -32,6 +32,21 @@ the task-5-brief's guessed field names:
     original sync left them as (PATCH 2); NC's EA/PIECES codes are
     normalized to one canonical 'EA' at transform time (PATCH 4) — see
     app/services/nc_bom_sync/transform.py's `_UOM_NORMALIZE`.
+  - `boms.batch_output_qty` / `bom_lines.qty_per`/`qty_per_secondary`
+    (migration 0015, PATCH 6, 2026-08-04 CRITICAL defect fix): `qty_per`/
+    `qty_per_secondary` are `NITEMNUM`/`NASSITEMNUM` NORMALIZED against the
+    header's own `HNPARENTNUM`/`HNASSPARENTNUM` batch-output quantity, NOT
+    the raw NC values — NITEMNUM is a whole-BATCH quantity, not a per-unit
+    one (see app/services/nc_bom_sync/transform.py's docstring PATCH 6 for
+    the full writeup, real numbers, and why this bit downstream BOM
+    explosion by orders of magnitude). `batch_output_qty` (<- raw
+    HNPARENTNUM, nullable) is kept on `boms` purely for traceability — so a
+    planner or Phase 1C can see what batch size a line's `qty_per` was
+    normalized against, without it being needed for any further math.
+    `qty_per`/`qty_per_secondary` widened from `Numeric(18,6)` to
+    `Numeric(24,10)` in the same migration — 6 decimal places would badly
+    round a real, legitimate small ratio (S0093's CP0132 line normalizes to
+    1/420 = 0.0023809523809...).
 """
 from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -56,6 +71,7 @@ class Bom(Base, UUIDPrimaryKey, TimestampMixin):
     effective_from: Mapped[object | None] = mapped_column(Date)  # always None from sync; header has no NC source date (see docstring)
     effective_to: Mapped[object | None] = mapped_column(Date)
     yield_rate: Mapped[object] = mapped_column(Numeric(18, 6), default=1)  # <- HVCHANGERATE "num/den" parsed
+    batch_output_qty: Mapped[object | None] = mapped_column(Numeric(24, 8))  # <- HNPARENTNUM, raw, traceability only (PATCH 6) — see class/module docstring
     nc_source_pk: Mapped[str] = mapped_column(String(50))  # <- CBOMID
 
     lines: Mapped[list["BomLine"]] = relationship(back_populates="bom", cascade="all, delete-orphan")
@@ -71,9 +87,9 @@ class BomLine(Base, UUIDPrimaryKey, TimestampMixin):
     bom_id: Mapped[str] = mapped_column(ForeignKey("boms.id", ondelete="CASCADE"), index=True)
     line_no: Mapped[int] = mapped_column(Integer, default=0)  # <- VROWNO, string->int
     component_material_code: Mapped[str] = mapped_column(String(50), index=True)
-    qty_per: Mapped[object] = mapped_column(Numeric(18, 6))  # <- NITEMNUM, taken as-is (IBASENUM/VCHANGERATE observed 1:1)
+    qty_per: Mapped[object] = mapped_column(Numeric(24, 10))  # <- NITEMNUM / boms.HNPARENTNUM, normalized per-1-unit-of-parent (PATCH 6, was taken as-is pre-2026-08-04 — a batch-scale bug)
     uom: Mapped[str | None] = mapped_column(String(20))  # <- CMEASUREID, resolved to a BD_MEASDOC unit code (e.g. 'KGM'); EA/PIECES normalized to 'EA'
-    qty_per_secondary: Mapped[object | None] = mapped_column(Numeric(18, 6))  # <- NASSITEMNUM, assistant-unit qty (S* finished goods only; null for single-unit lines)
+    qty_per_secondary: Mapped[object | None] = mapped_column(Numeric(24, 10))  # <- NASSITEMNUM / boms.HNASSPARENTNUM, normalized (PATCH 6); assistant-unit qty (S* finished goods only; null for single-unit lines)
     uom_secondary: Mapped[str | None] = mapped_column(String(20))  # <- CASSMEASUREID, resolved unit code; same EA/PIECES normalization as `uom`
     scrap_rate: Mapped[object] = mapped_column(Numeric(10, 4), default=0)  # always 0 in this NC instance, see docstring
     effective_from: Mapped[object | None] = mapped_column(Date)  # <- CBEGINPERIOD

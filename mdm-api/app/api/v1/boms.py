@@ -96,6 +96,7 @@ class BomEffectiveResponse(BaseModel):
     factory_code: str | None
     status: str
     yield_rate: Decimal
+    batch_output_qty: Decimal | None = None
     nc_source_pk: str
     lines: list[BomLineResponse]
 
@@ -161,6 +162,7 @@ async def get_effective_bom(
                 factory_code=bom.factory_code,
                 status=bom.status,
                 yield_rate=bom.yield_rate,
+                batch_output_qty=bom.batch_output_qty,
                 nc_source_pk=bom.nc_source_pk,
                 lines=[BomLineResponse.model_validate(ln) for ln in effective_lines],
             )
