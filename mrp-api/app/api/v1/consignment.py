@@ -31,6 +31,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -138,7 +139,13 @@ async def lot_lookup(
     lot_no: str = Query(...),
     material_code: str = Query(...),
 ):
-    result = lookup_lot(lot_no, material_code)
+    # lookup_lot() is a blocking oracledb call (thick-mode sync driver) — run
+    # it off the event loop so a slow/hung WMS host doesn't stall every other
+    # request this process is handling (including /health). Same idiom
+    # app/services/wms_sync/service.py and app/api/v1/forecast.py's import
+    # endpoint already use for their own blocking calls (I6, final-phase
+    # review).
+    result = await anyio.to_thread.run_sync(lookup_lot, lot_no, material_code)
     return result
 
 
@@ -151,7 +158,9 @@ async def create_stock(body: ConsignmentStockCreate, db: SessionDep, payload: Wr
     if expiry_date is not None:
         expiry_source = "manual"
     else:
-        result = lookup_lot(body.lot_no, body.material_code)
+        # See lot_lookup()'s comment above — same "don't block the event
+        # loop on a blocking Oracle call" reasoning applies here.
+        result = await anyio.to_thread.run_sync(lookup_lot, body.lot_no, body.material_code)
         wms_lookup_found = result["found"]
         if result["found"]:
             expiry_date = result["expiry_date"]

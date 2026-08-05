@@ -97,6 +97,34 @@ def test_query_raises_returns_not_found_and_closes_connection(monkeypatch):
 # ── 3. Query path: no row / found row / malformed date strings ─────────────
 
 
+def test_connect_and_query_are_both_bounded_by_a_timeout(monkeypatch):
+    """I6 (final-phase review): a blackholed WMS host must not be able to
+    hang this call forever — connect() must be given tcp_connect_timeout,
+    and the connection must get a Connection.call_timeout (thick-mode's
+    per-round-trip bound) before the query runs."""
+    monkeypatch.setattr(wms_lot_lookup, "wms_configured", lambda: True)
+    monkeypatch.setattr(wms_lot_lookup, "_ensure_thick", lambda: None)
+    monkeypatch.setattr(oracledb, "makedsn", lambda *a, **k: "fake-dsn")
+
+    connect_kwargs = {}
+    fake_con = _FakeConnection(row=None)
+
+    def _capture_connect(*args, **kwargs):
+        connect_kwargs.update(kwargs)
+        return fake_con
+
+    monkeypatch.setattr(oracledb, "connect", _capture_connect)
+
+    wms_lot_lookup.lookup_lot("HGC1976532", "CF0086")
+
+    assert connect_kwargs.get("tcp_connect_timeout"), (
+        "connect() must be called with a nonzero tcp_connect_timeout"
+    )
+    assert fake_con.call_timeout, (
+        "the connection must have a nonzero call_timeout set before querying"
+    )
+
+
 def test_no_matching_row_returns_not_found(monkeypatch):
     monkeypatch.setattr(wms_lot_lookup, "wms_configured", lambda: True)
     monkeypatch.setattr(wms_lot_lookup, "_ensure_thick", lambda: None)

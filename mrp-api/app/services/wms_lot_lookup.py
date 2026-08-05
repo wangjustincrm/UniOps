@@ -27,6 +27,18 @@ being unreachable or the lot simply not existing there. So `lookup_lot`
 never raises for either case — both come back as `found=False` with a
 logged warning; only a genuinely unexpected local misconfiguration (e.g. a
 programming error) would still raise.
+
+`lookup_lot` itself is a blocking, synchronous call (thick-mode oracledb has
+no async API) — callers MUST invoke it via `anyio.to_thread.run_sync`, never
+directly from an `async def` endpoint, or a slow/hung WMS host stalls the
+entire event loop (every other request this process is handling, including
+`/health`), not just this one. See app/api/v1/consignment.py's two call
+sites. The connection itself is bounded on both axes so a genuinely
+blackholed host still can't hang the worker thread forever: `connect()`
+gets `tcp_connect_timeout` (TCP handshake) and, once connected,
+`Connection.call_timeout` (thick-mode-only per-round-trip timeout) bounds
+the SELECT itself — both configurable via `settings.wms_lookup_*_timeout_*`
+(app/core/config.py).
 """
 import logging
 
@@ -66,7 +78,17 @@ def lookup_lot(lot_no: str, material_code: str) -> dict:
     try:
         _ensure_thick()
         dsn = oracledb.makedsn(settings.wms_host, settings.wms_port, service_name=settings.wms_service)
-        con = oracledb.connect(user=settings.wms_user, password=settings.wms_password, dsn=dsn)
+        con = oracledb.connect(
+            user=settings.wms_user,
+            password=settings.wms_password,
+            dsn=dsn,
+            tcp_connect_timeout=settings.wms_lookup_connect_timeout_seconds,
+        )
+        # Thick-mode-only: bounds each round trip (the SELECT below), so a
+        # connection that succeeds but then hangs mid-query (e.g. the host
+        # is up but the listener/DB itself is wedged) still can't hang this
+        # request forever the way tcp_connect_timeout alone would miss.
+        con.call_timeout = settings.wms_lookup_query_timeout_ms
         try:
             cur = con.cursor()
             cur.execute(

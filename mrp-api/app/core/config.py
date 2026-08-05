@@ -70,6 +70,17 @@ class Settings(BaseSettings):
     wms_user: str | None = None
     wms_password: str | None = None
 
+    # Connect timeout (TCP handshake, oracledb.connect()'s own
+    # tcp_connect_timeout kwarg) and per-round-trip query timeout
+    # (Connection.call_timeout, milliseconds, thick-mode-only) for the
+    # single-lot lookup in app/services/wms_lot_lookup.py. Deliberately
+    # short and separate from any bulk-sync timeout: a design-doc-mandated
+    # "never block the save" read on the request path must fail fast, not
+    # hang a request (or, pre-I6-fix, the whole event loop) waiting on a
+    # blackholed WMS host (I6, final-phase review).
+    wms_lookup_connect_timeout_seconds: float = 5.0
+    wms_lookup_query_timeout_ms: int = 5000
+
     oracle_client_lib: str = "/opt/oracle/instantclient_19_28"
 
 
