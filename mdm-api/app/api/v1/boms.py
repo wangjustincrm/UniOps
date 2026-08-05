@@ -53,6 +53,8 @@ from app.core.authz import require_any_permission
 from app.core.deps import CurrentUser
 from app.db.base import get_db
 from app.models.bom import Bom, BomLine
+from app.services.bom_common import covers_date, version_key
+from app.services.bom_explode import ExplodeNode, explode_bom
 from app.services.nc_bom_sync.canonical_sync import sync_boms
 from app.services.nc_bom_sync.reader import nc_configured
 
@@ -110,26 +112,14 @@ class BomSyncResponse(BaseModel):
     tombstone_skipped: list[str] = []
 
 
-def _version_key(version: str | None) -> tuple:
-    """Numeric HVERSION ordering: '1.10' > '1.9' > '1.0'. Falls back to
-    (0,) for blank/unparsable versions so they sort lowest, never crash."""
-    if not version:
-        return (0,)
-    parts: list[int] = []
-    for segment in str(version).split("."):
-        try:
-            parts.append(int(segment))
-        except ValueError:
-            parts.append(0)
-    return tuple(parts)
-
-
-def _covers(line: BomLine, on_date: date_type) -> bool:
-    if line.effective_from is not None and line.effective_from > on_date:
-        return False
-    if line.effective_to is not None and line.effective_to < on_date:
-        return False
-    return True
+# Module-level aliases (logic moved to app/services/bom_common.py so
+# app/services/bom_explode.py can reuse the exact same version-ordering and
+# line-effective-window logic without a circular import — see that module's
+# docstring). Kept as aliases so this file's existing call sites (and its
+# module-level `_version_key`/`_covers` names, which the test suite may
+# still reference via `boms_module._version_key`) needed no further edits.
+_version_key = version_key
+_covers = covers_date
 
 
 @router.get("/effective", response_model=BomEffectiveResponse)
@@ -179,6 +169,25 @@ async def get_effective_bom(
         status_code=404,
         detail=f"No effective BOM found for product={product!r} date={date}",
     )
+
+
+@router.get("/explode", response_model=ExplodeNode)
+async def explode_bom_endpoint(
+    product: str = Query(..., description="product_material_code to explode from the top"),
+    date: date_type = Query(..., description="as-of date, YYYY-MM-DD"),
+    max_depth: int = Query(default=10, ge=1, le=50, description="hard stop on tree depth"),
+    db: AsyncSession = Depends(get_db),
+    _: CurrentUser = ...,
+):
+    """Multi-level BOM explosion — the same engine Phase 1C's material
+    requirements calculation reuses (see app/services/bom_explode.py). Read
+    gate matches /effective: any authenticated role. Unlike /effective, a
+    product with zero approved BOMs is not a 404 — it comes back as a
+    single root node with `missing_bom`/`version_candidates_count=0`, since
+    the caller asked to explode a tree and an empty tree is still an answer
+    (the same reasoning `explode_bom` applies to every missing component
+    node deeper in the tree, not just the root)."""
+    return await explode_bom(db, product, date, max_depth=max_depth)
 
 
 @router.post("/sync", response_model=BomSyncResponse)
