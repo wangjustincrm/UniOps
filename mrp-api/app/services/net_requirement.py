@@ -17,11 +17,25 @@ then MRP) depends on, so it lives here and nowhere else:**
   its `qty` is nonzero.
 
 - **Consignment side** (`mrp_consignment_stock`, one hand-entered weekly
-  count per warehouse/material/lot): summed **only over each lot's LATEST
-  `count_date`**. The table accumulates one row per week per lot, so a lot
-  counted on 2026-07-21, 2026-07-28 and 2026-08-04 must contribute only the
-  2026-08-04 quantity — summing every historical count would triple-count
-  a single physical lot.
+  count per warehouse/material/lot): a count is a **full snapshot** of that
+  warehouse's consignment stock on the day it was taken, not an append-only
+  per-lot ledger — summed over the lots whose `count_date` equals the
+  **latest `count_date` for that (warehouse_code, material_code)**, never a
+  lot's own individually-latest `count_date`. A lot counted on 2026-07-21,
+  2026-07-28 and 2026-08-04 must contribute only the 2026-08-04 quantity
+  (summing every historical count would triple-count a single physical
+  lot) — AND a lot counted 500 on 2026-07-21 that is simply absent from the
+  2026-07-28 snapshot (it shipped out, so the planner didn't re-enter it)
+  must contribute **0** from 2026-07-28 onward, even though its own
+  2026-07-21 row is still sitting in the table with qty=500. Grouping by
+  each lot's own latest `count_date` instead of the warehouse+material's
+  latest `count_date` (the bug this module used to have) never notices a
+  lot has departed — it keeps counting that lot's last-known quantity
+  forever, overstating opening stock and causing under-purchasing. This
+  means the planner is expected to re-enter every lot still physically on
+  hand at each week's count, including ones whose quantity hasn't changed —
+  the snapshot is trusted to be a complete picture of what's there, not an
+  incremental delta.
 
 - **In-transit / already-planned-but-not-yet-received stock is 0 in this
   phase**, by design, not by omission: Phase 1A has not built the MPS/
@@ -109,6 +123,15 @@ class OpeningStockBreakdown:
 
     @property
     def opening_stock(self) -> Decimal:
+        # TODO(phase-1b): wms_qty and consignment_qty are added here with no
+        # UOM reconciliation — neither wms_inventory_lots nor
+        # mrp_consignment_stock carries a uom column, and nothing reads the
+        # forecast's own `uom` before this sum feeds compute_net_requirements
+        # as `forecast_qty - opening_stock`, so a material whose WMS/
+        # consignment counts and forecast aren't already in the same unit
+        # will silently produce a wrong net requirement. Design question for
+        # 1B (see I2, final-phase review) — not a mechanical fix, do not
+        # attempt here.
         return self.wms_qty + self.consignment_qty
 
 
@@ -126,28 +149,28 @@ async def _wms_available_qty(db: AsyncSession, material_code: str, today: date) 
 async def _consignment_latest_qty(
     db: AsyncSession, material_code: str,
 ) -> tuple[Decimal, date | None]:
-    """Sum each (warehouse_code, lot_no)'s qty at its own latest count_date
-    only — never every historical count of the same lot (see module
-    docstring)."""
-    latest = (
+    """Sum only the lots reported in the LATEST count_date **per
+    (warehouse_code, material_code)** — a full-snapshot read, never a
+    lot's own individually-latest count_date (see module docstring's I3
+    note: that would let a lot that shipped out and stopped being counted
+    keep contributing its last-known quantity forever)."""
+    latest_per_warehouse = (
         select(
             ConsignmentStock.warehouse_code,
-            ConsignmentStock.lot_no,
             func.max(ConsignmentStock.count_date).label("latest_count_date"),
         )
         .where(ConsignmentStock.material_code == material_code)
-        .group_by(ConsignmentStock.warehouse_code, ConsignmentStock.lot_no)
+        .group_by(ConsignmentStock.warehouse_code)
         .subquery()
     )
     qty_stmt = (
         select(func.coalesce(func.sum(ConsignmentStock.qty), 0))
         .select_from(ConsignmentStock)
         .join(
-            latest,
+            latest_per_warehouse,
             sa.and_(
-                ConsignmentStock.warehouse_code == latest.c.warehouse_code,
-                ConsignmentStock.lot_no == latest.c.lot_no,
-                ConsignmentStock.count_date == latest.c.latest_count_date,
+                ConsignmentStock.warehouse_code == latest_per_warehouse.c.warehouse_code,
+                ConsignmentStock.count_date == latest_per_warehouse.c.latest_count_date,
             ),
         )
         .where(ConsignmentStock.material_code == material_code)

@@ -125,6 +125,62 @@ async def test_consignment_only_latest_count_per_lot_is_summed(db_session):
 
 
 @pytest.mark.anyio
+async def test_consignment_lot_that_stops_being_counted_does_not_contribute(db_session):
+    """I3 (final-phase review): a stock count is a full SNAPSHOT of a
+    warehouse's consignment stock, not an append-only per-lot ledger.
+    LOT-A is counted 500 in week 1; week 2's count only re-counts a
+    DIFFERENT lot (LOT-A shipped out and simply wasn't re-entered). LOT-A's
+    500 must NOT still contribute after week 2, even though its week-1 row
+    is still sitting in the table — summing each lot at its own latest
+    count_date (the pre-fix behavior) would keep counting it forever."""
+    from app.models.consignment import ConsignmentStock
+
+    db_session.add_all([
+        ConsignmentStock(
+            warehouse_code="MAIN", material_code="S0093", lot_no="LOT-A",
+            qty=Decimal("500"), count_date=date(2026, 7, 21),
+        ),
+        ConsignmentStock(
+            warehouse_code="MAIN", material_code="S0093", lot_no="LOT-B",
+            qty=Decimal("40"), count_date=date(2026, 7, 28),
+        ),
+    ])
+    await db_session.commit()
+
+    breakdown = await get_opening_stock_breakdown(db_session, "S0093", today=date(2026, 8, 4))
+    # latest snapshot for (MAIN, S0093) is 2026-07-28 -- only LOT-B's 40
+    # counts; LOT-A's 500 from the superseded 2026-07-21 snapshot must not.
+    assert breakdown.consignment_qty == Decimal("40")
+    assert breakdown.consignment_count_date == date(2026, 7, 28)
+
+
+@pytest.mark.anyio
+async def test_consignment_each_warehouse_gets_its_own_latest_snapshot(db_session):
+    """The "latest count_date" that gates which rows count is scoped per
+    (warehouse_code, material_code) — a warehouse that hasn't been counted
+    as recently as another still contributes its own latest snapshot, not
+    zero and not forced onto some other warehouse's latest date."""
+    from app.models.consignment import ConsignmentStock
+
+    db_session.add_all([
+        # MAIN's latest snapshot: 2026-08-04
+        ConsignmentStock(
+            warehouse_code="MAIN", material_code="S0093", lot_no="LOT-A",
+            qty=Decimal("60"), count_date=date(2026, 8, 4),
+        ),
+        # SECOND's latest snapshot is older (2026-07-21) but still counts
+        ConsignmentStock(
+            warehouse_code="SECOND", material_code="S0093", lot_no="LOT-C",
+            qty=Decimal("15"), count_date=date(2026, 7, 21),
+        ),
+    ])
+    await db_session.commit()
+
+    breakdown = await get_opening_stock_breakdown(db_session, "S0093", today=date(2026, 8, 4))
+    assert breakdown.consignment_qty == Decimal("75")
+
+
+@pytest.mark.anyio
 async def test_opening_stock_is_zero_when_no_inventory_rows_exist(db_session):
     breakdown = await get_opening_stock_breakdown(db_session, "S9999-NOTHING-HERE", today=date(2026, 8, 4))
     assert breakdown.wms_qty == Decimal("0")
