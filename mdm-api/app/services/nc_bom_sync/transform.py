@@ -111,14 +111,8 @@ Key decisions baked in here (each justified in the survey, cited by section):
     reported a *raw* 610, off by 420x). `HNASSPARENTNUM` is the assistant-
     unit counterpart used for `qty_per_secondary`'s divisor (not
     `HNPARENTNUM` again) because the two can legitimately differ (S0093:
-    420 vs 100) — confirmed identical to `HVCHANGERATE`'s own
-    numerator/denominator (`HVCHANGERATE` is a redundant string encoding of
-    `HNPARENTNUM/HNASSPARENTNUM`, verified across all 46 distinct live
-    combinations with zero exceptions; see bom_explode.py's docstring for
-    why this means `yield_rate` must NOT also be divided into the
-    explosion's accumulated quantity — that would double-count this exact
-    normalization). A live full-table check found ZERO headers with a NULL
-    or non-positive `HNPARENTNUM`/`HNASSPARENTNUM`, so `_resolve_divisor`'s
+    420 vs 100). A live full-table check found ZERO headers with a NULL or
+    non-positive `HNPARENTNUM`/`HNASSPARENTNUM`, so `_resolve_divisor`'s
     None/<=0 -> fallback-to-1-with-a-warning path is defensive, not a real
     observed case — but it's still guarded, never a crash or a silent
     divide-by-zero. Results are `.quantize()`d to `_QTY_QUANT` (10 decimal
@@ -126,6 +120,26 @@ Key decisions baked in here (each justified in the survey, cited by section):
     6 decimal places would badly round a real, legitimate small ratio (e.g.
     S0093's CP0132 line: `1/420 = 0.00238095238...` needs more than 6dp to
     not lose most of its significant digits).
+  - `yield_rate` (<- `HVCHANGERATE`) is `HNPARENTNUM/HNASSPARENTNUM`
+    EXPRESSED AS A RATIO (survey: 头级用量换算比 "输出/输入",
+    survey line 54-55) — a unit-of-measure conversion factor between the
+    header's own primary and secondary UOM, NOT a production-yield/loss
+    term, and NOT the same *value* as either divisor individually (S0093:
+    yield_rate=4.2 equals neither HNPARENTNUM=420 nor HNASSPARENTNUM=100 —
+    it's their quotient). See bom_explode.py's docstring for why this ratio
+    must NOT also be divided into the explosion's accumulated quantity (it
+    is dimensionally a UOM-conversion factor, not a yield/loss multiplier,
+    and it is NOT always 1 — one live combination is HNPARENTNUM=1000/
+    HNASSPARENTNUM=1 -> yield_rate=1000 — so dividing by it again would
+    reintroduce a version of this exact bug at up to 1000x). This assumed
+    identity (`yield_rate == HNPARENTNUM/HNASSPARENTNUM`) was verified by
+    hand against all 46 distinct live `(HVCHANGERATE, HNPARENTNUM,
+    HNASSPARENTNUM)` combinations on 2026-08-04 with zero exceptions, but a
+    one-time hand check is not an enforced guarantee — `_check_yield_rate_
+    invariant()` below re-verifies it on every sync (within
+    `_YIELD_RATE_TOLERANCE`) and emits a counted `warnings` entry naming
+    the BOM if NC ever starts populating it differently, so a silent
+    divergence surfaces immediately instead of quietly mis-planning.
   - `bom_lines`/`bom_substitutes` rows carry a synthetic
     `bom_nc_source_pk`/`bom_line_nc_source_pk` key (the parent's CBOMID /
     CBOM_BID) instead of a real `bom_id`/`bom_line_id` FK — this is a pure
@@ -163,6 +177,12 @@ _CM_PREFIX = "CM"  # standardized milk, deprecated ~2 years ago — PATCH 5
 # ratios (e.g. 1/420 = 0.0023809523809...) without the precision loss a
 # narrower 6dp scale would cause on a genuinely small, legitimate ratio.
 _QTY_QUANT = Decimal("1e-10")
+
+# Relative tolerance for `_check_yield_rate_invariant`'s
+# yield_rate == HNPARENTNUM/HNASSPARENTNUM check (floored against 1 near
+# zero so a tiny expected ratio doesn't demand implausible float-style
+# precision from a value that's already parsed from a "num/den" string).
+_YIELD_RATE_TOLERANCE = Decimal("0.000001")
 
 
 def _clean(v):
@@ -286,6 +306,39 @@ def _resolve_divisor(
     return raw_value
 
 
+def _check_yield_rate_invariant(
+    yield_rate: Decimal, hnparentnum: Decimal | None, hnassparentnum: Decimal | None,
+    nc_source_pk: str, product_material_code: str, warnings: list,
+) -> None:
+    """Runtime guard for the assumption `bom_explode.py` relies on to NOT
+    divide by `yield_rate` (see this module's docstring and bom_explode.py's
+    "Accumulation formula" section): that `yield_rate` (<- HVCHANGERATE) is
+    always exactly `HNPARENTNUM/HNASSPARENTNUM`. Verified by hand against
+    911 live headers on 2026-08-04 with zero exceptions — but a one-time
+    hand check is not an enforced guarantee, so this re-checks it on every
+    sync and surfaces a `warnings` entry (never a crash — this is an
+    informational anomaly report, not a value used in any downstream math)
+    if NC ever starts populating `HVCHANGERATE` differently, so a silent
+    divergence is caught immediately instead of quietly mis-planning.
+
+    Only checks when BOTH divisors are present and the denominator is
+    non-zero — a missing/invalid divisor is already reported by
+    `_resolve_divisor` (a distinct, line-triggered concern) wherever a line
+    actually needs it; this function's job is purely the cross-field
+    consistency of the header's own metadata, not divisor availability."""
+    if hnparentnum is None or hnassparentnum is None or hnassparentnum == 0:
+        return
+    expected = hnparentnum / hnassparentnum
+    tolerance = _YIELD_RATE_TOLERANCE * max(abs(expected), Decimal("1"))
+    if abs(expected - yield_rate) > tolerance:
+        warnings.append({
+            "nc_source_pk": nc_source_pk, "reason": "yield_rate_batch_ratio_mismatch",
+            "product_material_code": product_material_code,
+            "yield_rate": str(yield_rate), "expected": str(expected),
+            "hnparentnum": str(hnparentnum), "hnassparentnum": str(hnassparentnum),
+        })
+
+
 def _parse_date(raw) -> date | None:
     """'YYYY-MM-DD HH24:MI:SS' or 'YYYY-MM-DD' -> date; blank/'~' -> None."""
     v = _clean(raw)
@@ -380,6 +433,17 @@ def transform(raw: dict) -> dict:
                 "nc_source_pk": pk, "reason": "unknown_bom_type_prefix",
                 "product_material_code": code,
             })
+        yield_rate = _parse_ratio(h.get("hvchangerate"))
+        hnparentnum_val = _parse_qty_or_none(h.get("hnparentnum"))
+        # Cross-checked against HNASSPARENTNUM here (header-level, cheap,
+        # independent of whether any line actually needs a divisor) — see
+        # _check_yield_rate_invariant's docstring and this module's
+        # docstring for why this must hold for bom_explode.py's no-divide
+        # decision to stay correct.
+        _check_yield_rate_invariant(
+            yield_rate, hnparentnum_val, _parse_qty_or_none(h.get("hnassparentnum")),
+            pk, code, warnings,
+        )
         boms.append({
             "product_material_code": code,
             "bom_type": bt,
@@ -388,12 +452,12 @@ def transform(raw: dict) -> dict:
             "status": _status(h.get("fbillstatus")),
             "effective_from": None,
             "effective_to": None,
-            "yield_rate": _parse_ratio(h.get("hvchangerate")),
+            "yield_rate": yield_rate,
             # Raw HNPARENTNUM, kept for traceability (planners/Phase 1C need
             # to see the source batch size) — distinct from the *divisor*
             # the line loop below resolves from it, which is always a safe
             # positive Decimal even when this is None (PATCH 6).
-            "batch_output_qty": _parse_qty_or_none(h.get("hnparentnum")),
+            "batch_output_qty": hnparentnum_val,
             "nc_source_pk": pk,
         })
         resolved_bom_pks.add(pk)

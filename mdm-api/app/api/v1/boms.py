@@ -178,6 +178,10 @@ async def explode_bom_endpoint(
     product: str = Query(..., description="product_material_code to explode from the top"),
     date: date_type = Query(..., description="as-of date, YYYY-MM-DD"),
     max_depth: int = Query(default=10, ge=1, le=50, description="hard stop on tree depth"),
+    max_nodes: int = Query(
+        default=5000, ge=1, le=50000,
+        description="hard stop on total nodes materialized (root inclusive) — guards diamond-heavy graphs",
+    ),
     db: AsyncSession = Depends(get_db),
     _: CurrentUser = ...,
 ):
@@ -189,7 +193,7 @@ async def explode_bom_endpoint(
     the caller asked to explode a tree and an empty tree is still an answer
     (the same reasoning `explode_bom` applies to every missing component
     node deeper in the tree, not just the root)."""
-    return await explode_bom(db, product, date, max_depth=max_depth)
+    return await explode_bom(db, product, date, max_depth=max_depth, max_nodes=max_nodes)
 
 
 @router.post("/sync", response_model=BomSyncResponse)

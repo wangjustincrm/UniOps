@@ -128,7 +128,7 @@ mrp/ 前端(5179) ──> mrp-api；portal navConfig 注册入口
 - **触发**：手动（运行控制台）+ 每日定时批（后台 asyncio 循环任务，仿 VMS 每日通知调度）+ WMS 同步状态 diff 触发的增量重算。
 - **流程**（单 run 内）：
   1. 快照：物料/BOM/供应参数（mdm HTTP）、NC 开口 PO（epms HTTP）、需求有效版本、WMS 库存镜像、计划参数生效版本 → run 级快照，保证可复算。
-  2. 低级码（LLC）：按 BOM 图算层级，自上而下展开（成品 → 半成品粉/包材 → 原辅料），展开量按 `qty_per × (1+scrap_rate) ÷ yield_rate` 修正，跨单位走 `uom_conversions`。
+  2. 低级码（LLC）：按 BOM 图算层级，自上而下展开（成品 → 半成品粉/包材 → 原辅料），展开量按 `qty_per × (1+scrap_rate)` 累乘，跨单位走 `uom_conversions`。**不要 `÷ yield_rate`**——`yield_rate`（<- NC `HVCHANGERATE`）是头级主/辅计量单位换算比（"输出/输入" = `HNPARENTNUM/HNASSPARENTNUM`），不是生产得率/损耗项；`qty_per` 在 mdm-api 落库时已经用同一对 `HNPARENTNUM`/`HNASSPARENTNUM` 做过批量归一化（2026-08-04 CRITICAL defect fix, `mdm-api/app/services/nc_bom_sync/transform.py` PATCH 6），再除一次 `yield_rate` 会把同一个换算比重复应用一遍，且该值并非恒为 1（实测出现过 1000），会把展开量再错乘/错除到最多 1000 倍——这条 `÷ yield_rate` 是通用 MRP 教材写法，套在这批 NC 数据上是错的，实现见 `mdm-api/app/services/bom_explode.py` 模块 docstring 的 "Accumulation formula" 一节，Phase 1C 不要"补回"这个除法。
   3. 逐物料按日 bucket 铺 PAB：`可用库存 = mapped_status='available' 且剩余保质期≥门槛的批次量 + 在途 + 人工供给计划 − 已分配 − 安全库存`；`净需求 = max(0, 毛需求 − 可用 − 期内供给)`。
   4. 批量策略修正 → 建议数量；`建议日期 = 需求日 − 前置期 − 质检缓冲`，按日历顺延；围栏内只出异常不改建议。
   5. 写 proposals + exceptions；diff 上一 run 生成"提前/延后/取消/数量变化"异常。
@@ -405,7 +405,7 @@ mrp/ 前端(5179) ──> mrp-api；portal navConfig 注册入口
 
 | 端点 | 作用 | 关键要求 |
 | --- | --- | --- |
-| `GET /mdm/v1/boms/explode?product=&date=&max_depth=` | 一次返回整棵级联树 | ① **环检测**（NC 数据可能存在 A→B→A，必须防死循环，命中即截断并在节点上标注）；② `max_depth` 兜底（默认 10）；③ 每个节点返回**累计用量**（相对顶层成品 1 单位，逐层按 `qty_per × (1+scrap_rate) ÷ yield_rate` 累乘）与本层用量两个值；④ 主/辅单位量都带出；⑤ **选版透明**：节点标注实际选中的版本号与候选版本总数（如 `v1.6 (7 approved)`），因为同母件多版本并存是常态，计划员需要知道系统选了哪个；⑥ 组件应有 BOM 却查不到时（如 `-R` 返工变体）标 `missing_bom`，不静默当叶子节点 |
+| `GET /mdm/v1/boms/explode?product=&date=&max_depth=` | 一次返回整棵级联树 | ① **环检测**（NC 数据可能存在 A→B→A，必须防死循环，命中即截断并在节点上标注）；② `max_depth` 兜底（默认 10）+ 总节点数兜底（钻石型图在深度 50 处可能组合爆炸，命中即截断并在节点上标注，不是静默丢节点）；③ 每个节点返回**累计用量**（相对顶层成品 1 单位，逐层按 `qty_per × (1+scrap_rate)` 累乘——**不要 `÷ yield_rate`**，理由同 §4.2：`yield_rate` 是主/辅单位换算比，`qty_per` 落库时已按 `HNPARENTNUM`/`HNASSPARENTNUM` 归一化过，再除一次是把同一换算比重复应用，见 `bom_explode.py` docstring）与本层用量两个值；④ 主/辅单位量都带出；⑤ **选版透明**：节点标注实际选中的版本号与候选版本总数（如 `v1.6 (7 approved)`），因为同母件多版本并存是常态，计划员需要知道系统选了哪个；⑥ 组件应有 BOM 却查不到时（如 `-R` 返工变体）标 `missing_bom`，不静默当叶子节点 |
 | `GET /mdm/v1/boms/where-used?component=&date=` | 反查：某物料被哪些成品用到 | 影响分析用——原料涨价/断货/质量问题时，一眼看出波及哪些成品。返回路径链而不只是顶层成品 |
 
 **前端页面**

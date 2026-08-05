@@ -43,31 +43,43 @@ mentions):
     child.qty_accumulated = parent.qty_accumulated * child.qty_per * (1 + child.scrap_rate)
 
 DELIBERATELY does NOT divide by `bom.yield_rate`, even though
-docs/superpowers/specs/2026-08-03-mrp-subsystem-design.md §6.5/§408 write
-the formula as `qty_per × (1+scrap_rate) ÷ yield_rate`. That spec text
-predates the 2026-08-04 survey finding that in THIS NC65 instance,
-`yield_rate` (<- HVCHANGERATE, parsed as a "num/den" ratio) is not an
-independent production-yield/loss factor at all — it is a redundant STRING
-encoding of the exact same `HNPARENTNUM/HNASSPARENTNUM` batch-divisor pair
-that `nc_bom_sync/transform.py`'s PATCH 6 already divides `qty_per` by at
-sync time (confirmed against all 46 distinct live (HVCHANGERATE,
-HNPARENTNUM, HNASSPARENTNUM) combinations across 911 live headers on
-2026-08-04, zero exceptions — e.g. S0093's header: HNPARENTNUM=420,
-HNASSPARENTNUM=100, HVCHANGERATE='4.2/1' = 420/100 exactly).
+docs/superpowers/specs/2026-08-03-mrp-subsystem-design.md §6.5/§408 wrote
+the formula as `qty_per × (1+scrap_rate) ÷ yield_rate` (that generic
+MRP-textbook term is now corrected there too, pointing back here).
+`yield_rate` (<- NC `HVCHANGERATE`) is NOT a production-yield/loss factor —
+per the survey (docs/superpowers/specs/2026-08-03-nc-bom-survey.md:54-55),
+it is 头级用量换算比 "输出/输入": a UNIT-OF-MEASURE CONVERSION RATIO between
+the header's own primary and secondary UOM, with `HNPARENTNUM`/
+`HNASSPARENTNUM` as its numerator/denominator. It is dimensionally not a
+yield term at all, and its *value* is not the same as either divisor
+individually — e.g. S0093's yield_rate=4.2 equals neither HNPARENTNUM=420
+nor HNASSPARENTNUM=100, it's their quotient (420/100). Confirmed against
+all 46 distinct live (HVCHANGERATE, HNPARENTNUM, HNASSPARENTNUM)
+combinations across 911 live headers on 2026-08-04, zero exceptions.
 
-Worked example (S0093, real data): header HNPARENTNUM=420. Its CW0001 line
-carries NITEMNUM=420, which `transform()` already normalizes to
-`qty_per=1.0` (420/420). If this function ALSO divided by
-`yield_rate` (=4.2 for this header), the accumulated quantity for CW0001
-would come out `1.0 / 4.2 ≈ 0.238` per kg of S0093 — wrong; the correct,
-already-normalized answer is `1.0` per kg (1 kg of dry-mix powder per kg of
-finished product). Applying both the transform-time divide AND an
-explode-time `÷ yield_rate` double-counts the exact same batch-scale
-factor — this is a live variant of the very qty_per bug PATCH 6 fixed, not
-a faithful implementation of the design spec's generic (pre-survey)
-assumption. `bom.yield_rate` is still stored (and still worth keeping,
-since it doubles as the header's primary/secondary UOM conversion ratio),
-it is simply not an input to THIS formula.
+Why this matters for THIS formula: `qty_per` is already normalized against
+the very same `HNPARENTNUM`/`HNASSPARENTNUM` pair at sync time
+(`nc_bom_sync/transform.py`'s PATCH 6). `yield_rate` is NOT always 1 — live
+values include 4.2 (S0093) and as high as 1000 (one real combination is
+HNPARENTNUM=1000/HNASSPARENTNUM=1) — so dividing the already-normalized
+`qty_per` by it again would not just double-count some abstract factor, it
+would reintroduce a live variant of the exact qty_per bug PATCH 6 fixed, at
+up to 1000x. This is not a one-time hand-verified assumption left to rot:
+`nc_bom_sync/transform.py`'s `_check_yield_rate_invariant()` re-checks
+`yield_rate == HNPARENTNUM/HNASSPARENTNUM` on every sync and emits a
+counted `warnings` entry naming the BOM if NC ever starts populating
+`HVCHANGERATE` differently — so a real divergence surfaces immediately
+instead of silently corrupting every explosion downstream.
+
+Worked example (S0093, real data): header HNPARENTNUM=420,
+HNASSPARENTNUM=100 (yield_rate=4.2). Its CW0001 line carries NITEMNUM=420,
+which `transform()` already normalizes to `qty_per=1.0` (420/420). If this
+function ALSO divided by `yield_rate` (=4.2), the accumulated quantity for
+CW0001 would come out `1.0 / 4.2 ≈ 0.238` per kg of S0093 — wrong; the
+correct, already-normalized answer is `1.0` per kg (1 kg of dry-mix powder
+per kg of finished product). `bom.yield_rate` is still stored (and still
+worth keeping, since it's the header's real primary/secondary UOM
+conversion ratio), it is simply not an input to THIS formula.
 """
 from __future__ import annotations
 
@@ -110,6 +122,7 @@ class ExplodeNode(BaseModel):
     version_candidates_count: int = 0
     missing_bom: bool = False
     cycle_detected: bool = False
+    node_limit_reached: bool = False
     children: list["ExplodeNode"] = []
 
 
@@ -121,19 +134,34 @@ async def explode_bom(
     product_code: str,
     on_date: date_type,
     max_depth: int = 10,
+    max_nodes: int = 5000,
 ) -> ExplodeNode:
     """Explode `product_code`'s effective BOM cascade as of `on_date`,
     breadth-first, down to at most `max_depth` levels below the root
     (root itself is level 0; a node at `level == max_depth` is returned but
     never expanded — its own `children` stays empty and its own BOM lookup
     is simply never attempted, distinct from `missing_bom`/`cycle_detected`,
-    which both mean "we looked and here's what we found")."""
+    which both mean "we looked and here's what we found").
+
+    `max_nodes` is a second, independent hard stop on the TOTAL number of
+    nodes materialized in the tree (root inclusive), on top of `max_depth`:
+    a diamond-heavy graph (several components sharing several sub-
+    components) can blow up combinatorially breadth-wise well before
+    `max_depth` levels down, cycle guard notwithstanding (the cycle guard
+    only catches an ancestor repeating on ONE root-to-node path — it does
+    nothing to bound fan-out across many different paths). Once the budget
+    is spent, every subsequently-discovered node is still returned (so a
+    caller can see the component exists) but flagged
+    `node_limit_reached=True` and never expanded further — same "we found
+    it, we just didn't explore past it" contract as `max_depth` truncation,
+    just with its own explicit flag instead of being inferred from `level`."""
     root = ExplodeNode(
         material_code=product_code,
         level=0,
         qty_per=Decimal(1),
         qty_accumulated=Decimal(1),
     )
+    total_nodes = 1  # root counts against the budget too
     # frontier: (node, ancestor codes on the path from root to node inclusive)
     frontier: list[tuple[ExplodeNode, frozenset[str]]] = [(root, frozenset({product_code}))]
 
@@ -204,6 +232,24 @@ async def explode_bom(
                 # the batch-scale normalization transform.py's PATCH 6
                 # already applied to `qty_per` at sync time.
                 child_accumulated = node.qty_accumulated * ln.qty_per * (Decimal(1) + child_scrap)
+                if total_nodes >= max_nodes:
+                    # Budget spent: still report the component (with its
+                    # correct qty_per/qty_accumulated) but stop right here —
+                    # never expanded, never added to next_frontier. See
+                    # `max_nodes`'s own docstring paragraph above.
+                    children.append(ExplodeNode(
+                        material_code=child_code,
+                        level=node.level + 1,
+                        qty_per=ln.qty_per,
+                        qty_accumulated=child_accumulated,
+                        uom=ln.uom,
+                        qty_per_secondary=ln.qty_per_secondary,
+                        uom_secondary=ln.uom_secondary,
+                        scrap_rate=child_scrap,
+                        node_limit_reached=True,
+                    ))
+                    continue
+                total_nodes += 1
                 is_cycle = child_code in ancestors
                 child = ExplodeNode(
                     material_code=child_code,
