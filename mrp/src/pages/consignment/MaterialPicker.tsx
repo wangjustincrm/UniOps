@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
 
 export function MaterialPicker({
-  value, onSelect, onClear, hasError, disabled,
+  value, onSelect, onClear, hasError, disabled, placeholder = 'Search products…',
 }: {
   /** Selected material code, or '' for none. */
   value: string
@@ -29,6 +29,10 @@ export function MaterialPicker({
   onClear: () => void
   hasError?: boolean
   disabled?: boolean
+  /** Trigger button placeholder when nothing is selected — e.g. BOM
+   *  Explorer's where-used mode reuses this picker for "component" rather
+   *  than "product" ('Search components…'). */
+  placeholder?: string
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -94,7 +98,7 @@ export function MaterialPicker({
         >
           <Search className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
           <span className={cn('flex-1 truncate', value ? 'text-neutral-900' : 'text-neutral-400')}>
-            {value || 'Search products…'}
+            {value || placeholder}
           </span>
         </button>
         {value && !disabled && (

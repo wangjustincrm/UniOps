@@ -151,13 +151,16 @@ export const epmsApi = {
   get: <T>(path: string) => epmsRequest<T>(path),
 }
 
-async function mdmRequest<T>(path: string): Promise<T> {
-  const res = await authFetch(`${MDM_BASE}${path}`, {})
+async function mdmRequest<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  const res = await authFetch(`${MDM_BASE}${path}`, opts)
   if (!res.ok) throw await toApiError(res)
   return res.json()
 }
 
-/** mdm-api client (materials master — see lib/materials.ts). Mounted under /mdm/v1, unlike mrp-api's /api/v1 — pass the full `/mdm/v1/...` path. */
+/** mdm-api client (materials master — see lib/materials.ts — and BOM explode/
+ *  where-used/sync — see pages/bom/bomApi.ts). Mounted under /mdm/v1, unlike
+ *  mrp-api's /api/v1 — pass the full `/mdm/v1/...` path. */
 export const mdmApi = {
-  get: <T>(path: string) => mdmRequest<T>(path),
+  get:  <T>(path: string)                => mdmRequest<T>(path),
+  post: <T>(path: string, body?: unknown) => mdmRequest<T>(path, { method: 'POST', body }),
 }
