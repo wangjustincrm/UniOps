@@ -491,6 +491,7 @@ services:
         VITE_API_URL: ${MRP_API_URL}
         VITE_PORTAL_URL: ${PORTAL_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
     ports: ["5179:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]

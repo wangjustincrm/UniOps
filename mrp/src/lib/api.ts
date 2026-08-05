@@ -4,14 +4,15 @@
 // mirrors oa/src/lib/api.ts — see that file's note; the Vite-proxy-in-Docker
 // trap has burned this project before.
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:8011'
+// epms-api (branding + the cross-module GET /config/me/permissions passthrough
+// the Sync button's mdm.bom.write gate uses — see hooks/usePermissions.ts).
+// Wired via VITE_EPMS_API_URL in both docker-compose.*.yml and mrp/Dockerfile.
 const EPMS_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
-// mdm-api (materials master, for the Consignment Stock product picker — see
-// lib/materials.ts). No VITE_MDM_API_URL is wired into mrp's docker-compose
-// service yet (only epms/oa/portal/finance/booking got it) — the fallback
-// matches mdm-api's fixed dev port (docker-compose.dev.yml maps 8002:8002)
-// and mdm-api's ALLOWED_ORIGINS already includes localhost:5179 (mrp's own
-// dev port), so this works without touching compose. Same pattern as
-// EPMS_BASE above.
+// mdm-api (materials master + BOM endpoints — see lib/materials.ts and
+// pages/bom/bomApi.ts). Wired via VITE_MDM_API_URL in both
+// docker-compose.*.yml and mrp/Dockerfile (Task 12 — previously only the
+// fallback default covered local dev; a real deployment silently hung on
+// localhost:8002 without this).
 const MDM_BASE = (import.meta.env.VITE_MDM_API_URL as string | undefined) || 'http://localhost:8002'
 
 function getToken(): string | null {
