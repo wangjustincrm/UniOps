@@ -111,14 +111,22 @@ at build time).
 
   | Subdomain (`.canadaroyalmilk.com`) | → container        |
   |------------------------------------|--------------------|
-  | `portal`/`epms`/`oa`/`vms`/`finance` | the web images   |
+  | `portal`/`epms`/`oa`/`vms`/`finance`/`mrp` | the web images |
   | `epms-api`                         | epms-api `8000`    |
   | `oa-api`                           | expense-api `8006` |
   | `vms-api`                          | vms-api `8008`     |
   | `finance-api`                      | finance-api `8004` |
   | `budget-api`                       | budget-api `8007`  |
   | `mdm-api`                          | mdm-api `8002`     |
+  | `mrp-api`                          | mrp-api `8011`     |
   | `files`                            | File server `10.10.50.66:8005` |
+
+  (`booking`/`booking-api` also route through the same edge — see "Booking
+  Module Release Steps" below for their own dedicated DNS step; omitted from
+  this base table for the same reason `mrp`/`mrp-api` were originally, before
+  this update — each module's release-steps section is where its DNS gets
+  called out at the time it's added, and this base table lags behind unless
+  someone remembers to circle back and add it here too.)
 
   `approval-api`/`identity-api` are server-to-server only (no subdomain). The
   browser-facing `*_URL` are baked into the bundles at **build time** as
@@ -139,10 +147,12 @@ at build time).
   (TCP). Enable NAT **hairpin/loopback** so internal users hitting the public IP
   reach the edge too (or use split-DNS — see DNS below).
 - **DNS** A records (→ `45.78.113.218`): `portal`, `epms`, `oa`, `vms`, `finance`,
-  `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`, `files`
-  — each `.canadaroyalmilk.com`. (Use specific records, **not** a wildcard on the
-  company apex.) Internal: rely on firewall hairpin, or add the same names in the
-  internal DNS pointing at `10.10.50.65` (split-DNS).
+  `mrp`, `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`,
+  `mrp-api`, `files` — each `.canadaroyalmilk.com`. (Use specific records, **not**
+  a wildcard on the company apex.) Internal: rely on firewall hairpin, or add the
+  same names in the internal DNS pointing at `10.10.50.65` (split-DNS). (`booking`/
+  `booking-api` need their own A records too — see "Booking Module Release
+  Steps" below, which was written with its own explicit DNS step.)
 - App server `10.10.50.65` can reach the **DB server** (`${DB_HOST}:5432` + Redis
   `:6379`) and **File server** (`10.10.50.66:8005`) — add `10.10.50.65` to
   **pg_hba.conf + ufw** on the DB server.
@@ -449,6 +459,30 @@ release:
    `DEFAULTS`/`LOCKED` at all. Only run it when a release adds new keys/roles
    that actually need seeding, and re-check the Access Control matrix
    afterward for any revoked grant that came back.
+
+4. **DNS + Caddy** — `mrp.canadaroyalmilk.com` and `mrp-api.canadaroyalmilk.com`
+   are already present in the `Caddyfile` (same pattern as Booking's step 6
+   above). Add both A records (→ `45.78.113.218`) in the external DNS and the
+   corresponding internal split-DNS entries (→ `10.10.50.65`) — see
+   Prerequisites' DNS list above, which now includes them (M13, final-phase
+   review: this step and the Prerequisites DNS list previously omitted
+   `mrp`/`mrp-api` entirely).
+
+5. **Migration `0015` is DDL-only** (M8, final-phase review) — it adds
+   columns/constraints but does not backfill or re-derive any data. A
+   dev/staging DB that was already sitting at 0011-0014 before this release
+   will apply 0015 cleanly, but the `boms`/`bom_lines` rows it already had
+   from an earlier `POST /mdm/v1/boms/sync` keep serving the **batch-scaled**
+   quantities that sync run computed — 0015's new columns/behavior only take
+   effect for rows written by a sync that runs *after* 0015 is applied.
+   **Run `POST /mdm/v1/boms/sync` again after migrating** any environment
+   that had BOM data before this release, or the BOM Explorer / explosion
+   endpoints will silently keep serving pre-0015 quantities until the next
+   sync happens to run for some other reason. **Production is unaffected**:
+   `boms` is created empty by migration `0011` in this same release, so
+   there is no pre-existing data to be stale in the first place — this only
+   matters for a dev/staging DB that had already synced BOMs before 0015
+   landed.
 
 ---
 
