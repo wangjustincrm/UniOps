@@ -27,17 +27,24 @@ def _nc_configured_by_default(monkeypatch):
 def _extract():
     return {
         "headers": [
+            # HNPARENTNUM=420 mirrors S0093's real live header (2026-08-04
+            # spot-check) so CF0092's lines exercise real PATCH 6 batch-scale
+            # normalization, not a no-op divide-by-1.
             {"cbomid": "H-CF", "hcmaterialid": "M-CF", "hversion": "1.2",
-             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1", "hnparentnum": 420},
+            # HNPARENTNUM=1 here (and below) so the pre-existing qty_per
+            # assertions on these lines (999.45 / 100 / 1911) stay meaningful
+            # numbers to assert on — a real, if unremarkable, NC value (133
+            # of 1016 live headers really do have HNPARENTNUM=1).
             {"cbomid": "H-CW", "hcmaterialid": "M-CW", "hversion": "1.1",
-             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1", "hnparentnum": 1},
             # Two coexisting APPROVED versions of the same product (CS0026),
             # like the survey's real CS0026 (7 approved versions 1.0-1.6) —
             # /effective must pick the max version.
             {"cbomid": "H-CS-OLD", "hcmaterialid": "M-CS", "hversion": "1.0",
-             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1", "hnparentnum": 1},
             {"cbomid": "H-CS-NEW", "hcmaterialid": "M-CS", "hversion": "1.6",
-             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1", "hnparentnum": 1},
         ],
         "lines": [
             {"cbom_bid": "L-CF-1", "cbomid": "H-CF", "cmaterialid": "M-CW",
@@ -251,7 +258,7 @@ async def test_bom_sync_skips_all_tombstones_when_headers_extract_is_empty(clien
 
     def extract_v1():
         return {
-            "headers": [{"cbomid": "H1", "hcmaterialid": "MA", "hversion": "1.0", "fbillstatus": 1}],
+            "headers": [{"cbomid": "H1", "hcmaterialid": "MA", "hversion": "1.0", "fbillstatus": 1, "hnparentnum": 1}],
             "lines": [{"cbom_bid": "L1", "cbomid": "H1", "cmaterialid": "MC", "nitemnum": 1, "vrowno": "10"}],
             "repl": [{"cbom_replaceid": "S1", "cbom_bid": "L1", "creplmaterialoid": "MD", "vrowno": "10"}],
             "material_codes": {"MA": "CS0001", "MC": "CR0001", "MD": "CR0002"},
@@ -298,6 +305,13 @@ async def test_effective_cascade_three_layers(client, db_session, monkeypatch):
     assert b1["bom_type"] == "packaging"
     assert b1["version"] == "1.2"
     assert {ln["component_material_code"] for ln in b1["lines"]} == {"CW0001", "CP0115"}
+    assert b1["batch_output_qty"] is not None and Decimal(str(b1["batch_output_qty"])) == Decimal("420")
+    # PATCH 6: NITEMNUM (420/610) normalized against HNPARENTNUM=420 — real
+    # S0093 numbers (CW0001=1.0/kg, CP0115=~1.4524/kg, ~688g/tin), not the
+    # raw batch quantities.
+    by_code = {ln["component_material_code"]: Decimal(str(ln["qty_per"])) for ln in b1["lines"]}
+    assert by_code["CW0001"] == Decimal("1")
+    assert by_code["CP0115"] == Decimal("1.4523809524")
 
     r2 = await client.get("/mdm/v1/boms/effective", params={"product": "CW0001", "date": "2026-08-04"})
     b2 = r2.json()
@@ -426,19 +440,27 @@ async def test_effective_factory_code_filter_and_deterministic_tiebreak(client, 
 
 @pytest.mark.anyio
 async def test_effective_exposes_secondary_uom_and_cm_exclusions(client, db_session, monkeypatch):
-    """End-to-end coverage for PATCH 2/3/4/5: a two-unit S-prefixed finished
-    good line resolves both units (with EA/PIECES normalized), a CM-prefixed
-    parent header never syncs, and a CM-prefixed component line is dropped
-    but visibly counted in `warnings`."""
+    """End-to-end coverage for PATCH 2/3/4/5/6: a two-unit S-prefixed
+    finished good line resolves both units (with EA/PIECES normalized AND
+    NITEMNUM/NASSITEMNUM normalized against the header's real HNPARENTNUM/
+    HNASSPARENTNUM batch quantities — S0093's live values, 2026-08-04
+    spot-check), a CM-prefixed parent header never syncs, and a CM-prefixed
+    component line is dropped but visibly counted in `warnings`."""
     from app.services.nc_bom_sync import canonical_sync
 
     def extract():
         return {
             "headers": [
                 {"cbomid": "H-S", "hcmaterialid": "M-S", "hversion": "1.0",
-                 "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+                 "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "4.2/1",
+                 "hnparentnum": 420, "hnassparentnum": 100},
+                # Raw-mirror upsert (nc_bom_sync/service.py) bulk-inserts all
+                # header rows in one multi-row VALUES clause, so every header
+                # dict in one extract() must carry the SAME key set — hence
+                # explicit Nones here rather than simply omitting the keys.
                 {"cbomid": "H-CM", "hcmaterialid": "M-CM", "hversion": "1.0",
-                 "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1"},
+                 "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1",
+                 "hnparentnum": None, "hnassparentnum": None},
             ],
             "lines": [
                 {"cbom_bid": "L-S-1", "cbomid": "H-S", "cmaterialid": "M-CP",
@@ -476,8 +498,12 @@ async def test_effective_exposes_secondary_uom_and_cm_exclusions(client, db_sess
     assert {ln["component_material_code"] for ln in eff["lines"]} == {"CP0115"}
     line = eff["lines"][0]
     assert line["uom"] == "KGM"
-    assert Decimal(str(line["qty_per_secondary"])) == Decimal("610")
+    # PATCH 6: 610/420 (primary) and 610/100 (secondary) — NOT the raw 610
+    # stored twice, the exact real-world defect this fix corrects.
+    assert Decimal(str(line["qty_per"])) == Decimal("1.4523809524")
+    assert Decimal(str(line["qty_per_secondary"])) == Decimal("6.1")
     assert line["uom_secondary"] == "EA"  # PIECES normalized to canonical EA
+    assert Decimal(str(eff["batch_output_qty"])) == Decimal("420")
 
 
 @pytest.mark.anyio

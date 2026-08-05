@@ -234,7 +234,7 @@ def test_s_prefix_does_not_collide_with_two_char_cs_cw_cf_prefixes():
 
 def test_uom_resolved_from_measdoc_pk_lookup():
     raw = _raw(
-        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1, "hnparentnum": 1}],
         lines=[{
             "cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2",
             "nitemnum": 1, "vrowno": "10", "cmeasureid": "PK-MEAS-KGM",
@@ -271,7 +271,7 @@ def test_blank_uom_pk_resolves_to_none_without_warning():
     """A line that simply has no cmeasureid at all is the normal case, not a
     resolution failure — must not spuriously warn."""
     raw = _raw(
-        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1, "hnparentnum": 1}],
         lines=[{"cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2", "nitemnum": 1, "vrowno": "10"}],
         material_codes={"M1": "CF0001", "M2": "CR0001"},
     )
@@ -286,8 +286,17 @@ def test_blank_uom_pk_resolves_to_none_without_warning():
 # ---------------------------------------------------------------------------
 
 def test_secondary_qty_and_uom_populated_for_two_unit_lines():
+    """Real S0093 numbers (live NC65, 2026-08-04 spot-check): header
+    HNPARENTNUM=420, HNASSPARENTNUM=100. The CP0115-1 tin line's
+    NITEMNUM=NASSITEMNUM=610 must normalize to qty_per=610/420 (primary
+    unit, KGM) and qty_per_secondary=610/100 (secondary unit, EA) — TWO
+    DIFFERENT ratios, not the same raw 610 stored twice (the PATCH 6 bug:
+    NITEMNUM/NASSITEMNUM are whole-BATCH quantities, not per-unit ones)."""
     raw = _raw(
-        headers=[{"cbomid": "PK-S", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1}],
+        headers=[{
+            "cbomid": "PK-S", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 420, "hnassparentnum": 100,
+        }],
         lines=[{
             "cbom_bid": "PKB1", "cbomid": "PK-S", "cmaterialid": "M2",
             "nitemnum": Decimal("610"), "vrowno": "10",
@@ -298,17 +307,18 @@ def test_secondary_qty_and_uom_populated_for_two_unit_lines():
     raw["uoms"] = {"PK-KGM": "KGM", "PK-EA": "EA"}
     out = transform(raw)
     ln = out["lines"][0]
-    assert ln["qty_per"] == Decimal("610")
+    assert ln["qty_per"] == Decimal("1.4523809524")  # 610/420, ~688g/tin — matches the real product spec
     assert ln["uom"] == "KGM"
-    assert ln["qty_per_secondary"] == Decimal("610")
+    assert ln["qty_per_secondary"] == Decimal("6.1")  # 610/100, NOT the raw 610
     assert ln["uom_secondary"] == "EA"
+    assert out["warnings"] == []  # both divisors present and valid -> no anomaly to report
 
 
 def test_secondary_qty_and_uom_none_when_absent_not_zero():
     """A single-unit line (no NASSITEMNUM/CASSMEASUREID at all) must get
     None, not 0/blank — 0 would misread as 'zero pieces'."""
     raw = _raw(
-        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1, "hnparentnum": 1}],
         lines=[{"cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2", "nitemnum": 1, "vrowno": "10"}],
         material_codes={"M1": "CF0001", "M2": "CR0001"},
     )
@@ -316,6 +326,120 @@ def test_secondary_qty_and_uom_none_when_absent_not_zero():
     ln = out["lines"][0]
     assert ln["qty_per_secondary"] is None
     assert ln["uom_secondary"] is None
+    # A line with no secondary unit at all must never touch/warn about
+    # HNASSPARENTNUM — the lazy divisor resolution must not fire for it.
+    assert out["warnings"] == []
+
+
+# ---------------------------------------------------------------------------
+# PATCH 6 (2026-08-04, CRITICAL defect fix): qty_per/qty_per_secondary must
+# be normalized against the header's HNPARENTNUM/HNASSPARENTNUM batch-output
+# quantity, not store NITEMNUM/NASSITEMNUM (a whole-BATCH quantity) as-is.
+# ---------------------------------------------------------------------------
+
+def test_qty_per_normalized_against_header_batch_output_qty():
+    """Real CS0026 numbers (live NC65, 2026-08-04 spot-check): header
+    HNPARENTNUM=1000. A CR0024 raw-material line with NITEMNUM=270 must
+    normalize to qty_per=0.27 (a sensible recipe ratio), not the raw batch
+    quantity 270."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK-CS", "hcmaterialid": "MCS", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 1000,
+        }],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK-CS", "cmaterialid": "M2",
+            "nitemnum": Decimal("270"), "vrowno": "10",
+        }],
+        material_codes={"MCS": "CS0026", "M2": "CR0024"},
+    )
+    out = transform(raw)
+    ln = out["lines"][0]
+    assert ln["qty_per"] == Decimal("0.27")
+    assert out["warnings"] == []
+
+
+def test_qty_per_quantized_to_ten_decimal_places_not_badly_rounded():
+    """Real S0093 numbers: header HNPARENTNUM=420. CP0132's NITEMNUM=1 line
+    normalizes to a repeating decimal (1/420 = 0.0023809523809...) — must
+    keep enough precision that 6dp rounding wouldn't have provided."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK-S", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 420,
+        }],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK-S", "cmaterialid": "M2",
+            "nitemnum": Decimal("1"), "vrowno": "10",
+        }],
+        material_codes={"MS": "S0093", "M2": "CP0132"},
+    )
+    out = transform(raw)
+    assert out["lines"][0]["qty_per"] == Decimal("0.0023809524")
+
+
+def test_missing_hnparentnum_falls_back_to_one_and_warns():
+    """Zero of 1016 live NC65 headers have a NULL/0 HNPARENTNUM (survey
+    spot-check), so this is a defensive path, not a routine one — but it
+    must never crash or silently divide by zero: fall back to a no-op
+    divisor of 1 and surface the anomaly in `warnings`."""
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        lines=[{"cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2", "nitemnum": 5, "vrowno": "10"}],
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
+    )
+    out = transform(raw)
+    assert out["lines"][0]["qty_per"] == Decimal("5")  # fallback divisor of 1 -> unchanged
+    assert any(
+        w["nc_source_pk"] == "PK1" and w["reason"] == "invalid_batch_divisor" and w["field"] == "hnparentnum"
+        for w in out["warnings"]
+    )
+
+
+def test_zero_hnparentnum_falls_back_to_one_and_warns():
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1, "hnparentnum": 0}],
+        lines=[{"cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2", "nitemnum": 5, "vrowno": "10"}],
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
+    )
+    out = transform(raw)
+    assert out["lines"][0]["qty_per"] == Decimal("5")
+    assert any(w["reason"] == "invalid_batch_divisor" and w["field"] == "hnparentnum" for w in out["warnings"])
+
+
+def test_header_with_no_lines_never_triggers_a_divisor_warning():
+    """A header with zero surviving lines never needs a divisor at all —
+    resolving (and warning about) one anyway would be pure noise. Divisor
+    resolution must be lazy, keyed off an actual line needing it."""
+    raw = _raw(
+        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        material_codes={"M1": "CF0001"},
+    )
+    out = transform(raw)
+    assert out["warnings"] == []
+
+
+def test_missing_hnassparentnum_falls_back_to_resolved_hnparentnum_not_straight_to_one():
+    """HNASSPARENTNUM missing (but HNPARENTNUM present and valid) must fall
+    back to HNPARENTNUM's own resolved divisor, not skip straight to 1."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 420,
+        }],
+        lines=[{
+            "cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2",
+            "nitemnum": Decimal("420"), "nassitemnum": Decimal("420"), "vrowno": "10",
+        }],
+        material_codes={"M1": "CF0001", "M2": "CR0001"},
+    )
+    out = transform(raw)
+    ln = out["lines"][0]
+    assert ln["qty_per"] == Decimal("1")
+    assert ln["qty_per_secondary"] == Decimal("1")  # 420 / fallback-to-HNPARENTNUM(420), not 420/1
+    assert any(
+        w["reason"] == "invalid_batch_divisor" and w["field"] == "hnassparentnum" for w in out["warnings"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +449,10 @@ def test_secondary_qty_and_uom_none_when_absent_not_zero():
 
 def test_ea_and_pieces_normalize_to_canonical_ea_on_both_uom_fields():
     raw = _raw(
-        headers=[{"cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1}],
+        headers=[{
+            "cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 1, "hnassparentnum": 1,
+        }],
         lines=[{
             "cbom_bid": "PKB1", "cbomid": "PK1", "cmaterialid": "M2",
             "nitemnum": 1, "vrowno": "10",

@@ -13,13 +13,15 @@ import pytest_asyncio
 from app.models.bom import Bom, BomLine
 
 
-def _bom(product_material_code, bom_type, version, nc_source_pk, status="approved"):
+def _bom(product_material_code, bom_type, version, nc_source_pk, status="approved", yield_rate=None):
+    kwargs = {} if yield_rate is None else {"yield_rate": yield_rate}
     return Bom(
         product_material_code=product_material_code,
         bom_type=bom_type,
         version=version,
         status=status,
         nc_source_pk=nc_source_pk,
+        **kwargs,
     )
 
 
@@ -56,6 +58,22 @@ async def seed_cascade(db_session):
     await db_session.flush()
     db_session.add(_line(cs.id, 10, "CR0031", "3.0", "L-CS0026-1"))
 
+    await db_session.commit()
+
+
+@pytest_asyncio.fixture
+async def seed_nontrivial_yield_rate(db_session):
+    """PATCH 6 follow-up regression: S_YIELD's header carries a real,
+    non-1 `yield_rate` (4.2, S0093's own live HVCHANGERATE-derived value) —
+    the accumulation formula must NOT divide by it (see bom_explode.py's
+    module docstring, "Accumulation formula"), since `qty_per` is already
+    normalized against the same HNPARENTNUM/HNASSPARENTNUM pair at sync
+    time. A component with qty_per=1.0 must accumulate to exactly 1.0, not
+    1.0/4.2."""
+    root = _bom("S_YIELD", "packaging", "1.0", "H-S-YIELD", yield_rate=Decimal("4.2"))
+    db_session.add(root)
+    await db_session.flush()
+    db_session.add(_line(root.id, 10, "CW_YIELD", "1.0", "L-S-YIELD-1"))
     await db_session.commit()
 
 
@@ -146,6 +164,20 @@ async def test_explode_walks_three_levels_and_accumulates(db_session, seed_casca
     # manufactured-type prefix — a legitimate purchased raw material).
     assert raw.missing_bom is False
     assert raw.children == []
+
+
+@pytest.mark.anyio
+async def test_accumulation_does_not_divide_by_yield_rate(db_session, seed_nontrivial_yield_rate):
+    from datetime import date
+
+    from app.services.bom_explode import explode_bom
+
+    root = await explode_bom(db_session, "S_YIELD", date(2026, 8, 4))
+    child = root.children[0]
+    assert child.material_code == "CW_YIELD"
+    # qty_per=1.0 must accumulate to exactly 1.0 — NOT 1.0/4.2 — even though
+    # the parent BOM's yield_rate is a real, non-1 value.
+    assert child.qty_accumulated == Decimal("1.0")
 
 
 @pytest.mark.anyio
