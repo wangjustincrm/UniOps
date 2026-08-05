@@ -186,3 +186,74 @@ def test_reconcile_noop_when_header_totals_missing():
     lines = [{"quantity": 1, "unit_price": 109.00, "amount": 123.17, "tax_amount": 0}]
     out = ocr_service._reconcile_line_amounts(lines, None, 14.17, None)
     assert out[0]["amount"] == 123.17
+
+
+# ── negative quantity normalization ─────────────────────────────────────────────
+# Regression: 2026-08 Linde cylinder-rent invoice 58209691. Cylinder-return rows
+# carry quantity -1; epms schemas keep the system-wide convention "negative lines
+# are expressed via negative unit_price, quantity stays >= 0" (see epms po.py),
+# so InvoiceLineItem.quantity ge=0 rejected the upload with a 422. OCR output is
+# normalized here instead: qty := |qty|, unit_price := -unit_price (line amount
+# is the product, so it is left untouched).
+
+def test_negative_quantity_flipped_to_negative_unit_price():
+    lines = [{"quantity": -1, "unit_price": 0.41, "amount": -0.41, "tax_amount": 0}]
+    out = ocr_service._normalize_negative_quantities(lines)
+    assert out[0]["quantity"] == 1
+    assert out[0]["unit_price"] == -0.41
+    assert out[0]["amount"] == -0.41  # product unchanged
+
+
+def test_negative_quantity_with_zero_price_does_not_produce_negative_zero():
+    """Linde balance rows: qty -1, price 0, amount 0 → qty 1, price stays 0 (not -0.0)."""
+    lines = [{"quantity": -1, "unit_price": 0.0, "amount": 0.0, "tax_amount": 0}]
+    out = ocr_service._normalize_negative_quantities(lines)
+    assert out[0]["quantity"] == 1
+    assert str(out[0]["unit_price"]) == "0.0"  # not "-0.0"
+
+
+def test_positive_quantities_left_untouched():
+    lines = [
+        {"quantity": 9, "unit_price": 0.41, "amount": 3.69, "tax_amount": 0},
+        {"quantity": 0, "unit_price": 5.0, "amount": 0.0, "tax_amount": 0},
+    ]
+    out = ocr_service._normalize_negative_quantities(lines)
+    assert [li["quantity"] for li in out] == [9, 0]
+    assert [li["unit_price"] for li in out] == [0.41, 5.0]
+
+
+def _linde_json() -> dict:
+    field = lambda v: {"value": v, "confidence": 1.0}  # noqa: E731
+    return {
+        "vendor_name": field("Linde Canada Inc"),
+        "invoice_number": field("58209691"),
+        "po_number": field("PO-113-2606-08"),
+        "invoice_date": field("2026-07-31"),
+        "due_date": field("2026-08-30"),
+        "payment_terms_net_days": field(None),
+        "currency": field("CAD"),
+        "subtotal": field(1309.84),
+        "tax_amount": field(170.28),
+        "total_amount": field(1480.12),
+        "line_items": [
+            {"description": "T IND CYLINDER RENT", "quantity": -1, "unit_price": 0.0,
+             "amount": 0.0, "tax_amount": 0},
+            {"description": "M IND CYLINDER RENT", "quantity": 9, "unit_price": 0.41,
+             "amount": 3.69, "tax_amount": 0},
+            {"description": "R IND CYLINDER RENT", "quantity": -1, "unit_price": 0.0,
+             "amount": 0.0, "tax_amount": 0},
+        ],
+    }
+
+
+async def test_extract_invoice_normalizes_negative_quantities(anthropic_stub):
+    """End-to-end: extracted lines never leave OCR with a negative quantity."""
+    anthropic_stub.response = _response(json.dumps(_linde_json()))
+
+    result = await ocr_service.extract_invoice(b"%PDF-fake", "application/pdf")
+
+    quantities = [li["quantity"] for li in result["line_items"]]
+    assert quantities == [1, 9, 1]
+    assert all(q >= 0 for q in quantities)
+    # positive row untouched
+    assert result["line_items"][1]["unit_price"] == 0.41

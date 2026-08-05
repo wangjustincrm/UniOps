@@ -119,6 +119,22 @@ def _reconcile_line_amounts(
     return lines
 
 
+def _normalize_negative_quantities(lines: list[dict]) -> list[dict]:
+    """Rewrite negative-quantity rows as positive-quantity, negative-price rows.
+
+    Observed failure (2026-08, Linde cylinder-rent invoice 58209691): cylinder-return
+    rows carry quantity -1, but the system-wide convention is "negative lines are
+    expressed via negative unit_price, quantity stays >= 0" (see epms po.py), and
+    InvoiceLineItem.quantity enforces ge=0 — so the upload 422'd. Flipping the sign
+    onto unit_price preserves the product (line amount is left untouched).
+    """
+    for li in lines:
+        if li["quantity"] < 0:
+            li["quantity"] = abs(li["quantity"])
+            li["unit_price"] = -li["unit_price"] if li["unit_price"] else 0.0
+    return lines
+
+
 def _mime_to_media_type(mime: str) -> str:
     mapping = {
         "image/jpeg": "image/jpeg",
@@ -247,6 +263,7 @@ async def extract_invoice(file_bytes: bytes, mime_type: str) -> dict:
         except (TypeError, ValueError):
             return None
 
+    lines = _normalize_negative_quantities(lines)
     lines = _reconcile_line_amounts(
         lines, _num(result.get("subtotal")), _num(result.get("tax_amount")), _num(result.get("total_amount")),
     )
