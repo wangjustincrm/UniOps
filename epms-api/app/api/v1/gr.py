@@ -5,6 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
+from uniops_authz import has_permission
+
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
@@ -50,21 +52,26 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
     if po is None:
         raise HTTPException(status_code=404, detail="Purchase order not found")
 
-    role = user.get("role", "")
     is_service_po = po.type in (4, 6)   # Service (4) and Project (6) follow service GR flow
-    warehouse_roles = {"system_admin", "warehouse_staff", "procurement_officer", "procurement_manager"}
+    # Warehouse admission is the `epms.gr.receive` matrix permission — the same
+    # gate as every other warehouse GR action (acknowledge/collect/confirm), so
+    # it honors ADDITIONAL roles from identity's user_roles (a user whose JWT
+    # primary role is e.g. `requester` but carries warehouse_staff via Portal
+    # Admin must be admitted). system_admin short-circuits inside.
+    can_receive = await has_permission(
+        db, uuid.UUID(user["sub"]), user.get("role", ""), "epms.gr.receive")
 
     # Service/Project POs (type 4, 6): requester can confirm delivery; PO must be approved+
-    # Physical POs: warehouse roles only; PO must be issued/partially_received
+    # Physical POs: warehouse permission only; PO must be issued/partially_received
     #
     # "Requester" here means the creator of the PR linked to this PO — NOT a generic
     # 'requester' JWT role, and NOT the PO creator (POs are raised by procurement
     # staff). A service/project PO with no linked PR has no requester, so only
-    # warehouse roles may create its GR.
+    # the warehouse permission admits its GR.
     if is_service_po:
         pr_requester_id = await gr_crud.get_pr_requester_id(db, po.pr_id)
         is_pr_requester = pr_requester_id is not None and pr_requester_id == uuid.UUID(user["sub"])
-        if role not in warehouse_roles and not is_pr_requester:
+        if not can_receive and not is_pr_requester:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         if po.status not in ("approved", "issued", "partially_received"):
             raise HTTPException(
@@ -72,7 +79,7 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
                 detail=f"Cannot create GR for PO in status '{po.status}'"
             )
     else:
-        if role not in warehouse_roles:
+        if not can_receive:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
         if po.status not in ("issued", "partially_received"):
             raise HTTPException(
