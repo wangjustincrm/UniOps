@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     # ── Cross-service URLs ────────────────────────────────────────────────────
     APPROVAL_API_URL: str = "http://localhost:8003/approval/v1"
     EPMS_API_URL: str = "http://localhost:8000"
+    MDM_API_URL: str = "http://localhost:8002"
+    MDM_API_TIMEOUT_SECONDS: float = 30.0
 
     # ── WMS (Flux) Oracle read-only connection ──────────────────────────────────
     # The Flux WMS Oracle server is <=11g — python-oracledb's thin mode refuses

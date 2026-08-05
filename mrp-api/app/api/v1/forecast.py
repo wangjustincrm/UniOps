@@ -32,16 +32,21 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
+import anyio
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy import func, select
 
 from app.core.authz import require_permission
-from app.core.deps import SessionDep
+from app.core.deps import BearerToken, SessionDep
 from app.models.forecast import ForecastLine, ForecastVersion
+from app.services import forecast_io
 
 router = APIRouter(prefix="/forecast", tags=["forecast"])
+
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
 WriteDep = Annotated[dict, Depends(require_permission("mrp.demand.write"))]
@@ -143,6 +148,19 @@ class CellsUpsertResponse(BaseModel):
     skipped_frozen: list[SkippedCell]
 
 
+class ImportRowError(BaseModel):
+    row: int  # 1-based over data rows (header excluded); 0 = header-level error
+    column: str
+    reason: str
+
+
+class ImportResponse(BaseModel):
+    ok_rows: int
+    error_rows: list[ImportRowError]
+    skipped_frozen: list[SkippedCell]
+    would_upsert: int
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -159,6 +177,24 @@ def _require_draft(version: ForecastVersion) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail=f"forecast version {version.id} is '{version.status}', not 'draft' — it is immutable",
         )
+
+
+async def _load_lines_by_material(
+    db: SessionDep, version_id: uuid.UUID, months: list[str],
+) -> dict[str, dict[str, Decimal]]:
+    """Shared by GET .../grid and GET .../export: current lines grouped by
+    material_code -> {month: qty}, restricted to the version's current
+    horizon (a line outside it — e.g. after a horizon edit — doesn't render)."""
+    month_index = set(months)
+    lines = (await db.execute(
+        select(ForecastLine).where(ForecastLine.version_id == version_id)
+    )).scalars().all()
+    by_material: dict[str, dict[str, Decimal]] = {}
+    for line in lines:
+        if line.month not in month_index:
+            continue
+        by_material.setdefault(line.material_code, {})[line.month] = line.qty
+    return by_material
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
@@ -322,3 +358,107 @@ async def confirm_version(version_id: uuid.UUID, db: SessionDep, _: WriteDep):
     await db.commit()
     await db.refresh(version)
     return version
+
+
+# ── Excel template / import / export (Task 2) ──────────────────────────────
+
+
+@router.get("/versions/{version_id}/template")
+async def download_template(version_id: uuid.UUID, db: SessionDep, _: ReadDep):
+    """Empty xlsx: Material Code | Name | <the version's 18 YYYY-MM months>."""
+    version = await _get_version_or_404(db, version_id)
+    months = _generate_months(version.horizon_start_month, version.horizon_months)
+    content = forecast_io.build_template_workbook(months)
+    filename = f"forecast-template-{version.version_no}.xlsx"
+    return Response(
+        content=content,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/versions/{version_id}/export")
+async def export_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep):
+    """Export the current grid as xlsx, in the same shape as the template."""
+    version = await _get_version_or_404(db, version_id)
+    months = _generate_months(version.horizon_start_month, version.horizon_months)
+    by_material = await _load_lines_by_material(db, version_id, months)
+    rows = [
+        {"material_code": code, "name": None, "cells": cells}
+        for code, cells in sorted(by_material.items())
+    ]
+    content = forecast_io.build_export_workbook(months, rows)
+    filename = f"forecast-export-{version.version_no}.xlsx"
+    return Response(
+        content=content,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/versions/{version_id}/import", response_model=ImportResponse)
+async def import_forecast(
+    version_id: uuid.UUID,
+    db: SessionDep,
+    _: WriteDep,
+    token: BearerToken,
+    file: Annotated[UploadFile, File()],
+    dry_run: bool = Query(default=True),
+):
+    """Validate (and, unless dry_run, apply) an uploaded forecast xlsx.
+
+    `dry_run=true` runs every check — including a read-only frozen-cell
+    lookup so the preview accurately reports `skipped_frozen`/`would_upsert`
+    — but writes nothing; the frontend's "preview validation report" depends
+    on this. `dry_run=false` applies via the same upsert semantics as
+    PUT .../cells (frozen cells skipped and reported, never overwritten).
+    """
+    version = await _get_version_or_404(db, version_id)
+    _require_draft(version)
+    months = _generate_months(version.horizon_start_month, version.horizon_months)
+
+    raw = await file.read()
+    # mdm-api material codes are fetched once per import (never per row),
+    # via a blocking httpx.Client bridged onto a worker thread.
+    valid_codes = await anyio.to_thread.run_sync(forecast_io.fetch_valid_material_codes, token)
+    ok_cells, error_rows = forecast_io.parse_import_workbook(raw, months, valid_codes)
+
+    skipped_frozen: list[dict] = []
+    if ok_cells:
+        material_codes = {c["material_code"] for c in ok_cells}
+        existing_rows = (await db.execute(
+            select(ForecastLine).where(
+                ForecastLine.version_id == version_id,
+                ForecastLine.material_code.in_(material_codes),
+            )
+        )).scalars().all()
+        existing_by_key = {(r.material_code, r.month): r for r in existing_rows}
+
+        for cell in ok_cells:
+            key = (cell["material_code"], cell["month"])
+            existing = existing_by_key.get(key)
+            if existing is not None and existing.freeze_flag:
+                skipped_frozen.append({"material_code": cell["material_code"], "month": cell["month"]})
+                continue
+            if not dry_run:
+                if existing is not None:
+                    existing.qty = cell["qty"]
+                else:
+                    new_line = ForecastLine(
+                        version_id=version_id,
+                        material_code=cell["material_code"],
+                        month=cell["month"],
+                        qty=cell["qty"],
+                    )
+                    db.add(new_line)
+                    existing_by_key[key] = new_line  # dedupe repeated cells in the same file
+
+        if not dry_run:
+            await db.commit()  # single transaction for the whole import
+
+    return {
+        "ok_rows": len(ok_cells),
+        "error_rows": error_rows,
+        "skipped_frozen": skipped_frozen,
+        "would_upsert": len(ok_cells) - len(skipped_frozen),
+    }
