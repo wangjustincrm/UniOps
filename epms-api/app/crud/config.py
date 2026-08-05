@@ -104,6 +104,9 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     "default_channel": "email_only",   # email_only | teams_only | both | none
     "teams_webhook_url": None,
     "followup_time": "08:00",
+    # 每日 follow-up 提醒总开关(Portal → Admin → Notification Settings)。
+    # 默认关;消费方一律 .get(..., False) 显式回落,老配置行没有该键也算关。
+    "daily_followup_enabled": False,
     # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
     # 不再逐个通知该角色成员。空 = 维持逐人发送。
     "role_shared_mailboxes": {},

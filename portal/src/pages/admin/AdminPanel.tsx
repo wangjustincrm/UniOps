@@ -49,6 +49,7 @@ interface CompanyConfig {
     default_channel: string
     teams_webhook_url: string | null
     followup_time: string
+    daily_followup_enabled?: boolean
     role_shared_mailboxes?: Record<string, string>
     [key: string]: unknown
   }
@@ -894,6 +895,7 @@ function NotificationSettings() {
   const [channel, setChannel] = useState('')
   const [webhook, setWebhook] = useState('')
   const [followup, setFollowup] = useState('')
+  const [dailyFollowup, setDailyFollowup] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
   const [mailboxError, setMailboxError] = useState<string | null>(null)
   const [smtp, setSmtp] = useState({ host: '', port: '', user: '', password: '', from: '', use_tls: true })
@@ -906,7 +908,9 @@ function NotificationSettings() {
   const ns = cfg?.notification_settings
   const channelVal = channel || ns?.default_channel || 'email_only'
   const webhookVal = webhook !== '' ? webhook : (ns?.teams_webhook_url ?? '')
-  const followupVal = followup || ns?.followup_time || '09:00'
+  // '08:00' mirrors the backend default (_DEFAULT_NOTIFICATION_SETTINGS / scheduler fallback).
+  const followupVal = followup || ns?.followup_time || '08:00'
+  const dailyFollowupVal = dailyFollowup ?? ns?.daily_followup_enabled ?? false
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
   const setMailboxFor = (code: string, value: string) => {
@@ -950,6 +954,7 @@ function NotificationSettings() {
           default_channel: channelVal as any,
           teams_webhook_url: webhookVal || null,
           followup_time: followupVal,
+          daily_followup_enabled: dailyFollowupVal,
           role_shared_mailboxes: mailboxesVal,
         },
         smtp_host: smtpVal.host || null,
@@ -1067,7 +1072,13 @@ function NotificationSettings() {
         {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
       </div>
 
-      <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day.">
+      <Field label="Daily Follow-up" hint="When on, users with open tasks receive a reminder email every day. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={dailyFollowupVal} onChange={(v) => setDailyFollowup(v)} />
+          <span className="text-xs text-neutral-500">{dailyFollowupVal ? 'On — daily reminders are sent' : 'Off — no daily reminders'}</span>
+        </div>
+      </Field>
+      <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
 
