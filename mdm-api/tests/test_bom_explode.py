@@ -62,6 +62,40 @@ async def seed_cascade(db_session):
 
 
 @pytest_asyncio.fixture
+async def seed_real_s0093_cascade(db_session):
+    """The REAL S0093 -> CW0001 -> CS0026 -> CR0024 cascade, with the exact
+    already-normalized `qty_per` values a real PATCH 6 sync writes to
+    `bom_lines` (live NC65, 2026-08-04 spot-check + full-tree explosion
+    smoke re-run). Phase 1C consumes `explode_bom` directly (not just
+    /effective's flat per-line qty_per), so this pins the real numbers at
+    THIS level too, not only at transform()/`/effective`:
+      - S0093 -> CP0115-1 (tin): qty_per=610/420=1.4523809524
+      - S0093 -> CW0001 (dry-mix powder): qty_per=420/420=1.0
+      - CW0001 -> CS0026: qty_per=999.45/1000=0.99945
+      - CS0026 -> CR0024 (raw material): qty_per=270/1000=0.27
+    so CR0024's qty_accumulated = 1.0 * 0.99945 * 0.27 = 0.2698515 — a
+    plausible per-kg fraction, not the ~113 million the pre-fix code
+    produced for this exact real cascade."""
+    root = _bom("S0093", "packaging", "1.0", "H-S0093-REAL")
+    db_session.add(root)
+    await db_session.flush()
+    db_session.add(_line(root.id, 10, "CW0001", "1.0", "L-S0093-REAL-1"))
+    db_session.add(_line(root.id, 20, "CP0115-1", "1.4523809524", "L-S0093-REAL-2", uom="EA"))
+
+    cw = _bom("CW0001", "drymix", "1.1", "H-CW0001-REAL")
+    db_session.add(cw)
+    await db_session.flush()
+    db_session.add(_line(cw.id, 10, "CS0026", "0.99945", "L-CW0001-REAL-1"))
+
+    cs = _bom("CS0026", "milling", "1.6", "H-CS0026-REAL")
+    db_session.add(cs)
+    await db_session.flush()
+    db_session.add(_line(cs.id, 10, "CR0024", "0.27", "L-CS0026-REAL-1"))
+
+    await db_session.commit()
+
+
+@pytest_asyncio.fixture
 async def seed_nontrivial_yield_rate(db_session):
     """PATCH 6 follow-up regression: S_YIELD's header carries a real,
     non-1 `yield_rate` (4.2, S0093's own live HVCHANGERATE-derived value) —
@@ -141,6 +175,31 @@ async def seed_multi_version(db_session):
 
 
 @pytest.mark.anyio
+async def test_explode_pins_real_s0093_normalized_numbers(db_session, seed_real_s0093_cascade):
+    """PATCH 6 regression at the explode level (not just transform()/
+    /effective — Phase 1C consumes `explode_bom` directly): the real S0093
+    numbers must come out of the FULL walk-and-accumulate path correctly,
+    not just survive a single division."""
+    from datetime import date
+
+    from app.services.bom_explode import explode_bom
+
+    root = await explode_bom(db_session, "S0093", date(2026, 8, 4))
+
+    tin = next(c for c in root.children if c.material_code == "CP0115-1")
+    assert tin.qty_accumulated == Decimal("1.4523809524")
+
+    powder = next(c for c in root.children if c.material_code == "CW0001")
+    assert powder.qty_accumulated == Decimal("1.0")
+
+    silo = next(c for c in powder.children if c.material_code == "CS0026")
+    assert silo.qty_accumulated == Decimal("0.99945")
+
+    raw = next(c for c in silo.children if c.material_code == "CR0024")
+    assert raw.qty_accumulated == Decimal("0.2698515")  # NOT ~113 million
+
+
+@pytest.mark.anyio
 async def test_explode_walks_three_levels_and_accumulates(db_session, seed_cascade):
     from datetime import date
 
@@ -178,6 +237,37 @@ async def test_accumulation_does_not_divide_by_yield_rate(db_session, seed_nontr
     # qty_per=1.0 must accumulate to exactly 1.0 — NOT 1.0/4.2 — even though
     # the parent BOM's yield_rate is a real, non-1 value.
     assert child.qty_accumulated == Decimal("1.0")
+
+
+@pytest.mark.anyio
+async def test_max_nodes_truncates_independently_of_max_depth(db_session, seed_cascade):
+    """`max_nodes` is a second, independent hard stop on top of `max_depth`
+    (guards diamond-heavy graphs that fan out combinatorially well before
+    hitting a depth limit — the cycle guard alone doesn't bound that). Using
+    the existing linear seed_cascade (S0093 -> CW0001 -> CS0026 -> CR0031)
+    with max_nodes=2 (root + one child): the walk must stop materializing
+    further children right after the budget is spent, flagging the first
+    over-budget node `node_limit_reached=True` rather than silently
+    expanding it or crashing."""
+    from datetime import date
+
+    from app.services.bom_explode import explode_bom
+
+    root = await explode_bom(db_session, "S0093", date(2026, 8, 4), max_nodes=2)
+    assert root.node_limit_reached is False
+
+    powder = root.children[0]
+    assert powder.material_code == "CW0001"
+    assert powder.node_limit_reached is False  # 2nd node — still within budget
+
+    silo = powder.children[0]
+    assert silo.material_code == "CS0026"
+    # 3rd node — budget (2) already spent by [root, CW0001]: reported with
+    # its correct qty_per/qty_accumulated but never expanded.
+    assert silo.node_limit_reached is True
+    assert silo.children == []
+    assert silo.cycle_detected is False
+    assert silo.missing_bom is False
 
 
 @pytest.mark.anyio

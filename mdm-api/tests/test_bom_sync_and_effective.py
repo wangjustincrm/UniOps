@@ -32,15 +32,20 @@ def _extract():
             # normalization, not a no-op divide-by-1.
             {"cbomid": "H-CF", "hcmaterialid": "M-CF", "hversion": "1.2",
              "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1", "hnparentnum": 420},
-            # HNPARENTNUM=1 here (and below) so the pre-existing qty_per
-            # assertions on these lines (999.45 / 100 / 1911) stay meaningful
-            # numbers to assert on — a real, if unremarkable, NC value (133
-            # of 1016 live headers really do have HNPARENTNUM=1).
+            # HNPARENTNUM=1000/HNASSPARENTNUM=1000 mirrors CS0026's real live
+            # header (2026-08-04 spot-check) — a genuine non-1 divisor, so
+            # this line actually exercises the PATCH 6 normalization path
+            # instead of a no-op divide-by-1 (qty_per becomes 999.45/1000 =
+            # 0.99945, not the raw batch quantity 999.45).
             {"cbomid": "H-CW", "hcmaterialid": "M-CW", "hversion": "1.1",
-             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1", "hnparentnum": 1},
+             "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1",
+             "hnparentnum": 1000, "hnassparentnum": 1000},
             # Two coexisting APPROVED versions of the same product (CS0026),
             # like the survey's real CS0026 (7 approved versions 1.0-1.6) —
-            # /effective must pick the max version.
+            # /effective must pick the max version. HNPARENTNUM=1 here (a
+            # real, if unremarkable, NC value — 133 of 1016 live headers
+            # really do have HNPARENTNUM=1) so the pre-existing qty_per
+            # assertions on these lines (100 / 1911) stay meaningful numbers.
             {"cbomid": "H-CS-OLD", "hcmaterialid": "M-CS", "hversion": "1.0",
              "fbillstatus": 1, "pk_org": "ORG1", "hvchangerate": "1/1", "hnparentnum": 1},
             {"cbomid": "H-CS-NEW", "hcmaterialid": "M-CS", "hversion": "1.6",
@@ -318,7 +323,9 @@ async def test_effective_cascade_three_layers(client, db_session, monkeypatch):
     assert b2["bom_type"] == "drymix"
     assert len(b2["lines"]) == 1
     assert b2["lines"][0]["component_material_code"] == "CS0026"
-    assert Decimal(str(b2["lines"][0]["qty_per"])) == Decimal("999.45")
+    # HNPARENTNUM=1000 on H-CW (a real, non-1 divisor) -> 999.45/1000, not
+    # the raw batch quantity 999.45.
+    assert Decimal(str(b2["lines"][0]["qty_per"])) == Decimal("0.99945")
     assert [s["substitute_material_code"] for s in b2["lines"][0]["substitutes"]] == ["CS0099"]
 
     # Multiple approved versions coexist (1.0 and 1.6) -> must pick max version 1.6,

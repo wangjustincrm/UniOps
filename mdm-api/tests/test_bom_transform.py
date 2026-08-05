@@ -295,7 +295,7 @@ def test_secondary_qty_and_uom_populated_for_two_unit_lines():
     raw = _raw(
         headers=[{
             "cbomid": "PK-S", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1,
-            "hnparentnum": 420, "hnassparentnum": 100,
+            "hnparentnum": 420, "hnassparentnum": 100, "hvchangerate": "4.2/1",
         }],
         lines=[{
             "cbom_bid": "PKB1", "cbomid": "PK-S", "cmaterialid": "M2",
@@ -440,6 +440,63 @@ def test_missing_hnassparentnum_falls_back_to_resolved_hnparentnum_not_straight_
     assert any(
         w["reason"] == "invalid_batch_divisor" and w["field"] == "hnassparentnum" for w in out["warnings"]
     )
+
+
+# ---------------------------------------------------------------------------
+# PATCH 6 follow-up (coordinator review, 2026-08-04): `bom_explode.py`'s
+# decision to NOT divide by `yield_rate` rests on `yield_rate` always
+# equaling `HNPARENTNUM/HNASSPARENTNUM` (verified by hand, never enforced).
+# `_check_yield_rate_invariant` re-verifies this on every sync so a real NC
+# divergence surfaces as a warning instead of silently mis-planning.
+# ---------------------------------------------------------------------------
+
+def test_yield_rate_matching_batch_ratio_does_not_warn():
+    """S0093's real numbers: HNPARENTNUM=420, HNASSPARENTNUM=100,
+    HVCHANGERATE='4.2/1' -> yield_rate=4.2 == 420/100 exactly. No anomaly."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK-S", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 420, "hnassparentnum": 100, "hvchangerate": "4.2/1",
+        }],
+        material_codes={"MS": "S0093"},
+    )
+    out = transform(raw)
+    assert out["warnings"] == []
+
+
+def test_yield_rate_mismatching_batch_ratio_warns():
+    """If NC ever populates HVCHANGERATE inconsistently with HNPARENTNUM/
+    HNASSPARENTNUM, bom_explode.py's no-divide decision silently stops
+    being correct for that BOM — this must be surfaced, not swallowed."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK-BAD", "hcmaterialid": "MS", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 420, "hnassparentnum": 100, "hvchangerate": "1/1",  # should be 4.2/1
+        }],
+        material_codes={"MS": "S0093"},
+    )
+    out = transform(raw)
+    assert any(
+        w["nc_source_pk"] == "PK-BAD" and w["reason"] == "yield_rate_batch_ratio_mismatch"
+        and w["product_material_code"] == "S0093"
+        for w in out["warnings"]
+    )
+
+
+def test_yield_rate_invariant_skipped_when_either_divisor_absent():
+    """Only checked when BOTH HNPARENTNUM and HNASSPARENTNUM are present —
+    a header simply missing one of them is already covered by
+    _resolve_divisor's own (line-triggered) warning; this check must not
+    double-warn for the same underlying gap."""
+    raw = _raw(
+        headers=[{
+            "cbomid": "PK1", "hcmaterialid": "M1", "hversion": "1.0", "fbillstatus": 1,
+            "hnparentnum": 420, "hvchangerate": "1/1",  # no hnassparentnum at all
+        }],
+        material_codes={"M1": "CF0001"},
+    )
+    out = transform(raw)
+    assert not any(w["reason"] == "yield_rate_batch_ratio_mismatch" for w in out["warnings"])
 
 
 # ---------------------------------------------------------------------------
