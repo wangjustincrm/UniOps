@@ -13,7 +13,16 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
+  TrendingUp, PackageSearch, Network,
 } from 'lucide-react'
+
+// MRP has no single landing tile like the other modules — Portal links
+// directly into three of its routes (Task 8 scaffold: Forecast, Consignment
+// Stock, BOM Explorer), each permission-gated on its own. Resolved with
+// import.meta.env directly (rather than via HrefContext, whose oa/vms/etc.
+// fields are populated by PortalSidebar/PortalPageLayout/PortalHome) so this
+// file is the single place that needs to change to wire the new module in.
+const MRP_URL = (import.meta.env.VITE_MRP_URL as string | undefined) || 'http://localhost:5179'
 
 export interface NavItemDef {
   label: string
@@ -60,6 +69,14 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
       { label: 'Finance',     icon: Landmark,     href: 'finance', anyPermission: FINANCE_ACCESS_PERMS },
       { label: 'Meeting Rooms', icon: CalendarClock, href: 'booking', anyPermission: BOOKING_ACCESS_PERMS },
+    ],
+  },
+  {
+    title: 'MRP',
+    items: [
+      { label: 'Forecast',           icon: TrendingUp,    href: 'mrp:/forecast',            permission: 'mrp.demand.write' },
+      { label: 'Consignment Stock',  icon: PackageSearch, href: 'mrp:/consignment-stock',   permission: 'mrp.demand.write' },
+      { label: 'BOM Explorer',       icon: Network,       href: 'mrp:/bom-explorer',        permission: 'mrp.report.view' },
     ],
   },
   {
@@ -114,6 +131,10 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   if (key.startsWith('epms:')) {
     const path = key.slice('epms:'.length)
     return ctx.session ? `${ctx.epmsUrl}${path}#__session=${ctx.session}` : `${ctx.epmsUrl}${path}`
+  }
+  if (key.startsWith('mrp:')) {
+    const path = key.slice('mrp:'.length)
+    return ctx.session ? `${MRP_URL}${path}#__session=${ctx.session}` : `${MRP_URL}${path}`
   }
   return '#'
 }

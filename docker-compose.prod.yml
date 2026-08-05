@@ -110,6 +110,7 @@ services:
       <<: *db-env
       SERVICE_NAME: approval-engine
       PORT: "8003"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     ports: ["8003:8003"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003
     healthcheck:
@@ -161,6 +162,7 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_NAME: identity-api
       PORT: "8009"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     ports: ["8009:8009"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8009
     healthcheck:
@@ -382,6 +384,7 @@ services:
         VITE_VMS_URL: ${VMS_URL}
         VITE_FINANCE_URL: ${FINANCE_URL}
         VITE_BOOKING_URL: ${BOOKING_URL}
+        VITE_MRP_URL: ${MRP_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_OA_API_URL: ${OA_API_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}
@@ -471,6 +474,24 @@ services:
         VITE_OA_URL: ${OA_URL}
         VITE_VMS_URL: ${VMS_URL}
     ports: ["5177:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  mrp-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-mrp-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: mrp/Dockerfile
+      args:
+        VITE_API_URL: ${MRP_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+    ports: ["5179:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
       interval: 30s
