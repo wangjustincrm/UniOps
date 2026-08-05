@@ -9,6 +9,7 @@ into forecast.py) so the patch takes effect at the call site.
 """
 import io
 
+import httpx
 import pytest
 from openpyxl import Workbook, load_workbook
 
@@ -55,8 +56,11 @@ async def test_import_dry_run_reports_errors_without_writing(client, admin_token
     body = r.json()
     assert body["ok_rows"] == 1  # thousands separator parsed correctly
     assert len(body["error_rows"]) == 2  # unknown material + non-numeric qty
-    assert any(e["row"] == 2 for e in body["error_rows"])  # BOGUS row
-    assert any(e["row"] == 3 for e in body["error_rows"])  # abc row
+    # `row` must be the physical Excel row number (header = row 1) so users
+    # can locate the bad row in their spreadsheet: data row 1 (S0093/20,000)
+    # is Excel row 2, so BOGUS (2nd data row) is row 3 and abc (3rd) is row 4.
+    assert any(e["row"] == 3 for e in body["error_rows"])  # BOGUS row
+    assert any(e["row"] == 4 for e in body["error_rows"])  # abc row
     assert body["skipped_frozen"] == []
     assert body["would_upsert"] == 1
 
@@ -238,3 +242,69 @@ async def test_export_reflects_current_grid(client, admin_token):
     assert len(data_rows) == 1
     assert data_rows[0][0] == "S0093"
     assert float(data_rows[0][2]) == 42
+
+
+@pytest.mark.anyio
+async def test_import_returns_503_when_mdm_api_unreachable(client, admin_token, monkeypatch):
+    """mdm-api being down must fail loudly and clearly — never silently fall
+    back to an empty valid-codes set, which would mark every material code
+    as unknown and mislead the user into thinking their data is wrong."""
+    from app.services import forecast_io
+
+    def _boom(*a, **k):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", _boom)
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v, months = await _make_version(client, headers)
+
+    buf = _xlsx([["S0093", "x", "5"] + [""] * 17], months)
+    r = await client.post(
+        f"/api/v1/forecast/versions/{v['id']}/import?dry_run=true",
+        files={"file": ("f.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=headers,
+    )
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert "mdm-api" in detail or "unavailable" in detail
+    assert "retry" in detail.lower()
+
+
+@pytest.mark.anyio
+async def test_export_then_reimport_round_trips_clean(client, admin_token, monkeypatch):
+    """Template/export/import must agree on shape: exporting a version with
+    data and feeding that file straight back into import must validate
+    clean and reproduce the same cell values."""
+    from app.services import forecast_io
+    monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", lambda *a, **k: {"S0093", "S0060"})
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v, months = await _make_version(client, headers)
+    await client.put(
+        f"/api/v1/forecast/versions/{v['id']}/cells",
+        json={"cells": [
+            {"material_code": "S0093", "month": months[0], "qty": "20000"},
+            {"material_code": "S0093", "month": months[1], "qty": "18500.5"},
+            {"material_code": "S0060", "month": months[0], "qty": "100"},
+        ]},
+        headers=headers,
+    )
+    original_grid = (await client.get(f"/api/v1/forecast/versions/{v['id']}/grid", headers=headers)).json()
+
+    exported = await client.get(f"/api/v1/forecast/versions/{v['id']}/export", headers=headers)
+    assert exported.status_code == 200
+
+    r = await client.post(
+        f"/api/v1/forecast/versions/{v['id']}/import?dry_run=false",
+        files={"file": ("roundtrip.xlsx", io.BytesIO(exported.content),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["error_rows"] == []
+    assert body["skipped_frozen"] == []
+
+    replayed_grid = (await client.get(f"/api/v1/forecast/versions/{v['id']}/grid", headers=headers)).json()
+    assert replayed_grid == original_grid

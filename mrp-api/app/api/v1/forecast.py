@@ -33,6 +33,7 @@ from decimal import Decimal
 from typing import Annotated
 
 import anyio
+import httpx
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
@@ -419,8 +420,17 @@ async def import_forecast(
 
     raw = await file.read()
     # mdm-api material codes are fetched once per import (never per row),
-    # via a blocking httpx.Client bridged onto a worker thread.
-    valid_codes = await anyio.to_thread.run_sync(forecast_io.fetch_valid_material_codes, token)
+    # via a blocking httpx.Client bridged onto a worker thread. If mdm-api is
+    # unreachable/errors, fail loudly with a clear retry message — do NOT
+    # fall back to an empty valid-codes set, which would silently mark every
+    # row's material code as unknown and make users think their data is bad.
+    try:
+        valid_codes = await anyio.to_thread.run_sync(forecast_io.fetch_valid_material_codes, token)
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Material validation is temporarily unavailable (could not reach mdm-api) — please retry the import.",
+        ) from exc
     ok_cells, error_rows = forecast_io.parse_import_workbook(raw, months, valid_codes)
 
     skipped_frozen: list[dict] = []

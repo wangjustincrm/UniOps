@@ -14,9 +14,12 @@ mirroring the task brief's `monkeypatch.setattr(forecast_io,
 async mock; the import endpoint bridges it onto the event loop via
 `anyio.to_thread.run_sync`.
 
-Row numbering in `error_rows`/ok-cell reporting is 1-based over *data* rows
-(header excluded) — row 1 is the first row after the header. A header-level
-problem (mismatched month column) is reported as row 0.
+Row numbering in `error_rows`/ok-cell reporting matches the **physical Excel
+row number** the user would see if they opened the file — the header is row
+1, so the first data row is row 2. Users read this report to locate the bad
+row in their spreadsheet, so it must line up with what Excel shows, not a
+0-based or header-excluded count. A header-level problem (mismatched month
+column) is reported as row 0 (there is no single data row it belongs to).
 """
 from __future__ import annotations
 
@@ -122,8 +125,9 @@ def parse_import_workbook(
     Returns (ok_cells, error_rows):
       - ok_cells: [{"material_code", "month", "qty": Decimal}] ready for the
         same upsert semantics as PUT .../cells.
-      - error_rows: [{"row", "column", "reason"}]. One row's problem never
-        stops the rest — every other row is still evaluated.
+      - error_rows: [{"row", "column", "reason"}]. `row` is the physical
+        Excel row number (header = row 1, first data row = row 2). One row's
+        problem never stops the rest — every other row is still evaluated.
     """
     wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
     ws = wb.active
@@ -151,7 +155,9 @@ def parse_import_workbook(
             valid_month_positions.append(i)
 
     ok_cells: list[dict] = []
-    for row_num, raw_row in enumerate(rows_iter, start=1):
+    # start=2: the header consumed by next() above is Excel row 1, so the
+    # first row this loop sees is Excel row 2 — report the real row number.
+    for row_num, raw_row in enumerate(rows_iter, start=2):
         if raw_row is None:
             continue
         row = list(raw_row)
