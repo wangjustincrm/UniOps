@@ -272,6 +272,115 @@ async def test_import_returns_503_when_mdm_api_unreachable(client, admin_token, 
 
 
 @pytest.mark.anyio
+async def test_import_rejects_non_xlsx_extension(client, admin_token, monkeypatch):
+    """I7 (final-phase review): a .csv (or any non-.xlsx) upload must be a
+    readable 400, not fall through to openpyxl and raise BadZipFile as an
+    opaque 500."""
+    from app.services import forecast_io
+    monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", lambda *a, **k: {"S0093"})
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v, months = await _make_version(client, headers)
+
+    r = await client.post(
+        f"/api/v1/forecast/versions/{v['id']}/import?dry_run=true",
+        files={"file": ("f.csv", io.BytesIO(b"Material Code,Name\n"), "text/csv")},
+        headers=headers,
+    )
+    assert r.status_code == 400
+    assert ".xlsx" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_import_rejects_disallowed_content_type(client, admin_token, monkeypatch):
+    """Extension is .xlsx but Content-Type is something else entirely — the
+    content-type check must fire independently of the extension check."""
+    from app.services import forecast_io
+    monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", lambda *a, **k: {"S0093"})
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v, months = await _make_version(client, headers)
+
+    buf = _xlsx([["S0093", "x", "5"] + [""] * 17], months)
+    r = await client.post(
+        f"/api/v1/forecast/versions/{v['id']}/import?dry_run=true",
+        files={"file": ("f.xlsx", buf, "text/plain")},
+        headers=headers,
+    )
+    assert r.status_code == 400
+    assert "content type" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_import_rejects_oversized_file(client, admin_token, monkeypatch):
+    """A file over the size cap must 400 before ever being parsed — the cap
+    is turned down to a few bytes here so an ordinary test-sized xlsx trips
+    it without needing to actually build a 10 MB file."""
+    import app.api.v1.forecast as forecast_module
+    from app.services import forecast_io
+    monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", lambda *a, **k: {"S0093"})
+    monkeypatch.setattr(forecast_module, "_MAX_IMPORT_FILE_BYTES", 10)
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v, months = await _make_version(client, headers)
+
+    buf = _xlsx([["S0093", "x", "5"] + [""] * 17], months)
+    r = await client.post(
+        f"/api/v1/forecast/versions/{v['id']}/import?dry_run=true",
+        files={"file": ("f.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=headers,
+    )
+    assert r.status_code == 400
+    assert "too large" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_import_rejects_corrupt_xlsx_as_400_not_500(client, admin_token, monkeypatch):
+    """A file that passes the extension/content-type/size checks but isn't
+    actually a readable xlsx (truncated upload, wrong bytes entirely, ...)
+    must still come back as a 400 with a readable message — previously
+    load_workbook's BadZipFile/InvalidFileException was uncaught and
+    surfaced as an opaque 500."""
+    from app.services import forecast_io
+    monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", lambda *a, **k: {"S0093"})
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v, months = await _make_version(client, headers)
+
+    r = await client.post(
+        f"/api/v1/forecast/versions/{v['id']}/import?dry_run=true",
+        files={"file": ("f.xlsx", io.BytesIO(b"this is not a zip/xlsx file at all"),
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=headers,
+    )
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert "could not read" in detail
+
+
+@pytest.mark.anyio
+async def test_import_rejects_file_over_the_row_cap(client, admin_token, monkeypatch):
+    """More data rows than MAX_IMPORT_DATA_ROWS must 400 with a clear
+    "split it up" message rather than silently truncating the import or
+    parsing an unbounded number of rows."""
+    from app.services import forecast_io
+    monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", lambda *a, **k: {"S0093"})
+    monkeypatch.setattr(forecast_io, "MAX_IMPORT_DATA_ROWS", 2)
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v, months = await _make_version(client, headers)
+
+    buf = _xlsx([["S0093", "x", "5"] + [""] * 17 for _ in range(3)], months)
+    r = await client.post(
+        f"/api/v1/forecast/versions/{v['id']}/import?dry_run=true",
+        files={"file": ("f.xlsx", buf, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=headers,
+    )
+    assert r.status_code == 400
+    assert "more than 2 data rows" in r.json()["detail"]
+
+
+@pytest.mark.anyio
 async def test_export_then_reimport_round_trips_clean(client, admin_token, monkeypatch):
     """Template/export/import must agree on shape: exporting a version with
     data and feeding that file straight back into import must validate

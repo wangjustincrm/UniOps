@@ -49,6 +49,17 @@ router = APIRouter(prefix="/forecast", tags=["forecast"])
 
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
+# POST .../import hardening (I7, final-phase review). 10 MB is generous for
+# an 18-month x few-thousand-material grid (a real export of that shape is
+# well under 1 MB) while still bounding how large a `bytes` object the
+# import path will ever materialize.
+_MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024
+_ALLOWED_IMPORT_CONTENT_TYPES = {
+    _XLSX_MEDIA_TYPE,
+    "application/octet-stream",  # some browsers/HTTP clients send this for .xlsx regardless of the real type
+    "",  # some clients omit Content-Type entirely
+}
+
 ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
 WriteDep = Annotated[dict, Depends(require_permission("mrp.demand.write"))]
 
@@ -413,12 +424,42 @@ async def import_forecast(
     — but writes nothing; the frontend's "preview validation report" depends
     on this. `dry_run=false` applies via the same upsert semantics as
     PUT .../cells (frozen cells skipped and reported, never overwritten).
+
+    Hardening (I7, final-phase review): extension/content-type and size are
+    checked before anything touches the bytes (cheapest checks first, and
+    before the mdm-api round trip below) — a `.csv` renamed to `.xlsx` or an
+    oversized upload is rejected with a 400 instead of either an opaque 500
+    (openpyxl's `BadZipFile` on a non-xlsx file, previously uncaught) or an
+    unbounded `await file.read()`.
     """
     version = await _get_version_or_404(db, version_id)
     _require_draft(version)
     months = _generate_months(version.horizon_start_month, version.horizon_months)
 
-    raw = await file.read()
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"only .xlsx files are accepted (got filename={file.filename!r})",
+        )
+    if file.content_type not in _ALLOWED_IMPORT_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"unsupported content type {file.content_type!r} — upload an .xlsx file",
+        )
+
+    # Read one byte past the cap so an oversized upload is detected without
+    # ever materializing more than (cap + 1) bytes as a Python object —
+    # `await file.read()` with no bound (the pre-fix code) would happily
+    # build an arbitrarily large `bytes`, which is exactly what a zip-bomb
+    # xlsx (small on disk, huge once parsed) or just a very large legitimate
+    # mistake could use to OOM the container.
+    raw = await file.read(_MAX_IMPORT_FILE_BYTES + 1)
+    if len(raw) > _MAX_IMPORT_FILE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"file too large — the limit is {_MAX_IMPORT_FILE_BYTES // (1024 * 1024)} MB",
+        )
+
     # mdm-api material codes are fetched once per import (never per row),
     # via a blocking httpx.Client bridged onto a worker thread. If mdm-api is
     # unreachable/errors, fail loudly with a clear retry message — do NOT
@@ -431,7 +472,11 @@ async def import_forecast(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Material validation is temporarily unavailable (could not reach mdm-api) — please retry the import.",
         ) from exc
-    ok_cells, error_rows = forecast_io.parse_import_workbook(raw, months, valid_codes)
+
+    try:
+        ok_cells, error_rows = forecast_io.parse_import_workbook(raw, months, valid_codes)
+    except forecast_io.ImportFileError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     skipped_frozen: list[dict] = []
     if ok_cells:

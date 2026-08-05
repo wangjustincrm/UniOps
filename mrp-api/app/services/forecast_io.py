@@ -20,6 +20,30 @@ row number** the user would see if they opened the file — the header is row
 row in their spreadsheet, so it must line up with what Excel shows, not a
 0-based or header-excluded count. A header-level problem (mismatched month
 column) is reported as row 0 (there is no single data row it belongs to).
+
+**Hardening (I7, final-phase review):** the caller (app/api/v1/forecast.py's
+`import_forecast`) enforces file size/extension/content-type before this
+module ever sees the bytes, but the actual xlsx parse still has two failure
+modes this module owns:
+
+- `load_workbook(..., read_only=True)` — read-only mode streams rows lazily
+  instead of materializing the whole parsed workbook in memory, so an xlsx
+  crafted to decompress to something far larger than it looks on disk (a
+  "zip bomb") can't OOM the container just from being opened, even under
+  `dry_run=true` where nothing is ever written.
+- A non-xlsx or corrupt file (e.g. a `.csv` renamed to `.xlsx`, or a
+  genuinely truncated upload) makes `load_workbook` raise — openpyxl's own
+  exception, `zipfile.BadZipFile`, or something else entirely depending on
+  how the bytes are malformed. `parse_import_workbook` catches all of that
+  and re-raises as `ImportFileError`, a `ValueError` subclass with a
+  human-readable message, so the endpoint can turn it into a 400 instead of
+  an opaque 500.
+
+`MAX_IMPORT_DATA_ROWS` caps the number of data rows this module will walk
+per import, independent of the byte-size cap the endpoint enforces (a small
+file can still claim an enormous number of rows) — exceeding it raises
+`ImportFileError` rather than silently truncating, so the user knows to
+split the file instead of unknowingly importing a partial grid.
 """
 from __future__ import annotations
 
@@ -32,6 +56,18 @@ from openpyxl import Workbook, load_workbook
 from app.core.config import settings
 
 TEMPLATE_HEADERS = ["Material Code", "Name"]
+
+# Hard cap on data rows a single import will walk (see module docstring's
+# "Hardening" section) — independent of the endpoint's byte-size cap.
+MAX_IMPORT_DATA_ROWS = 20_000
+
+
+class ImportFileError(ValueError):
+    """The uploaded file itself is unreadable as an xlsx workbook, or blows
+    past a hard structural limit (too many rows) — as opposed to a
+    per-row/per-cell content problem, which is reported via `error_rows`
+    instead of raising. The endpoint (app/api/v1/forecast.py) catches this
+    and returns 400 with `str(exc)` as the detail."""
 
 
 def fetch_valid_material_codes(token: str) -> set[str]:
@@ -110,7 +146,13 @@ def build_export_workbook(months: list[str], rows: list[dict]) -> bytes:
         values = [row["material_code"], row.get("name") or ""]
         for month in months:
             qty = cells.get(month)
-            values.append(float(qty) if qty is not None else "")
+            # openpyxl accepts Decimal natively (it's a real numeric cell
+            # type, not coerced to text) — going through float() here was
+            # the one place float ever entered this chain (M11, final-phase
+            # review) and could shift the last digit on an export -> import
+            # round trip, which test_export_then_reimport_round_trips_clean
+            # depends on being exact.
+            values.append(qty if qty is not None else "")
         ws.append(values)
     buf = io.BytesIO()
     wb.save(buf)
@@ -128,8 +170,29 @@ def parse_import_workbook(
       - error_rows: [{"row", "column", "reason"}]. `row` is the physical
         Excel row number (header = row 1, first data row = row 2). One row's
         problem never stops the rest — every other row is still evaluated.
+
+    Raises `ImportFileError` (see module docstring) if the bytes aren't a
+    readable xlsx workbook at all, or if it has more than
+    `MAX_IMPORT_DATA_ROWS` data rows — both are structural problems with the
+    file itself, not a per-row content problem, so they don't belong in
+    `error_rows`.
     """
-    wb = load_workbook(io.BytesIO(file_bytes), data_only=True)
+    try:
+        # read_only=True: stream rows instead of materializing the whole
+        # parsed workbook — see module docstring's "Hardening" section for
+        # why (a zip-bomb-style xlsx must not be able to OOM the container
+        # just from being opened, even under dry_run=true).
+        wb = load_workbook(io.BytesIO(file_bytes), data_only=True, read_only=True)
+    except Exception as exc:
+        # openpyxl raises different exception types for different kinds of
+        # bad input (InvalidFileException for a recognizably-wrong format,
+        # zipfile.BadZipFile for a non-zip/corrupt file, KeyError for a
+        # zip that's missing an expected part, ...) — catch broadly and
+        # normalize to one readable message rather than letting whichever
+        # one comes up surface as an opaque 500.
+        raise ImportFileError(
+            f"could not read the uploaded file as an Excel (.xlsx) workbook: {exc}"
+        ) from exc
     ws = wb.active
 
     rows_iter = ws.iter_rows(values_only=True)
@@ -158,6 +221,15 @@ def parse_import_workbook(
     # start=2: the header consumed by next() above is Excel row 1, so the
     # first row this loop sees is Excel row 2 — report the real row number.
     for row_num, raw_row in enumerate(rows_iter, start=2):
+        # row_num - 1 == the number of data rows seen so far (row 2 is data
+        # row 1). Checked before any per-row work so a file that blows past
+        # the cap fails fast rather than after fully scanning e.g. a
+        # 500k-row sheet.
+        if row_num - 1 > MAX_IMPORT_DATA_ROWS:
+            raise ImportFileError(
+                f"the uploaded file has more than {MAX_IMPORT_DATA_ROWS} data rows "
+                "— split it into smaller files and import them separately"
+            )
         if raw_row is None:
             continue
         row = list(raw_row)
