@@ -386,6 +386,15 @@ services:
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
+      # Server-to-server mdm-api URL (container DNS name), NOT the
+      # localhost:8002 the frontends' VITE_MDM_API_URL points browsers at
+      # (see the mrp/portal/epms/oa service blocks below) — that host is
+      # unreachable from inside this container. Without this, forecast_io
+      # falls back to app/core/config.py's http://localhost:8002 default,
+      # which is nothing inside the mrp-api container, and every Excel
+      # import 503s with a misleading "could not reach mdm-api" error even
+      # though mdm-api itself is healthy.
+      MDM_API_URL: http://mdm-api:8002
       # WMS(Flux) Oracle read-only connection (values live in the gitignored
       # root .env as WMS_*; missing values = feature hidden). See wms_conn.env.
       WMS_HOST: ${WMS_HOST:-}

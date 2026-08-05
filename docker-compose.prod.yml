@@ -276,6 +276,10 @@ services:
       API_V1_PREFIX: /api/v1
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
+      # Server-to-server mdm-api URL (container DNS name) — see
+      # docker-compose.dev.yml's mrp-api block for why this must NOT be the
+      # browser-facing ${MDM_API_URL} build var.
+      MDM_API_URL: http://mdm-api:8002
       # WMS(Flux) Oracle read-only connection (values live in the gitignored
       # .env as WMS_*; missing values = feature hidden).
       WMS_HOST: ${WMS_HOST:-}
