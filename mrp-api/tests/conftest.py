@@ -118,3 +118,23 @@ def _token(sub: uuid.UUID, role: str) -> str:
 @pytest_asyncio.fixture
 async def admin_token():
     return _token(uuid.uuid4(), "system_admin")
+
+
+@pytest_asyncio.fixture
+async def non_admin_token():
+    """A token for a role that is NOT system_admin (M12, final-phase
+    review). `admin_token` short-circuits every `require_permission(...)`
+    check before it ever looks at a permission key (see uniops_authz.core's
+    system_admin fast path) — a suite that only ever authenticates as
+    system_admin would pass all 61 tests even if a gated endpoint's
+    permission key were misspelled or swapped for the wrong one, because
+    the check is never actually exercised.
+
+    mrp-api's own alembic chain doesn't own identity's role_permissions/
+    role_defs/user_roles tables (this fixture's `mrp_test` database never
+    has them), so any test using this token to reach a real
+    require_permission(...) gate must ALSO monkeypatch
+    `uniops_authz.core.user_role_codes`/`_effective_matrix` — see
+    tests/test_permission_gates.py's `_deny_everything` helper for the
+    idiom (same one mdm-api/tests/test_boms_read_authz.py uses)."""
+    return _token(uuid.uuid4(), "requester")
