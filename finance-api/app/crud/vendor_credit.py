@@ -112,3 +112,57 @@ async def create(db: AsyncSession, *, payload: VendorCreditCreate,
             raise DuplicateCredit(dup) from None
         raise
     return vc
+
+
+class InvalidTransition(Exception):
+    """The requested review action is not legal from the current status."""
+
+
+def _stamp_review(credit: VendorCredit, reviewed_by: uuid.UUID,
+                  reviewed_by_name: str | None, note: str | None) -> None:
+    credit.reviewed_by = reviewed_by
+    credit.reviewed_by_name = reviewed_by_name
+    credit.reviewed_at = datetime.now(timezone.utc)
+    if note is not None:
+        credit.review_note = note
+
+
+async def approve(db: AsyncSession, credit: VendorCredit, *,
+                  reviewed_by: uuid.UUID, reviewed_by_name: str | None,
+                  note: str | None) -> VendorCredit:
+    # Self-review is deliberately permitted: the AP team is small enough that a
+    # segregation-of-duties gate would deadlock the queue. See spec §8.
+    if credit.status != PENDING_REVIEW:
+        raise InvalidTransition(
+            f"Only a pending_review credit can be approved (is {credit.status})")
+    credit.status = AVAILABLE
+    _stamp_review(credit, reviewed_by, reviewed_by_name, note)
+    await db.flush()
+    return credit
+
+
+async def reject(db: AsyncSession, credit: VendorCredit, *,
+                 reviewed_by: uuid.UUID, reviewed_by_name: str | None,
+                 note: str) -> VendorCredit:
+    if credit.status != PENDING_REVIEW:
+        raise InvalidTransition(
+            f"Only a pending_review credit can be rejected (is {credit.status})")
+    credit.status = VOID
+    _stamp_review(credit, reviewed_by, reviewed_by_name, note)
+    await db.flush()
+    return credit
+
+
+async def void(db: AsyncSession, credit: VendorCredit, *,
+               reviewed_by: uuid.UUID, reviewed_by_name: str | None,
+               note: str) -> VendorCredit:
+    if credit.status != AVAILABLE:
+        raise InvalidTransition(
+            f"Only an available credit can be voided (is {credit.status})")
+    if credit.applied_amount > _ZERO:
+        raise InvalidTransition(
+            "Credit has already been applied to a payment and cannot be voided")
+    credit.status = VOID
+    _stamp_review(credit, reviewed_by, reviewed_by_name, note)
+    await db.flush()
+    return credit

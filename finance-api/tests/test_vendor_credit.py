@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 
@@ -327,3 +328,96 @@ async def test_create_converts_racing_duplicate_to_duplicate_credit(db_session, 
                           uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
     assert exc.value.existing.id == first.id
     assert calls["n"] == 2  # fast-path miss, then the post-IntegrityError re-query
+
+
+@pytest_asyncio.fixture
+async def pending_credit(db_session):
+    from app.crud import vendor_credit as crud
+    vc = await crud.create(db_session, payload=_create_payload(),
+                           uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    await db_session.commit()
+    return vc
+
+
+@pytest.mark.anyio
+async def test_approve_makes_it_available(db_session, pending_credit):
+    from app.crud import vendor_credit as crud
+    reviewer = uuid.uuid4()
+    vc = await crud.approve(db_session, pending_credit, reviewed_by=reviewer,
+                            reviewed_by_name="Finance Manager", note=None)
+    await db_session.commit()
+    assert vc.status == "available"
+    assert vc.reviewed_by == reviewer
+    assert vc.reviewed_at is not None
+
+
+@pytest.mark.anyio
+async def test_uploader_may_approve_their_own_credit(db_session):
+    """Self-review is allowed by design — no SoD gate in Phase A."""
+    from app.crud import vendor_credit as crud
+    me = uuid.uuid4()
+    vc = await crud.create(db_session, payload=_create_payload(),
+                           uploaded_by=me, uploaded_by_name="AP")
+    await db_session.commit()
+    vc = await crud.approve(db_session, vc, reviewed_by=me,
+                            reviewed_by_name="AP", note=None)
+    await db_session.commit()
+    assert vc.status == "available"
+
+
+@pytest.mark.anyio
+async def test_reject_voids_with_a_note(db_session, pending_credit):
+    from app.crud import vendor_credit as crud
+    vc = await crud.reject(db_session, pending_credit, reviewed_by=uuid.uuid4(),
+                           reviewed_by_name="FM", note="Duplicate of CN-9")
+    await db_session.commit()
+    assert vc.status == "void"
+    assert vc.review_note == "Duplicate of CN-9"
+
+
+@pytest.mark.anyio
+async def test_cannot_approve_twice(db_session, pending_credit):
+    from app.crud import vendor_credit as crud
+    await crud.approve(db_session, pending_credit, reviewed_by=uuid.uuid4(),
+                       reviewed_by_name="FM", note=None)
+    await db_session.commit()
+    with pytest.raises(crud.InvalidTransition):
+        await crud.approve(db_session, pending_credit, reviewed_by=uuid.uuid4(),
+                           reviewed_by_name="FM", note=None)
+
+
+@pytest.mark.anyio
+async def test_void_requires_available_and_untouched(db_session, pending_credit):
+    from app.crud import vendor_credit as crud
+    # Not yet available → refuse.
+    with pytest.raises(crud.InvalidTransition):
+        await crud.void(db_session, pending_credit, reviewed_by=uuid.uuid4(),
+                        reviewed_by_name="FM", note="oops")
+
+    await crud.approve(db_session, pending_credit, reviewed_by=uuid.uuid4(),
+                       reviewed_by_name="FM", note=None)
+    await db_session.commit()
+
+    # Simulate a Phase-B application having consumed part of it.
+    pending_credit.applied_amount = Decimal("0.02")
+    pending_credit.remaining_amount = Decimal("0.02")
+    await db_session.flush()
+    with pytest.raises(crud.InvalidTransition, match="already been applied"):
+        await crud.void(db_session, pending_credit, reviewed_by=uuid.uuid4(),
+                        reviewed_by_name="FM", note="oops")
+
+
+@pytest.mark.anyio
+async def test_rejected_document_number_can_be_re_uploaded(db_session, pending_credit):
+    """The partial unique index excludes voided rows, so a corrected
+    re-upload of the same vendor document number must succeed."""
+    from app.crud import vendor_credit as crud
+    await crud.reject(db_session, pending_credit, reviewed_by=uuid.uuid4(),
+                      reviewed_by_name="FM", note="wrong amount")
+    await db_session.commit()
+    again = await crud.create(
+        db_session,
+        payload=_create_payload(vendor_id=pending_credit.vendor_id),
+        uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    await db_session.commit()
+    assert again.status == "pending_review"
