@@ -111,10 +111,15 @@ export default function SalesForecastPage() {
   const [liveCells, setLiveCells] = useState<CellValueMap>(new Map())
   const [syncedBaseline, setSyncedBaseline] = useState<CellValueMap>(new Map())
   const [addedRows, setAddedRows] = useState<Map<string, MaterialOption>>(new Map())
-  // Codes added this session whose placeholder (or a real edit) has already
-  // been autosaved — once persisted, "Add Product" no longer offers the
-  // quick-remove X for them (undoing that would need a real delete, not
-  // implemented here; see handleRemoveAddedRow).
+  // Codes added this session that are known to be durably persisted —
+  // "Add Product" stops offering the quick-remove X for them (undoing that
+  // would need a real delete, not implemented here; see
+  // handleRemoveAddedRow). An added row with no value typed in yet is NOT
+  // persisted (mrp_demand_series is sparse — see doFlush's comment) and
+  // must never land in this set purely for being added; today nothing adds
+  // a code here at all (a genuinely-saved added row still keeps its X too —
+  // a separate, minor gap, not the vanishing-row bug this set exists to
+  // avoid).
   const [persistedAddedCodes, setPersistedAddedCodes] = useState<Set<string>>(new Set())
   const [syncedGridKeyForAddedRows, setSyncedGridKeyForAddedRows] = useState<string | null>(null)
   const [focusRequest, setFocusRequest] = useState<{ rowId: string; colId?: string } | null>(null)
@@ -291,17 +296,17 @@ export default function SalesForecastPage() {
     const months = gridQuery.data?.months ?? []
     if (months.length === 0) return
     // A row added via "Add Product" that the planner hasn't typed anything
-    // into yet has no dirty cell, so on its own it would never appear in
-    // the autosave payload and the row would vanish if the grid ever did
-    // reload — send one explicit qty=0 placeholder (first non-past month)
-    // per such row so it survives as a real, all-zero series row. Same
-    // reasoning ForecastPage's handleSaveDraft used for Save Draft.
-    const anchorMonth = months.find((m) => m >= currentMonth) ?? months[months.length - 1]
-    const dirtyRowCodes = new Set(dirtyCells.map((c) => c.material_code))
-    const placeholders = [...addedRows.keys()]
-      .filter((code) => !dirtyRowCodes.has(code) && !persistedAddedCodes.has(code))
-      .map((code) => ({ material_code: code, month: anchorMonth, qty: 0 }))
-    const cellsToSave = [...dirtyCells, ...placeholders]
+    // into yet has no dirty cell — and deliberately sends NOTHING for it.
+    // An earlier version of this function sent an explicit qty=0
+    // "placeholder" cell so the row would "survive as a real, all-zero
+    // series row," but mrp_demand_series is SPARSE: upsert_cells treats
+    // qty==0 as a delete/no-op (see app/services/demand_series.py), so that
+    // placeholder was never actually persisted — it silently vanished on
+    // the next page load while this page had already moved the row into
+    // persistedAddedCodes, dropping its quick-remove X in the meantime. An
+    // untouched added row simply stays local-only (keeps the X below) until
+    // a real edit produces a dirty cell for its code.
+    const cellsToSave = dirtyCells
     if (cellsToSave.length === 0) return
 
     setSaveState('saving')
@@ -316,13 +321,6 @@ export default function SalesForecastPage() {
         }
         return next
       })
-      if (placeholders.length > 0) {
-        setPersistedAddedCodes((prev) => {
-          const next = new Set(prev)
-          for (const p of placeholders) next.add(p.material_code)
-          return next
-        })
-      }
       setSaveState('saved')
       toasts.success(`${res.upserted} cell${res.upserted === 1 ? '' : 's'} saved.`)
       if (savedResetTimer.current) window.clearTimeout(savedResetTimer.current)
@@ -366,8 +364,10 @@ export default function SalesForecastPage() {
   }, [scheduleSave])
 
   /** "Add Product" — appends a row immediately (no server round trip) and
-   *  focuses its first editable cell; the row itself is persisted by the
-   *  next autosave (see flushRef's placeholder logic above). */
+   *  focuses its first editable cell. The row is NOT persisted on its own;
+   *  it only becomes durable once the planner types a value into one of its
+   *  cells, which then flows into the next autosave like any other edit
+   *  (see doFlush). */
   function handleAddProduct(m: MaterialOption) {
     const alreadyServerRow = (gridQuery.data?.rows ?? []).some((r) => r.material_code === m.code)
     if (!alreadyServerRow && !addedRows.has(m.code)) {
