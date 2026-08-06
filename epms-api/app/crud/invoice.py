@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.models.gr import GoodsReceipt
+from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.invoice_tax_line import InvoiceTaxLine
@@ -304,12 +304,51 @@ async def _apply_gr_selection(
     invoice.gr_ids = [str(gid) for gid in effective]
 
 
+# GRs in these states never represent received goods, so they must never be
+# auto-attached to an invoice (a user can still pick one by hand).
+_DEAD_GR_STATUSES = ("cancelled", "rejected")
+
+
+async def _discover_grs_for_allocations(
+    db: AsyncSession, allocs: list[AllocationInput],
+) -> list[uuid.UUID]:
+    """GRs that already received what these allocations bill — the mirror image of
+    gr.crud._autofill_gr_to_matched_invoices, for the "received first, invoiced
+    later" order that the GR-create hook cannot cover.
+
+    Line-level allocations route by po_line_id; header-level ones (total-value
+    match / legacy shim) carry no line, so they fall back to every live GR on the
+    PO. Oldest first, so gr_id (the scalar) lands on the earliest receipt.
+    """
+    line_ids = [a.po_line_id for a in allocs if a.po_line_id is not None]
+    header_po_ids = [a.po_id for a in allocs if a.po_line_id is None]
+    found: list[uuid.UUID] = []
+    if line_ids:
+        receiving_grs = select(GrLineItem.gr_id).where(GrLineItem.po_line_id.in_(line_ids))
+        found += (await db.execute(
+            select(GoodsReceipt.id)
+            .where(GoodsReceipt.id.in_(receiving_grs),
+                   GoodsReceipt.status.not_in(_DEAD_GR_STATUSES))
+            .order_by(GoodsReceipt.created_at)
+        )).scalars().all()
+    if header_po_ids:
+        found += (await db.execute(
+            select(GoodsReceipt.id)
+            .where(GoodsReceipt.po_id.in_(header_po_ids),
+                   GoodsReceipt.status.not_in(_DEAD_GR_STATUSES))
+            .order_by(GoodsReceipt.created_at)
+        )).scalars().all()
+    seen: set[uuid.UUID] = set()
+    return [g for g in found if not (g in seen or seen.add(g))]
+
+
 async def match(
     db: AsyncSession,
     invoice: Invoice,
     req: InvoiceMatchRequest,
     matched_by: uuid.UUID,
     require_review: bool = False,
+    auto_link_grs: bool = False,
 ) -> Invoice:
     now = datetime.now(timezone.utc)
     allocs = await _normalize_allocations(invoice, req)
@@ -487,12 +526,17 @@ async def match(
     invoice.matched_po_line_ids = None
     invoice.matched_reference_total = None
 
-    # GR handling unchanged (whole-invoice level)
+    # GR handling (whole-invoice level). An explicit selection always wins — that
+    # includes an explicit empty one, which is why auto-discovery is opt-in per
+    # call site: rematch_from_existing replays the invoice's stored gr_ids, so a
+    # user who cleared the link in the edit form must not have it grow back.
     effective_gr_ids: list[uuid.UUID] = []
     if req.gr_ids:
         effective_gr_ids = list(req.gr_ids)
     elif req.gr_id:
         effective_gr_ids = [req.gr_id]
+    elif auto_link_grs:
+        effective_gr_ids = await _discover_grs_for_allocations(db, allocs)
     await _apply_gr_selection(db, invoice, effective_gr_ids)
 
     all_zero = all((row.variance or Decimal("0")) == Decimal("0") for row in new_rows)
