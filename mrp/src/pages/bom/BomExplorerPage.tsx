@@ -61,6 +61,10 @@ export default function BomExplorerPage() {
   // ── Explode mode ─────────────────────────────────────────────────────────
   const [productCode, setProductCode] = useState('')
   const [productLabel, setProductLabel] = useState('')
+  // Accumulated quantities are shown per this many finished units (default
+  // 1000 — planners think in per-batch/per-tonne terms, not per single unit).
+  // Editable; every accumulated value rescales live. Clamped to >= 1.
+  const [basis, setBasis] = useState(1000)
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set(['0']))
   const [syncedRoot, setSyncedRoot] = useState<ExplodeNode | null>(null)
 
@@ -124,7 +128,7 @@ export default function BomExplorerPage() {
   // main bundle for every page load.
   async function handleExport() {
     if (mode === 'explode' && explodeQuery.data) {
-      await exportExplodeTree(explodeQuery.data, asOfDate)
+      await exportExplodeTree(explodeQuery.data, asOfDate, basis)
       toasts.success('Export downloaded.')
     } else if (mode === 'where-used' && queriedComponent && whereUsedQuery.data) {
       await exportWhereUsed(queriedComponent, asOfDate, whereUsedQuery.data)
@@ -189,6 +193,7 @@ export default function BomExplorerPage() {
                   onSelect={(m: MaterialOption) => { setComponentCode(m.code); setComponentLabel(m.name ? `${m.code} — ${m.name}` : m.code) }}
                   onClear={() => { setComponentCode(''); setComponentLabel(''); setQueriedComponent(null) }}
                   placeholder="Search components…"
+                  finishedGoodsOnly={false}
                 />
               </div>
             </FormField>
@@ -197,6 +202,24 @@ export default function BomExplorerPage() {
           <FormField label="As of" htmlFor="bom-as-of">
             <Input id="bom-as-of" type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-40" />
           </FormField>
+
+          {mode === 'explode' && (
+            <FormField label="Accum. per (units)" htmlFor="bom-basis">
+              <Input
+                id="bom-basis"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={basis}
+                onChange={(e) => {
+                  const n = Math.floor(Number(e.target.value))
+                  setBasis(Number.isFinite(n) && n >= 1 ? n : 1)
+                }}
+                className="w-28"
+              />
+            </FormField>
+          )}
 
           {mode === 'where-used' && (
             <Button type="button" size="sm" onClick={handleFindWhereUsed} disabled={!componentCode}>
@@ -250,8 +273,7 @@ export default function BomExplorerPage() {
                 <div className="w-28">Type</div>
                 <div className="w-40">Version</div>
                 <div className="w-28 text-right">Qty / unit</div>
-                <div className="w-32 text-right">Accum. per 1 {explodeQuery.data.material_code}</div>
-                <div className="w-24 text-right">Secondary</div>
+                <div className="w-32 text-right">Accum. per {basis} {explodeQuery.data.material_code}</div>
               </div>
               <div className="overflow-x-auto rounded-b-lg border border-neutral-200">
                 <div className="min-w-[900px]">
@@ -263,6 +285,7 @@ export default function BomExplorerPage() {
                     expandedPaths={expandedPaths}
                     onToggle={toggleExpand}
                     topLabel={explodeQuery.data.material_code}
+                    basis={basis}
                   />
                 </div>
               </div>

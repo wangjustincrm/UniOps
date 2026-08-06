@@ -20,7 +20,7 @@ function formatQty(raw: string | null): string {
 }
 
 export function BomTreeRow({
-  node, path, ancestorContinues, isLast, expandedPaths, onToggle, topLabel,
+  node, path, ancestorContinues, isLast, expandedPaths, onToggle, topLabel, basis,
 }: {
   node: ExplodeNode
   path: string
@@ -33,12 +33,18 @@ export function BomTreeRow({
   onToggle: (path: string) => void
   /** Root product code, for the accumulated-quantity column header context. */
   topLabel: string
+  /** Accumulated quantities are reported by the API per 1 unit of the top
+   *  product; this multiplies them for display so the planner can read
+   *  "per N finished units" (default 1000, editable in the toolbar). Does
+   *  NOT scale `qty_per` (that's per 1 unit of the immediate parent). */
+  basis: number
 }) {
   const [versionOpen, setVersionOpen] = useState(false)
   const hasChildren = node.children.length > 0
   const expanded = expandedPaths.has(path)
-  const bomType = displayBomType(node.material_code, node.bom_type)
+  const bomType = displayBomType(node.material_code, node.bom_type, node.name)
   const isRoot = path === '0'
+  const accumScaled = node.qty_accumulated === null ? null : String(Number(node.qty_accumulated) * basis)
 
   const prefix = ancestorContinues.map((cont, i) => (
     <span key={i} className="inline-block w-4 shrink-0 text-neutral-300">{cont ? '│' : ' '}</span>
@@ -104,14 +110,10 @@ export function BomTreeRow({
           {isRoot ? '—' : `${formatQty(node.qty_per)} ${node.uom ?? ''}`}
         </div>
 
-        {/* Accumulated qty — the number planners actually need */}
-        <div className="w-32 shrink-0 text-right text-xs font-semibold tabular-nums text-neutral-900" title={`Per 1 unit of ${topLabel}`}>
-          {formatQty(node.qty_accumulated)} {node.uom ?? ''}
-        </div>
-
-        {/* Secondary unit, when present */}
-        <div className="w-24 shrink-0 text-right text-xs tabular-nums text-neutral-500">
-          {node.qty_per_secondary ? `${formatQty(node.qty_per_secondary)} ${node.uom_secondary ?? ''}` : '—'}
+        {/* Accumulated qty — the number planners actually need, scaled to the
+            chosen basis (per N units of the top product) */}
+        <div className="w-32 shrink-0 text-right text-xs font-semibold tabular-nums text-neutral-900" title={`Per ${basis} units of ${topLabel}`}>
+          {formatQty(accumScaled)} {node.uom ?? ''}
         </div>
       </div>
 
@@ -166,6 +168,7 @@ export function BomTreeRow({
           expandedPaths={expandedPaths}
           onToggle={onToggle}
           topLabel={topLabel}
+          basis={basis}
         />
       ))}
     </div>

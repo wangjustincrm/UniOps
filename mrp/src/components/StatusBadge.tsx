@@ -17,15 +17,24 @@
 import { cn } from '@/lib/utils'
 
 export type ForecastVersionStatus = 'draft' | 'confirmed' | 'superseded'
-export type BomTypeStatus = 'milling' | 'drymix' | 'packaging' | 'raw' | 'packaging-material'
+// `powdering` replaces the old `milling` label for CS-prefix semi-products,
+// and `past` (pasteurization) is derived for materials whose name contains
+// "Pasteurized" — both are display-layer classifications applied in
+// pages/bom/bomType.ts (the wire bom_type from mdm-api is still milling/
+// unknown respectively). `milling` is kept so any un-remapped value still
+// renders sanely.
+export type BomTypeStatus =
+  | 'milling' | 'powdering' | 'drymix' | 'packaging' | 'past' | 'raw' | 'packaging-material'
 
 const LABEL: Record<ForecastVersionStatus | BomTypeStatus, string> = {
   draft: 'Draft',
   confirmed: 'Confirmed',
   superseded: 'Superseded',
   milling: 'Milling',
+  powdering: 'Powdering',
   drymix: 'Dry-mix',
   packaging: 'Packaging',
+  past: 'Pasteurization',
   raw: 'Raw',
   'packaging-material': 'Packaging Material',
 }
@@ -35,8 +44,10 @@ const STYLE: Record<ForecastVersionStatus | BomTypeStatus, string> = {
   confirmed: 'bg-success-50 text-success-700 ring-emerald-200',
   superseded: 'bg-neutral-100 text-neutral-500 ring-neutral-200',
   milling: 'bg-violet-50 text-violet-700 ring-violet-200',
+  powdering: 'bg-violet-50 text-violet-700 ring-violet-200',
   drymix: 'bg-sky-50 text-sky-700 ring-sky-200',
   packaging: 'bg-indigo-50 text-indigo-700 ring-indigo-200',
+  past: 'bg-rose-50 text-rose-700 ring-rose-200',
   raw: 'bg-teal-50 text-teal-700 ring-teal-200',
   'packaging-material': 'bg-orange-50 text-orange-700 ring-orange-200',
 }

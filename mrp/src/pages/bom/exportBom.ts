@@ -34,37 +34,41 @@ interface ExplodeRow {
   'Approved Candidates': number
   'Qty Per (this level)': number | null
   Unit: string
-  'Accumulated Qty (per 1 unit top)': number | null
-  'Secondary Qty': number | null
-  'Secondary Unit': string
+  'Accumulated Qty': number | null
   'Missing BOM': string
   'Cycle Detected': string
 }
 
-function flatten(node: ExplodeNode, rows: ExplodeRow[]): void {
+function scaleAccum(raw: string | null, basis: number): number | null {
+  const v = n(raw)
+  return v === null ? null : v * basis
+}
+
+function flatten(node: ExplodeNode, rows: ExplodeRow[], basis: number): void {
   rows.push({
     Level: node.level,
     'Material Code': node.material_code,
     Name: node.name ?? '',
     'Indented Name': `${'  '.repeat(node.level)}${node.name ?? node.material_code}`,
-    'BOM Type': displayBomType(node.material_code, node.bom_type) ?? '',
+    // Same display classification the on-screen badge uses (name-based
+    // pasteurization + CS->powdering), so the export doesn't disagree with
+    // what the planner saw.
+    'BOM Type': displayBomType(node.material_code, node.bom_type, node.name) ?? '',
     Version: node.version ?? '',
     'Approved Candidates': node.version_candidates_count,
     'Qty Per (this level)': node.level === 0 ? null : n(node.qty_per),
     Unit: node.uom ?? '',
-    'Accumulated Qty (per 1 unit top)': n(node.qty_accumulated),
-    'Secondary Qty': n(node.qty_per_secondary),
-    'Secondary Unit': node.uom_secondary ?? '',
+    'Accumulated Qty': scaleAccum(node.qty_accumulated, basis),
     'Missing BOM': node.missing_bom ? 'Yes' : '',
     'Cycle Detected': node.cycle_detected ? 'Yes' : '',
   })
-  for (const child of node.children) flatten(child, rows)
+  for (const child of node.children) flatten(child, rows, basis)
 }
 
-export async function exportExplodeTree(root: ExplodeNode, asOfDate: string): Promise<void> {
+export async function exportExplodeTree(root: ExplodeNode, asOfDate: string, basis: number): Promise<void> {
   const XLSX = await import('xlsx')
   const rows: ExplodeRow[] = []
-  flatten(root, rows)
+  flatten(root, rows, basis)
   const sheet = XLSX.utils.json_to_sheet(rows)
   const book = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(book, sheet, 'BOM Explosion')
