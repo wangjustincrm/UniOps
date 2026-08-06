@@ -35,7 +35,7 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
 PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "epms.invoice.match":   ("system_admin", "ap_clerk", "finance_manager", "finance_bp"),
     "epms.po.write":        ("system_admin", "procurement_officer", "procurement_manager"),
-    "epms.pa.write":        ("system_admin", "finance_bp", "finance_manager", "ap_clerk", "requester", "erp_pa_officer"),
+    "epms.pa.write":        ("system_admin", "finance_bp", "finance_manager", "ap_clerk", "requester", "erp_pa_officer", "procurement_officer"),
     "epms.gr.receive":      ("system_admin", "warehouse_staff", "procurement_officer"),
     "finance.coa.manage":   ("system_admin", "finance_manager"),
     "finance.period.close": ("system_admin", "finance_manager"),
