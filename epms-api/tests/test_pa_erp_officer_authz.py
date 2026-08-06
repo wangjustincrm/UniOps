@@ -5,9 +5,14 @@ PR" ownership rule can never grant PA creation. The erp_pa_officer additional
 role (grantable to many users, layered on any base role) both grants
 epms.pa.write and relaxes the requester-ownership 403 for PR-less NC POs.
 
-These tests prove the end-to-end effect: a plain requester cannot create the PA
-(no epms.pa.write, and no ownership), while the SAME base-requester carrying the
-erp_pa_officer role can.
+These tests prove the end-to-end effect: a plain requester is blocked by the
+ownership rule (the PO is not linked to a PR they raised, and they hold none of
+the roles _may_create_pa_on_behalf recognises), while the SAME base-requester
+carrying the erp_pa_officer role can. Note: within a session where
+test_pa_on_behalf_authz.py has already run, the requester may separately hold
+epms.pa.write (that file commits a requester -> epms.pa.write grant into the
+session-scoped authz tables, which are never truncated) — the 403 here is still
+the ownership rule, not the permission gate.
 """
 import uuid
 from datetime import date
