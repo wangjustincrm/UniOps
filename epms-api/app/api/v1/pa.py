@@ -20,6 +20,7 @@ from app.models.config import CompanyConfig
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pa import PaymentApplication
+from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.vendor import Vendor
 from app.schemas.config import PrepaymentConfig
@@ -69,7 +70,7 @@ async def _get_prepayment_config(db: SessionDep) -> PrepaymentConfig:
     return PrepaymentConfig.model_validate(raw)
 
 
-def _may_create_pa_on_behalf(roles: set[str], po) -> bool:
+def _may_create_pa_on_behalf(roles: set[str], po: PurchaseOrder) -> bool:
     """Whether these role codes let the caller raise a PA against `po` that is
     not linked to their own requisition.
 

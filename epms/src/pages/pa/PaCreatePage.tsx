@@ -64,10 +64,16 @@ export default function PaCreatePage() {
   const [receiptOverrideReason, setReceiptOverrideReason] = useState('')
 
   // ── Derived ────────────────────────────────────────────────────────────────
+  const myAuthz = useRolePermissions().data
+  const perms = myAuthz?.permissions
   // A plain requester may only pay against POs linked to a PR they raised — even
   // if a special role assignment (e.g. finance_bp via Role Management) widened
-  // their backend PO scope to all POs. Privileged roles keep full visibility.
-  const requesterScoped = user?.role === 'requester'
+  // their backend PO scope to all POs — UNLESS that additional role is
+  // procurement_officer, which authorises paying on anyone's behalf (see
+  // epms-api pa.py::_may_create_pa_on_behalf). Privileged roles keep full
+  // visibility.
+  const requesterScoped =
+    user?.role === 'requester' && !myAuthz?.roles?.includes('procurement_officer')
   const eligiblePos = allPos.filter((p) =>
     ['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(p.status) &&
     (p.is_prepaid || p.has_unpaid_invoice) &&
@@ -93,7 +99,6 @@ export default function PaCreatePage() {
 
   // Receipt gate — a non-prepayment PA normally requires a matched invoice backed
   // by a goods receipt. Finance-authorized users can override with a reason.
-  const perms = useRolePermissions().data?.permissions
   const hasThreeWay = poInvoices.some(
     (inv) => inv.status === 'matched' && (!!inv.gr_id || (inv.gr_ids?.length ?? 0) > 0),
   )

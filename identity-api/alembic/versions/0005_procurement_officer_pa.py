@@ -40,6 +40,9 @@ def upgrade() -> None:
         f"VALUES ('{_KEY}','epms','Create / Edit PAs',102) "
         "ON CONFLICT (key) DO NOTHING")
     op.execute(
+        "INSERT INTO role_defs(code,label,sort,is_active) "
+        f"VALUES ('{_ROLE}','Procurement Officer',100,true) ON CONFLICT (code) DO NOTHING")
+    op.execute(
         "INSERT INTO role_permissions(role_code,permission_key) "
         f"VALUES ('{_ROLE}','{_KEY}') ON CONFLICT DO NOTHING")
 
@@ -47,6 +50,11 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Only the grant this migration added. permission_defs / role_defs are
     # shared with the seed scripts and other roles' grants — leave them alone.
+    # In particular, do NOT delete the role_defs row: procurement_officer is a
+    # pre-existing built-in role this migration did not introduce (the upgrade()
+    # insert above only exists to satisfy role_permissions' FK on a fresh DB),
+    # so deleting it here would cascade damage well beyond what this migration
+    # granted.
     op.execute(
         f"DELETE FROM role_permissions WHERE role_code = '{_ROLE}' "
         f"AND permission_key = '{_KEY}'")
