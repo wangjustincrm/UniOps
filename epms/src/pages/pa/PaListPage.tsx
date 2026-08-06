@@ -10,6 +10,7 @@ import { compareByStatusThenStep } from '@/lib/currentStepSort'
 import { usePas } from '@/hooks/usePas'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useAuthStore } from '@/stores/auth.store'
+import { useRolePermissions } from '@/hooks/useConfig'
 import type { PaStatus, ApiPa } from '@/services/pa'
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -114,7 +115,12 @@ export default function PaListPage() {
       : <ChevronDown className="h-3 w-3 text-primary-600" />
   }
 
-  const canCreate = ['ap_clerk', 'procurement_officer', 'procurement_manager', 'requester', 'system_admin'].includes(user?.role ?? '')
+  // Driven by the Access Control Matrix (epms.pa.write), not a hardcoded role
+  // list: the same key gates POST /pa, so the button and the endpoint can no
+  // longer disagree — and it picks up additional roles, which a base-role check
+  // cannot see.
+  const perms = useRolePermissions().data?.permissions
+  const canCreate = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
 
   const handleFilterChange = (value: string) => {
     setStatusFilter(value)

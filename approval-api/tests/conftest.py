@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
 from app.models.pa import PaymentApplication
+from app.models.po import PurchaseOrder
 from app.models.posting import PostingEvent, PostingLine
 from app.models.pr import PurchaseRequest
 from app.models.routing import ApprovalBackup, DeptRouting
@@ -67,6 +68,7 @@ _ENGINE_TABLES = [
     User.__table__,
     CompanyConfig.__table__,
     PaymentApplication.__table__,
+    PurchaseOrder.__table__,
     PurchaseRequest.__table__,
     Task.__table__,
     ApprovalEvent.__table__,
