@@ -118,6 +118,15 @@ export interface MatrixGridProps {
    * onSelect). `anchorEl` is the clicked button, for a caller-owned portal
    * popover to position itself against (e.g. Sales Forecast's
    * CellHistoryPopover). Omit to render no affordance at all.
+   *
+   * Deliberate exception to the app's usual >=44px touch-target rule: this
+   * renders once per cell on a dense spreadsheet grid whose rows are only
+   * ROW_HEIGHT (32px) tall, so a 44px hit area would have to overflow ~12px
+   * into the row above (same column) — a real mis-click vector (clicking
+   * near the bottom of one row would silently fire the row *below's*
+   * history instead of selecting/editing the cell you meant to hit). A
+   * small, precisely-bounded target that never leaves its own cell is the
+   * safer trade-off here; see the `p-1` sizing at each render site below.
    */
   onCellHistoryClick?: (rowId: string, colId: string, anchorEl: HTMLElement) => void
 }
@@ -812,7 +821,7 @@ function MatrixCell({
             onClick={onHistoryClick}
             aria-label="View change history"
             title="View change history"
-            className="absolute bottom-0 right-0 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-300 hover:text-primary-600"
+            className="absolute bottom-0 right-0 p-1 text-neutral-300 hover:text-primary-600"
           >
             <History aria-hidden className="h-2.5 w-2.5" />
           </button>
@@ -875,7 +884,7 @@ function MatrixCell({
           onClick={onHistoryClick}
           aria-label="View change history"
           title="View change history"
-          className="absolute bottom-0 right-0 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-300 hover:text-primary-600"
+          className="absolute bottom-0 right-0 p-1 text-neutral-300 hover:text-primary-600"
         >
           <History aria-hidden className="h-2.5 w-2.5" />
         </button>
