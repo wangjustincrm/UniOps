@@ -213,7 +213,19 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
       // Line items
       if (fields.lineItems && fields.lineItems.length > 0) {
-        setLineItems(fields.lineItems)
+        // Same normalisation point as the amount/taxAmount prefill above — the
+        // only place OCR sign-flipping happens. A uniform negation (not abs()):
+        // credit notes can legitimately mix signs (e.g. +100 credit, -10
+        // restocking fee, header -90); negating every line by -1 preserves the
+        // relative signs and keeps quantity * unit_price === line_total, while
+        // still summing to the now-positive header. abs() would break that —
+        // it would turn +100/-10 into 100/10, summing to 110, not 90.
+        const headerWasNegative = fields.amount !== null && fields.amount < 0
+        const neg = (n: number) => (n === 0 ? 0 : -n)   // avoid -0
+        const items = detected && headerWasNegative
+          ? fields.lineItems.map((li) => ({ ...li, unit_price: neg(li.unit_price), line_total: neg(li.line_total) }))
+          : fields.lineItems
+        setLineItems(items)
         filled.add('lineItems')
       }
 
@@ -292,7 +304,11 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       )
       return
     }
-    if (isDuplicate) return
+    // isDuplicate checks vendorInvoiceNumber against the regular-invoice list —
+    // not meaningful for credit notes, whose numbers live in a separate
+    // namespace. finance-api does its own duplicate detection for credits
+    // (409 with the existing credit named), surfaced in the catch below.
+    if (docType === 'invoice' && isDuplicate) return
 
     if (docType === 'credit_note') {
       try {
