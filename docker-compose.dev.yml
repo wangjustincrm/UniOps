@@ -75,6 +75,16 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
+      # epms-api computes its connection string from POSTGRES_* as a @property
+      # and IGNORES DATABASE_URL (app/core/config.py:52). This block overrides
+      # x-python-base wholesale -- YAML `<<:` does not deep-merge -- so every
+      # POSTGRES_* the app reads must be repeated here. Omitting the password
+      # silently fell back to the "epms_dev" default: every DB call failed auth
+      # while /health (which touches no DB) still reported healthy.
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: epms
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: epms
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: "0"
