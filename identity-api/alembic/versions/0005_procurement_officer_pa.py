@@ -39,9 +39,17 @@ def upgrade() -> None:
         "INSERT INTO permission_defs(key,module,label,sort) "
         f"VALUES ('{_KEY}','epms','Create / Edit PAs',102) "
         "ON CONFLICT (key) DO NOTHING")
+    # label/sort must mirror seed_authz.ROLE_LABELS — procurement_officer is a
+    # built-in role seeded by enumerate(ROLE_LABELS) there, sitting at index 7
+    # (requester=0, dept_admin=1, dept_manager=2, supervisor=3, director=4,
+    # gm=5, opm=6, procurement_officer=7). Both inserts are ON CONFLICT DO
+    # NOTHING, so whichever of this migration / seed_authz runs first on a
+    # fresh DB wins — keeping the values identical means it doesn't matter
+    # which one that is; a wrong sort here would otherwise pin the role out of
+    # its built-in position in the Portal -> Access Control matrix forever.
     op.execute(
         "INSERT INTO role_defs(code,label,sort,is_active) "
-        f"VALUES ('{_ROLE}','Procurement Officer',100,true) ON CONFLICT (code) DO NOTHING")
+        f"VALUES ('{_ROLE}','Procurement Officer',7,true) ON CONFLICT (code) DO NOTHING")
     op.execute(
         "INSERT INTO role_permissions(role_code,permission_key) "
         f"VALUES ('{_ROLE}','{_KEY}') ON CONFLICT DO NOTHING")
