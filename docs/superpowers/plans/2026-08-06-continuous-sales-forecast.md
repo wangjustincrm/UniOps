@@ -286,18 +286,15 @@ A finished good can be forecast before its BOM exists. Allow it (already allowed
 
 ## Task 10: MPS release-safety with coexisting outlook snapshots (ripple from T4)
 
-Removing the supersede invariant (T4) means many `ForecastVersion`s are `confirmed` forever by design. `mps.py`'s `create_run` gates only on `status=='confirmed'`, and `confirm_release` does an unconditional `delete(mrp_demands where demand_type='mps')`. Consequence: a run built off a **stale** outlook, when released, silently wipes the active MRP plan and replaces it with stale-forecast demand. **This must be resolved before the feature is used with more than one live snapshot.** ⚠️ **The business rule is a user decision (see plan handoff): is releasing a non-latest outlook allowed at all, or only the most-recently-generated one?** Implement per that decision. Default design (pending confirmation): allow generating/previewing an MPS off any outlook, but **guard the release** — warn/block when releasing a run whose `forecast_version_id` is not the latest confirmed outlook.
+Removing the supersede invariant (T4) means many `ForecastVersion`s are `confirmed` forever by design. `mps.py`'s `create_run` gates only on `status=='confirmed'`, and `confirm_release` does an unconditional `delete(mrp_demands where demand_type='mps')`. Consequence: a run built off a **stale** outlook, when released, silently wipes the active MRP plan and replaces it with stale-forecast demand. **This must be resolved before the feature is used with more than one live snapshot.** **User decision (2026-08-06): WARN BUT ALLOW** — releasing a run built off any confirmed outlook is permitted (supports deliberate rollback), but when it is **not the latest** confirmed outlook the UI must warn clearly before the planner confirms. No server-side hard block. The staleness check is **frontend-computed** (ProductionPlanPage already loads the confirmed-versions list with `confirmed_at`, and `MpsRunResponse.forecast_version_id` is present) — no backend behaviour change beyond a docstring fix.
 
 **Files:**
-- Modify: `mrp-api/app/api/v1/mps.py` (release guard + docstring/comment fix), its tests.
-- Modify: `mrp/src/pages/mps/ProductionPlanPage.tsx` (surface which outlook/anchor the run is from; surface the guard).
+- Modify: `mrp-api/app/api/v1/mps.py` (docstring/comment fix ONLY — no behaviour change).
+- Modify: `mrp/src/pages/mps/ProductionPlanPage.tsx` (surface which outlook/anchor the run is from; warn on non-latest release).
+- Test: `tsc` + (backend) the existing mps suite stays green (no new behaviour to test).
 
-**Interfaces:** depends on the user's business-rule decision; see plan Execution Handoff.
-
-- [ ] **Step 1:** Fix `mps.py`'s stale docstring/inline comment (lines ~58-60, ~493-499) — the delete-all conclusion is correct per design §8 ("one active released plan"), but its justification currently cites the removed supersede behaviour. Replace with "only one MPS lineage is meant to be live/released regardless of how many forecast versions are confirmed."
-- [ ] **Step 2 (per user decision):** add a release-safety guard in `confirm_release` (e.g. 409 or a `force` flag when `run.forecast_version_id` is not the newest `confirmed` version by `confirmed_at`), with a test proving a stale-outlook release is guarded and the latest is allowed.
-- [ ] **Step 3:** `ProductionPlanPage.tsx` shows the run's source outlook/anchor and the guard's warning. `tsc` clean; full mrp-api suite green.
-- [ ] **Step 4: Commit** `fix(mrp): guard MPS release against stale outlook snapshots`.
+- [ ] **Step 1 (backend, docstring only):** Fix `mps.py`'s stale module docstring (~lines 56-62) and the inline comment near `confirm_release`'s delete (~lines 493-499): the unconditional `delete(mrp_demands where demand_type='mps')` is correct per design §8 ("one active released plan"), but its justification currently cites the removed **supersede** behaviour. Replace with "only one MPS lineage is meant to be live/released at a time, regardless of how many forecast versions are confirmed." No code/behaviour change. `pytest tests/test_mps_api.py -q` stays green. Commit `docs(mrp): correct stale supersede rationale in mps release docstring`.
+- [ ] **Step 2 (frontend):** In `ProductionPlanPage.tsx`, look up the active run's source outlook by `run.forecast_version_id` in `confirmedVersions` and show it near the run header (e.g. `from FCV-… · anchor 2026-09`). Compute `isLatestOutlook = run.forecast_version_id === [the confirmed version with the max confirmed_at].id`. In the **Confirm & Release** `ConfirmDialog`, when `!isLatestOutlook`, render a prominent `role="alert"` warning: "This MPS was generated from an older outlook (FCV-… / anchor …), not the latest. Releasing it will overwrite the active MRP plan with that older forecast." Keep the release enabled (warn, not block). `tsc` clean. Commit `feat(mrp): warn when releasing MPS from a non-latest outlook`.
 
 ---
 
