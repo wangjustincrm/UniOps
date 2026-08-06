@@ -90,7 +90,13 @@ async def test_list_versions_paginated(client, admin_token):
 
 
 @pytest.mark.anyio
-async def test_confirm_supersedes_previous_confirmed(client, admin_token):
+async def test_confirm_does_not_supersede_previous_confirmed(client, admin_token):
+    """Continuous Sales Forecast redesign, Task 4 (design §4.3): confirming
+    a version no longer supersedes whichever version was previously
+    confirmed — outlook snapshots (app/services/demand_series.py's
+    freeze_outlook) and hand-built drafts confirmed here coexist as
+    'confirmed' at once. See tests/test_outlook.py for the freeze_outlook
+    side of this same invariant."""
     headers = {"Authorization": f"Bearer {admin_token}"}
     v1 = (await client.post(
         "/api/v1/forecast/versions", json={"horizon_start_month": "2026-09"}, headers=headers
@@ -106,7 +112,7 @@ async def test_confirm_supersedes_previous_confirmed(client, admin_token):
 
     listing = (await client.get("/api/v1/forecast/versions", params={"page_size": 50}, headers=headers)).json()
     statuses = {item["id"]: item["status"] for item in listing["items"]}
-    assert statuses[v1["id"]] == "superseded"
+    assert statuses[v1["id"]] == "confirmed"  # NOT superseded by v2's later confirm
     assert statuses[v2["id"]] == "confirmed"
 
 

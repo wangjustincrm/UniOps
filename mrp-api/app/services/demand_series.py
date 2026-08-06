@@ -1,14 +1,17 @@
-"""Continuous demand series: read grid + the single guarded write path
-(Continuous Sales Forecast redesign, plan doc
-docs/superpowers/plans/2026-08-06-continuous-sales-forecast.md, Task 2).
+"""Continuous demand series: read grid + the single guarded write path +
+freezing a window into an outlook snapshot (Continuous Sales Forecast
+redesign, plan doc
+docs/superpowers/plans/2026-08-06-continuous-sales-forecast.md, Tasks 2 & 4).
 
 `mrp_demand_series` (Task 1, `app/models/demand_series.py`) replaces the
 version-scoped `ForecastLine` grid as the one living demand table: one row
 per (material_code, absolute 'YYYY-MM' month), sparse (a row exists only for
 a non-zero cell), unbounded in time — no version_id. `ForecastVersion`/
-`ForecastLine` become frozen "outlook snapshot" tables in a later task.
+`ForecastLine` are now frozen "outlook snapshot" tables (Task 4's
+`freeze_outlook`, below) — the living series is the input, a version is one
+immutable, timestamped copy of a window of it.
 
-Two entry points:
+Three entry points:
 
 - `read_series_grid(db, from_month, to_month)` — same `GridResponse` shape
   `app/api/v1/forecast.py`'s `GET .../grid` returns (`months`, `rows` with
@@ -46,6 +49,16 @@ Two entry points:
   commits itself (same "service owns the write's atomicity" pattern
   `app/services/wms_sync/service.py` uses), so a caller never has to
   remember to commit for the guarantees above to hold.
+
+- `freeze_outlook(db, anchor_month, horizon_months, created_by)` —
+  "Generate Outlook": copies the `[anchor_month, anchor_month +
+  horizon_months)` slice of `mrp_demand_series` into a brand-new
+  `ForecastVersion` (`status='confirmed'` from creation) + its
+  `ForecastLine` rows, one per series cell in that window. Every call
+  produces an independent, immutable snapshot; it never touches a
+  previously frozen version's lines and never changes any other version's
+  status — several outlook snapshots (and hand-built drafts confirmed via
+  `app/api/v1/forecast.py`) coexist as `confirmed` at once (design §4.3).
 """
 from __future__ import annotations
 
@@ -58,6 +71,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.demand_series import MrpDemandSeries, MrpForecastChangeLog
+from app.models.forecast import ForecastLine, ForecastVersion
 from app.services.mdm_client import resolve_material_names
 
 _ZERO = Decimal("0")
@@ -250,3 +264,72 @@ async def upsert_cells(
 
     await db.commit()
     return UpsertResult(upserted=upserted, changed=changed)
+
+
+# ── Freeze: snapshot a window into an immutable ForecastVersion ────────────
+
+
+def _add_months(month: str, offset: int) -> str:
+    """`month` shifted forward `offset` (>=0) whole months, same 'YYYY-MM'
+    string arithmetic as `generate_month_range`/`_generate_months`
+    (app/api/v1/forecast.py) — used only to turn `(anchor_month,
+    horizon_months)` into the `to_month` `generate_month_range` needs."""
+    y, m = (int(p) for p in month.split("-"))
+    idx = y * 12 + (m - 1) + offset
+    y2, m2 = divmod(idx, 12)
+    return f"{y2:04d}-{m2 + 1:02d}"
+
+
+async def freeze_outlook(
+    db: AsyncSession,
+    anchor_month: str,
+    horizon_months: int,
+    created_by: uuid.UUID | None = None,
+) -> ForecastVersion:
+    """Freeze the living `mrp_demand_series` slice `[anchor_month,
+    anchor_month + horizon_months)` into a brand-new, already-`confirmed`
+    `ForecastVersion` snapshot (+ one `ForecastLine` per series cell in that
+    window — the sparse series table's own invariant already guarantees
+    every row is non-zero, see `upsert_cells`'s qty==0-deletes-the-row
+    contract, so no extra qty!=0 filter is needed here).
+
+    This is "Generate Outlook": every call mints an independent, immutable
+    snapshot — it never mutates a prior snapshot's lines (the series table
+    it reads from may keep changing after the fact; that's exactly the
+    point of freezing) and never touches any other `ForecastVersion`'s
+    status. Several outlook snapshots — and hand-built drafts confirmed via
+    `app/api/v1/forecast.py`'s `/confirm` — coexist as `confirmed` at once
+    (design §4.3); there is no more "exactly one confirmed version
+    system-wide" invariant to protect.
+    """
+    to_month = _add_months(anchor_month, horizon_months - 1)
+    months = generate_month_range(anchor_month, to_month)
+
+    rows = (await db.execute(
+        select(MrpDemandSeries).where(MrpDemandSeries.month.in_(months))
+    )).scalars().all()
+
+    version = ForecastVersion(
+        version_no=f"FCV-{anchor_month}-{uuid.uuid4().hex[:6].upper()}",
+        status="confirmed",
+        horizon_start_month=anchor_month,
+        horizon_months=horizon_months,
+        source_anchor_month=anchor_month,
+        created_by=created_by,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db.add(version)
+    await db.flush()  # assign version.id for the ForecastLine FK below
+
+    for row in rows:
+        db.add(ForecastLine(
+            version_id=version.id,
+            material_code=row.material_code,
+            month=row.month,
+            qty=row.qty,
+            uom=row.uom,
+        ))
+
+    await db.commit()
+    await db.refresh(version)
+    return version

@@ -27,18 +27,29 @@ that service's two named exceptions onto HTTP.
   `mrp_forecast_change_log` rows for one material, newest first. `month` is
   optional: omitted returns every month's history for that material.
 
-Read endpoints are gated `mrp.report.view`, the write endpoint
+- `POST /series/outlook` — "Generate Outlook" (Task 4): freezes
+  `[anchor_month, anchor_month + horizon_months)` of the living series into
+  a new immutable `mrp_forecast_versions` snapshot via
+  `app/services/demand_series.py::freeze_outlook`, returned in the same
+  `ForecastVersionResponse` shape `forecast.py`'s `POST /versions` returns
+  (reused as-is, not redefined here). Does not supersede any other
+  version — see `freeze_outlook`'s docstring and `forecast.py`'s `/confirm`
+  handler, which lost that behaviour in this same task.
+
+Read endpoints are gated `mrp.report.view`, the write endpoints
 `mrp.demand.write` — same two keys `forecast.py`/`consignment.py` use.
 """
+import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 
+from app.api.v1.forecast import ForecastVersionResponse
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
 from app.models.demand_series import MrpForecastChangeLog
@@ -46,6 +57,7 @@ from app.services.demand_series import (
     CellChange,
     PastMonthError,
     UomError,
+    freeze_outlook,
     read_series_grid,
     upsert_cells,
 )
@@ -112,6 +124,25 @@ class ChangeLogResponse(BaseModel):
     items: list[ChangeLogItem]
 
 
+class OutlookFreezeRequest(BaseModel):
+    anchor_month: str
+    horizon_months: int = 18
+
+    @field_validator("anchor_month")
+    @classmethod
+    def _valid_anchor_month(cls, v: str) -> str:
+        if not re.match(_MONTH_PATTERN, v):
+            raise ValueError("anchor_month must be 'YYYY-MM'")
+        return v
+
+    @field_validator("horizon_months")
+    @classmethod
+    def _positive_horizon(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("horizon_months must be >= 1")
+        return v
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -174,3 +205,11 @@ async def get_change_log(
     stmt = stmt.order_by(MrpForecastChangeLog.changed_at.desc())
     rows = (await db.execute(stmt)).scalars().all()
     return {"items": rows}
+
+
+@router.post("/outlook", response_model=ForecastVersionResponse, status_code=status.HTTP_201_CREATED)
+async def post_outlook(body: OutlookFreezeRequest, db: SessionDep, payload: WriteDep):
+    created_by = _sub_to_uuid(payload)
+    return await freeze_outlook(
+        db, body.anchor_month, body.horizon_months, created_by=created_by,
+    )

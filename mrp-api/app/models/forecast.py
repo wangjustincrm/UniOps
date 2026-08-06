@@ -7,10 +7,14 @@ month list server-side from these two fields (see
 app/api/v1/forecast.py::_generate_months); it is never persisted as its own
 list and never trusted from a client request body.
 
-Exactly one version may hold status='confirmed' at a time system-wide:
-confirming a version supersedes whichever version was previously confirmed
-(see the /confirm endpoint). 'draft' versions are freely writable via the
-grid cell API; 'confirmed'/'superseded' versions are immutable (writes 409).
+Several versions may hold status='confirmed' at once (Continuous Sales
+Forecast redesign, Task 4, design §4.3): confirming a version — whether via
+the /confirm endpoint or `app/services/demand_series.py::freeze_outlook`'s
+"Generate Outlook" snapshot — no longer supersedes any other confirmed
+version; 'superseded' is a legacy status a version could carry from before
+this change, never assigned by current code. 'draft' versions are freely
+writable via the grid cell API; 'confirmed'/'superseded' versions are
+immutable (writes 409).
 
 `ForecastLine.freeze_flag` marks a single (material_code, month) cell as
 locked against the bulk-upsert endpoint — used to protect a manually

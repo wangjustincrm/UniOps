@@ -36,7 +36,6 @@ from typing import Annotated
 
 import anyio
 import httpx
-import sqlalchemy as sa
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
@@ -371,14 +370,11 @@ async def confirm_version(version_id: uuid.UUID, db: SessionDep, _: WriteDep):
     version = await _get_version_or_404(db, version_id)
     _require_draft(version)
 
-    # Only one version is 'confirmed' system-wide at a time — confirming
-    # this one supersedes whichever version currently holds that status.
-    await db.execute(
-        sa.update(ForecastVersion)
-        .where(ForecastVersion.status == "confirmed")
-        .values(status="superseded")
-    )
-
+    # No longer supersedes any other 'confirmed' version (Continuous Sales
+    # Forecast redesign, Task 4, design §4.3): outlook snapshots
+    # (app/services/demand_series.py::freeze_outlook) and hand-built drafts
+    # confirmed here now coexist as 'confirmed' at once — there is no more
+    # "exactly one confirmed version system-wide" invariant to protect.
     version.status = "confirmed"
     version.confirmed_at = datetime.now(timezone.utc)
     await db.commit()
