@@ -27,14 +27,16 @@ import { Undo2, Redo2, Lock, AlertTriangle } from 'lucide-react'
 import { Button, Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
-  initHistory, commitCells, undo as undoHistory, redo as redoHistory,
-  currentCells, originalCells, canUndo as historyCanUndo, canRedo as historyCanRedo,
+  initHistory, commitCells, commitCellsAndRows, undo as undoHistory, redo as redoHistory,
+  currentCells, originalCells, currentExtraRows, canUndo as historyCanUndo, canRedo as historyCanRedo,
   type CellValueMap,
 } from './matrixGrid/history'
 import {
   cellKey, isMultiCellPaste, planPaste, applyPasteUpdates, formatPasteReport,
+  isFullTablePaste, planFullTablePaste, formatFullTablePasteReport,
   selectionToTsv, normalizeRange,
-  type GridRow, type GridCol, type PastePlan, type PasteAnchor, type RangeSelection,
+  type GridRow, type GridCol, type PastePlan, type FullTablePastePlan,
+  type PasteAnchor, type RangeSelection, type MaterialResolver,
 } from './matrixGrid/pasteLogic'
 import { ConfirmDialog } from './ConfirmDialog'
 
@@ -43,6 +45,11 @@ export type { GridRow, GridCol }
 const ROW_HEIGHT = 32
 const OVERSCAN = 8
 const CONFIRM_THRESHOLD = 100
+
+/** A paste plan awaiting the >100-cell confirmation dialog — either shape (see the paste handler below). */
+type PendingPastePlan =
+  | { kind: 'rect'; plan: PastePlan }
+  | { kind: 'fullTable'; plan: FullTablePastePlan }
 
 export interface MatrixGridProps {
   rows: GridRow[]
@@ -87,6 +94,16 @@ export interface MatrixGridProps {
    * shown while `readOnly`.
    */
   rowActions?: (row: GridRow) => ReactNode
+  /**
+   * Looks up a pasted product code against known materials. When supplied,
+   * a multi-cell paste whose first column resolves through this (rather
+   * than parsing as a number) is planned as a row-creating "full-table"
+   * paste instead of the rectangular numeric-block paste — see
+   * matrixGrid/pasteLogic.ts's isFullTablePaste/planFullTablePaste. Omit to
+   * keep this grid purely numeric (no product-code concept), which is what
+   * every other MatrixGrid caller besides ForecastPage wants.
+   */
+  resolveMaterial?: MaterialResolver
 }
 
 function defaultFormat(n: number): string {
@@ -99,10 +116,11 @@ interface FocusCell {
 }
 
 export function MatrixGrid({
-  rows, cols, value, onChange, frozenKeys, readOnly = false, height = 480,
+  rows: rowsProp, cols, value, onChange, frozenKeys, readOnly = false, height = 480,
   rowHeaderLabel = 'Row', rowTotalLabel = 'Total', colTotalLabel = 'Total',
   formatValue = defaultFormat,
   focusRequest = null, onFocusRequestHandled, clearRowId = null, onRowCleared, rowActions,
+  resolveMaterial,
 }: MatrixGridProps) {
   const frozen = frozenKeys ?? EMPTY_FROZEN
   const [history, setHistory] = useState(() => initHistory(new Map(value)))
@@ -110,6 +128,21 @@ export function MatrixGrid({
   const original = originalCells(history)
   const canUndo = historyCanUndo(history)
   const canRedo = historyCanRedo(history)
+  // Rows a full-table paste created this session, merged onto the caller's
+  // `rows` prop for rendering/nav/totals purposes. They live in `history`
+  // (see history.ts's Snapshot.extraRows) rather than component state so
+  // undo/redo reverts a paste's new rows together with its cell values —
+  // one paste, one undo step, per the design spec. Deduped against
+  // `rowsProp` so a row that lands for real (e.g. after Save Draft's
+  // refetch remounts this component with a fresh `key`) isn't shown twice
+  // for the one render before remount actually happens.
+  const pasteExtraRows = currentExtraRows(history)
+  const rows = useMemo(() => {
+    if (pasteExtraRows.length === 0) return rowsProp
+    const known = new Set(rowsProp.map((r) => r.id))
+    const extra = pasteExtraRows.filter((r) => !known.has(r.id))
+    return extra.length === 0 ? rowsProp : [...rowsProp, ...extra]
+  }, [rowsProp, pasteExtraRows])
 
   const [focus, setFocus] = useState<FocusCell | null>(null)
   const [selEnd, setSelEnd] = useState<FocusCell | null>(null)
@@ -127,7 +160,7 @@ export function MatrixGrid({
   // dialog's summary is always an accurate description of what Confirm
   // will do; the user must Confirm or Cancel it before touching anything
   // else. `locked` below is the single source of truth for this gate.
-  const [confirmPlan, setConfirmPlan] = useState<PastePlan | null>(null)
+  const [confirmPlan, setConfirmPlan] = useState<PendingPastePlan | null>(null)
   const locked = confirmPlan !== null
 
   // Emit changes to the parent on every committed history step.
@@ -232,7 +265,7 @@ export function MatrixGrid({
 
   // ── Apply a paste plan (shared by direct-apply and confirm-then-apply) ──
 
-  const applyPlan = useCallback((plan: PastePlan) => {
+  const applyRectPlan = useCallback((plan: PastePlan) => {
     if (plan.updates.length > 0) {
       applyUpdater((prev) => applyPasteUpdates(prev, plan.updates))
     }
@@ -248,14 +281,43 @@ export function MatrixGrid({
     setReport(formatPasteReport(plan))
   }, [applyUpdater, rows, cols])
 
-  // ── Excel paste — window-level listener gated on a focused anchor cell ──
+  // Row-creating paste: commits the new rows AND their cell values as one
+  // history snapshot (commitCellsAndRows, not commitCells) — that's what
+  // makes rows-created-plus-values a single undo step, per the design spec.
+  const applyFullTablePlan = useCallback((plan: FullTablePastePlan) => {
+    setHistory((h) => commitCellsAndRows(h, (prev) => {
+      const cells = plan.updates.length > 0 ? applyPasteUpdates(prev.cells, plan.updates) : prev.cells
+      if (plan.newRows.length === 0) return { cells, extraRows: prev.extraRows }
+      const known = new Set([...rows.map((r) => r.id), ...prev.extraRows.map((r) => r.id)])
+      const toAdd = plan.newRows.filter((r) => !known.has(r.id))
+      const extraRows = toAdd.length === 0 ? prev.extraRows : [...prev.extraRows, ...toAdd]
+      return { cells, extraRows }
+    }))
+    if (plan.invalidCells.length > 0) {
+      setInvalidByKey((prevMap) => {
+        const next = new Map(prevMap)
+        for (const ic of plan.invalidCells) next.set(ic.key, ic.raw)
+        return next
+      })
+    }
+    setReport(formatFullTablePasteReport(plan))
+  }, [rows])
+
+  // ── Excel paste — window-level listener ──────────────────────────────
   // Mirrors epms BreakdownMatrixModal.tsx lines 327-370: only intercept
   // multi-cell pastes (tab or newline present); single-cell paste falls
   // through to the native input so default browser behaviour is kept.
+  //
+  // Two shapes, checked in this order:
+  //  1. Full-table (row-creating): first column resolves to a known
+  //     material via `resolveMaterial` rather than parsing as a number.
+  //     Needs no focused cell — it can create rows from scratch on an
+  //     empty grid, which is the whole point (see pasteLogic.ts header).
+  //  2. Rectangular numeric block anchored at the focused cell (today's
+  //     behaviour) — requires `focus`, unchanged from before.
   useEffect(() => {
     if (readOnly) return
     const handler = (e: ClipboardEvent) => {
-      if (!focus) return
       // A previous large paste is still awaiting Confirm/Cancel — ignore
       // this paste entirely rather than planning and applying it under the
       // dialog. See the `locked`/`confirmPlan` comment above for why
@@ -263,19 +325,36 @@ export function MatrixGrid({
       if (locked) return
       const text = e.clipboardData?.getData('text/plain') ?? ''
       if (!isMultiCellPaste(text)) return
+
+      if (resolveMaterial && isFullTablePaste(text, resolveMaterial)) {
+        e.preventDefault()
+        const existingRowIds = new Set(rows.map((r) => r.id))
+        const plan = planFullTablePaste(text, cols, resolveMaterial, existingRowIds, frozen)
+        const nothingToDo = plan.updates.length === 0 && plan.newRows.length === 0
+          && plan.skippedRows === 0 && plan.skippedFrozen === 0 && plan.invalidCells.length === 0
+        if (nothingToDo) return
+        if (plan.totalCells > CONFIRM_THRESHOLD) {
+          setConfirmPlan({ kind: 'fullTable', plan })
+        } else {
+          applyFullTablePlan(plan)
+        }
+        return
+      }
+
+      if (!focus) return
       e.preventDefault()
       const anchor: PasteAnchor = { rowIdx: focus.rowIdx, colIdx: focus.colIdx }
       const plan = planPaste(text, anchor, rows, cols, frozen)
       if (plan.updates.length === 0 && plan.skippedFrozen === 0 && plan.invalidCells.length === 0) return
       if (plan.totalCells > CONFIRM_THRESHOLD) {
-        setConfirmPlan(plan)
+        setConfirmPlan({ kind: 'rect', plan })
       } else {
-        applyPlan(plan)
+        applyRectPlan(plan)
       }
     }
     window.addEventListener('paste', handler)
     return () => window.removeEventListener('paste', handler)
-  }, [readOnly, focus, rows, cols, frozen, applyPlan, locked])
+  }, [readOnly, focus, rows, cols, frozen, resolveMaterial, applyRectPlan, applyFullTablePlan, locked])
 
   // ── Copy — Ctrl+C emits TSV for the current selection ───────────────────
   const copySelection = useCallback(() => {
@@ -423,7 +502,9 @@ export function MatrixGrid({
             <Redo2 className="h-3.5 w-3.5" />
           </Button>
           <span className="text-xs text-neutral-400">
-            Click a cell, Tab/arrows to move, Enter moves down · paste a block from Excel · Ctrl+Z/Y undo/redo · select a range + Ctrl+C to copy
+            Click a cell, Tab/arrows to move, Enter moves down · paste a block from Excel
+            {resolveMaterial && ', or paste a full table (product code, optional name, month values) to add new product rows — even on an empty grid'}
+            {' '}· Ctrl+Z/Y undo/redo · select a range + Ctrl+C to copy
           </span>
         </div>
       )}
@@ -444,7 +525,7 @@ export function MatrixGrid({
         </div>
       )}
 
-      {confirmPlan && (
+      {confirmPlan && confirmPlan.kind === 'rect' && (
         // Reuses the shared ConfirmDialog (portal + backdrop) instead of the
         // inline banner this used to be — the backdrop is also what makes
         // the "gate mouse interaction with the grid" half of `locked` work
@@ -452,27 +533,57 @@ export function MatrixGrid({
         // the keyboard half a backdrop alone can't cover.
         <ConfirmDialog
           title="Large paste — confirm before applying"
-          confirmLabel={`Apply ${confirmPlan.updates.length} cell${confirmPlan.updates.length === 1 ? '' : 's'}`}
+          confirmLabel={`Apply ${confirmPlan.plan.updates.length} cell${confirmPlan.plan.updates.length === 1 ? '' : 's'}`}
           onCancel={() => setConfirmPlan(null)}
           onConfirm={() => {
-            applyPlan(confirmPlan)
+            applyRectPlan(confirmPlan.plan)
             setConfirmPlan(null)
           }}
         >
           <p className="flex items-start gap-1.5 text-warning-800">
             <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
             <span>
-              This paste affects <strong>{confirmPlan.affectedRows}</strong> row{confirmPlan.affectedRows === 1 ? '' : 's'} x{' '}
-              <strong>{confirmPlan.affectedCols}</strong> column{confirmPlan.affectedCols === 1 ? '' : 's'} ={' '}
-              <strong>{confirmPlan.totalCells}</strong> cells.
-              {confirmPlan.skippedFrozen > 0 && <> {confirmPlan.skippedFrozen} of those are frozen and will be skipped.</>}
-              {confirmPlan.invalidCells.length > 0 && <> {confirmPlan.invalidCells.length} cell(s) are not valid numbers and will be flagged, not applied.</>}
+              This paste affects <strong>{confirmPlan.plan.affectedRows}</strong> row{confirmPlan.plan.affectedRows === 1 ? '' : 's'} x{' '}
+              <strong>{confirmPlan.plan.affectedCols}</strong> column{confirmPlan.plan.affectedCols === 1 ? '' : 's'} ={' '}
+              <strong>{confirmPlan.plan.totalCells}</strong> cells.
+              {confirmPlan.plan.skippedFrozen > 0 && <> {confirmPlan.plan.skippedFrozen} of those are frozen and will be skipped.</>}
+              {confirmPlan.plan.invalidCells.length > 0 && <> {confirmPlan.plan.invalidCells.length} cell(s) are not valid numbers and will be flagged, not applied.</>}
             </span>
           </p>
           <div className="flex items-center gap-2 flex-wrap">
-            {confirmPlan.skippedFrozen > 0 && <Badge variant="neutral">{confirmPlan.skippedFrozen} frozen skipped</Badge>}
-            {confirmPlan.invalidCells.length > 0 && <Badge variant="danger">{confirmPlan.invalidCells.length} invalid</Badge>}
-            {(confirmPlan.clippedRows || confirmPlan.clippedCols) && <Badge variant="warning">clipped to grid bounds</Badge>}
+            {confirmPlan.plan.skippedFrozen > 0 && <Badge variant="neutral">{confirmPlan.plan.skippedFrozen} frozen skipped</Badge>}
+            {confirmPlan.plan.invalidCells.length > 0 && <Badge variant="danger">{confirmPlan.plan.invalidCells.length} invalid</Badge>}
+            {(confirmPlan.plan.clippedRows || confirmPlan.plan.clippedCols) && <Badge variant="warning">clipped to grid bounds</Badge>}
+          </div>
+        </ConfirmDialog>
+      )}
+
+      {confirmPlan && confirmPlan.kind === 'fullTable' && (
+        <ConfirmDialog
+          title="Large paste — confirm before applying"
+          confirmLabel={`Apply ${confirmPlan.plan.updates.length} cell${confirmPlan.plan.updates.length === 1 ? '' : 's'}${confirmPlan.plan.newRows.length > 0 ? ` (${confirmPlan.plan.newRows.length} new row${confirmPlan.plan.newRows.length === 1 ? '' : 's'})` : ''}`}
+          onCancel={() => setConfirmPlan(null)}
+          onConfirm={() => {
+            applyFullTablePlan(confirmPlan.plan)
+            setConfirmPlan(null)
+          }}
+        >
+          <p className="flex items-start gap-1.5 text-warning-800">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              This paste affects <strong>{confirmPlan.plan.totalRows}</strong> product row{confirmPlan.plan.totalRows === 1 ? '' : 's'}
+              {' '}(<strong>{confirmPlan.plan.newRows.length}</strong> new) across <strong>{confirmPlan.plan.updates.length}</strong> cells.
+              {confirmPlan.plan.skippedRows > 0 && <> {confirmPlan.plan.skippedRows} row(s) will be skipped — unknown product code.</>}
+              {confirmPlan.plan.skippedFrozen > 0 && <> {confirmPlan.plan.skippedFrozen} cell(s) are frozen and will be skipped.</>}
+              {confirmPlan.plan.invalidCells.length > 0 && <> {confirmPlan.plan.invalidCells.length} cell(s) are not valid numbers and will be flagged, not applied.</>}
+            </span>
+          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            {confirmPlan.plan.newRows.length > 0 && <Badge variant="info">{confirmPlan.plan.newRows.length} new row{confirmPlan.plan.newRows.length === 1 ? '' : 's'}</Badge>}
+            {confirmPlan.plan.skippedRows > 0 && <Badge variant="danger">{confirmPlan.plan.skippedRows} unknown code{confirmPlan.plan.skippedRows === 1 ? '' : 's'}</Badge>}
+            {confirmPlan.plan.skippedFrozen > 0 && <Badge variant="neutral">{confirmPlan.plan.skippedFrozen} frozen skipped</Badge>}
+            {confirmPlan.plan.invalidCells.length > 0 && <Badge variant="danger">{confirmPlan.plan.invalidCells.length} invalid</Badge>}
+            {confirmPlan.plan.unmatchedMonthColumns > 0 && <Badge variant="warning">{confirmPlan.plan.unmatchedMonthColumns} month column{confirmPlan.plan.unmatchedMonthColumns === 1 ? '' : 's'} not in this version</Badge>}
           </div>
         </ConfirmDialog>
       )}

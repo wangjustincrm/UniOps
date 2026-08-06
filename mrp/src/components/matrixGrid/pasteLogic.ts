@@ -102,11 +102,18 @@ export function parseNumericCell(raw: string): CellParseResult {
   return { kind: 'value', value }
 }
 
-export interface PasteUpdate {
+/** The only fields applyPasteUpdates() actually reads — both the rectangular
+ *  PasteUpdate (below) and the full-table FullTableUpdate (further down)
+ *  carry extra bookkeeping fields, but structurally satisfy this so one
+ *  applyPasteUpdates() serves both paste shapes without a conversion step. */
+export interface CellWrite {
   key: string
+  value: number
+}
+
+export interface PasteUpdate extends CellWrite {
   rowIdx: number
   colIdx: number
-  value: number
 }
 
 export interface InvalidPasteCell {
@@ -218,7 +225,7 @@ export function planPaste(
 /** Apply a paste plan's updates onto a cell map, returning a new Map. 0 deletes the key (matches blueprint's "0 = no entry" sparse convention). */
 export function applyPasteUpdates(
   cells: ReadonlyMap<string, number>,
-  updates: PasteUpdate[],
+  updates: CellWrite[],
 ): Map<string, number> {
   const next = new Map(cells)
   for (const u of updates) {
@@ -242,6 +249,268 @@ export function formatPasteReport(plan: PastePlan): string | null {
   }
   if (plan.clippedRows || plan.clippedCols) {
     parts.push('paste clipped to grid bounds')
+  }
+  return parts.length > 0 ? parts.join(', ') : null
+}
+
+// ── Row-creating "full-table" paste ─────────────────────────────────────
+//
+// Gap this closes: a freshly created forecast version has zero rows, so
+// there is no cell to click and no anchor for the rectangular paste above
+// — a planner cannot get their 18-month Excel forecast in at all without
+// adding every product by hand first. This second paste shape lets a paste
+// carrying a product-code column create the rows it needs, in one undo
+// step, with no cell focused beforehand.
+//
+// Shape matches the Excel template this page generates: `Material Code |
+// Name | <18 months>`. Header row is optional; when present it's used to
+// align pasted month columns to the version's months by label (so a
+// planner can paste a subset, or a differently-ordered range) instead of
+// by position.
+
+/** month header cells look like `YYYY-MM` — same format GridCol.id/label use for a month column (see ForecastPage's matrixCols). */
+export const MONTH_LABEL_RE = /^\d{4}-\d{2}$/
+
+/** True if `grid[0]` contains at least one YYYY-MM cell — the signal that
+ *  the pasted block carries its own month header row rather than starting
+ *  straight into data. */
+export function hasMonthHeaderRow(grid: string[][]): boolean {
+  return grid.length > 0 && grid[0].some((cell) => MONTH_LABEL_RE.test(cell.trim()))
+}
+
+/** First data row (skipping any header row) whose leading cell isn't blank
+ *  — the row planFullTablePaste and isFullTablePaste both key their shape
+ *  decisions off of, so a stray blank leading line doesn't derail either. */
+function firstNonBlankCodeRow(dataRows: string[][]): string[] | null {
+  for (const row of dataRows) {
+    if ((row[0] ?? '').trim() !== '') return row
+  }
+  return null
+}
+
+/** A `${code}` -> resolved-row lookup, e.g. backed by mdm-api's materials
+ *  list. Returns undefined for a code that isn't a known material. Only the
+ *  return type's shape matters here — pasteLogic.ts stays framework/API
+ *  agnostic; MatrixGrid/ForecastPage supply the actual resolver. */
+export type MaterialResolver = (code: string) => { id: string; label: string } | undefined
+
+/**
+ * True if `text` should be planned as a row-creating full-table paste
+ * rather than the rectangular numeric-block paste above: the pasted
+ * block's first column holds a value that (a) doesn't parse as a plain
+ * number and (b) resolves to a known material via `resolveMaterial`.
+ * A numeric block anchored at a focused cell (today's behaviour) never
+ * satisfies both, so this cleanly falls through to planPaste() otherwise.
+ *
+ * Decisive check runs against the first non-blank data row only (matches
+ * the design spec's "the first column... holds values that resolve"
+ * literally). Known limitation: if that first row's own code is a typo
+ * that fails to resolve but later rows in the same paste would have
+ * resolved fine, this returns false and the whole paste falls through to
+ * the numeric path instead of reporting "unknown product code" for that
+ * one row — a real product-code paste with a bad first row currently reads
+ * as a no-op rather than a partial success. Acceptable for now: the
+ * common case (planner copies straight from the template, first row is a
+ * real product) is unaffected, and misclassifying an ordinary numeric
+ * paste as full-table just because its first cell happens to be
+ * non-numeric text would be the worse failure mode.
+ */
+export function isFullTablePaste(text: string, resolveMaterial: MaterialResolver): boolean {
+  const grid = parseClipboardText(text)
+  if (grid.length === 0) return false
+  const dataRows = hasMonthHeaderRow(grid) ? grid.slice(1) : grid
+  const row = firstNonBlankCodeRow(dataRows)
+  if (!row) return false
+  const firstCell = row[0].trim()
+  if (parseNumericCell(firstCell).kind === 'value') return false
+  return resolveMaterial(firstCell) !== undefined
+}
+
+/** True if `cell` reads like a product name rather than a month value —
+ *  used only when the paste has no header row, to decide (once, from the
+ *  first data row) whether column 1 is an optional Name column or already
+ *  the first month value. A blank cell defaults to "not a name" so a
+ *  blank-name paste doesn't misalign every month by one column. */
+function looksLikeNameColumn(cell: string | undefined): boolean {
+  const trimmed = (cell ?? '').trim()
+  return trimmed !== '' && parseNumericCell(trimmed).kind !== 'value'
+}
+
+export interface FullTableUpdate extends CellWrite {
+  materialCode: string
+  month: string
+}
+
+export interface FullTableInvalidCell {
+  key: string
+  materialCode: string
+  month: string
+  raw: string
+}
+
+export interface FullTablePastePlan {
+  kind: 'fullTable'
+  /** Cell writes — same convention as PastePlan.updates (blank pasted cell = skip, not zero). */
+  updates: FullTableUpdate[]
+  /** Rows to create, in first-seen paste order, deduped, excluding codes already in `existingRowIds`. */
+  newRows: GridRow[]
+  /** Unresolved codes, deduped, in first-seen order — surfaced in the paste report so they don't silently vanish. */
+  unknownCodes: string[]
+  /** Count of pasted data rows dropped because their code didn't resolve (rows that DO resolve still land, even within the same paste). */
+  skippedRows: number
+  skippedFrozen: number
+  invalidCells: FullTableInvalidCell[]
+  /** Header month labels present in the paste but not one of this version's months. */
+  unmatchedMonthColumns: number
+  /** Data rows in the pasted block (header excluded), for the paste report and the >100 confirm gate. */
+  totalRows: number
+  /** totalRows * matched month columns — same "how big is this paste" role PastePlan.totalCells plays for the rectangular path. */
+  totalCells: number
+}
+
+const EMPTY_FULL_TABLE_PLAN: FullTablePastePlan = {
+  kind: 'fullTable',
+  updates: [],
+  newRows: [],
+  unknownCodes: [],
+  skippedRows: 0,
+  skippedFrozen: 0,
+  invalidCells: [],
+  unmatchedMonthColumns: 0,
+  totalRows: 0,
+  totalCells: 0,
+}
+
+/**
+ * Build the full set of row-creations and cell-writes for a full-table
+ * paste. Pure and side-effect free, like planPaste() — MatrixGrid.tsx
+ * decides whether to apply immediately or show the >100-cell confirmation
+ * first, then commits `updates` + `newRows` as a single history step (see
+ * history.ts's commitCellsAndRows) so the whole paste — rows created plus
+ * values — is one undo step.
+ */
+export function planFullTablePaste(
+  text: string,
+  cols: GridCol[],
+  resolveMaterial: MaterialResolver,
+  existingRowIds: ReadonlySet<string>,
+  frozenKeys: ReadonlySet<string>,
+): FullTablePastePlan {
+  const grid = parseClipboardText(text)
+  if (grid.length === 0) return EMPTY_FULL_TABLE_PLAN
+
+  const hasHeader = hasMonthHeaderRow(grid)
+  const dataRows = hasHeader ? grid.slice(1) : grid
+  if (dataRows.length === 0) return EMPTY_FULL_TABLE_PLAN
+
+  // Column plan: which pasted column index holds which target month. The
+  // optional Name column (if present) only matters here for figuring out
+  // where the month values start — its text, if any, is never used as the
+  // row label (see the resolved.label comment below).
+  let monthColIndexes: Map<number, string>
+  let unmatchedMonthColumns = 0
+
+  if (hasHeader) {
+    const headerRow = grid[0]
+    monthColIndexes = new Map()
+    for (let c = 1; c < headerRow.length; c++) {
+      const cell = (headerRow[c] ?? '').trim()
+      if (MONTH_LABEL_RE.test(cell)) {
+        if (cols.some((col) => col.id === cell)) monthColIndexes.set(c, cell)
+        else unmatchedMonthColumns++
+      }
+      // A non-month cell (e.g. "Name") before the first matched month
+      // header needs no special handling here — it's simply never in
+      // monthColIndexes, so the update loop below skips reading it.
+    }
+  } else {
+    const anchorRow = firstNonBlankCodeRow(dataRows)
+    const hasName = looksLikeNameColumn(anchorRow?.[1])
+    const startIdx = hasName ? 2 : 1
+    monthColIndexes = new Map(cols.map((col, i) => [startIdx + i, col.id]))
+  }
+
+  const updates: FullTableUpdate[] = []
+  const invalidCells: FullTableInvalidCell[] = []
+  const newRows: GridRow[] = []
+  const newRowIds = new Set<string>()
+  const unknownCodesSeen = new Set<string>()
+  const unknownCodes: string[] = []
+  let skippedRows = 0
+  let skippedFrozen = 0
+
+  for (const row of dataRows) {
+    const rawCode = (row[0] ?? '').trim()
+    if (rawCode === '') continue // fully blank line — not an error, just skipped
+
+    const resolved = resolveMaterial(rawCode)
+    if (!resolved) {
+      if (!unknownCodesSeen.has(rawCode)) {
+        unknownCodesSeen.add(rawCode)
+        unknownCodes.push(rawCode)
+      }
+      skippedRows++
+      continue
+    }
+
+    if (!existingRowIds.has(resolved.id) && !newRowIds.has(resolved.id)) {
+      // The resolver's own label (materials master) is authoritative, not
+      // the pasted Name text — that column only exists here to disambiguate
+      // where the month values start (see nameColIndex above); a stale or
+      // blank pasted name shouldn't override the real product name.
+      newRowIds.add(resolved.id)
+      newRows.push({ id: resolved.id, label: resolved.label })
+    }
+
+    for (const [pastedIdx, colId] of monthColIndexes) {
+      const raw = row[pastedIdx]
+      if (raw === undefined) continue
+      const parsed = parseNumericCell(raw)
+      if (parsed.kind === 'blank') continue // skip — do not zero out
+      const key = cellKey(resolved.id, colId)
+      if (frozenKeys.has(key)) { skippedFrozen++; continue }
+      if (parsed.kind === 'invalid') {
+        invalidCells.push({ key, materialCode: resolved.id, month: colId, raw })
+        continue
+      }
+      updates.push({ key, materialCode: resolved.id, month: colId, value: parsed.value })
+    }
+  }
+
+  return {
+    kind: 'fullTable',
+    updates,
+    newRows,
+    unknownCodes,
+    skippedRows,
+    skippedFrozen,
+    invalidCells,
+    unmatchedMonthColumns,
+    totalRows: dataRows.length,
+    totalCells: dataRows.length * monthColIndexes.size,
+  }
+}
+
+/** Human-readable one-line summary for the paste report — full-table counterpart of formatPasteReport(). */
+export function formatFullTablePasteReport(plan: FullTablePastePlan): string | null {
+  const parts: string[] = []
+  if (plan.updates.length > 0) {
+    parts.push(`${plan.updates.length} cell${plan.updates.length === 1 ? '' : 's'} updated`)
+  }
+  if (plan.newRows.length > 0) {
+    parts.push(`${plan.newRows.length} new product row${plan.newRows.length === 1 ? '' : 's'} added`)
+  }
+  if (plan.skippedRows > 0) {
+    parts.push(`${plan.skippedRows} row${plan.skippedRows === 1 ? '' : 's'} skipped — unknown product code: ${plan.unknownCodes.join(', ')}`)
+  }
+  if (plan.skippedFrozen > 0) {
+    parts.push(`${plan.skippedFrozen} cell${plan.skippedFrozen === 1 ? '' : 's'} skipped (frozen)`)
+  }
+  if (plan.invalidCells.length > 0) {
+    parts.push(`${plan.invalidCells.length} cell${plan.invalidCells.length === 1 ? '' : 's'} invalid (not a number)`)
+  }
+  if (plan.unmatchedMonthColumns > 0) {
+    parts.push(`${plan.unmatchedMonthColumns} pasted month column${plan.unmatchedMonthColumns === 1 ? '' : 's'} not in this version`)
   }
   return parts.length > 0 ? parts.join(', ') : null
 }

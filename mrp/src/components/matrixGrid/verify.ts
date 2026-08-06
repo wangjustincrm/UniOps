@@ -14,10 +14,12 @@
 import {
   parseClipboardText, isMultiCellPaste, parseNumericCell, planPaste,
   applyPasteUpdates, formatPasteReport, selectionToTsv, cellKey,
-  type GridRow, type GridCol,
+  hasMonthHeaderRow, isFullTablePaste, planFullTablePaste, formatFullTablePasteReport,
+  type GridRow, type GridCol, type MaterialResolver,
 } from './pasteLogic'
 import {
-  initHistory, commitCells, undo, redo, currentCells, canUndo, canRedo,
+  initHistory, commitCells, commitCellsAndRows, undo, redo,
+  currentCells, currentExtraRows, canUndo, canRedo,
 } from './history'
 
 let failures = 0
@@ -165,6 +167,156 @@ console.log('selectionToTsv')
   check('produces 2x2 TSV with blanks for missing cells', tsv === '100\t200\n300\t')
   const reparsed = parseClipboardText(tsv)
   check('re-parses to the same 2x2 shape', eq(reparsed, [['100', '200'], ['300', '']]))
+}
+
+// ── full-table (row-creating) paste ───────────────────────────────────────
+// Fixtures matching the real Sales Forecast shape: material codes and
+// YYYY-MM month columns (id === label, same as ForecastPage's matrixCols),
+// not the generic p0/m0 fixtures above.
+const ftCols: GridCol[] = ['2024-01', '2024-02', '2024-03'].map((m) => ({ id: m, label: m }))
+const materials = new Map<string, { id: string; label: string }>([
+  ['M001', { id: 'M001', label: 'M001 — Widget' }],
+  ['M002', { id: 'M002', label: 'M002 — Gadget' }],
+])
+const resolveMaterial: MaterialResolver = (code) => materials.get(code)
+
+console.log('hasMonthHeaderRow')
+check('a row with a YYYY-MM cell is a header row', hasMonthHeaderRow([['Material Code', 'Name', '2024-01'], ['M001', 'Widget', '100']]))
+check('a plain data row is not a header row', !hasMonthHeaderRow([['M001', 'Widget', '100']]))
+
+console.log('isFullTablePaste: shape detection')
+check('numeric block is NOT full-table', !isFullTablePaste('20000\t18000\n12000\t10000', resolveMaterial))
+check('known-code first column IS full-table (no header)', isFullTablePaste('M001\tWidget\t100\t200\t300', resolveMaterial))
+check('known-code first column IS full-table (with header)', isFullTablePaste(
+  'Material Code\tName\t2024-01\t2024-02\t2024-03\nM001\tWidget\t100\t200\t300', resolveMaterial,
+))
+check('unresolvable first-row code is NOT full-table (documented limitation — see isFullTablePaste doc comment)', !isFullTablePaste('ZZZZ\t100\t200', resolveMaterial))
+check('a blank leading line is skipped when finding the decisive row', isFullTablePaste('\nM001\tWidget\t100', resolveMaterial))
+check('single-cell paste is never multi-cell, so never full-table either', !isMultiCellPaste('M001'))
+
+console.log('planFullTablePaste: no header, no name column')
+{
+  const text = 'M001\t100\t200\t300\nM002\t50\t60\t70'
+  const plan = planFullTablePaste(text, ftCols, resolveMaterial, new Set(), new Set())
+  check('6 updates (2 rows x 3 months)', plan.updates.length === 6)
+  check('2 new rows, resolver label used verbatim', eq(plan.newRows, [
+    { id: 'M001', label: 'M001 — Widget' }, { id: 'M002', label: 'M002 — Gadget' },
+  ]))
+  check('no unknown codes, no skipped rows', plan.unknownCodes.length === 0 && plan.skippedRows === 0)
+  check('month values landed left-to-right from the first month (M001,2024-01=100 / M002,2024-03=70)', eq(
+    [plan.updates.find((u) => u.key === cellKey('M001', '2024-01'))?.value, plan.updates.find((u) => u.key === cellKey('M002', '2024-03'))?.value],
+    [100, 70],
+  ))
+  check('totalRows=2, totalCells=6 (2 rows x 3 matched month cols)', plan.totalRows === 2 && plan.totalCells === 6)
+}
+
+console.log('planFullTablePaste: no header, WITH name column')
+{
+  // Column 1 ("Stale Old Name") fails parseNumericCell -> detected as a
+  // Name column -> month values shift right by one, starting at column 2.
+  // The pasted names are deliberately stale/wrong here so the label check
+  // below actually proves the resolver wins, not a coincidence.
+  const text = 'M001\tStale Old Name\t100\t200\t300\nM002\tAlso Stale\t50\t60\t70'
+  const plan = planFullTablePaste(text, ftCols, resolveMaterial, new Set(), new Set())
+  check('name column correctly skipped — still 6 updates, same values as no-name case', eq(
+    plan.updates.map((u) => u.value).sort((a, b) => a - b),
+    [50, 60, 70, 100, 200, 300],
+  ))
+  check('row label comes from the resolver (materials master), NOT the stale pasted name text', eq(
+    plan.newRows.map((r) => r.label),
+    ['M001 — Widget', 'M002 — Gadget'],
+  ))
+}
+
+console.log('planFullTablePaste: header row aligns by YYYY-MM label, not position')
+{
+  // Header lists months out of order and skips 2024-02 entirely — position-
+  // based alignment would misfile these; label-based alignment must not.
+  const text = 'Material Code\tName\t2024-03\t2024-01\nM001\tWidget\t300\t100'
+  const plan = planFullTablePaste(text, ftCols, resolveMaterial, new Set(), new Set())
+  check('2024-03 pasted first column still lands on the 2024-03 target column', eq(
+    plan.updates.find((u) => u.key === cellKey('M001', '2024-03'))?.value, 300,
+  ))
+  check('2024-01 pasted second column still lands on the 2024-01 target column', eq(
+    plan.updates.find((u) => u.key === cellKey('M001', '2024-01'))?.value, 100,
+  ))
+  check('2024-02 was never pasted, so no update for it', !plan.updates.some((u) => u.key === cellKey('M001', '2024-02')))
+  check('totalCells reflects only the 2 matched month columns (2 rows if there were 2, here 1 row x 2 cols = 2)', plan.totalCells === 2)
+}
+
+console.log('planFullTablePaste: header names a month this version does not have')
+{
+  const text = 'Material Code\tName\t2024-01\t2099-12\nM001\tWidget\t100\t999'
+  const plan = planFullTablePaste(text, ftCols, resolveMaterial, new Set(), new Set())
+  check('2024-01 still applied', plan.updates.some((u) => u.key === cellKey('M001', '2024-01') && u.value === 100))
+  check('2099-12 not in this version -> 1 unmatched month column, no update for it', plan.unmatchedMonthColumns === 1 && !plan.updates.some((u) => u.value === 999))
+}
+
+console.log('planFullTablePaste: unknown codes reported, not silently dropped; resolvable rows still land')
+{
+  const text = 'M001\t100\t200\t300\nBADCODE\t1\t2\t3\nM002\t50\t60\t70\nBADCODE\t9\t9\t9'
+  const plan = planFullTablePaste(text, ftCols, resolveMaterial, new Set(), new Set())
+  check('2 rows skipped (both BADCODE lines), deduped to 1 unknown code', plan.skippedRows === 2 && eq(plan.unknownCodes, ['BADCODE']))
+  check('M001 and M002 still land despite the interleaved bad rows', eq(
+    [...new Set(plan.updates.map((u) => u.materialCode))].sort(),
+    ['M001', 'M002'],
+  ))
+  const report = formatFullTablePasteReport(plan)
+  check('report matches the spec\'s example phrasing ("N rows skipped — unknown product code: ...")', report === '6 cells updated, 2 new product rows added, 2 rows skipped — unknown product code: BADCODE')
+}
+
+console.log('planFullTablePaste: existing row is not re-added to newRows, but its cells still update')
+{
+  const text = 'M001\t100\t200\t300'
+  const plan = planFullTablePaste(text, ftCols, resolveMaterial, new Set(['M001']), new Set())
+  check('M001 already exists -> not in newRows', plan.newRows.length === 0)
+  check('cells for M001 still planned', plan.updates.length === 3)
+}
+
+console.log('planFullTablePaste: frozen cell skipped + counted, invalid cell flagged, blank cell skipped')
+{
+  const frozen = new Set([cellKey('M001', '2024-01')])
+  const text = 'M001\t100\tabc\t\nM002\t10\t20\t30' // M001: frozen, invalid, blank; M002: all valid
+  const plan = planFullTablePaste(text, ftCols, resolveMaterial, new Set(), frozen)
+  check('1 frozen cell skipped', plan.skippedFrozen === 1)
+  check('1 invalid cell reported (abc)', plan.invalidCells.length === 1 && plan.invalidCells[0].raw === 'abc')
+  check('blank cell produced no update', !plan.updates.some((u) => u.key === cellKey('M001', '2024-03')))
+  check('M002 fully applied (3 cells), M001 contributes none (frozen+invalid+blank)', eq(
+    plan.updates.map((u) => u.key).sort(),
+    [cellKey('M002', '2024-01'), cellKey('M002', '2024-02'), cellKey('M002', '2024-03')].sort(),
+  ))
+}
+
+console.log('planFullTablePaste: empty/blank input -> empty plan, no throw')
+{
+  check('empty string', planFullTablePaste('', ftCols, resolveMaterial, new Set(), new Set()).updates.length === 0)
+  check('header-only (no data rows)', planFullTablePaste('Material Code\tName\t2024-01', ftCols, resolveMaterial, new Set(), new Set()).updates.length === 0)
+}
+
+// ── history: extraRows travel with cells as one undo step ─────────────────
+console.log('history: commitCellsAndRows keeps rows-created-plus-values as one undo step')
+{
+  let h = initHistory(new Map())
+  check('fresh history has no extraRows', currentExtraRows(h).length === 0)
+
+  const created: GridRow = { id: 'M001', label: 'M001 — Widget' }
+  h = commitCellsAndRows(h, (prev) => ({
+    cells: new Map(prev.cells).set(cellKey('M001', '2024-01'), 100),
+    extraRows: [...prev.extraRows, created],
+  }))
+  check('after the paste commit: 1 extra row and 1 cell, both in the SAME snapshot', eq(currentExtraRows(h), [created]) && currentCells(h).size === 1)
+
+  h = undo(h)
+  check('one undo removes the row AND the value together', currentExtraRows(h).length === 0 && currentCells(h).size === 0)
+
+  h = redo(h)
+  check('redo restores both together', eq(currentExtraRows(h), [created]) && currentCells(h).size === 1)
+
+  // An ordinary cell edit after that (commitCells, the plain-edit path) must
+  // leave extraRows untouched — only a full-table paste ever adds to it.
+  h = commitCells(h, (prev) => new Map(prev).set(cellKey('M001', '2024-02'), 5))
+  check('plain edit does not disturb extraRows', eq(currentExtraRows(h), [created]))
+  check('plain edit does add the new cell', currentCells(h).get(cellKey('M001', '2024-02')) === 5)
 }
 
 // ── history: undo/redo stack ──────────────────────────────────────────────

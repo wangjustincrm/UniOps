@@ -5,7 +5,7 @@
 // version (read-only thereafter); Import Excel previews a validation
 // report (dry_run) before writing anything; Export / Download Template are
 // plain downloads.
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileDown, FileSpreadsheet, FileUp, Lock, Loader2, Save, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@uniops/shell'
@@ -18,7 +18,7 @@ import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
 import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
-import type { MaterialOption } from '@/lib/materials'
+import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { VersionSwitcher } from './VersionSwitcher'
 import { NewVersionModal } from './NewVersionModal'
 import { ImportWizard } from './ImportWizard'
@@ -75,6 +75,30 @@ export default function ForecastPage() {
 
   const permsQuery = usePermissions()
   const canWriteForecast = !!(permsQuery.data?.permissions['mrp.demand.write'] || permsQuery.data?.permissions['data_maintenance'])
+
+  // Full materials master, fetched once (not per pasted row) and cached —
+  // backs MatrixGrid's row-creating "full-table" paste (resolveMaterial
+  // below): a planner pasting an 18-month forecast with a product-code
+  // column needs every pasted code checked against materials, and mdm-api's
+  // list_materials() has no "match these codes" filter to do that in one
+  // targeted call, so this fetches the whole list instead (materialsApi.
+  // listAll() pages through it at the endpoint's max page_size). Only
+  // needed for a writable draft, since paste is disabled otherwise.
+  const materialsAllQuery = useQuery({
+    queryKey: ['forecast-materials-all'],
+    queryFn: () => materialsApi.listAll(),
+    enabled: canWriteForecast,
+    staleTime: 5 * 60 * 1000,
+  })
+  const materialsByCode = useMemo(() => {
+    const map = new Map<string, MaterialOption>()
+    for (const m of materialsAllQuery.data ?? []) map.set(m.code, m)
+    return map
+  }, [materialsAllQuery.data])
+  const resolveMaterial = useCallback((code: string) => {
+    const m = materialsByCode.get(code)
+    return m ? { id: m.code, label: m.name ? `${m.code} — ${m.name}` : m.code } : undefined
+  }, [materialsByCode])
 
   const versionsQuery = useQuery({
     queryKey: ['forecast-versions'],
@@ -401,8 +425,10 @@ export default function ForecastPage() {
             <>
               {matrixRows.length === 0 && (
                 <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-                  This version has no forecast lines yet. Add a product directly above, download the template and use
-                  Import Excel, or create a new version copying lines from an existing one.
+                  This version has no forecast lines yet. Add a product directly above, paste a full forecast table
+                  copied from Excel (a product-code column creates the rows for you — no need to add products by hand
+                  first), download the template and use Import Excel, or create a new version copying lines from an
+                  existing one.
                 </p>
               )}
               <MatrixGrid
@@ -421,6 +447,7 @@ export default function ForecastPage() {
                 onFocusRequestHandled={() => setFocusRequest(null)}
                 clearRowId={clearRowId}
                 onRowCleared={() => setClearRowId(null)}
+                resolveMaterial={canWriteForecast ? resolveMaterial : undefined}
                 rowActions={(row) => (
                   addedRows.has(row.id) ? (
                     <button

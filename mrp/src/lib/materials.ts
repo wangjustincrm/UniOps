@@ -28,4 +28,28 @@ export const materialsApi = {
     mdmApi.get<MaterialListResponse>(
       `/mdm/v1/materials?q=${encodeURIComponent(q)}&page=1&page_size=${pageSize}`,
     ),
+
+  /**
+   * Fetches the full materials master, paging at the endpoint's max
+   * page_size (500) until exhausted. Used by the Sales Forecast page's
+   * row-creating paste (see matrixGrid/pasteLogic.ts's planFullTablePaste)
+   * to resolve a whole pasted product-code column in one client-side pass
+   * instead of one mdm-api lookup per pasted row — list_materials() has no
+   * "match these codes" filter, so a one-time full fetch (cached by the
+   * caller's react-query key) is the batched alternative.
+   */
+  listAll: async (): Promise<MaterialOption[]> => {
+    const pageSize = 500
+    const all: MaterialOption[] = []
+    let page = 1
+    for (;;) {
+      const res = await mdmApi.get<MaterialListResponse>(
+        `/mdm/v1/materials?page=${page}&page_size=${pageSize}`,
+      )
+      all.push(...res.items)
+      if (res.items.length === 0 || all.length >= res.total) break
+      page++
+    }
+    return all
+  },
 }
