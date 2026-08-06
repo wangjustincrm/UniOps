@@ -40,15 +40,24 @@ def _pa_payload(po_id):
     }
 
 
-async def _grant_procurement_officer_pa_write(db):
-    """Mirror identity migration 0005 in the shadow authz tables — conftest's
-    default matrix seeds only the view_*/create_* keys, never the phase-2 ones."""
+async def _grant_pa_write(db):
+    """Mirror the real production grants in the shadow authz tables — conftest's
+    default matrix seeds only the view_*/create_* keys, never the phase-2 ones.
+    Grants epms.pa.write to both procurement_officer (identity migration 0005)
+    and requester (identity-api/scripts/seed_phase2_keys.py:38), so a plain
+    requester in these tests reaches create_pa's body exactly as they do in
+    production — otherwise a "stranger" requester would be rejected by the
+    require_permission dependency before the ownership check ever runs, and
+    the regression test below would pass for the wrong reason."""
     await db.execute(text(
         "INSERT INTO permission_defs(key,module,label,sort) "
         "VALUES ('epms.pa.write','epms','Create / Edit PAs',102) ON CONFLICT (key) DO NOTHING"))
     await db.execute(text(
         "INSERT INTO role_permissions(role_code,permission_key) "
         "VALUES ('procurement_officer','epms.pa.write') ON CONFLICT DO NOTHING"))
+    await db.execute(text(
+        "INSERT INTO role_permissions(role_code,permission_key) "
+        "VALUES ('requester','epms.pa.write') ON CONFLICT DO NOTHING"))
 
 
 async def _user(db, role: str, *, additional: str | None = None):
@@ -104,7 +113,7 @@ async def test_procurement_officer_creates_pa_for_another_requesters_po(test_eng
     the ownership branch does not apply to a non-requester base role."""
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        await _grant_procurement_officer_pa_write(db)
+        await _grant_pa_write(db)
         requester = await _user(db, "requester")
         po_id = await _three_way_po_owned_by(db, requester.id)
         officer = await _user(db, "procurement_officer")
@@ -122,7 +131,7 @@ async def test_requester_with_additional_procurement_officer_role_creates_pa(tes
     honour the additional role too."""
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        await _grant_procurement_officer_pa_write(db)
+        await _grant_pa_write(db)
         owner = await _user(db, "requester")
         po_id = await _three_way_po_owned_by(db, owner.id)
         officer = await _user(db, "requester", additional="procurement_officer")
@@ -130,15 +139,23 @@ async def test_requester_with_additional_procurement_officer_role_creates_pa(tes
     async with _client_for(officer) as c:
         r = await c.post(PA_URL, json=_pa_payload(str(po_id)))
     assert r.status_code == 201, r.text
+    assert r.json()["pa_number"].startswith("PA-")
 
 
 @pytest.mark.asyncio
 async def test_plain_requester_still_cannot_create_pa_for_someone_elses_po(test_engine):
     """Regression guard: relaxing the ownership check for officers must not open
-    it for ordinary requesters."""
+    it for ordinary requesters.
+
+    The stranger must hold epms.pa.write (granted above, matching production —
+    see identity-api/scripts/seed_phase2_keys.py:38) so the request reaches
+    create_pa's body and is rejected by the ownership check specifically, not
+    by the require_permission dependency before it ever runs. Asserting the
+    detail message (not just the status code) is what makes this test load-
+    bearing against a widened _may_create_pa_on_behalf."""
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        await _grant_procurement_officer_pa_write(db)
+        await _grant_pa_write(db)
         owner = await _user(db, "requester")
         po_id = await _three_way_po_owned_by(db, owner.id)
         stranger = await _user(db, "requester")
@@ -146,3 +163,4 @@ async def test_plain_requester_still_cannot_create_pa_for_someone_elses_po(test_
     async with _client_for(stranger) as c:
         r = await c.post(PA_URL, json=_pa_payload(str(po_id)))
     assert r.status_code == 403, r.text
+    assert "You can only create payments for purchase orders linked to your own requisitions." in r.text
