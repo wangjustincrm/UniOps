@@ -300,8 +300,12 @@ async def match_invoice(
     require_review = not (is_ap or is_uploader)
     from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired
     try:
+        # No GR picked in the request → attach the GRs that already received these
+        # lines (goods-first, invoice-later). A selection sent by the caller, even
+        # an empty one, is honoured verbatim.
         result = await invoice_crud.match(db, inv, body, matched_by=caller_id,
-                                          require_review=require_review)
+                                          require_review=require_review,
+                                          auto_link_grs=body.gr_ids is None and body.gr_id is None)
 
         # 完成调用者的 match 任务(指派场景)
         now_ts = datetime.now(timezone.utc)

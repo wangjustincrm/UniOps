@@ -496,21 +496,41 @@ async def _autofill_gr_to_matched_invoices(
     GRs). Convenience only — match status is PO-vs-invoice variance, so this never
     re-runs matching or changes status. Idempotent per GR id. Invoices not yet
     matched (no allocations) are left alone; they pick the GR up when matched.
+
+    PO-level fallback: an invoice matched BY TOTAL AMOUNT (the total-value panel,
+    the legacy single-PO shim, and auto-match-on-upload when it cannot split by
+    line) allocates against the PO header with po_line_id NULL. There is no line
+    to route by, so those invoices — and only those — link at PO level instead.
+    Invoices that DO allocate by line on this PO keep the precise line routing.
     """
     po_line_ids = [ln.po_line_id for ln in lines if ln.po_line_id is not None]
-    if not po_line_ids:
-        return
-    inv_ids = (await db.execute(
-        select(InvoicePoAllocation.invoice_id)
-        .where(InvoicePoAllocation.po_line_id.in_(po_line_ids))
-        .distinct()
-    )).scalars().all()
+    inv_ids: list[uuid.UUID] = []
+    if po_line_ids:
+        inv_ids += (await db.execute(
+            select(InvoicePoAllocation.invoice_id)
+            .where(InvoicePoAllocation.po_line_id.in_(po_line_ids))
+            .distinct()
+        )).scalars().all()
+    if gr.po_id is not None:
+        # Header-level only: every allocation this invoice makes against THIS PO
+        # carries a NULL po_line_id (HAVING count(po_line_id) = 0). An invoice
+        # that mixes line-level allocations on this PO is excluded — it is
+        # routable by line and must not be swept in wholesale.
+        inv_ids += (await db.execute(
+            select(InvoicePoAllocation.invoice_id)
+            .where(InvoicePoAllocation.po_id == gr.po_id)
+            .group_by(InvoicePoAllocation.invoice_id)
+            .having(func.count(InvoicePoAllocation.po_line_id) == 0)
+        )).scalars().all()
     if not inv_ids:
         return
     invoices = (await db.execute(
         select(Invoice).where(
-            Invoice.id.in_(inv_ids),
-            Invoice.status.in_(("matched", "exception")),
+            Invoice.id.in_(set(inv_ids)),
+            # match_review = matched, pending an AP reviewer's approval. Leaving it
+            # out stranded those invoices with gr_id NULL (empty 3-Way Match view,
+            # blocked PA receipt gate) until someone linked the GR by hand.
+            Invoice.status.in_(("matched", "match_review", "exception")),
         )
     )).scalars().all()
     for inv in invoices:
