@@ -54,6 +54,18 @@ def upgrade() -> None:
         sa.Column("source_anchor_month", sa.CHAR(length=7), nullable=True),
     )
 
+    # 用当前唯一confirmed版本的行,给连续序列表播种初始内容(幂等,重跑安全)
+    op.execute(
+        """
+        INSERT INTO mrp_demand_series (id, material_code, month, qty, uom, created_at, updated_at)
+        SELECT gen_random_uuid(), l.material_code, l.month, l.qty, 'KG', now(), now()
+        FROM mrp_forecast_lines l
+        JOIN mrp_forecast_versions v ON v.id = l.version_id
+        WHERE v.status = 'confirmed'
+        ON CONFLICT (material_code, month) DO NOTHING
+        """
+    )
+
 
 def downgrade() -> None:
     op.drop_column("mrp_forecast_versions", "source_anchor_month")
