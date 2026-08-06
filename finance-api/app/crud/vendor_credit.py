@@ -166,3 +166,27 @@ async def void(db: AsyncSession, credit: VendorCredit, *,
     _stamp_review(credit, reviewed_by, reviewed_by_name, note)
     await db.flush()
     return credit
+
+
+async def get_by_id(db: AsyncSession, credit_id: uuid.UUID) -> VendorCredit | None:
+    return (await db.execute(
+        select(VendorCredit).where(VendorCredit.id == credit_id)
+    )).scalars().first()
+
+
+async def get_all(db: AsyncSession, *, status: str | None = None,
+                  vendor_id: uuid.UUID | None = None,
+                  limit: int = 100, offset: int = 0) -> tuple[list[VendorCredit], int]:
+    q = select(VendorCredit)
+    c = select(func.count()).select_from(VendorCredit)
+    if status:
+        q = q.where(VendorCredit.status == status)
+        c = c.where(VendorCredit.status == status)
+    if vendor_id:
+        q = q.where(VendorCredit.vendor_id == vendor_id)
+        c = c.where(VendorCredit.vendor_id == vendor_id)
+    total = (await db.execute(c)).scalar_one()
+    rows = (await db.execute(
+        q.order_by(VendorCredit.created_at.desc()).limit(limit).offset(offset)
+    )).scalars().all()
+    return list(rows), total

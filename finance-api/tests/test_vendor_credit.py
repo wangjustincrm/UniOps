@@ -1,12 +1,18 @@
 """Vendor Credit — Phase A (record + review, no money movement)."""
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
+from httpx import ASGITransport, AsyncClient
+from jose import jwt
 from sqlalchemy.exc import IntegrityError
+
+from app.core.config import settings
+from app.db.base import get_db
+from app.main import app
 
 
 def _row(**overrides):
@@ -421,3 +427,109 @@ async def test_rejected_document_number_can_be_re_uploaded(db_session, pending_c
         uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
     await db_session.commit()
     assert again.status == "pending_review"
+
+
+def _h(role="ap_clerk", sub=None):
+    token = jwt.encode({"sub": str(sub or uuid.uuid4()), "role": role,
+                        "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                       settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def client(db_session):
+    async def _override_get_db():
+        yield db_session
+    app.dependency_overrides[get_db] = _override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+def _api_body(**over):
+    b = dict(
+        vendor_id=str(uuid.uuid4()), vendor_name="Amazon Business",
+        vendor_credit_number="11DJ-MFHX-N4JG", credit_date="2026-07-01",
+        currency="CAD", amount="-0.04", tax_amount="0",
+        po_number="PO-089-2605-23", line_items=[], file_name="cn.pdf",
+    )
+    b.update(over)
+    return b
+
+
+@pytest.mark.anyio
+async def test_post_creates_pending_credit_with_positive_amount(client):
+    r = await client.post("/finance/v1/vendor-credits", json=_api_body(), headers=_h())
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["status"] == "pending_review"
+    assert body["total_amount"] == "0.04"
+    assert body["credit_number"].startswith("VC-")
+
+
+@pytest.mark.anyio
+async def test_post_requires_a_token(client):
+    r = await client.post("/finance/v1/vendor-credits", json=_api_body())
+    assert r.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_post_duplicate_returns_409_with_existing_number(client):
+    vid = str(uuid.uuid4())
+    first = await client.post("/finance/v1/vendor-credits",
+                              json=_api_body(vendor_id=vid), headers=_h())
+    assert first.status_code == 201
+    dup = await client.post("/finance/v1/vendor-credits",
+                            json=_api_body(vendor_id=vid), headers=_h())
+    assert dup.status_code == 409
+    assert first.json()["credit_number"] in dup.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_list_filters_by_status(client):
+    await client.post("/finance/v1/vendor-credits", json=_api_body(), headers=_h())
+    r = await client.get("/finance/v1/vendor-credits",
+                         params={"status": "pending_review"}, headers=_h())
+    assert r.status_code == 200
+    assert r.json()["total"] >= 1
+    assert all(i["status"] == "pending_review" for i in r.json()["items"])
+
+    empty = await client.get("/finance/v1/vendor-credits",
+                             params={"status": "available"}, headers=_h())
+    assert empty.json()["total"] == 0
+
+
+@pytest.mark.anyio
+async def test_approve_flips_to_available(client):
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    r = await client.post(f"/finance/v1/vendor-credits/{created['id']}/approve",
+                          json={}, headers=_h("system_admin"))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "available"
+
+
+@pytest.mark.anyio
+async def test_approving_twice_returns_409(client):
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    await client.post(f"/finance/v1/vendor-credits/{created['id']}/approve",
+                      json={}, headers=_h("system_admin"))
+    again = await client.post(f"/finance/v1/vendor-credits/{created['id']}/approve",
+                              json={}, headers=_h("system_admin"))
+    assert again.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_reject_requires_a_note(client):
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    r = await client.post(f"/finance/v1/vendor-credits/{created['id']}/reject",
+                          json={"note": ""}, headers=_h("system_admin"))
+    assert r.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_detail_404_for_unknown_id(client):
+    r = await client.get(f"/finance/v1/vendor-credits/{uuid.uuid4()}", headers=_h())
+    assert r.status_code == 404
