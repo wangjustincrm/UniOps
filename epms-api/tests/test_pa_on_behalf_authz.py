@@ -16,7 +16,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import create_access_token
@@ -26,6 +26,7 @@ from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
+from app.models.task import Task
 from app.models.vendor import Vendor
 from app.schemas.auth import RegisterRequest
 
@@ -164,3 +165,50 @@ async def test_plain_requester_still_cannot_create_pa_for_someone_elses_po(test_
         r = await c.post(PA_URL, json=_pa_payload(str(po_id)))
     assert r.status_code == 403, r.text
     assert "You can only create payments for purchase orders linked to your own requisitions." in r.text
+
+
+async def _open_create_pa_task_for(db, po, requester_id):
+    """The create_pa task the live flow raises when an invoice is matched —
+    always anchored on the PO and assigned to the PR requester."""
+    t = Task(type="create_pa", document_type="po", document_id=po.id,
+             document_number=po.number, assigned_role="requester",
+             assigned_user_id=requester_id,
+             title=f"Create Payment Application: {po.number}")
+    db.add(t); await db.flush()
+    return t.id
+
+
+@pytest.mark.asyncio
+async def test_officer_created_pa_leaves_no_task_for_the_officer(test_engine):
+    """The create-PA reminder belongs to the PR requester and must stay there:
+    creating the PA on their behalf completes THEIR task and must not raise any
+    task (hence any e-mail or daily follow-up) aimed at the officer."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_pa_write(db)
+        requester = await _user(db, "requester")
+        po_id = await _three_way_po_owned_by(db, requester.id)
+        po = await db.get(PurchaseOrder, po_id)
+        task_id = await _open_create_pa_task_for(db, po, requester.id)
+        officer = await _user(db, "procurement_officer")
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        r = await c.post(PA_URL, json=_pa_payload(str(po_id)))
+    assert r.status_code == 201, r.text
+
+    async with factory() as db:
+        # The requester's reminder is done — they must not keep being chased.
+        done = (await db.execute(
+            select(Task.is_completed).where(Task.id == task_id))).scalar_one()
+        assert done is True, "creating the PA must complete the requester's create_pa task"
+
+        # Nothing at all points at the officer: no per-user assignment and no
+        # create_pa pool broadcast to their role.
+        mine = (await db.execute(
+            select(Task).where(Task.assigned_user_id == officer.id))).scalars().all()
+        assert mine == [], f"officer must receive no task, got {[t.type for t in mine]}"
+        pooled = (await db.execute(
+            select(Task).where(Task.type == "create_pa",
+                               Task.assigned_role == "procurement_officer"))).scalars().all()
+        assert pooled == [], "create_pa must never be broadcast to the procurement_officer pool"
