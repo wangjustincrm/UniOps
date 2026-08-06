@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 
 import { useRolePermissions } from '@/hooks/useConfig'
 import { useReviewVendorCredit, useVendorCredits } from '@/hooks/useVendorCredits'
@@ -15,6 +16,9 @@ const TABS = [
 const fmt = (v: string, ccy: string) =>
   `${ccy} ${Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+const errorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error ? err.message : fallback
+
 export function VendorCreditsPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('pending_review')
   const [noteFor, setNoteFor] = useState<{ credit: VendorCredit; action: 'reject' | 'void' } | null>(null)
@@ -28,6 +32,14 @@ export function VendorCreditsPage() {
   const canManage = user?.role === 'system_admin' || !!perms?.['epms.vendor_credit.manage']
 
   const rows = data?.items ?? []
+
+  // The single `review` mutation backs both the inline Approve buttons and the
+  // note modal's Confirm button. Route its error to the right spot by looking
+  // at which action the failed call was for.
+  const approveError =
+    review.isError && review.variables?.action === 'approve'
+      ? errorMessage(review.error, 'Approve failed')
+      : null
 
   return (
     <div className="p-6">
@@ -47,6 +59,13 @@ export function VendorCreditsPage() {
           </button>
         ))}
       </div>
+
+      {approveError && (
+        <div className="mt-4 flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          {approveError}
+        </div>
+      )}
 
       {isLoading ? (
         <p className="mt-6 text-sm text-neutral-500">Loading…</p>
@@ -96,7 +115,7 @@ export function VendorCreditsPage() {
                       </button>
                       <button
                         className="rounded border border-danger-300 px-2.5 py-1 text-xs font-medium text-danger-700"
-                        onClick={() => { setNoteFor({ credit: c, action: 'reject' }); setNote('') }}>
+                        onClick={() => { review.reset(); setNoteFor({ credit: c, action: 'reject' }); setNote('') }}>
                         Reject
                       </button>
                     </>
@@ -104,7 +123,7 @@ export function VendorCreditsPage() {
                   {canManage && c.status === 'available' && Number(c.applied_amount) === 0 && (
                     <button
                       className="rounded border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700"
-                      onClick={() => { setNoteFor({ credit: c, action: 'void' }); setNote('') }}>
+                      onClick={() => { review.reset(); setNoteFor({ credit: c, action: 'void' }); setNote('') }}>
                       Void
                     </button>
                   )}
@@ -125,6 +144,12 @@ export function VendorCreditsPage() {
               className="mt-3 w-full rounded border border-neutral-300 p-2 text-sm"
               rows={3} value={note} onChange={(e) => setNote(e.target.value)}
               placeholder="Reason (required)" />
+            {review.isError && review.variables?.action === noteFor.action && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {errorMessage(review.error, `${noteFor.action === 'reject' ? 'Reject' : 'Void'} failed`)}
+              </div>
+            )}
             <div className="mt-4 flex justify-end gap-2">
               <button className="rounded border border-neutral-300 px-3 py-1.5 text-sm"
                       onClick={() => setNoteFor(null)}>
