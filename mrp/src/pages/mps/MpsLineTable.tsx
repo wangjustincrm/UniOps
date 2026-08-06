@@ -166,14 +166,19 @@ export function MpsLineTable({
           <thead className="bg-neutral-50">
             <tr>
               {!readOnly && (
-                <th className="w-10 border-b border-neutral-200 px-3 py-2">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all lines"
-                    checked={selected.size === lines.length && lines.length > 0}
-                    onChange={toggleAll}
-                    className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-                  />
+                <th className="border-b border-neutral-200">
+                  {/* Visual checkbox stays 16px; the wrapping label is the
+                      real ≥44px tap target (native label-wraps-input click
+                      association, no separate handler needed). */}
+                  <label className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center px-3">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all lines"
+                      checked={selected.size === lines.length && lines.length > 0}
+                      onChange={toggleAll}
+                      className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                    />
+                  </label>
                 </th>
               )}
               <th className="border-b border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600">Product</th>
@@ -198,14 +203,16 @@ export function MpsLineTable({
                   )}
                 >
                   {!readOnly && (
-                    <td className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${line.material_code}`}
-                        checked={selected.has(line.id)}
-                        onChange={() => toggleOne(line.id)}
-                        className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-                      />
+                    <td className="p-0">
+                      <label className="flex min-h-[44px] min-w-[44px] cursor-pointer items-center justify-center px-3">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${line.material_code}`}
+                          checked={selected.has(line.id)}
+                          onChange={() => toggleOne(line.id)}
+                          className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                        />
+                      </label>
                     </td>
                   )}
                   <td className="px-3 py-2">

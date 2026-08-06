@@ -80,7 +80,12 @@ export function AdjustDrawer({
             <h2 className="text-base font-semibold text-neutral-900">Adjust Line</h2>
             <p className="font-mono text-xs text-neutral-500">{line.material_code} · demand {line.demand_month}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-neutral-400 hover:text-neutral-600">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+          >
             <XIcon className="h-5 w-5" />
           </button>
         </div>
@@ -126,7 +131,7 @@ export function AdjustDrawer({
           </div>
 
           <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
-            <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={onClose} disabled={submitting}>Cancel</Button>
             <Button type="submit" size="sm" className="min-h-[44px]" disabled={submitting}>
               {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Save Changes
