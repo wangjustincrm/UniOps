@@ -9,6 +9,8 @@ billno = UniOps AP number (the JV cross-check anchor). Dimension chains:
 2026-07-14 NC trial feedback: all enumeration values are NC CODES (not names);
   department/revexp/cost_center output codes; account classified by CC prefix or
   department keyword (classify_expense_account); buysell is per-row (CAD→2, else→4).
+2026-08-05 change: ONE summary body row per invoice (was one row per PO
+  allocation) — money = AP head total, dims from the largest allocation.
 """
 import uuid
 from decimal import Decimal
@@ -247,18 +249,13 @@ async def build_export_rows(db: AsyncSession, ap_ids: list) -> tuple[list, list,
                          cc_nc, dept_code, revexp_code, emp,
                          cc_uniops, dept_name))
 
-        # tax proration when rows carry no tax but the AP does
-        total_tax = sum((r[1] for r in rows), _ZERO)
-        if total_tax == _ZERO and ap.tax_amount > _ZERO:
-            base = sum((r[0] for r in rows), _ZERO)
-            prorated, acc = [], _ZERO
-            for i, r in enumerate(rows):
-                t = (ap.tax_amount - acc if i == len(rows) - 1 else
-                     (ap.tax_amount * r[0] / base).quantize(Decimal("0.01"))
-                     if base > _ZERO else _ZERO)
-                acc += t
-                prorated.append((r[0], t, *r[2:]))
-            rows = prorated
+        # One summary body row per invoice (2026-08-05 change): NC wants a
+        # single line per AP, not one per PO allocation. Amounts come from the
+        # AP head (allocations may under-cover the head or carry no tax);
+        # dimensions come from the largest-amount source row so the dominant
+        # PO's department/budget/account win.
+        top = max(rows, key=lambda r: r[0] or _ZERO)
+        rows = [(ap.amount, ap.tax_amount, *top[2:])]
 
         first = rows[0]
         # first row tuple: (notax, tax, cc_nc, dept_code, revexp_code, emp, cc_uniops, dept_name)

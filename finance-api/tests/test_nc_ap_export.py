@@ -142,6 +142,8 @@ async def test_build_rows_epms_allocations(db_session):
     db_session.add(CostCenter(id=cc_id, code="MOH-0104-P01", name="Production CC",
                               department_id=dept_id))
     db_session.add(BudgetAccount(id=uuid.uuid4(), code="CRM004", name="Depreciation", is_active=True))
+    # smaller allocation (po2) inserted FIRST — the summary row must take its
+    # dims from the LARGEST allocation (po1), not the first one returned
     db_session.add_all([
         PurchaseRequest(id=uuid.uuid4(), po_id=po1, cost_center_id=cc_id,
                         budget_code="CRM004", department_name="Production",
@@ -149,10 +151,10 @@ async def test_build_rows_epms_allocations(db_session):
         PurchaseRequest(id=uuid.uuid4(), po_id=po2, cost_center_id=None,
                         budget_code=None, department_name="Maintenance",
                         created_by=uuid.uuid4()),
-        InvoicePoAllocation(id=uuid.uuid4(), invoice_id=src, po_id=po1,
-                            allocated_amount=Decimal("60.00"), allocated_tax=Decimal("7.80")),
         InvoicePoAllocation(id=uuid.uuid4(), invoice_id=src, po_id=po2,
                             allocated_amount=Decimal("40.00"), allocated_tax=Decimal("5.20")),
+        InvoicePoAllocation(id=uuid.uuid4(), invoice_id=src, po_id=po1,
+                            allocated_amount=Decimal("60.00"), allocated_tax=Decimal("7.80")),
     ])
     await db_session.flush()
     ap = await _mk_ap(db_session, src_id=src)
@@ -160,21 +162,26 @@ async def test_build_rows_epms_allocations(db_session):
 
     heads, bodies, errors = await build_export_rows(db_session, [ap.id])
     assert errors == []
-    assert len(heads) == 1 and len(bodies) == 2
+    # ONE summary body row per invoice (2026-08-05), not one per allocation
+    assert len(heads) == 1 and len(bodies) == 1
     h = heads[0]
     assert h["seq"] == 0 and h["billno"] == "" and h["ap_number"] == "AP-2026-0100"
-    # head department = first body row's dept CODE
+    # head department = dominant (largest) allocation's dept CODE
     assert h["department"] == "0104"
-    b1 = next(b for b in bodies if b["money"] == "67.80")
+    b1 = bodies[0]
+    # money = AP head total (100.00 + 13.00), tax-inclusive
+    assert b1["money"] == "113.00"
     # cost_center always blank — UniOps CCs don't map to NC's
     assert b1["cost_center"] == ""
-    # revexp is the budget CODE directly
+    # revexp is the dominant allocation's budget CODE
     assert b1["revexp"] == "CRM004"
     # notax/tax always emitted as zero — NC recomputes from money + tax_rate
-    assert b1["notax"] == "0.00" and b1["tax"] == "0.00" and b1["money"] == "67.80"
-    # account_path: MOH prefix → 510101
+    assert b1["notax"] == "0.00" and b1["tax"] == "0.00"
+    # account_path from dominant allocation: MOH prefix → 510101
     assert b1["account_path"] == "510101"
-    # tax_rate still derived from the real amounts (7.80 / 60.00)
+    # dept code from dominant allocation
+    assert b1["department"] == "0104"
+    # tax_rate derived from the AP head amounts (13.00 / 100.00)
     assert b1["tax_code"] == "001" and b1["tax_rate"] == "13.00"
     # CAD → buysell '2'
     assert b1["buysell"] == "2"
@@ -182,11 +189,6 @@ async def test_build_rows_epms_allocations(db_session):
     assert b1["pay_term"] == "FH01"
     # obj_type code
     assert b1["obj_type"] == "1"
-    b2 = next(b for b in bodies if b["money"] == "45.20")
-    # no CC, Maintenance dept → unresolvable dept code → ''
-    assert b2["cost_center"] == "" and b2["revexp"] == ""
-    # Maintenance → no keyword match → 6602
-    assert b2["account_path"] == "6602"
 
 
 async def test_build_rows_oa_pa_chain(db_session):
