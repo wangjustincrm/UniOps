@@ -64,16 +64,15 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def fetch_materials(token: str) -> dict[str, str | None]:
-    """Pull the full material_code -> name map known to mdm-api, once.
-
-    Pages through GET /mdm/v1/materials (page_size=500) until exhausted.
-    Forwards the caller's bearer token so this respects mdm-api's own authz
-    (materials reads there are open to any authenticated role). Raises
-    `httpx.HTTPError` (network failure or non-2xx) — callers that must
-    degrade instead of fail should go through `resolve_material_names`.
-    """
-    materials: dict[str, str | None] = {}
+def _iter_material_pages(token: str):
+    """Shared paging loop behind `fetch_materials` and `fetch_shelf_life` —
+    both just read a different field off the same `GET /mdm/v1/materials`
+    pages (page_size=500), so this is the one place that owns the HTTP/
+    pagination mechanics. Forwards the caller's bearer token so this
+    respects mdm-api's own authz (materials reads there are open to any
+    authenticated role). Raises `httpx.HTTPError` (network failure or
+    non-2xx) — callers that must degrade instead of fail go through the
+    `resolve_*` wrappers, never this generator directly."""
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(
         base_url=f"{settings.MDM_API_URL}/mdm/v1",
@@ -87,15 +86,46 @@ def fetch_materials(token: str) -> dict[str, str | None]:
             resp.raise_for_status()
             data = resp.json()
             items = data.get("items", [])
-            for item in items:
-                code = item.get("code")
-                if code:
-                    materials[code] = item.get("name")
+            yield from items
             total = data.get("total", len(items))
             if not items or page * page_size >= total:
                 break
             page += 1
+
+
+def fetch_materials(token: str) -> dict[str, str | None]:
+    """Pull the full material_code -> name map known to mdm-api, once.
+
+    Pages through GET /mdm/v1/materials (page_size=500) until exhausted —
+    see `_iter_material_pages`. Raises `httpx.HTTPError` (network failure or
+    non-2xx) — callers that must degrade instead of fail should go through
+    `resolve_material_names`.
+    """
+    materials: dict[str, str | None] = {}
+    for item in _iter_material_pages(token):
+        code = item.get("code")
+        if code:
+            materials[code] = item.get("name")
     return materials
+
+
+def fetch_shelf_life(token: str) -> dict[str, int | None]:
+    """Pull the full material_code -> shelf_life_months map known to
+    mdm-api, once (Phase 1B Task 4 — the MPS engine's pre-build hard check,
+    app/services/mps_engine.py, needs this per material; a missing/null
+    value there means "unknown", which the engine treats as never
+    pre-buildable, fail-safe).
+
+    Same paging mechanics as `fetch_materials` — see `_iter_material_pages`.
+    Raises `httpx.HTTPError` on any failure — callers that must degrade
+    instead of fail should go through `resolve_shelf_life`.
+    """
+    shelf_life: dict[str, int | None] = {}
+    for item in _iter_material_pages(token):
+        code = item.get("code")
+        if code:
+            shelf_life[code] = item.get("shelf_life_months")
+    return shelf_life
 
 
 def _fetch_materials_safe(token: str) -> dict[str, str | None]:
@@ -128,3 +158,36 @@ async def resolve_material_names(token: str) -> dict[str, str | None]:
     this lookup existed.
     """
     return await anyio.to_thread.run_sync(_fetch_materials_safe, token)
+
+
+def _fetch_shelf_life_safe(token: str) -> dict[str, int | None]:
+    """`fetch_shelf_life`, but never raises — same worker-thread contract as
+    `_fetch_materials_safe` (see this module's docstring for why the
+    try/except must live here, on the thread, rather than around the
+    `await anyio.to_thread.run_sync(...)` call in `resolve_shelf_life`)."""
+    try:
+        return fetch_shelf_life(token)
+    except Exception:
+        logger.warning(
+            "mdm-api shelf-life lookup failed — degrading to shelf_life_months=null for "
+            "every material (mps_engine.py never pre-builds an item whose shelf life is "
+            "unknown, so this fails safe rather than blocking MPS generation)",
+            exc_info=True,
+        )
+        return {}
+
+
+async def resolve_shelf_life(token: str) -> dict[str, int | None]:
+    """Read-endpoint-safe wrapper: fetch material_code -> shelf_life_months,
+    never raise. Used by `app/api/v1/mps.py` to feed `generate_mps`'
+    `shelf_life_months` argument — imported there as a bare name (not
+    accessed via this module) so tests can `monkeypatch.setattr(mps,
+    "resolve_shelf_life", ...)`, same idiom `app/api/v1/consignment.py` uses
+    for `lookup_lot` (see that module's docstring).
+
+    mdm-api being unavailable must not block MPS generation — every material
+    simply resolves to shelf_life_months=None (unknown), which the engine
+    already treats as "never pre-build" (fail safe, see mps_engine.py's
+    docstring), not a hang or a 5xx.
+    """
+    return await anyio.to_thread.run_sync(_fetch_shelf_life_safe, token)
