@@ -1,0 +1,148 @@
+"""procurement_officer may raise a PA on behalf of anyone.
+
+Creating a PA is gated by the epms.pa.write matrix key plus — for callers whose
+JWT base role is 'requester' — an ownership check against the linked PR. A
+Procurement Officer must be able to pay ANY PO, whether the role is their base
+login role or an additional role layered on a requester account, while a plain
+requester still may only pay their own requisitions.
+
+Approval routing is NOT affected by who creates the PA (approval-api resolves
+approvers from the linked PR) — that invariant is covered by
+approval-api/tests/test_pa_on_behalf_routing.py.
+"""
+import uuid
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.core.security import create_access_token
+from app.crud import user as user_crud
+from app.main import create_app
+from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
+from app.models.po import PurchaseOrder
+from app.models.pr import PurchaseRequest
+from app.models.vendor import Vendor
+from app.schemas.auth import RegisterRequest
+
+PA_URL = "/api/v1/pa"
+
+
+def _pa_payload(po_id):
+    return {
+        "po_id": po_id, "title": "On-behalf Payment", "pa_type": "regular",
+        "subtotal": "100.00", "tax_amount": "0.00", "currency": "CAD",
+        "line_items": [{"description": "X", "qty": "1", "unit": "EA", "unit_price": "100.00"}],
+    }
+
+
+async def _grant_procurement_officer_pa_write(db):
+    """Mirror identity migration 0005 in the shadow authz tables — conftest's
+    default matrix seeds only the view_*/create_* keys, never the phase-2 ones."""
+    await db.execute(text(
+        "INSERT INTO permission_defs(key,module,label,sort) "
+        "VALUES ('epms.pa.write','epms','Create / Edit PAs',102) ON CONFLICT (key) DO NOTHING"))
+    await db.execute(text(
+        "INSERT INTO role_permissions(role_code,permission_key) "
+        "VALUES ('procurement_officer','epms.pa.write') ON CONFLICT DO NOTHING"))
+
+
+async def _user(db, role: str, *, additional: str | None = None):
+    u = await user_crud.create(db, RegisterRequest(
+        email=f"{role}-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+        full_name=role.replace("_", " ").title(), role=role))
+    if additional:
+        await db.execute(text(
+            "INSERT INTO user_roles(user_id, role_code) VALUES (:u, :r) "
+            "ON CONFLICT DO NOTHING"), {"u": str(u.id), "r": additional})
+    return u
+
+
+async def _three_way_po_owned_by(db, requester_id):
+    """A PO linked to a PR raised by `requester_id`, carrying a GR + matched
+    invoice so the 3-way receipt gate is satisfied. Returns the PO id."""
+    v = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme", category="supplier",
+               contact_name="C", contact_email="c@x.com")
+    db.add(v); await db.flush()
+    pr = PurchaseRequest(number=f"PR-{uuid.uuid4().hex[:8]}", title="Someone else's PR",
+                         type=1, status="approved", amount=Decimal("100"),
+                         created_by=requester_id)
+    db.add(pr); await db.flush()
+    po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="PO", type=1,
+                       vendor_id=v.id, vendor_name="Acme", status="issued",
+                       created_by=requester_id, pr_id=pr.id)
+    db.add(po); await db.flush()
+    gr = GoodsReceipt(number=f"GR-{uuid.uuid4().hex[:8]}", title="G", po_id=po.id,
+                      po_number=po.number, vendor_id=v.id, vendor_name="Acme",
+                      gr_type="physical", procurement_type=1, status="collected",
+                      created_by=requester_id)
+    db.add(gr); await db.flush()
+    inv = Invoice(internal_ref=f"I-{uuid.uuid4().hex[:6]}", vendor_invoice_number="X",
+                  vendor_id=v.id, vendor_name="Acme", amount=Decimal("100"),
+                  tax_amount=Decimal("0"), total_amount=Decimal("100"),
+                  invoice_date=date(2026, 1, 1), due_date=date(2026, 2, 1),
+                  status="matched", line_items=[], po_id=po.id, gr_id=gr.id,
+                  uploaded_by=requester_id)
+    db.add(inv); await db.flush()
+    return po.id
+
+
+def _client_for(user):
+    token = create_access_token(str(user.id), user.role)
+    return AsyncClient(transport=ASGITransport(app=create_app()),
+                       base_url="http://test",
+                       headers={"Authorization": f"Bearer {token}"})
+
+
+@pytest.mark.asyncio
+async def test_procurement_officer_creates_pa_for_another_requesters_po(test_engine):
+    """Base-role Procurement Officer: the matrix grant alone must be enough —
+    the ownership branch does not apply to a non-requester base role."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_procurement_officer_pa_write(db)
+        requester = await _user(db, "requester")
+        po_id = await _three_way_po_owned_by(db, requester.id)
+        officer = await _user(db, "procurement_officer")
+        await db.commit()
+    async with _client_for(officer) as c:
+        r = await c.post(PA_URL, json=_pa_payload(str(po_id)))
+    assert r.status_code == 201, r.text
+    assert r.json()["pa_number"].startswith("PA-")
+
+
+@pytest.mark.asyncio
+async def test_requester_with_additional_procurement_officer_role_creates_pa(test_engine):
+    """Granting Procurement Officer as an ADDITIONAL role on a requester login
+    must work identically — the matrix unions roles, so the ownership 403 has to
+    honour the additional role too."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_procurement_officer_pa_write(db)
+        owner = await _user(db, "requester")
+        po_id = await _three_way_po_owned_by(db, owner.id)
+        officer = await _user(db, "requester", additional="procurement_officer")
+        await db.commit()
+    async with _client_for(officer) as c:
+        r = await c.post(PA_URL, json=_pa_payload(str(po_id)))
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.asyncio
+async def test_plain_requester_still_cannot_create_pa_for_someone_elses_po(test_engine):
+    """Regression guard: relaxing the ownership check for officers must not open
+    it for ordinary requesters."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_procurement_officer_pa_write(db)
+        owner = await _user(db, "requester")
+        po_id = await _three_way_po_owned_by(db, owner.id)
+        stranger = await _user(db, "requester")
+        await db.commit()
+    async with _client_for(stranger) as c:
+        r = await c.post(PA_URL, json=_pa_payload(str(po_id)))
+    assert r.status_code == 403, r.text

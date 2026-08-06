@@ -69,6 +69,23 @@ async def _get_prepayment_config(db: SessionDep) -> PrepaymentConfig:
     return PrepaymentConfig.model_validate(raw)
 
 
+def _may_create_pa_on_behalf(roles: set[str], po) -> bool:
+    """Whether these role codes let the caller raise a PA against `po` that is
+    not linked to their own requisition.
+
+    This only bypasses the requester-ownership rule — the epms.pa.write matrix
+    gate still applies to every caller.
+    """
+    # Procurement Officer pays on anyone's behalf, on any PO. Approval routing is
+    # unaffected: approval-api resolves a PA's approvers from the linked PR's
+    # requester/department, never from PA.created_by.
+    if "procurement_officer" in roles:
+        return True
+    # erp_pa_officer covers only PR-less NC-imported POs — those have no
+    # requisitioner for ownership to apply to in the first place.
+    return "erp_pa_officer" in roles and po.pr_id is None and po.source == "nc"
+
+
 @router.post("", response_model=PaResponse, status_code=201)
 async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: BearerToken):
     po = await po_crud.get_by_id(db, body.po_id)
@@ -86,14 +103,8 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
                 select(PurchaseRequest.created_by).where(PurchaseRequest.id == po.pr_id)
             )).scalar_one_or_none()
         if pr_requester_id != uuid.UUID(user["sub"]):
-            # A base-requester may still pay a PR-less NC-imported PO if they hold
-            # the erp_pa_officer pool role — these POs have no requisitioner to own
-            # them, so ownership can't apply; fall through to the pa.write gate.
-            allowed_via_erp_pool = False
-            if po.pr_id is None and po.source == "nc":
-                roles = await _effective_role_codes(db, "requester", uuid.UUID(user["sub"]))
-                allowed_via_erp_pool = "erp_pa_officer" in roles
-            if not allowed_via_erp_pool:
+            roles = await _effective_role_codes(db, "requester", uuid.UUID(user["sub"]))
+            if not _may_create_pa_on_behalf(roles, po):
                 raise HTTPException(
                     status_code=403,
                     detail="You can only create payments for purchase orders linked to your own requisitions.",
