@@ -284,6 +284,23 @@ A finished good can be forecast before its BOM exists. Allow it (already allowed
 
 ---
 
+## Task 10: MPS release-safety with coexisting outlook snapshots (ripple from T4)
+
+Removing the supersede invariant (T4) means many `ForecastVersion`s are `confirmed` forever by design. `mps.py`'s `create_run` gates only on `status=='confirmed'`, and `confirm_release` does an unconditional `delete(mrp_demands where demand_type='mps')`. Consequence: a run built off a **stale** outlook, when released, silently wipes the active MRP plan and replaces it with stale-forecast demand. **This must be resolved before the feature is used with more than one live snapshot.** ⚠️ **The business rule is a user decision (see plan handoff): is releasing a non-latest outlook allowed at all, or only the most-recently-generated one?** Implement per that decision. Default design (pending confirmation): allow generating/previewing an MPS off any outlook, but **guard the release** — warn/block when releasing a run whose `forecast_version_id` is not the latest confirmed outlook.
+
+**Files:**
+- Modify: `mrp-api/app/api/v1/mps.py` (release guard + docstring/comment fix), its tests.
+- Modify: `mrp/src/pages/mps/ProductionPlanPage.tsx` (surface which outlook/anchor the run is from; surface the guard).
+
+**Interfaces:** depends on the user's business-rule decision; see plan Execution Handoff.
+
+- [ ] **Step 1:** Fix `mps.py`'s stale docstring/inline comment (lines ~58-60, ~493-499) — the delete-all conclusion is correct per design §8 ("one active released plan"), but its justification currently cites the removed supersede behaviour. Replace with "only one MPS lineage is meant to be live/released regardless of how many forecast versions are confirmed."
+- [ ] **Step 2 (per user decision):** add a release-safety guard in `confirm_release` (e.g. 409 or a `force` flag when `run.forecast_version_id` is not the newest `confirmed` version by `confirmed_at`), with a test proving a stale-outlook release is guarded and the latest is allowed.
+- [ ] **Step 3:** `ProductionPlanPage.tsx` shows the run's source outlook/anchor and the guard's warning. `tsc` clean; full mrp-api suite green.
+- [ ] **Step 4: Commit** `fix(mrp): guard MPS release against stale outlook snapshots`.
+
+---
+
 ## Self-Review (coverage vs spec)
 
 - §4.1 `mrp_demand_series` → T1; §4.2 `mrp_forecast_change_log` → T1/T2 (written in upsert); §4.3 version reuse + `source_anchor_month` + drop-supersede → T1/T4.
