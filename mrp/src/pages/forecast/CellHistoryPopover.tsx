@@ -89,7 +89,7 @@ export function CellHistoryPopover({
           type="button"
           onClick={onClose}
           aria-label="Close history"
-          className="shrink-0 text-neutral-400 hover:text-neutral-600"
+          className="-m-2.5 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-neutral-400 hover:text-neutral-600"
         >
           <XIcon className="h-3.5 w-3.5" />
         </button>

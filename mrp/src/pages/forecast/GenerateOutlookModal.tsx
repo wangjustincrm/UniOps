@@ -42,7 +42,12 @@ export function GenerateOutlookModal({
           <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-900">
             <Sparkles className="h-4 w-4 text-primary-600" /> Generate Outlook
           </h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="text-neutral-400 hover:text-neutral-600">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="-m-2.5 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+          >
             <XIcon className="h-5 w-5" />
           </button>
         </div>

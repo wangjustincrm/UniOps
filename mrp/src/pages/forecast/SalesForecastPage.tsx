@@ -149,18 +149,37 @@ export default function SalesForecastPage() {
     return m ? { id: m.code, label: m.name ? `${m.code} — ${m.name}` : m.code } : undefined
   }, [materialsByCode])
 
+  // This page treats its very first successful fetch as the one-and-only
+  // load: after that, autosave (flushSave/doFlush below) keeps `committed`
+  // in sync with the server directly, so nothing here ever calls
+  // invalidateQueries/refetch. A *background* refetch is a different risk
+  // though — TanStack Query's defaults (App.tsx only turns off
+  // refetchOnWindowFocus) still include refetchOnReconnect: true, so a
+  // network blip mid-edit would otherwise silently refetch this query. Any
+  // resulting new `gridQuery.data` reference would (a) re-run the
+  // baseline-sync block below, overwriting the in-progress `liveCells`
+  // state with the server's snapshot — silently discarding not-yet-flushed
+  // edits from the dirty-diff *without even changing what MatrixGrid is
+  // still visibly showing*, which is worse than a remount (an invisible
+  // trust gap, not just a visible reset) — and (b) previously changed
+  // `gridKey` (see below), remounting MatrixGrid and wiping its undo stack.
+  // Disabling both background-refetch triggers is the actual fix; the
+  // range-only `gridKey` (not tied to `dataUpdatedAt`) is a second,
+  // independent guard so a remount can't happen even if some future change
+  // to this file ever does call refetch.
   const gridQuery = useQuery({
     queryKey: ['sales-forecast-grid', rangeFrom, rangeTo],
     queryFn: () => seriesApi.getGrid(rangeFrom, rangeTo),
+    staleTime: Infinity,
+    refetchOnReconnect: false,
   })
 
   const baseline = useMemo(() => buildBaseline(gridQuery.data), [gridQuery.data])
 
-  // Remounts MatrixGrid exactly once, when the initial fetch lands (see
-  // gridQuery.dataUpdatedAt below) — never again afterward, since nothing
-  // on this page invalidates/refetches the grid query post-load (autosave
-  // updates `committed` directly instead; see flushSave).
-  const gridKey = `${rangeFrom}::${rangeTo}::${gridQuery.dataUpdatedAt}`
+  // Deliberately just the requested range, not gridQuery.dataUpdatedAt —
+  // see the comment above. MatrixGrid mounts once, when `gridQuery.data`
+  // first becomes truthy, and never again for the life of this page.
+  const gridKey = `${rangeFrom}::${rangeTo}`
 
   if (baseline !== syncedBaseline) {
     setSyncedBaseline(baseline)

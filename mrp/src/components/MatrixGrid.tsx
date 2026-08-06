@@ -812,7 +812,7 @@ function MatrixCell({
             onClick={onHistoryClick}
             aria-label="View change history"
             title="View change history"
-            className="absolute bottom-0 right-0 p-0.5 text-neutral-300 hover:text-primary-600"
+            className="absolute bottom-0 right-0 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-300 hover:text-primary-600"
           >
             <History aria-hidden className="h-2.5 w-2.5" />
           </button>
@@ -875,7 +875,7 @@ function MatrixCell({
           onClick={onHistoryClick}
           aria-label="View change history"
           title="View change history"
-          className="absolute bottom-0 right-0 p-0.5 text-neutral-300 hover:text-primary-600"
+          className="absolute bottom-0 right-0 flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-300 hover:text-primary-600"
         >
           <History aria-hidden className="h-2.5 w-2.5" />
         </button>
