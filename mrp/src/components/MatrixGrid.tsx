@@ -812,6 +812,12 @@ function MatrixCell({
         ref={registerRef}
         aria-label={invalidRaw ? `Invalid value pasted: "${invalidRaw}" is not a number` : undefined}
         onClick={(e) => onSelect(e.shiftKey)}
+        // Select the whole value on focus so clicking (or Tab/arrow-navigating)
+        // into a cell that already holds a number lets you just type to replace
+        // it — Excel behaviour. Without this, typing into a populated cell
+        // appends to the existing text ("251" + "300" -> "251300"), which makes
+        // direct entry feel broken and pushes users toward paste-only editing.
+        onFocus={(e) => e.currentTarget.select()}
         onChange={(ev) => setLocal(ev.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
