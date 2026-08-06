@@ -37,6 +37,7 @@ class ForecastVersion(Base, UUIDPrimaryKey, TimestampMixin):
     note: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    source_anchor_month: Mapped[str | None] = mapped_column(CHAR(7))  # window anchor a snapshot was frozen from; NULL for legacy hand-built versions
 
 
 class ForecastLine(Base, UUIDPrimaryKey, TimestampMixin):
