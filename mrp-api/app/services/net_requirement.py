@@ -110,6 +110,15 @@ def compute_net_requirements(
     return rows
 
 
+PLANNING_UOM = "KG"
+
+
+class UomMismatchError(ValueError):
+    """A contributing stock source is not in the planning UOM (KG) and no
+    conversion exists — summing it would silently produce a wrong net
+    requirement (design decision 2026-08-06: enforce, don't convert)."""
+
+
 @dataclass(frozen=True)
 class OpeningStockBreakdown:
     """Provenance/freshness breakdown behind a single material's opening
@@ -117,21 +126,22 @@ class OpeningStockBreakdown:
     display (design doc §6.4)."""
 
     wms_qty: Decimal
+    wms_uom: str
     consignment_qty: Decimal
+    consignment_uom: str
     consignment_count_date: date | None
     wms_synced_at: datetime | None
 
     @property
     def opening_stock(self) -> Decimal:
-        # TODO(phase-1b): wms_qty and consignment_qty are added here with no
-        # UOM reconciliation — neither wms_inventory_lots nor
-        # mrp_consignment_stock carries a uom column, and nothing reads the
-        # forecast's own `uom` before this sum feeds compute_net_requirements
-        # as `forecast_qty - opening_stock`, so a material whose WMS/
-        # consignment counts and forecast aren't already in the same unit
-        # will silently produce a wrong net requirement. Design question for
-        # 1B (see I2, final-phase review) — not a mechanical fix, do not
-        # attempt here.
+        for label, qty, uom in (
+            ("wms", self.wms_qty, self.wms_uom),
+            ("consignment", self.consignment_qty, self.consignment_uom),
+        ):
+            if qty and uom != PLANNING_UOM:
+                raise UomMismatchError(
+                    f"{label} stock is in {uom!r}, not {PLANNING_UOM!r}; refusing to sum"
+                )
         return self.wms_qty + self.consignment_qty
 
 
@@ -148,12 +158,18 @@ async def _wms_available_qty(db: AsyncSession, material_code: str, today: date) 
 
 async def _consignment_latest_qty(
     db: AsyncSession, material_code: str,
-) -> tuple[Decimal, date | None]:
+) -> tuple[Decimal, str, date | None]:
     """Sum only the lots reported in the LATEST count_date **per
     (warehouse_code, material_code)** — a full-snapshot read, never a
     lot's own individually-latest count_date (see module docstring's I3
     note: that would let a lot that shipped out and stopped being counted
-    keep contributing its last-known quantity forever)."""
+    keep contributing its last-known quantity forever).
+
+    Also returns the `uom` off one of the summed rows (single warehouse/
+    material in practice; if rows ever disagree, taking any is fine here —
+    a mixed-unit guard is out of scope for this task) so the caller can
+    enforce the KG planning-UOM invariant. Defaults to PLANNING_UOM when
+    there are no rows to read a unit from."""
     latest_per_warehouse = (
         select(
             ConsignmentStock.warehouse_code,
@@ -177,11 +193,26 @@ async def _consignment_latest_qty(
     )
     qty = Decimal((await db.execute(qty_stmt)).scalar_one())
 
+    uom_stmt = (
+        select(ConsignmentStock.uom)
+        .select_from(ConsignmentStock)
+        .join(
+            latest_per_warehouse,
+            sa.and_(
+                ConsignmentStock.warehouse_code == latest_per_warehouse.c.warehouse_code,
+                ConsignmentStock.count_date == latest_per_warehouse.c.latest_count_date,
+            ),
+        )
+        .where(ConsignmentStock.material_code == material_code)
+        .limit(1)
+    )
+    uom = (await db.execute(uom_stmt)).scalar_one_or_none() or PLANNING_UOM
+
     latest_date_stmt = select(func.max(ConsignmentStock.count_date)).where(
         ConsignmentStock.material_code == material_code
     )
     latest_date = (await db.execute(latest_date_stmt)).scalar_one_or_none()
-    return qty, latest_date
+    return qty, uom, latest_date
 
 
 async def get_opening_stock_breakdown(
@@ -193,14 +224,21 @@ async def get_opening_stock_breakdown(
     resolved_today = today if today is not None else datetime.now(timezone.utc).date()
 
     wms_qty = await _wms_available_qty(db, material_code, resolved_today)
-    consignment_qty, consignment_count_date = await _consignment_latest_qty(db, material_code)
+    consignment_qty, consignment_uom, consignment_count_date = await _consignment_latest_qty(
+        db, material_code
+    )
 
     sync_row = await db.get(MrpSyncState, "wms")
     wms_synced_at = sync_row.last_synced_at if sync_row is not None else None
 
     return OpeningStockBreakdown(
         wms_qty=wms_qty,
+        # wms_inventory_lots has no unit column; finished-goods WMS stock is
+        # KG by survey (2026-08-06 decision) — assert the invariant here
+        # rather than read a column that doesn't exist.
+        wms_uom=PLANNING_UOM,
         consignment_qty=consignment_qty,
+        consignment_uom=consignment_uom,
         consignment_count_date=consignment_count_date,
         wms_synced_at=wms_synced_at,
     )

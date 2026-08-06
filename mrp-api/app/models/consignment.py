@@ -36,6 +36,7 @@ class ConsignmentStock(Base, UUIDPrimaryKey, TimestampMixin):
     material_code: Mapped[str] = mapped_column(String(50), index=True)
     lot_no: Mapped[str] = mapped_column(String(50))
     qty: Mapped[object] = mapped_column(Numeric(18, 3), default=0, server_default="0")
+    uom: Mapped[str] = mapped_column(String(10), default="KG", server_default="KG")
     count_date: Mapped[date] = mapped_column(Date)
     expiry_date: Mapped[date | None] = mapped_column(Date)
     expiry_source: Mapped[str | None] = mapped_column(String(20))  # 'wms'|'manual'|None

@@ -10,7 +10,10 @@ from decimal import Decimal
 
 import pytest
 
-from app.services.net_requirement import compute_net_requirements, get_opening_stock_breakdown
+from app.services.net_requirement import (
+    OpeningStockBreakdown, PLANNING_UOM, UomMismatchError,
+    compute_net_requirements, get_opening_stock_breakdown,
+)
 
 
 # ── Pure function: compute_net_requirements ─────────────────────────────────
@@ -45,6 +48,32 @@ def test_opening_stock_of_month_n_is_closing_stock_of_month_n_minus_1():
         {"2026-09": Decimal("100"), "2026-10": Decimal("100")}, opening_stock=Decimal("250"))
     assert rows[0].opening_stock == Decimal("250")
     assert rows[1].opening_stock == rows[0].closing_stock == Decimal("150")
+
+
+# ── KG planning-UOM invariant guard ──────────────────────────────────────────
+
+
+def test_planning_uom_is_kg():
+    assert PLANNING_UOM == "KG"
+
+
+def test_opening_stock_sums_when_all_kg():
+    b = OpeningStockBreakdown(
+        wms_qty=Decimal("100"), wms_uom="KG",
+        consignment_qty=Decimal("40"), consignment_uom="KG",
+        consignment_count_date=None, wms_synced_at=None,
+    )
+    assert b.opening_stock == Decimal("140")
+
+
+def test_opening_stock_rejects_non_kg_source():
+    b = OpeningStockBreakdown(
+        wms_qty=Decimal("100"), wms_uom="KG",
+        consignment_qty=Decimal("40"), consignment_uom="EA",
+        consignment_count_date=None, wms_synced_at=None,
+    )
+    with pytest.raises(UomMismatchError):
+        _ = b.opening_stock
 
 
 # ── DB-facing: get_opening_stock_breakdown ──────────────────────────────────
