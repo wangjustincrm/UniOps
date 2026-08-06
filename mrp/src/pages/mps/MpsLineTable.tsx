@@ -42,6 +42,7 @@ function productLabel(code: string, materialsByCode?: Map<string, MaterialOption
 export function MpsLineTable({
   lines,
   materialsByCode,
+  noBomCodes,
   readOnly,
   canExecute,
   canRelease,
@@ -56,6 +57,14 @@ export function MpsLineTable({
    *  part of MpsLineResponse itself — see mpsApi.ts). Optional: a lookup
    *  miss just falls back to showing the bare code. */
   materialsByCode?: Map<string, MaterialOption>
+  /** Product codes with NO approved BOM yet (spec §8b, Continuous Sales
+   *  Forecast Task 9) — sourced from mdm-api's /boms/exist by the page (see
+   *  bomStatusApi.ts), the same batch call the Sales Forecast grid uses.
+   *  Display only: 1B never explodes BOMs, so this changes nothing about
+   *  lock/adjust/release behavior — it's purely a heads-up for the planner
+   *  that 1C's material requirements calc will have to skip this line until
+   *  a BOM exists. Optional: omitted, no line shows the badge. */
+  noBomCodes?: ReadonlySet<string>
   /** True once the run is released (immutable) — hides the checkbox column
    *  and the whole action bar; lines render read-only. */
   readOnly: boolean
@@ -234,7 +243,14 @@ export function MpsLineTable({
                     </td>
                   )}
                   <td className="px-3 py-2">
-                    <span className="block font-mono text-xs text-neutral-800">{product.code}</span>
+                    <span className="flex items-center gap-1.5 font-mono text-xs text-neutral-800">
+                      {product.code}
+                      {noBomCodes?.has(line.material_code) && (
+                        <Badge variant="warning" title="No approved BOM found yet for this product — 1C's material requirements calc will skip this line until one exists.">
+                          No BOM
+                        </Badge>
+                      )}
+                    </span>
                     {product.name && <span className="block truncate text-[11px] text-neutral-400">{product.name}</span>}
                   </td>
                   <td className="px-3 py-2 text-xs text-neutral-600">{line.demand_month}</td>

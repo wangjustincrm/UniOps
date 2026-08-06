@@ -112,6 +112,19 @@ export interface MatrixGridProps {
    */
   highlightColIds?: ReadonlySet<string>
   /**
+   * Row ids to render with a distinct tint on the sticky row-header cell
+   * (e.g. Sales Forecast's "no BOM yet" finished-goods rows — spec §8b).
+   * Purely cosmetic, same as `highlightColIds` — no effect on
+   * editability/paste/frozen behavior.
+   */
+  tintRowIds?: ReadonlySet<string>
+  /**
+   * Optional small badge rendered inline right after a row's label (e.g. a
+   * "No BOM" pill) — unlike `rowActions`, this renders even while
+   * `readOnly`, since it's informational, not an editing affordance.
+   */
+  rowBadge?: (row: GridRow) => ReactNode
+  /**
    * When supplied, every cell (editable or frozen/read-only) renders a tiny
    * history affordance in its corner; clicking it calls this instead of
    * selecting the cell (click is stopped from bubbling to the cell's own
@@ -145,7 +158,7 @@ export function MatrixGrid({
   rowHeaderLabel = 'Row', rowTotalLabel = 'Total', colTotalLabel = 'Total',
   formatValue = defaultFormat,
   focusRequest = null, onFocusRequestHandled, clearRowId = null, onRowCleared, rowActions,
-  resolveMaterial, highlightColIds, onCellHistoryClick,
+  resolveMaterial, highlightColIds, tintRowIds, rowBadge, onCellHistoryClick,
 }: MatrixGridProps) {
   const frozen = frozenKeys ?? EMPTY_FROZEN
   const [history, setHistory] = useState(() => initHistory(new Map(value)))
@@ -654,9 +667,17 @@ export function MatrixGrid({
                 const rowIdx = startIdx + i
                 return (
                   <tr key={row.id} style={{ height: ROW_HEIGHT }}>
-                    <td className="sticky left-0 z-10 bg-white border-b border-r border-neutral-200 px-3 py-1.5 text-left font-medium text-neutral-800">
+                    <td
+                      className={cn(
+                        'sticky left-0 z-10 border-b border-r border-neutral-200 px-3 py-1.5 text-left font-medium text-neutral-800',
+                        tintRowIds?.has(row.id) ? 'bg-amber-50' : 'bg-white',
+                      )}
+                    >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate">{row.label}</span>
+                        <span className="truncate flex items-center gap-1.5">
+                          {row.label}
+                          {rowBadge?.(row)}
+                        </span>
                         {!readOnly && rowActions?.(row)}
                       </div>
                     </td>

@@ -51,7 +51,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -265,6 +265,42 @@ async def get_bom_sync_state(
         last_stats=state.last_stats,
         updated_at=state.updated_at.isoformat() if state.updated_at else None,
     )
+
+
+class BomExistRequest(BaseModel):
+    product_codes: list[str]
+
+
+class BomExistResponse(BaseModel):
+    with_bom: list[str]
+
+
+@router.post("/exist", response_model=BomExistResponse)
+async def check_boms_exist(
+    body: BomExistRequest,
+    db: AsyncSession = Depends(get_db),
+    _: ReportViewDep = ...,
+):
+    """Continuous Sales Forecast Task 9 (spec §8b): a finished good can be
+    forecast BEFORE its BOM exists — that's allowed, but the Sales Forecast
+    grid and MPS lines need to FLAG it. Rather than each page calling
+    /effective per product code (a 404-per-miss, error-driven control flow
+    for what's a routine "not yet" state), this is one batch call: which of
+    `product_codes` have at least one APPROVED bom row. Same read gate as
+    /effective|/explode|/where-used|/sync-state (`mrp.report.view`) — this
+    still discloses which products have an established formulation, even
+    though it discloses none of the formulation itself."""
+    if not body.product_codes:
+        return BomExistResponse(with_bom=[])
+    rows = (
+        await db.execute(
+            select(distinct(Bom.product_material_code)).where(
+                Bom.product_material_code.in_(body.product_codes),
+                Bom.status == "approved",
+            )
+        )
+    ).scalars().all()
+    return BomExistResponse(with_bom=list(rows))
 
 
 @router.post("/sync", response_model=BomSyncResponse)

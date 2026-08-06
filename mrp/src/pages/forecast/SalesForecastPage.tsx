@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertCircle, Check, Loader2, Lock, Sparkles, X } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { Button, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
 import { cellKey, parseCellKey } from '@/components/matrixGrid/pasteLogic'
@@ -34,9 +34,11 @@ import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { seriesApi, type GridResponse } from './seriesApi'
 import { GenerateOutlookModal } from './GenerateOutlookModal'
 import { CellHistoryPopover } from './CellHistoryPopover'
+import { bomStatusApi } from './bomStatusApi'
 
 const AUTOSAVE_DEBOUNCE_MS = 1200
 const OUTLOOK_HORIZON_MONTHS = 18
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set()
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -247,6 +249,30 @@ export default function SalesForecastPage() {
     for (const c of matrixCols) if (c.id >= currentMonth && c.id < windowEndExclusive) s.add(c.id)
     return s
   }, [matrixCols, currentMonth, windowEndExclusive])
+
+  // No-BOM flagging (spec §8b): a finished good can be forecast before its
+  // BOM exists in mdm-api — allowed, but flagged. Sorted so the query key is
+  // stable across renders regardless of row insertion order (react-query
+  // hashes the key structurally, but a stable order also keeps this cheap to
+  // eyeball in devtools). "Has a BOM" is a single source (mdm-api's
+  // /boms/exist) shared with MPS — see bomStatusApi.ts.
+  const gridProductCodes = useMemo(
+    () => [...new Set(matrixRows.map((r) => r.id))].sort(),
+    [matrixRows],
+  )
+  const bomStatusQuery = useQuery({
+    queryKey: ['forecast-bom-status', gridProductCodes],
+    queryFn: () => bomStatusApi.withBom(gridProductCodes),
+    enabled: gridProductCodes.length > 0,
+    staleTime: 5 * 60 * 1000,
+  })
+  const noBomRowIds = useMemo(() => {
+    const withBom = bomStatusQuery.data
+    if (!withBom) return EMPTY_STRING_SET
+    const s = new Set<string>()
+    for (const code of gridProductCodes) if (!withBom.has(code)) s.add(code)
+    return s
+  }, [gridProductCodes, bomStatusQuery.data])
 
   // ── Autosave ──────────────────────────────────────────────────────────
   // flushRef always points at a closure from the most recent render (synced
@@ -461,6 +487,14 @@ export default function SalesForecastPage() {
             onRowCleared={() => setClearRowId(null)}
             resolveMaterial={canWriteForecast ? resolveMaterial : undefined}
             highlightColIds={highlightColIds}
+            tintRowIds={noBomRowIds}
+            rowBadge={(row) => (
+              noBomRowIds.has(row.id) ? (
+                <Badge variant="warning" className="shrink-0" title="No approved BOM found yet for this product — forecast entry still works.">
+                  No BOM
+                </Badge>
+              ) : null
+            )}
             onCellHistoryClick={(rowId, colId, anchorEl) => {
               const rect = anchorEl.getBoundingClientRect()
               const row = matrixRows.find((r) => r.id === rowId)
