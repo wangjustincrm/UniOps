@@ -29,6 +29,11 @@ export interface ForecastVersion {
   confirmed_at: string | null
   created_at: string
   updated_at: string
+  // Window anchor the snapshot was frozen from (freeze_outlook's Continuous
+  // Sales Forecast redesign, Task 4/9) — null for legacy hand-built
+  // versions. Used by ProductionPlanPage to show/compare which outlook an
+  // MPS run was generated from (Task 10).
+  source_anchor_month: string | null
 }
 
 export interface ForecastVersionListResponse {

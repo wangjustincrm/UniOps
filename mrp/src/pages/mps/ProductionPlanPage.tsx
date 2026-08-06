@@ -56,6 +56,23 @@ export default function ProductionPlanPage() {
   const [manualVersionId, setManualVersionId] = useState<string | null>(null)
   const selectedVersionId = manualVersionId ?? confirmedVersions[0]?.id ?? null
 
+  // The single most-recently-confirmed outlook among the (now possibly
+  // several) coexisting confirmed ForecastVersions — Continuous Sales
+  // Forecast Task 4 dropped the old supersede-on-confirm rule, so more than
+  // one can be 'confirmed' at once. Ties (identical confirmed_at) resolve
+  // to whichever is encountered last; versions with a null confirmed_at
+  // (shouldn't happen for status='confirmed', but be defensive) never win.
+  const latestConfirmedVersion = useMemo(() => {
+    let latest: (typeof confirmedVersions)[number] | null = null
+    for (const v of confirmedVersions) {
+      if (!v.confirmed_at) continue
+      if (!latest?.confirmed_at || new Date(v.confirmed_at) >= new Date(latest.confirmed_at)) {
+        latest = v
+      }
+    }
+    return latest
+  }, [confirmedVersions])
+
   // ── The active run ───────────────────────────────────────────────────────
   const [runId, setRunId] = useState<string | null>(null)
 
@@ -66,6 +83,19 @@ export default function ProductionPlanPage() {
   })
   const run = runQuery.data ?? null
   const isReleased = run?.status === 'released'
+
+  // Which confirmed outlook this run was generated from (Task 10, design
+  // §8 "one active released plan"): confirmedVersions is the same list the
+  // "Forecast Version" picker above draws from, so a run's
+  // forecast_version_id should always resolve here — but if it doesn't
+  // (e.g. list still loading, or some future path confirms off a
+  // non-confirmed version) fall back to null and treat that as non-latest
+  // rather than silently skipping the warning.
+  const runVersion = useMemo(
+    () => confirmedVersions.find((v) => v.id === run?.forecast_version_id) ?? null,
+    [confirmedVersions, run],
+  )
+  const isLatestOutlook = !!run && !!latestConfirmedVersion && run.forecast_version_id === latestConfirmedVersion.id
 
   function invalidateRun() {
     return queryClient.invalidateQueries({ queryKey: ['mps-run', runId] })
@@ -201,6 +231,11 @@ export default function ProductionPlanPage() {
           <div className="flex items-center gap-2 text-sm text-neutral-600">
             <span className="font-mono text-xs text-neutral-500">{run.run_no}</span>
             <StatusBadge status={run.status} />
+            {runVersion && (
+              <span className="text-xs text-neutral-500">
+                from {runVersion.version_no} · anchor {runVersion.source_anchor_month ?? '—'}
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -330,8 +365,25 @@ export default function ProductionPlanPage() {
           onConfirm={handleConfirmRelease}
           onCancel={() => setReleaseConfirmOpen(false)}
           busy={releasing}
-          danger={releaseSummary.gapCount > 0}
+          danger={releaseSummary.gapCount > 0 || !isLatestOutlook}
         >
+          {/* Task 10 (design §8, "one active released plan"): confirm-release
+              always overwrites the entire active mrp_demands MPS lineage,
+              regardless of which confirmed outlook produced it (T4 dropped
+              the single-confirmed-version invariant, so several outlooks
+              can be confirmed at once). Releasing a non-latest outlook is
+              legitimate (deliberate rollback) so this warns, it does not
+              block — the button below stays enabled either way. */}
+          {!isLatestOutlook && (
+            <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-danger-800">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                This MPS was generated from an older outlook
+                {runVersion ? <> (<strong>{runVersion.version_no}</strong> / anchor <strong>{runVersion.source_anchor_month ?? '—'}</strong>)</> : ''},
+                not the latest. Releasing it will overwrite the active MRP plan with that older forecast.
+              </span>
+            </p>
+          )}
           <p>
             This will release <strong>{releaseSummary.productCount}</strong> product{releaseSummary.productCount === 1 ? '' : 's'} totaling{' '}
             <strong>{formatQty(releaseSummary.totalQty)} kg</strong> into the MRP requirements table, and{' '}

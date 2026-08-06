@@ -77,6 +77,7 @@ class ForecastVersionResponse(BaseModel):
     confirmed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    source_anchor_month: str | None = None
 
     model_config = {"from_attributes": True}
 

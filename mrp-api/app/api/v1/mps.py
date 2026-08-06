@@ -55,16 +55,20 @@ immutable: `POST .../recalculate`, `PATCH .../lines/{id}`, and a second
 `confirm-release` deletes EVERY prior `demand_type='mps'` row in
 `mrp_demands` — system-wide, regardless of which `forecast_version_id`
 produced it — before inserting this run's own rows. This is deliberately
-not scoped to "runs of the same forecast_version_id": `ForecastVersion` is
-single-lineage (confirming a new version supersedes whichever one was
-previously confirmed — see `app/models/forecast.py`), so a re-confirmed
-forecast mints a brand-new `version_id` on every planning cycle. Scoping the
-delete to `run.forecast_version_id` would leave a prior cycle's released
-run's rows behind forever (they belong to the now-superseded version_id),
-silently double-counting demand. Only one forecast version — and therefore
-only one released MPS lineage — is ever meant to be "live" at a time, so the
-delete is unconditional across all `demand_type='mps'` rows; other demand
-types (should any exist later) are untouched.
+not scoped to "runs of the same forecast_version_id": multiple
+`ForecastVersion`s can be `confirmed` at once (outlook snapshots coexist —
+see `app/models/forecast.py`), but that is a forecasting-side fact only.
+Regardless of how many forecast versions are confirmed, only one MPS
+lineage is meant to be live/released at a time (design §8, "one active
+released plan") — releasing a new run always replaces whichever plan was
+previously active, even one built off a different confirmed outlook.
+Scoping the delete to `run.forecast_version_id` would leave a prior
+release's rows behind forever whenever it was built off a different
+version_id, silently double-counting demand. So the delete is unconditional
+across all `demand_type='mps'` rows; other demand types (should any exist
+later) are untouched. (The UI is responsible for warning a planner before
+releasing a run that was built off a non-latest confirmed outlook — this
+endpoint itself does not block or check outlook recency.)
 
 `capacity_gap=True` lines are NEVER written to `mrp_demands`. A gap line is
 an *unmet-demand exception* for a human to resolve (add capacity / adjust
@@ -491,12 +495,12 @@ async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
     lines = await _load_lines(db, run.id)
 
     # Delete EVERY prior demand_type='mps' row, system-wide -- not scoped to
-    # this run's forecast_version_id. See module docstring for why: a
-    # re-confirmed forecast mints a new version_id each cycle, so scoping
-    # this delete to `run.forecast_version_id` would leave a superseded
-    # cycle's released rows behind forever (they belong to a different
-    # version_id) and silently double-count demand. Only one forecast
-    # version — and therefore only one released MPS lineage — is ever live.
+    # this run's forecast_version_id. See module docstring for why: multiple
+    # forecast versions can be confirmed at once, but only one MPS lineage
+    # is ever meant to be live/released at a time (design §8). Scoping this
+    # delete to `run.forecast_version_id` would leave a prior release's rows
+    # behind forever whenever it was built off a different version_id, and
+    # silently double-count demand.
     await db.execute(delete(MrpDemand).where(MrpDemand.demand_type == "mps"))
 
     for line in lines:
