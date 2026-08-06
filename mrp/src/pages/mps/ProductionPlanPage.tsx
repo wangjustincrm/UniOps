@@ -248,7 +248,24 @@ export default function ProductionPlanPage() {
         </p>
       )}
 
-      {run && (
+      {/* A generated run with zero lines is not an error and not a capacity-rule
+          problem: it means every forecast month's net requirement is zero
+          (available stock already covers the forecast), so there is nothing to
+          schedule. Without an explicit callout the planner sees only the
+          generic "no capacity usage" empty state and reasonably assumes their
+          rules didn't apply — so say why plainly and skip the bars/table. */}
+      {run && run.lines.length === 0 && (
+        <div role="status" className="flex flex-col items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 py-14 text-center">
+          <p className="text-sm font-medium text-primary-900">No production needed for this forecast.</p>
+          <p className="max-w-xl px-4 text-xs text-primary-700">
+            Every forecast month's net requirement is zero — available stock (WMS + consignment) already
+            covers the forecast, so there is nothing to schedule. This is not a capacity-rule problem:
+            your capacity rules only take effect once a product's forecast exceeds its available stock.
+          </p>
+        </div>
+      )}
+
+      {run && run.lines.length > 0 && (
         <>
           <CapacityBars occupancy={run.capacity_occupancy} />
 
