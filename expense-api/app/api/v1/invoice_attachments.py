@@ -52,12 +52,16 @@ async def upload_attachment(
     user: CurrentUserDep,
     token: BearerTokenDep,
     invoice_id: uuid.UUID = Query(...),
-    invoice_source: str = Query("oa"),   # 'epms' | 'oa'
+    invoice_source: str = Query("oa"),   # 'epms' | 'oa' | 'credit'
     file: UploadFile = File(...),
 ):
     """Upload an invoice file to file-api and record metadata in invoice_attachments."""
-    if invoice_source not in ("epms", "oa"):
-        raise HTTPException(status_code=400, detail="invoice_source must be 'epms' or 'oa'")
+    # 'credit' = a finance-api vendor_credits row; invoice_id then carries the
+    # vendor credit's id. api/v1/invoice_list.py filters on the literal 'epms' /
+    # 'oa' values, so credits never leak into the unified invoice list.
+    if invoice_source not in ("epms", "oa", "credit"):
+        raise HTTPException(status_code=400,
+                            detail="invoice_source must be 'epms', 'oa' or 'credit'")
 
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:

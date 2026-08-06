@@ -14,7 +14,7 @@ class InvoiceAttachment(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     invoice_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
-    invoice_source: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # 'epms' | 'oa'
+    invoice_source: Mapped[str] = mapped_column(String(10), nullable=False, index=True)  # 'epms' | 'oa' | 'credit'
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False, default="application/octet-stream")
     file_size_bytes: Mapped[int] = mapped_column(nullable=False, default=0)
