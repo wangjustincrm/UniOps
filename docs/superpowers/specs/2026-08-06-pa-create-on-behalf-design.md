@@ -30,7 +30,7 @@
 | **创建权限** | `epms.pa.write` 默认角色集为 `system_admin / finance_bp / finance_manager / ap_clerk / requester / erp_pa_officer` —— **不含 `procurement_officer`** | ✅ 要改 |
 | **归属 403** | `epms-api/app/api/v1/pa.py::create_pa`:当 **JWT 基础角色 == `requester`** 时校验 PO 归属,逃逸口只认"持 `erp_pa_officer` 且 PO 为 NC 无 PR" | ✅ 要改 |
 | **前端入口** | `epms/src/pages/pa/PaListPage.tsx` 的 `canCreate` 硬编码角色数组(已含 `procurement_officer` / `procurement_manager`,但后端会 403 —— 既有不一致) | ✅ 要改 |
-| PA 创建页 PO 下拉 | `epms/src/pages/pa/PaCreatePage.tsx` 的 `requesterScoped` 仅在 `user.role === 'requester'` 时收窄;officer 不受限 | ❌ 无需改 |
+| PA 创建页 PO 下拉 | `epms/src/pages/pa/PaCreatePage.tsx` 的 `requesterScoped` 仅在 `user.role === 'requester'` 时收窄——但只对**基础角色**是 officer 的人成立;若 `procurement_officer` 是叠加在 `requester` 之上的附加角色,下拉仍会收窄到自己的 PO,功能在 UI 层不可用 | ✅ 要改:`requesterScoped` 须同时看附加角色(`useRolePermissions().roles` 是否含 `procurement_officer`) |
 
 **副作用(已知且接受)**:officer 建 PA 后,PR Requester 那条 `create_pa` 任务会被 `task.py::_complete_stale_create_pa_tasks` 自动完成,Requester 不会被继续催办。
 
@@ -51,6 +51,8 @@
 **`identity-api/scripts/verify_gate_parity.py` 保持不动**:它的 `PHASE2_DEFAULTS` 是 phase-2 割接时刻的**冻结快照**,模块 docstring 明写"割接后任何一次有意的矩阵编辑都会让它对该 role×key 打印 DIFF —— 那是预期且正确的后果,不是回归"。把新授权补进去会让它变成"拿一份字典和自己比",丧失比对价值。运行它出现 `DIFF role=procurement_officer key=epms.pa.write old=False new=True` 是本次改动的**正确表现**。
 
 不加 lock:这个能力是可撤销的业务授权,admin 应能在 Access Control 矩阵里关掉。
+
+> ⚠️ **该可撤销性只对基础角色成立**。若某用户 `users.role == 'requester'`、`procurement_officer` 是叠加的附加角色,他本就凭 requester 自己的 `epms.pa.write` 通过矩阵闸门(`effective_permissions` 取角色并集),随后 `_may_create_pa_on_behalf` 里对角色名的硬编码判断(`"procurement_officer" in roles`)会直接豁免归属检查——矩阵格子关不掉这条路径。要收回这类用户的代建能力,必须**额外**在 `user_roles` 里删除他的 `procurement_officer` 附加角色分配,单勾/关矩阵格子不够。
 
 > 迁移里直接授权(而非只开矩阵入口)是刻意的:上一次 Create GR 改成矩阵权限后,因矩阵未勾导致原本能建 GR 的人 403(见记忆 `project_uniops_gr_create_additional_role_403`)。这里部署完即生效,无需人工去 Portal 勾。
 
@@ -121,6 +123,14 @@ approval-api:
 
 ## 5. 部署
 
+- **部署前**:这条授权是按**角色**发的,迁移落地那一刻,持有该角色(基础或附加)的**每一个人**立即拿到能力——不是逐人开通。建议先跑下面的 SQL 核对受影响名单,让 operator 心里有数:
+  ```sql
+  SELECT u.email, 'base' AS how FROM users u
+   WHERE u.role='procurement_officer' AND u.is_active
+  UNION ALL
+  SELECT u.email, 'additional' FROM user_roles ur JOIN users u ON u.id=ur.user_id
+   WHERE ur.role_code='procurement_officer' AND u.is_active;
+  ```
 - identity-api 跑 `migrate`(0005)**或**等价的 `seed_phase2_keys`。
 - 其余按标准发布流程(`reference_uniops_prod_release_workflow`):全 15 镜像同 sha。
 - **部署后无需人工勾权限**;若要给 `procurement_manager` 同样能力,在 Portal → Access Control 勾 `epms.pa.write` 即可。
