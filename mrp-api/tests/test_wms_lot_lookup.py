@@ -25,8 +25,9 @@ _NOT_FOUND = {"found": False, "production_date": None, "expiry_date": None}
 
 
 class _FakeCursor:
-    def __init__(self, row=None, raise_on_execute=None):
+    def __init__(self, row=None, rows=None, raise_on_execute=None):
         self._row = row
+        self._rows = rows or []
         self._raise_on_execute = raise_on_execute
 
     def execute(self, *args, **kwargs):
@@ -36,10 +37,13 @@ class _FakeCursor:
     def fetchone(self):
         return self._row
 
+    def fetchall(self):
+        return self._rows
+
 
 class _FakeConnection:
-    def __init__(self, row=None, raise_on_execute=None):
-        self._cursor = _FakeCursor(row=row, raise_on_execute=raise_on_execute)
+    def __init__(self, row=None, rows=None, raise_on_execute=None):
+        self._cursor = _FakeCursor(row=row, rows=rows, raise_on_execute=raise_on_execute)
         self.closed = False
 
     def cursor(self):
@@ -173,3 +177,65 @@ def test_found_row_with_malformed_dates_returns_none_dates_not_an_exception(monk
     # A row was found (query matched) but the raw date strings are unusable —
     # this must still report found=True with dates=None, not raise.
     assert result == {"found": True, "production_date": None, "expiry_date": None}
+
+
+# ── 4. list_lots — batch-history combo source, same never-raise contract ───
+
+
+def test_list_lots_not_configured_returns_empty_without_connecting(monkeypatch):
+    monkeypatch.setattr(wms_lot_lookup, "wms_configured", lambda: False)
+
+    def _fail(*args, **kwargs):
+        raise AssertionError("must not connect when WMS is not configured")
+
+    monkeypatch.setattr(oracledb, "connect", _fail)
+    assert wms_lot_lookup.list_lots("CF0086") == []
+
+
+def test_list_lots_query_raises_returns_empty_and_closes_connection(monkeypatch):
+    monkeypatch.setattr(wms_lot_lookup, "wms_configured", lambda: True)
+    monkeypatch.setattr(wms_lot_lookup, "_ensure_thick", lambda: None)
+    monkeypatch.setattr(oracledb, "makedsn", lambda *a, **k: "fake-dsn")
+
+    fake_con = _FakeConnection(raise_on_execute=RuntimeError("ORA-03113"))
+    monkeypatch.setattr(oracledb, "connect", lambda *a, **k: fake_con)
+
+    assert wms_lot_lookup.list_lots("CF0086") == []  # never propagates
+    assert fake_con.closed is True
+
+
+def test_list_lots_parses_rows_skips_null_and_preserves_order(monkeypatch):
+    monkeypatch.setattr(wms_lot_lookup, "wms_configured", lambda: True)
+    monkeypatch.setattr(wms_lot_lookup, "_ensure_thick", lambda: None)
+    monkeypatch.setattr(oracledb, "makedsn", lambda *a, **k: "fake-dsn")
+
+    # Rows arrive already deduplicated by supplier batch (the query groups by
+    # lotatt05), newest-expiry-first. This function's own job is just: skip a
+    # null batch defensively, turn malformed date strings into None (not raise),
+    # and keep the query's order.
+    rows = [
+        ("26C141125110131", "2026-05-20", "2028-05-19"),
+        (None, "2026-01-01", "2028-01-01"),
+        ("25E3471251XYZ", "bad", "also-bad"),
+    ]
+    fake_con = _FakeConnection(rows=rows)
+    monkeypatch.setattr(oracledb, "connect", lambda *a, **k: fake_con)
+
+    from datetime import date
+    result = wms_lot_lookup.list_lots("CF0086")
+    assert result == [
+        {"lot_no": "26C141125110131", "production_date": date(2026, 5, 20), "expiry_date": date(2028, 5, 19)},
+        {"lot_no": "25E3471251XYZ", "production_date": None, "expiry_date": None},
+    ]
+    assert fake_con.closed is True
+
+
+def test_list_lots_empty_result_is_empty_list(monkeypatch):
+    monkeypatch.setattr(wms_lot_lookup, "wms_configured", lambda: True)
+    monkeypatch.setattr(wms_lot_lookup, "_ensure_thick", lambda: None)
+    monkeypatch.setattr(oracledb, "makedsn", lambda *a, **k: "fake-dsn")
+
+    fake_con = _FakeConnection(rows=[])
+    monkeypatch.setattr(oracledb, "connect", lambda *a, **k: fake_con)
+
+    assert wms_lot_lookup.list_lots("NO-SUCH-SKU") == []

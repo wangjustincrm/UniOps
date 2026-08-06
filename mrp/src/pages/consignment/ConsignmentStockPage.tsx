@@ -22,7 +22,8 @@ import { cn, formatDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { MaterialPicker } from './MaterialPicker'
-import { consignmentApi, type ConsignmentStock } from './consignmentApi'
+import { LotCombo } from './LotCombo'
+import { consignmentApi, type ConsignmentStock, type LotHistoryItem } from './consignmentApi'
 import type { MaterialOption } from '@/lib/materials'
 
 const MAIN_WAREHOUSE = 'MAIN'
@@ -108,6 +109,15 @@ export default function ConsignmentStockPage() {
     setLotNo(v)
     setFieldErrors((e) => ({ ...e, lotNo: undefined }))
     if (lookupState !== 'idle') resetLookup() // stale result for a now-edited lot number
+  }
+
+  function handleLotPick(item: LotHistoryItem) {
+    // Chosen from the WMS history combo — we already hold its dates, so show
+    // the "found in WMS" state directly instead of firing another lookup.
+    setLotNo(item.lot_no)
+    setFieldErrors((e) => ({ ...e, lotNo: undefined }))
+    setLookupDates({ production_date: item.production_date, expiry_date: item.expiry_date })
+    setLookupState('found')
   }
 
   async function handleLotBlur() {
@@ -214,15 +224,15 @@ export default function ConsignmentStockPage() {
             />
           </FormField>
 
-          <FormField label="Lot Number" required htmlFor="lot-no" error={fieldErrors.lotNo}>
-            <Input
-              id="lot-no"
+          <FormField label="Lot Number" required error={fieldErrors.lotNo}>
+            <LotCombo
+              materialCode={materialCode}
               value={lotNo}
-              onChange={(e) => handleLotChange(e.target.value)}
+              onChange={handleLotChange}
+              onPick={handleLotPick}
               onBlur={handleLotBlur}
-              placeholder="e.g. L20260801-03"
+              hasError={!!fieldErrors.lotNo}
               disabled={submitting}
-              error={!!fieldErrors.lotNo}
             />
           </FormField>
 

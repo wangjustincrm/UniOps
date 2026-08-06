@@ -248,6 +248,28 @@ async def test_lot_lookup_endpoint_delegates_to_service(client, admin_token, mon
 
 
 @pytest.mark.anyio
+async def test_lot_history_endpoint_delegates_to_service(client, admin_token, monkeypatch):
+    monkeypatch.setattr(
+        consignment, "list_lots",
+        lambda material_code: [
+            {"lot_no": "LOT-A", "production_date": date(2026, 5, 20), "expiry_date": date(2028, 5, 19)},
+            {"lot_no": "LOT-B", "production_date": None, "expiry_date": None},
+        ],
+    )
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.get(
+        "/api/v1/consignment/lot-history",
+        params={"material_code": "S0093"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json() == {"items": [
+        {"lot_no": "LOT-A", "production_date": "2026-05-20", "expiry_date": "2028-05-19"},
+        {"lot_no": "LOT-B", "production_date": None, "expiry_date": None},
+    ]}
+
+
+@pytest.mark.anyio
 async def test_patch_qty_and_delete(client, admin_token, monkeypatch):
     monkeypatch.setattr(
         consignment, "lookup_lot",

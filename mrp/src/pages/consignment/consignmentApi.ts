@@ -47,6 +47,16 @@ export interface LotLookupResult {
   expiry_date: string | null
 }
 
+export interface LotHistoryItem {
+  lot_no: string
+  production_date: string | null
+  expiry_date: string | null
+}
+
+export interface LotHistoryResult {
+  items: LotHistoryItem[]
+}
+
 export interface CreateStockBody {
   material_code: string
   lot_no: string
@@ -69,5 +79,13 @@ export const consignmentApi = {
   lotLookup: (lotNo: string, materialCode: string) =>
     api.get<LotLookupResult>(
       `/consignment/lot-lookup?lot_no=${encodeURIComponent(lotNo)}&material_code=${encodeURIComponent(materialCode)}`,
+    ),
+
+  // All historical batch numbers for a product (live WMS INV_LOT_ATT), for the
+  // lot-number combo box. Empty items[] when WMS is unreachable or the SKU has
+  // no lots — the combo just shows no suggestions, hand entry still works.
+  lotHistory: (materialCode: string) =>
+    api.get<LotHistoryResult>(
+      `/consignment/lot-history?material_code=${encodeURIComponent(materialCode)}`,
     ),
 }

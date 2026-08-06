@@ -52,7 +52,7 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
 from app.models.consignment import ConsignmentStock
 from app.services.mdm_client import resolve_material_names
-from app.services.wms_lot_lookup import lookup_lot
+from app.services.wms_lot_lookup import list_lots, lookup_lot
 
 router = APIRouter(prefix="/consignment", tags=["consignment"])
 
@@ -69,6 +69,20 @@ class LotLookupResponse(BaseModel):
     found: bool
     production_date: date | None
     expiry_date: date | None
+
+
+class LotHistoryItem(BaseModel):
+    lot_no: str
+    production_date: date | None
+    expiry_date: date | None
+
+
+class LotHistoryResponse(BaseModel):
+    # Historical batch numbers for one product, sourced live from WMS
+    # INV_LOT_ATT (newest expiry first). Empty — never an error — when WMS is
+    # unreachable/unconfigured or the SKU has no lots, so the combo box just
+    # offers no suggestions and hand entry still works (design doc 6.3).
+    items: list[LotHistoryItem]
 
 
 class ConsignmentStockCreate(BaseModel):
@@ -168,6 +182,17 @@ async def lot_lookup(
     # review).
     result = await anyio.to_thread.run_sync(lookup_lot, lot_no, material_code)
     return result
+
+
+@router.get("/lot-history", response_model=LotHistoryResponse)
+async def lot_history(
+    _: ReadDep,
+    material_code: str = Query(...),
+):
+    # list_lots() is a blocking oracledb call — off the event loop, same as
+    # lot_lookup above, so a slow WMS host can't stall the worker.
+    items = await anyio.to_thread.run_sync(list_lots, material_code)
+    return {"items": items}
 
 
 @router.post("/stock", response_model=ConsignmentStockCreateResponse, status_code=status.HTTP_201_CREATED)
