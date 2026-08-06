@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column("id", UUID(as_uuid=True), primary_key=True, default=uuid.uuid4),
         sa.Column("material_code", sa.String(50), nullable=False),
         sa.Column("month", sa.CHAR(7), nullable=False),
-        sa.Column("qty", sa.Numeric(18, 3), nullable=False, server_default="0"),
+        sa.Column("qty", sa.Numeric(18, 3), nullable=False),
         sa.Column("uom", sa.String(10), nullable=False, server_default="KG"),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
