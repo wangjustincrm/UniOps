@@ -44,10 +44,11 @@
 - `INSERT INTO role_permissions(role_code,permission_key) VALUES ('procurement_officer','epms.pa.write') ON CONFLICT DO NOTHING`
 - `downgrade()` 只删这一条 grant 行,不动 `permission_defs`/`role_defs`(它们由 seed 共享)
 
-同步两处常量以免漂移:
+同步一处常量以免漂移:
 
-- `identity-api/scripts/seed_phase2_keys.py::PHASE2_DEFAULTS["epms.pa.write"]` 追加 `"procurement_officer"`
-- `identity-api/scripts/verify_gate_parity.py::PHASE2_DEFAULTS["epms.pa.write"]` 同步(该文件当前也缺 `erp_pa_officer`,一并补齐,让它真正反映运行时集合)
+- `identity-api/scripts/seed_phase2_keys.py::PHASE2_DEFAULTS["epms.pa.write"]` 追加 `"procurement_officer"`(新库 seed 走这里,必须与迁移一致)
+
+**`identity-api/scripts/verify_gate_parity.py` 保持不动**:它的 `PHASE2_DEFAULTS` 是 phase-2 割接时刻的**冻结快照**,模块 docstring 明写"割接后任何一次有意的矩阵编辑都会让它对该 role×key 打印 DIFF —— 那是预期且正确的后果,不是回归"。把新授权补进去会让它变成"拿一份字典和自己比",丧失比对价值。运行它出现 `DIFF role=procurement_officer key=epms.pa.write old=False new=True` 是本次改动的**正确表现**。
 
 不加 lock:这个能力是可撤销的业务授权,admin 应能在 Access Control 矩阵里关掉。
 
