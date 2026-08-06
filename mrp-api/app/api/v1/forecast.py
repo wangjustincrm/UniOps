@@ -1,19 +1,20 @@
-"""Sales forecast versions + grid cell API (Phase 1A Task 1).
+"""Sales forecast versions — read/export API (Phase 1A Task 1; write/draft
+endpoints retired in the Continuous Sales Forecast redesign, Task 8).
 
-`POST /versions` builds the version's 18 (default) consecutive `YYYY-MM`
-months itself from `horizon_start_month` — a client-supplied month list is
-never trusted/accepted anywhere in this module; `_generate_months()` is the
-single source of that sequence and both `POST /versions` (validation only)
-and `GET /versions/{id}/grid` (rendering) call it fresh from the persisted
-`horizon_start_month`/`horizon_months` columns.
+A `ForecastVersion` is now an immutable snapshot: hand-built drafting
+(`POST /versions`), cell editing (`PUT .../cells`), manual confirmation
+(`POST .../confirm`) and file import (`POST .../import`) all moved to the
+continuous series (`app/api/v1/series.py` edits `mrp_demand_series` directly;
+`app/services/demand_series.py::freeze_outlook`, reached via
+`POST /series/outlook`, is the only way a new version is created now — see
+that module's docstring). This module keeps only the read/export surface: a
+frozen outlook snapshot is still viewable/exportable here, and
+`app/api/v1/mps.py` still reads versions as MPS input.
 
-`copy_from_version_id` copies the source version's lines **as-is by
-(material_code, month)** into the new version — there is no month-shifting.
-A source line whose month falls outside the new version's generated horizon
-is simply dropped (not remapped to an equivalent relative month). This
-keeps "copy from a similar past version" simple and unsurprising: if you
-start the new sheet at a different month, only the overlapping months carry
-forward.
+`_generate_months()` is the single source of a version's `YYYY-MM` column
+sequence — always derived fresh from the persisted
+`horizon_start_month`/`horizon_months` columns, never persisted as its own
+list.
 
 `GET /versions/{id}/grid` and `GET /versions/{id}/export` resolve each row's
 `name` via `app.services.mdm_client.resolve_material_names` — one batched
@@ -23,22 +24,16 @@ degrade to `name: None` for every row (today's pre-lookup behavior) rather
 than 5xx-ing or hanging — the grid/export's actual numbers never depend on
 mdm-api, so a name-lookup failure must never take the whole read down.
 
-Write endpoints (`POST /versions`, `PUT .../cells`, `POST .../confirm`) are
-gated `mrp.demand.write`; reads (`GET /versions`, `GET .../grid`) are gated
-`mrp.report.view`. A version whose status is not 'draft' rejects writes to
-its cells (409) — 'confirmed'/'superseded' versions are immutable.
+All endpoints here are reads, gated `mrp.report.view`.
 """
-import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-import anyio
-import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.core.authz import require_permission
@@ -51,21 +46,7 @@ router = APIRouter(prefix="/forecast", tags=["forecast"])
 
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-# POST .../import hardening (I7, final-phase review). 10 MB is generous for
-# an 18-month x few-thousand-material grid (a real export of that shape is
-# well under 1 MB) while still bounding how large a `bytes` object the
-# import path will ever materialize.
-_MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024
-_ALLOWED_IMPORT_CONTENT_TYPES = {
-    _XLSX_MEDIA_TYPE,
-    "application/octet-stream",  # some browsers/HTTP clients send this for .xlsx regardless of the real type
-    "",  # some clients omit Content-Type entirely
-}
-
 ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
-WriteDep = Annotated[dict, Depends(require_permission("mrp.demand.write"))]
-
-_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 def _generate_months(start_month: str, count: int) -> list[str]:
@@ -83,27 +64,6 @@ def _generate_months(start_month: str, count: int) -> list[str]:
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────
-
-
-class ForecastVersionCreate(BaseModel):
-    horizon_start_month: str
-    horizon_months: int = 18
-    note: str | None = None
-    copy_from_version_id: uuid.UUID | None = None
-
-    @field_validator("horizon_start_month")
-    @classmethod
-    def _valid_month(cls, v: str) -> str:
-        if not _MONTH_RE.match(v):
-            raise ValueError("horizon_start_month must be 'YYYY-MM'")
-        return v
-
-    @field_validator("horizon_months")
-    @classmethod
-    def _positive_horizon(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("horizon_months must be >= 1")
-        return v
 
 
 class ForecastVersionResponse(BaseModel):
@@ -142,39 +102,6 @@ class GridResponse(BaseModel):
     grand_total: Decimal
 
 
-class CellUpsert(BaseModel):
-    material_code: str
-    month: str
-    qty: Decimal
-
-
-class CellsUpsertRequest(BaseModel):
-    cells: list[CellUpsert]
-
-
-class SkippedCell(BaseModel):
-    material_code: str
-    month: str
-
-
-class CellsUpsertResponse(BaseModel):
-    upserted: int
-    skipped_frozen: list[SkippedCell]
-
-
-class ImportRowError(BaseModel):
-    row: int  # 1-based over data rows (header excluded); 0 = header-level error
-    column: str
-    reason: str
-
-
-class ImportResponse(BaseModel):
-    ok_rows: int
-    error_rows: list[ImportRowError]
-    skipped_frozen: list[SkippedCell]
-    would_upsert: int
-
-
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
@@ -183,14 +110,6 @@ async def _get_version_or_404(db: SessionDep, version_id: uuid.UUID) -> Forecast
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="forecast version not found")
     return version
-
-
-def _require_draft(version: ForecastVersion) -> None:
-    if version.status != "draft":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"forecast version {version.id} is '{version.status}', not 'draft' — it is immutable",
-        )
 
 
 async def _load_lines_by_material(
@@ -212,52 +131,6 @@ async def _load_lines_by_material(
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
-
-
-@router.post("/versions", response_model=ForecastVersionResponse, status_code=status.HTTP_201_CREATED)
-async def create_version(body: ForecastVersionCreate, db: SessionDep, payload: WriteDep):
-    created_by = None
-    sub = payload.get("sub")
-    if sub:
-        try:
-            created_by = uuid.UUID(sub)
-        except ValueError:
-            created_by = None
-
-    version = ForecastVersion(
-        version_no=f"FCV-{body.horizon_start_month}-{uuid.uuid4().hex[:8].upper()}",
-        status="draft",
-        horizon_start_month=body.horizon_start_month,
-        horizon_months=body.horizon_months,
-        note=body.note,
-        created_by=created_by,
-    )
-    db.add(version)
-    await db.flush()  # assign version.id for the FK below
-
-    if body.copy_from_version_id is not None:
-        source = await db.get(ForecastVersion, body.copy_from_version_id)
-        if source is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="copy_from_version_id not found")
-        target_months = set(_generate_months(body.horizon_start_month, body.horizon_months))
-        src_lines = (await db.execute(
-            select(ForecastLine).where(ForecastLine.version_id == source.id)
-        )).scalars().all()
-        for line in src_lines:
-            if line.month not in target_months:
-                continue  # as-is copy by (material, month); no shifting — see module docstring
-            db.add(ForecastLine(
-                version_id=version.id,
-                material_code=line.material_code,
-                month=line.month,
-                qty=line.qty,
-                uom=line.uom,
-                freeze_flag=False,  # a fresh draft copy starts unfrozen
-            ))
-
-    await db.commit()
-    await db.refresh(version)
-    return version
 
 
 @router.get("/versions", response_model=ForecastVersionListResponse)
@@ -323,66 +196,7 @@ async def get_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep, token: Bea
     }
 
 
-@router.put("/versions/{version_id}/cells", response_model=CellsUpsertResponse)
-async def upsert_cells(version_id: uuid.UUID, body: CellsUpsertRequest, db: SessionDep, _: WriteDep):
-    version = await _get_version_or_404(db, version_id)
-    _require_draft(version)
-
-    if not body.cells:
-        return {"upserted": 0, "skipped_frozen": []}
-
-    material_codes = {c.material_code for c in body.cells}
-    existing_rows = (await db.execute(
-        select(ForecastLine).where(
-            ForecastLine.version_id == version_id,
-            ForecastLine.material_code.in_(material_codes),
-        )
-    )).scalars().all()
-    existing_by_key = {(r.material_code, r.month): r for r in existing_rows}
-
-    upserted = 0
-    skipped_frozen: list[dict] = []
-    for cell in body.cells:
-        key = (cell.material_code, cell.month)
-        existing = existing_by_key.get(key)
-        if existing is not None and existing.freeze_flag:
-            skipped_frozen.append({"material_code": cell.material_code, "month": cell.month})
-            continue
-        if existing is not None:
-            existing.qty = cell.qty
-        else:
-            new_line = ForecastLine(
-                version_id=version_id,
-                material_code=cell.material_code,
-                month=cell.month,
-                qty=cell.qty,
-            )
-            db.add(new_line)
-            existing_by_key[key] = new_line  # dedupe repeated cells in the same request
-        upserted += 1
-
-    await db.commit()  # single transaction for the whole bulk upsert
-    return {"upserted": upserted, "skipped_frozen": skipped_frozen}
-
-
-@router.post("/versions/{version_id}/confirm", response_model=ForecastVersionResponse)
-async def confirm_version(version_id: uuid.UUID, db: SessionDep, _: WriteDep):
-    version = await _get_version_or_404(db, version_id)
-    _require_draft(version)
-
-    # No longer supersedes any other 'confirmed' version (Continuous Sales
-    # Forecast redesign, Task 4, design §4.3): outlook snapshots
-    # (app/services/demand_series.py::freeze_outlook) and hand-built drafts
-    # confirmed here now coexist as 'confirmed' at once — there is no more
-    # "exactly one confirmed version system-wide" invariant to protect.
-    version.status = "confirmed"
-    version.confirmed_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(version)
-    return version
-
-
-# ── Excel template / import / export (Task 2) ──────────────────────────────
+# ── Excel template / export (Task 2) ────────────────────────────────────────
 
 
 @router.get("/versions/{version_id}/template")
@@ -421,112 +235,3 @@ async def export_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep, token: 
     )
 
 
-@router.post("/versions/{version_id}/import", response_model=ImportResponse)
-async def import_forecast(
-    version_id: uuid.UUID,
-    db: SessionDep,
-    _: WriteDep,
-    token: BearerToken,
-    file: Annotated[UploadFile, File()],
-    dry_run: bool = Query(default=True),
-):
-    """Validate (and, unless dry_run, apply) an uploaded forecast xlsx.
-
-    `dry_run=true` runs every check — including a read-only frozen-cell
-    lookup so the preview accurately reports `skipped_frozen`/`would_upsert`
-    — but writes nothing; the frontend's "preview validation report" depends
-    on this. `dry_run=false` applies via the same upsert semantics as
-    PUT .../cells (frozen cells skipped and reported, never overwritten).
-
-    Hardening (I7, final-phase review): extension/content-type and size are
-    checked before anything touches the bytes (cheapest checks first, and
-    before the mdm-api round trip below) — a `.csv` renamed to `.xlsx` or an
-    oversized upload is rejected with a 400 instead of either an opaque 500
-    (openpyxl's `BadZipFile` on a non-xlsx file, previously uncaught) or an
-    unbounded `await file.read()`.
-    """
-    version = await _get_version_or_404(db, version_id)
-    _require_draft(version)
-    months = _generate_months(version.horizon_start_month, version.horizon_months)
-
-    if not (file.filename or "").lower().endswith(".xlsx"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"only .xlsx files are accepted (got filename={file.filename!r})",
-        )
-    if file.content_type not in _ALLOWED_IMPORT_CONTENT_TYPES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"unsupported content type {file.content_type!r} — upload an .xlsx file",
-        )
-
-    # Read one byte past the cap so an oversized upload is detected without
-    # ever materializing more than (cap + 1) bytes as a Python object —
-    # `await file.read()` with no bound (the pre-fix code) would happily
-    # build an arbitrarily large `bytes`, which is exactly what a zip-bomb
-    # xlsx (small on disk, huge once parsed) or just a very large legitimate
-    # mistake could use to OOM the container.
-    raw = await file.read(_MAX_IMPORT_FILE_BYTES + 1)
-    if len(raw) > _MAX_IMPORT_FILE_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"file too large — the limit is {_MAX_IMPORT_FILE_BYTES // (1024 * 1024)} MB",
-        )
-
-    # mdm-api material codes are fetched once per import (never per row),
-    # via a blocking httpx.Client bridged onto a worker thread. If mdm-api is
-    # unreachable/errors, fail loudly with a clear retry message — do NOT
-    # fall back to an empty valid-codes set, which would silently mark every
-    # row's material code as unknown and make users think their data is bad.
-    try:
-        valid_codes = await anyio.to_thread.run_sync(forecast_io.fetch_valid_material_codes, token)
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Material validation is temporarily unavailable (could not reach mdm-api) — please retry the import.",
-        ) from exc
-
-    try:
-        ok_cells, error_rows = forecast_io.parse_import_workbook(raw, months, valid_codes)
-    except forecast_io.ImportFileError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    skipped_frozen: list[dict] = []
-    if ok_cells:
-        material_codes = {c["material_code"] for c in ok_cells}
-        existing_rows = (await db.execute(
-            select(ForecastLine).where(
-                ForecastLine.version_id == version_id,
-                ForecastLine.material_code.in_(material_codes),
-            )
-        )).scalars().all()
-        existing_by_key = {(r.material_code, r.month): r for r in existing_rows}
-
-        for cell in ok_cells:
-            key = (cell["material_code"], cell["month"])
-            existing = existing_by_key.get(key)
-            if existing is not None and existing.freeze_flag:
-                skipped_frozen.append({"material_code": cell["material_code"], "month": cell["month"]})
-                continue
-            if not dry_run:
-                if existing is not None:
-                    existing.qty = cell["qty"]
-                else:
-                    new_line = ForecastLine(
-                        version_id=version_id,
-                        material_code=cell["material_code"],
-                        month=cell["month"],
-                        qty=cell["qty"],
-                    )
-                    db.add(new_line)
-                    existing_by_key[key] = new_line  # dedupe repeated cells in the same file
-
-        if not dry_run:
-            await db.commit()  # single transaction for the whole import
-
-    return {
-        "ok_rows": len(ok_cells),
-        "error_rows": error_rows,
-        "skipped_frozen": skipped_frozen,
-        "would_upsert": len(ok_cells) - len(skipped_frozen),
-    }

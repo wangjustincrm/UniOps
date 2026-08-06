@@ -10,14 +10,23 @@ shelf life.
 `resolve_shelf_life` is imported as a bare name into `mps.py` (same idiom
 `consignment.py` uses for `lookup_lot` — see that module's docstring) so it
 can be monkeypatched here without ever hitting real mdm-api.
+
+Fixture forecast versions are built directly against the ORM (`db_session`)
+rather than via `POST /forecast/versions` + `PUT .../cells` +
+`POST .../confirm` — those write/confirm endpoints were retired in the
+Continuous Sales Forecast redesign (Task 8; see tests/test_forecast.py's
+module docstring). mps.py only ever reads a version's stored rows, so a
+version built this way is indistinguishable to it from one freeze_outlook
+would have produced.
 """
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
 
 from app.api.v1 import mps as mps_module
+from app.models.forecast import ForecastLine, ForecastVersion
 
 
 async def _no_shelf_life(token):
@@ -28,24 +37,24 @@ async def _no_shelf_life(token):
     return {}
 
 
-async def _confirmed_version(client, headers, *, start="2026-09", months=3, material="S0093", monthly_qty="100"):
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": start, "horizon_months": months},
-        headers=headers,
-    )).json()
+async def _confirmed_version(db_session, *, start="2026-09", months=3, material="S0093", monthly_qty="100"):
     month_list = mps_module._generate_months(start, months)
-    await client.put(
-        f"/api/v1/forecast/versions/{v['id']}/cells",
-        json={"cells": [
-            {"material_code": material, "month": m, "qty": monthly_qty} for m in month_list
-        ]},
-        headers=headers,
+    version = ForecastVersion(
+        version_no=f"FCV-{start}-{uuid.uuid4().hex[:8].upper()}",
+        status="confirmed",
+        horizon_start_month=start,
+        horizon_months=months,
+        confirmed_at=datetime.now(timezone.utc),
     )
-    confirmed = (await client.post(
-        f"/api/v1/forecast/versions/{v['id']}/confirm", headers=headers,
-    )).json()
-    return confirmed, month_list
+    db_session.add(version)
+    await db_session.flush()  # assign version.id for the lines' FK below
+    for m in month_list:
+        db_session.add(ForecastLine(
+            version_id=version.id, material_code=material, month=m, qty=Decimal(monthly_qty),
+        ))
+    await db_session.commit()
+    await db_session.refresh(version)
+    return {"id": str(version.id)}, month_list
 
 
 async def _factory_rule(client, headers, *, max_sku_count=50, max_output_qty="1000000"):
@@ -72,7 +81,7 @@ async def test_generate_run_and_confirm_release_end_to_end(client, db_session, a
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    version, months = await _confirmed_version(client, headers)
+    version, months = await _confirmed_version(db_session)
     await _factory_rule(client, headers)
 
     r = await client.post(
@@ -117,10 +126,10 @@ async def test_generate_run_and_confirm_release_end_to_end(client, db_session, a
 
 
 @pytest.mark.anyio
-async def test_confirm_release_requires_permission(client, admin_token, non_admin_token, monkeypatch):
+async def test_confirm_release_requires_permission(client, db_session, admin_token, non_admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    version, _ = await _confirmed_version(client, headers)
+    version, _ = await _confirmed_version(db_session)
     await _factory_rule(client, headers)
     run = (await client.post(
         "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
@@ -151,24 +160,23 @@ async def test_material_with_sufficient_opening_stock_produces_no_line(client, d
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": "2026-09", "horizon_months": 2},
-        headers=headers,
-    )).json()
-    await client.put(
-        f"/api/v1/forecast/versions/{v['id']}/cells",
-        json={"cells": [
-            {"material_code": "S0093", "month": "2026-09", "qty": "100"},
-            {"material_code": "S0093", "month": "2026-10", "qty": "100"},
-            {"material_code": "S0060", "month": "2026-09", "qty": "50"},
-            {"material_code": "S0060", "month": "2026-10", "qty": "50"},
-        ]},
-        headers=headers,
+    forecast_version = ForecastVersion(
+        version_no=f"FCV-2026-09-{uuid.uuid4().hex[:8].upper()}",
+        status="confirmed",
+        horizon_start_month="2026-09",
+        horizon_months=2,
+        confirmed_at=datetime.now(timezone.utc),
     )
-    version = (await client.post(
-        f"/api/v1/forecast/versions/{v['id']}/confirm", headers=headers,
-    )).json()
+    db_session.add(forecast_version)
+    await db_session.flush()
+    db_session.add_all([
+        ForecastLine(version_id=forecast_version.id, material_code="S0093", month="2026-09", qty=Decimal("100")),
+        ForecastLine(version_id=forecast_version.id, material_code="S0093", month="2026-10", qty=Decimal("100")),
+        ForecastLine(version_id=forecast_version.id, material_code="S0060", month="2026-09", qty=Decimal("50")),
+        ForecastLine(version_id=forecast_version.id, material_code="S0060", month="2026-10", qty=Decimal("50")),
+    ])
+    await db_session.commit()
+    version = {"id": str(forecast_version.id)}
     await _factory_rule(client, headers)
 
     from app.models.wms_inventory import WmsInventoryLot
@@ -193,25 +201,29 @@ async def test_material_with_sufficient_opening_stock_produces_no_line(client, d
 
 
 @pytest.mark.anyio
-async def test_generate_run_requires_confirmed_forecast_version(client, admin_token, monkeypatch):
+async def test_generate_run_requires_confirmed_forecast_version(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": "2026-09", "horizon_months": 1},
-        headers=headers,
-    )).json()
+    v = ForecastVersion(
+        version_no=f"FCV-2026-09-{uuid.uuid4().hex[:8].upper()}",
+        status="draft",
+        horizon_start_month="2026-09",
+        horizon_months=1,
+    )
+    db_session.add(v)
+    await db_session.commit()
+    await db_session.refresh(v)
     r = await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": v["id"]}, headers=headers,
+        "/api/v1/mps/runs", json={"forecast_version_id": str(v.id)}, headers=headers,
     )
     assert r.status_code == 409
 
 
 @pytest.mark.anyio
-async def test_get_run_includes_capacity_occupancy(client, admin_token, monkeypatch):
+async def test_get_run_includes_capacity_occupancy(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    version, months = await _confirmed_version(client, headers, months=1, monthly_qty="40")
+    version, months = await _confirmed_version(db_session, months=1, monthly_qty="40")
     await _factory_rule(client, headers, max_sku_count=5, max_output_qty="1000")
 
     run = (await client.post(
@@ -229,10 +241,10 @@ async def test_get_run_includes_capacity_occupancy(client, admin_token, monkeypa
 
 
 @pytest.mark.anyio
-async def test_patch_line_marks_manual_adjusted_and_can_lock(client, admin_token, monkeypatch):
+async def test_patch_line_marks_manual_adjusted_and_can_lock(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    version, months = await _confirmed_version(client, headers, months=1)
+    version, months = await _confirmed_version(db_session, months=1)
     await _factory_rule(client, headers)
 
     run = (await client.post(
@@ -253,10 +265,10 @@ async def test_patch_line_marks_manual_adjusted_and_can_lock(client, admin_token
 
 
 @pytest.mark.anyio
-async def test_recalculate_keeps_locked_line_fixed(client, admin_token, monkeypatch):
+async def test_recalculate_keeps_locked_line_fixed(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    version, months = await _confirmed_version(client, headers, months=1, monthly_qty="100")
+    version, months = await _confirmed_version(db_session, months=1, monthly_qty="100")
     await _factory_rule(client, headers)
 
     run = (await client.post(
@@ -289,7 +301,7 @@ async def test_confirm_release_skips_capacity_gap_lines(client, db_session, admi
     to the planner."""
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    version, months = await _confirmed_version(client, headers, months=1, monthly_qty="100")
+    version, months = await _confirmed_version(db_session, months=1, monthly_qty="100")
     # Capacity too small to ever hold 100, and shelf life is unknown for
     # every material (see _no_shelf_life) so the engine can never pre-build
     # it either -- the only possible outcome is an explicit capacity_gap.
@@ -335,7 +347,7 @@ async def test_confirm_release_clears_prior_cycle_demand_across_forecast_version
     headers = {"Authorization": f"Bearer {admin_token}"}
 
     v1, _ = await _confirmed_version(
-        client, headers, start="2026-09", months=1, material="S0093", monthly_qty="100",
+        db_session, start="2026-09", months=1, material="S0093", monthly_qty="100",
     )
     await _factory_rule(client, headers)
     r1 = (await client.post(
@@ -345,7 +357,7 @@ async def test_confirm_release_clears_prior_cycle_demand_across_forecast_version
     assert rel1.status_code == 200, rel1.text
 
     v2, _ = await _confirmed_version(
-        client, headers, start="2026-10", months=1, material="S0093", monthly_qty="120",
+        db_session, start="2026-10", months=1, material="S0093", monthly_qty="120",
     )
     r2 = (await client.post(
         "/api/v1/mps/runs", json={"forecast_version_id": v2["id"]}, headers=headers,
@@ -363,10 +375,10 @@ async def test_confirm_release_clears_prior_cycle_demand_across_forecast_version
 
 
 @pytest.mark.anyio
-async def test_patch_line_rejects_malformed_plan_month(client, admin_token, monkeypatch):
+async def test_patch_line_rejects_malformed_plan_month(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
-    version, months = await _confirmed_version(client, headers, months=1)
+    version, months = await _confirmed_version(db_session, months=1)
     await _factory_rule(client, headers)
     run = (await client.post(
         "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,

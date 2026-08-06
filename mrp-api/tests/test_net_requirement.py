@@ -4,16 +4,44 @@ Pure-function cases come straight from the task brief; the DB-facing cases
 below exercise `get_opening_stock_breakdown`'s two exclusion rules (WMS
 hold/expired lots don't count; only a consignment lot's LATEST count_date
 counts) plus the end-to-end `GET /api/v1/net-requirement` endpoint.
+
+The endpoint-level cases build their fixture `ForecastVersion`/
+`ForecastLine` rows directly against the ORM (`db_session`) via
+`_make_version` below, rather than via `POST /forecast/versions` +
+`PUT .../cells` — those write endpoints were retired in the Continuous
+Sales Forecast redesign (Task 8; see tests/test_forecast.py's module
+docstring). `GET /net-requirement` only ever reads a version's stored rows,
+regardless of status or how they got there.
 """
+import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 
+from app.models.forecast import ForecastLine, ForecastVersion
 from app.services.net_requirement import (
     OpeningStockBreakdown, PLANNING_UOM, UomMismatchError,
     compute_net_requirements, get_opening_stock_breakdown,
 )
+
+
+async def _make_version(db_session, *, start, horizon_months, cells=()):
+    version = ForecastVersion(
+        version_no=f"FCV-{start}-{uuid.uuid4().hex[:8].upper()}",
+        status="draft",
+        horizon_start_month=start,
+        horizon_months=horizon_months,
+    )
+    db_session.add(version)
+    await db_session.flush()  # assign version.id for the lines' FK below
+    for material_code, month, qty in cells:
+        db_session.add(ForecastLine(
+            version_id=version.id, material_code=material_code, month=month, qty=Decimal(qty),
+        ))
+    await db_session.commit()
+    await db_session.refresh(version)
+    return {"id": str(version.id)}
 
 
 # ── Pure function: compute_net_requirements ─────────────────────────────────
@@ -227,20 +255,11 @@ async def test_net_requirement_endpoint_end_to_end(client, db_session, admin_tok
 
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": "2026-09", "horizon_months": 3},
-        headers=headers,
-    )).json()
-    await client.put(
-        f"/api/v1/forecast/versions/{v['id']}/cells",
-        json={"cells": [
-            {"material_code": "S0093", "month": "2026-09", "qty": "100"},
-            {"material_code": "S0093", "month": "2026-10", "qty": "100"},
-            {"material_code": "S0093", "month": "2026-11", "qty": "100"},
-        ]},
-        headers=headers,
-    )
+    v = await _make_version(db_session, start="2026-09", horizon_months=3, cells=[
+        ("S0093", "2026-09", "100"),
+        ("S0093", "2026-10", "100"),
+        ("S0093", "2026-11", "100"),
+    ])
 
     db_session.add(WmsInventoryLot(
         warehouse_id="CANADA", material_code="S0093", lot_no="LOT-OK",
@@ -269,21 +288,12 @@ async def test_net_requirement_endpoint_end_to_end(client, db_session, admin_tok
 
 
 @pytest.mark.anyio
-async def test_net_requirement_material_code_omitted_returns_all_materials(client, admin_token):
+async def test_net_requirement_material_code_omitted_returns_all_materials(client, db_session, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": "2026-09", "horizon_months": 2},
-        headers=headers,
-    )).json()
-    await client.put(
-        f"/api/v1/forecast/versions/{v['id']}/cells",
-        json={"cells": [
-            {"material_code": "S0093", "month": "2026-09", "qty": "10"},
-            {"material_code": "S0060", "month": "2026-09", "qty": "20"},
-        ]},
-        headers=headers,
-    )
+    v = await _make_version(db_session, start="2026-09", horizon_months=2, cells=[
+        ("S0093", "2026-09", "10"),
+        ("S0060", "2026-09", "20"),
+    ])
 
     r = await client.get(
         "/api/v1/net-requirement",
@@ -298,7 +308,7 @@ async def test_net_requirement_material_code_omitted_returns_all_materials(clien
 
 
 @pytest.mark.anyio
-async def test_net_requirement_populates_material_name_from_mdm(client, admin_token, monkeypatch):
+async def test_net_requirement_populates_material_name_from_mdm(client, db_session, admin_token, monkeypatch):
     """Same "bare code, no name" gap the forecast grid had — see this
     module's docstring."""
     import app.api.v1.net_requirement as net_requirement_module
@@ -308,16 +318,9 @@ async def test_net_requirement_populates_material_name_from_mdm(client, admin_to
     )
 
     headers = {"Authorization": f"Bearer {admin_token}"}
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": "2026-09", "horizon_months": 1},
-        headers=headers,
-    )).json()
-    await client.put(
-        f"/api/v1/forecast/versions/{v['id']}/cells",
-        json={"cells": [{"material_code": "S0093", "month": "2026-09", "qty": "10"}]},
-        headers=headers,
-    )
+    v = await _make_version(db_session, start="2026-09", horizon_months=1, cells=[
+        ("S0093", "2026-09", "10"),
+    ])
 
     r = await client.get(
         "/api/v1/net-requirement",
@@ -329,7 +332,7 @@ async def test_net_requirement_populates_material_name_from_mdm(client, admin_to
 
 
 @pytest.mark.anyio
-async def test_net_requirement_degrades_to_null_name_when_mdm_api_unreachable(client, admin_token, monkeypatch):
+async def test_net_requirement_degrades_to_null_name_when_mdm_api_unreachable(client, db_session, admin_token, monkeypatch):
     """mdm-api being down must not break this endpoint — degrade `name` to
     null and still return 200, same contract as the forecast grid. Patches
     at the mdm_client module level so this exercises the real degrade path."""
@@ -342,16 +345,9 @@ async def test_net_requirement_degrades_to_null_name_when_mdm_api_unreachable(cl
     monkeypatch.setattr(mdm_client, "fetch_materials", _boom)
 
     headers = {"Authorization": f"Bearer {admin_token}"}
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": "2026-09", "horizon_months": 1},
-        headers=headers,
-    )).json()
-    await client.put(
-        f"/api/v1/forecast/versions/{v['id']}/cells",
-        json={"cells": [{"material_code": "S0093", "month": "2026-09", "qty": "10"}]},
-        headers=headers,
-    )
+    v = await _make_version(db_session, start="2026-09", horizon_months=1, cells=[
+        ("S0093", "2026-09", "10"),
+    ])
 
     r = await client.get(
         "/api/v1/net-requirement",
@@ -367,13 +363,9 @@ async def _net_req_async(value):
 
 
 @pytest.mark.anyio
-async def test_net_requirement_unknown_material_code_404s(client, admin_token):
+async def test_net_requirement_unknown_material_code_404s(client, db_session, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
-    v = (await client.post(
-        "/api/v1/forecast/versions",
-        json={"horizon_start_month": "2026-09", "horizon_months": 1},
-        headers=headers,
-    )).json()
+    v = await _make_version(db_session, start="2026-09", horizon_months=1)
     r = await client.get(
         "/api/v1/net-requirement",
         params={"version_id": v["id"], "material_code": "NOT-IN-VERSION"},

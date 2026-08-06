@@ -15,9 +15,9 @@ mdm-api's test_boms_read_authz.py documents), so `_deny_everything` below
 monkeypatches `uniops_authz.core.user_role_codes`/`_effective_matrix`
 directly rather than relying on real matrix rows.
 
-One test per gated endpoint group (forecast read+write, consignment
-read+write, inventory read, admin_sync write, net_requirement read) — that
-covers every distinct permission key this service defines
+One test per gated endpoint group (forecast read, demand write (series.py),
+consignment read+write, inventory read, admin_sync write, net_requirement
+read) — that covers every distinct permission key this service defines
 (mrp.report.view, mrp.demand.write, mrp.param.write) at least once.
 """
 import uuid
@@ -50,11 +50,21 @@ async def test_forecast_read_gate_403s_non_permitted_role(client, non_admin_toke
 
 
 @pytest.mark.anyio
-async def test_forecast_write_gate_403s_non_permitted_role(client, non_admin_token, monkeypatch):
+async def test_demand_write_gate_403s_non_permitted_role(client, non_admin_token, monkeypatch):
+    """mrp.demand.write — forecast.py's own write endpoints (POST
+    /versions, PUT .../cells, POST .../confirm, POST .../import) were
+    retired in the Continuous Sales Forecast redesign (Task 8); this key is
+    now gated on series.py's PUT /series/cells instead (also covered by
+    tests/test_demand_series.py's own test_put_cells_without_write_permission_returns_403,
+    and POST /series/outlook by tests/test_outlook.py's
+    test_post_outlook_without_write_permission_returns_403 — kept here too
+    so this file's "one test per gated group" catalogue stays complete)."""
     _deny_everything(monkeypatch)
     headers = {"Authorization": f"Bearer {non_admin_token}"}
-    r = await client.post(
-        "/api/v1/forecast/versions", json={"horizon_start_month": "2026-09"}, headers=headers,
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2026-09", "qty": "1"}]},
+        headers=headers,
     )
     assert r.status_code == 403
 

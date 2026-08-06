@@ -15,6 +15,7 @@ task makes — freezing (and confirming) does NOT supersede a prior
 confirmed version, several stay `confirmed` at once (design §4.3).
 """
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -179,22 +180,30 @@ async def test_post_outlook_without_write_permission_returns_403(client, non_adm
     assert r.status_code == 403
 
 
-# ── Freezing/confirming no longer supersedes prior confirmed versions ──────
+# ── Freezing no longer supersedes prior confirmed versions ─────────────────
 
 
 @pytest.mark.anyio
-async def test_freezing_outlook_does_not_supersede_prior_confirmed_forecast_version(client, admin_token):
+async def test_freezing_outlook_does_not_supersede_prior_confirmed_forecast_version(client, db_session, admin_token):
     """Design §4.3: outlook snapshots coexist -- several `confirmed`
-    versions may exist at once. A hand-built draft confirmed via
-    POST /versions/{id}/confirm must stay `confirmed` after a later outlook
-    freeze, and the freshly frozen outlook is also `confirmed` -- neither
-    flips the other to `superseded`."""
+    versions may exist at once. A version that is already `confirmed` --
+    built directly against the ORM here, since POST /versions and
+    POST .../confirm were retired with the continuous series (Task 8); the
+    only way current code produces a confirmed version is freeze_outlook --
+    must stay `confirmed` after a later outlook freeze, and the freshly
+    frozen outlook is also `confirmed` -- neither flips the other to
+    `superseded`."""
     headers = {"Authorization": f"Bearer {admin_token}"}
-    v1 = (await client.post(
-        "/api/v1/forecast/versions", json={"horizon_start_month": "2026-09"}, headers=headers,
-    )).json()
-    r1 = await client.post(f"/api/v1/forecast/versions/{v1['id']}/confirm", headers=headers)
-    assert r1.status_code == 200 and r1.json()["status"] == "confirmed"
+    v1 = ForecastVersion(
+        version_no=f"FCV-2026-09-{uuid.uuid4().hex[:8].upper()}",
+        status="confirmed",
+        horizon_start_month="2026-09",
+        horizon_months=18,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(v1)
+    await db_session.commit()
+    await db_session.refresh(v1)
 
     r2 = await client.post(
         "/api/v1/series/outlook",
@@ -209,30 +218,5 @@ async def test_freezing_outlook_does_not_supersede_prior_confirmed_forecast_vers
         "/api/v1/forecast/versions", params={"page_size": 50}, headers=headers,
     )).json()
     statuses = {item["id"]: item["status"] for item in listing["items"]}
-    assert statuses[v1["id"]] == "confirmed"  # NOT superseded by the later outlook freeze
-    assert statuses[v2["id"]] == "confirmed"
-
-
-@pytest.mark.anyio
-async def test_confirming_second_draft_does_not_supersede_first_confirmed(client, admin_token):
-    """Same invariant, exercised via two hand-built drafts confirmed back to
-    back through POST /versions/{id}/confirm -- both remain confirmed."""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    v1 = (await client.post(
-        "/api/v1/forecast/versions", json={"horizon_start_month": "2026-09"}, headers=headers,
-    )).json()
-    r1 = await client.post(f"/api/v1/forecast/versions/{v1['id']}/confirm", headers=headers)
-    assert r1.status_code == 200 and r1.json()["status"] == "confirmed"
-
-    v2 = (await client.post(
-        "/api/v1/forecast/versions", json={"horizon_start_month": "2026-10"}, headers=headers,
-    )).json()
-    r2 = await client.post(f"/api/v1/forecast/versions/{v2['id']}/confirm", headers=headers)
-    assert r2.status_code == 200 and r2.json()["status"] == "confirmed"
-
-    listing = (await client.get(
-        "/api/v1/forecast/versions", params={"page_size": 50}, headers=headers,
-    )).json()
-    statuses = {item["id"]: item["status"] for item in listing["items"]}
-    assert statuses[v1["id"]] == "confirmed"
+    assert statuses[str(v1.id)] == "confirmed"  # NOT superseded by the later outlook freeze
     assert statuses[v2["id"]] == "confirmed"
