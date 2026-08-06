@@ -265,3 +265,170 @@ async def test_read_series_grid_empty_range_returns_empty_grid(db_session):
         "column_totals": {"2030-01": Decimal("0")},
         "grand_total": Decimal("0"),
     }
+
+
+# ── API: /series (Task 3) ────────────────────────────────────────────────
+#
+# Uses `client`/`admin_token`/`non_admin_token` (tests/conftest.py) — same
+# HTTP-level harness `test_consignment.py`/`test_permission_gates.py` use.
+# `current_month` is intentionally NOT under test control here — the
+# endpoint resolves it from real wall-clock UTC (module docstring), so
+# these tests write far-future months (2099-*) that can never be "past"
+# regardless of when the suite runs, and separately assert a real past
+# month (2020-01) 422s.
+
+
+def _deny_everything(monkeypatch):
+    """Same idiom as tests/test_permission_gates.py's helper of the same
+    name (duplicated here rather than imported — that module doesn't
+    export it for cross-file reuse): makes every role's effective
+    permission set empty, so `non_admin_token` actually hits the 403 path
+    instead of the system_admin fast path `admin_token` always takes."""
+    import uniops_authz.core as authz_core
+
+    async def _user_role_codes(db, user_id, base_role):
+        return {base_role}
+
+    async def _effective_matrix(db):
+        return {}
+
+    monkeypatch.setattr(authz_core, "user_role_codes", _user_role_codes)
+    monkeypatch.setattr(authz_core, "_effective_matrix", _effective_matrix)
+
+
+@pytest.mark.anyio
+async def test_put_cells_upserts_and_returns_counts(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [
+            {"material_code": "S0093", "month": "2099-01", "qty": "100"},
+            {"material_code": "S0060", "month": "2099-01", "qty": "20"},
+        ]},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"upserted": 2, "changed": 2}
+
+
+@pytest.mark.anyio
+async def test_put_cells_past_month_returns_422(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2020-01", "qty": "5"}]},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    assert "2020-01" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_put_cells_non_kg_returns_422(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2099-01", "qty": "5", "uom": "EA"}]},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    assert "EA" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_put_cells_duplicate_key_in_one_batch_last_value_wins(client, admin_token):
+    """A grid editor can emit the same (material_code, month) twice in one
+    PUT batch (e.g. two edits to the same cell before the user saves). The
+    service dedupes within-batch (app/services/demand_series.py's
+    existing_by_key), but this asserts that contract survives the HTTP
+    layer end to end: the final stored qty is the LAST cell's value, and
+    the change log records exactly the two sequential transitions
+    (None->10, then 10->20) — not a lost update and not a stray extra row."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [
+            {"material_code": "S0093", "month": "2099-02", "qty": "10"},
+            {"material_code": "S0093", "month": "2099-02", "qty": "20"},
+        ]},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    # two writes happened (both cells triggered a real change), but they
+    # collapse onto the same underlying row.
+    assert r.json() == {"upserted": 2, "changed": 2}
+
+    grid = (await client.get(
+        "/api/v1/series", params={"from": "2099-02", "to": "2099-02"}, headers=headers,
+    )).json()
+    rows_by_code = {row["material_code"]: row for row in grid["rows"]}
+    assert rows_by_code["S0093"]["cells"]["2099-02"] == "20.000"  # last value wins
+
+    log = (await client.get(
+        "/api/v1/series/change-log",
+        params={"material_code": "S0093", "month": "2099-02"},
+        headers=headers,
+    )).json()
+    entries = sorted(log["items"], key=lambda item: Decimal(item["new_qty"]))
+    assert len(entries) == 2
+    assert entries[0]["old_qty"] is None and entries[0]["new_qty"] == "10.000"
+    assert entries[1]["old_qty"] == "10.000" and entries[1]["new_qty"] == "20.000"
+
+
+@pytest.mark.anyio
+async def test_get_series_returns_grid(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2099-03", "qty": "42"}]},
+        headers=headers,
+    )
+    r = await client.get(
+        "/api/v1/series", params={"from": "2099-03", "to": "2099-03"}, headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["months"] == ["2099-03"]
+    assert len(body["rows"]) == 1
+    row = body["rows"][0]
+    assert row["material_code"] == "S0093"
+    assert row["cells"] == {"2099-03": "42.000"}
+    assert row["total"] == "42.000"
+    assert body["column_totals"] == {"2099-03": "42.000"}
+    assert body["grand_total"] == "42.000"
+
+
+@pytest.mark.anyio
+async def test_get_change_log_newest_first(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2099-04", "qty": "10"}]},
+        headers=headers,
+    )
+    await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2099-04", "qty": "30"}]},
+        headers=headers,
+    )
+    r = await client.get(
+        "/api/v1/series/change-log", params={"material_code": "S0093"}, headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 2
+    # newest first: the second PUT (10 -> 30) must come before the first (None -> 10)
+    assert items[0]["old_qty"] == "10.000" and items[0]["new_qty"] == "30.000"
+    assert items[1]["old_qty"] is None and items[1]["new_qty"] == "10.000"
+
+
+@pytest.mark.anyio
+async def test_put_cells_without_write_permission_returns_403(client, non_admin_token, monkeypatch):
+    _deny_everything(monkeypatch)
+    headers = {"Authorization": f"Bearer {non_admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2099-01", "qty": "5"}]},
+        headers=headers,
+    )
+    assert r.status_code == 403
