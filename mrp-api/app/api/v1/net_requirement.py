@@ -18,6 +18,16 @@ e.g. `_get_version_or_404`).
 
 Gated `mrp.report.view` — this is a read/report endpoint, same permission as
 `GET /forecast/versions/{id}/grid` and `GET /inventory/lots`.
+
+Each item's `name` is resolved via `app.services.mdm_client.resolve_material_names`
+— one batched call per request (never per material), same degrade-on-failure
+contract as the forecast grid/export and the consignment stock list (see
+those modules' docstrings): mdm-api trouble means every item's `name` comes
+back None, never a broken/5xx response. There is no frontend page consuming
+this endpoint yet, but the response shape is fixed here up front for
+consistency with every other endpoint that returns a bare `material_code` —
+whichever page eventually renders this data won't hit the same "just a code,
+no name" gap the forecast grid did.
 """
 import uuid
 from datetime import date, datetime
@@ -29,8 +39,9 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.core.authz import require_permission
-from app.core.deps import SessionDep
+from app.core.deps import BearerToken, SessionDep
 from app.models.forecast import ForecastLine, ForecastVersion
+from app.services.mdm_client import resolve_material_names
 from app.services.net_requirement import compute_net_requirements, get_opening_stock_breakdown
 
 router = APIRouter(tags=["net-requirement"])
@@ -58,6 +69,7 @@ class StockSourcesResponse(BaseModel):
 
 class MaterialNetRequirementResponse(BaseModel):
     material_code: str
+    name: str | None = None
     months: list[NetRowResponse]
     stock_sources: StockSourcesResponse
 
@@ -111,12 +123,14 @@ async def _load_forecast_by_material(
 
 async def _build_material_response(
     db: SessionDep, material_code: str, months: list[str], forecast_cells: dict[str, Decimal],
+    name: str | None,
 ) -> MaterialNetRequirementResponse:
     forecast_by_month = {m: forecast_cells.get(m, Decimal("0")) for m in months}
     breakdown = await get_opening_stock_breakdown(db, material_code)
     rows = compute_net_requirements(forecast_by_month, breakdown.opening_stock)
     return MaterialNetRequirementResponse(
         material_code=material_code,
+        name=name,
         months=[
             NetRowResponse(
                 month=r.month, forecast_qty=r.forecast_qty, opening_stock=r.opening_stock,
@@ -140,6 +154,7 @@ async def _build_material_response(
 async def get_net_requirement(
     db: SessionDep,
     _: ReadDep,
+    token: BearerToken,
     version_id: uuid.UUID = Query(...),
     material_code: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -155,14 +170,22 @@ async def get_net_requirement(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"material_code {material_code!r} has no forecast line in version {version_id}",
             )
-        item = await _build_material_response(db, material_code, months, by_material[material_code])
+        names = await resolve_material_names(token)
+        item = await _build_material_response(
+            db, material_code, months, by_material[material_code], names.get(material_code),
+        )
         return NetRequirementListResponse(items=[item], total=1, page=1, page_size=1)
 
     all_codes = sorted(by_material)
     total = len(all_codes)
     page_codes = all_codes[(page - 1) * page_size: (page - 1) * page_size + page_size]
+    # One batched mdm-api round trip for this page (never per material) —
+    # skipped entirely when the page is empty. Never raises: see
+    # resolve_material_names' docstring — mdm-api trouble degrades every
+    # item's name to None rather than breaking this read.
+    names = await resolve_material_names(token) if page_codes else {}
     items = [
-        await _build_material_response(db, code, months, by_material[code])
+        await _build_material_response(db, code, months, by_material[code], names.get(code))
         for code in page_codes
     ]
     return NetRequirementListResponse(items=items, total=total, page=page, page_size=page_size)

@@ -24,6 +24,17 @@ nothing.
 A duplicate (warehouse_code, material_code, lot_no, count_date) — the
 planner re-entering the same week's count for the same lot — is a 409, not
 the raw 500 an unhandled IntegrityError would otherwise produce.
+
+`GET /stock` (list) resolves each row's material `name` via
+`app.services.mdm_client.resolve_material_names` — one batched call per
+request, same degrade-on-failure contract as the forecast grid (see
+app/api/v1/forecast.py's module docstring): mdm-api trouble means every
+row's `name` comes back None, never a broken/5xx list. `POST /stock` (create)
+and `GET /stock/{id}` don't carry `name` — the create form already knows the
+product's name client-side (the planner picked it via MaterialPicker) and
+there's no single-row detail view that needs it; only the list table
+(mrp/src/pages/consignment/ConsignmentStockPage.tsx) renders a bare
+`material_code` today.
 """
 import logging
 import uuid
@@ -38,8 +49,9 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.authz import require_permission
-from app.core.deps import SessionDep
+from app.core.deps import BearerToken, SessionDep
 from app.models.consignment import ConsignmentStock
+from app.services.mdm_client import resolve_material_names
 from app.services.wms_lot_lookup import lookup_lot
 
 router = APIRouter(prefix="/consignment", tags=["consignment"])
@@ -98,8 +110,17 @@ class ConsignmentStockCreateResponse(ConsignmentStockResponse):
     wms_lookup_found: bool | None = None
 
 
+class ConsignmentStockListItem(ConsignmentStockResponse):
+    # Populated only by GET /stock (list) via a single batched mdm-api call
+    # for the whole page — see this module's docstring. None if the material
+    # has no name in mdm-api, or if that lookup couldn't be completed (mdm-api
+    # unavailable) — either way the list must still render, just without a
+    # name for that row.
+    name: str | None = None
+
+
 class ConsignmentStockListResponse(BaseModel):
-    items: list[ConsignmentStockResponse]
+    items: list[ConsignmentStockListItem]
     total: int
     page: int
     page_size: int
@@ -201,6 +222,7 @@ async def create_stock(body: ConsignmentStockCreate, db: SessionDep, payload: Wr
 async def list_stock(
     db: SessionDep,
     _: ReadDep,
+    token: BearerToken,
     warehouse_code: str | None = Query(default=None),
     material_code: str | None = Query(default=None),
     lot_no: str | None = Query(default=None),
@@ -223,7 +245,18 @@ async def list_stock(
 
     stmt = stmt.order_by(ConsignmentStock.count_date.desc(), ConsignmentStock.material_code, ConsignmentStock.lot_no)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
-    items = (await db.execute(stmt)).scalars().all()
+    rows = (await db.execute(stmt)).scalars().all()
+
+    # One batched mdm-api round trip for this page (never per row) — skipped
+    # entirely when the page is empty. Never raises: see
+    # resolve_material_names' docstring — mdm-api trouble degrades every
+    # row's name to None rather than breaking this list.
+    names = await resolve_material_names(token) if rows else {}
+    items: list[ConsignmentStockListItem] = []
+    for row in rows:
+        item = ConsignmentStockListItem.model_validate(row)
+        item.name = names.get(row.material_code)
+        items.append(item)
 
     latest_stmt = select(ConsignmentStock.warehouse_code, func.max(ConsignmentStock.count_date)).group_by(
         ConsignmentStock.warehouse_code

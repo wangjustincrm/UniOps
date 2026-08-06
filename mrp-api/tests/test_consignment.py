@@ -166,6 +166,67 @@ async def test_list_reports_latest_count_date_per_warehouse(client, admin_token,
 
 
 @pytest.mark.anyio
+async def test_list_populates_material_names_from_mdm(client, admin_token, monkeypatch):
+    """The same "bare code, no name" gap the forecast grid had — see
+    app/api/v1/consignment.py's module docstring."""
+    monkeypatch.setattr(
+        consignment, "lookup_lot",
+        lambda lot_no, material_code: {"found": False, "production_date": None, "expiry_date": None},
+    )
+    monkeypatch.setattr(
+        consignment, "resolve_material_names",
+        lambda token: _consignment_async({"S0093": "Whole Milk Powder 25kg"}),
+    )
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post(
+        "/api/v1/consignment/stock",
+        json={"material_code": "S0093", "lot_no": "LOT-A", "qty": "100", "count_date": "2026-08-04"},
+        headers=headers,
+    )
+
+    r = await client.get("/api/v1/consignment/stock", headers=headers)
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["material_code"] == "S0093"
+    assert item["name"] == "Whole Milk Powder 25kg"
+
+
+@pytest.mark.anyio
+async def test_list_degrades_to_null_names_when_mdm_api_unreachable(client, admin_token, monkeypatch):
+    """mdm-api being down must not break this list — degrade every row's
+    `name` to null and still return 200, same contract as the forecast grid
+    (app/services/mdm_client.py's resolve_material_names). Patches at the
+    mdm_client module level so this exercises the real degrade path."""
+    import httpx as _httpx
+    from app.services import mdm_client
+
+    def _boom(token):
+        raise _httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(
+        consignment, "lookup_lot",
+        lambda lot_no, material_code: {"found": False, "production_date": None, "expiry_date": None},
+    )
+    monkeypatch.setattr(mdm_client, "fetch_materials", _boom)
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post(
+        "/api/v1/consignment/stock",
+        json={"material_code": "S0093", "lot_no": "LOT-A", "qty": "100", "count_date": "2026-08-04"},
+        headers=headers,
+    )
+
+    r = await client.get("/api/v1/consignment/stock", headers=headers)
+    assert r.status_code == 200
+    item = r.json()["items"][0]
+    assert item["name"] is None
+
+
+async def _consignment_async(value):
+    return value
+
+
+@pytest.mark.anyio
 async def test_lot_lookup_endpoint_delegates_to_service(client, admin_token, monkeypatch):
     monkeypatch.setattr(
         consignment, "lookup_lot",

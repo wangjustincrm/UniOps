@@ -4,15 +4,19 @@ Consumes Task 1's `ForecastVersion`/`ForecastLine` shape via the caller
 (app/api/v1/forecast.py) — this module only deals with xlsx bytes and
 row-level validation, it does not touch the DB session itself.
 
-`fetch_valid_material_codes` is deliberately a *synchronous* function (an
-`httpx.Client`, not `AsyncClient`) that pages through mdm-api's
-`GET /mdm/v1/materials` **once per import call** (never per row) forwarding
-the caller's bearer token. It is sync so tests can monkeypatch this exact
-module attribute with a plain callable (see tests/test_forecast_io.py,
-mirroring the task brief's `monkeypatch.setattr(forecast_io,
-"fetch_valid_material_codes", lambda *a, **k: {...})`) without needing an
-async mock; the import endpoint bridges it onto the event loop via
-`anyio.to_thread.run_sync`.
+`fetch_valid_material_codes` is deliberately a *synchronous* function that
+pages through mdm-api's `GET /mdm/v1/materials` **once per import call**
+(never per row) forwarding the caller's bearer token. It is sync so tests
+can monkeypatch this exact module attribute with a plain callable (see
+tests/test_forecast_io.py, mirroring the task brief's
+`monkeypatch.setattr(forecast_io, "fetch_valid_material_codes", lambda *a,
+**k: {...})`) without needing an async mock; the import endpoint bridges it
+onto the event loop via `anyio.to_thread.run_sync`. It now derives from
+`app.services.mdm_client.fetch_materials` — the same httpx.Client/paging
+loop, generalized to also carry each material's name so read endpoints
+(forecast grid/export, consignment stock list, net-requirement) can resolve
+`material_code -> name` without a second, independent way of calling
+mdm-api.
 
 Row numbering in `error_rows`/ok-cell reporting matches the **physical Excel
 row number** the user would see if they opened the file — the header is row
@@ -50,10 +54,9 @@ from __future__ import annotations
 import io
 from decimal import Decimal, InvalidOperation
 
-import httpx
 from openpyxl import Workbook, load_workbook
 
-from app.core.config import settings
+from app.services.mdm_client import fetch_materials
 
 TEMPLATE_HEADERS = ["Material Code", "Name"]
 
@@ -73,30 +76,14 @@ class ImportFileError(ValueError):
 def fetch_valid_material_codes(token: str) -> set[str]:
     """Pull the full set of material codes known to mdm-api, once.
 
-    Pages through GET /mdm/v1/materials (page_size=500) until exhausted.
-    Forwards the caller's bearer token so this respects mdm-api's own authz
-    (materials reads there are open to any authenticated role).
+    Thin wrapper over `app.services.mdm_client.fetch_materials` (see this
+    module's docstring) — the codes are just that map's keys. Forwards the
+    caller's bearer token so this respects mdm-api's own authz (materials
+    reads there are open to any authenticated role). Raises on failure
+    (never falls back to an empty set) — see `fetch_materials`'s docstring
+    for why import_forecast depends on that.
     """
-    codes: set[str] = set()
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    with httpx.Client(
-        base_url=f"{settings.MDM_API_URL}/mdm/v1",
-        timeout=settings.MDM_API_TIMEOUT_SECONDS,
-        headers=headers,
-    ) as http:
-        page = 1
-        page_size = 500
-        while True:
-            resp = http.get("/materials", params={"page": page, "page_size": page_size})
-            resp.raise_for_status()
-            data = resp.json()
-            items = data.get("items", [])
-            codes.update(item["code"] for item in items if item.get("code"))
-            total = data.get("total", len(items))
-            if not items or page * page_size >= total:
-                break
-            page += 1
-    return codes
+    return set(fetch_materials(token).keys())
 
 
 def parse_qty(raw) -> Decimal:

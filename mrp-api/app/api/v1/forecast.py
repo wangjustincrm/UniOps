@@ -15,11 +15,13 @@ keeps "copy from a similar past version" simple and unsurprising: if you
 start the new sheet at a different month, only the overlapping months carry
 forward.
 
-`GET /versions/{id}/grid` returns `name: null` for every row — material
-names live in mdm-api and this task does not wire a cross-service lookup
-(no MdmClient-style client exists yet in this service, see app/core/config.py
-— out of scope here per the task brief; the frontend can resolve
-material_code -> name against mdm-api's own materials list).
+`GET /versions/{id}/grid` and `GET /versions/{id}/export` resolve each row's
+`name` via `app.services.mdm_client.resolve_material_names` — one batched
+call per request (never per row), forwarding the caller's bearer token. That
+helper never raises: if mdm-api is unreachable/slow/erroring, both endpoints
+degrade to `name: None` for every row (today's pre-lookup behavior) rather
+than 5xx-ing or hanging — the grid/export's actual numbers never depend on
+mdm-api, so a name-lookup failure must never take the whole read down.
 
 Write endpoints (`POST /versions`, `PUT .../cells`, `POST .../confirm`) are
 gated `mrp.demand.write`; reads (`GET /versions`, `GET .../grid`) are gated
@@ -44,6 +46,7 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.services import forecast_io
+from app.services.mdm_client import resolve_material_names
 
 router = APIRouter(prefix="/forecast", tags=["forecast"])
 
@@ -275,7 +278,7 @@ async def list_versions(
 
 
 @router.get("/versions/{version_id}/grid", response_model=GridResponse)
-async def get_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep):
+async def get_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep, token: BearerToken):
     version = await _get_version_or_404(db, version_id)
     months = _generate_months(version.horizon_start_month, version.horizon_months)
     month_index = set(months)
@@ -290,6 +293,12 @@ async def get_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep):
             continue  # lines outside the current horizon (e.g. after a horizon edit) don't render
         by_material.setdefault(line.material_code, {})[line.month] = line.qty
 
+    # One batched mdm-api round trip for the whole grid (never per row) —
+    # skipped entirely when there are no rows to name. Never raises: see
+    # resolve_material_names' docstring — mdm-api trouble degrades every
+    # row's name to None rather than breaking this read.
+    names = await resolve_material_names(token) if by_material else {}
+
     column_totals: dict[str, Decimal] = {m: Decimal("0") for m in months}
     rows: list[dict] = []
     grand_total = Decimal("0")
@@ -297,7 +306,12 @@ async def get_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep):
         material_cells = by_material[material_code]
         cells = {m: material_cells.get(m, Decimal("0")) for m in months}
         total = sum(cells.values(), Decimal("0"))
-        rows.append({"material_code": material_code, "name": None, "cells": cells, "total": total})
+        rows.append({
+            "material_code": material_code,
+            "name": names.get(material_code),
+            "cells": cells,
+            "total": total,
+        })
         for m in months:
             column_totals[m] += cells[m]
         grand_total += total
@@ -390,13 +404,16 @@ async def download_template(version_id: uuid.UUID, db: SessionDep, _: ReadDep):
 
 
 @router.get("/versions/{version_id}/export")
-async def export_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep):
+async def export_grid(version_id: uuid.UUID, db: SessionDep, _: ReadDep, token: BearerToken):
     """Export the current grid as xlsx, in the same shape as the template."""
     version = await _get_version_or_404(db, version_id)
     months = _generate_months(version.horizon_start_month, version.horizon_months)
     by_material = await _load_lines_by_material(db, version_id, months)
+    # Same one-batched-call-per-request/degrade-on-failure contract as
+    # GET .../grid — see resolve_material_names' docstring.
+    names = await resolve_material_names(token) if by_material else {}
     rows = [
-        {"material_code": code, "name": None, "cells": cells}
+        {"material_code": code, "name": names.get(code), "cells": cells}
         for code, cells in sorted(by_material.items())
     ]
     content = forecast_io.build_export_workbook(months, rows)

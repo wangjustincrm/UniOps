@@ -269,6 +269,75 @@ async def test_net_requirement_material_code_omitted_returns_all_materials(clien
 
 
 @pytest.mark.anyio
+async def test_net_requirement_populates_material_name_from_mdm(client, admin_token, monkeypatch):
+    """Same "bare code, no name" gap the forecast grid had — see this
+    module's docstring."""
+    import app.api.v1.net_requirement as net_requirement_module
+    monkeypatch.setattr(
+        net_requirement_module, "resolve_material_names",
+        lambda token: _net_req_async({"S0093": "Whole Milk Powder 25kg"}),
+    )
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v = (await client.post(
+        "/api/v1/forecast/versions",
+        json={"horizon_start_month": "2026-09", "horizon_months": 1},
+        headers=headers,
+    )).json()
+    await client.put(
+        f"/api/v1/forecast/versions/{v['id']}/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2026-09", "qty": "10"}]},
+        headers=headers,
+    )
+
+    r = await client.get(
+        "/api/v1/net-requirement",
+        params={"version_id": v["id"], "material_code": "S0093"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["items"][0]["name"] == "Whole Milk Powder 25kg"
+
+
+@pytest.mark.anyio
+async def test_net_requirement_degrades_to_null_name_when_mdm_api_unreachable(client, admin_token, monkeypatch):
+    """mdm-api being down must not break this endpoint — degrade `name` to
+    null and still return 200, same contract as the forecast grid. Patches
+    at the mdm_client module level so this exercises the real degrade path."""
+    import httpx as _httpx
+    from app.services import mdm_client
+
+    def _boom(token):
+        raise _httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(mdm_client, "fetch_materials", _boom)
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    v = (await client.post(
+        "/api/v1/forecast/versions",
+        json={"horizon_start_month": "2026-09", "horizon_months": 1},
+        headers=headers,
+    )).json()
+    await client.put(
+        f"/api/v1/forecast/versions/{v['id']}/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2026-09", "qty": "10"}]},
+        headers=headers,
+    )
+
+    r = await client.get(
+        "/api/v1/net-requirement",
+        params={"version_id": v["id"], "material_code": "S0093"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["items"][0]["name"] is None
+
+
+async def _net_req_async(value):
+    return value
+
+
+@pytest.mark.anyio
 async def test_net_requirement_unknown_material_code_404s(client, admin_token):
     headers = {"Authorization": f"Bearer {admin_token}"}
     v = (await client.post(
