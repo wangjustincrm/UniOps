@@ -533,3 +533,81 @@ async def test_reject_requires_a_note(client):
 async def test_detail_404_for_unknown_id(client):
     r = await client.get(f"/finance/v1/vendor-credits/{uuid.uuid4()}", headers=_h())
     assert r.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_approve_denies_role_without_the_manage_permission(client):
+    """The conftest test schema seeds role_permissions with only
+    finance.coa.manage / finance.period.close / finance.jv.post — ap_clerk has
+    no grant for epms.vendor_credit.manage, so require_permission must deny
+    it with 403 rather than admitting by construction (system_admin always
+    short-circuits the gate and would never exercise this path)."""
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    r = await client.post(f"/finance/v1/vendor-credits/{created['id']}/approve",
+                          json={}, headers=_h("ap_clerk"))
+    assert r.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_approve_allows_non_admin_role_granted_the_permission(client, db_session):
+    """Proves the gate admits on an actual role_permissions grant, not just on
+    the system_admin shortcut — mirrors how tests/conftest.py seeds its own
+    phase-2 permission rows."""
+    await db_session.execute(sa.text(
+        "INSERT INTO permission_defs (key, module, label, sort) "
+        "VALUES ('epms.vendor_credit.manage', 'epms', 'epms.vendor_credit.manage', 0) "
+        "ON CONFLICT (key) DO NOTHING"))
+    await db_session.execute(sa.text(
+        "INSERT INTO role_permissions (role_code, permission_key) "
+        "VALUES ('ap_clerk', 'epms.vendor_credit.manage')"))
+    await db_session.commit()
+
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    r = await client.post(f"/finance/v1/vendor-credits/{created['id']}/approve",
+                          json={}, headers=_h("ap_clerk"))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "available"
+
+
+@pytest.mark.anyio
+async def test_void_success_flips_available_to_void(client):
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    await client.post(f"/finance/v1/vendor-credits/{created['id']}/approve",
+                      json={}, headers=_h("system_admin"))
+    r = await client.post(f"/finance/v1/vendor-credits/{created['id']}/void",
+                          json={"note": "no longer needed"}, headers=_h("system_admin"))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "void"
+
+
+@pytest.mark.anyio
+async def test_void_pending_review_returns_409(client):
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    r = await client.post(f"/finance/v1/vendor-credits/{created['id']}/void",
+                          json={"note": "no longer needed"}, headers=_h("system_admin"))
+    assert r.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_reject_success_flips_to_void_with_persisted_note(client):
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+    r = await client.post(f"/finance/v1/vendor-credits/{created['id']}/reject",
+                          json={"note": "wrong vendor"}, headers=_h("system_admin"))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "void"
+    assert body["review_note"] == "wrong vendor"
+
+
+@pytest.mark.anyio
+async def test_list_rejects_zero_and_negative_limit(client):
+    r = await client.get("/finance/v1/vendor-credits", params={"limit": 0}, headers=_h())
+    assert r.status_code == 422
+
+    r = await client.get("/finance/v1/vendor-credits", params={"limit": -1}, headers=_h())
+    assert r.status_code == 422

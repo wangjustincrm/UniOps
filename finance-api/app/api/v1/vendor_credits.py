@@ -59,7 +59,7 @@ async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
 async def list_vendor_credits(user: CurrentUser,
                               status: str | None = Query(default=None),
                               vendor_id: uuid.UUID | None = Query(default=None),
-                              limit: int = Query(default=100, le=500),
+                              limit: int = Query(default=100, ge=1, le=500),
                               offset: int = Query(default=0, ge=0),
                               db: AsyncSession = Depends(get_db)):
     items, total = await crud.get_all(db, status=status, vendor_id=vendor_id,
