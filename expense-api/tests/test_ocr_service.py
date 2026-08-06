@@ -257,3 +257,29 @@ async def test_extract_invoice_normalizes_negative_quantities(anthropic_stub):
     assert all(q >= 0 for q in quantities)
     # positive row untouched
     assert result["line_items"][1]["unit_price"] == 0.41
+
+
+def test_document_type_is_extracted_when_present():
+    from app.services import ocr_service
+    parsed = {
+        "vendor_name": {"value": "Amazon Business", "confidence": 1.0},
+        "document_type": {"value": "credit_note", "confidence": 0.95},
+        "subtotal": {"value": -0.04, "confidence": 1.0},
+        "line_items": [],
+    }
+    result = ocr_service._assemble_invoice_result(parsed)
+    assert result["document_type"] == "credit_note"
+
+
+def test_document_type_defaults_to_invoice_when_absent():
+    from app.services import ocr_service
+    result = ocr_service._assemble_invoice_result(
+        {"vendor_name": {"value": "ULINE", "confidence": 1.0}, "line_items": []})
+    assert result["document_type"] == "invoice"
+
+
+def test_document_type_falls_back_on_an_unexpected_value():
+    from app.services import ocr_service
+    result = ocr_service._assemble_invoice_result(
+        {"document_type": {"value": "receipt", "confidence": 0.4}, "line_items": []})
+    assert result["document_type"] == "invoice"
