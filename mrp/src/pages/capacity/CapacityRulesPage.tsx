@@ -180,13 +180,17 @@ function RulesTable({
                 </span>
               </td>
               {canWrite && (
-                <td className="px-3 py-2 text-right">
-                  <div className="flex justify-end gap-1">
+                <td className="px-1 py-1 text-right">
+                  {/* Design spec §6.6 mandates >=44x44px interactive targets.
+                      The buttons are h-11 w-11 (44px) so the clickable area
+                      itself meets that, even though the glyph inside stays
+                      small (h-3.5 w-3.5) to match the table's density. */}
+                  <div className="flex justify-end">
                     <button
                       type="button"
                       onClick={() => onEdit(rule)}
                       aria-label={`Edit ${scopeLabel(rule)} rule`}
-                      className="rounded-md p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                      className="flex h-11 w-11 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
@@ -194,7 +198,7 @@ function RulesTable({
                       type="button"
                       onClick={() => onDelete(rule)}
                       aria-label={`Delete ${scopeLabel(rule)} rule`}
-                      className="rounded-md p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600"
+                      className="flex h-11 w-11 items-center justify-center rounded-md text-neutral-400 hover:bg-danger-50 hover:text-danger-600"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>

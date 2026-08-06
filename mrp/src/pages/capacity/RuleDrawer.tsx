@@ -36,12 +36,16 @@ import {
   type CapacityConstraintType,
 } from './capacityApi'
 
-// Output-quantity capacity is tracked in KG per design §6.4 ("uom: KG for
-// max_output_qty"); MT is offered alongside it for bulk/tonne-scale rules
-// without pulling in the full mdm-api UOM master for a two-option picker —
-// this page never needs to display or convert third-party units, only
-// record which of these two the planner meant.
-const OUTPUT_UOM_OPTIONS = ['KG', 'MT'] as const
+// Output-quantity capacity is KG-only, and not just as a UI default: the
+// MPS engine that consumes these rules (mrp-api's mps.py
+// _resolve_capacity_limits) reads `limit_value` as a bare Decimal and
+// enforces it as kilograms — it never looks at the `uom` column to convert.
+// A rule saved with any other unit (e.g. "50" meant as tonnes) would
+// silently be enforced as 50 kg, a 1000x error with no warning anywhere
+// downstream. So this field must not be a free choice: it is fixed to
+// 'KG', not offered as a picker, making a non-KG capacity rule impossible
+// to save from this form.
+const OUTPUT_UOM = 'KG'
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -59,7 +63,6 @@ function formatQty(n: number): string {
 interface FormErrors {
   scope_ref?: string
   limit_value?: string
-  uom?: string
   effective_from?: string
   effective_to?: string
 }
@@ -69,12 +72,15 @@ interface FormState {
   scope_ref: string
   constraint_type: CapacityConstraintType
   limit_value: string
-  uom: string
   effective_from: string
   effective_to: string
   is_active: boolean
 }
 
+// `uom` is deliberately not part of FormState — it is never a user choice
+// (see OUTPUT_UOM above). It's derived at submit time and for display,
+// always 'KG' for max_output_qty and null otherwise, regardless of what a
+// loaded rule's `uom` column happens to contain.
 function initialState(rule: CapacityRule | null): FormState {
   if (!rule) {
     return {
@@ -82,7 +88,6 @@ function initialState(rule: CapacityRule | null): FormState {
       scope_ref: '',
       constraint_type: 'max_sku_count',
       limit_value: '',
-      uom: '',
       effective_from: todayIso(),
       effective_to: '',
       is_active: true,
@@ -93,7 +98,6 @@ function initialState(rule: CapacityRule | null): FormState {
     scope_ref: rule.scope_ref ?? '',
     constraint_type: rule.constraint_type,
     limit_value: rule.limit_value,
-    uom: rule.uom ?? '',
     effective_from: rule.effective_from,
     effective_to: rule.effective_to ?? '',
     is_active: rule.is_active,
@@ -175,12 +179,6 @@ export function RuleDrawer({
 
   function handleConstraintTypeChange(next: CapacityConstraintType) {
     set('constraint_type', next)
-    if (next === 'max_output_qty') {
-      if (!form.uom) set('uom', OUTPUT_UOM_OPTIONS[0])
-    } else {
-      set('uom', '')
-      clearError('uom')
-    }
   }
 
   function validateScopeRef(scopeType: CapacityScopeType, scopeRef: string): string | undefined {
@@ -190,10 +188,6 @@ export function RuleDrawer({
   function validateLimitValue(v: string): string | undefined {
     const n = Number(v)
     if (v.trim() === '' || !Number.isFinite(n) || n <= 0) return 'Enter a limit greater than 0.'
-    return undefined
-  }
-  function validateUom(constraintType: CapacityConstraintType, uom: string): string | undefined {
-    if (constraintType === 'max_output_qty' && !uom) return 'Select a unit.'
     return undefined
   }
   function validateEffectiveFrom(v: string): string | undefined {
@@ -209,7 +203,6 @@ export function RuleDrawer({
     return {
       scope_ref: validateScopeRef(form.scope_type, form.scope_ref),
       limit_value: validateLimitValue(form.limit_value),
-      uom: validateUom(form.constraint_type, form.uom),
       effective_from: validateEffectiveFrom(form.effective_from),
       effective_to: validateEffectiveTo(form.effective_from, form.effective_to),
     }
@@ -242,7 +235,10 @@ export function RuleDrawer({
       scope_ref: form.scope_type === 'factory' ? null : form.scope_ref.trim(),
       constraint_type: form.constraint_type,
       limit_value: Number(form.limit_value),
-      uom: form.constraint_type === 'max_output_qty' ? form.uom : null,
+      // Fixed, never user-editable — see OUTPUT_UOM's header comment: the
+      // MPS engine enforces this number as KG unconditionally, so any
+      // other recorded unit would silently misrepresent the limit.
+      uom: form.constraint_type === 'max_output_qty' ? OUTPUT_UOM : null,
       effective_from: form.effective_from,
       effective_to: form.effective_to || null,
       is_active: form.is_active,
@@ -347,17 +343,16 @@ export function RuleDrawer({
               </FormField>
 
               {form.constraint_type === 'max_output_qty' && (
-                <FormField label="Unit" required htmlFor="rule-uom" error={errors.uom}>
-                  <select
-                    id="rule-uom"
-                    value={form.uom}
-                    onChange={(e) => { set('uom', e.target.value); clearError('uom') }}
-                    onBlur={() => setErrors((er) => ({ ...er, uom: validateUom(form.constraint_type, form.uom) }))}
-                    disabled={submitting}
-                    className="flex h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {OUTPUT_UOM_OPTIONS.map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                <FormField
+                  label="Unit"
+                  hint="Fixed — the planning engine enforces this limit in kilograms only."
+                >
+                  {/* Read-only, not a picker: see OUTPUT_UOM's header comment
+                      — the MPS engine has no unit conversion, so this field
+                      must never be user-editable. A disabled Input (rather
+                      than plain text) keeps the same field height/alignment
+                      as the Limit input beside it. */}
+                  <Input id="rule-uom" value={OUTPUT_UOM} readOnly disabled />
                 </FormField>
               )}
             </div>
