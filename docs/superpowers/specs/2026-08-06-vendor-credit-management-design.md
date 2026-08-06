@@ -447,9 +447,12 @@ violations; it does not prevent them.
 ## 8. Permissions, navigation, compatibility
 
 - New permission `epms.vendor_credit.manage`, registered in
-  `identity-api/scripts/seed_phase2_keys.py` (both the key→module map at line 20
-  and the key→default-roles map at line 36) and in `verify_gate_parity.py`.
-  These two scripts are the only registration points in the repo.
+  `identity-api/scripts/seed_phase2_keys.py` — both the key→module map at line 20
+  and the key→default-roles map at line 36. That script is the only registration
+  point. **`verify_gate_parity.py` must NOT be edited**: its docstring declares it
+  a one-shot acceptance tool holding a frozen, hand-typed snapshot of the 12
+  phase-2 keys at cutover, deliberately not imported from the seed script; adding
+  a key would corrupt the snapshot it exists to preserve.
   Default roles: `system_admin`, `ap_clerk`, `finance_manager`, `finance_bp`.
   The Portal Access Control matrix must then be ticked for the intended roles.
 - **Uploading** a credit note reuses the existing invoice-upload permission — if
