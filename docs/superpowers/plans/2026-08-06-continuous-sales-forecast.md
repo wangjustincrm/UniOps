@@ -261,6 +261,29 @@ async def test_non_kg_rejected(db_session):
 
 ---
 
+## Task 9: No-BOM finished-goods flagging (spec §8b)
+
+A finished good can be forecast before its BOM exists. Allow it (already allowed), but flag it in the Sales Forecast grid and on MPS lines, sourced from a single mdm-api batch check. This runs AFTER Task 7 (the page exists to flag on).
+
+**Files:**
+- Create: `mdm-api/app/api/v1/boms.py` — MODIFY: add a batch `POST /boms/exist` endpoint (or a new small route in that file).
+- Create: `mrp/src/pages/forecast/bomStatusApi.ts` (mdm client) — CREATE.
+- Modify: `mrp/src/pages/forecast/SalesForecastPage.tsx` (color no-BOM rows + badge), `mrp/src/pages/mps/MpsLineTable.tsx` (No-BOM badge on planned lines).
+- Test: `mdm-api/tests/test_boms.py` (add a case), `tsc`.
+
+**Interfaces:**
+- Produces: `POST /mdm/v1/boms/exist` `{product_codes: [str, ...]}` → `{with_bom: [str, ...]}` — the subset of `product_codes` that have at least one **approved** `boms` row (product has a BOM established). Auth: read (any authenticated role, matching the other read `boms` endpoints). Frontend `bomStatusApi.withBom(codes: string[]) -> Promise<Set<string>>`.
+
+- [ ] **Step 1: Write failing backend test** (`mdm-api/tests/test_boms.py`): seed an approved bom for product `S0093` and none for `S9999`; `POST /mdm/v1/boms/exist` `{"product_codes":["S0093","S9999"]}` → `{"with_bom":["S0093"]}`. (Reuse that file's existing fixtures/seed helpers.)
+- [ ] **Step 2: Run → FAIL.**
+- [ ] **Step 3: Implement** the endpoint in `mdm-api/app/api/v1/boms.py`: a `select(distinct Bom.product_material_code).where(product_material_code.in_(codes), status=='approved')`, return the matched set as `with_bom`. Register if it's a new router (it's the existing boms router — just add the route). Gate with the same read dependency the other GET boms endpoints use.
+- [ ] **Step 4: Run → PASS.** Commit `feat(mdm): batch /boms/exist for no-BOM flagging`.
+- [ ] **Step 5: Frontend client** `bomStatusApi.ts` — `withBom(codes)` posts to `/mdm/v1/boms/exist` via `mdmApi`, returns `new Set(res.with_bom)`. `tsc` clean.
+- [ ] **Step 6: Flag in Sales Forecast** — `SalesForecastPage.tsx` fetches `bomStatusApi.withBom(productCodesInGrid)` (react-query, keyed on the code list) and passes a `noBomRowIds` set to the grid; render those product rows with a distinct tint and a small **"No BOM"** badge next to the product label. Entry stays fully enabled. `tsc` clean.
+- [ ] **Step 7: Flag in MPS** — `MpsLineTable.tsx` shows a **"No BOM"** badge on a planned line whose `material_code` is not in the with-BOM set (fetch the same `bomStatusApi.withBom` for the run's product codes in `ProductionPlanPage.tsx`, pass down). Display only — no behaviour change (1B never explodes BOMs; 1C will skip these). `tsc` clean. Commit `feat(mrp): flag no-BOM finished goods in forecast + MPS`.
+
+---
+
 ## Self-Review (coverage vs spec)
 
 - §4.1 `mrp_demand_series` → T1; §4.2 `mrp_forecast_change_log` → T1/T2 (written in upsert); §4.3 version reuse + `source_anchor_month` + drop-supersede → T1/T4.
@@ -268,6 +291,7 @@ async def test_non_kg_rejected(db_session):
 - §6 Generate Outlook → snapshot → MPS unchanged → T4 (+ T4 asserts MPS still runs).
 - §7 endpoints: `GET /series`, `PUT /series/cells`, `GET /series/change-log` → T3; `POST /outlook` → T4; retire per-version write endpoints → T8.
 - §8 migration + seed → T1/T5; Phase 1B untouched → verified in T4/T8 (mps suite green).
+- §8b no-BOM finished goods (allow + flag in forecast & MPS; 1C excludes from explosion) → T9 (mdm `/boms/exist` + forecast/MPS badges). Runs after T7 so the page exists to flag on.
 - §9 out of scope (actuals, carry-forward, compare view) → no task, correctly absent.
 - §10 testing → T2/T3/T4 cover series/change-log/outlook; full-suite green gate in T8.
 - **Type consistency:** `CellChange(material_code, month, qty, uom)`, `GridResponse` shape, `freeze_outlook(...) -> ForecastVersion`, `source_anchor_month` used consistently T1→T8.

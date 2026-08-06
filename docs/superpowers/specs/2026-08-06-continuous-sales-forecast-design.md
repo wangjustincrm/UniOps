@@ -113,6 +113,15 @@ Retained/adjusted:
 - **Phase 1A:** the forecast page UI is substantially rebuilt (version switcher/New/Save/Confirm → continuous table + Generate Outlook). The grid backend shifts from per-version to series-based; the `MatrixGrid` component and paste/undo modules are reused as-is.
 - **Phase 1B (MPS):** **no code change.** It consumes a confirmed version, which Generate Outlook still produces. The "one active released plan" semantics of `mrp_demands` (release replaces all `demand_type='mps'`) is preserved.
 
+## 8b. No-BOM finished goods (business add, 2026-08-06)
+
+A finished good can be forecast **before its BOM exists** (new product, BOM not yet built in NC). This must be a first-class, non-blocking case, not an error:
+
+- **Forecast:** entry is allowed for a product with no approved BOM (already true — the series never checks BOM). The Sales Forecast grid **visually flags** such rows (a distinct tint + a "No BOM" badge) so the planner sees the gap without being blocked.
+- **Outlook / MPS:** the product freezes into the outlook snapshot and is planned by MPS normally (MPS schedules finished-good quantities and never looks at BOMs). Its planned line carries the same "No BOM" marker.
+- **Material requirements (Phase 1C):** a no-BOM finished good **does not participate in material-requirement explosion** — it contributes zero component demand and is surfaced as "materials not calculated (no BOM)", **not** as the hard `missing_bom` error the BOM Explorer raises for a product that *should* explode. When its BOM is later built, the next outlook/MRP run picks it up automatically.
+- **Source of truth:** "has a BOM" is owned by mdm-api (an approved `boms` row for the product code). Consumers (forecast page, MPS page, 1C engine) query a single batch endpoint rather than each re-deriving it.
+
 ## 9. Out of scope (explicitly deferred to Phase 1C)
 
 - Actual-output backfill; showing **actual** values in past months.
