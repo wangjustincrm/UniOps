@@ -13,7 +13,7 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
-  TrendingUp, PackageSearch, Network,
+  Network,
 } from 'lucide-react'
 
 // MRP has no single landing tile like the other modules — Portal links
@@ -69,23 +69,15 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
       { label: 'Finance',     icon: Landmark,     href: 'finance', anyPermission: FINANCE_ACCESS_PERMS },
       { label: 'Meeting Rooms', icon: CalendarClock, href: 'booking', anyPermission: BOOKING_ACCESS_PERMS },
-    ],
-  },
-  {
-    title: 'MRP',
-    items: [
-      // Gated on mrp.report.view, not mrp.demand.write: every read these two
-      // pages perform on load (grid/list fetches) requires mrp.report.view,
-      // and packages/authz has no write⇒read implication — a planner
-      // granted only mrp.demand.write (as the nav previously advertised)
-      // would see the page appear, then have every fetch 403 forever (I5,
-      // final-phase review). mrp.demand.write is still required for the
-      // in-page write actions (create version, upsert cells, confirm,
-      // import, create/edit stock rows); this only controls whether the nav
-      // item — and the page behind it — is reachable at all.
-      { label: 'Forecast',           icon: TrendingUp,    href: 'mrp:/forecast',            permission: 'mrp.report.view' },
-      { label: 'Consignment Stock',  icon: PackageSearch, href: 'mrp:/consignment-stock',   permission: 'mrp.report.view' },
-      { label: 'BOM Explorer',       icon: Network,       href: 'mrp:/bom-explorer',        permission: 'mrp.report.view' },
+      // MRP is a single module entry like its siblings — its own sidebar owns
+      // the page-level navigation (Forecast / Consignment Stock / BOM Explorer).
+      // Gated on mrp.report.view, not mrp.demand.write: every read the MRP
+      // pages perform on load requires mrp.report.view, and packages/authz has
+      // no write⇒read implication — a planner granted only mrp.demand.write
+      // (as the nav previously advertised) would see the entry appear, then
+      // have every fetch 403 forever (I5, final-phase review). mrp.demand.write
+      // is still required for the in-page write actions.
+      { label: 'MRP',         icon: Network,      href: 'mrp', permission: 'mrp.report.view' },
     ],
   },
   {
@@ -135,6 +127,10 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   if (key === 'vms')  return ctx.vmsHref
   if (key === 'finance') return ctx.financeHref
   if (key === 'booking') return ctx.bookingHref
+  // Bare 'mrp' lands on the module root, which redirects to its default page —
+  // same shape as the sibling module entries above. The session fragment is
+  // still needed because MRP is a separate origin.
+  if (key === 'mrp') return ctx.session ? `${MRP_URL}/#__session=${ctx.session}` : MRP_URL
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {
