@@ -21,9 +21,10 @@
  *     the new sparse Map so the parent can hold it for Save.
  */
 import {
-  useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode,
+  useCallback, useEffect, useId, useMemo, useRef, useState,
+  type ReactNode, type MouseEvent as ReactMouseEvent,
 } from 'react'
-import { Undo2, Redo2, Lock, AlertTriangle } from 'lucide-react'
+import { Undo2, Redo2, Lock, AlertTriangle, History } from 'lucide-react'
 import { Button, Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
@@ -104,6 +105,21 @@ export interface MatrixGridProps {
    * every other MatrixGrid caller besides ForecastPage wants.
    */
   resolveMaterial?: MaterialResolver
+  /**
+   * Column ids to visually mark in the header (e.g. Sales Forecast's
+   * `[current_month, current_month+18)` outlook window) — purely cosmetic,
+   * no effect on editability/paste/frozen behavior.
+   */
+  highlightColIds?: ReadonlySet<string>
+  /**
+   * When supplied, every cell (editable or frozen/read-only) renders a tiny
+   * history affordance in its corner; clicking it calls this instead of
+   * selecting the cell (click is stopped from bubbling to the cell's own
+   * onSelect). `anchorEl` is the clicked button, for a caller-owned portal
+   * popover to position itself against (e.g. Sales Forecast's
+   * CellHistoryPopover). Omit to render no affordance at all.
+   */
+  onCellHistoryClick?: (rowId: string, colId: string, anchorEl: HTMLElement) => void
 }
 
 function defaultFormat(n: number): string {
@@ -120,7 +136,7 @@ export function MatrixGrid({
   rowHeaderLabel = 'Row', rowTotalLabel = 'Total', colTotalLabel = 'Total',
   formatValue = defaultFormat,
   focusRequest = null, onFocusRequestHandled, clearRowId = null, onRowCleared, rowActions,
-  resolveMaterial,
+  resolveMaterial, highlightColIds, onCellHistoryClick,
 }: MatrixGridProps) {
   const frozen = frozenKeys ?? EMPTY_FROZEN
   const [history, setHistory] = useState(() => initHistory(new Map(value)))
@@ -604,7 +620,12 @@ export function MatrixGrid({
                 {cols.map((c) => (
                   <th
                     key={c.id}
-                    className="border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-neutral-600 min-w-24"
+                    className={cn(
+                      'border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold min-w-24',
+                      highlightColIds?.has(c.id)
+                        ? 'bg-primary-50 border-b-2 border-b-primary-400 text-primary-700'
+                        : 'text-neutral-600',
+                    )}
                   >
                     {c.label}
                   </th>
@@ -650,6 +671,9 @@ export function MatrixGrid({
                           formatValue={formatValue}
                           onSelect={(extend) => focusCell(rowIdx, colIdx, extend)}
                           onCommit={(v) => setCellValue(rowIdx, colIdx, v)}
+                          onHistoryClick={onCellHistoryClick
+                            ? (e) => { e.stopPropagation(); onCellHistoryClick(row.id, col.id, e.currentTarget) }
+                            : undefined}
                           onNavigate={(dir) => {
                             const delta: Record<typeof dir, [number, number]> = {
                               up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1],
@@ -708,7 +732,7 @@ type NavDir = 'up' | 'down' | 'left' | 'right' | 'tab' | 'enter'
 
 function MatrixCell({
   cellKeyAttr, registerRef, value, hasEntry, frozen, readOnly, locked, modified, invalidRaw, selected, formatValue,
-  onSelect, onCommit, onNavigate,
+  onSelect, onCommit, onNavigate, onHistoryClick,
 }: {
   /** `${rowId}::${colId}` — exposed as data-testid for automated/manual verification, not used by the component itself. */
   cellKeyAttr: string
@@ -728,6 +752,8 @@ function MatrixCell({
   onSelect: (extend: boolean) => void
   onCommit: (v: number) => void
   onNavigate: (dir: NavDir) => void
+  /** See MatrixGridProps.onCellHistoryClick — pre-bound to this cell's row/col by the caller. */
+  onHistoryClick?: (e: ReactMouseEvent<HTMLButtonElement>) => void
 }) {
   // Sync external value changes (undo/redo/paste/reset) into the local edit
   // buffer. Done as a render-phase state adjustment (React's documented
@@ -780,6 +806,17 @@ function MatrixCell({
         {frozen && <Lock aria-hidden className="absolute top-0.5 left-0.5 h-2.5 w-2.5 text-neutral-400" />}
         {frozen && <span className="sr-only">Frozen — not editable.</span>}
         {hasEntry ? formatValue(value) : '—'}
+        {onHistoryClick && (
+          <button
+            type="button"
+            onClick={onHistoryClick}
+            aria-label="View change history"
+            title="View change history"
+            className="absolute bottom-0 right-0 p-0.5 text-neutral-300 hover:text-primary-600"
+          >
+            <History aria-hidden className="h-2.5 w-2.5" />
+          </button>
+        )}
       </td>
     )
   }
@@ -832,6 +869,17 @@ function MatrixCell({
         className="w-full text-right font-mono text-xs px-2 py-1.5 bg-transparent border-0 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:bg-white disabled:cursor-not-allowed disabled:opacity-60"
       />
       {invalidRaw && <span className="sr-only">{`Pasted value "${invalidRaw}" was not a valid number and was not applied.`}</span>}
+      {onHistoryClick && (
+        <button
+          type="button"
+          onClick={onHistoryClick}
+          aria-label="View change history"
+          title="View change history"
+          className="absolute bottom-0 right-0 p-0.5 text-neutral-300 hover:text-primary-600"
+        >
+          <History aria-hidden className="h-2.5 w-2.5" />
+        </button>
+      )}
     </td>
   )
 }
