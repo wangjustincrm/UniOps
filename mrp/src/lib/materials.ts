@@ -11,6 +11,7 @@ export interface MaterialOption {
   name: string | null
   spec: string | null
   item_type: string | null
+  erp_item_type: string | null
   base_uom: string | null
   is_active: boolean
 }
@@ -20,6 +21,31 @@ export interface MaterialListResponse {
   total: number
   page: number
   page_size: number
+}
+
+// Finished-goods classification. The authoritative signal is the ERP's own
+// MES material type, mirrored as `erp_item_type`: **type '3' = finished
+// good** (per business, 2026-08-06). This beats classifying by code prefix
+// (`CF*`/`S<digit>*`): MES type '3' additionally catches finished goods that
+// don't follow that naming (e.g. `10821001`/`10821002`, numeric-coded adult
+// formulas) and correctly excludes the 13 `CF****-R` *rework* variants
+// (type 0/1) that a prefix rule would wrongly sweep in. `item_type`,
+// `product_family`, `procurement_type` are unusable (100% NULL or a constant
+// default — the webapi sync brings too few attributes); `erp_item_type` is
+// populated on all rows. If the ERP-MDM import is later reworked to read the
+// ERP DB directly with richer attributes, this is the one spot to revisit.
+export const FINISHED_GOODS_MES_TYPE = '3'
+
+// Byproduct codes that carry MES type '3' but are NOT sellable finished goods
+// and take no part in BOM / consignment planning (per business, 2026-08-06):
+// CF00AF = Animal Feed, CF00WT = Waste Powder. No attribute distinguishes them
+// from real finished goods in the thin webapi-synced master, so they're
+// excluded by code. Revisit alongside isFinishedGood if the ERP-MDM import is
+// reworked to read the ERP DB directly.
+export const FINISHED_GOODS_EXCLUDED_CODES = new Set(['CF00AF', 'CF00WT'])
+
+export function isFinishedGood(m: Pick<MaterialOption, 'code' | 'erp_item_type'>): boolean {
+  return m.erp_item_type === FINISHED_GOODS_MES_TYPE && !FINISHED_GOODS_EXCLUDED_CODES.has(m.code)
 }
 
 export const materialsApi = {

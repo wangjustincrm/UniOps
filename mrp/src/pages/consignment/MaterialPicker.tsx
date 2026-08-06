@@ -13,15 +13,23 @@
 // (PrLineItems.tsx) — deliberately NOT epms's MaterialsPicker in that same
 // file, which uses a non-portaled `absolute` panel and would reintroduce
 // the clipping bug this page is required to avoid.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X as XIcon, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { materialsApi, type MaterialOption } from '@/lib/materials'
+import { isFinishedGood, materialsApi, type MaterialOption } from '@/lib/materials'
+
+// Render cap for the UNBOUNDED (component / all-materials) mode only: an
+// empty/broad query there spans the whole ~2600-row master, too many <button>s
+// to paint at once, so we show the first N and prompt to narrow. Finished-goods
+// mode is a bounded ~130-row set and is rendered in full (scrollable) — the
+// user expects to browse every product without typing.
+const MAX_RENDERED = 200
 
 export function MaterialPicker({
   value, onSelect, onClear, hasError, disabled, placeholder = 'Search products…',
+  finishedGoodsOnly = true,
 }: {
   /** Selected material code, or '' for none. */
   value: string
@@ -33,6 +41,11 @@ export function MaterialPicker({
    *  Explorer's where-used mode reuses this picker for "component" rather
    *  than "product" ('Search components…'). */
   placeholder?: string
+  /** Restrict options to finished goods (see materials.ts isFinishedGood:
+   *  CF and S-digit codes). Default true: this picker is product-oriented
+   *  everywhere except BOM Explorer's where-used mode, which reverse-looks-up
+   *  an arbitrary component (raw/semi/packaging) and passes false. */
+  finishedGoodsOnly?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -53,15 +66,37 @@ export function MaterialPicker({
     return () => document.removeEventListener('mousedown', handler)
   }, [open])
 
-  // No debounce — matches the one existing precedent for this exact
-  // pattern (epms PrLineItems.tsx MaterialsPicker: a useQuery keyed on the
-  // raw search string, refetching per keystroke). Page sizes are capped at
-  // 30 results server-side, so the worst case is a small, cheap query.
-  const { data, isLoading } = useQuery({
-    queryKey: ['mdm-materials-picker', q],
-    queryFn: () => materialsApi.search(q, 30),
+  // Load the WHOLE materials master once (paged to exhaustion by listAll,
+  // shared react-query cache key so every picker instance reuses one fetch)
+  // and filter client-side. The old approach queried the server per keystroke
+  // capped at 30 rows with no paging, which (a) never surfaced a match past
+  // the first 30 and (b) had no way to exclude non-products — the empty-query
+  // state showed whatever sorted first (ADT*/ENV* sample points), not
+  // finished goods. The finished-goods set is ~140 rows and the full master
+  // ~2600, both cheap to filter in the browser (the Sales Forecast paste path
+  // already loads the full master this way).
+  const { data: allMaterials, isLoading } = useQuery({
+    queryKey: ['mdm-materials-all'],
+    queryFn: () => materialsApi.listAll(),
     enabled: open,
+    staleTime: 5 * 60_000,
   })
+
+  const results = useMemo(() => {
+    if (!allMaterials) return [] as MaterialOption[]
+    const pool = finishedGoodsOnly ? allMaterials.filter(isFinishedGood) : allMaterials
+    const term = q.trim().toLowerCase()
+    if (!term) return pool
+    return pool.filter(
+      (m) => m.code.toLowerCase().includes(term) || (m.name?.toLowerCase().includes(term) ?? false),
+    )
+  }, [allMaterials, finishedGoodsOnly, q])
+
+  // Finished-goods mode is bounded (~130) — show them all so the planner can
+  // scroll the full product list without typing. Only the unbounded component
+  // mode is capped.
+  const shown = finishedGoodsOnly ? results : results.slice(0, MAX_RENDERED)
+  const overflow = results.length - shown.length
 
   function openPicker() {
     if (disabled) return
@@ -88,8 +123,12 @@ export function MaterialPicker({
           disabled={disabled}
           aria-haspopup="listbox"
           aria-expanded={open}
+          // min-w-0 lets this flex child shrink below its content width so
+          // the label's `truncate` actually clips — without it a long
+          // "CODE — Long Product Name" spills past the field into the next
+          // grid column (covers the Lot Number input).
           className={cn(
-            'flex h-10 flex-1 items-center gap-2 rounded-lg border bg-neutral-100 px-3 text-left text-sm transition-colors',
+            'flex h-10 w-full min-w-0 flex-1 items-center gap-2 rounded-lg border bg-neutral-100 px-3 text-left text-sm transition-colors',
             'focus:outline-none focus:bg-white focus:border-primary-600',
             'disabled:cursor-not-allowed disabled:opacity-60',
             hasError ? 'border-danger-600 bg-danger-50' : 'border-neutral-200',
@@ -97,7 +136,7 @@ export function MaterialPicker({
           )}
         >
           <Search className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
-          <span className={cn('flex-1 truncate', value ? 'text-neutral-900' : 'text-neutral-400')}>
+          <span className={cn('min-w-0 flex-1 truncate', value ? 'text-neutral-900' : 'text-neutral-400')}>
             {value || placeholder}
           </span>
         </button>
@@ -137,13 +176,13 @@ export function MaterialPicker({
           <div className="max-h-72 overflow-y-auto">
             {isLoading ? (
               <div className="px-3 py-4 text-xs text-neutral-400">Loading…</div>
-            ) : !data?.items.length ? (
+            ) : !shown.length ? (
               <div className="flex flex-col items-center gap-1 py-6 text-neutral-400">
                 <Package className="h-5 w-5" />
                 <span className="text-xs">No matching products</span>
               </div>
             ) : (
-              data.items.map((m) => (
+              shown.map((m) => (
                 <button
                   key={m.id}
                   type="button"
@@ -166,6 +205,11 @@ export function MaterialPicker({
                   )}
                 </button>
               ))
+            )}
+            {overflow > 0 && (
+              <div className="border-t border-neutral-100 px-3 py-2 text-center text-[10px] text-neutral-400">
+                +{overflow} more — keep typing to narrow
+              </div>
             )}
           </div>
         </div>,
