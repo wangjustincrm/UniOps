@@ -246,9 +246,12 @@ export function MpsLineTable({
                     <span className="flex items-center gap-1.5 font-mono text-xs text-neutral-800">
                       {product.code}
                       {noBomCodes?.has(line.material_code) && (
-                        <Badge variant="warning" title="No approved BOM found yet for this product — 1C's material requirements calc will skip this line until one exists.">
-                          No BOM
-                        </Badge>
+                        // Badge (packages/shell) doesn't spread rest props onto
+                        // its <span> — a `title` passed directly to it is
+                        // silently dropped. Wrap it in a plain span instead.
+                        <span title="No approved BOM found yet for this product — 1C's material requirements calc will skip this line until one exists.">
+                          <Badge variant="warning">No BOM</Badge>
+                        </span>
                       )}
                     </span>
                     {product.name && <span className="block truncate text-[11px] text-neutral-400">{product.name}</span>}

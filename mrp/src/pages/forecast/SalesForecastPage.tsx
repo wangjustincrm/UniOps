@@ -490,9 +490,14 @@ export default function SalesForecastPage() {
             tintRowIds={noBomRowIds}
             rowBadge={(row) => (
               noBomRowIds.has(row.id) ? (
-                <Badge variant="warning" className="shrink-0" title="No approved BOM found yet for this product — forecast entry still works.">
-                  No BOM
-                </Badge>
+                // Badge (packages/shell) doesn't spread rest props onto its
+                // <span> — a `title` passed directly to it is silently
+                // dropped. Wrap it in a plain span carrying the tooltip.
+                <span title="No approved BOM found yet for this product — forecast entry still works.">
+                  <Badge variant="warning" className="shrink-0">
+                    No BOM
+                  </Badge>
+                </span>
               ) : null
             )}
             onCellHistoryClick={(rowId, colId, anchorEl) => {
