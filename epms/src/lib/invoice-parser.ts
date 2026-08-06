@@ -22,6 +22,7 @@ export interface ParsedInvoiceFields {
   taxAmount:           number | null
   currency:            string | null   // "CAD" | "USD" | "EUR" | "RMB"
   lineItems:           ParsedLineItem[] | null
+  documentType:        'invoice' | 'credit_note'
 }
 
 export type ParseResult =
@@ -51,6 +52,7 @@ interface OcrInvoiceResponse {
   line_items?:             OcrLineItem[]
   ocr_confidence?:         number
   low_confidence_fields?:  string[]
+  document_type?:          'invoice' | 'credit_note' | null
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
@@ -109,6 +111,7 @@ export async function parseInvoiceFile(file: File): Promise<ParseResult> {
       taxAmount:           r.tax_amount ?? null,
       currency:            r.currency ?? null,
       lineItems,
+      documentType:        r.document_type === 'credit_note' ? 'credit_note' : 'invoice',
     }
     return { ok: true, fields }
   } catch (err) {
