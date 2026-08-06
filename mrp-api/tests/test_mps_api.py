@@ -276,3 +276,106 @@ async def test_recalculate_keeps_locked_line_fixed(client, admin_token, monkeypa
     assert len(lines) == 1
     assert lines[0]["locked_by_planner"] is True
     assert Decimal(lines[0]["qty"]) == Decimal("999")  # untouched by recalculation
+
+
+@pytest.mark.anyio
+async def test_confirm_release_skips_capacity_gap_lines(client, db_session, admin_token, monkeypatch):
+    """A capacity_gap line is an unmet-demand exception for a human to
+    resolve, not a booked production order (mps_engine.py's own docstring:
+    it "does not consume any month's capacity ledger") -- it must never be
+    materialized into mrp_demands, or Phase 1C's material explosion would
+    over-procure raw materials for production that can't actually happen
+    this cycle. It IS still persisted as an MrpMpsLine, so it stays visible
+    to the planner."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, months = await _confirmed_version(client, headers, months=1, monthly_qty="100")
+    # Capacity too small to ever hold 100, and shelf life is unknown for
+    # every material (see _no_shelf_life) so the engine can never pre-build
+    # it either -- the only possible outcome is an explicit capacity_gap.
+    await _factory_rule(client, headers, max_sku_count=50, max_output_qty="50")
+
+    run = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+    )).json()
+    assert len(run["lines"]) == 1
+    assert run["lines"][0]["capacity_gap"] is True
+
+    rel = await client.post(f"/api/v1/mps/runs/{run['id']}/confirm-release", headers=headers)
+    assert rel.status_code == 200, rel.text
+
+    import sqlalchemy as sa
+    from app.models.demand import MrpDemand
+    from app.models.mps import MrpMpsLine
+
+    demand_rows = (await db_session.execute(
+        sa.select(MrpDemand).where(MrpDemand.source_run_id == uuid.UUID(run["id"]))
+    )).scalars().all()
+    assert demand_rows == []  # the gap line must never materialize into mrp_demands
+
+    line_rows = (await db_session.execute(
+        sa.select(MrpMpsLine).where(MrpMpsLine.run_id == uuid.UUID(run["id"]))
+    )).scalars().all()
+    assert len(line_rows) == 1
+    assert line_rows[0].capacity_gap is True  # still visible as an MrpMpsLine
+
+
+@pytest.mark.anyio
+async def test_confirm_release_clears_prior_cycle_demand_across_forecast_versions(
+    client, db_session, admin_token, monkeypatch,
+):
+    """Rolling-forecast cycle: v1 confirmed -> R1 released -> forecast
+    revised -> v2 confirmed (a NEW version_id -- ForecastVersion is
+    single-lineage; confirming v2 supersedes v1, see
+    app/models/forecast.py) -> R2 released. mrp_demands must end with ONLY
+    R2's rows: R1's rows must not survive forever just because they belong
+    to a different, now-superseded forecast_version_id -- that would
+    silently double-count demand on every rolling-forecast cycle."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    v1, _ = await _confirmed_version(
+        client, headers, start="2026-09", months=1, material="S0093", monthly_qty="100",
+    )
+    await _factory_rule(client, headers)
+    r1 = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": v1["id"]}, headers=headers,
+    )).json()
+    rel1 = await client.post(f"/api/v1/mps/runs/{r1['id']}/confirm-release", headers=headers)
+    assert rel1.status_code == 200, rel1.text
+
+    v2, _ = await _confirmed_version(
+        client, headers, start="2026-10", months=1, material="S0093", monthly_qty="120",
+    )
+    r2 = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": v2["id"]}, headers=headers,
+    )).json()
+    rel2 = await client.post(f"/api/v1/mps/runs/{r2['id']}/confirm-release", headers=headers)
+    assert rel2.status_code == 200, rel2.text
+
+    import sqlalchemy as sa
+    from app.models.demand import MrpDemand
+
+    rows = (await db_session.execute(sa.select(MrpDemand))).scalars().all()
+    assert len(rows) == 1  # R1's row was cleared, not just left orphaned under v1
+    assert rows[0].source_run_id == uuid.UUID(r2["id"])
+    assert rows[0].qty == Decimal("120.000")
+
+
+@pytest.mark.anyio
+async def test_patch_line_rejects_malformed_plan_month(client, admin_token, monkeypatch):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, months = await _confirmed_version(client, headers, months=1)
+    await _factory_rule(client, headers)
+    run = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+    )).json()
+    line = run["lines"][0]
+
+    r = await client.patch(
+        f"/api/v1/mps/runs/{run['id']}/lines/{line['id']}",
+        json={"plan_month": "2026-13"},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text

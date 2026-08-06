@@ -52,17 +52,43 @@ value the model reserves — no endpoint here produces it). A released run is
 immutable: `POST .../recalculate`, `PATCH .../lines/{id}`, and a second
 `POST .../confirm-release` all 409 once `status='released'`.
 
+`confirm-release` deletes EVERY prior `demand_type='mps'` row in
+`mrp_demands` — system-wide, regardless of which `forecast_version_id`
+produced it — before inserting this run's own rows. This is deliberately
+not scoped to "runs of the same forecast_version_id": `ForecastVersion` is
+single-lineage (confirming a new version supersedes whichever one was
+previously confirmed — see `app/models/forecast.py`), so a re-confirmed
+forecast mints a brand-new `version_id` on every planning cycle. Scoping the
+delete to `run.forecast_version_id` would leave a prior cycle's released
+run's rows behind forever (they belong to the now-superseded version_id),
+silently double-counting demand. Only one forecast version — and therefore
+only one released MPS lineage — is ever meant to be "live" at a time, so the
+delete is unconditional across all `demand_type='mps'` rows; other demand
+types (should any exist later) are untouched.
+
+`capacity_gap=True` lines are NEVER written to `mrp_demands`. A gap line is
+an *unmet-demand exception* for a human to resolve (add capacity / adjust
+the plan), not a booked production order — per `mps_engine.py`'s own
+docstring, it "does not consume any month's capacity ledger". Writing it as
+ordinary `demand_type='mps'` demand would make Phase 1C's material
+explosion over-procure raw materials for production that literally cannot
+happen this cycle. The line is still persisted as an `MrpMpsLine` (visible
+in the run detail/report) — only the `mrp_demands` materialization skips it.
+Once a planner resolves the gap and regenerates, a placed line flows through
+normally on the next release.
+
 Permission keys (identity-api/scripts/seed_authz.py, `mrp` app):
 `mrp.run.execute` gates generate/recalculate/line-edit; `mrp.report.view`
 gates the read; `mrp.proposal.confirm` gates release.
 """
+import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, func, select
 
 from app.api.v1.net_requirement import _generate_months, _load_forecast_by_material
@@ -92,6 +118,13 @@ DEFAULT_SAFETY_MARGIN_FRACTION = Decimal("0.3333")
 # constraint (see feedback_uniops_document_number_collision, project
 # memory). pg_advisory_xact_lock auto-releases at commit/rollback.
 _RUN_NO_LOCK_KEY = 778899221
+
+# Mirrors app/api/v1/forecast.py's _MONTH_RE exactly -- 'YYYY-MM' with a
+# real month 01-12. A PATCH .../lines/{id} that accepted a malformed
+# plan_month would corrupt GET .../{id}'s capacity_occupancy month grouping
+# (a bad key that never matches any resolved capacity month, and sorts
+# unpredictably against real 'YYYY-MM' strings).
+_MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────
@@ -155,6 +188,13 @@ class MpsLineUpdate(BaseModel):
     qty: Decimal | None = None
     plan_month: str | None = None
     locked_by_planner: bool | None = None
+
+    @field_validator("plan_month")
+    @classmethod
+    def _valid_month(cls, v: str | None) -> str | None:
+        if v is not None and not _MONTH_RE.match(v):
+            raise ValueError("plan_month must be 'YYYY-MM'")
+        return v
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -450,20 +490,21 @@ async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
     _require_not_released(run)
     lines = await _load_lines(db, run.id)
 
-    # Delete prior mrp_demands for this forecast lineage: this run's own
-    # rows (defensive — a fresh run never has any yet) plus any
-    # previously-released run for the same forecast_version_id, per the
-    # brief's "simplest correct" rule.
-    prior_released_run_ids = (await db.execute(
-        select(MrpMpsRun.id).where(
-            MrpMpsRun.forecast_version_id == run.forecast_version_id,
-            MrpMpsRun.status == "released",
-        )
-    )).scalars().all()
-    delete_ids = set(prior_released_run_ids) | {run.id}
-    await db.execute(delete(MrpDemand).where(MrpDemand.source_run_id.in_(delete_ids)))
+    # Delete EVERY prior demand_type='mps' row, system-wide -- not scoped to
+    # this run's forecast_version_id. See module docstring for why: a
+    # re-confirmed forecast mints a new version_id each cycle, so scoping
+    # this delete to `run.forecast_version_id` would leave a superseded
+    # cycle's released rows behind forever (they belong to a different
+    # version_id) and silently double-count demand. Only one forecast
+    # version — and therefore only one released MPS lineage — is ever live.
+    await db.execute(delete(MrpDemand).where(MrpDemand.demand_type == "mps"))
 
     for line in lines:
+        if line.capacity_gap:
+            # Unmet-demand exception, not a booked production order -- never
+            # materialized into mrp_demands (see module docstring). Still
+            # persisted as an MrpMpsLine above, so it stays visible.
+            continue
         db.add(MrpDemand(
             source_run_id=run.id, demand_type="mps", material_code=line.material_code,
             demand_month=line.plan_month, qty=line.qty,
