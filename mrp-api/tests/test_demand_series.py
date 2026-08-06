@@ -1,0 +1,267 @@
+"""Tests for `app/services/demand_series.py` (Continuous Sales Forecast
+redesign, plan doc 2026-08-06-continuous-sales-forecast, Task 2).
+
+Covers the brief's required cases verbatim (new cell -> row + one log;
+past-month rejected; non-KG rejected) plus the edge cases the interface
+implies: editing an existing cell logs old->new and updates the row; qty=0
+deletes the row and logs (old,new=0); qty=0 against a material with no
+existing row is a true no-op (nothing to delete, nothing changed); a same-qty
+resubmit is a no-op (writes/logs nothing); a batch with one bad cell rejects
+the WHOLE batch atomically (the valid cell in the same batch is not written
+either); and `read_series_grid`'s GridResponse shape/totals over a range.
+"""
+import uuid
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import select
+
+from app.models.demand_series import MrpDemandSeries, MrpForecastChangeLog
+from app.services.demand_series import (
+    CellChange,
+    PastMonthError,
+    UomError,
+    generate_month_range,
+    read_series_grid,
+    upsert_cells,
+)
+
+
+# ── generate_month_range (pure function) ────────────────────────────────────
+
+
+def test_generate_month_range_inclusive():
+    assert generate_month_range("2026-09", "2026-11") == ["2026-09", "2026-10", "2026-11"]
+
+
+def test_generate_month_range_single_month():
+    assert generate_month_range("2026-09", "2026-09") == ["2026-09"]
+
+
+def test_generate_month_range_crosses_year_boundary():
+    assert generate_month_range("2026-11", "2027-02") == [
+        "2026-11", "2026-12", "2027-01", "2027-02",
+    ]
+
+
+def test_generate_month_range_reversed_is_empty():
+    assert generate_month_range("2026-11", "2026-09") == []
+
+
+# ── upsert_cells: brief's cases verbatim ────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_new_cell_writes_row_and_one_log(db_session):
+    res = await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("100"))],
+        current_month="2026-09", changed_by=None,
+    )
+    await db_session.commit()
+    assert (res.upserted, res.changed) == (1, 1)
+    grid = await read_series_grid(db_session, "2026-11", "2026-11")
+    assert grid["rows"][0]["cells"]["2026-11"] == Decimal("100")
+    # exactly one change-log row, old None -> new 100
+    logs = (await db_session.execute(select(MrpForecastChangeLog))).scalars().all()
+    assert len(logs) == 1 and logs[0].old_qty is None and logs[0].new_qty == Decimal("100")
+
+
+@pytest.mark.anyio
+async def test_past_month_write_rejected(db_session):
+    with pytest.raises(PastMonthError):
+        await upsert_cells(db_session, [CellChange("S0093", "2026-08", Decimal("5"))],
+                            current_month="2026-09", changed_by=None)
+
+
+@pytest.mark.anyio
+async def test_non_kg_rejected(db_session):
+    with pytest.raises(UomError):
+        await upsert_cells(db_session, [CellChange("S0093", "2026-11", Decimal("5"), uom="EA")],
+                            current_month="2026-09", changed_by=None)
+
+
+# ── upsert_cells: edit / delete / no-op / atomic-batch edge cases ──────────
+
+
+@pytest.mark.anyio
+async def test_editing_existing_cell_updates_row_and_appends_second_log(db_session):
+    await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("100"))],
+        current_month="2026-09", changed_by=None,
+    )
+
+    changer = uuid.uuid4()
+    res = await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("150"))],
+        current_month="2026-09", changed_by=changer,
+    )
+    assert (res.upserted, res.changed) == (1, 1)
+
+    grid = await read_series_grid(db_session, "2026-11", "2026-11")
+    assert grid["rows"][0]["cells"]["2026-11"] == Decimal("150")
+
+    # underlying series row was updated in place, not duplicated
+    series_rows = (await db_session.execute(select(MrpDemandSeries))).scalars().all()
+    assert len(series_rows) == 1 and series_rows[0].qty == Decimal("150")
+
+    logs = (await db_session.execute(
+        select(MrpForecastChangeLog).order_by(MrpForecastChangeLog.changed_at)
+    )).scalars().all()
+    assert len(logs) == 2
+    assert logs[0].old_qty is None and logs[0].new_qty == Decimal("100")
+    assert logs[1].old_qty == Decimal("100") and logs[1].new_qty == Decimal("150")
+    assert logs[1].changed_by == changer
+
+
+@pytest.mark.anyio
+async def test_qty_zero_deletes_existing_row_and_logs_old_to_zero(db_session):
+    await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("100"))],
+        current_month="2026-09", changed_by=None,
+    )
+
+    res = await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("0"))],
+        current_month="2026-09", changed_by=None,
+    )
+    assert (res.upserted, res.changed) == (1, 1)
+
+    # sparse table: the row is gone, not stored as qty=0
+    series_rows = (await db_session.execute(select(MrpDemandSeries))).scalars().all()
+    assert series_rows == []
+
+    grid = await read_series_grid(db_session, "2026-11", "2026-11")
+    assert grid["rows"] == []  # nothing to render once the row is deleted
+
+    logs = (await db_session.execute(
+        select(MrpForecastChangeLog).order_by(MrpForecastChangeLog.changed_at)
+    )).scalars().all()
+    assert len(logs) == 2
+    assert logs[1].old_qty == Decimal("100") and logs[1].new_qty == Decimal("0")
+
+
+@pytest.mark.anyio
+async def test_qty_zero_with_no_existing_row_is_a_true_noop(db_session):
+    """Setting a never-written cell to 0 has nothing to delete and nothing to
+    change -- it must not create a row or a log entry."""
+    res = await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("0"))],
+        current_month="2026-09", changed_by=None,
+    )
+    assert (res.upserted, res.changed) == (0, 0)
+    assert (await db_session.execute(select(MrpDemandSeries))).scalars().all() == []
+    assert (await db_session.execute(select(MrpForecastChangeLog))).scalars().all() == []
+
+
+@pytest.mark.anyio
+async def test_resubmitting_same_qty_writes_nothing(db_session):
+    await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("100"))],
+        current_month="2026-09", changed_by=None,
+    )
+
+    res = await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("100"))],
+        current_month="2026-09", changed_by=None,
+    )
+    assert (res.upserted, res.changed) == (0, 0)
+
+    # still exactly one series row and one log row from the first write
+    series_rows = (await db_session.execute(select(MrpDemandSeries))).scalars().all()
+    assert len(series_rows) == 1 and series_rows[0].qty == Decimal("100")
+    logs = (await db_session.execute(select(MrpForecastChangeLog))).scalars().all()
+    assert len(logs) == 1
+
+
+@pytest.mark.anyio
+async def test_batch_with_one_past_month_cell_rejects_whole_batch_atomically(db_session):
+    """A valid cell riding in the same batch as a past-month cell must NOT be
+    written -- validation runs over the whole batch before any mutation."""
+    with pytest.raises(PastMonthError):
+        await upsert_cells(
+            db_session,
+            [
+                CellChange("S0093", "2026-11", Decimal("100")),  # would be valid alone
+                CellChange("S0093", "2026-08", Decimal("5")),  # current_month=2026-09 -> past
+            ],
+            current_month="2026-09", changed_by=None,
+        )
+    await db_session.commit()
+    # nothing from the batch was written, not even the valid cell
+    assert (await db_session.execute(select(MrpDemandSeries))).scalars().all() == []
+    assert (await db_session.execute(select(MrpForecastChangeLog))).scalars().all() == []
+
+
+@pytest.mark.anyio
+async def test_batch_with_one_non_kg_cell_rejects_whole_batch_atomically(db_session):
+    with pytest.raises(UomError):
+        await upsert_cells(
+            db_session,
+            [
+                CellChange("S0093", "2026-11", Decimal("100")),  # would be valid alone
+                CellChange("S0060", "2026-11", Decimal("5"), uom="EA"),
+            ],
+            current_month="2026-09", changed_by=None,
+        )
+    await db_session.commit()
+    assert (await db_session.execute(select(MrpDemandSeries))).scalars().all() == []
+    assert (await db_session.execute(select(MrpForecastChangeLog))).scalars().all() == []
+
+
+@pytest.mark.anyio
+async def test_current_month_defaults_when_omitted(db_session):
+    """current_month isn't required -- it defaults to today's real month, so
+    a far-future cell must still succeed with no explicit current_month."""
+    res = await upsert_cells(
+        db_session, [CellChange("S0093", "2099-01", Decimal("1"))], changed_by=None,
+    )
+    assert (res.upserted, res.changed) == (1, 1)
+
+
+# ── read_series_grid ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_read_series_grid_shape_and_totals(db_session):
+    await upsert_cells(
+        db_session,
+        [
+            CellChange("S0093", "2026-09", Decimal("100")),
+            CellChange("S0093", "2026-10", Decimal("50")),
+            CellChange("S0060", "2026-09", Decimal("20")),
+        ],
+        current_month="2026-09", changed_by=None,
+    )
+    # outside the requested range -- must not appear in months/cells/totals
+    await upsert_cells(
+        db_session, [CellChange("S0093", "2026-12", Decimal("999"))],
+        current_month="2026-09", changed_by=None,
+    )
+
+    grid = await read_series_grid(db_session, "2026-09", "2026-10")
+
+    assert grid["months"] == ["2026-09", "2026-10"]
+    rows_by_code = {r["material_code"]: r for r in grid["rows"]}
+    assert set(rows_by_code) == {"S0093", "S0060"}
+
+    s0093 = rows_by_code["S0093"]
+    assert s0093["cells"] == {"2026-09": Decimal("100"), "2026-10": Decimal("50")}
+    assert s0093["total"] == Decimal("150")
+
+    s0060 = rows_by_code["S0060"]
+    assert s0060["cells"] == {"2026-09": Decimal("20"), "2026-10": Decimal("0")}
+    assert s0060["total"] == Decimal("20")
+
+    assert grid["column_totals"] == {"2026-09": Decimal("120"), "2026-10": Decimal("50")}
+    assert grid["grand_total"] == Decimal("170")
+
+
+@pytest.mark.anyio
+async def test_read_series_grid_empty_range_returns_empty_grid(db_session):
+    grid = await read_series_grid(db_session, "2030-01", "2030-01")
+    assert grid == {
+        "months": ["2030-01"],
+        "rows": [],
+        "column_totals": {"2030-01": Decimal("0")},
+        "grand_total": Decimal("0"),
+    }
