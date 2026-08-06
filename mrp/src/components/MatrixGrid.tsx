@@ -21,7 +21,7 @@
  *     the new sparse Map so the parent can hold it for Save.
  */
 import {
-  useCallback, useEffect, useId, useMemo, useRef, useState,
+  useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 import { Undo2, Redo2, Lock, AlertTriangle } from 'lucide-react'
 import { Button, Badge } from '@uniops/shell'
@@ -63,6 +63,30 @@ export interface MatrixGridProps {
   colTotalLabel?: string
   /** Optional number formatter for display (defaults to en-US grouping, 0 decimals). */
   formatValue?: (n: number) => string
+  /**
+   * Imperatively focus one cell — set by the parent right after it appends a
+   * new row (e.g. ForecastPage's "Add Product") so the planner can start
+   * typing immediately, same as any keyboard-driven navigation (scrolls the
+   * row into view too if needed). `colId` defaults to the first column.
+   * Cleared via `onFocusRequestHandled` once applied, so re-requesting the
+   * same cell again later still fires.
+   */
+  focusRequest?: { rowId: string; colId?: string } | null
+  onFocusRequestHandled?: () => void
+  /**
+   * Row id whose cell values (all columns) should be purged from history —
+   * used when the parent removes a not-yet-saved row, so stray edits don't
+   * silently resurrect if the same row id is added back later. A no-op if
+   * the row currently has no values. Cleared via `onRowCleared` once applied.
+   */
+  clearRowId?: string | null
+  onRowCleared?: () => void
+  /**
+   * Optional extra content rendered at the right edge of a row's sticky
+   * header cell (e.g. a remove control for a not-yet-saved row). Never
+   * shown while `readOnly`.
+   */
+  rowActions?: (row: GridRow) => ReactNode
 }
 
 function defaultFormat(n: number): string {
@@ -78,6 +102,7 @@ export function MatrixGrid({
   rows, cols, value, onChange, frozenKeys, readOnly = false, height = 480,
   rowHeaderLabel = 'Row', rowTotalLabel = 'Total', colTotalLabel = 'Total',
   formatValue = defaultFormat,
+  focusRequest = null, onFocusRequestHandled, clearRowId = null, onRowCleared, rowActions,
 }: MatrixGridProps) {
   const frozen = frozenKeys ?? EMPTY_FROZEN
   const [history, setHistory] = useState(() => initHistory(new Map(value)))
@@ -175,6 +200,35 @@ export function MatrixGrid({
       setSelEnd(null)
     }
   }, [rows, cols])
+
+  // ── Imperative focus / row-clear requests from the parent ───────────────
+  // (see the props' doc comments above — used by ForecastPage's "Add
+  // Product" and "remove a not-yet-saved row" flows.)
+  useEffect(() => {
+    if (!focusRequest) return
+    const rowIdx = rows.findIndex((r) => r.id === focusRequest.rowId)
+    if (rowIdx === -1) return // row not in the current `rows` prop yet — nothing to focus
+    const colIdx = focusRequest.colId ? cols.findIndex((c) => c.id === focusRequest.colId) : 0
+    if (colIdx === -1) return
+    focusCell(rowIdx, colIdx, false, true)
+    onFocusRequestHandled?.()
+  }, [focusRequest, rows, cols, focusCell, onFocusRequestHandled])
+
+  useEffect(() => {
+    if (!clearRowId) return
+    applyUpdater((prev) => {
+      let changed = false
+      const next = new Map(prev)
+      for (const c of cols) {
+        const k = cellKey(clearRowId, c.id)
+        if (next.has(k)) { next.delete(k); changed = true }
+      }
+      return changed ? next : prev
+    })
+    setFocus((f) => (f && rows[f.rowIdx]?.id === clearRowId ? null : f))
+    setSelEnd((s) => (s && rows[s.rowIdx]?.id === clearRowId ? null : s))
+    onRowCleared?.()
+  }, [clearRowId, cols, rows, applyUpdater, onRowCleared])
 
   // ── Apply a paste plan (shared by direct-apply and confirm-then-apply) ──
 
@@ -459,8 +513,11 @@ export function MatrixGrid({
                 const rowIdx = startIdx + i
                 return (
                   <tr key={row.id} style={{ height: ROW_HEIGHT }}>
-                    <td className="sticky left-0 z-10 bg-white border-b border-r border-neutral-200 px-3 py-1.5 text-left font-medium text-neutral-800 whitespace-nowrap">
-                      {row.label}
+                    <td className="sticky left-0 z-10 bg-white border-b border-r border-neutral-200 px-3 py-1.5 text-left font-medium text-neutral-800">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate">{row.label}</span>
+                        {!readOnly && rowActions?.(row)}
+                      </div>
                     </td>
                     {cols.map((col, colIdx) => {
                       const key = cellKey(row.id, col.id)

@@ -7,7 +7,7 @@
 // plain downloads.
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileDown, FileSpreadsheet, FileUp, Lock, Loader2, Save, ShieldCheck } from 'lucide-react'
+import { FileDown, FileSpreadsheet, FileUp, Lock, Loader2, Save, ShieldCheck, X } from 'lucide-react'
 import { Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
@@ -16,6 +16,9 @@ import type { CellValueMap } from '@/components/matrixGrid/history'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
+import { usePermissions } from '@/hooks/usePermissions'
+import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
+import type { MaterialOption } from '@/lib/materials'
 import { VersionSwitcher } from './VersionSwitcher'
 import { NewVersionModal } from './NewVersionModal'
 import { ImportWizard } from './ImportWizard'
@@ -61,6 +64,17 @@ export default function ForecastPage() {
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [downloadingTemplate, setDownloadingTemplate] = useState(false)
+  // Rows the planner added this session via "Add Product" that aren't in
+  // the server's grid yet — keyed by material_code. See the reset block
+  // below (next to gridKey) and handleSaveDraft for how these get promoted
+  // to real rows or intentionally dropped.
+  const [addedRows, setAddedRows] = useState<Map<string, MaterialOption>>(new Map())
+  const [syncedGridKeyForAddedRows, setSyncedGridKeyForAddedRows] = useState<string | null>(null)
+  const [focusRequest, setFocusRequest] = useState<{ rowId: string; colId?: string } | null>(null)
+  const [clearRowId, setClearRowId] = useState<string | null>(null)
+
+  const permsQuery = usePermissions()
+  const canWriteForecast = !!(permsQuery.data?.permissions['mrp.demand.write'] || permsQuery.data?.permissions['data_maintenance'])
 
   const versionsQuery = useQuery({
     queryKey: ['forecast-versions'],
@@ -83,6 +97,12 @@ export default function ForecastPage() {
 
   const baseline = useMemo(() => buildBaseline(gridQuery.data), [gridQuery.data])
 
+  // Remount MatrixGrid whenever a fresh server snapshot lands (version
+  // switch, or a refetch after save/import/confirm) — the component only
+  // resets its undo history and "modified" markers on remount (see Task 9
+  // report: "remount with a different key to load a different dataset").
+  const gridKey = `${selectedVersionId ?? 'none'}::${gridQuery.dataUpdatedAt}`
+
   // liveCells is the single source of truth for dirty-diffing. MatrixGrid's
   // `value` prop only seeds its *internal* history on mount (see the file
   // header comment there) — it does not call onChange for that initial
@@ -95,6 +115,18 @@ export default function ForecastPage() {
   if (baseline !== syncedBaseline) {
     setSyncedBaseline(baseline)
     setLiveCells(baseline)
+  }
+
+  // Session-local "Add Product" rows are only ever session state (see
+  // addedRows above) — reset them at the same cadence MatrixGrid itself
+  // remounts at (gridKey). Any addition not yet persisted by then really is
+  // gone, which matches Save Draft's own promise: handleSaveDraft upserts a
+  // qty=0 placeholder cell for an added-but-untouched row precisely so it
+  // survives this reset (see that function for why).
+  if (gridKey !== syncedGridKeyForAddedRows) {
+    setSyncedGridKeyForAddedRows(gridKey)
+    if (addedRows.size > 0) setAddedRows(new Map())
+    if (focusRequest) setFocusRequest(null)
   }
 
   const dirtyCells = useMemo(() => {
@@ -111,29 +143,67 @@ export default function ForecastPage() {
     return out
   }, [baseline, liveCells])
 
-  const matrixRows: MatrixRow[] = useMemo(
-    () => (gridQuery.data?.rows ?? []).map((r) => ({ id: r.material_code, label: r.name ?? r.material_code })),
-    [gridQuery.data],
-  )
+  // Server rows first, then any session-local "Add Product" rows not
+  // (yet) reflected in the server's grid — filtered by material_code so a
+  // row that just got persisted (e.g. after Save Draft's refetch) isn't
+  // rendered twice while addedRows still holds it for one render.
+  const matrixRows: MatrixRow[] = useMemo(() => {
+    const serverRows = gridQuery.data?.rows ?? []
+    const serverCodes = new Set(serverRows.map((r) => r.material_code))
+    const extraRows = [...addedRows.values()].filter((m) => !serverCodes.has(m.code))
+    return [
+      ...serverRows.map((r) => ({ id: r.material_code, label: r.name ?? r.material_code })),
+      ...extraRows.map((m) => ({ id: m.code, label: m.name ? `${m.code} — ${m.name}` : m.code })),
+    ]
+  }, [gridQuery.data, addedRows])
   const matrixCols: MatrixCol[] = useMemo(
     () => (gridQuery.data?.months ?? []).map((m) => ({ id: m, label: m })),
     [gridQuery.data],
   )
 
-  // Remount MatrixGrid whenever a fresh server snapshot lands (version
-  // switch, or a refetch after save/import/confirm) — the component only
-  // resets its undo history and "modified" markers on remount (see Task 9
-  // report: "remount with a different key to load a different dataset").
-  const gridKey = `${selectedVersionId ?? 'none'}::${gridQuery.dataUpdatedAt}`
-
   function trySelectVersion(id: string) {
-    if (dirtyCells.length > 0) {
+    const parts: string[] = []
+    if (dirtyCells.length > 0) parts.push(`${dirtyCells.length} unsaved cell edit(s)`)
+    if (addedRows.size > 0) parts.push(`${addedRows.size} newly added product(s)`)
+    if (parts.length > 0) {
       const ok = window.confirm(
-        `You have ${dirtyCells.length} unsaved cell edit(s) on ${selectedVersion?.version_no}. Switch versions and discard them?`,
+        `You have ${parts.join(' and ')} on ${selectedVersion?.version_no}. Switch versions and discard them?`,
       )
       if (!ok) return
     }
     setManualVersionId(id)
+  }
+
+  /** "Add Product" — appends a row immediately (no server round trip) and
+   *  focuses its first cell. Picking a material that's already a row (server
+   *  or a still-pending local addition) just re-focuses it instead of
+   *  duplicating — same material_code can only ever be one grid row. */
+  function handleAddProduct(m: MaterialOption) {
+    const alreadyServerRow = (gridQuery.data?.rows ?? []).some((r) => r.material_code === m.code)
+    if (!alreadyServerRow && !addedRows.has(m.code)) {
+      setAddedRows((prev) => {
+        const next = new Map(prev)
+        next.set(m.code, m)
+        return next
+      })
+    }
+    setFocusRequest({ rowId: m.code, colId: gridQuery.data?.months[0] })
+  }
+
+  /** Removes a row that only ever existed locally (never saved) — a mis-pick
+   *  fix. Not offered for rows already backed by the server (see MatrixGrid's
+   *  `rowActions`, gated on `addedRows.has(row.id)`). Also purges any cell
+   *  values the planner may have typed for it from MatrixGrid's history, so
+   *  they don't silently resurface if the same product is added back later. */
+  function handleRemoveAddedRow(code: string) {
+    setAddedRows((prev) => {
+      if (!prev.has(code)) return prev
+      const next = new Map(prev)
+      next.delete(code)
+      return next
+    })
+    setClearRowId(code)
+    setFocusRequest((f) => (f?.rowId === code ? null : f))
   }
 
   async function handleCreateVersion(body: CreateVersionBody) {
@@ -153,10 +223,31 @@ export default function ForecastPage() {
   }
 
   async function handleSaveDraft() {
-    if (!selectedVersionId || dirtyCells.length === 0) return
+    if (!selectedVersionId) return
+    // A row added via "Add Product" that the planner left entirely
+    // untouched has no dirty cells (nothing differs from a baseline of
+    // "doesn't exist"), so on its own it would never appear in the upsert
+    // payload — and PUT .../cells only ever writes the cells it's given, so
+    // a row with zero ForecastLine rows simply never comes back from
+    // GET .../grid, i.e. it would silently vanish on reload. Chose to
+    // persist rather than warn-and-lose: send one explicit qty=0 cell (the
+    // horizon's first month) per such row so it survives as a real,
+    // all-zero grid row — a planner who picked a product almost always
+    // wants it kept even before they've filled anything in, and an
+    // explicit "0 forecast" line is a normal, meaningful state for this
+    // grid (nothing here treats 0 specially otherwise).
+    const months = gridQuery.data?.months ?? []
+    const dirtyRowCodes = new Set(dirtyCells.map((c) => c.material_code))
+    const placeholders = months.length > 0
+      ? [...addedRows.keys()]
+          .filter((code) => !dirtyRowCodes.has(code))
+          .map((code) => ({ material_code: code, month: months[0], qty: 0 }))
+      : []
+    const cellsToSave = [...dirtyCells, ...placeholders]
+    if (cellsToSave.length === 0) return
     setSaving(true)
     try {
-      const res = await forecastApi.upsertCells(selectedVersionId, dirtyCells)
+      const res = await forecastApi.upsertCells(selectedVersionId, cellsToSave)
       const parts = [`${res.upserted} cell${res.upserted === 1 ? '' : 's'} saved`]
       if (res.skipped_frozen.length > 0) {
         parts.push(`${res.skipped_frozen.length} cell${res.skipped_frozen.length === 1 ? '' : 's'} skipped (frozen)`)
@@ -222,6 +313,8 @@ export default function ForecastPage() {
     return sum
   }, [liveCells])
 
+  const pendingSaveCount = dirtyCells.length + addedRows.size
+
   return (
     <div className="flex flex-col gap-4">
       {/* Header */}
@@ -253,6 +346,17 @@ export default function ForecastPage() {
           {/* Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
+              {canWriteForecast && (
+                <div className="w-56">
+                  <MaterialPicker
+                    value=""
+                    onSelect={handleAddProduct}
+                    onClear={() => { /* trigger never shows a value — nothing to clear */ }}
+                    disabled={!isDraft}
+                    placeholder="Add Product…"
+                  />
+                </div>
+              )}
               <Button type="button" variant="secondary" size="sm" onClick={() => setImportOpen(true)} disabled={!isDraft}>
                 <FileUp className="h-3.5 w-3.5" /> Import Excel
               </Button>
@@ -266,9 +370,9 @@ export default function ForecastPage() {
               </Button>
             </div>
             <div className="flex items-center gap-2">
-              <Button type="button" variant="secondary" size="sm" onClick={handleSaveDraft} disabled={!isDraft || saving || dirtyCells.length === 0}>
+              <Button type="button" variant="secondary" size="sm" onClick={handleSaveDraft} disabled={!isDraft || saving || pendingSaveCount === 0}>
                 {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                Save Draft{dirtyCells.length > 0 ? ` (${dirtyCells.length})` : ''}
+                Save Draft{pendingSaveCount > 0 ? ` (${pendingSaveCount})` : ''}
               </Button>
               <Button type="button" size="sm" onClick={() => setConfirmOpen(true)} disabled={!isDraft || confirming}>
                 <ShieldCheck className="h-3.5 w-3.5" /> Confirm
@@ -297,8 +401,8 @@ export default function ForecastPage() {
             <>
               {matrixRows.length === 0 && (
                 <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-                  This version has no forecast lines yet. Download the template, fill it in, and use Import Excel — or create
-                  a new version copying lines from an existing one.
+                  This version has no forecast lines yet. Add a product directly above, download the template and use
+                  Import Excel, or create a new version copying lines from an existing one.
                 </p>
               )}
               <MatrixGrid
@@ -313,6 +417,23 @@ export default function ForecastPage() {
                 rowTotalLabel="Total"
                 colTotalLabel="Monthly Sum"
                 formatValue={formatQty}
+                focusRequest={focusRequest}
+                onFocusRequestHandled={() => setFocusRequest(null)}
+                clearRowId={clearRowId}
+                onRowCleared={() => setClearRowId(null)}
+                rowActions={(row) => (
+                  addedRows.has(row.id) ? (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleRemoveAddedRow(row.id) }}
+                      aria-label={`Remove ${row.label} — not yet saved`}
+                      title="Remove — not yet saved"
+                      className="shrink-0 text-neutral-300 hover:text-danger-500"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null
+                )}
               />
             </>
           )}
@@ -351,9 +472,12 @@ export default function ForecastPage() {
             <strong>{matrixCols.length}</strong> months (grand total <strong>{formatQty(grandTotal)}</strong>) as the active
             forecast. It becomes read-only immediately — further changes require a new version.
           </p>
-          {dirtyCells.length > 0 && (
+          {pendingSaveCount > 0 && (
             <p className="text-warning-700">
-              You have {dirtyCells.length} unsaved edit(s). Save Draft first, or they will be lost.
+              You have {[
+                dirtyCells.length > 0 ? `${dirtyCells.length} unsaved edit(s)` : null,
+                addedRows.size > 0 ? `${addedRows.size} newly added product(s)` : null,
+              ].filter(Boolean).join(' and ')} not saved. Save Draft first, or they will be lost.
             </p>
           )}
           <p className="text-neutral-500">Any other currently confirmed version will be marked superseded.</p>
