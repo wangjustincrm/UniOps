@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
@@ -91,6 +92,23 @@ async def create(db: AsyncSession, *, payload: VendorCreditCreate,
         uploaded_by_name=uploaded_by_name,
         uploaded_at=now,
     )
-    db.add(vc)
-    await db.flush()
+    # The _find_duplicate check above is check-then-act, not atomic: two
+    # concurrent create() calls for the same (vendor_id, vendor_credit_number)
+    # can both pass that SELECT before either commits. The loser would then
+    # violate uq_vendor_credits_vendor_docno at flush and raise a raw
+    # IntegrityError — but callers (the API route) only handle
+    # DuplicateCredit and would surface that as a 500 instead of a 409. A
+    # SAVEPOINT (begin_nested) scopes the failure to just this insert, so
+    # catching it here still leaves the outer session/transaction usable:
+    # we re-query for the row that won the race and raise DuplicateCredit
+    # from it, same as the non-raced path above.
+    try:
+        async with db.begin_nested():
+            db.add(vc)
+            await db.flush()
+    except IntegrityError:
+        dup = await _find_duplicate(db, payload.vendor_id, payload.vendor_credit_number)
+        if dup is not None:
+            raise DuplicateCredit(dup) from None
+        raise
     return vc

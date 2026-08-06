@@ -290,3 +290,40 @@ async def test_same_document_number_allowed_for_a_different_vendor(db_session):
     await crud.create(db_session, payload=_create_payload(vendor_id=uuid.uuid4()),
                       uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
     await db_session.commit()
+
+
+@pytest.mark.anyio
+async def test_create_converts_racing_duplicate_to_duplicate_credit(db_session, monkeypatch):
+    """_find_duplicate is check-then-act: a concurrent create() can commit its
+    row between our SELECT and our flush. True concurrency is awkward to
+    force in a single session, so this simulates the miss directly: the fast
+    -path SELECT is stubbed to report "no duplicate" exactly once (as it
+    would if the race window closed the wrong way), while the real duplicate
+    row already exists and is committed. create() must still convert the
+    resulting IntegrityError from uq_vendor_credits_vendor_docno into
+    DuplicateCredit — never let it leak — because callers only handle
+    DuplicateCredit and would otherwise surface a 500 instead of a 409.
+    """
+    from app.crud import vendor_credit as crud
+
+    vid = uuid.uuid4()
+    first = await crud.create(db_session, payload=_create_payload(vendor_id=vid),
+                              uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    await db_session.commit()
+
+    real_find_duplicate = crud._find_duplicate
+    calls = {"n": 0}
+
+    async def _find_duplicate_misses_once(db, vendor_id, doc_number):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return None
+        return await real_find_duplicate(db, vendor_id, doc_number)
+
+    monkeypatch.setattr(crud, "_find_duplicate", _find_duplicate_misses_once)
+
+    with pytest.raises(crud.DuplicateCredit) as exc:
+        await crud.create(db_session, payload=_create_payload(vendor_id=vid),
+                          uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    assert exc.value.existing.id == first.id
+    assert calls["n"] == 2  # fast-path miss, then the post-IntegrityError re-query
