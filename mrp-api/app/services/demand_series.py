@@ -27,7 +27,14 @@ Three entry points:
 
     - past-month-read-only: any cell whose `month < current_month` raises
       `PastMonthError` (already-elapsed months are historical fact, not
-      editable forecast).
+      editable forecast) — enforced by a plain string comparison, so it also
+      requires `cell.month` to already be shaped `'YYYY-MM'` (`_MONTH_SHAPE`)
+      before that comparison runs; a malformed month (e.g. `"2026-1"`) also
+      raises `PastMonthError` rather than being compared. This is a
+      belt-and-suspenders check — `app/api/v1/series.py`'s
+      `SeriesCellUpsert.month` field_validator already rejects a malformed
+      body month with a 422 before it reaches here, but this service must
+      not trust that every caller remembers to validate first.
     - KG-only: any cell whose `uom != 'KG'` raises `UomError` (mirrors
       `net_requirement.py`'s `PLANNING_UOM` invariant — this is the write-side
       enforcement of the same rule).
@@ -62,6 +69,7 @@ Three entry points:
 """
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -75,6 +83,19 @@ from app.models.forecast import ForecastLine, ForecastVersion
 from app.services.mdm_client import resolve_material_names
 
 _ZERO = Decimal("0")
+
+# Belt-and-suspenders shape guard on CellChange.month, independent of the
+# HTTP layer's own SeriesCellUpsert.month field_validator (app/api/v1/series.py)
+# — this service must not trust a malformed month string reaching it from
+# ANY caller (a future non-HTTP caller, a test, a caller that forgets the
+# schema-level check). Loose on purpose (just \d{4}-\d{2}, not the stricter
+# 01-12 month range the API layer enforces) — its only job is to guarantee
+# the `cell.month < current_month` STRING comparison a few lines down can't
+# be fooled by a differently-shaped string (e.g. "2026-1" versus "2026-08"
+# compares greater at character index 6 because '1' > '0', letting a
+# malformed month sail past the past-month guard and land in a real
+# historical row).
+_MONTH_SHAPE = re.compile(r"^\d{4}-\d{2}$")
 
 
 # ── Month helpers (plain 'YYYY-MM' string arithmetic, no date lib) ─────────
@@ -204,6 +225,15 @@ async def upsert_cells(
     # rejects the entire request atomically (no query/db.add happens above
     # this loop, so raising here leaves the session untouched).
     for cell in cells:
+        if not _MONTH_SHAPE.match(cell.month):
+            # Reject before the string comparison below ever runs — an
+            # oddly-shaped month (e.g. "2026-1") would otherwise compare
+            # unpredictably against current_month and could sail past the
+            # past-month guard. See _MONTH_SHAPE's comment above.
+            raise PastMonthError(
+                f"cannot write {cell.material_code}/{cell.month!r}: month must be "
+                "'YYYY-MM'"
+            )
         if cell.month < current_month:
             raise PastMonthError(
                 f"cannot write {cell.material_code}/{cell.month}: month is before "

@@ -8,7 +8,12 @@ deletes the row and logs (old,new=0); qty=0 against a material with no
 existing row is a true no-op (nothing to delete, nothing changed); a same-qty
 resubmit is a no-op (writes/logs nothing); a batch with one bad cell rejects
 the WHOLE batch atomically (the valid cell in the same batch is not written
-either); and `read_series_grid`'s GridResponse shape/totals over a range.
+either); `read_series_grid`'s GridResponse shape/totals over a range; and a
+malformed month (e.g. "2026-1", which string-compares as "after" a real
+current_month like "2026-08") is rejected both at the HTTP body-validation
+layer (SeriesCellUpsert.month) and, belt-and-suspenders, inside upsert_cells
+itself — closing the past-read-only bypass a malformed month would otherwise
+open.
 """
 import uuid
 from decimal import Decimal
@@ -209,6 +214,26 @@ async def test_batch_with_one_non_kg_cell_rejects_whole_batch_atomically(db_sess
 
 
 @pytest.mark.anyio
+async def test_malformed_month_rejected_even_though_it_would_string_compare_as_future(db_session):
+    """`upsert_cells`' past-month guard is a plain string comparison —
+    "2026-1" > "2026-08" character-by-character (at index 6, '1' > '0'),
+    so a malformed one-digit month would sail past `cell.month <
+    current_month` and land in a real historical row if this shape guard
+    didn't reject it first. Proves the belt-and-suspenders check in
+    upsert_cells closes that bypass independent of the HTTP layer's own
+    SeriesCellUpsert.month field_validator."""
+    assert "2026-1" > "2026-08"  # sanity: confirms the string-compare bypass this guards against
+    with pytest.raises(PastMonthError):
+        await upsert_cells(
+            db_session, [CellChange("S0093", "2026-1", Decimal("100"))],
+            current_month="2026-08", changed_by=None,
+        )
+    await db_session.commit()
+    assert (await db_session.execute(select(MrpDemandSeries))).scalars().all() == []
+    assert (await db_session.execute(select(MrpForecastChangeLog))).scalars().all() == []
+
+
+@pytest.mark.anyio
 async def test_current_month_defaults_when_omitted(db_session):
     """current_month isn't required -- it defaults to today's real month, so
     a far-future cell must still succeed with no explicit current_month."""
@@ -333,6 +358,25 @@ async def test_put_cells_non_kg_returns_422(client, admin_token):
     )
     assert r.status_code == 422, r.text
     assert "EA" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad_month", ["2026-1", "2026-13", "abc", "2026-011"])
+async def test_put_cells_malformed_body_month_returns_422(client, admin_token, bad_month):
+    """SeriesCellUpsert.month's field_validator (app/api/v1/series.py) must
+    422 a malformed body month via Pydantic's own validation, BEFORE it ever
+    reaches upsert_cells' string-compare past-month guard — closes the
+    "2026-1" > "2026-08" bypass that would otherwise defeat the
+    past-read-only invariant, and "2026-011" would overflow the
+    mrp_demand_series.month CHAR(7) column as an unhandled 500 rather than a
+    clean 422 if it weren't rejected here."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": bad_month, "qty": "5"}]},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
 
 
 @pytest.mark.anyio

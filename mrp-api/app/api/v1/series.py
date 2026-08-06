@@ -98,6 +98,24 @@ class SeriesCellUpsert(BaseModel):
     qty: Decimal
     uom: str = "KG"
 
+    @field_validator("month")
+    @classmethod
+    def _valid_month(cls, v: str) -> str:
+        # GET's from/to/month query params validate against _MONTH_PATTERN
+        # via FastAPI's own `pattern=` kwarg (see that constant's docstring
+        # above); this is the same guard on the PUT body's `month`, which
+        # FastAPI's Query(pattern=...) can't reach. Without it, a malformed
+        # value like "2026-1" sails past upsert_cells' `cell.month <
+        # current_month` STRING comparison (at char index 6, '1' > '0'
+        # compares greater than "2026-08", so it reads as "not past" even
+        # though it's not a valid month at all) and gets written straight
+        # into a real historical row — defeating the past-read-only
+        # invariant. A too-long value like "2026-011" would also overflow
+        # the mrp_demand_series.month CHAR(7) column as an unhandled 500.
+        if not re.match(_MONTH_PATTERN, v):
+            raise ValueError("month must be 'YYYY-MM'")
+        return v
+
 
 class SeriesCellsUpsertRequest(BaseModel):
     cells: list[SeriesCellUpsert]
