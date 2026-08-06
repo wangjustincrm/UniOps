@@ -195,3 +195,98 @@ async def test_unique_source_ref_blocks_duplicate_but_allows_null(db_session):
         **_row(source=SOURCE_QBO_IMPORT, source_ref=None)))
     await db_session.execute(sa.insert(VendorCredit).values(
         **_row(source=SOURCE_QBO_IMPORT, source_ref=None)))
+
+
+def _create_payload(**over):
+    from app.schemas.vendor_credit import VendorCreditCreate
+    p = dict(
+        vendor_id=uuid.uuid4(), vendor_name="Amazon Business",
+        vendor_credit_number="11DJ-MFHX-N4JG",
+        credit_date=date(2026, 7, 1), currency="CAD",
+        amount=Decimal("-0.04"), tax_amount=Decimal("0"),
+        po_id=None, po_number="PO-089-2605-23",
+        line_items=[{"description": "Export Fee", "quantity": 1,
+                     "unit_price": -0.04, "line_total": -0.04}],
+        file_name="AmazonBusiness_CreditNote_11DJ-MFHX-N4JG.pdf", notes=None,
+    )
+    p.update(over)
+    return VendorCreditCreate(**p)
+
+
+@pytest.mark.anyio
+async def test_create_stores_negative_input_as_positive(db_session):
+    from app.crud import vendor_credit as crud
+    uid = uuid.uuid4()
+    vc = await crud.create(db_session, payload=_create_payload(),
+                           uploaded_by=uid, uploaded_by_name="AP Clerk")
+    await db_session.commit()
+    assert vc.amount == Decimal("0.04")
+    assert vc.tax_amount == Decimal("0.00")
+    assert vc.total_amount == Decimal("0.04")
+    assert vc.remaining_amount == Decimal("0.04")
+    assert vc.applied_amount == Decimal("0.00")
+    assert vc.status == "pending_review"
+    assert vc.source == "upload"
+    assert vc.opening_balance is False
+    assert vc.credit_number.startswith("VC-")
+    assert vc.po_number == "PO-089-2605-23"
+
+
+@pytest.mark.anyio
+async def test_create_normalises_negative_tax_too(db_session):
+    from app.crud import vendor_credit as crud
+    vc = await crud.create(
+        db_session,
+        payload=_create_payload(amount=Decimal("-100.00"), tax_amount=Decimal("-13.00")),
+        uploaded_by=uuid.uuid4(), uploaded_by_name="AP Clerk")
+    await db_session.commit()
+    assert vc.amount == Decimal("100.00")
+    assert vc.tax_amount == Decimal("13.00")
+    assert vc.total_amount == Decimal("113.00")
+
+
+@pytest.mark.anyio
+async def test_create_rejects_zero_total(db_session):
+    from app.crud import vendor_credit as crud
+    with pytest.raises(ValueError, match="must not be zero"):
+        await crud.create(
+            db_session,
+            payload=_create_payload(amount=Decimal("0"), tax_amount=Decimal("0")),
+            uploaded_by=uuid.uuid4(), uploaded_by_name="AP Clerk")
+
+
+@pytest.mark.anyio
+async def test_create_allocates_sequential_numbers(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    a = await crud.create(db_session, payload=_create_payload(vendor_id=vid, vendor_credit_number="CN-1"),
+                          uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    b = await crud.create(db_session, payload=_create_payload(vendor_id=vid, vendor_credit_number="CN-2"),
+                          uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    await db_session.commit()
+    prefix = f"VC-{date.today():%Y%m%d}-"
+    assert a.credit_number == f"{prefix}0001"
+    assert b.credit_number == f"{prefix}0002"
+
+
+@pytest.mark.anyio
+async def test_create_rejects_same_vendor_same_document_number(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    first = await crud.create(db_session, payload=_create_payload(vendor_id=vid),
+                              uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    await db_session.commit()
+    with pytest.raises(crud.DuplicateCredit) as exc:
+        await crud.create(db_session, payload=_create_payload(vendor_id=vid),
+                          uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    assert exc.value.existing.id == first.id
+
+
+@pytest.mark.anyio
+async def test_same_document_number_allowed_for_a_different_vendor(db_session):
+    from app.crud import vendor_credit as crud
+    await crud.create(db_session, payload=_create_payload(vendor_id=uuid.uuid4()),
+                      uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    await crud.create(db_session, payload=_create_payload(vendor_id=uuid.uuid4()),
+                      uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+    await db_session.commit()
