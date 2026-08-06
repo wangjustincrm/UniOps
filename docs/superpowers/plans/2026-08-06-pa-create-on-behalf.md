@@ -31,7 +31,7 @@
 - Produces: 数据库中存在 `role_permissions('procurement_officer','epms.pa.write')` 一行。Task 2 的后端门禁 `require_permission("epms.pa.write")` 依赖它;Task 5 的前端按钮依赖它经 `GET /config/me/permissions` 暴露出来。
 - Consumes: 现有 alembic 链尾 `0004_erp_pa_officer_role`(已核实是 identity 唯一 head)。
 
-- [ ] **Step 1: 确认 identity 的 alembic head 仍是 0004**
+- [x] **Step 1: 确认 identity 的 alembic head 仍是 0004**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
@@ -40,7 +40,7 @@ grep -h "^revision\|^down_revision" identity-api/alembic/versions/*.py
 
 Expected: 输出四对 revision/down_revision,链为 `0001 → 0002 → 0003 → 0004_erp_pa_officer_role`,没有第二个 head(即没有任何两个文件的 `down_revision` 相同)。若不是,停下来先问用户 —— 挂错 `down_revision` 会造成双 head。
 
-- [ ] **Step 2: 写迁移文件**
+- [x] **Step 2: 写迁移文件**
 
 Create `identity-api/alembic/versions/0005_procurement_officer_pa.py` (revision id kept to 32 chars — `alembic_version_identity.version_num` is `varchar(32)` and rejects longer ids):
 
@@ -94,7 +94,7 @@ def downgrade() -> None:
         f"AND permission_key = '{_KEY}'")
 ```
 
-- [ ] **Step 3: 同步 seed 常量**
+- [x] **Step 3: 同步 seed 常量**
 
 Modify `identity-api/scripts/seed_phase2_keys.py:38` — 在元组末尾追加 `"procurement_officer"`:
 
@@ -104,7 +104,7 @@ Modify `identity-api/scripts/seed_phase2_keys.py:38` — 在元组末尾追加 `
 
 (这行是新库首次 seed 的来源,必须与迁移一致,否则新环境和老环境的矩阵会漂移。)
 
-- [ ] **Step 4: 在本地 identity 容器里跑 upgrade + downgrade + upgrade,验证幂等与可回滚**
+- [x] **Step 4: 在本地 identity 容器里跑 upgrade + downgrade + upgrade,验证幂等与可回滚**
 
 ```bash
 docker ps --format '{{.Names}}' | grep identity     # 确认容器名(下面按 uniops_identity_api)
@@ -144,7 +144,7 @@ Expected:`GRANT_ROWS_AFTER_DOWN 0`;两次 `upgrade head` 都成功(第二次是 
 
 > 若本地没有跑着的 identity 容器,不要退回宿主机执行(宿主 `.env` 打生产库)。改为在 Task 2 的 epms 测试里通过 shadow 表验证授权效果,并在本 Task 的 commit message 里注明"迁移未在本地实跑,待部署前在 dev 环境验证"。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
@@ -170,7 +170,7 @@ so the capability is live the moment the release lands."
 
 **测试环境(每次跑测都要):** 覆盖 `POSTGRES_*` 指向本地 docker `uniops_postgres`(user=`epms`,库 `epms_test`),`JWT_SECRET_KEY=test-secret`;密码用 `docker inspect uniops_postgres` 取。首次需 `python -m scripts.create_test_db`。**同一时刻只跑一个 epms 套件。**
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 Create `epms-api/tests/test_pa_on_behalf_authz.py`:
 
@@ -325,7 +325,7 @@ async def test_plain_requester_still_cannot_create_pa_for_someone_elses_po(test_
     assert r.status_code == 403, r.text
 ```
 
-- [ ] **Step 2: 跑测确认哪一条失败**
+- [x] **Step 2: 跑测确认哪一条失败**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf/epms-api
@@ -340,7 +340,7 @@ Expected(改代码前的正确基线,三条各有各的含义):
 
 若第一条也 FAIL,说明 shadow 表授权没生效,先查 `_grant_procurement_officer_pa_write` 是否 commit 了。
 
-- [ ] **Step 3: 实现最小改动**
+- [x] **Step 3: 实现最小改动**
 
 Modify `epms-api/app/api/v1/pa.py` —— 在 `create_pa` 之前(紧跟 `_get_prepayment_config` 之后)加入判定函数:
 
@@ -374,7 +374,7 @@ def _may_create_pa_on_behalf(roles: set[str], po) -> bool:
                 )
 ```
 
-- [ ] **Step 4: 跑测确认三条全绿 + 老的 erp_pa_officer 套件不回归**
+- [x] **Step 4: 跑测确认三条全绿 + 老的 erp_pa_officer 套件不回归**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf/epms-api
@@ -383,7 +383,7 @@ pytest tests/test_pa_on_behalf_authz.py tests/test_pa_erp_officer_authz.py -v
 
 Expected:5 passed(新 3 + 老 2)。老套件里的 `test_plain_requester_cannot_create_pa_for_nc_po` 必须仍是 403 —— 它证明重构没有把逃逸口开得过宽。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
@@ -406,7 +406,7 @@ role or an additional role on a requester login. Plain requesters are unchanged.
 - Consumes: Task 2 建立的 `_pa_payload` / `_grant_procurement_officer_pa_write` / `_user` / `_three_way_po_owned_by` / `_client_for`。
 - Produces: 无生产代码产物 —— 这是把"通知不改动"这个需求转成可执行断言。
 
-- [ ] **Step 1: 追加测试**
+- [x] **Step 1: 追加测试**
 
 在 `epms-api/tests/test_pa_on_behalf_authz.py` 顶部 import 区补上:
 
@@ -465,7 +465,7 @@ async def test_officer_created_pa_leaves_no_task_for_the_officer(test_engine):
         assert pooled == [], "create_pa must never be broadcast to the procurement_officer pool"
 ```
 
-- [ ] **Step 2: 跑测**
+- [x] **Step 2: 跑测**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf/epms-api
@@ -474,7 +474,7 @@ pytest tests/test_pa_on_behalf_authz.py -v
 
 Expected: 4 passed。这条应当**一次就过** —— 它是不变量测试,证明现有派发逻辑(`crud/pa.py::_complete_create_pa_tasks`)已经满足"officer 不收提醒"的需求,不需要写新代码。若它 FAIL,说明真的有代码把任务派给了创建人,那要停下来报告,不要改测试去迁就。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
@@ -496,7 +496,7 @@ officer's PA), so the officer never gets the mail or the daily follow-up."
 - Consumes: `app.crud.engine._routing_user_id(db, doc_type, doc)`、`app.crud.engine._routing_department_id(db, doc_type, doc, routing_uid)`;pytest fixture `engine_db_session`(见 `approval-api/tests/conftest.py`,同目录其他 engine 测试都用它)。
 - Produces: 无生产代码产物。
 
-- [ ] **Step 1: 写测试**
+- [x] **Step 1: 写测试**
 
 Create `approval-api/tests/test_pa_on_behalf_routing.py`:
 
@@ -600,7 +600,7 @@ async def test_pa_routing_follows_pr_selected_department(engine_db_session):
     assert dept == dept_selected, "PR.department_id must win over the requester's own department"
 ```
 
-- [ ] **Step 2: 跑测**
+- [x] **Step 2: 跑测**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf/approval-api
@@ -609,7 +609,7 @@ pytest tests/test_pa_on_behalf_routing.py -v
 
 Expected: 2 passed(不变量测试,应一次就过 —— `_routing_user_id` 已经沿 `PA → PO → PR` 解析)。若 FAIL,说明"审批流不变"这个前提不成立,停下来报告,不要动引擎代码。
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
@@ -631,7 +631,7 @@ come from the PR's requester/department, never from PA.created_by."
 - Consumes: `useRolePermissions()` from `@/hooks/useConfig`,返回 `{ permissions: Record<string, boolean>, roles: string[] }`(`epms/src/services/config.ts::MyPermissions`)。后端 `GET /config/me/permissions` 返回 `permission_defs` 的全部 key(含 `epms.pa.write`),且已是基础角色 ∪ 附加角色的并集。
 - Produces: 无下游消费者。
 
-- [ ] **Step 1: 加 import**
+- [x] **Step 1: 加 import**
 
 在 `epms/src/pages/pa/PaListPage.tsx` 第 12 行 `import { useAuthStore } from '@/stores/auth.store'` 之后插入:
 
@@ -639,7 +639,7 @@ come from the PR's requester/department, never from PA.created_by."
 import { useRolePermissions } from '@/hooks/useConfig'
 ```
 
-- [ ] **Step 2: 改 `canCreate`**
+- [x] **Step 2: 改 `canCreate`**
 
 把 `epms/src/pages/pa/PaListPage.tsx:117`:
 
@@ -658,7 +658,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
   const canCreate = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
 ```
 
-- [ ] **Step 3: 类型检查对齐基线**
+- [x] **Step 3: 类型检查对齐基线**
 
 worktree 里没有 `node_modules`,先装依赖(用 `npm ci` 而不是 `npm install`,避免改动 lockfile):
 
@@ -668,16 +668,16 @@ npm ci
 npx tsc -p tsconfig.app.json 2>&1 | tail -5
 ```
 
-Expected:错误条数与基线 **59** 一致(基线是这个仓库既有的存量错误)。用下面的命令数一下,并确认没有一条错误指向 `PaListPage.tsx`:
+Expected:错误条数与基线 **58** 一致(基线是这个仓库既有的存量错误)。用下面的命令数一下,并确认没有一条错误指向 `PaListPage.tsx`:
 
 ```bash
 npx tsc -p tsconfig.app.json 2>&1 | grep -c "error TS"
 npx tsc -p tsconfig.app.json 2>&1 | grep "PaListPage"
 ```
 
-Expected:第一条打印 `59`;第二条**无输出**(这里"无输出"是有效证据,因为同一次运行的第一条命令已经给出了正面的计数基线)。若计数 > 59,看新增的那几条是不是本次改动引入的。
+Expected:第一条打印 `58`;第二条**无输出**(这里"无输出"是有效证据,因为同一次运行的第一条命令已经给出了正面的计数基线)。若计数 > 58,看新增的那几条是不是本次改动引入的。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
@@ -696,7 +696,7 @@ picks up procurement_officer (base or additional role) automatically."
 **Files:**
 - Modify: `docs/superpowers/plans/2026-08-06-pa-create-on-behalf.md`(勾选完成项)
 
-- [ ] **Step 1: 跑 epms-api 全量套件,与基线对比**
+- [x] **Step 1: 跑 epms-api 全量套件,与基线对比**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf/epms-api
@@ -705,7 +705,7 @@ pytest -q 2>&1 | tail -5
 
 Expected:failed 数不高于本分支起点的基线。**注意**:epms 套件存在存量失败(历史基线约 72 failed,且与运行环境有关),所以不能只看"有没有红"。若有失败,逐条确认它是否出现在未改动的 `main` 上 —— 在 `c:/Project/uniops-release`(main 工作区)上跑同样的命令取基线对比。**跑之前确认没有别的会话在跑 epms 套件。**
 
-- [ ] **Step 2: 跑 approval-api 全量套件**
+- [x] **Step 2: 跑 approval-api 全量套件**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf/approval-api
@@ -714,7 +714,7 @@ pytest -q 2>&1 | tail -5
 
 Expected:与基线一致;本次新增 2 passed。
 
-- [ ] **Step 3: 勾选本计划中已完成的 checkbox 并提交**
+- [x] **Step 3: 勾选本计划中已完成的 checkbox 并提交**
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
@@ -722,7 +722,7 @@ git add docs/superpowers/plans/2026-08-06-pa-create-on-behalf.md
 git commit -m "docs: mark on-behalf PA plan tasks complete"
 ```
 
-- [ ] **Step 4: 汇报,不要自行 push 或合并**
+- [x] **Step 4: 汇报,不要自行 push 或合并**
 
 向用户汇报:改动清单、测试证据(通过/失败计数 vs 基线)、以及部署须知 —— identity 需跑迁移 `0005`,其余按标准发布流程全 15 镜像同 sha;部署后无需人工在 Portal 勾权限。
 
