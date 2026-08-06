@@ -38,7 +38,7 @@
 
 ### 3.1 授权:矩阵驱动 + 迁移里默认授予
 
-新增 identity 迁移 `0005_procurement_officer_pa_write`(`down_revision = "0004_erp_pa_officer_role"`,当前唯一 head),幂等地把 `epms.pa.write` 授给 `procurement_officer`:
+新增 identity 迁移 `0005_procurement_officer_pa`(`down_revision = "0004_erp_pa_officer_role"`,当前唯一 head),幂等地把 `epms.pa.write` 授给 `procurement_officer`:
 
 - `INSERT INTO permission_defs(...) VALUES ('epms.pa.write','epms','Create / Edit PAs',102) ON CONFLICT (key) DO NOTHING`(防新库缺 def 行导致 FK 失败,照抄 0004 做法)
 - `INSERT INTO role_permissions(role_code,permission_key) VALUES ('procurement_officer','epms.pa.write') ON CONFLICT DO NOTHING`

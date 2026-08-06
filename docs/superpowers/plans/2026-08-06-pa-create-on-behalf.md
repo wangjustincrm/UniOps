@@ -23,7 +23,7 @@
 ### Task 1: identity — 把 `epms.pa.write` 授给 `procurement_officer`
 
 **Files:**
-- Create: `identity-api/alembic/versions/0005_procurement_officer_pa_write.py`
+- Create: `identity-api/alembic/versions/0005_procurement_officer_pa.py`
 - Modify: `identity-api/scripts/seed_phase2_keys.py:38`
 - 不改:`identity-api/scripts/verify_gate_parity.py`(冻结快照,见 spec §3.1)
 
@@ -42,7 +42,7 @@ Expected: 输出四对 revision/down_revision,链为 `0001 → 0002 → 0003 →
 
 - [ ] **Step 2: 写迁移文件**
 
-Create `identity-api/alembic/versions/0005_procurement_officer_pa_write.py`:
+Create `identity-api/alembic/versions/0005_procurement_officer_pa.py` (revision id kept to 32 chars — `alembic_version_identity.version_num` is `varchar(32)` and rejects longer ids):
 
 ```python
 """Grant epms.pa.write to procurement_officer (create PA on behalf of anyone).
@@ -67,7 +67,7 @@ row its grant references).
 """
 from alembic import op
 
-revision = "0005_procurement_officer_pa_write"
+revision = "0005_procurement_officer_pa"
 down_revision = "0004_erp_pa_officer_role"
 branch_labels = None
 depends_on = None
@@ -121,7 +121,7 @@ async def main():
 asyncio.run(main())"
 ```
 
-Expected:`alembic heads` 只列出 `0005_procurement_officer_pa_write (head)`;`upgrade` 成功;最后打印 `GRANT_ROWS 1`。
+Expected:`alembic heads` 只列出 `0005_procurement_officer_pa (head)`;`upgrade` 成功;最后打印 `GRANT_ROWS 1`。
 
 再验回滚与重跑幂等:
 
@@ -148,7 +148,7 @@ Expected:`GRANT_ROWS_AFTER_DOWN 0`;两次 `upgrade head` 都成功(第二次是 
 
 ```bash
 cd /c/Project/uniops-pa-onbehalf
-git add identity-api/alembic/versions/0005_procurement_officer_pa_write.py identity-api/scripts/seed_phase2_keys.py
+git add identity-api/alembic/versions/0005_procurement_officer_pa.py identity-api/scripts/seed_phase2_keys.py
 git commit -m "feat(identity): grant epms.pa.write to procurement_officer
 
 Lets a Procurement Officer raise a Payment Application against any PO.
@@ -730,7 +730,7 @@ git commit -m "docs: mark on-behalf PA plan tasks complete"
 
 ## 部署须知(交付时一并转达)
 
-1. identity-api 跑 `migrate`(alembic `0005_procurement_officer_pa_write`)**或**等价的 `seed_phase2_keys`。
+1. identity-api 跑 `migrate`(alembic `0005_procurement_officer_pa`)**或**等价的 `seed_phase2_keys`。
 2. 其余服务按标准发布流程发布(全 15 镜像同 sha)。
 3. 无需人工勾权限;若日后要让 `procurement_manager` 也能代建,在 Portal → Access Control 勾 `epms.pa.write` 即可,无需改代码。
 4. 部署后跑 `verify_gate_parity` 会出现 `DIFF role=procurement_officer key=epms.pa.write old=False new=True` —— 这是本次有意矩阵变更的**正确表现**,不是回归(该脚本的 `PHASE2_DEFAULTS` 是割接时的冻结快照,刻意不同步)。
