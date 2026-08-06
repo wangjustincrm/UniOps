@@ -6,6 +6,7 @@ import { mrpRoutes } from '@/app/routes'
 import {
   TrendingUp, PackageSearch, Network, ArrowLeft, Menu,
   ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
+  SlidersHorizontal, CalendarRange,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/signOut'
@@ -29,9 +30,11 @@ function getStoredSession(): { token: string | null; user: { id?: string; full_n
 // ── Navigation ────────────────────────────────────────────────────────────────
 
 const NAV = [
-  { label: 'Sales Forecast',      href: '/forecast',            icon: TrendingUp    },
-  { label: 'Consignment Stock',   href: '/consignment-stock',   icon: PackageSearch },
-  { label: 'BOM Explorer',        href: '/bom-explorer',        icon: Network       },
+  { label: 'Sales Forecast',      href: '/forecast',            icon: TrendingUp       },
+  { label: 'Consignment Stock',   href: '/consignment-stock',   icon: PackageSearch    },
+  { label: 'BOM Explorer',        href: '/bom-explorer',        icon: Network          },
+  { label: 'Capacity Rules',      href: '/capacity-rules',      icon: SlidersHorizontal },
+  { label: 'Production Plan',     href: '/production-plan',     icon: CalendarRange    },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
