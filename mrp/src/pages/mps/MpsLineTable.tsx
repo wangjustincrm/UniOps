@@ -9,7 +9,7 @@
 // 409 semantics live in ProductionPlanPage.tsx, which passes down plain
 // callbacks (mirrors RuleDrawer.tsx's onSaved/notifySuccess split: children
 // stay presentational, the page owns mutations).
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ArrowUp, Lock, Unlock, PackageCheck, SquarePen, AlertTriangle } from 'lucide-react'
 import { Button, Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
@@ -74,6 +74,24 @@ export function MpsLineTable({
   onConfirmReleaseClick: () => void
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  // Recalculate deletes+recreates every MrpMpsLine under the same run.id, so
+  // a `key={run.id}` remount (see ProductionPlanPage.tsx) doesn't help here —
+  // drop any selected id that no longer has a matching line, on every lines
+  // change, so a stale id can't reach onLockSelected/onAdjustLine and 404.
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev
+      const liveIds = new Set(lines.map((l) => l.id))
+      let changed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (liveIds.has(id)) next.add(id)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [lines])
 
   const gapCount = useMemo(() => lines.filter((l) => l.capacity_gap).length, [lines])
   const prebuildCount = useMemo(() => lines.filter((l) => l.is_prebuild).length, [lines])

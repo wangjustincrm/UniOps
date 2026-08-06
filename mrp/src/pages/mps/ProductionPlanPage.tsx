@@ -253,6 +253,7 @@ export default function ProductionPlanPage() {
           <CapacityBars occupancy={run.capacity_occupancy} />
 
           <MpsLineTable
+            key={run.id}
             lines={run.lines}
             materialsByCode={materialsByCode}
             readOnly={isReleased}

@@ -47,9 +47,8 @@ def upgrade() -> None:
         sa.Column("stats", JSONB, nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.UniqueConstraint("run_no", name="uq_mrp_mps_runs_run_no"),
     )
-    op.create_index("ix_mrp_mps_runs_run_no", "mrp_mps_runs", ["run_no"])
+    op.create_index("ix_mrp_mps_runs_run_no", "mrp_mps_runs", ["run_no"], unique=True)
     op.create_index("ix_mrp_mps_runs_forecast_version_id", "mrp_mps_runs", ["forecast_version_id"])
 
     op.create_table(
