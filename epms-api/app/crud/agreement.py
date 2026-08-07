@@ -1,8 +1,8 @@
 """CRUD for Purchase Agreement (AGR)."""
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
@@ -89,3 +89,32 @@ async def update(
     await db.commit()
     await db.refresh(agr)
     return agr
+
+
+async def candidates_for_vendor(
+    db: AsyncSession, vendor_id: uuid.UUID, on_date: date | None = None
+) -> list[PurchaseAgreement]:
+    """Agreements an invoice from this vendor may be matched against.
+
+    Admission (spec §5.1): status == "active", OR status == "expired" and today
+    is still within valid_to + grace_days. The grace branch exists because a
+    period's statement always arrives after the period closes — an agreement
+    expiring 8/31 still has to absorb the invoice that lands on 9/3.
+
+    The grace predicate is written as an integer day difference rather than an
+    interval addition: in Postgres `date - date` yields an integer number of
+    days, so `(today - valid_to) <= grace_days` needs no interval construction
+    and reads the same as the rule it encodes.
+    """
+    today = on_date or date.today()
+    q = select(PurchaseAgreement).where(
+        PurchaseAgreement.vendor_id == vendor_id,
+        or_(
+            PurchaseAgreement.status == "active",
+            and_(
+                PurchaseAgreement.status == "expired",
+                (literal(today) - PurchaseAgreement.valid_to) <= PurchaseAgreement.grace_days,
+            ),
+        ),
+    ).order_by(PurchaseAgreement.number)
+    return list((await db.execute(q)).scalars().all())

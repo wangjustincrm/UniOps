@@ -8,12 +8,14 @@ from sqlalchemy import select
 
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.core.access_scope import build_scope
+from app.crud import agreement as agreement_crud
 from app.crud import invoice as invoice_crud
 from app.crud import vendor as vendor_crud
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
+from app.schemas.agreement import AgreementListResponse
 from app.schemas.invoice import (
     AssignMatchRequest,
     DeclineMatchRequest,
@@ -436,6 +438,29 @@ async def list_match_candidates(
         items=[PoResponse.model_validate(po) for po in pos],
         total=len(pos),
     )
+
+
+@router.get("/{invoice_id}/agreement-candidates", response_model=AgreementListResponse)
+async def list_agreement_candidates(
+    invoice_id: uuid.UUID,
+    db: SessionDep,
+    user: CurrentUserPayload,
+):
+    """Agreements this invoice may be matched to (same vendor, inside the
+    admission window). Authorised exactly like list_match_candidates — by the
+    invoice's match permission, NOT by a generic agreement scope, or an assignee
+    with no related PR sees zero candidates and deadlocks."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    caller_id = uuid.UUID(user["sub"])
+    is_uploader = inv.uploaded_by == caller_id
+    if (user.get("role") not in _AP_ROLES and not is_uploader
+            and not await _has_open_match_task(db, caller_id, invoice_id)):
+        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
+
+    items = await agreement_crud.candidates_for_vendor(db, inv.vendor_id)
+    return {"items": items, "total": len(items)}
 
 
 @router.post("/{invoice_id}/decline-match", response_model=InvoiceResponse)
