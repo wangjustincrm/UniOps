@@ -1,16 +1,29 @@
-"""MPS scheduling algorithm (Phase 1B Task 3).
+"""MPS scheduling algorithm (Phase 1B Task 3 + production-lead-time task 1).
 
-Pure-function tests only -- no DB, no clock. Cases 1-4 are verbatim from the
-task brief; the rest cover edge cases the algorithm text implies (SKU-count
-overflow, locked-line capacity consumption, prebuild_reason content, a
-multi-hop cascade that must skip full intermediate months, and the
-distinction between a shelf-life-caused gap vs a pure-capacity-caused gap).
+Pure-function tests only -- no DB, no clock. Cases 1-4 in the first section
+are verbatim from the original task brief; the rest cover edge cases the
+algorithm text implies (SKU-count overflow, locked-line capacity consumption,
+prebuild_reason content, a multi-hop cascade that must skip full intermediate
+months, and the distinction between a shelf-life-caused gap vs a
+pure-capacity-caused gap). The lead-time section below is verbatim from the
+2026-08-07 production-lead-time task brief.
+
+All calls pass `lead_months` and `current_month` explicitly (no defaults on
+`generate_mps`); pre-lead tests pass `lead_months=0` and a `current_month`
+safely before every demand month in the test, which the engine guarantees
+reproduces the exact pre-lead placement/prebuild/gap behaviour byte-for-byte
+(see `test_lead_zero_reproduces_same_month` below for the dedicated
+regression case).
 """
 from decimal import Decimal
 
 from app.services.mps_engine import (
     CapacityLimits, DemandItem, PlannedLine, generate_mps,
 )
+
+# Anchor used by pre-lead tests below: always <= every demand month they use,
+# so lead_months=0 reproduces the exact pre-lead behaviour (no clamping).
+_NO_LEAD_ANCHOR = "2020-01"
 
 
 # ── Brief's verbatim cases ───────────────────────────────────────────────────
@@ -20,7 +33,7 @@ def test_under_capacity_places_in_demand_month():
     out = generate_mps(
         [DemandItem("S0060", "2026-11", Decimal("100"))],
         CapacityLimits(max_sku_count=12, max_output_qty=Decimal("160000")),
-        {"S0060": 18}, Decimal("0.3333"),
+        {"S0060": 18}, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR,
     )
     assert len(out) == 1
     line = out[0]
@@ -37,7 +50,7 @@ def test_output_overflow_prebuilds_to_prior_month():
     ]
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=12, max_output_qty=Decimal("160000")),
-        {"A": 18, "B": 18}, Decimal("0.3333"),
+        {"A": 18, "B": 18}, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR,
     )
     by_code = {l.material_code: l for l in out}
     # 240k demanded in one month, 160k/mo cap -> one product pre-built earlier
@@ -56,7 +69,7 @@ def test_shelf_life_blocks_too_early_prebuild_becomes_gap():
     demands = [DemandItem(c, "2026-11", Decimal("160000")) for c in ("A", "B")]
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=12, max_output_qty=Decimal("160000")),
-        {"A": 1, "B": 1}, Decimal("0.3333"),
+        {"A": 1, "B": 1}, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR,
     )
     assert any(l.capacity_gap for l in out)
     gap = [l for l in out if l.capacity_gap][0]
@@ -72,7 +85,7 @@ def test_unknown_shelf_life_is_never_prebuilt():
     demands = [DemandItem(c, "2026-11", Decimal("160000")) for c in ("A", "B")]
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=12, max_output_qty=Decimal("160000")),
-        {"A": None, "B": None}, Decimal("0.3333"),
+        {"A": None, "B": None}, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR,
     )
     assert all(not l.is_prebuild for l in out)
     assert any(l.capacity_gap for l in out)
@@ -93,7 +106,7 @@ def test_sku_count_overflow_prebuilds_to_prior_month():
     ]
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=1, max_output_qty=None),
-        {"A": 18, "B": 18}, Decimal("0.3333"),
+        {"A": 18, "B": 18}, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR,
     )
     assert not any(l.capacity_gap for l in out)
     prebuilt = [l for l in out if l.is_prebuild]
@@ -113,7 +126,7 @@ def test_locked_line_consumes_capacity_forces_sibling_prebuild():
     demands = [DemandItem("A", "2026-11", Decimal("50000"))]
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=12, max_output_qty=Decimal("160000")),
-        {"A": 18}, Decimal("0.3333"), locked=locked,
+        {"A": 18}, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR, locked=locked,
     )
     # the locked line passes through completely untouched...
     locked_out = [l for l in out if l.locked]
@@ -139,7 +152,7 @@ def test_multi_month_cascade_skips_full_earlier_months_to_find_room():
     shelf_life = {"F": 18, "G": 18, "H": 3, "I": 6}
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=None, max_output_qty=Decimal("100")),
-        shelf_life, Decimal("0.3333"),
+        shelf_life, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR,
     )
     assert not any(l.capacity_gap for l in out)
     i_line = [l for l in out if l.material_code == "I"][0]
@@ -167,7 +180,7 @@ def test_capacity_gap_from_pure_capacity_keeps_shelf_life_ok_true():
     shelf_life = {"Y": 1, "Z": 2}
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=None, max_output_qty=Decimal("100")),
-        shelf_life, Decimal("0.3333"), locked=locked,
+        shelf_life, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR, locked=locked,
     )
     z_line = [l for l in out if l.material_code == "Z"][0]
     assert z_line.capacity_gap is True
@@ -183,10 +196,53 @@ def test_demand_across_multiple_months_processed_ascending_independently():
     ]
     out = generate_mps(
         demands, CapacityLimits(max_sku_count=12, max_output_qty=Decimal("160000")),
-        {"P": 18}, Decimal("0.3333"),
+        {"P": 18}, Decimal("0.3333"), lead_months=0, current_month=_NO_LEAD_ANCHOR,
     )
     assert len(out) == 2
     by_month = {l.demand_month: l for l in out}
     assert by_month["2026-11"].plan_month == "2026-11"
     assert by_month["2026-12"].plan_month == "2026-12"
     assert not any(l.is_prebuild for l in out)
+
+
+# ── Production lead time (2026-08-07 task 1 brief, verbatim) ────────────────
+
+UNL = CapacityLimits(max_sku_count=None, max_output_qty=None)
+
+
+def test_lead_schedules_one_month_before_demand():
+    out = generate_mps([DemandItem("A", "2026-11", Decimal("10"))], UNL,
+                       {"A": 24}, Decimal("0"), lead_months=1, current_month="2026-08")
+    assert len(out) == 1
+    assert out[0].plan_month == "2026-10"           # D - lead, capacity was free
+    assert out[0].is_prebuild is False and out[0].lead_shortfall is False
+
+
+def test_lead_clamped_to_current_month_flags_shortfall():
+    # demand next month, lead 1 -> target = this month's predecessor = past -> clamp to now
+    out = generate_mps([DemandItem("A", "2026-08", Decimal("10"))], UNL,
+                       {"A": 24}, Decimal("0"), lead_months=1, current_month="2026-08")
+    assert out[0].plan_month == "2026-08"
+    assert out[0].lead_shortfall is True
+
+
+def test_capacity_full_at_target_prebuilds_earlier_down_to_current_floor():
+    demands = [DemandItem(c, "2026-11", Decimal("100")) for c in ("A", "B")]
+    out = generate_mps(demands, CapacityLimits(max_sku_count=12, max_output_qty=Decimal("100")),
+                       {"A": 24, "B": 24}, Decimal("0"), lead_months=1, current_month="2026-08")
+    # target 2026-10 holds one; the other pre-builds to 2026-09 (earlier than standard target)
+    assert any(l.is_prebuild and l.plan_month == "2026-09" for l in out)
+    assert not any(l.plan_month < "2026-08" for l in out)   # never before current
+
+
+def test_lead_zero_reproduces_same_month():
+    out = generate_mps([DemandItem("A", "2026-11", Decimal("10"))], UNL,
+                       {"A": 24}, Decimal("0"), lead_months=0, current_month="2026-08")
+    assert out[0].plan_month == "2026-11" and out[0].is_prebuild is False and out[0].lead_shortfall is False
+
+
+def test_shelf_life_shorter_than_lead_is_a_gap():
+    # lead 2, shelf life 1 (minus safety) can't cover producing 2 months early -> gap
+    out = generate_mps([DemandItem("A", "2026-11", Decimal("10"))], UNL,
+                       {"A": 1}, Decimal("0"), lead_months=2, current_month="2026-08")
+    assert out[0].capacity_gap is True and out[0].shelf_life_ok is False
