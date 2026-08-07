@@ -280,6 +280,9 @@ services:
       # docker-compose.dev.yml's mrp-api block for why this must NOT be the
       # browser-facing ${MDM_API_URL} build var.
       MDM_API_URL: http://mdm-api:8002
+      # Server-to-server identity-api URL (mrp06 follow-up — see
+      # docker-compose.dev.yml's mrp-api block for the same reasoning).
+      IDENTITY_API_URL: http://identity-api:8009
       # WMS(Flux) Oracle read-only connection (values live in the gitignored
       # .env as WMS_*; missing values = feature hidden).
       WMS_HOST: ${WMS_HOST:-}

@@ -405,6 +405,14 @@ services:
       # import 503s with a misleading "could not reach mdm-api" error even
       # though mdm-api itself is healthy.
       MDM_API_URL: http://mdm-api:8002
+      # Server-to-server identity-api URL (mrp06 follow-up — resolves the
+      # caller's display name at write time for the forecast change log; see
+      # app/services/identity_client.py). Same container-DNS reasoning as
+      # MDM_API_URL above: without this it falls back to
+      # app/core/config.py's localhost:8009 default, unreachable from inside
+      # this container, and the name lookup silently degrades to null on
+      # every save (never breaks the save itself, just never shows a name).
+      IDENTITY_API_URL: http://identity-api:8009
       # WMS(Flux) Oracle read-only connection (values live in the gitignored
       # root .env as WMS_*; missing values = feature hidden). See wms_conn.env.
       WMS_HOST: ${WMS_HOST:-}

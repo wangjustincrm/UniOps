@@ -21,6 +21,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
+from app.api.v1 import series
 from app.models.demand_series import MrpDemandSeries, MrpForecastChangeLog
 from app.services.demand_series import (
     CellChange,
@@ -83,6 +84,33 @@ async def test_non_kg_rejected(db_session):
     with pytest.raises(UomError):
         await upsert_cells(db_session, [CellChange("S0093", "2026-11", Decimal("5"), uom="EA")],
                             current_month="2026-09", changed_by=None)
+
+
+@pytest.mark.anyio
+async def test_changed_by_name_is_stored_on_the_log_row(db_session):
+    """mrp06 follow-up: upsert_cells' changed_by_name param (write-time
+    denormalization, see app/models/demand_series.py's
+    MrpForecastChangeLog.changed_by_name docstring) must land on the log row
+    it produces, independent of changed_by itself."""
+    await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("100"))],
+        current_month="2026-09", changed_by=uuid.uuid4(), changed_by_name="Jane Planner",
+    )
+    logs = (await db_session.execute(select(MrpForecastChangeLog))).scalars().all()
+    assert len(logs) == 1 and logs[0].changed_by_name == "Jane Planner"
+
+
+@pytest.mark.anyio
+async def test_changed_by_name_defaults_to_none(db_session):
+    """A caller that doesn't pass changed_by_name (e.g. a non-HTTP caller,
+    or identity-api down) must still write the log row -- just without a
+    name, never a broken save."""
+    await upsert_cells(
+        db_session, [CellChange("S0093", "2026-11", Decimal("100"))],
+        current_month="2026-09", changed_by=None,
+    )
+    logs = (await db_session.execute(select(MrpForecastChangeLog))).scalars().all()
+    assert len(logs) == 1 and logs[0].changed_by_name is None
 
 
 # ── upsert_cells: edit / delete / no-op / atomic-batch edge cases ──────────
@@ -464,6 +492,64 @@ async def test_get_change_log_newest_first(client, admin_token):
     # newest first: the second PUT (10 -> 30) must come before the first (None -> 10)
     assert items[0]["old_qty"] == "10.000" and items[0]["new_qty"] == "30.000"
     assert items[1]["old_qty"] is None and items[1]["new_qty"] == "10.000"
+
+
+# ── PUT /series/cells: changed_by_name (mrp06 follow-up) ────────────────────
+#
+# The change-history popover must show the editor's NAME, not their UUID.
+# The endpoint resolves the caller's name ONCE per request via
+# identity_client.resolve_current_user_name — imported into app/api/v1/series.py
+# as a bare name (module docstring) so it's monkeypatchable here the same way
+# tests/test_consignment.py monkeypatches `consignment.lookup_lot`.
+
+
+@pytest.mark.anyio
+async def test_put_cells_stores_and_returns_editor_name_from_identity_lookup(
+    client, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(series, "resolve_current_user_name", lambda token: "Jane Planner")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2099-05", "qty": "7"}]},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+
+    log = (await client.get(
+        "/api/v1/series/change-log",
+        params={"material_code": "S0093", "month": "2099-05"},
+        headers=headers,
+    )).json()
+    assert len(log["items"]) == 1
+    assert log["items"][0]["changed_by_name"] == "Jane Planner"
+
+
+@pytest.mark.anyio
+async def test_put_cells_saves_successfully_when_identity_lookup_returns_none(
+    client, admin_token, monkeypatch,
+):
+    """identity-api down (or any lookup failure) degrades to changed_by_name
+    =None -- resolve_current_user_name itself never raises (see its
+    docstring), so this simulates its degraded return value directly. The
+    save must still succeed -- a name lookup must never break a save."""
+    monkeypatch.setattr(series, "resolve_current_user_name", lambda token: None)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put(
+        "/api/v1/series/cells",
+        json={"cells": [{"material_code": "S0093", "month": "2099-06", "qty": "9"}]},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"upserted": 1, "changed": 1}
+
+    log = (await client.get(
+        "/api/v1/series/change-log",
+        params={"material_code": "S0093", "month": "2099-06"},
+        headers=headers,
+    )).json()
+    assert len(log["items"]) == 1
+    assert log["items"][0]["changed_by_name"] is None
 
 
 @pytest.mark.anyio

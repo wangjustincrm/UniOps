@@ -25,6 +25,12 @@ export interface ChangeLogItem {
   new_qty: string | null
   source: string
   changed_by: string | null
+  // Write-time-denormalized editor display name (mrp06 follow-up — see
+  // mrp-api's app/models/demand_series.py MrpForecastChangeLog.changed_by_name
+  // docstring). Null when identity-api was unavailable at write time, or for
+  // rows written before mrp06 — CellHistoryPopover must never fall back to
+  // rendering `changed_by` (the raw UUID) in that case.
+  changed_by_name: string | null
   changed_at: string
 }
 

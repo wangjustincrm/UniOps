@@ -46,4 +46,16 @@ class MrpForecastChangeLog(Base, UUIDPrimaryKey):
     new_qty: Mapped[object | None] = mapped_column(Numeric(18, 3))
     source: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
     changed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # Write-time denormalization of the editor's display name (mrp06 follow-up
+    # to the Continuous Sales Forecast feature). The access JWT carries only
+    # {sub, role, type} — no name — and identity-api has no batch/list-users
+    # endpoint to resolve `changed_by` UUIDs after the fact, only
+    # GET /identity/v1/auth/me for the CURRENT caller. Since the editor IS the
+    # current user at write time, `app/api/v1/series.py`'s PUT /series/cells
+    # resolves this once via app/services/identity_client.py and stores it
+    # here — so the change-history popover can render a name without ever
+    # needing a live UUID -> name lookup. Nullable: identity-api being down at
+    # write time (or a pre-mrp06 row) degrades to no name shown, never a
+    # raised error and never the raw UUID.
+    changed_by_name: Mapped[str | None] = mapped_column(String(200))
     changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

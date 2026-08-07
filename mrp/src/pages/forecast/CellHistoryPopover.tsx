@@ -109,7 +109,12 @@ export function CellHistoryPopover({
               <li key={`${it.changed_at}-${i}`} className="text-xs text-neutral-700">
                 <span className="text-neutral-400">{formatDate(it.changed_at)}:</span>{' '}
                 {formatQty(it.old_qty)} → {formatQty(it.new_qty)}
-                {it.changed_by && <span className="text-neutral-400"> · {it.changed_by}</span>}
+                {/* Editor NAME only, never the raw changed_by UUID — see
+                    seriesApi.ts's ChangeLogItem.changed_by_name docstring.
+                    Absent (identity-api was down at write time, or a
+                    pre-mrp06 row) renders nothing, never a fallback to the
+                    uuid. */}
+                {it.changed_by_name && <span className="text-neutral-400"> · {it.changed_by_name}</span>}
               </li>
             ))}
           </ul>

@@ -204,6 +204,7 @@ async def upsert_cells(
     cells: list[CellChange],
     current_month: str | None = None,
     changed_by: uuid.UUID | None = None,
+    changed_by_name: str | None = None,
     source: str = "manual",
 ) -> UpsertResult:
     """The single write path onto `mrp_demand_series`. See module docstring
@@ -214,7 +215,16 @@ async def upsert_cells(
 
     `current_month` defaults to `datetime.now(timezone.utc)` formatted
     'YYYY-MM' when omitted (real callers, e.g. Task 3's API endpoint); tests
-    pass a fixed value so the past-month guard is deterministic."""
+    pass a fixed value so the past-month guard is deterministic.
+
+    `changed_by_name` (mrp06 follow-up) is a write-time-denormalized display
+    name for `changed_by`, stored verbatim on every change-log row this call
+    produces — see `app/models/demand_series.py`'s
+    `MrpForecastChangeLog.changed_by_name` docstring for why this is
+    denormalized at write time instead of resolved at read time. `None` by
+    default (mirrors `changed_by`'s own default) — a caller with no name to
+    give (identity-api down, or a non-HTTP caller) simply logs no name,
+    never breaks the write."""
     if current_month is None:
         current_month = datetime.now(timezone.utc).strftime("%Y-%m")
 
@@ -287,7 +297,7 @@ async def upsert_cells(
         db.add(MrpForecastChangeLog(
             material_code=cell.material_code, month=cell.month,
             old_qty=old_qty, new_qty=new_qty,
-            source=source, changed_by=changed_by,
+            source=source, changed_by=changed_by, changed_by_name=changed_by_name,
         ))
         upserted += 1
         changed += 1

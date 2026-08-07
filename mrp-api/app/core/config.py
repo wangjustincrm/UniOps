@@ -59,6 +59,8 @@ class Settings(BaseSettings):
     EPMS_API_URL: str = "http://localhost:8000"
     MDM_API_URL: str = "http://localhost:8002"
     MDM_API_TIMEOUT_SECONDS: float = 30.0
+    IDENTITY_API_URL: str = "http://localhost:8009"
+    IDENTITY_API_TIMEOUT_SECONDS: float = 10.0
 
     # ── WMS (Flux) Oracle read-only connection ──────────────────────────────────
     # The Flux WMS Oracle server is <=11g — python-oracledb's thin mode refuses

@@ -21,7 +21,11 @@ that service's two named exceptions onto HTTP.
   `UomError` — validated by `upsert_cells` over the whole batch before
   anything is written — become a 422 with a readable detail; nothing from a
   rejected batch is written (that atomicity is `upsert_cells`'s guarantee,
-  not this module's).
+  not this module's). The caller's display name is resolved ONCE per
+  request (not once per cell) via `resolve_current_user_name` — see that
+  module's docstring for the write-time-denormalization rationale and its
+  never-raises contract — and passed through as `changed_by_name` so every
+  change-log row this write produces carries it.
 
 - `GET /series/change-log?material_code=&month=` — raw
   `mrp_forecast_change_log` rows for one material, newest first. `month` is
@@ -61,6 +65,11 @@ from app.services.demand_series import (
     read_series_grid,
     upsert_cells,
 )
+# Imported as a bare name (not accessed via the identity_client module) so
+# tests can `monkeypatch.setattr(series, "resolve_current_user_name", ...)`
+# — same idiom app/api/v1/consignment.py uses for `lookup_lot` (see that
+# module's docstring).
+from app.services.identity_client import resolve_current_user_name
 
 router = APIRouter(prefix="/series", tags=["series"])
 
@@ -133,6 +142,7 @@ class ChangeLogItem(BaseModel):
     new_qty: Decimal | None
     source: str
     changed_by: uuid.UUID | None
+    changed_by_name: str | None
     changed_at: datetime
 
     model_config = {"from_attributes": True}
@@ -192,18 +202,24 @@ async def get_series(
 
 
 @router.put("/cells", response_model=SeriesCellsUpsertResponse)
-async def put_series_cells(body: SeriesCellsUpsertRequest, db: SessionDep, payload: WriteDep):
+async def put_series_cells(body: SeriesCellsUpsertRequest, db: SessionDep, payload: WriteDep, token: BearerToken):
     # Resolved here, not left to upsert_cells' own datetime.now() default —
     # see this module's docstring for why (Task 2 review carry-over).
     current_month = datetime.now(timezone.utc).strftime("%Y-%m")
     changed_by = _sub_to_uuid(payload)
+    # Once per request, not once per cell — see this module's docstring and
+    # identity_client.resolve_current_user_name's docstring. Never raises:
+    # identity-api being down must not block the save, just degrade to no
+    # name on this write's change-log rows.
+    changed_by_name = resolve_current_user_name(token)
     cells = [
         CellChange(material_code=c.material_code, month=c.month, qty=c.qty, uom=c.uom)
         for c in body.cells
     ]
     try:
         result = await upsert_cells(
-            db, cells, current_month=current_month, changed_by=changed_by, source="manual",
+            db, cells, current_month=current_month, changed_by=changed_by,
+            changed_by_name=changed_by_name, source="manual",
         )
     except (PastMonthError, UomError) as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
