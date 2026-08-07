@@ -219,3 +219,68 @@ async def get_all(db: AsyncSession, *, status: str | None = None,
         q.order_by(VendorCredit.created_at.desc()).limit(limit).offset(offset)
     )).scalars().all()
     return list(rows), total
+
+
+class CreditUnavailable(Exception):
+    """An explicitly requested credit is not applicable to this payment."""
+
+
+async def select_credits_for_payment(
+    db: AsyncSession, *, vendor_id: uuid.UUID, currency: str, base: Decimal,
+    credit_ids: list[uuid.UUID] | None = None, lock: bool = True,
+) -> list[tuple[VendorCredit, Decimal]]:
+    """Pick credits to net off a payment of `base`, oldest first.
+
+    credit_ids is THREE-VALUED and must be compared with `is None`:
+      None  -> automatic FIFO over every applicable credit
+      []    -> apply nothing this run
+      [ids] -> apply only these, and fail loudly if any is not applicable
+
+    Locking differs by mode on purpose. The automatic path uses SKIP LOCKED so
+    two concurrent batches paying the same vendor take disjoint credits instead
+    of blocking each other. The explicit path blocks, because the operator was
+    shown these exact credits and applying a subset silently would make the
+    preview a lie. lock=False is for the read-only preview, which must not hold
+    locks across a human's think time.
+    """
+    if credit_ids is not None and len(credit_ids) == 0:
+        return []
+    if base <= _ZERO:
+        return []
+
+    q = select(VendorCredit).where(
+        VendorCredit.vendor_id == vendor_id,
+        VendorCredit.currency == currency,
+        VendorCredit.status == AVAILABLE,
+        VendorCredit.remaining_amount > _ZERO,
+    ).order_by(VendorCredit.credit_date, VendorCredit.created_at)
+
+    if credit_ids is not None:
+        q = q.where(VendorCredit.id.in_(credit_ids))
+        if lock:
+            q = q.with_for_update()
+    elif lock:
+        q = q.with_for_update(skip_locked=True)
+
+    rows = list((await db.execute(q)).scalars().all())
+
+    if credit_ids is not None:
+        found = {r.id for r in rows}
+        missing = [str(cid) for cid in credit_ids if cid not in found]
+        if missing:
+            raise CreditUnavailable(
+                "These credits are no longer available for this payment: "
+                + ", ".join(missing)
+            )
+
+    picks: list[tuple[VendorCredit, Decimal]] = []
+    remaining_base = base
+    for credit in rows:
+        if remaining_base <= _ZERO:
+            break
+        take = min(credit.remaining_amount, remaining_base)
+        if take <= _ZERO:
+            continue
+        picks.append((credit, take))
+        remaining_base -= take
+    return picks

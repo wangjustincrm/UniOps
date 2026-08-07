@@ -86,3 +86,130 @@ async def test_application_rejects_non_positive_amount(db_session):
         await db_session.flush()
     assert "ck_vendor_credit_applications_positive" in str(exc.value)
     await db_session.rollback()
+
+
+@pytest.mark.anyio
+async def test_fifo_takes_oldest_first_and_stops_at_base(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    older = _credit(vendor_id=vid, credit_date=date(2026, 5, 1),
+                    amount=Decimal("30.00"), total_amount=Decimal("30.00"),
+                    remaining_amount=Decimal("30.00"))
+    newer = _credit(vendor_id=vid, credit_date=date(2026, 6, 1),
+                    amount=Decimal("50.00"), total_amount=Decimal("50.00"),
+                    remaining_amount=Decimal("50.00"))
+    db_session.add_all([newer, older])
+    await db_session.flush()
+
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD", base=Decimal("40.00"))
+
+    assert [p[0].id for p in picks] == [older.id, newer.id]
+    assert [p[1] for p in picks] == [Decimal("30.00"), Decimal("10.00")]
+
+
+@pytest.mark.anyio
+async def test_selection_never_exceeds_base(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    db_session.add(_credit(vendor_id=vid, amount=Decimal("500.00"),
+                           total_amount=Decimal("500.00"),
+                           remaining_amount=Decimal("500.00")))
+    await db_session.flush()
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD", base=Decimal("120.00"))
+    assert [p[1] for p in picks] == [Decimal("120.00")]
+
+
+@pytest.mark.anyio
+async def test_currency_must_match_exactly(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    db_session.add(_credit(vendor_id=vid, currency="CAD"))
+    await db_session.flush()
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="USD", base=Decimal("50.00"))
+    assert picks == []
+
+
+@pytest.mark.anyio
+async def test_only_available_credits_are_selected(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    db_session.add_all([
+        _credit(vendor_id=vid, status="pending_review"),
+        _credit(vendor_id=vid, status="void"),
+        _credit(vendor_id=vid, status="exhausted",
+                applied_amount=Decimal("100.00"), remaining_amount=Decimal("0")),
+    ])
+    await db_session.flush()
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD", base=Decimal("50.00"))
+    assert picks == []
+
+
+@pytest.mark.anyio
+async def test_zero_or_negative_base_selects_nothing(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    db_session.add(_credit(vendor_id=vid))
+    await db_session.flush()
+    for base in (Decimal("0"), Decimal("-5.00")):
+        assert await crud.select_credits_for_payment(
+            db_session, vendor_id=vid, currency="CAD", base=base) == []
+
+
+@pytest.mark.anyio
+async def test_empty_credit_ids_selects_nothing(db_session):
+    """[] means 'apply nothing this run' — NOT the same as None."""
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    db_session.add(_credit(vendor_id=vid))
+    await db_session.flush()
+    assert await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD",
+        base=Decimal("50.00"), credit_ids=[]) == []
+
+
+@pytest.mark.anyio
+async def test_explicit_ids_select_only_those(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    a = _credit(vendor_id=vid, credit_date=date(2026, 5, 1),
+                amount=Decimal("20.00"), total_amount=Decimal("20.00"),
+                remaining_amount=Decimal("20.00"))
+    b = _credit(vendor_id=vid, credit_date=date(2026, 6, 1),
+                amount=Decimal("20.00"), total_amount=Decimal("20.00"),
+                remaining_amount=Decimal("20.00"))
+    db_session.add_all([a, b])
+    await db_session.flush()
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD",
+        base=Decimal("100.00"), credit_ids=[b.id])
+    assert [p[0].id for p in picks] == [b.id]
+
+
+@pytest.mark.anyio
+async def test_explicit_id_that_is_not_applicable_aborts(db_session):
+    """The operator's preview must match what executes, or nothing executes."""
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    voided = _credit(vendor_id=vid, status="void")
+    db_session.add(voided)
+    await db_session.flush()
+    with pytest.raises(crud.CreditUnavailable):
+        await crud.select_credits_for_payment(
+            db_session, vendor_id=vid, currency="CAD",
+            base=Decimal("50.00"), credit_ids=[voided.id])
+
+
+@pytest.mark.anyio
+async def test_explicit_id_belonging_to_another_vendor_aborts(db_session):
+    from app.crud import vendor_credit as crud
+    other = _credit(vendor_id=uuid.uuid4())
+    db_session.add(other)
+    await db_session.flush()
+    with pytest.raises(crud.CreditUnavailable):
+        await crud.select_credits_for_payment(
+            db_session, vendor_id=uuid.uuid4(), currency="CAD",
+            base=Decimal("50.00"), credit_ids=[other.id])
