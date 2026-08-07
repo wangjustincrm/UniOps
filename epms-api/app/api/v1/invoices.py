@@ -342,6 +342,22 @@ async def match_invoice(
             other.completed_by = caller_id
 
         if result.status == "match_review" and my_task is not None:
+            # Route-aware description: an agreement match's variance is always
+            # 0 (there is no PO line to compare against — that's the entire
+            # point of the legacy_settlement escape hatch), so the PO route's
+            # "non-zero variance (0)" wording would be self-contradictory here.
+            if result.match_route == "agreement":
+                review_description = (
+                    f"Invoice {inv.internal_ref} was matched to agreement "
+                    f"{result.agreement_number} as a legacy settlement (no receipt "
+                    f"evidence): {result.legacy_settlement_reason}. Please review and "
+                    "approve or reject."
+                )
+            else:
+                review_description = (
+                    f"Invoice {inv.internal_ref} was matched with a non-zero variance "
+                    f"({result.variance}). Please review and approve or reject."
+                )
             review = Task(
                 type="review_match", priority="normal",
                 document_type="invoice", document_id=inv.id,
@@ -350,10 +366,7 @@ async def match_invoice(
                 assigned_user_id=reviewer_id,
                 created_by=caller_id,
                 title=f"Review match variance on invoice {inv.internal_ref}",
-                description=(
-                    f"Invoice {inv.internal_ref} was matched with a non-zero variance "
-                    f"({result.variance}). Please review and approve or reject."
-                ),
+                description=review_description,
                 vendor=inv.vendor_name, amount=inv.total_amount,
             )
             db.add(review)
@@ -616,16 +629,21 @@ async def match_review(
         review_task.completed_by = reviewer_id
 
     if body.action == "reject" and prev_assignee is not None:
+        # Route-neutral wording: this task fires on ANY rejected match_review,
+        # PO or agreement. "to PO" was accurate before the agreement route
+        # could reach this state; review_match() clears match_route on reject,
+        # so by here there is no reliable per-route signal left to branch on
+        # anyway — the fix is to not need one.
         redo = Task(
             type="match_invoice", priority="normal",
             document_type="invoice", document_id=inv.id,
             document_number=inv.internal_ref,
             assigned_role="assigned", assigned_user_id=prev_assignee,
             created_by=reviewer_id,
-            title=f"Re-match invoice {inv.internal_ref} to PO",
+            title=f"Re-match invoice {inv.internal_ref}",
             description=(
                 f"Your match of invoice {inv.internal_ref} was rejected: {body.note} "
-                f"Please review the allocation and match again."
+                f"Please match it again."
             ),
             vendor=inv.vendor_name, amount=inv.total_amount,
         )

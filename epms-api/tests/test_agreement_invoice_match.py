@@ -4,12 +4,17 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.security import create_access_token
+from app.crud import user as user_crud
+from app.main import create_app
 from app.models.agreement import PurchaseAgreement
 from app.models.invoice import Invoice
 from app.models.task import Task
+from app.schemas.auth import RegisterRequest
 from tests.test_agreements import seed_vendor_and_user
 
 pytestmark = pytest.mark.asyncio
@@ -88,6 +93,27 @@ async def _upload_invoice(client, vendor_id, amount="1000.00"):
     })
     r.raise_for_status()
     return r.json()
+
+
+async def _delegate_client(test_engine):
+    """A 'requester'-role user, pre-authenticated — neither AP staff (not in
+    _AP_ROLES) nor (by construction, never the uploader of any invoice created
+    in these tests) the uploader, i.e. the caller shape that produces
+    require_review=True in match_invoice(). Returns (client, user_id)."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        user = await user_crud.create(db, RegisterRequest(
+            email=f"delegate-{uuid.uuid4().hex[:8]}@example.com",
+            password="TestPass1!", full_name="Delegate Tester", role="requester"))
+        await db.commit()
+        await db.refresh(user)
+    token = create_access_token(str(user.id), user.role)
+    client = AsyncClient(
+        transport=ASGITransport(app=create_app()),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    return client, user.id
 
 
 async def test_agreement_candidates_returns_active_same_vendor(admin_client, test_engine):
@@ -483,6 +509,128 @@ async def test_agreement_invoice_delete_recomputes_consumed_amount(admin_client,
     r2 = await admin_client.delete(f"{INV_URL}/{inv['id']}")
     assert r2.status_code == 204, r2.text
 
+    async with factory() as db:
+        fresh = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+    assert fresh.consumed_amount == Decimal("0")
+
+
+# ── require_review on the agreement route (code review finding, 2026-08-07) ──
+#
+# match_invoice() computes require_review = not (is_ap or is_uploader) and
+# passes it into crud.invoice.match(). The PO branch honours it (match_review
+# when a delegate's match shows non-zero variance); _match_to_agreement
+# originally ignored it outright, so a delegated (non-AP, non-uploader)
+# caller completed an agreement match terminally — the ONE route with zero
+# receipt evidence had the WEAKEST control, backwards from what
+# require_review exists to guard against.
+
+async def test_agreement_match_by_delegate_requires_review(admin_client, test_engine):
+    """A delegate (holds an open match_invoice task, is neither AP staff nor
+    the uploader) matching an invoice to an agreement must land in
+    match_review, not matched — mirroring the PO route's require_review gate.
+    The agreement route has no PO line to independently verify against (that
+    is the entire point of legacy_settlement), so unlike the PO route there is
+    no "zero variance, objectively confirmed" case to exempt: require_review
+    alone decides."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    delegate_client, delegate_id = await _delegate_client(test_engine)
+    try:
+        r_assign = await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
+                                           json={"user_id": str(delegate_id)})
+        assert r_assign.status_code == 200, r_assign.text
+
+        r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
+            "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["status"] == "match_review"
+        assert body["match_route"] == "agreement"
+        assert body["legacy_settlement"] is True
+        assert Decimal(body["variance"]) == Decimal("0")
+    finally:
+        await delegate_client.aclose()
+
+    # The endpoint's review-task creation (fires on result.status=="match_review"
+    # AND the caller held an open match_invoice task) is route-agnostic — it
+    # should already fire for the agreement route with no endpoint change.
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        review_task = (await db.execute(select(Task).where(
+            Task.type == "review_match", Task.document_type == "invoice",
+            Task.document_id == uuid.UUID(inv["id"]), Task.is_completed.is_(False),
+        ))).scalar_one_or_none()
+        agr_fresh = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+    assert review_task is not None
+    assert review_task.assigned_role == "ap_clerk"
+    # A pending-review invoice still reserves against the ceiling — the same
+    # "every linked invoice counts, no status filter" contract _recompute_
+    # consumed already implements; it isn't a real spend yet, but it also isn't
+    # released until approved or rejected.
+    assert agr_fresh.consumed_amount == Decimal("1000.00")
+
+
+async def test_agreement_match_by_ap_completes_terminally(admin_client, test_engine):
+    """The other half of the same gate: an AP caller (admin_client's role is
+    system_admin, in _AP_ROLES) matching to an agreement must NOT be routed
+    through review — require_review is False for AP/uploader callers on
+    either route. (Already incidentally covered by
+    test_match_to_agreement_sets_route_and_consumes; this test exists to make
+    the require_review=False side of the gate an explicit, named assertion.)"""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"
+
+
+async def test_agreement_match_review_reject_releases_consumed_amount(admin_client, test_engine):
+    """Proactive follow-on fix: enabling match_review on the agreement route
+    makes a NEW state reachable that was previously impossible — an invoice
+    with agreement_id still set but status back at "unmatched" after an AP
+    clerk rejects the review. review_match()'s reject branch, for the PO
+    route, deliberately KEEPS po_id/allocations "for reference" (a rejected
+    match was never counted anywhere else). The agreement route can't reuse
+    that convention as-is: _recompute_consumed sums every invoice with
+    agreement_id still set, with no status filter, so leaving agreement_id in
+    place after reject would leave a REJECTED, non-payable invoice inflating
+    the NTE ceiling forever. review_match() now detaches agreement_id/
+    agreement_number/match_route/legacy_settlement on reject and recomputes
+    the released agreement, the same cleanup match()'s PO branch already
+    performs on a route switch."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    delegate_client, delegate_id = await _delegate_client(test_engine)
+    try:
+        await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
+                                json={"user_id": str(delegate_id)})
+        r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
+            "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "match_review"
+    finally:
+        await delegate_client.aclose()
+
+    r2 = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={
+        "action": "reject", "note": "no backup attached, please get the statement PDF"})
+    assert r2.status_code == 200, r2.text
+    body = r2.json()
+    assert body["status"] == "unmatched"
+    assert body["agreement_id"] is None
+    assert body["agreement_number"] is None
+    assert body["match_route"] is None
+    assert body["legacy_settlement"] is False
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         fresh = (await db.execute(select(PurchaseAgreement).where(
             PurchaseAgreement.id == agr.id))).scalar_one()

@@ -368,7 +368,8 @@ async def _recompute_consumed(db: AsyncSession, agreement_id: uuid.UUID) -> None
 
 
 async def _match_to_agreement(
-    db: AsyncSession, invoice: Invoice, req: InvoiceMatchRequest, matched_by: uuid.UUID
+    db: AsyncSession, invoice: Invoice, req: InvoiceMatchRequest, matched_by: uuid.UUID,
+    require_review: bool = False,
 ) -> Invoice:
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == req.agreement_id)
@@ -431,7 +432,19 @@ async def _match_to_agreement(
     invoice.matched_by_name = (await db.execute(
         select(User.full_name).where(User.id == matched_by)
     )).scalar_one_or_none()
-    invoice.status = "matched"
+    # Mirrors the PO branch's require_review gate (code review finding,
+    # 2026-08-07): the PO branch only enters "match_review" when a delegated
+    # (non-AP, non-uploader) caller matched AND the numbers show a non-zero
+    # variance — a zero-variance PO match is objectively confirmed against a
+    # PO line, so a delegate can complete it terminally without a second set
+    # of eyes. The agreement route has no such objective reference at all
+    # (no PO line, no GR — that is the entire point of legacy_settlement), so
+    # there is never a "this is independently verified" case to exempt: if
+    # require_review is set, every agreement match by a delegate goes to
+    # review, full stop. Skipping this would leave the LEAST-evidenced route
+    # with the WEAKEST control, backwards from what require_review exists to
+    # guard against.
+    invoice.status = "match_review" if require_review else "matched"
 
     await db.flush()
     # consumed_amount must reflect BOTH sides of a route change: the newly-linked
@@ -458,7 +471,7 @@ async def match(
     # machinery (no lines, no GRs, no balance check), and running that first
     # would reject a valid monthly statement.
     if req.agreement_id is not None:
-        return await _match_to_agreement(db, invoice, req, matched_by)
+        return await _match_to_agreement(db, invoice, req, matched_by, require_review)
 
     # Symmetric cleanup for the agreement→PO direction (code review finding,
     # 2026-08-07): _match_to_agreement above clears every PO field on a route
@@ -711,6 +724,7 @@ async def review_match(
     """复核被指派人的 match:approve 按容差落定,reject 回 unmatched。"""
     if invoice.status != "match_review":
         raise ValueError(f"Invoice is not pending review (status '{invoice.status}')")
+    released_agreement_id: uuid.UUID | None = None
     if action == "approve":
         rows = (await db.execute(
             select(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id)
@@ -740,8 +754,31 @@ async def review_match(
         invoice.matched_by_name = None
         invoice.exception_reason = None   # defensive: stale reason must not survive back to unmatched
         # 分摊行保留供参考;下次 match 会整体重建(match() 幂等删除)
+        #
+        # The agreement route cannot keep the same "leave it for reference"
+        # convention: consumed_amount is derived from every invoice whose
+        # agreement_id is still set, with no status filter (a rejected match
+        # was never a real spend event and must not count toward the NTE
+        # ceiling). This branch only becomes reachable now that
+        # require_review can route an agreement match through match_review —
+        # before that, an agreement-linked invoice was always "matched", so a
+        # reject was never possible while agreement_id stayed set. Detaching
+        # the invoice fully (rather than filtering consumed_amount by status)
+        # mirrors the same cleanup match()'s PO branch already performs on a
+        # route switch, and keeps _recompute_consumed's "every linked invoice
+        # counts" contract simple and honest.
+        released_agreement_id = invoice.agreement_id
+        if released_agreement_id is not None:
+            invoice.agreement_id = None
+            invoice.agreement_number = None
+            invoice.match_route = None
+            invoice.legacy_settlement = False
+            invoice.legacy_settlement_reason = None
     await db.flush()
     await db.refresh(invoice)
+    if released_agreement_id is not None:
+        await _recompute_consumed(db, released_agreement_id)
+        await db.flush()
     return invoice
 
 
