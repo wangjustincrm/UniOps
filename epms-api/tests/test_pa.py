@@ -579,3 +579,165 @@ async def test_settlement_requires_valid_prepayment_ref(admin_client):
         subtotal="100.00", tax_amount="0.00", prepayment_applied="0.00",
     ))
     assert r.status_code == 422
+
+
+# ── action='process' → finance-api payment executor (vendor credit netting) ───
+#
+# The single-payment path is NOT a second-class citizen of the batch runner:
+# it forwards to the same `payment_execute.execute()` and therefore takes the
+# same automatic FIFO vendor-credit default. Until this wave it could not carry
+# the operator's choice at all, so the PA Process dialog's netting preview had
+# nowhere to send a deselection. These tests pin the wire contract.
+#
+# They call the route function directly with `pa_crud.get_by_id` and
+# `finance_client.execute_payment` stubbed, rather than going through the HTTP
+# client: everything between a POST and this branch (vendor create → PO create
+# → PO approval) needs approval-api and identity tables this unit DB does not
+# have, which is why the HTTP-driven tests above already fail here. The
+# forwarding of body.credit_ids is what is under test, and it is fully
+# exercised this way.
+
+class _FakePa:
+    """Minimal stand-in for the PaymentApplication the route loads. Only the
+    attributes pa_action touches on the 'process' path."""
+    def __init__(self):
+        import uuid as _uuid
+        self.id = _uuid.uuid4()
+        self.po_id = _uuid.uuid4()      # non-None: a NULL po_id is an OA Direct PA → 404
+        self.pa_type = "regular"
+        self.pa_number = "PA-TEST-0001"
+        self.status = "approved"
+
+
+class _FakeDb:
+    async def refresh(self, _obj):
+        return None
+
+
+async def _run_pa_action(monkeypatch, **action_body):
+    """Invoke the pa_action route on the 'process' branch and return the kwargs
+    finance_client.execute_payment was called with."""
+    import app.api.v1.pa as pa_api
+    from app.schemas.pa import PaActionRequest
+
+    pa = _FakePa()
+    captured: dict = {}
+
+    async def _fake_get_by_id(_db, _pa_id):
+        return pa
+
+    async def _fake_execute_payment(**kwargs):
+        captured.update(kwargs)
+        return {"new_status": "processed"}
+
+    monkeypatch.setattr(pa_api.pa_crud, "get_by_id", _fake_get_by_id)
+    monkeypatch.setattr(pa_api.finance_client, "execute_payment", _fake_execute_payment)
+
+    returned = await pa_api.pa_action(
+        pa_id=pa.id,
+        body=PaActionRequest(action="process", **action_body),
+        db=_FakeDb(),
+        user={"sub": str(pa.id), "role": "ap_clerk"},
+        token="fake-token",
+    )
+    assert returned is pa
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_process_omits_credit_ids_when_the_dialog_was_untouched(monkeypatch):
+    """None must reach finance-api as an ABSENT key, not as an empty list.
+    credit_ids is three-valued: absent = "apply the automatic FIFO default",
+    [] = "apply nothing". Collapsing the two would make an untouched Process
+    dialog silently pay the gross."""
+    captured = await _run_pa_action(monkeypatch)
+    assert captured["credit_ids"] is None
+
+
+@pytest.mark.asyncio
+async def test_process_forwards_an_explicit_credit_selection(monkeypatch):
+    """The operator deselected one of the suggested credits: exactly the
+    surviving ids go through, so finance-api re-runs capped FIFO over them
+    under row locks."""
+    import uuid as _uuid
+    keep = [str(_uuid.uuid4()), str(_uuid.uuid4())]
+    captured = await _run_pa_action(monkeypatch, credit_ids=keep)
+    assert [str(c) for c in captured["credit_ids"]] == keep
+
+
+@pytest.mark.asyncio
+async def test_process_forwards_an_empty_credit_selection(monkeypatch):
+    """[] is a real instruction — "pay this one in full, apply no credit" — and
+    must survive the trip rather than being normalised back to the default."""
+    captured = await _run_pa_action(monkeypatch, credit_ids=[])
+    assert captured["credit_ids"] == []
+
+
+def test_pa_action_request_accepts_credit_ids():
+    """The schema itself: without this field the route has nothing to forward,
+    and FastAPI would silently drop the key the Process dialog sends."""
+    import uuid as _uuid
+    from app.schemas.pa import PaActionRequest
+
+    assert PaActionRequest(action="process").credit_ids is None
+    assert PaActionRequest(action="process", credit_ids=[]).credit_ids == []
+    cid = str(_uuid.uuid4())
+    assert [str(c) for c in
+            PaActionRequest(action="process", credit_ids=[cid]).credit_ids] == [cid]
+
+
+@pytest.mark.asyncio
+async def test_finance_client_puts_credit_ids_on_the_wire_only_when_given(monkeypatch):
+    """The payload builder itself: `if credit_ids:` would collapse [] into
+    "omitted" and net a payment the operator asked to pay in full. This calls
+    the real `execute_payment` (only httpx.AsyncClient is faked, so the actual
+    dict-construction code runs) and inspects the JSON body that would have
+    gone on the wire to finance-api's POST /payments/execute — the one hop
+    where None-vs-[] could silently collapse and the three route-level tests
+    above (which stub execute_payment out entirely) cannot see."""
+    import uuid as _uuid
+
+    from app.services import finance_client
+
+    captured: dict = {}
+
+    class _FakeResponse:
+        status_code = 200
+        is_success = True
+
+        def json(self):
+            return {"new_status": "processed"}
+
+    class _FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def post(self, url, json=None, headers=None):
+            captured["url"] = url
+            captured["payload"] = json
+            return _FakeResponse()
+
+    monkeypatch.setattr(finance_client.httpx, "AsyncClient", _FakeAsyncClient)
+
+    doc_id = _uuid.uuid4()
+
+    # credit_ids=None -> key absent from the body entirely.
+    await finance_client.execute_payment(doc_kind="pa", doc_id=doc_id, bearer_token="tok")
+    assert "credit_ids" not in captured["payload"]
+
+    # credit_ids=[] -> present, empty — "apply nothing", not "omitted".
+    await finance_client.execute_payment(
+        doc_kind="pa", doc_id=doc_id, bearer_token="tok", credit_ids=[])
+    assert captured["payload"]["credit_ids"] == []
+
+    # credit_ids=[uuid] -> present, each id stringified.
+    cid = _uuid.uuid4()
+    await finance_client.execute_payment(
+        doc_kind="pa", doc_id=doc_id, bearer_token="tok", credit_ids=[cid])
+    assert captured["payload"]["credit_ids"] == [str(cid)]

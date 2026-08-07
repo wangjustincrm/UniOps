@@ -92,6 +92,16 @@ class PaActionRequest(BaseModel):
     action: str = Field(min_length=1, max_length=20)
     comment: str | None = None
     bank_account_id: uuid.UUID | None = None   # funding bank/card for action='process'
+    # Vendor credits to net off this payment (action='process' only).
+    # THREE-VALUED — compare with `is None`, exactly as finance-api's
+    # PaymentExecuteRequest.credit_ids does:
+    #   None  -> apply finance-api's automatic FIFO default
+    #   []    -> apply nothing this run
+    #   [ids] -> apply only these
+    # The Process dialog sends this ONLY when the operator deselected a credit
+    # the preview offered; an untouched dialog leaves it absent so the server
+    # keeps choosing.
+    credit_ids: list[uuid.UUID] | None = None
 
 
 class PaSettleRequest(BaseModel):

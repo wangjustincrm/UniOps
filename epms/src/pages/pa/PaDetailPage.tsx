@@ -20,6 +20,10 @@ import { usePaAttachments, useDeletePaAttachment, useRegeneratePaPdf } from '@/h
 import { paAttachmentService } from '@/services/paAttachments'
 import { PA_TYPE_LABEL, type PaStatus } from '@/services/pa'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
+import {
+  planApplications, plannedTotal, suggestCredits,
+  type CreditSuggestResponse,
+} from '@/services/vendorCredits'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -151,16 +155,69 @@ interface FundingAccount {
   account_masked: string | null; currency: string; is_active: boolean
 }
 
-function ProcessModal({ paNumber, currency, amount, busy, onConfirm, onClose }: {
-  paNumber: string; currency: string; amount: number; busy: boolean
-  onConfirm: (bankAccountId: string) => void; onClose: () => void
+/**
+ * Confirmation dialog for action='process' — i.e. "send the money".
+ *
+ * It MUST show the net, not the gross. finance-api nets approved vendor
+ * credits off every PA payment automatically (Phase B), and this dialog is one
+ * of only two surfaces from which a payment is executed. Before this fix it
+ * displayed `pa.payment_amount`, so a 50,000 PA against a 45,000 available
+ * credit asked the operator to confirm "50,000" and then sent 5,000.
+ *
+ * `/vendor-credits/suggest` is read-only and takes no locks — it previews what
+ * the FIFO default would apply. The operator can uncheck individual credits;
+ * the resulting `credit_ids` list is forwarded to finance-api, which re-runs
+ * capped FIFO over exactly those ids under row locks.
+ */
+function ProcessModal({ paId, paNumber, currency, amount, busy, error, onConfirm, onClose }: {
+  paId: string; paNumber: string; currency: string; amount: number; busy: boolean; error?: string
+  onConfirm: (bankAccountId: string, creditIds?: string[]) => void; onClose: () => void
 }) {
   const [bankId, setBankId] = useState('')
+  const [off, setOff] = useState<Set<string>>(new Set())
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ['finance-bank-accounts'],
     queryFn: () => financeApi.get<FundingAccount[]>('/bank/accounts'),
   })
+  // Direct PAs (no PO) belong to OA, not EPMS, so this page only ever shows
+  // doc_kind 'pa'. This dialog is mounted fresh every time it opens (the page
+  // only renders <ProcessModal> while processOpen is true), but the query
+  // cache would otherwise still serve a within-staleTime plan from the LAST
+  // time it was open — stale enough that a credit consumed elsewhere since
+  // then would still show (and let the operator confirm) the old allocation.
+  // refetchOnMount: 'always' forces a fresh GET every mount regardless of
+  // cache freshness; isFetching (not isLoading) gates the button so the stale
+  // cached plan can't be confirmed while that refetch is still in flight.
+  const { data: suggestion, isFetching: creditsFetching, isError: creditsError } =
+    useQuery<CreditSuggestResponse>({
+      queryKey: ['vendor-credit-suggest', paId],
+      queryFn: () => suggestCredits('pa', paId),
+      retry: false,
+      refetchOnMount: 'always',
+    })
   const options = accounts.filter((a) => a.is_active && a.currency === currency)
+
+  // Gross comes from the suggest response when we have it (the server's own
+  // view of what this PA asks for) and falls back to the PA's own amount while
+  // the preview is loading or if it failed.
+  const gross = suggestion ? Number(suggestion.gross) : amount
+  const plan = suggestion ? planApplications(suggestion, off) : []
+  const takeById = new Map(plan.map((p) => [p.credit.credit_id, p.take]))
+  const applied = plannedTotal(plan)
+  const net = gross - applied
+  const hasCredits = (suggestion?.suggested.length ?? 0) > 0
+
+  // Three-valued on purpose: send `credit_ids` ONLY when the operator actually
+  // deselected something. An untouched dialog leaves it undefined so the
+  // server applies its own automatic default — which is also the right
+  // behaviour when the preview failed to load, since we then have no ids to
+  // send and must not claim to know better.
+  const handleConfirm = () =>
+    onConfirm(bankId, off.size === 0
+      ? undefined
+      : (suggestion?.suggested ?? [])
+          .filter((c) => !off.has(c.credit_id))
+          .map((c) => c.credit_id))
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 backdrop-blur-sm p-4">
@@ -172,7 +229,7 @@ function ProcessModal({ paNumber, currency, amount, busy, onConfirm, onClose }: 
             </div>
             <div>
               <h2 className="text-sm font-semibold text-neutral-900">Mark as Processed</h2>
-              <p className="text-xs text-neutral-500">{paNumber} · {formatAmount(amount)} {currency}</p>
+              <p className="text-xs text-neutral-500">{paNumber} · {formatAmount(net, currency)}</p>
             </div>
           </div>
           <button onClick={onClose} className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
@@ -193,11 +250,80 @@ function ProcessModal({ paNumber, currency, amount, busy, onConfirm, onClose }: 
               <p className="text-xs text-amber-600">No active {currency} accounts. Add one under Finance → Bank &amp; Cards.</p>
             )}
           </div>
+
+          {creditsError && (
+            <p className="text-xs text-amber-600">
+              Could not load the vendor-credit preview. Any approved credit for this
+              vendor will still be applied automatically, so the amount actually sent
+              may be less than shown.
+            </p>
+          )}
+
+          {/* Gross / Credits applied / Net. Rendered as soon as the preview is
+              in, even with no credits, so this block reads as the
+              authoritative statement of what leaves the bank. */}
+          {suggestion && (
+            <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs">
+              <div className="flex items-center justify-between text-neutral-600">
+                <span>Gross</span>
+                <span className="font-mono">{formatAmount(gross, currency)}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-neutral-600">
+                <span>Credits applied</span>
+                <span className="font-mono">{applied > 0 ? '−' : ''}{formatAmount(applied, currency)}</span>
+              </div>
+              <div className="mt-1.5 flex items-center justify-between border-t border-neutral-200 pt-1.5 font-semibold text-neutral-900">
+                <span>Net to pay</span>
+                <span className="font-mono">{formatAmount(net, currency)}</span>
+              </div>
+
+              {hasCredits && (
+                <div className="mt-2.5 flex flex-col gap-1 border-t border-neutral-200 pt-2">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">
+                    Vendor credits
+                  </span>
+                  {suggestion.suggested.map((c) => {
+                    const take = takeById.get(c.credit_id)
+                    return (
+                      <label key={c.credit_id} className="flex items-center gap-2 text-neutral-600">
+                        <input type="checkbox" checked={!off.has(c.credit_id)}
+                               onChange={() => setOff((prev) => {
+                                 const next = new Set(prev)
+                                 if (next.has(c.credit_id)) next.delete(c.credit_id)
+                                 else next.add(c.credit_id)
+                                 return next
+                               })} />
+                        <span className="font-mono">{c.credit_number}</span>
+                        <span className="text-neutral-400">{formatDate(c.credit_date)}</span>
+                        {/* The recomputed take, never c.apply: deselecting one
+                            credit reshuffles what every later credit
+                            contributes. Excluded (or unreached) credits show
+                            their remaining balance struck through. */}
+                        {take === undefined
+                          ? <span className="ml-auto font-mono text-neutral-300 line-through">{formatAmount(Number(c.remaining), currency)}</span>
+                          : <span className="ml-auto font-mono">{formatAmount(take, currency)}</span>}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && (
+            <p className="text-xs text-danger-600">{error}</p>
+          )}
+
           <div className="flex justify-end gap-2">
             <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
-            <button disabled={!bankId || busy} onClick={() => onConfirm(bankId)}
+            {/* Disabled while the preview is in flight (initial load OR the
+                forced refetch-on-mount): confirming before it lands would put
+                a stale or gross-fallback figure on the button and
+                reintroduce exactly the number this dialog exists to correct. */}
+            <button disabled={!bankId || busy || creditsFetching} onClick={handleConfirm}
               className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary-600 px-3 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed">
-              <CheckCircle2 className="h-4 w-4" />{busy ? 'Processing…' : 'Confirm Payment'}
+              <CheckCircle2 className="h-4 w-4" />
+              {busy ? 'Processing…' : creditsFetching ? 'Loading…' : `Pay ${formatAmount(net, currency)}`}
             </button>
           </div>
         </div>
@@ -278,9 +404,12 @@ export default function PaDetailPage() {
       { onSuccess: () => setPendingAction(null) }
     )
   }
-  const handleProcessConfirm = (bankAccountId: string) =>
+  // creditIds is three-valued: undefined (dialog untouched) is omitted from
+  // the body so finance-api applies its automatic FIFO default; [] means the
+  // operator deselected every offered credit and wants the gross paid.
+  const handleProcessConfirm = (bankAccountId: string, creditIds?: string[]) =>
     paAction.mutate(
-      { action: 'process', bank_account_id: bankAccountId },
+      { action: 'process', bank_account_id: bankAccountId, credit_ids: creditIds },
       { onSuccess: () => setProcessOpen(false) },
     )
 
@@ -369,7 +498,11 @@ export default function PaDetailPage() {
           )}
           {/* Approval actions moved to fixed bottom bar */}
           {pa.status === 'approved' && canProcess && (
-            <Button onClick={() => setProcessOpen(true)} disabled={paAction.isPending} className="gap-2">
+            <Button
+              onClick={() => { paAction.reset(); setProcessOpen(true) }}
+              disabled={paAction.isPending}
+              className="gap-2"
+            >
               <Landmark className="h-4 w-4" />
               {paAction.isPending ? 'Processing…' : 'Mark as Processed'}
             </Button>
@@ -769,12 +902,16 @@ export default function PaDetailPage() {
       )}
       {processOpen && (
         <ProcessModal
+          paId={pa.id}
           paNumber={pa.pa_number}
           currency={pa.currency}
           amount={Number(pa.payment_amount)}
           busy={paAction.isPending}
+          error={paAction.isError
+            ? (paAction.error instanceof Error ? paAction.error.message : 'Payment failed')
+            : undefined}
           onConfirm={handleProcessConfirm}
-          onClose={() => setProcessOpen(false)}
+          onClose={() => { paAction.reset(); setProcessOpen(false) }}
         />
       )}
     </div>

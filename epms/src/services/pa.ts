@@ -136,6 +136,19 @@ export interface PaActionBody {
   action: PaAction
   comment?: string
   bank_account_id?: string   // funding bank/card for action='process'
+  /**
+   * Vendor credits to net off this payment (action='process' only).
+   * THREE-VALUED — the wire contract mirrors finance-api's
+   * PaymentExecuteRequest.credit_ids:
+   *   omitted / undefined -> finance-api applies its automatic FIFO default
+   *   []                  -> apply no credit at all this run
+   *   [ids]               -> apply only these
+   * Send it ONLY when the operator actually deselected a credit the preview
+   * offered. Sending a full id list for an untouched dialog would work today
+   * but would freeze a stale plan if a credit landed between preview and
+   * confirm.
+   */
+  credit_ids?: string[]
 }
 
 export interface PaFilters {
