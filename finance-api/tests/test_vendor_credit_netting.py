@@ -941,3 +941,41 @@ async def test_batch_isolates_a_line_naming_an_unavailable_credit(db_session):
     rec = (await db_session.execute(sa.select(PaymentRecord).where(
         PaymentRecord.doc_id == good_pa_id))).scalar_one()
     assert rec.amount == Decimal("50.00")
+
+
+@pytest.mark.anyio
+async def test_execute_batch_route_coerces_credit_ids_by_doc_keys(client, db_session):
+    """The CRUD-level tests above call execute_batch() directly with a native
+    dict whose keys are already uuid.UUID objects — that never proves the
+    wire path works. A real JSON request body has STRING keys
+    ({"credit_ids_by_doc": {"<uuid-string>": [...]}}), and the executor looks
+    up with `.get(ln.doc_id)` where ln.doc_id is a uuid.UUID. If Pydantic did
+    not coerce ExecuteBatchRequest.credit_ids_by_doc's string keys to
+    uuid.UUID, the lookup would silently miss for every doc, every line would
+    fall back to the automatic default, and an operator's deselection would
+    be silently ignored. Goes through the real route (like
+    tests/test_payment_batch.py::test_create_and_execute_batch) with an
+    explicit empty list for the one line, so a passing assertion here can
+    only mean the string key really reached the executor as a matching
+    uuid.UUID."""
+    from app.models.payment import PaymentRecord
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id))
+    await db_session.flush()
+
+    r = await client.post("/finance/v1/payments/batches", headers=_h(),
+                          json={"docs": [{"doc_kind": "pa_dir", "doc_id": str(pa.id)}]})
+    assert r.status_code == 201, r.text
+    batch_id = r.json()["id"]
+
+    r2 = await client.post(f"/finance/v1/payments/batches/{batch_id}/execute",
+                           headers=_h(),
+                           json={"credit_ids_by_doc": {str(pa.id): []}})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["paid"] == 1 and r2.json()["failed"] == 0
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.doc_id == pa.id))).scalar_one()
+    assert rec.credit_applied == Decimal("0.00")
+    assert rec.amount == Decimal("100.00")
