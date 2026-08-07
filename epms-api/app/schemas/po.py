@@ -94,6 +94,31 @@ class PoUpdate(BaseModel):
     line_items: list[PoLineItemIn] | None = None
 
 
+class PoImportedLineUpdate(BaseModel):
+    """The only two line columns a buyer may fill in on an imported PO."""
+    id: uuid.UUID
+    supplier_item_id: str | None = Field(default=None, max_length=100)
+    sample: str | None = Field(default=None, max_length=100)
+
+
+class PoImportedDetailsUpdate(BaseModel):
+    """Buyer-supplied detail on an NC-imported PO.
+
+    Deliberately narrow. vendor_id, currency, title, budget_code, type and every
+    line money/quantity field are absent, so no caller can reach them through
+    this endpoint no matter what the frontend does or does not disable. Widening
+    this model is a security change, not a convenience change.
+    """
+    expected_delivery: date | None = None
+    delivery_address: str | None = None
+    incoterms: str | None = Field(default=None, max_length=100)
+    tax_code: str | None = Field(default=None, max_length=20)
+    tax_rate: Decimal | None = Field(default=None, ge=0, le=1)
+    is_prepaid: bool | None = None
+    buyer_notes: str | None = None
+    lines: list[PoImportedLineUpdate] = Field(default_factory=list)
+
+
 class PoListResponse(BaseModel):
     items: list["PoResponse"]
     total: int

@@ -15,7 +15,7 @@ from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.po import PO_WORKFLOW, PlaceOrderRequest, PoActionRequest, PoCreate, PoUpdate
+from app.schemas.po import PO_WORKFLOW, PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
 
 
@@ -233,6 +233,76 @@ async def update(
     await db.flush()
     await db.refresh(po)
     return po
+
+
+# ── Imported-PO buyer details (NC mirror, status='issued' only) ───────────────
+
+async def update_imported_details(
+    db: AsyncSession,
+    po: PurchaseOrder,
+    payload: PoImportedDetailsUpdate,
+) -> tuple[PurchaseOrder, dict, dict]:
+    """Apply buyer-supplied detail to an NC-imported PO.
+
+    Only writes the columns named in PoImportedDetailsUpdate. subtotal is never
+    touched: a tax-rate change re-derives tax_amount/total from the existing
+    subtotal so the header stays internally consistent.
+
+    Returns (po, before, after) holding only the fields this call actually
+    changed, for the caller's audit-log entry. Raises ValueError if a line id
+    does not belong to this PO.
+    """
+    before: dict = {}
+    after: dict = {}
+
+    def _set(field: str, value) -> None:
+        old = getattr(po, field)
+        if value is None or old == value:
+            return
+        before[field] = str(old) if old is not None else None
+        after[field] = str(value)
+        setattr(po, field, value)
+
+    for field in ("expected_delivery", "delivery_address", "incoterms",
+                  "tax_code", "buyer_notes", "is_prepaid"):
+        _set(field, getattr(payload, field))
+
+    if payload.tax_rate is not None and payload.tax_rate != po.tax_rate:
+        before["tax_rate"] = str(po.tax_rate)
+        po.tax_rate = payload.tax_rate
+        po.tax_amount = (po.subtotal * payload.tax_rate).quantize(Decimal("0.01"))
+        po.total = po.subtotal + po.tax_amount
+        after["tax_rate"] = str(po.tax_rate)
+        after["tax_amount"] = str(po.tax_amount)
+        after["total"] = str(po.total)
+
+    by_id = {line.id: line for line in po.line_items}
+    line_changes: list[dict] = []
+    for patch in payload.lines:
+        line = by_id.get(patch.id)
+        if line is None:
+            # Never a 500 and never a silent no-op: a line id from another PO is
+            # a caller error worth surfacing, and letting it through would make
+            # this endpoint a cross-document write primitive.
+            raise ValueError(f"Line {patch.id} does not belong to PO {po.number}")
+        delta: dict = {}
+        if patch.supplier_item_id is not None and line.supplier_item_id != patch.supplier_item_id:
+            delta["supplier_item_id"] = [line.supplier_item_id, patch.supplier_item_id]
+            line.supplier_item_id = patch.supplier_item_id
+        if patch.sample is not None and line.sample != patch.sample:
+            delta["sample"] = [line.sample, patch.sample]
+            line.sample = patch.sample
+        if delta:
+            line_changes.append({"line_id": str(patch.id), **delta})
+    if line_changes:
+        after["lines"] = line_changes
+
+    # Marks the PO for nc_purchase_sync/writer.py's tax-rate guard.
+    po.buyer_edited_at = datetime.now(timezone.utc)
+
+    await db.flush()
+    await db.refresh(po)
+    return po, before, after
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────

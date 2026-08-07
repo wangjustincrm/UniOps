@@ -15,16 +15,18 @@ from app.crud import po as po_crud
 from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
 from app.crud.current_step import enrich_current_step
+from app.models.admin_audit_log import AdminAuditLog
 from app.models.invoice import Invoice
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
-from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoListResponse, PoResponse, PoUpdate
+from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoListResponse, PoResponse, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
 from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/po", tags=["purchase-orders"])
 
 PoWriteDep = Annotated[dict, Depends(require_permission("epms.po.write"))]
+PoEditImportedDep = Annotated[dict, Depends(require_permission("epms.po.edit_imported"))]
 
 
 @router.get("", response_model=PoListResponse)
@@ -134,6 +136,52 @@ async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWr
         vendor_name = vendor.name
 
     return await po_crud.update(db, po, body, vendor_code=vendor_code, vendor_name=vendor_name)
+
+
+@router.patch("/{po_id}/imported-details", response_model=PoResponse)
+async def update_imported_details(
+    po_id: uuid.UUID, body: PoImportedDetailsUpdate, db: SessionDep, user: PoEditImportedDep,
+):
+    """Fill in buyer-supplied detail on an NC-imported PO.
+
+    Deliberately separate from PATCH /po/{po_id}. That endpoint accepts a new
+    vendor_id, a new currency and a full replacement line_items list (crud.update
+    deletes and rebuilds the lines), so relaxing its draft/returned status gate
+    for NC POs would hand anyone holding epms.po.write the ability to rewrite the
+    money on an order already in the invoice/payment flow. Here the request model
+    itself makes those fields unreachable.
+    """
+    po = await po_crud.get_by_id(db, po_id)
+    if po is None:
+        raise HTTPException(status_code=404, detail="PO not found")
+    if po.source != "nc":
+        raise HTTPException(
+            status_code=409, detail="Only NC-imported POs can be edited here")
+    if po.status != "issued":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot edit an NC PO in status '{po.status}' — only 'issued' is editable",
+        )
+
+    try:
+        po, before, after = await po_crud.update_imported_details(db, po, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if after:
+        db.add(AdminAuditLog(
+            actor_id=uuid.UUID(user["sub"]),
+            actor_email=user.get("email", ""),
+            action="edit",
+            system="epms",
+            entity="po",
+            record_id=po.id,
+            record_number=po.number,
+            before=before,
+            after=after,
+        ))
+        await db.flush()
+    return po
 
 
 async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: str) -> None:
