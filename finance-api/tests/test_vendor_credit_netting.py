@@ -550,5 +550,93 @@ async def test_partial_payment_posts_the_amount_actually_paid(db_session):
                              amount_paid=Decimal("40.00"))
     lines = await _posting_lines(db_session, res.posting_event_id)
 
+    # Pin the exact line set — without this, a stray extra posting line
+    # would slip through unnoticed by the two amount assertions below.
+    assert set(lines) == {"accounts_payable", "bank"}
     assert lines["accounts_payable"][0] == Decimal("40.00")
     assert lines["bank"][1] == Decimal("40.00")
+    debits = sum(d or Decimal("0") for d, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c in lines.values())
+    assert debits == credits
+
+
+@pytest.mark.anyio
+async def test_credit_side_sums_to_debit_including_clearing_line(db_session):
+    """An unmapped 'vendor_credit_clearing' line_role is silently dropped by
+    the balance-sheet/income-statement builders (app/crud/gl.py: `if not
+    acct: continue`), which would throw the balance sheet out of balance by
+    exactly credit_applied on every credited payment — invisible unless
+    something asserts the clearing line's own presence and amount, not just
+    that totals balance (totals alone would still balance if this line were
+    never emitted and the bank line silently carried the full amount)."""
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    lines = await _posting_lines(db_session, res.posting_event_id)
+
+    assert set(lines) == {"accounts_payable", "bank", "vendor_credit_clearing"}
+    # The clearing line must itself exist with the expected credit amount —
+    # not merely inferred from the totals matching. debit is NOT NULL
+    # server_default 0 (app/models/posting.py), never None, for a
+    # credit-only line.
+    assert lines["vendor_credit_clearing"] == (Decimal("0.00"), Decimal("30.00"))
+
+    debit_total = lines["accounts_payable"][0]
+    credit_total = lines["bank"][1] + lines["vendor_credit_clearing"][1]
+    assert debit_total == credit_total == Decimal("100.00")
+
+
+@pytest.mark.anyio
+async def test_voucher_when_credit_fully_covers_the_payment(db_session):
+    """net == 0: emit_event must drop the zero-amount bank line rather than
+    post a spurious $0 bank leg. This is the case the credit-clearing feature
+    exists for and depends on an implementation detail one layer away
+    (emit_event's line filtering) that this suite would not otherwise catch
+    if it changed."""
+    pa = _pa(payment_amount=Decimal("30.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    lines = await _posting_lines(db_session, res.posting_event_id)
+
+    assert set(lines) == {"accounts_payable", "vendor_credit_clearing"}
+    assert "bank" not in lines
+    assert lines["accounts_payable"][0] == Decimal("30.00")
+    assert lines["vendor_credit_clearing"][1] == Decimal("30.00")
+    debits = sum(d or Decimal("0") for d, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c in lines.values())
+    assert debits == credits
+
+
+@pytest.mark.anyio
+async def test_voucher_for_partial_payment_with_credit_applied(db_session):
+    """The two changes in this task interacting: base comes from amount_paid
+    (spec 6.6), and the credit side still splits against that base rather
+    than against pa.payment_amount."""
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("15.00"),
+                           total_amount=Decimal("15.00"),
+                           remaining_amount=Decimal("15.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4(),
+                             amount_paid=Decimal("40.00"))
+    lines = await _posting_lines(db_session, res.posting_event_id)
+
+    assert set(lines) == {"accounts_payable", "bank", "vendor_credit_clearing"}
+    assert lines["accounts_payable"][0] == Decimal("40.00")     # base, not payment_amount
+    assert lines["bank"][1] == Decimal("25.00")                 # net = base - credit_applied
+    assert lines["vendor_credit_clearing"][1] == Decimal("15.00")
+    debits = sum(d or Decimal("0") for d, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c in lines.values())
+    assert debits == credits

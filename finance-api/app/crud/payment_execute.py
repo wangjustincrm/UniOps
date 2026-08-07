@@ -350,6 +350,18 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             # Bank is credited only with the cash that left; the netted portion
             # parks in a clearing account so the GL bank balance still ties to
             # the bank statement.
+            #
+            # "vendor_credit_clearing" requires an account_mappings row
+            # (mapping_type='line_role') to appear on the balance sheet / income
+            # statement: app/crud/gl.py's builders do `if not acct: continue`
+            # for an unmapped code, so an unmapped clearing line is silently
+            # dropped from both reports while AP and bank still move — the
+            # balance sheet then reports "balanced": false by exactly this
+            # amount on every credited payment. Only the trial balance shows it
+            # (as "(unmapped)"). Seeding this role is precedent (see
+            # alembic/versions/0013_accounts_receivable.py seeding
+            # accounts_receivable/revenue/output_tax) but is pending a business
+            # decision on which GL account holds vendor credits pending.
             posting_lines.append({
                 "line_role": "vendor_credit_clearing", "credit": credit_applied,
                 "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,
