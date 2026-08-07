@@ -66,21 +66,51 @@ for this release.
    it from Portal Admin until a line is added to that array. Confirmed by
    reading the file, not assumed — this is a known gap, not a regression from
    this release.
-3. **PA approval workflow step check (operator action, not automated)** — if
-   the *configured* PA workflow (`company_config.workflow_defs["pa"]`,
-   editable from the same Portal Admin screen) contains a `gm_or_opm` step:
-   that step is a **broadcast** task (`assigned_user_id = None`, everyone
-   holding the role sees it), so the task-chain visibility shortcut other
-   approval steps rely on cannot help that approver find the PA. Combined
-   with the fact that an agreement-sourced PA's approval **routes** on the
-   *creator's* department (the generic routing fallback — `"agr"`/`"pa"`
-   department routing isn't in approval-api's per-doc-type branch list) while
-   PA **visibility** scopes on the *agreement's own* `department_id`, a
-   `gm_or_opm` approver could end up unable to both list AND open the PA.
-   **The default PA workflow is `finance_bp` + `finance_manager`, both
-   unrestricted roles that see every PA regardless of department scoping —
-   the default installation is unaffected.** Only check this if your
-   `workflow_defs["pa"]` has been customized to include a `gm_or_opm` step.
+3. **PA approval workflow step check — REQUIRED, not conditional on
+   customization.** `approval-api/app/main.py`'s `seed_default_workflows()`
+   writes any missing key into `company_config.workflow_defs` on **every
+   boot**, only skipping keys that already exist. `_WORKFLOW_DEFAULTS["pa"]`
+   (`approval-api/app/crud/engine.py`) is:
+   `dept_manager → director → gm_or_opm → finance_bp → finance_mgr` —
+   **`gm_or_opm` is in the default chain.** (`workflow.py`'s separate
+   `_DEFAULT_PA` = `finance_bp` + `finance_manager` is a fallback used only
+   when `workflow_defs` has no `"pa"` key at all — boot seeding guarantees it
+   does, so that fallback is effectively dead code and must not be read as
+   "the default.")
+   **This means a stock, unmodified installation is the at-risk
+   configuration**, not an edge case reachable only by customizing the
+   workflow. Verify:
+   ```sql
+   SELECT workflow_defs->'pa' FROM company_config;
+   ```
+   If it contains a `gm_or_opm` step, the risk is live:
+   - `gm_or_opm` is a **broadcast** task (`assigned_user_id = None` — every
+     active holder of that post sees it), so the task-chain visibility
+     shortcut other approval steps rely on cannot help that approver find the
+     PA the normal way.
+   - An agreement-sourced PA's approval **routes** on the *creator's*
+     department: `_routing_department_id` (`approval-api/app/crud/engine.py`)
+     has branches for `doc_type` `"pr"`, `"po"`, `"pa"`/`"pa_dir"` — the
+     `"pa"` branch resolves department via `PA.po_id → PO.pr_id →
+     PR.department_id`, which is always `None` for an agreement-sourced PA
+     (`po_id` is null by construction), so it falls through to the routing
+     user's (the PA's creator's) own department.
+   - PA **visibility** (who can even list/open it) instead scopes on the
+     *agreement's own* `department_id` (`epms-api`'s `is_pa_visible` /
+     `build_scope`).
+   - A `gm_or_opm` approver whose own department differs from the
+     agreement's department can therefore end up **unable to both list AND
+     open** the PA they're supposed to approve.
+   **Also affects the agreement document itself, not just its PAs**:
+   `_routing_department_id` has no `"agr"` branch either, so submitting an
+   *agreement* for approval also routes `dept_manager`/`gm_or_opm`/`director`
+   steps off the submitter's own department rather than
+   `PurchaseAgreement.department_id` — the same class of bug, one layer up.
+   **Mitigation if this is live in your environment**: reassign the PA
+   creator (or check "on behalf of" support) so agreement-sourced PAs are
+   created by someone in the agreement's own department, or flag this for a
+   routing fix in approval-api before agreement PAs reach a `gm_or_opm` step
+   in production.
 
 ## Cutover script for Princess Auto (the backlog this phase exists for)
 
@@ -93,11 +123,12 @@ for this release.
    Procurement Manager → Finance Manager by default) to `active`.
 3. Match the backlog invoices to the agreement, one `legacy_settlement`
    reason each (mandatory — MatchPanel's Agreements tab enforces this).
-4. Create a Payment Application from the agreement (agreement detail page,
-   or `?agreement_id=` deep link into `PaCreatePage`), select the
-   matched-but-unpaid invoices, submit through the standard PA approval /
-   payment flow. Confirm the PA needs no goods receipt and lists correctly
-   in the EPMS PA list.
+4. Open the agreement's detail page and click **Create PA** in the header
+   action bar (visible once the agreement is admissible and has at least one
+   matched-but-unpaid invoice — `AgreementDetailPage.tsx`'s `canCreatePa`).
+   Select the matched-but-unpaid invoices, submit through the standard PA
+   approval / payment flow. Confirm the PA needs no goods receipt and lists
+   correctly in the EPMS PA list.
 5. **Only after the backlog is clear**, close the old open PO
    (`status = 'closed'`). This removes it from the invoice match candidate
    pool so future statements route to the agreement instead.
@@ -145,14 +176,21 @@ through:
    blank, confirm the resulting invoice shows "Settled without receipt" on
    its detail page.
 3. **PA creation from an agreement** (this task —
-   `epms/src/pages/pa/PaCreatePage.tsx`): open `?agreement_id=<id>` (from the
-   agreement detail page or a matched invoice), confirm the PO line picker,
-   goods-receipt picker, and receipt-override field are **absent**, confirm
-   only matched-but-unpaid invoices are selectable, confirm an invoice
-   already claimed by another open PA on the same agreement shows "Already in
-   PA" and cannot be re-selected, submit, confirm the new PA appears in the
-   EPMS PA list with no goods-receipt requirement, and confirm it can be
-   approved and paid through the standard PA flow.
+   `epms/src/pages/pa/PaCreatePage.tsx` +
+   `AgreementDetailPage.tsx`'s **Create PA** button): from an admissible
+   agreement with at least one matched-but-unpaid invoice, click Create PA on
+   its detail page and confirm it lands on `PaCreatePage` with the agreement
+   pre-loaded. Confirm the PO line picker, goods-receipt picker, and
+   receipt-override field are **absent**, confirm only matched-but-unpaid
+   invoices are selectable, confirm an invoice already claimed by another
+   open PA on the same agreement shows "Already in PA" and cannot be
+   re-selected, submit, confirm the new PA appears in the EPMS PA list with
+   no goods-receipt requirement, and confirm it can be approved and paid
+   through the standard PA flow. Separately: confirm the button is **absent**
+   on an agreement with zero matched-but-unpaid invoices, and on one that is
+   `draft`/`submitted`/`in_review`/`closed`/`cancelled`/`returned`/`rejected`
+   or expired past its grace window. Also confirm a mistyped/nonexistent
+   `?agreement_id=` shows a real error, not an infinite "Loading agreement…".
 4. **Over-ceiling warning**: match/create against an agreement whose consumed
    amount exceeds its not-to-exceed, confirm the warning displays and nothing
    is blocked.

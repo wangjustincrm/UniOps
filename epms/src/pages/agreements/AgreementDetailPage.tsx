@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil,
+  CreditCard,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
@@ -15,7 +16,7 @@ import { useAgreement, useAgreementAction } from '@/hooks/useAgreements'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTasks } from '@/hooks/useTasks'
 import { useInvoices } from '@/hooks/useInvoices'
-import type { AgreementStatus, AgreementType } from '@/services/agreement'
+import type { AgreementStatus, AgreementType, ApiAgreement } from '@/services/agreement'
 import type { InvoiceStatus } from '@/services/invoices'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
@@ -49,6 +50,21 @@ const INVOICE_STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutr
   match_review: { label: 'Pending Review', variant: 'info' },
   approved: { label: 'Approved', variant: 'success' },
   paid: { label: 'Paid', variant: 'neutral' },
+}
+
+// Mirrors epms-api/app/crud/agreement.py::_admissible_predicate — the ONE rule
+// for whether new spend (an invoice match, or a PA) may be raised against this
+// agreement right now: active, or expired but still within its grace window.
+// UI-only gate for the Create PA button below; the backend re-checks
+// independently on POST /pa (agr_crud.is_admissible), so an off-by-one here
+// (timezone rounding) only costs an extra click, never a bad write.
+function isAgreementAdmissible(agreement: ApiAgreement): boolean {
+  if (agreement.status === 'active') return true
+  if (agreement.status !== 'expired') return false
+  const daysSinceExpiry = Math.floor(
+    (Date.now() - new Date(agreement.valid_to).getTime()) / 86_400_000
+  )
+  return daysSinceExpiry <= agreement.grace_days
 }
 
 // Approval-step timeline, adapted from PoDetailPage::buildWorkflowSteps. There
@@ -232,9 +248,21 @@ export default function AgreementDetailPage() {
   )
   const invoices = invoicesData?.items ?? []
   const legacySettlementCount = invoices.filter((inv) => inv.legacy_settlement).length
+  // "Matched-but-unpaid" — same filter PaCreatePage's agreement mode uses to
+  // populate its invoice picker. If this is 0, the create page would load to
+  // an empty Step 2 with nothing to select, so gate the button on it here.
+  const payableInvoiceCount = invoices.filter((inv) => inv.status === 'matched').length
 
   const perms = useRolePermissions().data?.permissions
   const canWrite = user?.role === 'system_admin' || !!perms?.['epms.agreement.write']
+  // Driven by the Access Control Matrix (epms.pa.write) — the same key gates
+  // POST /pa, matching PaListPage's canCreate convention — plus the two
+  // preconditions POST /pa's agreement route enforces server-side (admission
+  // window, at least one matched invoice), so the button isn't offered when
+  // clicking it would just 422.
+  const canCreatePaPerm = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
+  const canCreatePa =
+    canCreatePaPerm && !!agreement && isAgreementAdmissible(agreement) && payableInvoiceCount > 0
   // Matches epms-api/app/crud/agreement.py:13 EDITABLE_STATUSES = ("draft", "returned") —
   // both are submit-able AND edit-able. 'returned' must have both, or the
   // Return action is a permanent dead end: the creator can neither fix nor
@@ -338,6 +366,14 @@ export default function AgreementDetailPage() {
                 <XCircle className="h-3.5 w-3.5" />
                 Cancel
               </Button>
+            )}
+            {canCreatePa && (
+              <Link to={`/pa/new?agreement_id=${agreement.id}`}>
+                <Button size="sm">
+                  <CreditCard className="h-3.5 w-3.5" />
+                  Create PA
+                </Button>
+              </Link>
             )}
           </div>
         </div>

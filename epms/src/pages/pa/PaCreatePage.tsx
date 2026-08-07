@@ -101,7 +101,7 @@ export default function PaCreatePage() {
   // the only evidence of real spend (Phase 1A has no pickup slips).
   const agreementIdFromUrl = searchParams.get('agreement_id') ?? ''
   const isAgreementMode = Boolean(agreementIdFromUrl)
-  const { data: agreement } = useAgreement(agreementIdFromUrl)
+  const { data: agreement, isError: agreementLoadError } = useAgreement(agreementIdFromUrl)
 
   // ── Step 1 — PO selection ──────────────────────────────────────────────────
   // A Task Inbox "Create PA" task deep-links ?poId=<po>. Pre-select that PO and
@@ -583,7 +583,17 @@ export default function PaCreatePage() {
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
                 Agreement
               </h2>
-              {!agreement ? (
+              {agreementLoadError ? (
+                <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-danger-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-danger-800">Could not load this agreement.</p>
+                    <p className="text-xs text-danger-700 mt-0.5">
+                      It may not exist, or you may not have permission to view it. Check the link and try again.
+                    </p>
+                  </div>
+                </div>
+              ) : !agreement ? (
                 <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading agreement…</p>
               ) : (
                 <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
@@ -1233,7 +1243,9 @@ export default function PaCreatePage() {
 
             {!contextSelected ? (
               <p className="text-xs text-neutral-400 text-center py-4">
-                {isAgreementMode ? 'Loading agreement…' : 'Select a PO to see summary'}
+                {isAgreementMode
+                  ? (agreementLoadError ? 'Agreement failed to load.' : 'Loading agreement…')
+                  : 'Select a PO to see summary'}
               </p>
             ) : (
               <div className="flex flex-col gap-3">
