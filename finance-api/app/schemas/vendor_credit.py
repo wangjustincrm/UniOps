@@ -71,3 +71,18 @@ class VendorCreditResponse(BaseModel):
 class VendorCreditListResponse(BaseModel):
     items: list[VendorCreditResponse]
     total: int
+
+
+class CreditSuggestion(BaseModel):
+    credit_id: uuid.UUID
+    credit_number: str
+    credit_date: date
+    remaining: Decimal
+    apply: Decimal
+
+
+class CreditSuggestResponse(BaseModel):
+    gross: Decimal
+    suggested: list[CreditSuggestion]
+    credit_applied: Decimal
+    net: Decimal

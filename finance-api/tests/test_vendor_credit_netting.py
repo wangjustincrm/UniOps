@@ -1,10 +1,17 @@
 """Vendor Credit — Phase B (payment netting, GL, remittance)."""
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
+import pytest_asyncio
 import sqlalchemy as sa
+from httpx import ASGITransport, AsyncClient
+from jose import jwt
+
+from app.core.config import settings
+from app.db.base import get_db
+from app.main import app
 
 
 def test_application_model_mapped():
@@ -742,3 +749,73 @@ async def test_clearing_mapping_seeds_and_stamps_when_account_1123_present(db_se
     res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
     lines = await _posting_lines(db_session, res.posting_event_id)
     assert lines["vendor_credit_clearing"][2] == "1123"   # account_code stamped by _stamp_account_codes
+
+
+def _h(role="ap_clerk", sub=None):
+    token = jwt.encode({"sub": str(sub or uuid.uuid4()), "role": role,
+                        "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                       settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def client(db_session):
+    async def _override_get_db():
+        yield db_session
+    app.dependency_overrides[get_db] = _override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_suggest_returns_the_fifo_plan(client, db_session):
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/vendor-credits/suggest",
+                         params={"doc_kind": "pa", "doc_id": str(pa.id)},
+                         headers=_h())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["gross"] == "100.00"
+    assert body["credit_applied"] == "30.00"
+    assert body["net"] == "70.00"
+    assert len(body["suggested"]) == 1
+    assert body["suggested"][0]["apply"] == "30.00"
+
+
+@pytest.mark.anyio
+async def test_suggest_with_no_credits_returns_full_gross(client, db_session):
+    pa = _pa(payment_amount=Decimal("55.00"))
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/vendor-credits/suggest",
+                         params={"doc_kind": "pa", "doc_id": str(pa.id)},
+                         headers=_h())
+    body = r.json()
+    assert body["suggested"] == []
+    assert body["credit_applied"] == "0.00"
+    assert body["net"] == "55.00"
+
+
+@pytest.mark.anyio
+async def test_suggest_rejects_expense_claim(client):
+    r = await client.get("/finance/v1/vendor-credits/suggest",
+                         params={"doc_kind": "expense_claim",
+                                 "doc_id": str(uuid.uuid4())},
+                         headers=_h())
+    assert r.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_suggest_404s_for_an_unknown_document(client):
+    r = await client.get("/finance/v1/vendor-credits/suggest",
+                         params={"doc_kind": "pa", "doc_id": str(uuid.uuid4())},
+                         headers=_h())
+    assert r.status_code == 404

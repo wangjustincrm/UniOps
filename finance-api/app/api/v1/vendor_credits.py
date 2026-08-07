@@ -6,17 +6,21 @@ credit is `pending_review` and confers nothing until approved, so the real gate
 sits on the review actions, which require epms.vendor_credit.manage.
 """
 import uuid
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import require_permission
 from app.core.deps import CurrentUser
 from app.crud import vendor_credit as crud
 from app.db.base import get_db
+from app.models.pa import PaymentApplication
 from app.schemas.vendor_credit import (
-    VendorCreditCreate, VendorCreditListResponse, VendorCreditReject,
-    VendorCreditResponse, VendorCreditReview,
+    CreditSuggestion, CreditSuggestResponse, VendorCreditCreate,
+    VendorCreditListResponse, VendorCreditReject, VendorCreditResponse,
+    VendorCreditReview,
 )
 
 router = APIRouter(prefix="/vendor-credits", tags=["vendor-credits"])
@@ -75,6 +79,49 @@ async def list_vendor_credits(user: CurrentUser,
     items, total = await crud.get_all(db, status=status, vendor_id=vendor_id,
                                       limit=limit, offset=offset)
     return VendorCreditListResponse(items=items, total=total)
+
+
+@router.get("/suggest", response_model=CreditSuggestResponse)
+async def suggest_credits(user: CurrentUser,
+                          doc_kind: str = Query(...),
+                          doc_id: uuid.UUID = Query(...),
+                          db: AsyncSession = Depends(get_db)):
+    """Preview which credits would be netted off a payment, without locking.
+
+    Declared before /{credit_id} so FastAPI does not try to parse the literal
+    "suggest" as a UUID.
+    """
+    if doc_kind not in ("pa", "pa_dir"):
+        raise HTTPException(
+            status_code=422,
+            detail="Vendor credits apply to vendor payments only (pa, pa_dir)")
+
+    pa = (await db.execute(
+        select(PaymentApplication).where(PaymentApplication.id == doc_id)
+    )).scalar_one_or_none()
+    if pa is None:
+        raise HTTPException(status_code=404, detail="Payment application not found")
+
+    picks = await crud.select_credits_for_payment(
+        db, vendor_id=pa.vendor_id, currency=pa.currency,
+        base=pa.payment_amount, credit_ids=None, lock=False,
+    )
+    # Decimal("0") has scale 0, so an empty `picks` would serialize
+    # credit_applied as "0" instead of "0.00" — start the accumulator at
+    # scale 2 to match pa.payment_amount's precision either way.
+    applied = sum((take for _, take in picks), Decimal("0.00"))
+    return CreditSuggestResponse(
+        gross=pa.payment_amount,
+        suggested=[
+            CreditSuggestion(
+                credit_id=c.id, credit_number=c.credit_number,
+                credit_date=c.credit_date, remaining=c.remaining_amount, apply=take,
+            )
+            for c, take in picks
+        ],
+        credit_applied=applied,
+        net=pa.payment_amount - applied,
+    )
 
 
 @router.get("/{credit_id}", response_model=VendorCreditResponse)
