@@ -819,3 +819,125 @@ async def test_suggest_404s_for_an_unknown_document(client):
                          params={"doc_kind": "pa", "doc_id": str(uuid.uuid4())},
                          headers=_h())
     assert r.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_batch_line_defaults_to_automatic_netting(db_session):
+    from app.crud import payment_batch
+    from app.models.payment import PaymentRecord
+    from app.models.payment_batch import PaymentBatch, PaymentBatchLine
+
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("25.00"),
+                           total_amount=Decimal("25.00"),
+                           remaining_amount=Decimal("25.00")))
+    batch = PaymentBatch(batch_number=f"B-{uuid.uuid4().hex[:6]}",
+                         batch_date=date(2026, 8, 7), status="draft",
+                         currency="CAD", total=Decimal("100.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    db_session.add(PaymentBatchLine(batch_id=batch.id, doc_kind="pa",
+                                    doc_id=pa.id, doc_number=pa.pa_number,
+                                    amount=Decimal("100.00"), status="pending"))
+    await db_session.flush()
+
+    await payment_batch.execute_batch(
+        db_session, batch, {"sub": str(uuid.uuid4()), "role": "system_admin"}, None)
+    await db_session.flush()
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.doc_id == pa.id))).scalar_one()
+    assert rec.credit_applied == Decimal("25.00")
+    assert rec.amount == Decimal("75.00")
+
+
+@pytest.mark.anyio
+async def test_batch_line_can_opt_out_of_netting(db_session):
+    from app.crud import payment_batch
+    from app.models.payment import PaymentRecord
+    from app.models.payment_batch import PaymentBatch, PaymentBatchLine
+
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id))
+    batch = PaymentBatch(batch_number=f"B-{uuid.uuid4().hex[:6]}",
+                         batch_date=date(2026, 8, 7), status="draft",
+                         currency="CAD", total=Decimal("100.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    db_session.add(PaymentBatchLine(batch_id=batch.id, doc_kind="pa",
+                                    doc_id=pa.id, doc_number=pa.pa_number,
+                                    amount=Decimal("100.00"), status="pending"))
+    await db_session.flush()
+
+    await payment_batch.execute_batch(
+        db_session, batch, {"sub": str(uuid.uuid4()), "role": "system_admin"},
+        None, credit_ids_by_doc={pa.id: []})
+    await db_session.flush()
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.doc_id == pa.id))).scalar_one()
+    assert rec.credit_applied == Decimal("0.00")
+    assert rec.amount == Decimal("100.00")
+
+
+@pytest.mark.anyio
+async def test_batch_isolates_a_line_naming_an_unavailable_credit(db_session):
+    """CreditUnavailable inherits ValueError (Task 4) specifically so this
+    path — an operator-selected credit that has gone stale by execute time —
+    fails only its own line's savepoint rather than escaping execute_batch's
+    per-line try/except and aborting the whole loop with already-executed
+    lines' status flips stuck in the outer (uncommitted) transaction while
+    the batch itself stays 'draft'. Two lines: one names a voided credit and
+    must be recorded 'failed' with its error; the other is ordinary and must
+    still pay, and the batch must still finish (not raise)."""
+    from app.crud import payment_batch
+    from app.models.payment import PaymentRecord
+    from app.models.payment_batch import PaymentBatch, PaymentBatchLine
+
+    bad_pa = _pa(payment_amount=Decimal("100.00"))
+    good_pa = _pa(payment_amount=Decimal("50.00"))
+    db_session.add_all([bad_pa, good_pa])
+    voided = _credit(vendor_id=bad_pa.vendor_id, status="void")
+    db_session.add(voided)
+    batch = PaymentBatch(batch_number=f"B-{uuid.uuid4().hex[:6]}",
+                         batch_date=date(2026, 8, 7), status="draft",
+                         currency="CAD", total=Decimal("150.00"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+    db_session.add_all([
+        PaymentBatchLine(batch_id=batch.id, doc_kind="pa",
+                         doc_id=bad_pa.id, doc_number=bad_pa.pa_number,
+                         amount=Decimal("100.00"), status="pending"),
+        PaymentBatchLine(batch_id=batch.id, doc_kind="pa",
+                         doc_id=good_pa.id, doc_number=good_pa.pa_number,
+                         amount=Decimal("50.00"), status="pending"),
+    ])
+    await db_session.flush()
+    # Captured before execute_batch: the failed line's savepoint rollback
+    # expires touched ORM objects, and re-fetching an expired attribute
+    # outside an awaited context raises MissingGreenlet — so read these off
+    # the (already-flushed, still-fresh) objects now rather than after.
+    bad_pa_id, good_pa_id, batch_id = bad_pa.id, good_pa.id, batch.id
+
+    result = await payment_batch.execute_batch(
+        db_session, batch, {"sub": str(uuid.uuid4()), "role": "system_admin"},
+        None, credit_ids_by_doc={bad_pa_id: [voided.id]})
+    await db_session.flush()
+
+    assert result.status == "executed"
+
+    lines = (await db_session.execute(sa.select(PaymentBatchLine).where(
+        PaymentBatchLine.batch_id == batch_id))).scalars().all()
+    by_doc = {ln.doc_id: ln for ln in lines}
+    assert by_doc[bad_pa_id].status == "failed"
+    assert by_doc[bad_pa_id].error
+    assert by_doc[good_pa_id].status == "paid"
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.doc_id == good_pa_id))).scalar_one()
+    assert rec.amount == Decimal("50.00")

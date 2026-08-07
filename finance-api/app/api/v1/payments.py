@@ -266,6 +266,9 @@ class CreateBatchRequest(BaseModel):
 
 class ExecuteBatchRequest(BaseModel):
     bank_account_id: uuid.UUID | None = None
+    # doc_id -> credit ids to apply. A document absent from the map uses the
+    # automatic FIFO default; an explicit empty list pays that line in full.
+    credit_ids_by_doc: dict[uuid.UUID, list[uuid.UUID]] | None = None
 
 
 @router.get("/can-pay")
@@ -360,7 +363,8 @@ async def execute_batch(batch_id: uuid.UUID, token: BearerToken, user: CurrentUs
         raise HTTPException(status_code=404, detail="Batch not found")
     try:
         await batch_crud.execute_batch(db, batch, user, bearer_token=token,
-                                       bank_account_id=body.bank_account_id)
+                                       bank_account_id=body.bank_account_id,
+                                       credit_ids_by_doc=body.credit_ids_by_doc)
         await db.commit()
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
