@@ -21,6 +21,7 @@ export type TaskType =
   | 'create_prepayment_pa'
   | 'approve_budget_plan'
   | 'revise_budget_plan'
+  | 'approve_agr'
 
 export interface ApiTask {
   id: string

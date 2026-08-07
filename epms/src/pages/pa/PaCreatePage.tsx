@@ -195,7 +195,7 @@ export default function PaCreatePage() {
   // Settle 模式:来源预付加载后锁定并预填 PO / 类型 / Original Prepayment PA / 抵扣额
   useEffect(() => {
     if (!sourcePrepay) return
-    setSelectedPoId(sourcePrepay.po_id)
+    setSelectedPoId(sourcePrepay.po_id ?? '')
     setPaType('settlement')
     setPrepaymentPaId(sourcePrepay.id)
     setPrepaymentApplied(String(sourcePrepay.payment_amount ?? ''))

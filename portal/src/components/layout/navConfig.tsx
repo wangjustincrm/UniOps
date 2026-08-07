@@ -13,6 +13,7 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
+  FileSignature,
 } from 'lucide-react'
 
 export interface NavItemDef {
@@ -56,6 +57,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
     title: 'MODULES',
     items: [
       { label: 'Procurement', icon: ShoppingCart, href: 'epms' },
+      { label: 'Agreements',  icon: FileSignature, href: 'epms:/agreements', anyPermission: ['epms.agreement.read'] },
       { label: 'OA',          icon: Wallet,       href: 'oa' },
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
       { label: 'Finance',     icon: Landmark,     href: 'finance', anyPermission: FINANCE_ACCESS_PERMS },

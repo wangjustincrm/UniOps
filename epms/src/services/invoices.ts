@@ -61,6 +61,13 @@ export interface ApiInvoice {
   uploaded_by: string
   uploaded_by_name?: string
   created_at: string
+  // Agreement route (house-account / no-PO matching) — Phase 1A only.
+  agreement_id?: string | null
+  agreement_number?: string | null
+  // 1A has no receipt evidence at all: every agreement match is flagged and
+  // must carry a reason. This is the escape-hatch health metric Finance watches.
+  legacy_settlement?: boolean
+  legacy_settlement_reason?: string | null
 }
 
 export interface CreateInvoiceBody {
@@ -136,6 +143,7 @@ export interface InvoiceFilters {
   status?: string
   vendor_id?: string
   po_id?: string
+  agreement_id?: string
   search?: string
   page?: number
   page_size?: number

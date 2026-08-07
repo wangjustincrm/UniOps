@@ -12,6 +12,7 @@ import {
   Building2,
   FolderTree,
   Wrench,
+  FileSignature,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -54,6 +55,7 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Goods Receipt', href: '/gr', icon: <Warehouse className="h-4 w-4" />, permission: 'view_gr' },
       { label: 'Invoices', href: '/invoices', icon: <FileText className="h-4 w-4" />, permission: 'view_invoice' },
       { label: 'Payment Applications', href: '/pa', icon: <CreditCard className="h-4 w-4" />, permission: 'view_pa' },
+      { label: 'Agreements', href: '/agreements', icon: <FileSignature className="h-4 w-4" />, permission: 'epms.agreement.read' },
     ],
   },
   // NOTE: FINANCE section (Budget Dashboard / Budget Plans / Account Catalog)

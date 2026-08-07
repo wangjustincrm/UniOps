@@ -217,7 +217,9 @@ export default function PaDetailPage() {
   const paAction = usePaAction(id ?? '')
   const confirmSettlement = useConfirmSettlement(id ?? '')
   const { data: po } = usePo(pa?.po_id ?? '')
-  const { data: invoicesData } = useInvoices(pa?.invoice_ids.length ? { po_id: pa.po_id } : undefined)
+  // Agreement-sourced PAs (Phase 1A) have po_id === null — nothing to filter
+  // invoices by, so skip the fetch rather than send a null po_id.
+  const { data: invoicesData } = useInvoices(pa?.po_id && pa.invoice_ids.length ? { po_id: pa.po_id } : undefined)
   // The PO can carry multiple PAs/invoices, so narrow to the invoices actually
   // linked to THIS PA (pa.invoice_ids) instead of showing every PO invoice.
   const linkedInvoices = (invoicesData?.items ?? []).filter((inv) => pa?.invoice_ids.includes(inv.id))

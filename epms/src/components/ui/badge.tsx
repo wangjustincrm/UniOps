@@ -27,6 +27,9 @@ const STATUS_CONFIG: Record<
   paid: { label: 'Paid', variant: 'dark', dot: 'bg-neutral-400' },
   closed: { label: 'Closed', variant: 'dark', dot: 'bg-neutral-400' },
   nc_milk: { label: 'Milk / NC', variant: 'info', dot: 'bg-primary-500' },
+  // Purchase Agreement — 'active' is the approval-terminal status (not 'approved').
+  active: { label: 'Active', variant: 'success', dot: 'bg-success-600' },
+  expired: { label: 'Expired', variant: 'warning', dot: 'bg-warning-500' },
 }
 
 export function StatusBadge({ status, label }: { status: DocumentStatus; label?: string }) {

@@ -32,6 +32,9 @@ export type DocumentStatus =
   | 'paid'
   | 'closed'
   | 'nc_milk'
+  // Purchase Agreement statuses (approval terminal state is 'active', not 'approved')
+  | 'active'
+  | 'expired'
 
 export type ProcurementType = 1 | 2 | 3 | 4 | 5 | 6
 

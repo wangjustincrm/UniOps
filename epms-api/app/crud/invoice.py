@@ -69,6 +69,7 @@ async def get_all(
     status: str | None = None,
     vendor_id: uuid.UUID | None = None,
     po_id: uuid.UUID | None = None,
+    agreement_id: uuid.UUID | None = None,
     search: str | None = None,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
@@ -105,6 +106,8 @@ async def get_all(
             InvoicePoAllocation.po_id == po_id
         )
         q = q.where(or_(Invoice.po_id == po_id, Invoice.id.in_(alloc_by_po)))
+    if agreement_id:
+        q = q.where(Invoice.agreement_id == agreement_id)
     if search and search.strip():
         term = f"%{search.strip()}%"
         q = q.where(or_(

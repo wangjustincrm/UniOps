@@ -178,6 +178,7 @@ async def list_invoices(
     status: str | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
     po_id: uuid.UUID | None = Query(default=None),
+    agreement_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
@@ -196,7 +197,7 @@ async def list_invoices(
     own_uploads = scope["user_id"] if (scope["role"] == "requester" and scope["restrict"]) else None
     task_uid = uuid.UUID(user["sub"]) if scope["restrict"] else None
     items, total = await invoice_crud.get_all(
-        db, status=status, vendor_id=vendor_id, po_id=po_id, search=search,
+        db, status=status, vendor_id=vendor_id, po_id=po_id, agreement_id=agreement_id, search=search,
         po_ids_subq=scope["po_subq"],
         own_uploads_user_id=own_uploads,
         task_user_id=task_uid,

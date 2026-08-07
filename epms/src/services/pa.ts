@@ -59,8 +59,13 @@ export interface ApiPa {
   payment_amount: number
   vendor_id: string
   vendor_name: string
-  po_id: string
-  po_number: string
+  // Agreement-sourced PAs (Phase 1A) have no PO — the backend returns null for
+  // both. Previously typed as non-nullable, which was a lie the moment
+  // agreement-sourced PAs shipped (PaListPage.tsx renders po_number directly;
+  // a null renders as blank, which is fine, but callers doing po_id-truthy
+  // checks need the real type).
+  po_id: string | null
+  po_number: string | null
   invoice_ids: string[]
   prepayment_pct?: number
   expected_settlement_date?: string
