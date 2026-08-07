@@ -37,6 +37,15 @@ export interface MpsLine {
   prebuild_reason: string | null
   shelf_life_ok: boolean
   capacity_gap: boolean
+  /** Production Lead Time (mrp08): true when the engine could not push
+   *  production back a full `production_lead_months` before the demand
+   *  month (clamped at the run's current month) — distinct from
+   *  `is_prebuild` (which just means plan_month != demand_month). A line
+   *  can be a shortfall without being a capacity_gap: shortfall means
+   *  "produced later than the lead asked for", gap means "demand unmet
+   *  even after that". See ProductionMatrix.tsx for how the two combine
+   *  on a cell (gap takes precedence). */
+  lead_shortfall: boolean
   locked_by_planner: boolean
   manual_adjusted: boolean
   status: string
@@ -50,6 +59,10 @@ export interface MpsRun {
   horizon_months: number
   status: MpsRunStatus
   safety_margin_fraction: string // Decimal-as-string
+  /** Production Lead Time (mrp08): how many months earlier than a demand
+   *  month the engine tries to schedule production for it (default 1,
+   *  set at generate() time — see `generate()`'s opts below). */
+  production_lead_months: number
   generated_by: string | null
   stats: MpsRunStats | null
 }
@@ -84,12 +97,18 @@ export interface AdjustLineBody {
 
 export const mpsApi = {
   /** Requires the forecast version to be status='confirmed' (409 otherwise
-   *  — see mps.py's create_run()). `safetyMarginFraction` omitted lets the
-   *  backend fall back to its own default (1/3 shelf life). */
-  generate: (forecastVersionId: string, safetyMarginFraction?: number) =>
+   *  — see mps.py's create_run()). Both `opts` fields are optional and
+   *  independently omittable: `safety_margin_fraction` omitted falls back
+   *  to the backend's own default (1/3 shelf life); `production_lead_months`
+   *  omitted falls back to the backend's default of 1 (mrp08). */
+  generate: (
+    forecastVersionId: string,
+    opts?: { safety_margin_fraction?: number; production_lead_months?: number },
+  ) =>
     api.post<MpsRunDetail>('/mps/runs', {
       forecast_version_id: forecastVersionId,
-      ...(safetyMarginFraction != null ? { safety_margin_fraction: safetyMarginFraction } : {}),
+      ...(opts?.safety_margin_fraction != null ? { safety_margin_fraction: opts.safety_margin_fraction } : {}),
+      ...(opts?.production_lead_months != null ? { production_lead_months: opts.production_lead_months } : {}),
     }),
 
   get: (runId: string) => api.get<MpsRunGet>(`/mps/runs/${runId}`),

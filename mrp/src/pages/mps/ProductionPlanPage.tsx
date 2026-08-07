@@ -228,12 +228,16 @@ export default function ProductionPlanPage() {
   // ── Generate / Recalculate ──────────────────────────────────────────────
   const [generating, setGenerating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
+  // Production Lead Time (mrp08): how many months earlier than a demand
+  // month the engine should try to schedule production — default 1 matches
+  // the backend's own default (mps.py's create_run()) when omitted.
+  const [leadMonths, setLeadMonths] = useState(1)
 
   async function handleGenerate() {
     if (!selectedVersionId) return
     setGenerating(true)
     try {
-      const result = await mpsApi.generate(selectedVersionId)
+      const result = await mpsApi.generate(selectedVersionId, { production_lead_months: leadMonths })
       setRunId(result.id)
       toasts.success(`Generated ${result.run_no} — ${result.lines.length} line(s).`)
     } catch (err) {
@@ -392,6 +396,21 @@ export default function ProductionPlanPage() {
         <div className="flex flex-wrap items-center gap-2">
           {canExecute && (
             <>
+              <FormField label="Lead (months)" htmlFor="mps-lead-months">
+                <input
+                  id="mps-lead-months"
+                  type="number"
+                  min={0}
+                  max={12}
+                  value={leadMonths}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    setLeadMonths(Number.isFinite(n) ? Math.min(12, Math.max(0, Math.trunc(n))) : 0)
+                  }}
+                  disabled={generating}
+                  className="flex h-11 w-20 rounded-lg border border-neutral-200 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+              </FormField>
               <Button
                 type="button" size="sm" className="min-h-[44px]"
                 onClick={handleGenerate}

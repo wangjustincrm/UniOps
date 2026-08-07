@@ -18,7 +18,7 @@
 // thead/first-column's containing-block resolution. One container with both
 // axes explicit removes the ambiguity.
 import { useMemo } from 'react'
-import { Lock, AlertTriangle } from 'lucide-react'
+import { Lock, AlertTriangle, Clock } from 'lucide-react'
 import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
@@ -43,6 +43,11 @@ interface MatrixCell {
   planned: number
   gap: boolean
   locked: boolean
+  /** Production Lead Time (mrp08): true if any underlying line couldn't be
+   *  pushed back the run's full `production_lead_months` before its demand
+   *  month (clamped at "now"). Display-only marker on the Planned row —
+   *  gap (red) takes precedence when a cell is both. */
+  shortfall: boolean
   demandMonths: string[]
   /** The underlying MpsLine[] this cell aggregates — handed back verbatim
    *  to onAdjustCell so the caller (AdjustDrawer, per T5) knows exactly
@@ -51,7 +56,7 @@ interface MatrixCell {
 }
 
 function emptyCell(): MatrixCell {
-  return { demand: 0, available: 0, planned: 0, gap: false, locked: false, demandMonths: [], cellLines: [] }
+  return { demand: 0, available: 0, planned: 0, gap: false, locked: false, shortfall: false, demandMonths: [], cellLines: [] }
 }
 
 function cellKey(materialCode: string, planMonth: string): string {
@@ -122,6 +127,7 @@ export function ProductionMatrix({
       cell.planned += Number(line.qty)
       if (line.capacity_gap) cell.gap = true
       if (line.locked_by_planner) cell.locked = true
+      if (line.lead_shortfall) cell.shortfall = true
       if (!cell.demandMonths.includes(line.demand_month)) cell.demandMonths.push(line.demand_month)
       cell.cellLines.push(line)
     }
@@ -274,9 +280,14 @@ function MetricCell({
 }) {
   const hasData = cell.cellLines.length > 0
 
+  // The three metric sub-rows get distinct subtle backgrounds so a planner
+  // can tell them apart at a glance while scrolling months horizontally —
+  // applied to every cell in the row (not just ones with data) so the row
+  // reads as a solid band. Planned's gap/shortfall highlighting below
+  // overrides this base tint on the cells that need it.
   if (metric === 'Demand') {
     return (
-      <td className="border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-neutral-700">
+      <td className="border-b border-r border-neutral-200 bg-neutral-50 px-2 py-1.5 text-right font-mono text-neutral-700">
         {hasData ? formatValue(cell.demand) : <span className="text-neutral-300">—</span>}
       </td>
     )
@@ -284,47 +295,63 @@ function MetricCell({
 
   if (metric === 'Available') {
     return (
-      <td className="border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-neutral-700">
+      <td className="border-b border-r border-neutral-200 bg-primary-50/40 px-2 py-1.5 text-right font-mono text-neutral-700">
         {hasData ? formatValue(cell.available) : <span className="text-neutral-300">—</span>}
       </td>
     )
   }
 
-  // Planned — the only clickable row. "Has production" = a non-zero planned
-  // qty; a cell that merely has lines but nets to zero output (e.g. fully
-  // covered by available stock) renders as empty, same as a cell with no
-  // lines at all — neither is something a planner would click to adjust.
+  // Planned — the only clickable row, and the actionable output (bold).
+  // "Has production" = a non-zero planned qty; a cell that merely has lines
+  // but nets to zero output (e.g. fully covered by available stock) renders
+  // as empty, same as a cell with no lines at all — neither is something a
+  // planner would click to adjust.
   const hasProduction = cell.planned > 0
   const title = cell.demandMonths.length > 0 ? `For ${cell.demandMonths.join(', ')} demand` : undefined
+  // Gap (red, unmet demand) takes precedence over shortfall (amber,
+  // produced later than the requested lead but still met) when a cell is
+  // both — gap is the more severe condition a planner needs to see first.
+  const showShortfall = cell.shortfall && !cell.gap
 
   if (!hasProduction) {
     return (
-      <td className="border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono text-neutral-300">—</td>
+      <td className="border-b border-r border-neutral-200 bg-success-50/50 px-2 py-1.5 text-right font-mono text-neutral-300">—</td>
     )
   }
 
   const valueNode = (
     <span className="inline-flex items-center justify-end gap-1">
       {cell.gap && <AlertTriangle aria-hidden className="h-3 w-3 shrink-0 text-danger-600" />}
+      {showShortfall && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-600" />}
       {formatValue(cell.planned)}
       {cell.locked && <Lock aria-hidden className="h-3 w-3 shrink-0 text-neutral-400" />}
     </span>
   )
 
+  const cellTitle = cell.gap
+    ? `Capacity gap — unmet demand${title ? ` (${title})` : ''}`
+    : showShortfall
+      ? 'Produced later than the lead — no earlier capacity/time'
+      : title
+
   return (
     <td
       className={cn(
-        'border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono',
-        cell.gap ? 'bg-danger-50 text-danger-700 font-semibold' : 'text-neutral-800',
+        'border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono font-semibold',
+        cell.gap
+          ? 'bg-danger-50 text-danger-700'
+          : showShortfall
+            ? 'bg-warning-50 text-warning-800'
+            : 'bg-success-50/50 text-neutral-800',
       )}
     >
       {readOnly ? (
-        <span title={cell.gap ? 'Capacity gap — unmet demand' : title}>{valueNode}</span>
+        <span title={cellTitle}>{valueNode}</span>
       ) : (
         <button
           type="button"
           onClick={() => onAdjustCell(cell.cellLines)}
-          title={cell.gap ? `Capacity gap — unmet demand${title ? ` (${title})` : ''}` : title}
+          title={cellTitle}
           className="inline-flex min-h-11 w-full items-center justify-end rounded px-1 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
         >
           {valueNode}
