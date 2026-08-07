@@ -15,7 +15,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Index, Numeric, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -101,4 +101,34 @@ class VendorCredit(UUIDPrimaryKey, TimestampMixin, Base):
         Index("ix_vendor_credits_available",
               "vendor_id", "currency", "credit_date",
               postgresql_where=text("status = 'available' AND remaining_amount > 0")),
+    )
+
+
+class VendorCreditApplication(UUIDPrimaryKey, TimestampMixin, Base):
+    """One row per (credit, payment) application — the audit trail for why a
+    payment was short. Written by app/crud/vendor_credit.py inside the same
+    transaction as the PaymentRecord it references, never separately.
+    """
+    __tablename__ = "vendor_credit_applications"
+
+    credit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("vendor_credits.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    payment_record_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), nullable=False, index=True,
+    )
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    # The document that was paid: pa | pa_dir. Never expense_claim.
+    doc_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    doc_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    doc_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    applied_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    applied_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("applied_amount > 0", name="ck_vendor_credit_applications_positive"),
     )
