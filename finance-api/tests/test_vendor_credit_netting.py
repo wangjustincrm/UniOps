@@ -354,6 +354,7 @@ async def _run_execute(db, pa, *, user_id, credit_ids=None, amount_paid=None):
 @pytest.mark.anyio
 async def test_payment_is_reduced_by_available_credit(db_session):
     from app.models.payment import PaymentRecord
+    from app.models.vendor_credit import VendorCreditApplication
     actor = uuid.uuid4()
     pa = _pa(payment_amount=Decimal("100.00"))
     db_session.add(pa)
@@ -369,6 +370,16 @@ async def test_payment_is_reduced_by_available_credit(db_session):
     assert rec.amount == Decimal("70.00")
     assert rec.credit_applied == Decimal("30.00")
     assert res.new_status == "processed"
+
+    # Pin the flush-before-apply wiring: the application row the executor
+    # wrote must point at THIS payment record, and batch_id must be None for
+    # a non-batch call (a wrong id would only ever surface as a NOT NULL
+    # error, not a clear assertion failure).
+    app_row = (await db_session.execute(sa.select(VendorCreditApplication).where(
+        VendorCreditApplication.payment_record_id == rec.id))).scalar_one()
+    assert app_row.payment_record_id == rec.id
+    assert app_row.batch_id is None
+    assert app_row.applied_amount == Decimal("30.00")
 
 
 @pytest.mark.anyio
@@ -457,3 +468,28 @@ async def test_partial_payment_nets_against_the_amount_actually_paid(db_session)
         PaymentRecord.id == res.payment_record_id))).scalar_one()
     assert rec.credit_applied == Decimal("50.00")
     assert rec.amount == Decimal("0.00")
+
+
+@pytest.mark.anyio
+async def test_pa_path_with_po_id_nets_the_same_as_pa_dir(db_session):
+    """Every other test's _pa() leaves po_id unset, so execute() has only ever
+    routed it through the pa_dir branch (doc_kind = 'pa_dir' if po_id is None
+    else 'pa'). The 'pa' branch additionally writes back to invoice_ids /
+    ap_invoices — netting is shared code, so this confirms rather than
+    suspects, but it has never actually run."""
+    from app.models.payment import PaymentRecord
+    pa = _pa(payment_amount=Decimal("100.00"), po_id=uuid.uuid4(),
+             po_number="PO-TEST-1")
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+
+    assert res.doc_kind == "pa"
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+    assert rec.amount == Decimal("70.00")
+    assert rec.credit_applied == Decimal("30.00")

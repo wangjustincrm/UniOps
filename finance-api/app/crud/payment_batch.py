@@ -175,6 +175,11 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
     db.add(batch)
     await db.flush()
     for p in pas:
+        # `amount` here is the gross payable snapshotted when the batch is
+        # built — it is what is owed, not what will actually be sent. Vendor
+        # credits net the cash at execution time (payment_execute.execute),
+        # after this line is written; the netted figure shows up in the
+        # payment preview and is recorded on the payment_record, not here.
         db.add(PaymentBatchLine(
             batch_id=batch.id,
             doc_kind="pa_dir" if p.po_id is None else "pa",

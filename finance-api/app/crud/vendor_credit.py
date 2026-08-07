@@ -221,8 +221,19 @@ async def get_all(db: AsyncSession, *, status: str | None = None,
     return list(rows), total
 
 
-class CreditUnavailable(Exception):
-    """An explicitly requested credit is not applicable to this payment."""
+class CreditUnavailable(ValueError):
+    """An explicitly requested credit is not applicable to this payment.
+
+    Inherits ValueError (not Exception) deliberately: `execute()`'s contract is
+    "Raises LookupError (404), ValueError (409), PaymentPermissionError (403)",
+    and a credit that has since been consumed or voided by the time the
+    operator submits is exactly a 409 conflict — the transaction never
+    commits, so no money moves, but the caller needs a message naming the
+    credit rather than an unhandled 500. The same base class makes the batch
+    runner's per-line `except (..., ValueError)` catch it too, isolating one
+    bad line instead of aborting the whole run. Do not change this back to
+    Exception.
+    """
 
 
 async def select_credits_for_payment(
