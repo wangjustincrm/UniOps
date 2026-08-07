@@ -35,7 +35,7 @@
   ```
   Use a distinct `TEST_FINANCE_DB` per task.
 - **Never run `alembic` by hand.** `finance-api/.env` points at the PRODUCTION database (10.10.50.20). The pytest fixture overrides `DATABASE_URL` safely; manual invocation does not.
-- finance frontend gate: `cd finance && npx tsc --noEmit 2>&1 | grep -c "error TS"`. **Measure the baseline before changing anything**; do not copy a number. If `node_modules` is missing, run `npm ci` first, or tsc prints an install prompt and the grep count is a false zero.
+- finance frontend gate: `cd finance && npx tsc -p tsconfig.app.json --noEmit --ignoreDeprecations 6.0 2>&1 | grep -c "error TS"`. **Measure the baseline before changing anything**; do not copy a number. If `node_modules` is missing, run `npm ci` first, or tsc prints an install prompt and the grep count is a false zero.
 - **Never `git stash`.**
 
 ## What already exists — read before designing anything new
@@ -1485,8 +1485,16 @@ Plus a **Drift** panel from `GET /drift`, and a header showing the cutover run f
 
 Run:
 ```bash
-cd finance && npx tsc --noEmit 2>&1 | grep -c "error TS"
+cd finance && npx tsc -p tsconfig.app.json --noEmit --ignoreDeprecations 6.0 2>&1 | grep -c "error TS"
 ```
+
+> **The gate command matters.** `finance/tsconfig.json` is a solution-style config
+> (`"files": []` plus `references`), so a bare `npx tsc --noEmit` compiles **zero files** and
+> always reports 0 — a false pass. The project must be named explicitly. TypeScript here is
+> 6.0.3, which errors on the deprecated `baseUrl` unless `--ignoreDeprecations 6.0` is passed.
+> With the correct command tsc compiles 64 source files. **The measured baseline is 0 errors**
+> (controller-verified 2026-08-07); do not accept a 0 that came from the bare command.
+
 Record the number in your report. If it prints `0`, check the raw output for real diagnostics — a missing `node_modules` makes tsc print an install prompt, which greps to zero. Run `npm ci` in `finance/` if so, then measure again. Do not copy a baseline from anywhere.
 
 - [ ] **Step 2: Add the client calls**
@@ -1546,7 +1554,7 @@ Add the page next to the existing QBO mirror route, matching how that entry is d
 
 - [ ] **Step 6: Type-check**
 
-Run: `cd finance && npx tsc --noEmit 2>&1 | grep -c "error TS"`
+Run: `cd finance && npx tsc -p tsconfig.app.json --noEmit --ignoreDeprecations 6.0 2>&1 | grep -c "error TS"`
 
 Expected: the baseline from Step 1, unchanged.
 
