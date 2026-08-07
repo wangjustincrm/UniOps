@@ -493,3 +493,62 @@ async def test_pa_path_with_po_id_nets_the_same_as_pa_dir(db_session):
         PaymentRecord.id == res.payment_record_id))).scalar_one()
     assert rec.amount == Decimal("70.00")
     assert rec.credit_applied == Decimal("30.00")
+
+
+async def _posting_lines(db, event_id):
+    rows = (await db.execute(sa.text(
+        "SELECT line_role, debit, credit FROM posting_lines "
+        "WHERE event_id = :e ORDER BY line_role"
+    ), {"e": str(event_id)})).all()
+    return {r[0]: (r[1], r[2]) for r in rows}
+
+
+@pytest.mark.anyio
+async def test_voucher_splits_the_credit_side(db_session):
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    lines = await _posting_lines(db_session, res.posting_event_id)
+
+    assert lines["accounts_payable"][0] == Decimal("100.00")   # debit gross
+    assert lines["bank"][1] == Decimal("70.00")                # credit net cash
+    assert lines["vendor_credit_clearing"][1] == Decimal("30.00")
+    debits = sum(d or Decimal("0") for d, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c in lines.values())
+    assert debits == credits
+
+
+@pytest.mark.anyio
+async def test_voucher_has_no_clearing_line_without_credits(db_session):
+    """An ordinary payment's voucher shape is unchanged."""
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    lines = await _posting_lines(db_session, res.posting_event_id)
+
+    assert set(lines) == {"accounts_payable", "bank"}
+    assert lines["accounts_payable"][0] == Decimal("100.00")
+    assert lines["bank"][1] == Decimal("100.00")
+
+
+@pytest.mark.anyio
+async def test_partial_payment_posts_the_amount_actually_paid(db_session):
+    """Spec 6.6: the voucher used pa.payment_amount while the record used
+    amount_paid. Both must now be the amount actually paid."""
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4(),
+                             amount_paid=Decimal("40.00"))
+    lines = await _posting_lines(db_session, res.posting_event_id)
+
+    assert lines["accounts_payable"][0] == Decimal("40.00")
+    assert lines["bank"][1] == Decimal("40.00")

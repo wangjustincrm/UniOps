@@ -340,6 +340,22 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
                 applied_by=recorded_by,
             )
 
+        posting_lines = [
+            {"line_role": "accounts_payable", "debit": base,
+             "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,
+             "currency": pa.currency},
+            _bank_line(net, pa.currency, bank),
+        ]
+        if credit_applied > Decimal("0"):
+            # Bank is credited only with the cash that left; the netted portion
+            # parks in a clearing account so the GL bank balance still ties to
+            # the bank statement.
+            posting_lines.append({
+                "line_role": "vendor_credit_clearing", "credit": credit_applied,
+                "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,
+                "currency": pa.currency,
+            })
+
         event_id = await emit_event(
             db,
             source_service="finance",
@@ -347,12 +363,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             source_doc_id=pa.id,
             source_doc_number=pa.pa_number,
             event_type="payment",
-            lines=await _stamp_fx(db, await _stamp_account_codes(db, [
-                {"line_role": "accounts_payable", "debit": pa.payment_amount,
-                 "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,
-                 "currency": pa.currency},
-                _bank_line(pa.payment_amount, pa.currency, bank),
-            ]), pay_date),
+            lines=await _stamp_fx(db, await _stamp_account_codes(db, posting_lines), pay_date),
         )
         return PaymentExecuteResponse(
             doc_kind=doc_kind, doc_id=pa.id, doc_number=pa.pa_number,
