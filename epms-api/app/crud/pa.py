@@ -76,19 +76,27 @@ async def get_all(
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[PaymentApplication], int]:
-    from sqlalchemy import or_
-    # EPMS owns PO-based PAs only; OA's Direct PAs (NULL po_id) live in the same
-    # shared table but belong to expense-api. Excluding them keeps PaResponse
-    # (po_id/po_number non-nullable) valid and avoids cross-domain bleed.
-    q = select(PaymentApplication).where(PaymentApplication.po_id.is_not(None))
+    # EPMS owns PO-based AND agreement-based PAs; OA's Direct PAs have BOTH
+    # columns NULL, which is what keeps them out of this list.
+    q = select(PaymentApplication).where(or_(
+        PaymentApplication.po_id.is_not(None),
+        PaymentApplication.agreement_id.is_not(None),
+    ))
     if po_ids_subq is not None:
+        # po_ids_subq scopes PO-visibility (e.g. a requester's own PR chain) — it
+        # has no opinion on agreements, so agreement PAs must bypass it rather
+        # than being filtered out by a PO-shaped predicate they can never match.
         if created_by:
             q = q.where(or_(
                 PaymentApplication.po_id.in_(po_ids_subq),
+                PaymentApplication.agreement_id.is_not(None),
                 PaymentApplication.created_by == created_by,
             ))
         else:
-            q = q.where(PaymentApplication.po_id.in_(po_ids_subq))
+            q = q.where(or_(
+                PaymentApplication.po_id.in_(po_ids_subq),
+                PaymentApplication.agreement_id.is_not(None),
+            ))
     elif created_by:
         q = q.where(PaymentApplication.created_by == created_by)
     if status:
@@ -142,13 +150,14 @@ async def get_by_id(db: AsyncSession, pa_id: uuid.UUID) -> PaymentApplication | 
 async def create(
     db: AsyncSession,
     payload: PaCreate,
-    po_number: str,
+    po_number: str | None,
     vendor_id: uuid.UUID,
     vendor_name: str,
     created_by: uuid.UUID,
     receipt_override: bool = False,
     receipt_override_reason: str | None = None,
     receipt_override_by: uuid.UUID | None = None,
+    agreement_number: str | None = None,
 ) -> PaymentApplication:
     number = await _next_number(db)
     payment_amount = _compute_payment(payload)
@@ -158,6 +167,8 @@ async def create(
         title=payload.title,
         po_id=payload.po_id,
         po_number=po_number,
+        agreement_id=payload.agreement_id,
+        agreement_number=agreement_number,
         vendor_id=vendor_id,
         vendor_name=vendor_name,
         invoice_ids=[str(i) for i in payload.invoice_ids],
@@ -189,12 +200,17 @@ async def create(
     for item in _build_line_items(pa.id, payload.line_items):
         db.add(item)
 
-    # A PA now exists for this PO — clear any open "Create Payment Application"
-    # prompts for it (the task previously lingered because this was never called).
-    await _complete_create_pa_tasks(db, payload.po_id)
-    # A prepayment PA additionally satisfies the "Create Prepayment PA" prompt.
-    if pa.pa_type == "prepayment":
-        await _complete_create_prepayment_pa_tasks(db, payload.po_id)
+    # PO-only follow-up: agreement PAs have no PO, so there is no "Create Payment
+    # Application" / "Create Prepayment PA" task anchored to a po_id to clear —
+    # calling these with po_id=None would wrongly match tasks with a NULL
+    # document_id.
+    if payload.po_id is not None:
+        # A PA now exists for this PO — clear any open "Create Payment Application"
+        # prompts for it (the task previously lingered because this was never called).
+        await _complete_create_pa_tasks(db, payload.po_id)
+        # A prepayment PA additionally satisfies the "Create Prepayment PA" prompt.
+        if pa.pa_type == "prepayment":
+            await _complete_create_prepayment_pa_tasks(db, payload.po_id)
 
     await db.flush()
     await db.refresh(pa)

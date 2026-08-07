@@ -13,6 +13,7 @@ from app.core.access_scope import build_scope, _effective_role_codes
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services import finance_client
+from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
 from app.crud import po as po_crud
 from app.crud.current_step import enrich_current_step
@@ -89,6 +90,37 @@ def _may_create_pa_on_behalf(roles: set[str], po: PurchaseOrder) -> bool:
 
 @router.post("", response_model=PaResponse, status_code=201)
 async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: BearerToken):
+    # ── Agreement route: no PO, no GR, no receipt gate ─────────────────────────
+    if body.agreement_id is not None:
+        agr = await agr_crud.get_by_id(db, body.agreement_id)
+        if agr is None:
+            raise HTTPException(status_code=404, detail="Agreement not found")
+        # Every listed invoice must actually be matched to THIS agreement —
+        # otherwise a PA could pay an unrelated invoice off an approved ceiling.
+        if body.invoice_ids:
+            rows = (await db.execute(
+                select(Invoice.id, Invoice.agreement_id)
+                .where(Invoice.id.in_(body.invoice_ids))
+            )).all()
+            if len(rows) != len(set(body.invoice_ids)):
+                raise HTTPException(status_code=422, detail="One or more invoices not found")
+            stray = [str(r.id) for r in rows if r.agreement_id != body.agreement_id]
+            if stray:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invoice(s) not matched to agreement {agr.number}: {', '.join(stray)}")
+        # 收货闸门不适用:协议路线定义上就没有 GR(1A 无 pickup slip,1B 才有)。
+        created = await pa_crud.create(
+            db, body,
+            po_number=None,
+            agreement_number=agr.number,
+            vendor_id=agr.vendor_id,
+            vendor_name=agr.vendor_name,
+            created_by=uuid.UUID(user["sub"]),
+        )
+        return created
+
+    # ── PO route below, unchanged ──────────────────────────────────────────────
     po = await po_crud.get_by_id(db, body.po_id)
     if po is None:
         raise HTTPException(status_code=404, detail="Purchase order not found")
