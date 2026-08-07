@@ -46,3 +46,11 @@ class MrpMpsLine(Base, UUIDPrimaryKey, TimestampMixin):
     locked_by_planner: Mapped[bool] = mapped_column(Boolean, default=False)
     manual_adjusted: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(20), default="draft", server_default="draft")
+    # Demand context snapshot (mrp07, Production Plan Matrix final-review fix):
+    # the gross forecast for demand_month and the rolled-forward opening
+    # stock entering it, as they stood at generate/recalculate time -- NOT
+    # recomputed from live inventory on every read (a released run must stay
+    # a frozen point-in-time snapshot). NULL for pre-mrp07 lines; the read
+    # side falls back to 0 (see app/api/v1/mps.py's _line_response).
+    demand_forecast: Mapped[object | None] = mapped_column(Numeric(18, 3))
+    opening_stock: Mapped[object | None] = mapped_column(Numeric(18, 3))

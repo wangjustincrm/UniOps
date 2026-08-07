@@ -156,12 +156,12 @@ class MpsLineResponse(BaseModel):
     locked_by_planner: bool
     manual_adjusted: bool
     status: str
-    # Demand context (design: Production Plan matrix) -- NOT ORM columns on
-    # MrpMpsLine, so `from_attributes` validation elsewhere in this module
-    # (create_run/recalculate_run/confirm_release, via `_run_detail_response`)
-    # never populates them and falls back to these defaults. Only
-    # `get_run` builds the real per-line context and constructs
-    # `MpsLineResponse` explicitly with computed values (see `_line_response`).
+    # Demand context (design: Production Plan matrix) -- snapshotted onto
+    # MrpMpsLine at generate/recalculate time (mrp07 migration) so a
+    # released run's numbers never drift as live inventory moves afterward,
+    # and GET .../{id} doesn't pay a full net-requirement rollforward on
+    # every read. `_line_response` reads these straight off the line,
+    # defaulting NULL (pre-mrp07 lines) to 0 -- never a live recompute.
     demand_forecast: Decimal = Decimal("0")
     opening_stock: Decimal = Decimal("0")
 
@@ -330,16 +330,21 @@ async def _run_detail_response(db: SessionDep, run: MrpMpsRun) -> MpsRunDetailRe
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
         status=run.status, safety_margin_fraction=run.safety_margin_fraction,
         generated_by=run.generated_by, stats=run.stats,
-        lines=[MpsLineResponse.model_validate(l) for l in lines],
+        lines=[_line_response(l) for l in lines],
     )
 
 
 async def _build_demand_context(db: SessionDep, version: ForecastVersion) -> dict[str, dict[str, tuple[Decimal, Decimal]]]:
     """Re-derive the run's demand basis exactly as `_build_demand_items` did,
     but keep every month's gross forecast + rolled-forward opening stock
-    (not just the positive-net-requirement ones) so `get_run` can attach
-    them to each persisted line by (material_code, demand_month). material
-    -> {month: (forecast_qty, opening_stock)}."""
+    (not just the positive-net-requirement ones), so `create_run` /
+    `recalculate_run` can snapshot them onto each persisted line by
+    (material_code, demand_month) at WRITE time (mrp07 migration --
+    `MrpMpsLine.demand_forecast`/`opening_stock`). Reads (`get_run`, export)
+    no longer call this; they read the stored columns straight off the line
+    (see `_line_response`) so a released run's numbers stay frozen instead of
+    drifting with live inventory. material -> {month: (forecast_qty,
+    opening_stock)}."""
     months = _generate_months(version.horizon_start_month, version.horizon_months)
     by_material = await _load_forecast_by_material(db, version.id, months)
 
@@ -354,19 +359,20 @@ async def _build_demand_context(db: SessionDep, version: ForecastVersion) -> dic
     return ctx
 
 
-def _line_response(
-    line: MrpMpsLine, ctx: dict[str, dict[str, tuple[Decimal, Decimal]]],
-) -> MpsLineResponse:
-    demand_forecast, opening_stock = ctx.get(line.material_code, {}).get(
-        line.demand_month, (Decimal("0"), Decimal("0"))
-    )
+def _line_response(line: MrpMpsLine) -> MpsLineResponse:
+    """Reads the frozen demand-context snapshot straight off the line
+    (`MrpMpsLine.demand_forecast`/`opening_stock`, written once at
+    generate/recalculate time -- see `_build_demand_context`'s docstring).
+    NULL (pre-mrp07 lines, never regenerated) defaults to 0 rather than a
+    live recompute."""
     return MpsLineResponse(
         id=line.id, material_code=line.material_code, demand_month=line.demand_month,
         plan_month=line.plan_month, qty=line.qty, is_prebuild=line.is_prebuild,
         prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
         capacity_gap=line.capacity_gap, locked_by_planner=line.locked_by_planner,
         manual_adjusted=line.manual_adjusted, status=line.status,
-        demand_forecast=demand_forecast, opening_stock=opening_stock,
+        demand_forecast=line.demand_forecast if line.demand_forecast is not None else Decimal("0"),
+        opening_stock=line.opening_stock if line.opening_stock is not None else Decimal("0"),
     )
 
 
@@ -418,6 +424,11 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     limits = await _resolve_capacity_limits(db, version.horizon_start_month)
     shelf_life = await resolve_shelf_life(token)
     lines = generate_mps(demands, limits, shelf_life, safety_margin)
+    # Snapshot the demand context (gross forecast + rolled-forward opening
+    # stock) onto each line NOW, at generate time -- see
+    # `_build_demand_context`'s docstring for why reads no longer recompute
+    # this from live inventory.
+    ctx = await _build_demand_context(db, version)
 
     run_no = await _next_run_no(db)
     run = MrpMpsRun(
@@ -434,11 +445,15 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     await db.flush()  # assign run.id for the lines' FK below
 
     for line in lines:
+        demand_forecast, opening_stock = ctx.get(line.material_code, {}).get(
+            line.demand_month, (Decimal("0"), Decimal("0"))
+        )
         db.add(MrpMpsLine(
             run_id=run.id, material_code=line.material_code, demand_month=line.demand_month,
             plan_month=line.plan_month, qty=line.qty, is_prebuild=line.is_prebuild,
             prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
             capacity_gap=line.capacity_gap, locked_by_planner=False, manual_adjusted=False,
+            demand_forecast=demand_forecast, opening_stock=opening_stock,
         ))
 
     await db.commit()
@@ -451,14 +466,12 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     run = await _get_run_or_404(db, run_id)
     lines = await _load_lines(db, run.id)
     occupancy = await _compute_capacity_occupancy(db, lines)
-    version = await _get_version_or_404(db, run.forecast_version_id)
-    ctx = await _build_demand_context(db, version)
     return MpsRunGetResponse(
         id=run.id, run_no=run.run_no, forecast_version_id=run.forecast_version_id,
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
         status=run.status, safety_margin_fraction=run.safety_margin_fraction,
         generated_by=run.generated_by, stats=run.stats,
-        lines=[_line_response(l, ctx) for l in lines],
+        lines=[_line_response(l) for l in lines],
         capacity_occupancy=occupancy,
     )
 
@@ -480,9 +493,7 @@ async def export_run(
     row falls back to its bare material_code, never a broken export."""
     run = await _get_run_or_404(db, run_id)
     lines = await _load_lines(db, run.id)
-    version = await _get_version_or_404(db, run.forecast_version_id)
-    ctx = await _build_demand_context(db, version)
-    line_responses = [_line_response(l, ctx) for l in lines]
+    line_responses = [_line_response(l) for l in lines]
 
     codes = {l.material_code for l in line_responses}
     names = await resolve_material_names(token) if codes else {}
@@ -518,6 +529,14 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     # about), so remember it here keyed by the identity generate_mps uses to
     # recognize "this is the same locked line" (material + demand_month).
     locked_manual_adjusted = {(l.material_code, l.demand_month): l.manual_adjusted for l in locked_existing}
+    # A locked line's already-stored demand-context snapshot must also
+    # survive being echoed back through generate_mps unchanged -- it's a
+    # frozen point-in-time value from whenever it was last (re)generated,
+    # not something to recompute here (see `_build_demand_context`'s
+    # docstring). Keyed the same way as `locked_manual_adjusted` above.
+    locked_demand_context = {
+        (l.material_code, l.demand_month): (l.demand_forecast, l.opening_stock) for l in locked_existing
+    }
     locked_keys = set(locked_manual_adjusted)
 
     # Demand for a material/month already covered by a locked line must NOT
@@ -531,15 +550,29 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     limits = await _resolve_capacity_limits(db, run.horizon_start_month)
     shelf_life = await resolve_shelf_life(token)
     lines = generate_mps(demands, limits, shelf_life, run.safety_margin_fraction, locked=locked_planned)
+    # Snapshot the demand context for the newly (re)placed, non-locked lines
+    # -- same write-time contract as create_run.
+    ctx = await _build_demand_context(db, version)
 
     await db.execute(delete(MrpMpsLine).where(MrpMpsLine.run_id == run.id))
     for line in lines:
         manual_adjusted = locked_manual_adjusted.get((line.material_code, line.demand_month), False) if line.locked else False
+        if line.locked:
+            # Carried over unchanged -- don't null a locked line's already-
+            # stored context just because it was re-persisted this cycle.
+            demand_forecast, opening_stock = locked_demand_context.get(
+                (line.material_code, line.demand_month), (Decimal("0"), Decimal("0"))
+            )
+        else:
+            demand_forecast, opening_stock = ctx.get(line.material_code, {}).get(
+                line.demand_month, (Decimal("0"), Decimal("0"))
+            )
         db.add(MrpMpsLine(
             run_id=run.id, material_code=line.material_code, demand_month=line.demand_month,
             plan_month=line.plan_month, qty=line.qty, is_prebuild=line.is_prebuild,
             prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
             capacity_gap=line.capacity_gap, locked_by_planner=line.locked, manual_adjusted=manual_adjusted,
+            demand_forecast=demand_forecast, opening_stock=opening_stock,
         ))
     run.stats = _compute_stats(lines)
 

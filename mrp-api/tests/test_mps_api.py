@@ -301,6 +301,74 @@ async def test_get_run_includes_demand_context_per_line(client, db_session, admi
 
 
 @pytest.mark.anyio
+async def test_get_run_demand_context_is_frozen_snapshot_not_live(client, db_session, admin_token, monkeypatch):
+    """A run's `demand_forecast`/`opening_stock` must be the snapshot taken
+    at generate time (mrp07 migration), NOT a live recompute -- otherwise a
+    RELEASED run's numbers would silently drift as WMS stock moves after
+    generation, breaking the Demand - Available = Planned reading. Generate
+    a run, record a line's opening_stock, then change the material's WMS
+    inventory and re-fetch: opening_stock must be UNCHANGED."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    forecast_version = ForecastVersion(
+        version_no=f"FCV-2026-09-{uuid.uuid4().hex[:8].upper()}",
+        status="confirmed",
+        horizon_start_month="2026-09",
+        horizon_months=1,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(forecast_version)
+    await db_session.flush()
+    db_session.add(
+        ForecastLine(version_id=forecast_version.id, material_code="S0093", month="2026-09", qty=Decimal("100")),
+    )
+    await db_session.commit()
+    version = {"id": str(forecast_version.id)}
+    await _factory_rule(client, headers)
+
+    from app.models.wms_inventory import WmsInventoryLot
+    lot = WmsInventoryLot(
+        warehouse_id="CANADA", material_code="S0093", lot_no="LOT-BEFORE",
+        qty=Decimal("30"), qty_allocated=Decimal("0"), qty_onhold=Decimal("0"),
+        mapped_status="available", expiry_date=date(2027, 1, 1),
+        sync_batch_id="b1",
+    )
+    db_session.add(lot)
+    await db_session.commit()
+
+    run = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+    )).json()
+    run_id = run["id"]
+
+    r1 = await client.get(f"/api/v1/mps/runs/{run_id}", headers=headers)
+    assert r1.status_code == 200, r1.text
+    line_before = r1.json()["lines"][0]
+    assert Decimal(line_before["opening_stock"]) == Decimal("30")
+    assert Decimal(line_before["demand_forecast"]) == Decimal("100")
+
+    # Mutate live inventory for the same material AFTER the run was
+    # generated -- if the endpoint were still recomputing on read, this
+    # would change what GET .../{id} reports.
+    lot.qty = Decimal("999")
+    db_session.add(WmsInventoryLot(
+        warehouse_id="CANADA", material_code="S0093", lot_no="LOT-AFTER",
+        qty=Decimal("500"), qty_allocated=Decimal("0"), qty_onhold=Decimal("0"),
+        mapped_status="available", expiry_date=date(2027, 1, 1),
+        sync_batch_id="b2",
+    ))
+    await db_session.commit()
+
+    r2 = await client.get(f"/api/v1/mps/runs/{run_id}", headers=headers)
+    assert r2.status_code == 200, r2.text
+    line_after = r2.json()["lines"][0]
+    assert Decimal(line_after["opening_stock"]) == Decimal("30")  # frozen, not live 30+999+500
+    assert Decimal(line_after["demand_forecast"]) == Decimal("100")
+    assert line_after["opening_stock"] == line_before["opening_stock"]
+
+
+@pytest.mark.anyio
 async def test_patch_line_marks_manual_adjusted_and_can_lock(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
