@@ -19,10 +19,12 @@ module docstring). mps.py only ever reads a version's stored rows, so a
 version built this way is indistinguishable to it from one freeze_outlook
 would have produced.
 """
+import io
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
+import openpyxl
 import pytest
 
 from app.api.v1 import mps as mps_module
@@ -449,3 +451,79 @@ async def test_patch_line_rejects_malformed_plan_month(client, db_session, admin
         headers=headers,
     )
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.anyio
+async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_session, admin_token, monkeypatch):
+    """GET .../export renders the production plan matrix: a Product/Metric
+    header, then Demand/Available/Planned rows per product across the run's
+    plan_months. unit=t scales qty/1000 (3dp); unit=kg leaves the raw KG
+    value untouched."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+
+    async def _fake_names(token):
+        return {"S0093": "Whole Milk Powder 25kg"}
+
+    monkeypatch.setattr(mps_module, "resolve_material_names", _fake_names)
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, months = await _confirmed_version(db_session, months=1, monthly_qty="2500")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+    )).json()
+    assert len(run["lines"]) == 1
+    line = run["lines"][0]
+    qty_kg = Decimal(line["qty"])
+
+    r = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=t", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert r.headers["content-disposition"] == f'attachment; filename="production-plan-{run["run_no"]}.xlsx"'
+
+    wb = openpyxl.load_workbook(io.BytesIO(r.content))
+    ws = wb.active
+    header = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    assert header == ["Product", "Metric", months[0]]
+
+    rows = {row[1]: row for row in ws.iter_rows(min_row=2, values_only=True)}
+    assert set(rows) == {"Demand", "Available", "Planned"}
+    for row in rows.values():
+        assert row[0] == "Whole Milk Powder 25kg"  # resolved name, not the bare code
+    expected_tonnes = float((qty_kg / Decimal("1000")).quantize(Decimal("0.001")))
+    assert rows["Planned"][2] == expected_tonnes
+    assert rows["Demand"][2] == float((Decimal("2500") / Decimal("1000")).quantize(Decimal("0.001")))
+
+    r_kg = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=kg", headers=headers)
+    assert r_kg.status_code == 200, r_kg.text
+    wb_kg = openpyxl.load_workbook(io.BytesIO(r_kg.content))
+    ws_kg = wb_kg.active
+    rows_kg = {row[1]: row for row in ws_kg.iter_rows(min_row=2, values_only=True)}
+    assert rows_kg["Planned"][2] == float(qty_kg)
+
+
+@pytest.mark.anyio
+async def test_export_run_requires_permission(client, db_session, admin_token, non_admin_token, monkeypatch):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, _ = await _confirmed_version(db_session, months=1)
+    await _factory_rule(client, headers)
+    run = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+    )).json()
+
+    import uniops_authz.core as authz_core
+
+    async def _user_role_codes(db, user_id, base_role):
+        return {base_role}
+
+    async def _effective_matrix(db):
+        return {}
+
+    monkeypatch.setattr(authz_core, "user_role_codes", _user_role_codes)
+    monkeypatch.setattr(authz_core, "_effective_matrix", _effective_matrix)
+
+    denied_headers = {"Authorization": f"Bearer {non_admin_token}"}
+    r = await client.get(f"/api/v1/mps/runs/{run['id']}/export", headers=denied_headers)
+    assert r.status_code == 403

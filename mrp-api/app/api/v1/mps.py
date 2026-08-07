@@ -91,7 +91,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, func, select
 
@@ -101,8 +102,9 @@ from app.core.deps import BearerToken, SessionDep
 from app.models.demand import MrpDemand
 from app.models.forecast import ForecastVersion
 from app.models.mps import MrpMpsLine, MrpMpsRun
+from app.services import mps_export
 from app.services.capacity import resolve_effective_rules
-from app.services.mdm_client import resolve_shelf_life
+from app.services.mdm_client import resolve_material_names, resolve_shelf_life
 from app.services.mps_engine import CapacityLimits, DemandItem, PlannedLine, generate_mps
 from app.services.net_requirement import compute_net_requirements, get_opening_stock_breakdown
 
@@ -111,6 +113,8 @@ router = APIRouter(prefix="/mps", tags=["mps"])
 RunDep = Annotated[dict, Depends(require_permission("mrp.run.execute"))]
 ReportDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
 ConfirmDep = Annotated[dict, Depends(require_permission("mrp.proposal.confirm"))]
+
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 # design §6.8 "保质期的 1/3" — a product may be pre-built up to 1/3 of its
 # shelf life early by default when the caller doesn't specify a margin.
@@ -456,6 +460,39 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
         generated_by=run.generated_by, stats=run.stats,
         lines=[_line_response(l, ctx) for l in lines],
         capacity_occupancy=occupancy,
+    )
+
+
+@router.get("/runs/{run_id}/export")
+async def export_run(
+    run_id: uuid.UUID, db: SessionDep, _: ReportDep, token: BearerToken,
+    unit: str = Query(default="t", pattern="^(kg|t)$"),
+):
+    """Production plan matrix (Product x plan_month, Demand/Available/Planned
+    rows per product) as xlsx — mirrors forecast.py's `GET .../export`
+    (openpyxl workbook built off the same per-line demand context `GET
+    /runs/{id}` renders, returned as a binary attachment). See
+    app/services/mps_export.py's docstring for the aggregation/columns.
+
+    Names resolved the same one-batched-call/degrade-to-code contract every
+    other mdm-api-backed read in this service uses (see
+    resolve_material_names' docstring) — mdm-api trouble means every product
+    row falls back to its bare material_code, never a broken export."""
+    run = await _get_run_or_404(db, run_id)
+    lines = await _load_lines(db, run.id)
+    version = await _get_version_or_404(db, run.forecast_version_id)
+    ctx = await _build_demand_context(db, version)
+    line_responses = [_line_response(l, ctx) for l in lines]
+
+    codes = {l.material_code for l in line_responses}
+    names = await resolve_material_names(token) if codes else {}
+
+    content = mps_export.build_mps_matrix_workbook(run, line_responses, unit, names)
+    filename = f"production-plan-{run.run_no}.xlsx"
+    return Response(
+        content=content,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
