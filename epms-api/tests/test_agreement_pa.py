@@ -370,3 +370,48 @@ async def test_pa_search_matches_agreement_number(admin_client, test_engine):
     r = await admin_client.get(PA_URL, params={"search": agr.number})
     assert r.status_code == 200, r.text
     assert pa["id"] in [i["id"] for i in r.json()["items"]]
+
+
+# ── Fix round 2: NEW-2 — task-chain visibility for out-of-department approvers ───
+
+async def test_agreement_pa_task_chain_visibility_across_departments(admin_client, test_engine):
+    """approval-api's dept_manager/gm_or_opm/director approval step for an
+    agreement PA routes on the PA CREATOR's own department
+    (_routing_department_id has no agreement case, falls through to
+    doc.created_by's department) — NOT the agreement's own department_id that
+    visible_agreement_subquery scopes list visibility on. Those two can
+    diverge, so a dept_manager assigned the approve_pa task for an agreement
+    PA in a DIFFERENT department must still find it in their list via the
+    task-chain fallback — exactly how PO-based PAs already work
+    (_task_chain_po_ids). Without it they'd get the task but the PA would be
+    invisible everywhere except the direct-task shortcut on GET /pa/{id}."""
+    from app.models.task import Task
+
+    agreement_dept = await _make_department(test_engine, "Agreement Home Dept")
+    approver_dept = await _make_department(test_engine, "Approver's Own Dept")
+    vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine, vendor_name="Task Chain Vendor")
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id, department_id=agreement_dept)
+    pa = await _match_and_pay(admin_client, vendor_id, agr, "90.00")
+
+    approver_client, approver_id = await _client_with_user(
+        test_engine, "dept_manager", department_id=approver_dept)
+    try:
+        # Sanity: WITHOUT a task, an out-of-department dept_manager does not see it.
+        before = await approver_client.get(PA_URL)
+        assert pa["id"] not in [i["id"] for i in before.json()["items"]]
+
+        factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as db:
+            db.add(Task(
+                type="approve_pa", priority="normal", document_type="pa",
+                document_id=uuid.UUID(pa["id"]), document_number=pa["pa_number"],
+                assigned_role="dept_manager", assigned_user_id=approver_id,
+                title="Approve PA", description="test task",
+            ))
+            await db.commit()
+
+        after = await approver_client.get(PA_URL)
+        assert pa["id"] in [i["id"] for i in after.json()["items"]]
+        assert (await approver_client.get(f"{PA_URL}/{pa['id']}")).status_code == 200
+    finally:
+        await approver_client.aclose()

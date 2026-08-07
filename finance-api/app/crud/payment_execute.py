@@ -265,7 +265,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         if pa.status != "approved":
             raise ValueError(f"Cannot pay PA in status '{pa.status}'")
         # actual kind derives from the document, not the client
-        doc_kind = "pa_dir" if pa.po_id is None else "pa"
+        doc_kind = "pa_dir" if pa.is_direct else "pa"
         pa.status = "processed"
         # Stamp the real payment date (honours a back-dated req.payment_date).
         # Dashboards read paid_at, never the onupdate-bumped updated_at.

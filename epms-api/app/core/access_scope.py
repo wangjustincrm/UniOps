@@ -66,6 +66,30 @@ def _task_chain_po_ids(user_id: uuid.UUID) -> Select:
         PaymentApplication.id.in_(_open_task_doc_ids(user_id, "pa")))
     return _open_task_doc_ids(user_id, "po").union(po_from_pa)
 
+
+def _task_chain_agreement_ids(user_id: uuid.UUID) -> Select:
+    """Agreement ids reachable from the user's open PA-approval tasks.
+
+    approval-api's `_routing_department_id` (engine.py) has no agreement case:
+    for doc_type in ("pa", "pa_dir") it only resolves a department via
+    `po_id → PurchaseOrder.pr_id → PurchaseRequest.department_id`, which is
+    always None for an agreement PA (no po_id) — so it falls straight through
+    to the routing user's OWN department, and `_routing_user_id` resolves
+    "routing user" to the PA's `created_by` whenever there is no PO/PR chain.
+    In short: an agreement PA's dept_manager/gm_or_opm/director approval step
+    routes on the PA CREATOR's department, not the agreement's own
+    `department_id` that `visible_agreement_subquery` scopes on. Those two can
+    diverge (an AP clerk in one department raising a PA against another
+    department's agreement) — without this task-chain fallback, the assigned
+    approver gets the `approve_pa` task and can open the PA directly (the
+    open-task shortcut in `is_pa_visible`), but it never appears in their PA
+    list. Mirrors `_task_chain_po_ids`, which is exactly why PO-based PAs
+    never had this hole."""
+    return select(PaymentApplication.agreement_id).where(
+        PaymentApplication.id.in_(_open_task_doc_ids(user_id, "pa")),
+        PaymentApplication.agreement_id.isnot(None),
+    )
+
 # Roles whose scope is restricted to their department / own documents.
 # Every role NOT in this set gets unrestricted visibility.
 _RESTRICTED_ROLES = {"requester", "dept_manager", "dept_admin", "gm", "opm", "supervisor", "director"}
@@ -229,6 +253,7 @@ async def _effective_permissions(
 async def visible_pr_subquery(
     db: AsyncSession,
     user: dict,
+    codes: set[str] | None = None,
 ) -> Optional[Select]:
     """Return a scalar subquery of visible PR ids, or None (= no filter = all).
 
@@ -248,10 +273,15 @@ async def visible_pr_subquery(
 
     Per-role scope is unchanged from the previous single-role branches; they
     are just OR-ed together here instead of being selected by base role.
+
+    `codes` lets `build_scope` share one `_effective_role_codes` resolution
+    with `visible_agreement_subquery` instead of each independently re-running
+    the same three queries. Pass None to resolve independently.
     """
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
-    codes = await _effective_role_codes(db, role, user_id)
+    if codes is None:
+        codes = await _effective_role_codes(db, role, user_id)
 
     # Any unrestricted role → full visibility.
     if any(c not in _RESTRICTED_ROLES for c in codes):
@@ -395,6 +425,7 @@ async def visible_po_subquery(
 async def visible_agreement_subquery(
     db: AsyncSession,
     user: dict,
+    codes: set[str] | None = None,
 ) -> Optional[Select]:
     """Return a scalar subquery of visible purchase_agreement ids, or None (=
     unrestricted).
@@ -406,23 +437,35 @@ async def visible_agreement_subquery(
     resolved straight off the agreement row instead of through a cost-center
     join:
       • any unrestricted role → None (all agreements)
+      • ALWAYS OR-ed in         → agreements of any PA the caller holds an open
+                                  approve_pa task for (see _task_chain_agreement_ids
+                                  — approval routing can diverge from the
+                                  agreement's own department)
       • requester              → agreements they created or are the named owner of
       • dept_manager/dept_admin → agreements in their own department
       • gm / opm                → agreements in their mapped departments
       • director                → agreements in their directed departments
       • supervisor               → agreements created by a direct report
-    A restricted role that matches none of the above (e.g. a bare requester who
-    neither created nor owns anything, no department) gets an always-false
-    predicate — deny by default, not an accidental fall-through to unrestricted.
+
+    `codes` lets `build_scope` resolve `_effective_role_codes` ONCE and share
+    it with `visible_pr_subquery` instead of this function re-running the same
+    three queries (user_roles / approval_dept_routing / supervisor check) a
+    second time on every PR/PO/GR/invoice/PA list or detail request. Pass None
+    to resolve independently (kept for any caller outside build_scope).
     """
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
-    codes = await _effective_role_codes(db, role, user_id)
+    if codes is None:
+        codes = await _effective_role_codes(db, role, user_id)
 
     if any(c not in _RESTRICTED_ROLES for c in codes):
         return None  # unrestricted
 
-    conds = []
+    task_agr = _task_chain_agreement_ids(user_id)
+    # task-chain is always OR-ed in, unconditional on which restricted role(s)
+    # the caller holds — mirrors visible_pr_subquery's task_pr / the PO side's
+    # task_po baked into visible_po_subquery.
+    conds = [PurchaseAgreement.id.in_(task_agr)]
     if "requester" in codes:
         conds.append(PurchaseAgreement.created_by == user_id)
         conds.append(PurchaseAgreement.owner_id == user_id)
@@ -443,9 +486,6 @@ async def visible_agreement_subquery(
     if "supervisor" in codes:
         reports = select(User.id).where(User.supervisor_id == user_id)
         conds.append(PurchaseAgreement.created_by.in_(reports))
-
-    if not conds:
-        return select(PurchaseAgreement.id).where(sa.false())
 
     return select(PurchaseAgreement.id).where(or_(*conds))
 
@@ -552,17 +592,24 @@ async def build_scope(db: AsyncSession, user: dict) -> dict:
     sourced from the Access Control Matrix (Admin Panel). Endpoints should treat
     a missing/false view_<doc> as "no list visibility" regardless of pr/po_subq.
     """
-    pr_subq = await visible_pr_subquery(db, user)
-    po_subq = await visible_po_subquery(db, user, pr_subq)
-    agr_subq = await visible_agreement_subquery(db, user)
+    role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
-    perms = await _effective_permissions(db, user.get("role", ""), user_id)
+    # Resolved ONCE here and shared with visible_pr_subquery/
+    # visible_agreement_subquery — each independently re-running
+    # _effective_role_codes would be 3 extra queries (user_roles,
+    # approval_dept_routing, supervisor check) on every PR/PO/GR/invoice/PA
+    # list or detail request, not just PA ones.
+    codes = await _effective_role_codes(db, role, user_id)
+    pr_subq = await visible_pr_subquery(db, user, codes=codes)
+    po_subq = await visible_po_subquery(db, user, pr_subq)
+    agr_subq = await visible_agreement_subquery(db, user, codes=codes)
+    perms = await _effective_permissions(db, role, user_id)
     return {
         "pr_subq":  pr_subq,
         "po_subq":  po_subq,
         "agr_subq": agr_subq,
         "user_id":  user_id,
-        "role":     user.get("role", ""),
+        "role":     role,
         "restrict": pr_subq is not None,
         "perms":    perms,
     }

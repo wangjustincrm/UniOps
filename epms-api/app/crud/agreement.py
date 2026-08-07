@@ -91,51 +91,59 @@ async def update(
     return agr
 
 
-def is_admissible(agr: PurchaseAgreement, on_date: date | None = None) -> bool:
-    """Whether NEW spend may be raised against this agreement right now — an
-    invoice match, or (Task 7) a Payment Application.
+def _admissible_predicate(today: date):
+    """The ONE place agreement admission is expressed: status == "active", OR
+    status == "expired" and still inside its grace window (Postgres
+    `date - date` is an integer day count, so `(today - valid_to) <=
+    grace_days` needs no interval construction). The grace branch exists
+    because a period's statement always arrives after the period closes — an
+    agreement expiring 8/31 still has to absorb the invoice that lands 9/3
+    (spec §5.1).
 
-    Same admission rule as `candidates_for_vendor`'s SQL predicate below:
-    status == "active", OR status == "expired" and still inside its grace
-    window. That query is a multi-row WHERE clause (can't call this function
-    per-row without breaking to Python-side filtering); this is the single-row
-    Python-side twin for call sites that already hold one loaded row (PA
-    creation). ⚠️ SIBLING COPY — keep this rule in lock-step with
-    candidates_for_vendor if either changes (see access_scope.py's
-    "SIBLING COPY" convention for the same situation elsewhere in this repo).
+    Returns a SQLAlchemy ColumnElement, not a Python bool — used directly in
+    `candidates_for_vendor`'s multi-row WHERE below AND by `is_admissible`'s
+    single-row check, so there is exactly one copy of this rule (code review
+    I-3 follow-through: an earlier round had two independent copies — this
+    SQL clause and a Python if/elif in is_admissible — that happened to agree
+    but had no structural reason to stay in sync).
+    """
+    return or_(
+        PurchaseAgreement.status == "active",
+        and_(
+            PurchaseAgreement.status == "expired",
+            (literal(today) - PurchaseAgreement.valid_to) <= PurchaseAgreement.grace_days,
+        ),
+    )
+
+
+async def is_admissible(
+    db: AsyncSession, agr: PurchaseAgreement, on_date: date | None = None
+) -> bool:
+    """Whether NEW spend may be raised against `agr` right now — an invoice
+    match, or a Payment Application (Task 7). A targeted single-row query on
+    the primary key evaluating `_admissible_predicate`, not a Python
+    re-implementation of it — `agr` may be a caller's already-loaded (and
+    potentially stale) copy; re-reading through the SAME predicate the list
+    query uses is the whole point of factoring it out.
     """
     today = on_date or date.today()
-    if agr.status == "active":
-        return True
-    if agr.status == "expired":
-        return (today - agr.valid_to).days <= agr.grace_days
-    return False
+    row = (await db.execute(
+        select(PurchaseAgreement.id).where(
+            PurchaseAgreement.id == agr.id,
+            _admissible_predicate(today),
+        )
+    )).scalar_one_or_none()
+    return row is not None
 
 
 async def candidates_for_vendor(
     db: AsyncSession, vendor_id: uuid.UUID, on_date: date | None = None
 ) -> list[PurchaseAgreement]:
-    """Agreements an invoice from this vendor may be matched against.
-
-    Admission (spec §5.1): status == "active", OR status == "expired" and today
-    is still within valid_to + grace_days. The grace branch exists because a
-    period's statement always arrives after the period closes — an agreement
-    expiring 8/31 still has to absorb the invoice that lands on 9/3.
-
-    The grace predicate is written as an integer day difference rather than an
-    interval addition: in Postgres `date - date` yields an integer number of
-    days, so `(today - valid_to) <= grace_days` needs no interval construction
-    and reads the same as the rule it encodes.
-    """
+    """Agreements an invoice from this vendor may be matched against —
+    admission per `_admissible_predicate` (spec §5.1)."""
     today = on_date or date.today()
     q = select(PurchaseAgreement).where(
         PurchaseAgreement.vendor_id == vendor_id,
-        or_(
-            PurchaseAgreement.status == "active",
-            and_(
-                PurchaseAgreement.status == "expired",
-                (literal(today) - PurchaseAgreement.valid_to) <= PurchaseAgreement.grace_days,
-            ),
-        ),
+        _admissible_predicate(today),
     ).order_by(PurchaseAgreement.number)
     return list((await db.execute(q)).scalars().all())

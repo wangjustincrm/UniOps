@@ -111,7 +111,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # The agreement itself is the PA's authorisation — it must actually be
         # approved (or still inside its post-expiry grace window) before it can
         # back a payment. Same admission rule invoices are matched under.
-        if not agr_crud.is_admissible(agr):
+        if not await agr_crud.is_admissible(db, agr):
             raise HTTPException(
                 status_code=422,
                 detail=f"Agreement {agr.number} is not active (status={agr.status}) "
