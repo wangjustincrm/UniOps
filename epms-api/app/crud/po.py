@@ -254,21 +254,38 @@ async def update_imported_details(
     """
     before: dict = {}
     after: dict = {}
+    # pydantic v2: which keys the caller's JSON body actually contained. A key
+    # present with an explicit null must clear a nullable column; a key
+    # absent from the body must leave the column untouched — those are not
+    # the same thing, and collapsing them (checking `value is None` alone)
+    # made a nullable field impossible to ever clear from the frontend.
+    fields_set = payload.model_fields_set
 
-    def _set(field: str, value) -> None:
+    def _set(field: str, value, *, nullable: bool = True) -> None:
+        if field not in fields_set:
+            return
+        if value is None and not nullable:
+            # NOT NULL column (is_prepaid) — an explicit null on the wire has
+            # no column state to map to, so it is a no-op, not a clear.
+            return
         old = getattr(po, field)
-        if value is None or old == value:
+        if old == value:
             return
         before[field] = str(old) if old is not None else None
-        after[field] = str(value)
+        after[field] = str(value) if value is not None else None
         setattr(po, field, value)
 
     for field in ("expected_delivery", "delivery_address", "incoterms",
-                  "tax_code", "buyer_notes", "is_prepaid"):
+                  "tax_code", "buyer_notes"):
         _set(field, getattr(payload, field))
+    _set("is_prepaid", payload.is_prepaid, nullable=False)
 
-    if payload.tax_rate is not None and payload.tax_rate != po.tax_rate:
+    # tax_rate is NOT NULL too (default 0), so an explicit null is likewise a
+    # no-op rather than a clear — only a present, non-null rate is applied.
+    if "tax_rate" in fields_set and payload.tax_rate is not None and payload.tax_rate != po.tax_rate:
         before["tax_rate"] = str(po.tax_rate)
+        before["tax_amount"] = str(po.tax_amount)
+        before["total"] = str(po.total)
         po.tax_rate = payload.tax_rate
         po.tax_amount = (po.subtotal * payload.tax_rate).quantize(Decimal("0.01"))
         po.total = po.subtotal + po.tax_amount
@@ -286,10 +303,11 @@ async def update_imported_details(
             # this endpoint a cross-document write primitive.
             raise ValueError(f"Line {patch.id} does not belong to PO {po.number}")
         delta: dict = {}
-        if patch.supplier_item_id is not None and line.supplier_item_id != patch.supplier_item_id:
+        line_fields_set = patch.model_fields_set
+        if "supplier_item_id" in line_fields_set and line.supplier_item_id != patch.supplier_item_id:
             delta["supplier_item_id"] = [line.supplier_item_id, patch.supplier_item_id]
             line.supplier_item_id = patch.supplier_item_id
-        if patch.sample is not None and line.sample != patch.sample:
+        if "sample" in line_fields_set and line.sample != patch.sample:
             delta["sample"] = [line.sample, patch.sample]
             line.sample = patch.sample
         if delta:
@@ -297,8 +315,12 @@ async def update_imported_details(
     if line_changes:
         after["lines"] = line_changes
 
-    # Marks the PO for nc_purchase_sync/writer.py's tax-rate guard.
-    po.buyer_edited_at = datetime.now(timezone.utc)
+    if after:
+        # Marks the PO for nc_purchase_sync/writer.py's tax-rate guard. Gated
+        # on an actual change (mirrors the caller's `if after:` audit-log
+        # gate) — a no-op save must not silently arm re-sync protection for a
+        # PO nothing was ever hand-edited on.
+        po.buyer_edited_at = datetime.now(timezone.utc)
 
     await db.flush()
     await db.refresh(po)

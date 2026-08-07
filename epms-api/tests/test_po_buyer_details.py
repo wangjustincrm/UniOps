@@ -200,7 +200,9 @@ async def test_non_nc_po_is_rejected(test_engine):
 async def test_cannot_touch_another_pos_line(test_engine):
     """Passing a line id that belongs to a different PO must be rejected AND must
     leave that line untouched. Without the ownership check this endpoint would be
-    a cross-document write primitive."""
+    a cross-document write primitive. It must also roll back header fields sent
+    in the same rejected request — a 400 that quietly wrote incoterms would be
+    a partial write masquerading as a clean rejection."""
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         await _grant_edit_imported(db)
@@ -212,6 +214,7 @@ async def test_cannot_touch_another_pos_line(test_engine):
 
     async with _client_for(officer) as c:
         r = await c.patch(_url(mine_id), json={
+            "incoterms": "X",
             "lines": [{"id": str(victim_line_id), "supplier_item_id": "STOLEN"}]})
     assert r.status_code == 400, r.text
 
@@ -220,6 +223,10 @@ async def test_cannot_touch_another_pos_line(test_engine):
             select(PoLineItem.supplier_item_id).where(PoLineItem.id == victim_line_id)
         )).scalar_one()
         assert got is None, "a rejected request must not have written the other PO's line"
+        po_incoterms = (await db.execute(
+            select(PurchaseOrder.incoterms).where(PurchaseOrder.id == mine_id)
+        )).scalar_one()
+        assert po_incoterms is None, "a rejected request must not have written header fields either"
 
 
 @pytest.mark.asyncio
@@ -255,6 +262,60 @@ async def test_locked_fields_are_unreachable(test_engine):
         assert ln.qty == Decimal("10.0000")
         assert ln.unit_price == Decimal("10.00")
         assert ln.supplier_item_id == "SKU-1"
+
+
+@pytest.mark.asyncio
+async def test_explicit_null_clears_a_field(test_engine):
+    """A key present in the body with an explicit JSON null must clear the
+    column — this is exactly what the edit page's clear button sends
+    (`incoterms || null`, etc.), so treating null the same as "not supplied"
+    made a wrongly-entered value impossible to remove."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_edit_imported(db)
+        officer = await _user(db, "erp_pa_officer")
+        po, line = await _nc_po(db, creator_id=officer.id)
+        po_id = po.id
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        r = await c.patch(_url(po_id), json={
+            "incoterms": "FOB Shanghai", "expected_delivery": "2026-09-01",
+        })
+        assert r.status_code == 200, r.text
+
+        r = await c.patch(_url(po_id), json={
+            "incoterms": None, "expected_delivery": None,
+        })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["incoterms"] is None
+    assert body["expected_delivery"] is None
+
+
+@pytest.mark.asyncio
+async def test_omitted_key_leaves_the_stored_value_untouched(test_engine):
+    """The mirror image of test_explicit_null_clears_a_field: a key that is
+    absent from the body — not sent at all — must not be confused with an
+    explicit null. Pinning both behaviours against each other is the point;
+    either one alone could pass for the wrong reason."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_edit_imported(db)
+        officer = await _user(db, "erp_pa_officer")
+        po, line = await _nc_po(db, creator_id=officer.id)
+        po_id = po.id
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        r = await c.patch(_url(po_id), json={"incoterms": "FOB Shanghai"})
+        assert r.status_code == 200, r.text
+
+        r = await c.patch(_url(po_id), json={"buyer_notes": "unrelated edit"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["incoterms"] == "FOB Shanghai"
+    assert body["buyer_notes"] == "unrelated edit"
 
 
 @pytest.mark.asyncio
