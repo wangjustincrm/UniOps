@@ -241,6 +241,64 @@ async def test_get_run_includes_capacity_occupancy(client, db_session, admin_tok
 
 
 @pytest.mark.anyio
+async def test_get_run_includes_demand_context_per_line(client, db_session, admin_token, monkeypatch):
+    """Each MPS line must carry the demand it was planned against: the gross
+    forecast for its demand_month, and the rolled-forward opening stock
+    entering that month (same numbers `compute_net_requirements` derived
+    when the run was generated -- see module docstring / mps.py's own
+    _build_demand_items). Two forecast months with partial opening stock so
+    the rollforward is actually exercised: month 1 starts with nonzero
+    opening stock and produces a net requirement anyway; month 2 starts with
+    whatever closing stock month 1 left behind."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    forecast_version = ForecastVersion(
+        version_no=f"FCV-2026-09-{uuid.uuid4().hex[:8].upper()}",
+        status="confirmed",
+        horizon_start_month="2026-09",
+        horizon_months=2,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(forecast_version)
+    await db_session.flush()
+    db_session.add_all([
+        ForecastLine(version_id=forecast_version.id, material_code="S0093", month="2026-09", qty=Decimal("100")),
+        ForecastLine(version_id=forecast_version.id, material_code="S0093", month="2026-10", qty=Decimal("100")),
+    ])
+    await db_session.commit()
+    version = {"id": str(forecast_version.id)}
+    await _factory_rule(client, headers)
+
+    from app.models.wms_inventory import WmsInventoryLot
+    # Only 30 on hand -- covers part of month 1's forecast but leaves a net
+    # requirement, and is fully consumed by month 1 (closing_stock = 0), so
+    # month 2 rolls forward with opening_stock = 0.
+    db_session.add(WmsInventoryLot(
+        warehouse_id="CANADA", material_code="S0093", lot_no="LOT-PARTIAL",
+        qty=Decimal("30"), qty_allocated=Decimal("0"), qty_onhold=Decimal("0"),
+        mapped_status="available", expiry_date=date(2027, 1, 1),
+        sync_batch_id="b1",
+    ))
+    await db_session.commit()
+
+    run = (await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+    )).json()
+    assert len(run["lines"]) == 2  # both months produce a net requirement
+
+    r = await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)
+    assert r.status_code == 200, r.text
+    lines_by_demand_month = {l["demand_month"]: l for l in r.json()["lines"]}
+
+    m1, m2 = lines_by_demand_month["2026-09"], lines_by_demand_month["2026-10"]
+    assert Decimal(m1["demand_forecast"]) == Decimal("100")
+    assert Decimal(m1["opening_stock"]) == Decimal("30")
+    assert Decimal(m2["demand_forecast"]) == Decimal("100")
+    assert Decimal(m2["opening_stock"]) == Decimal("0")
+
+
+@pytest.mark.anyio
 async def test_patch_line_marks_manual_adjusted_and_can_lock(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}

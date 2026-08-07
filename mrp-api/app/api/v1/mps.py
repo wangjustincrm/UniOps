@@ -152,6 +152,14 @@ class MpsLineResponse(BaseModel):
     locked_by_planner: bool
     manual_adjusted: bool
     status: str
+    # Demand context (design: Production Plan matrix) -- NOT ORM columns on
+    # MrpMpsLine, so `from_attributes` validation elsewhere in this module
+    # (create_run/recalculate_run/confirm_release, via `_run_detail_response`)
+    # never populates them and falls back to these defaults. Only
+    # `get_run` builds the real per-line context and constructs
+    # `MpsLineResponse` explicitly with computed values (see `_line_response`).
+    demand_forecast: Decimal = Decimal("0")
+    opening_stock: Decimal = Decimal("0")
 
     model_config = {"from_attributes": True}
 
@@ -322,6 +330,42 @@ async def _run_detail_response(db: SessionDep, run: MrpMpsRun) -> MpsRunDetailRe
     )
 
 
+async def _build_demand_context(db: SessionDep, version: ForecastVersion) -> dict[str, dict[str, tuple[Decimal, Decimal]]]:
+    """Re-derive the run's demand basis exactly as `_build_demand_items` did,
+    but keep every month's gross forecast + rolled-forward opening stock
+    (not just the positive-net-requirement ones) so `get_run` can attach
+    them to each persisted line by (material_code, demand_month). material
+    -> {month: (forecast_qty, opening_stock)}."""
+    months = _generate_months(version.horizon_start_month, version.horizon_months)
+    by_material = await _load_forecast_by_material(db, version.id, months)
+
+    ctx: dict[str, dict[str, tuple[Decimal, Decimal]]] = {}
+    for material_code, forecast_cells in by_material.items():
+        forecast_by_month = {m: forecast_cells.get(m, Decimal("0")) for m in months}
+        breakdown = await get_opening_stock_breakdown(db, material_code)
+        ctx[material_code] = {
+            row.month: (row.forecast_qty, row.opening_stock)
+            for row in compute_net_requirements(forecast_by_month, breakdown.opening_stock)
+        }
+    return ctx
+
+
+def _line_response(
+    line: MrpMpsLine, ctx: dict[str, dict[str, tuple[Decimal, Decimal]]],
+) -> MpsLineResponse:
+    demand_forecast, opening_stock = ctx.get(line.material_code, {}).get(
+        line.demand_month, (Decimal("0"), Decimal("0"))
+    )
+    return MpsLineResponse(
+        id=line.id, material_code=line.material_code, demand_month=line.demand_month,
+        plan_month=line.plan_month, qty=line.qty, is_prebuild=line.is_prebuild,
+        prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
+        capacity_gap=line.capacity_gap, locked_by_planner=line.locked_by_planner,
+        manual_adjusted=line.manual_adjusted, status=line.status,
+        demand_forecast=demand_forecast, opening_stock=opening_stock,
+    )
+
+
 async def _compute_capacity_occupancy(
     db: SessionDep, lines: list[MrpMpsLine],
 ) -> list[CapacityOccupancyMonth]:
@@ -403,12 +447,14 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     run = await _get_run_or_404(db, run_id)
     lines = await _load_lines(db, run.id)
     occupancy = await _compute_capacity_occupancy(db, lines)
+    version = await _get_version_or_404(db, run.forecast_version_id)
+    ctx = await _build_demand_context(db, version)
     return MpsRunGetResponse(
         id=run.id, run_no=run.run_no, forecast_version_id=run.forecast_version_id,
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
         status=run.status, safety_margin_fraction=run.safety_margin_fraction,
         generated_by=run.generated_by, stats=run.stats,
-        lines=[MpsLineResponse.model_validate(l) for l in lines],
+        lines=[_line_response(l, ctx) for l in lines],
         capacity_occupancy=occupancy,
     )
 
