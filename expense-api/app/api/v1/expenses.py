@@ -139,6 +139,7 @@ async def list_expenses(
     user: CurrentUserDep,
     claim_type: Annotated[str | None, Query(alias="type")] = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
+    exclude_type: Annotated[str | None, Query(alias="exclude_type")] = None,
     my_claims: bool = False,
     page: int = 1,
     page_size: Annotated[int, Query(le=100)] = 20,
@@ -146,6 +147,13 @@ async def list_expenses(
     """OA expense list — role-based visibility (PRD §B):
     All roles see their own submissions + claims in their approval queue.
     system_admin sees all.
+
+    `exclude_type` (comma-separated) drops claim types from the result. The
+    Expense Claims page sends `exclude_type=TRA`: a Travel Application shares
+    this table but is not a reimbursement (total_amount 0, never reaches the
+    payment path, and its detail route is /travel/:id) — without this it showed
+    up on both /expenses and /travel. The Travel Applications page sends
+    `type=TRA` instead and is unaffected.
     """
     from sqlalchemy import func, or_, select as sa_select
     from app.models.expense import ExpenseClaim as EC
@@ -153,6 +161,7 @@ async def list_expenses(
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
+    excluded = [t.strip() for t in exclude_type.split(",") if t.strip()] if exclude_type else []
 
     # Full visibility: system_admin (config) and ap_clerk (processes payments across all
     # claims — must keep seeing a claim after it is marked paid, not just while approved).
@@ -160,7 +169,8 @@ async def list_expenses(
         employee_id = user_id if my_claims else None
         items, total = await expense_crud.list_claims(
             db, claim_type=claim_type, status=status_filter,
-            employee_id=employee_id, page=page, page_size=page_size,
+            employee_id=employee_id, exclude_types=excluded,
+            page=page, page_size=page_size,
         )
         return ExpenseClaimListResponse(
             items=[ExpenseClaimListItem.model_validate(c) for c in items],
@@ -203,6 +213,8 @@ async def list_expenses(
     q = sa_select(EC).where(or_(*conditions))
     if claim_type:
         q = q.where(EC.claim_type == claim_type)
+    if excluded:
+        q = q.where(EC.claim_type.not_in(excluded))
     if status_filter:
         q = q.where(EC.status == status_filter)
 
