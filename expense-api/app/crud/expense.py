@@ -251,6 +251,23 @@ async def list_claims(
     return list(result.scalars().all()), total
 
 
+async def delete_claim(db: AsyncSession, claim: ExpenseClaim) -> dict[str, int]:
+    """Hard-delete a claim and everything hanging off it. The CALLER commits.
+
+    `tasks` and `approval_events` are approval-api's polymorphic tables keyed by
+    document_id with no FK to expense_claims — without an explicit purge the
+    claim vanishes while its approve task lives on in approvers' inboxes. Line
+    items, trip items, travelers, attachments and expense_approval_events go via
+    ON DELETE CASCADE.
+    """
+    from app.admin.cascade import purge_shared_refs  # local: avoids crud↔admin import cycle
+
+    refs = await purge_shared_refs(db, claim.id)
+    await db.delete(claim)
+    await db.flush()
+    return {"expense_claims": 1, **refs}
+
+
 async def count_pending(db: AsyncSession) -> int:
     result = await db.execute(
         select(func.count()).where(
