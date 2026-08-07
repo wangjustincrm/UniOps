@@ -483,7 +483,14 @@ export default function SalesForecastPage() {
       if (!el) return
       const top = el.getBoundingClientRect().top
       const available = window.innerHeight - top - GRID_BOTTOM_MARGIN
-      setGridHeight(Math.max(GRID_MIN_HEIGHT, Math.floor(available)))
+      // Fit to content, capped at the viewport — NOT "always fill the
+      // viewport". With few products the old fill-everything height left a big
+      // empty scroll area AND pushed the Outlooks panel below the fold; with
+      // many products the content exceeds `available` so it fills the viewport
+      // and scrolls internally (header + Total row stay sticky). 32 = MatrixGrid
+      // ROW_HEIGHT; +90 ≈ sticky header + totals row + borders.
+      const contentHeight = matrixRows.length * 32 + 90
+      setGridHeight(Math.max(160, Math.min(Math.floor(available), contentHeight)))
     }
     recompute()
     window.addEventListener('resize', recompute)
@@ -493,7 +500,9 @@ export default function SalesForecastPage() {
     // showing instead). This page never gets a second `data` reference for
     // the life of the mount (see gridQuery's own header comment above), so
     // this isn't a recurring re-measure trigger, just the one that matters.
-  }, [gridQuery.data])
+    // matrixRows.length is included so adding/removing (or clearing) a product
+    // re-fits the content-aware height.
+  }, [gridQuery.data, matrixRows.length])
 
   const handleGridChange = useCallback((next: CellValueMap) => {
     setLiveCells(next)
