@@ -358,3 +358,63 @@ def test_full_reload_preserves_invoice_linked_po(committed_nc_env):
     status, skipped = cur.fetchone()
     assert status == "success"
     assert skipped >= 1
+
+
+# ── buyer-edited data survives re-sync ───────────────────────────────────────
+
+def test_upsert_preserves_buyer_details_and_manual_tax(pg_cur, seeded_vendor, system_user_id):
+    """A PO whose buyer_edited_at is set keeps its hand-entered columns and its
+    hand-set tax rate. The money is re-derived from NC's new subtotal so the
+    header still satisfies subtotal + tax_amount == total."""
+    from app.services.nc_purchase_sync import writer
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "update purchase_orders set buyer_notes=%s, incoterms=%s, tax_rate=%s, "
+        "buyer_edited_at=now() where nc_source_pk='O1'",
+        ("Ship in one lot", "FOB Shanghai", Decimal("0.13")))
+    pg_cur.execute(
+        "update po_line_items set supplier_item_id=%s, sample=%s where nc_source_pk='OL1'",
+        ("SKU-9", "500 g"))
+
+    # NC re-sends the order with a bigger subtotal and its own zero tax.
+    payload["orders"][0]["subtotal"] = Decimal("200.00")
+    payload["orders"][0]["tax_rate"] = Decimal("0")
+    payload["orders"][0]["tax_amount"] = Decimal("0")
+    payload["orders"][0]["total"] = Decimal("200.00")
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "select buyer_notes, incoterms, subtotal, tax_rate, tax_amount, total "
+        "from purchase_orders where nc_source_pk='O1'")
+    notes, inco, subtotal, rate, tax_amount, total = pg_cur.fetchone()
+    assert notes == "Ship in one lot"
+    assert inco == "FOB Shanghai"
+    assert subtotal == Decimal("200.00")      # NC still owns the subtotal
+    assert rate == Decimal("0.13")            # buyer's rate survives
+    assert tax_amount == Decimal("26.00")     # re-derived off the new subtotal
+    assert total == Decimal("226.00")
+    assert subtotal + tax_amount == total
+
+    pg_cur.execute(
+        "select supplier_item_id, sample from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone() == ("SKU-9", "500 g")
+
+
+def test_upsert_takes_nc_tax_when_po_was_never_buyer_edited(pg_cur, seeded_vendor, system_user_id):
+    """Guard against over-reach: with buyer_edited_at NULL the mirror must still
+    take NC's tax verbatim, exactly as before this change."""
+    from app.services.nc_purchase_sync import writer
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    payload["orders"][0]["subtotal"] = Decimal("200.00")
+    payload["orders"][0]["tax_rate"] = Decimal("0.05")
+    payload["orders"][0]["tax_amount"] = Decimal("10.00")
+    payload["orders"][0]["total"] = Decimal("210.00")
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "select tax_rate, tax_amount, total from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone() == (Decimal("0.05"), Decimal("10.00"), Decimal("210.00"))
