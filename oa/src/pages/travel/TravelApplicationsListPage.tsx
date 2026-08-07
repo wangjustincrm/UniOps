@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Plane } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Plus, Plane, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -18,6 +19,9 @@ interface TravelApp {
   submission_date: string
   travel_destination?: string | null
   status: string
+  // Server-computed: unapproved + mine (or I am system_admin). The page holds
+  // no permission logic of its own.
+  can_delete: boolean
 }
 
 interface TravelAppList { items: TravelApp[]; total: number }
@@ -35,6 +39,10 @@ export default function TravelApplicationsListPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
 
+  const qc = useQueryClient()
+  const [pendingDelete, setPendingDelete] = useState<TravelApp | null>(null)
+  const [deleteError, setDeleteError] = useState('')
+
   const { data, isLoading } = useQuery<TravelAppList>({
     queryKey: ['travel-list', activeStatus, page, pageSize],
     queryFn: () => {
@@ -42,6 +50,18 @@ export default function TravelApplicationsListPage() {
       if (activeStatus !== 'all') qs.set('status', activeStatus)
       return api.get<TravelAppList>(`/api/v1/expenses?${qs}`)
     },
+  })
+
+  const del = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/v1/expenses/${id}`),
+    onSuccess: () => {
+      // Deleting the only row of a trailing page would otherwise strand the
+      // user on an empty page.
+      if ((data?.items.length ?? 0) === 1 && page > 1) setPage(page - 1)
+      qc.invalidateQueries({ queryKey: ['travel-list'] })
+      setPendingDelete(null)
+    },
+    onError: (e: unknown) => setDeleteError(e instanceof Error ? e.message : 'Delete failed'),
   })
 
   return (
@@ -105,6 +125,7 @@ export default function TravelApplicationsListPage() {
                 <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Destination</th>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Date</th>
                 <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Status</th>
+                <th className="px-4 py-3 text-right font-medium text-neutral-500 text-xs uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -120,6 +141,18 @@ export default function TravelApplicationsListPage() {
                   <td className="px-4 py-3 text-neutral-700">{a.travel_destination || '—'}</td>
                   <td className="px-4 py-3 text-neutral-500">{a.submission_date}</td>
                   <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
+                  <td className="px-4 py-3 text-right">
+                    {a.can_delete && (
+                      <button
+                        // The row itself navigates to the detail page.
+                        onClick={(e) => { e.stopPropagation(); setDeleteError(''); setPendingDelete(a) }}
+                        title="Delete this travel application"
+                        className="rounded-lg p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -135,6 +168,17 @@ export default function TravelApplicationsListPage() {
           />
         )}
       </div>
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title={`Delete ${pendingDelete.claim_number}?`}
+          message="This travel application and its approval history will be permanently deleted. This cannot be undone."
+          onConfirm={() => del.mutate(pendingDelete.id)}
+          onClose={() => setPendingDelete(null)}
+          loading={del.isPending}
+          error={deleteError}
+        />
+      )}
     </div>
   )
 }
