@@ -47,6 +47,7 @@ class PoLineItemResponse(BaseModel):
     description: str
     material_id: str | None
     supplier_item_id: str | None
+    sample: str | None = None
     qty: Decimal
     unit: str
     unit_price: Decimal
@@ -133,6 +134,10 @@ class PoResponse(BaseModel):
     expected_delivery: date | None
     delivery_address: str | None
     notes: str | None
+    # Buyer-supplied detail (NC-imported POs). `notes` stays NC-owned.
+    buyer_notes: str | None = None
+    incoterms: str | None = None
+    buyer_edited_at: datetime | None = None
     approval_step_idx: int
     pr_id: uuid.UUID | None
     pr_number: str | None
