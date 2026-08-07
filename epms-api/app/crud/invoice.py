@@ -1,6 +1,6 @@
 """CRUD for Invoice with 3-way match logic."""
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete as sa_delete
@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.crud import agreement as agreement_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
@@ -380,19 +381,18 @@ async def _match_to_agreement(
         raise AgreementMatchInvalid(
             "Agreement must belong to the same vendor as the invoice")
 
-    # Mirrors crud/agreement.py:candidates_for_vendor's admission rule exactly
-    # (status == active, OR expired-but-still-inside-grace) — this is the same
-    # predicate rewritten as an interval comparison instead of an integer day
-    # difference; both agree because valid_to + grace_days >= today
-    # ⟺ today - valid_to <= grace_days.
-    today = date.today()
-    in_window = agr.status == "active" or (
-        agr.status == "expired"
-        and agr.valid_to + timedelta(days=agr.grace_days or 0) >= today
-    )
-    if not in_window:
+    # One rule, one implementation. This used to be a Python rewrite of
+    # crud/agreement.py::_admissible_predicate ("same predicate as an interval
+    # comparison instead of an integer day difference"). The two agreed only
+    # because the rule was inert — status "active" short-circuited before any
+    # date was read. Now that the validity window is load-bearing (see
+    # _admissible_predicate) their date sources genuinely differ: SQL
+    # `literal(today)` evaluated server-side vs a process-local date.today().
+    # Call the predicate instead of restating it.
+    if not await agreement_crud.is_admissible(db, agr):
         raise AgreementMatchInvalid(
-            f"Agreement {agr.number} is {agr.status} and outside its grace window; "
+            f"Agreement {agr.number} is not open for new spend "
+            f"(status={agr.status}, valid to {agr.valid_to} + {agr.grace_days or 0}d grace); "
             "renew it before matching invoices to it.")
 
     # 1A: no pickup slips exist, so every agreement match settles without receipt

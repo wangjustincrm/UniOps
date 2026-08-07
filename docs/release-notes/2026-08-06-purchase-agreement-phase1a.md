@@ -44,12 +44,88 @@ approval-api) is brought up on the new image.** Follow the standard order —
 `migrate-prod.sh` first, then `docker compose up -d` — do not reorder this
 for this release.
 
+## If something fails — stop conditions and rollback
+
+**Confirm each step before starting the next. Do not batch.**
+
+1. **Before `migrate-prod.sh`** — record the current heads so you can tell what
+   actually ran:
+   ```sql
+   SELECT version_num FROM alembic_version;            -- epms-api
+   SELECT version_num FROM alembic_version_identity;   -- identity-api
+   ```
+   Take a database backup. `ag01`/`ag02` create a table and add columns; they
+   are additive and low-risk, but the identity migration writes grant rows into
+   a table an admin may also have edited by hand.
+2. **After `migrate-prod.sh`, before `docker compose up -d`** — confirm both
+   heads moved:
+   ```sql
+   SELECT version_num FROM alembic_version;            -- expect ag02_agreement_links
+   SELECT version_num FROM alembic_version_identity;   -- expect 0006_agreement_perms
+   ```
+   Confirm the columns actually exist — the head row moving is not proof the
+   DDL landed if the script was interrupted:
+   ```sql
+   \d payment_applications   -- expect agreement_id, agreement_number
+   \d invoices               -- expect agreement_id, agreement_number, match_route,
+                             --        match_route_auto, legacy_settlement,
+                             --        legacy_settlement_reason
+   ```
+   **If either head did not move, do not bring services up.** Per the deploy-order
+   section above, starting the new `finance-api` against a database without
+   `payment_applications.agreement_id` breaks AP list, payment, batches,
+   remittance and the NC AP export for **every** PA, not just agreement ones.
+
+**If `migrate-prod.sh` fails partway.** Each alembic revision runs in its own
+transaction, so a failure leaves you at the last *fully applied* revision — read
+`alembic_version` to find out which, do not assume. Never hand-edit or INSERT
+into `alembic_version` / `alembic_version_identity` to "register" a revision:
+that strands the real DDL and every later migration then runs against a schema
+that does not match what alembic believes. Fix the cause and re-run
+`migrate-prod.sh`; both new epms-api migrations are plain additive DDL and both
+identity statements are `ON CONFLICT DO NOTHING`, so re-running is safe.
+
+**If you must roll the code back after a successful migration.**
+
+> **Do NOT downgrade `ag02_agreement_links`.**
+
+The extra columns are *inert* to the previous release: nothing in the old code
+reads `agreement_id`, so leaving them in place costs nothing. Dropping them, by
+contrast, breaks the **new** finance-api instantly and irreversibly for the
+duration — and finance-api is the service most likely to still be running
+mid-rollback. The safe rollback is **code only**: redeploy the previous image
+tags and leave the schema at `ag02_agreement_links`. The same applies to
+`0006_agreement_perms` — surplus permission grants for a permission key nothing
+reads are harmless; revoking them is not, and re-running the migration later
+will not restore grants an admin has since un-ticked.
+
+Roll the schema back only if you are abandoning the feature entirely, and only
+after every service is down and confirmed on the old image.
+
+**If an agreement will not leave `submitted`.** The step-0 approver almost
+certainly cannot read it — check `epms.agreement.read` per verification step 1
+below before looking anywhere else.
+
 ## Post-deploy verification
 
 1. **Access Control**: Portal → Access Control shows **View Agreements** and
    **Create / Edit Agreements** under EPMS. Confirm the seeded grants landed —
    `procurement_officer` and `procurement_manager` should hold both
    (identity-api migration `0006_agreement_perms`).
+   **View Agreements must also be held by every role that can sit in the `agr`
+   approval chain** — `dept_manager`, `director`, `gm`, `opm` — plus
+   `requester`. `dept_manager` is step 0 of the default chain; without the read
+   grant that approver 403s on their own task deep link and no agreement can
+   ever reach `active`. Verify:
+   ```sql
+   SELECT role_code FROM role_permissions
+   WHERE permission_key = 'epms.agreement.read' ORDER BY role_code;
+   ```
+   Expect 12 rows: ap_clerk, auditor, dept_manager, director, finance_bp,
+   finance_manager, gm, opm, procurement_manager, procurement_officer,
+   requester, system_admin. (`gm_or_opm` is deliberately **not** there — it is
+   a pseudo-role the approval engine resolves into a real `gm`/`opm`, and it is
+   not a `role_defs` code, so granting it would fail the migration's FK.)
 2. **Approval workflow seed** — approval-api seeds `workflow_defs["agr"]` on
    boot; no migration writes it. Verify directly:
    ```sql
@@ -57,15 +133,17 @@ for this release.
    ```
    Expect an array of **three** steps (default: Department Manager →
    Procurement Manager → Finance Manager).
-   **Portal Admin's Approval Workflows screen will not show it.**
-   `portal/src/pages/admin/AdminPanel.tsx`'s `ActionKey` type and
-   `ACTION_KEYS` array are a hardcoded list —
-   `'pr' | 'po' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' |
-   'budget_plan' | 'vms_visit'` — and do **not** include `'agr'`. The chain is
-   live and enforced by approval-api regardless, but nobody can view or edit
-   it from Portal Admin until a line is added to that array. Confirmed by
-   reading the file, not assumed — this is a known gap, not a regression from
-   this release.
+   Portal Admin → Approval Workflows now lists **Purchase Agreement** as an
+   editable key (`portal/src/pages/admin/AdminPanel.tsx`'s `ActionKey` /
+   `ACTION_KEYS`). That listing is not cosmetic: `epms-api`'s
+   `crud/config.py::update` replaces `workflow_defs` **wholesale** (only
+   `notification_settings` is shallow-merged), so before `'agr'` was added to
+   that array, **any** workflow save from Portal Admin deleted
+   `workflow_defs.agr`. approval-api reseeded it on its next boot, but between
+   the save and that boot the SQL above returned NULL while the chain still
+   worked — a false alarm at exactly this verification step. If you see NULL
+   here on a system that has been up a while, check the Portal build actually
+   contains this fix before concluding the seed failed.
 3. **PA approval workflow step check — REQUIRED, not conditional on
    customization.** `approval-api/app/main.py`'s `seed_default_workflows()`
    writes any missing key into `company_config.workflow_defs` on **every
@@ -145,6 +223,22 @@ for this release.
 - **The not-to-exceed ceiling warns but never blocks.** Passing it is
   recorded and shown (on the agreement detail page, the match panel, and the
   PA create page) but does not disable submit/approve/match/create anywhere.
+- **The validity window, by contrast, DOES block — and it is enforced by the
+  admission predicate, not by a status field.** Nothing in the system writes
+  `expired` or `closed` (there is no scheduler in this phase; the only status
+  write is approval-api activating the agreement). So
+  `epms-api/app/crud/agreement.py::_admissible_predicate` compares dates
+  directly: an agreement admits new spend only while
+  `today <= valid_to + grace_days`, regardless of it still reading `active`.
+  Practical consequence for the cutover: **set `valid_to` far enough out to
+  cover the whole backlog**, or matching will start refusing with
+  *"not open for new spend"* while the agreement still looks active in the UI.
+  `valid_from` is deliberately not part of the test — back-dated agreements for
+  historical invoices are the point of 1A.
+  The agreement detail page's Create-PA button is a deliberately *permissive*
+  display gate (browser clock vs server clock), so it can offer a button the
+  API then refuses with a 422 that explains why. That is the intended
+  direction of the divergence.
 
 ## ⚠️ Follow-up that must not be dropped
 

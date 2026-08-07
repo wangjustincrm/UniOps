@@ -48,8 +48,15 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "budget.opening.write": ("system_admin", "finance_manager", "finance_bp"),
     "mdm.finance.write":    ("system_admin", "finance_manager", "ap_clerk"),
     "mdm.vendor.write":     ("system_admin", "vendor_manager", "finance_manager"),
+    # Byte-for-byte the same role set as identity 0006_agreement_perms._GRANTS
+    # (the two halves of one registration). Includes every role that can sit in
+    # the `agr` approval chain — without a read grant the step-0 approver 403s
+    # on GET /agreements/{id} and no agreement can ever be activated. "gm_or_opm"
+    # is deliberately absent: it is a pseudo-role resolved into gm/opm and is not
+    # a role_defs code (role_permissions.role_code FKs to it).
     "epms.agreement.read":  ("system_admin", "procurement_officer", "procurement_manager",
-                             "ap_clerk", "finance_bp", "finance_manager", "auditor"),
+                             "ap_clerk", "finance_bp", "finance_manager", "auditor",
+                             "dept_manager", "director", "gm", "opm", "requester"),
     "epms.agreement.write": ("system_admin", "procurement_officer", "procurement_manager"),
 }
 

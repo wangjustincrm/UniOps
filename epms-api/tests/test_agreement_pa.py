@@ -415,3 +415,55 @@ async def test_agreement_pa_task_chain_visibility_across_departments(admin_clien
         assert (await approver_client.get(f"{PA_URL}/{pa['id']}")).status_code == 200
     finally:
         await approver_client.aclose()
+
+
+# ── Fix round 2: S-4 — the linked invoice must have CLEARED matching ──────────
+
+async def test_agreement_pa_refused_for_invoice_still_in_match_review(admin_client, test_engine):
+    """The agreement route has no GR, so the invoice is the ONLY evidence — and
+    an invoice sitting at "match_review" has not been reviewed yet. Its
+    agreement_id is already set at that point, so the "matched to THIS
+    agreement" check alone lets a PA be raised before the reviewer answers,
+    quietly bypassing the review gate added in ebeb3f5."""
+    from tests.test_agreement_invoice_match import _delegate_client
+
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    delegate_client, delegate_id = await _delegate_client(test_engine)
+    try:
+        await admin_client.post(f"/api/v1/invoices/{inv['id']}/assign-match",
+                                json={"user_id": str(delegate_id)})
+        r = await delegate_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
+            "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "match_review"
+    finally:
+        await delegate_client.aclose()
+
+    r = await admin_client.post(PA_URL, json={
+        "title": "Paying an unreviewed statement", "agreement_id": str(agr.id),
+        "invoice_ids": [inv["id"]],
+        "subtotal": "1000.00", "tax_amount": "0.00", "payment_amount": "1000.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "1000.00", "line_total": "1000.00"}],
+    })
+    assert r.status_code == 422, r.text
+    assert "not cleared for payment" in r.text
+
+    # …and once the review is approved the same request goes through, proving
+    # the gate is the review state and not something incidental.
+    r2 = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match-review",
+                                 json={"action": "approve", "note": "ok"})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["status"] == "matched"
+
+    r3 = await admin_client.post(PA_URL, json={
+        "title": "Paying a reviewed statement", "agreement_id": str(agr.id),
+        "invoice_ids": [inv["id"]],
+        "subtotal": "1000.00", "tax_amount": "0.00", "payment_amount": "1000.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "1000.00", "line_total": "1000.00"}],
+    })
+    assert r3.status_code == 201, r3.text

@@ -27,12 +27,33 @@ _KEYS = {
     "epms.agreement.write": ("epms", "Create / Edit Agreements", 105),
 }
 
-# Read: everyone already in the procurement/AP chain. Write: the roles that
-# already hold epms.po.write, plus procurement_manager who owns the terms.
+# Read: everyone already in the procurement/AP chain, PLUS every role an admin
+# can put in the `agr` approval chain, PLUS requester.
+#
+# The approval roles are not optional. The seeded default `agr` chain is
+# dept_manager -> procurement_manager -> finance_manager (approval-api
+# crud/engine.py::_WORKFLOW_DEFAULTS), and GET /agreements/{id} is gated on
+# epms.agreement.read (epms-api api/v1/agreements.py::AgrReadDep). Without a
+# read grant the step-0 approver 403s on their own approve_agr task deep link
+# and the nav entry is hidden, so no agreement can ever reach `active` and the
+# invoice-match candidate pool stays permanently empty. director / gm / opm are
+# included because an admin may configure any of them into the chain from
+# Portal Admin without touching this table.
+#
+# requester is included so access_scope.visible_agreement_subquery's
+# created_by / owner_id branches are reachable at all — an agreement's named
+# owner is frequently a plain requester, and the read gate runs BEFORE scoping.
+#
+# NOTE: the chain's "gm_or_opm" is a PSEUDO-role resolved at task-assignment
+# time into a real `gm` or `opm` (approval-api crud/engine.py::_resolve_gm_or_opm);
+# it is NOT a role_defs code, and role_permissions.role_code is a FK to
+# role_defs.code (identity 0002_authz_tables), so inserting it here would abort
+# the migration with a ForeignKeyViolation. Grant the two real roles instead.
 _GRANTS = {
     "epms.agreement.read": (
         "system_admin", "procurement_officer", "procurement_manager",
         "ap_clerk", "finance_bp", "finance_manager", "auditor",
+        "dept_manager", "director", "gm", "opm", "requester",
     ),
     "epms.agreement.write": (
         "system_admin", "procurement_officer", "procurement_manager",

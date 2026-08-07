@@ -635,3 +635,112 @@ async def test_agreement_match_review_reject_releases_consumed_amount(admin_clie
         fresh = (await db.execute(select(PurchaseAgreement).where(
             PurchaseAgreement.id == agr.id))).scalar_one()
     assert fresh.consumed_amount == Decimal("0")
+
+
+async def test_agreement_match_review_approve_keeps_link_and_consumed(admin_client, test_engine):
+    """Mirror of the reject test above — the side that must NOT clean up.
+
+    review_match()'s reject branch detaches agreement_id and releases
+    consumed_amount. Nothing asserted the approve side leaves both standing, so
+    an over-eager "clean up whenever the review ends" refactor would sail
+    through: the invoice would come out matched but with no agreement link, its
+    spend silently released from the NTE ceiling and its PA route gone. This
+    test is that guard."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    delegate_client, delegate_id = await _delegate_client(test_engine)
+    try:
+        await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
+                                json={"user_id": str(delegate_id)})
+        r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
+            "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "match_review"
+    finally:
+        await delegate_client.aclose()
+
+    r2 = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={
+        "action": "approve", "note": "statement checked against the paper slips"})
+    assert r2.status_code == 200, r2.text
+    body = r2.json()
+    assert body["status"] == "matched"
+    assert body["agreement_id"] == str(agr.id)
+    assert body["agreement_number"] == agr.number
+    assert body["match_route"] == "agreement"
+    assert body["legacy_settlement"] is True
+    assert body["legacy_settlement_reason"] == "backlog"
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+    assert fresh.consumed_amount == Decimal("1000.00")
+
+
+# ── The validity window is enforced by dates, not by a status ────────────────
+#
+# Nothing in this codebase ever writes "expired" or "closed": the only status
+# write anywhere is approval-api engine._post_approve_agr setting "active",
+# AgreementUpdate has no status field, and there is no scheduler. The tests
+# above therefore only proved the window worked for a status that never
+# occurs in production. These prove it for the status that DOES.
+
+async def test_active_agreement_past_grace_is_not_a_candidate(admin_client, test_engine):
+    """status still reads "active" (nothing ever changes it) but the window has
+    closed — the candidate pool must refuse it anyway. Before the window was
+    folded into the admission predicate this agreement was admissible forever,
+    which is precisely the permanently-open PO this feature replaces."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id,
+        status="active",
+        valid_from=date.today() - timedelta(days=400),
+        valid_to=date.today() - timedelta(days=60),
+        grace_days=30,
+    )
+    inv = await _upload_invoice(admin_client, vendor_id)
+    ids = [i["id"] for i in (await admin_client.get(
+        f"{INV_URL}/{inv['id']}/agreement-candidates")).json()["items"]]
+    assert str(agr.id) not in ids
+
+
+async def test_active_agreement_inside_grace_is_still_a_candidate(admin_client, test_engine):
+    """The boundary the other way: past valid_to but inside grace_days stays in
+    the pool, so the month's statement that lands after the period closes can
+    still be matched (spec §5.1 / E7)."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id,
+        status="active",
+        valid_from=date.today() - timedelta(days=400),
+        valid_to=date.today() - timedelta(days=5),
+        grace_days=30,
+    )
+    inv = await _upload_invoice(admin_client, vendor_id)
+    ids = [i["id"] for i in (await admin_client.get(
+        f"{INV_URL}/{inv['id']}/agreement-candidates")).json()["items"]]
+    assert str(agr.id) in ids
+
+
+async def test_match_refused_against_active_agreement_past_grace(admin_client, test_engine):
+    """The candidate pool is a list; this is the enforcing gate. crud/invoice.py's
+    agreement branch calls agreement_crud.is_admissible rather than restating
+    the rule, so it must refuse the same row the pool omits."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id,
+        status="active",
+        valid_from=date.today() - timedelta(days=400),
+        valid_to=date.today() - timedelta(days=60),
+        grace_days=30,
+    )
+    inv = await _upload_invoice(admin_client, vendor_id, amount="500.00")
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id),
+        "legacy_settlement_reason": "backlog statement",
+    })
+    assert r.status_code == 422, r.text
+    assert "not open for new spend" in r.text

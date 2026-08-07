@@ -52,12 +52,22 @@ const INVOICE_STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutr
   paid: { label: 'Paid', variant: 'neutral' },
 }
 
-// Mirrors epms-api/app/crud/agreement.py::_admissible_predicate — the ONE rule
-// for whether new spend (an invoice match, or a PA) may be raised against this
-// agreement right now: active, or expired but still within its grace window.
-// UI-only gate for the Create PA button below; the backend re-checks
-// independently on POST /pa (agr_crud.is_admissible), so an off-by-one here
-// (timezone rounding) only costs an extra click, never a bad write.
+// DELIBERATELY LOOSER than the backend rule, and only safe because of that.
+//
+// The authority is epms-api/app/crud/agreement.py::_admissible_predicate, which
+// requires status in (active, expired) AND today <= valid_to + grace_days. This
+// copy skips the date test for 'active' — it cannot be made to agree, because
+// its inputs differ: the backend compares Postgres-server dates, this compares
+// the browser's local clock against a UTC-parsed valid_to. Any attempt at parity
+// would drift by a day per timezone and start HIDING the button on agreements
+// the backend would happily accept.
+//
+// So this is a permissive-only display gate for the Create PA button: it may
+// show the button when the backend will refuse (the user gets a 422 explaining
+// why), and must never hide it when the backend would allow. POST /pa re-checks
+// independently via agr_crud.is_admissible, which is the enforcing copy. Do not
+// "fix" the divergence by tightening this — tighten it and you silently strand
+// legitimate spend at a timezone boundary.
 function isAgreementAdmissible(agreement: ApiAgreement): boolean {
   if (agreement.status === 'active') return true
   if (agreement.status !== 'expired') return false

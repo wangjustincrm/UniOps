@@ -133,21 +133,27 @@ export default function AgreementEditPage() {
     try {
       await updateAgreement.mutateAsync({
         id: id!,
+        // Cleared fields must go out as explicit `null`, NOT `undefined`.
+        // JSON.stringify drops undefined keys, and the backend uses
+        // model_dump(exclude_unset=True) — so an undefined here means "don't
+        // touch", and clearing Not-to-Exceed / tax code / department / owner
+        // appeared to save while keeping the old value. All these columns are
+        // nullable. PoEditPage sends null for the same reason.
         body: {
           title,
-          contract_no: contractNo || undefined,
-          contact_email: contactEmail || undefined,
-          vendor_reference: vendorReference || undefined,
+          contract_no: contractNo || null,
+          contact_email: contactEmail || null,
+          vendor_reference: vendorReference || null,
           valid_from: validFrom,
           valid_to: validTo,
           grace_days: graceDays,
-          not_to_exceed: notToExceed ? Number(notToExceed) : undefined,
-          tax_code: taxCode ?? undefined,
-          tax_rate: taxRate ?? undefined,
-          department_id: departmentId || undefined,
-          budget_code: budgetCode || undefined,
-          owner_id: selectedOwner?.id || undefined,
-          notes: notes || undefined,
+          not_to_exceed: notToExceed ? Number(notToExceed) : null,
+          tax_code: taxCode ?? null,
+          tax_rate: taxRate ?? null,
+          department_id: departmentId || null,
+          budget_code: budgetCode || null,
+          owner_id: selectedOwner?.id || null,
+          notes: notes || null,
         },
       })
       if (andSubmit) {

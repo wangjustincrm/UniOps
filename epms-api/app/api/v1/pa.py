@@ -32,6 +32,13 @@ router = APIRouter(prefix="/pa", tags=["payment-applications"])
 
 PaWriteDep = Annotated[dict, Depends(require_permission("epms.pa.write"))]
 
+# Invoice statuses that may back an agreement PA. Invoice statuses are
+# unmatched | matched | match_review | exception | approved | paid
+# (app/models/invoice.py). "match_review" is deliberately EXCLUDED: the
+# agreement route's review gate would otherwise be bypassable by raising the PA
+# before the reviewer answers. "paid" is excluded because it is already settled.
+_PAYABLE_INVOICE_STATUSES = ("matched", "approved")
+
 
 @router.get("", response_model=PaListResponse)
 async def list_pas(
@@ -129,7 +136,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # Every listed invoice must actually be matched to THIS agreement —
         # otherwise a PA could pay an unrelated invoice off an approved ceiling.
         rows = (await db.execute(
-            select(Invoice.id, Invoice.agreement_id)
+            select(Invoice.id, Invoice.internal_ref, Invoice.agreement_id, Invoice.status)
             .where(Invoice.id.in_(body.invoice_ids))
         )).all()
         if len(rows) != len(set(body.invoice_ids)):
@@ -139,6 +146,22 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
             raise HTTPException(
                 status_code=422,
                 detail=f"Invoice(s) not matched to agreement {agr.number}: {', '.join(stray)}")
+        # …and each must have CLEARED matching. The link alone is not enough:
+        # an invoice matched by a delegate sits at "match_review" with its
+        # agreement_id already set, so without this check the AP review gate
+        # (commit ebeb3f5) is bypassable simply by raising the PA before the
+        # review is answered. On the PO route the GR is independent evidence;
+        # here the invoice IS the only evidence, so its review state is the
+        # control. "exception"/"unmatched" are excluded for the same reason.
+        not_ready = [
+            f"{r.internal_ref} ({r.status})"
+            for r in rows if r.status not in _PAYABLE_INVOICE_STATUSES
+        ]
+        if not_ready:
+            raise HTTPException(
+                status_code=422,
+                detail="Invoice(s) not cleared for payment — a matched, reviewed "
+                       f"invoice is required: {', '.join(not_ready)}")
         # 收货闸门不适用:协议路线定义上就没有 GR(1A 无 pickup slip,1B 才有)。
         created = await pa_crud.create(
             db, body,

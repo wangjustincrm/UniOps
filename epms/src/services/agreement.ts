@@ -67,21 +67,27 @@ export interface CreateAgreementBody {
   notes?: string
 }
 
+// PATCH /agreements/{id} applies `model_dump(exclude_unset=True)`, so an
+// omitted key leaves the stored value alone and an explicit `null` clears the
+// column. Every optional field here is therefore `| null`: the edit form has to
+// be able to CLEAR Not-to-Exceed / tax code / department / owner, and sending
+// `undefined` (which JSON.stringify drops) silently kept the old value. Same
+// convention PoEditPage already follows for tax_code.
 export interface UpdateAgreementBody {
   title?: string
-  contract_no?: string
-  contact_email?: string
-  vendor_reference?: string
+  contract_no?: string | null
+  contact_email?: string | null
+  vendor_reference?: string | null
   valid_from?: string
   valid_to?: string
   grace_days?: number
-  not_to_exceed?: number
+  not_to_exceed?: number | null
   tax_code?: string | null
   tax_rate?: number | null
-  department_id?: string
-  budget_code?: string
-  owner_id?: string
-  notes?: string
+  department_id?: string | null
+  budget_code?: string | null
+  owner_id?: string | null
+  notes?: string | null
 }
 
 export interface AgreementActionBody {

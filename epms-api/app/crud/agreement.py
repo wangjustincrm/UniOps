@@ -92,27 +92,51 @@ async def update(
 
 
 def _admissible_predicate(today: date):
-    """The ONE place agreement admission is expressed: status == "active", OR
-    status == "expired" and still inside its grace window (Postgres
-    `date - date` is an integer day count, so `(today - valid_to) <=
-    grace_days` needs no interval construction). The grace branch exists
-    because a period's statement always arrives after the period closes — an
-    agreement expiring 8/31 still has to absorb the invoice that lands 9/3
-    (spec §5.1).
+    """The ONE place agreement admission is expressed: the agreement has been
+    approved (status "active", or "expired") AND today is still inside
+    `valid_to + grace_days`. Postgres `date - date` is an integer day count,
+    so `(today - valid_to) <= grace_days` needs no interval construction.
+
+    ⚠️ 有效期是在这里生效的,不靠任何后台任务。 The date test deliberately
+    applies to "active" too, not just "expired". Nothing in this codebase ever
+    writes "expired" or "closed" — the only status write anywhere is
+    approval-api engine._post_approve_agr setting "active", AgreementUpdate
+    has no status field, and there is no scheduler. An earlier form of this
+    predicate admitted `status == "active"` unconditionally, which meant
+    valid_to and grace_days had no effect on anything: approving an agreement
+    produced a permanently open authorisation. With the NTE ceiling being
+    warn-only by explicit user decision (spec §7 control #2), that left the
+    feature with no enforced limit at all — exactly the "permanently open PO"
+    it exists to replace, while the spec rates validity a *strong* control
+    (§5.1, §7 control #3). Folding the comparison in here enforces the window
+    on every read path with no background job to deploy, monitor or backfill.
+
+    The "expired" arm is retained rather than collapsed into a status-blind
+    date test so that a future sweeper CAN still mark agreements expired (for
+    reporting / list filters) without changing admission semantics — but
+    admissibility never *depends* on a status nothing writes. Statuses that
+    are not approvals of spend (draft / in_review / closed / cancelled) stay
+    out regardless of dates.
+
+    The grace window exists because a period's statement always arrives after
+    the period closes — an agreement expiring 8/31 still has to absorb the
+    invoice that lands 9/3 (spec §5.1, E7).
+
+    `valid_from` is intentionally NOT part of the test: 1A exists to clear a
+    backlog of already-issued invoices against a back-dated agreement, and the
+    approval chain — not the calendar — is what authorises the start.
 
     Returns a SQLAlchemy ColumnElement, not a Python bool — used directly in
     `candidates_for_vendor`'s multi-row WHERE below AND by `is_admissible`'s
     single-row check, so there is exactly one copy of this rule (code review
     I-3 follow-through: an earlier round had two independent copies — this
     SQL clause and a Python if/elif in is_admissible — that happened to agree
-    but had no structural reason to stay in sync).
+    but had no structural reason to stay in sync). crud/invoice.py's agreement
+    match branch calls is_admissible() for the same reason.
     """
-    return or_(
-        PurchaseAgreement.status == "active",
-        and_(
-            PurchaseAgreement.status == "expired",
-            (literal(today) - PurchaseAgreement.valid_to) <= PurchaseAgreement.grace_days,
-        ),
+    return and_(
+        PurchaseAgreement.status.in_(("active", "expired")),
+        (literal(today) - PurchaseAgreement.valid_to) <= PurchaseAgreement.grace_days,
     )
 
 
