@@ -384,11 +384,21 @@ the import after a later FULL RELOAD only adds new credits — the
 
 ### 7.3 Vendor mapping — the hard part
 
-**There is no QBO-vendor → `business_partners` mapping anywhere in `main`.**
-`QboVendor` is referenced only by the generic list route (`api/v1/qbo.py:87`), and
-the `business_partners` mirror (`models/mirrors.py:74`) has no QBO column. The
-mapping used by the unmerged `feature/qbo-vendor-remittance-email` branch
-(`60dae4a`) is not available here. This import must build its own.
+**Correction (2026-08-07): a QBO-vendor → `business_partners` matcher DOES exist on
+`main`.** The earlier claim here — that the only such logic lived on the unmerged
+`feature/qbo-vendor-remittance-email` branch — was wrong. `POST /qbo/vendor-emails/backfill`
+(`api/v1/qbo.py`, shipped in `54c039e`) already matches on
+`lower(trim(business_partners.name)) == lower(trim(qbo_vendors.display_name))`, and its
+docstring states the same discipline this design settled on independently: *"ambiguous names
+on either side are skipped and reported, never guessed."*
+
+Phase C must **reuse that normalisation and its ambiguity handling** rather than invent a
+second one. Note what it already gets right and must be preserved: it buckets BOTH sides by
+the normalised key, and treats a key with more than one candidate on **either** side as
+ambiguous — a one-directional lookup would silently pick the first of several same-named
+partners. What Phase C adds on top is persistence of the human decision
+(`qbo_vendor_map`), the employee/ignore classification, and the fact that a match only
+pre-fills — it never auto-applies.
 
 The QBO vendor list is a **superset** of EPMS vendors and mixes three populations:
 
