@@ -31,6 +31,8 @@ export interface MpsLine {
   demand_month: string // 'YYYY-MM'
   plan_month: string // 'YYYY-MM'
   qty: string // Decimal-as-string
+  demand_forecast: string // Decimal-as-string
+  opening_stock: string // Decimal-as-string
   is_prebuild: boolean
   prebuild_reason: string | null
   shelf_life_ok: boolean
@@ -104,4 +106,9 @@ export const mpsApi = {
   /** Materializes non-gap lines into mrp_demands and flips the run to
    *  'released' (immutable from then on). 409s if already released. */
   confirmRelease: (runId: string) => api.post<MpsRunDetail>(`/mps/runs/${runId}/confirm-release`, {}),
+
+  /** xlsx blob (unit converts qty columns kg<->t server-side) — caller (T5)
+   *  hands this to forecastApi's `saveBlob` pattern to trigger a download. */
+  exportRun: (runId: string, unit: 'kg' | 't') =>
+    api.getBlob(`/mps/runs/${runId}/export?unit=${unit}`),
 }
