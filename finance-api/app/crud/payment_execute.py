@@ -358,10 +358,16 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             # dropped from both reports while AP and bank still move — the
             # balance sheet then reports "balanced": false by exactly this
             # amount on every credited payment. Only the trial balance shows it
-            # (as "(unmapped)"). Seeding this role is precedent (see
-            # alembic/versions/0013_accounts_receivable.py seeding
-            # accounts_receivable/revenue/output_tax) but is pending a business
-            # decision on which GL account holds vendor credits pending.
+            # (as "(unmapped)"). Seeded by alembic/versions/
+            # 0032_vendor_credit_clearing_mapping.py to account 1123
+            # "Advance to suppliers" (existing IFRS asset account, no new NC
+            # account): an unapplied vendor credit is money the supplier owes
+            # us, so it belongs there until the credit note itself is booked.
+            # That migration guards on 1123 existing (COA is NC-synced and a
+            # given environment may not have it yet) — if it does not, the
+            # role stays unmapped and this line's account_code stays NULL,
+            # which is exactly the tolerated-but-visible-in-trial-balance
+            # state described above, not a payment blocker.
             posting_lines.append({
                 "line_role": "vendor_credit_clearing", "credit": credit_applied,
                 "partner_id": pa.vendor_id, "partner_name": pa.vendor_name,

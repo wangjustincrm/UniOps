@@ -496,11 +496,14 @@ async def test_pa_path_with_po_id_nets_the_same_as_pa_dir(db_session):
 
 
 async def _posting_lines(db, event_id):
+    """(debit, credit, account_code) per line_role. account_code is a third
+    element appended after debit/credit — existing callers indexing [0]/[1]
+    are unaffected."""
     rows = (await db.execute(sa.text(
-        "SELECT line_role, debit, credit FROM posting_lines "
+        "SELECT line_role, debit, credit, account_code FROM posting_lines "
         "WHERE event_id = :e ORDER BY line_role"
     ), {"e": str(event_id)})).all()
-    return {r[0]: (r[1], r[2]) for r in rows}
+    return {r[0]: (r[1], r[2], r[3]) for r in rows}
 
 
 @pytest.mark.anyio
@@ -518,8 +521,8 @@ async def test_voucher_splits_the_credit_side(db_session):
     assert lines["accounts_payable"][0] == Decimal("100.00")   # debit gross
     assert lines["bank"][1] == Decimal("70.00")                # credit net cash
     assert lines["vendor_credit_clearing"][1] == Decimal("30.00")
-    debits = sum(d or Decimal("0") for d, _ in lines.values())
-    credits = sum(c or Decimal("0") for _, c in lines.values())
+    debits = sum(d or Decimal("0") for d, _, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c, _ in lines.values())
     assert debits == credits
 
 
@@ -555,8 +558,8 @@ async def test_partial_payment_posts_the_amount_actually_paid(db_session):
     assert set(lines) == {"accounts_payable", "bank"}
     assert lines["accounts_payable"][0] == Decimal("40.00")
     assert lines["bank"][1] == Decimal("40.00")
-    debits = sum(d or Decimal("0") for d, _ in lines.values())
-    credits = sum(c or Decimal("0") for _, c in lines.values())
+    debits = sum(d or Decimal("0") for d, _, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c, _ in lines.values())
     assert debits == credits
 
 
@@ -583,8 +586,12 @@ async def test_credit_side_sums_to_debit_including_clearing_line(db_session):
     # The clearing line must itself exist with the expected credit amount —
     # not merely inferred from the totals matching. debit is NOT NULL
     # server_default 0 (app/models/posting.py), never None, for a
-    # credit-only line.
-    assert lines["vendor_credit_clearing"] == (Decimal("0.00"), Decimal("30.00"))
+    # credit-only line. account_code is None here because this test's fresh
+    # migration run finds no chart_of_accounts row for '1123' (the local
+    # dev/test IFRS seed does not carry it — see
+    # test_clearing_mapping_seeds_and_stamps_when_account_1123_present for
+    # the case where it is present).
+    assert lines["vendor_credit_clearing"] == (Decimal("0.00"), Decimal("30.00"), None)
 
     debit_total = lines["accounts_payable"][0]
     credit_total = lines["bank"][1] + lines["vendor_credit_clearing"][1]
@@ -612,8 +619,8 @@ async def test_voucher_when_credit_fully_covers_the_payment(db_session):
     assert "bank" not in lines
     assert lines["accounts_payable"][0] == Decimal("30.00")
     assert lines["vendor_credit_clearing"][1] == Decimal("30.00")
-    debits = sum(d or Decimal("0") for d, _ in lines.values())
-    credits = sum(c or Decimal("0") for _, c in lines.values())
+    debits = sum(d or Decimal("0") for d, _, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c, _ in lines.values())
     assert debits == credits
 
 
@@ -637,6 +644,101 @@ async def test_voucher_for_partial_payment_with_credit_applied(db_session):
     assert lines["accounts_payable"][0] == Decimal("40.00")     # base, not payment_amount
     assert lines["bank"][1] == Decimal("25.00")                 # net = base - credit_applied
     assert lines["vendor_credit_clearing"][1] == Decimal("15.00")
-    debits = sum(d or Decimal("0") for d, _ in lines.values())
-    credits = sum(c or Decimal("0") for _, c in lines.values())
+    debits = sum(d or Decimal("0") for d, _, _ in lines.values())
+    credits = sum(c or Decimal("0") for _, c, _ in lines.values())
     assert debits == credits
+
+
+# The guarded, idempotent INSERT from alembic/versions/
+# 0032_vendor_credit_clearing_mapping.py's upgrade() — kept as a literal
+# copy here (not imported: alembic version modules use op.execute(), which
+# needs an alembic Operations/MigrationContext bound to the connection, not
+# a plain AsyncSession) so these two tests can exercise its exact SQL under
+# both guard conditions without invoking alembic from a test. The migration
+# itself binds :id unqualified (fine under alembic's sync psycopg2 driver,
+# same as the 0007_purchase_expense_mapping precedent) — CAST(:id AS uuid)
+# is added only here because this test runs it over asyncpg, which (unlike
+# psycopg2) requires an explicit cast for a bound str against a uuid column
+# in an INSERT ... SELECT list.
+_SEED_VENDOR_CREDIT_CLEARING_MAPPING = sa.text(
+    "INSERT INTO account_mappings (id, mapping_type, source_code, account_code) "
+    "SELECT CAST(:id AS uuid), 'line_role', 'vendor_credit_clearing', '1123' "
+    "WHERE EXISTS (SELECT 1 FROM chart_of_accounts WHERE code = '1123') "
+    "ON CONFLICT (mapping_type, source_code) DO NOTHING"
+)
+
+
+async def _vendor_credit_clearing_mapping_account_code(db):
+    row = (await db.execute(sa.text(
+        "SELECT account_code FROM account_mappings "
+        "WHERE mapping_type='line_role' AND source_code='vendor_credit_clearing'"
+    ))).first()
+    return row[0] if row else None
+
+
+@pytest.mark.anyio
+async def test_clearing_mapping_absent_when_account_1123_not_seeded(db_session):
+    """Pins the guard's negative branch against the REAL migration outcome —
+    not a simulation. db_session rebuilds this database from scratch via
+    `alembic upgrade head` on every test (tests/conftest.py's _migrate()),
+    and this repo's local dev/test IFRS seed (migration 0005) does not carry
+    account 1123 — so 0032's guarded INSERT is correctly a no-op here, same
+    as it would be in any environment before its first NC COA sync. A
+    credited payment must still succeed, with account_code left NULL on the
+    clearing line (Finding 1's 'does not block payment' contract)."""
+    assert await _vendor_credit_clearing_mapping_account_code(db_session) is None
+
+    pa = _pa(payment_amount=Decimal("50.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("20.00"),
+                           total_amount=Decimal("20.00"),
+                           remaining_amount=Decimal("20.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    lines = await _posting_lines(db_session, res.posting_event_id)
+    assert lines["vendor_credit_clearing"][2] is None   # account_code
+
+
+@pytest.mark.anyio
+async def test_clearing_mapping_seeds_and_stamps_when_account_1123_present(db_session):
+    """The environment this migration is written for: the COA has been
+    NC-synced to include 1123 'Advance to suppliers' (this repo's local
+    dev/test seed does not carry it — see the sibling
+    test_clearing_mapping_absent_when_account_1123_not_seeded for that real,
+    unmodified state). Seeds chart_of_accounts with 1123 here to reproduce
+    that environment, then replays 0032's exact guarded INSERT to prove:
+    (1) it seeds the mapping with account_code='1123' once the account
+    exists, (2) it is idempotent — replaying it a second time raises nothing
+    and leaves exactly one row, and (3) _stamp_account_codes then stamps
+    that code onto a credited payment's clearing line, which is the
+    assertion that actually closes the balance-sheet hole Finding 1 raised
+    (an account_code the balance-sheet/income-statement builders can find,
+    not just a row in account_mappings)."""
+    from app.models.coa import ChartOfAccount
+    db_session.add(ChartOfAccount(
+        code="1123", name="Advance to Suppliers", account_type="asset",
+        normal_balance="debit",
+    ))
+    await db_session.flush()
+
+    await db_session.execute(_SEED_VENDOR_CREDIT_CLEARING_MAPPING.bindparams(id=str(uuid.uuid4())))
+    await db_session.execute(_SEED_VENDOR_CREDIT_CLEARING_MAPPING.bindparams(id=str(uuid.uuid4())))
+    await db_session.flush()
+
+    rows = (await db_session.execute(sa.text(
+        "SELECT account_code FROM account_mappings "
+        "WHERE mapping_type='line_role' AND source_code='vendor_credit_clearing'"
+    ))).all()
+    assert [r[0] for r in rows] == ["1123"]   # exactly one row — ON CONFLICT DO NOTHING held
+
+    pa = _pa(payment_amount=Decimal("50.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("20.00"),
+                           total_amount=Decimal("20.00"),
+                           remaining_amount=Decimal("20.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    lines = await _posting_lines(db_session, res.posting_event_id)
+    assert lines["vendor_credit_clearing"][2] == "1123"   # account_code stamped by _stamp_account_codes
