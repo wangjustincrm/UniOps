@@ -31,7 +31,11 @@
 - **Overlay UI** (dropdowns, popovers) must `createPortal` to `document.body` with `position: fixed` to escape `overflow` clipping.
 - **Commit per task.** Do not push; the user approves pushes separately.
 
-- **Test env (corrected 2026-08-07 — the value written below in older task bodies is wrong).** The local Postgres container `uniops_postgres` runs on `localhost:5432` with user **`epms`**, password **`7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9`**, DB `epms_test` (approval-api: `approval_test`). Any task step showing `POSTGRES_USER=uniops` or `<local docker pw>` is stale — use these values.
+- **Test env (corrected 2026-08-07 — the value written below in older task bodies is wrong).** The local Postgres container `uniops_postgres` runs on `localhost:5432` with user **`epms`**, DB `epms_test` (approval-api: `approval_test`). Any task step showing `POSTGRES_USER=uniops` is stale — the user is `epms`. Read the password from the running container rather than hardcoding it anywhere:
+  ```bash
+  docker exec uniops_postgres env | grep POSTGRES_PASSWORD
+  ```
+  Never paste a credential into a tracked file.
 - **Baseline confirmed 2026-08-07:** epms-api full suite = **69 failed, 542 passed** (11m08s). approval-api = 53 passed.
 - **⚠️ Do NOT use the `seeded_vendor` / `system_user_id` conftest fixtures in these tests.** They insert through `pg_cur`, a **separate psycopg2 connection whose transaction is never committed**, so rows are invisible to the async ORM session and to API calls — you get `ForeignKeyViolationError` or a 404 "Vendor not found". (`seeded_vendor` also returns a **tuple `(id, name)`**, not a dict, so `seeded_vendor["id"]` raises `TypeError`.) Confirmed empirically during Task 1. Every test body in Tasks 2, 5, 6, and 7 that references `seeded_vendor["id"]` or `system_user_id` must instead seed through the async session using this helper, which Task 2 adds to `epms-api/tests/test_agreements.py` and later tasks import:
 
