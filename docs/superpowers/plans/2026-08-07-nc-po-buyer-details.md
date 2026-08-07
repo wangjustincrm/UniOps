@@ -22,6 +22,15 @@
 - **Do not modify `epms/src/components/pr/PrLineItems.tsx`** or `epms/src/types/index.ts`'s `PrLineItem`. Four pages consume them; this feature uses its own component.
 - **Do not modify `_generate_po_pdf_background()` in `epms-api/app/api/v1/po.py`.** The approval-path PDF flow stays exactly as it is.
 - **Editable scope is `source == 'nc'` AND `status == 'issued'`.** `closed` and `nc_milk` stay read-only. Never widen this.
+- **Never `git stash`.** Baselines are recorded below; measuring one by stashing risks losing uncommitted work.
+- **Never run the dev Docker stack.** Its bind mounts are relative to the invoking directory and the running containers belong to other worktrees; starting or restarting it would disrupt another branch's environment and would not show this branch's code.
+
+### Recorded baselines
+
+Measured on this worktree at the branch point (`d57578d`, before any task ran):
+
+- **epms-api full suite** (`python -m pytest tests -q`, >10 min): see `.superpowers/sdd/2026-08-07-nc-po-buyer-details/baseline-epms-api.txt` for the summary line. Compare against that file, never against a number quoted from another branch or session.
+- **epms frontend** (`npx tsc -p tsconfig.app.json`): measured in Task 6 Step 1 and recorded there; every later frontend task compares against it.
 
 ### Standard commands
 
@@ -917,7 +926,7 @@ python -m pytest tests/test_po.py tests/test_po_search.py tests/test_po_pa_filte
                  tests/test_nc_source_field.py tests/test_pa_on_behalf_authz.py -v
 ```
 
-Expected: same pass/fail counts as on the commit before this task. Measure that baseline first by running the same command with the working tree stashed, or by reading the counts you recorded in Task 1 Step 8 — do not assume zero failures; this suite carries a pre-existing failure population.
+Expected: same pass/fail counts as the branch-point baseline recorded in **Global Constraints → Recorded baselines**. Do not assume zero failures — this suite carries a pre-existing failure population. **Never `git stash` to measure a baseline**; the recorded numbers exist precisely so you never have to.
 
 - [ ] **Step 8: Commit**
 
@@ -1932,9 +1941,13 @@ npm run lint 2>&1 | tail -20
 
 Expected: the Task 6 Step 1 baseline, no new lint errors.
 
-- [ ] **Step 6: Manual UI check**
+- [ ] **Step 6: Hand the manual UI check to the human partner**
 
-There is no frontend test runner, so this step is the only functional verification of the UI. Bring up the dev stack and check, in order:
+**Do not attempt to run the dev stack.** `docker-compose.dev.yml` bind-mounts `./epms-api` and `./epms` **relative to whatever directory compose was invoked from**, and the containers currently running were started from other checkouts (`uniops_epms_api` ← `C:\Project\uniops-mrp-phase0`, `uniops_epms_frontend` ← `C:\Project\uniops`). Pointing a browser at `localhost:5173` therefore exercises *someone else's code*, and re-pointing the stack at this worktree would disrupt another branch's running environment.
+
+Instead, write the checklist below into the task report verbatim so the human partner can run it after the branch is merged or deployed to a dev environment built from this branch. Mark this step complete once the checklist is in the report — and state plainly in the report that the UI was **not** functionally verified by you.
+
+Checklist to hand over:
 
 1. Log in as a user holding `erp_pa_officer` (or `system_admin`).
 2. Open an NC-imported PO with `status = 'issued'` — the **Edit Details** button must be visible.
@@ -1943,8 +1956,6 @@ There is no frontend test runner, so this step is the only functional verificati
 5. From Edit Details: confirm Vendor, Currency, Title, Budget Code and every line quantity/price render as text with no input; only Supplier Item ID, Sample and the header fields accept input.
 6. Fill in Incoterms, Buyer Notes, one Supplier Item ID and one Sample, then Save. Confirm it returns to the detail page, the values show there, and the attachment list has a fresh `<PO number>.pdf`.
 7. Download that PDF and confirm it shows the Sample column, an Incoterms line, and the Buyer Notes block — with Incoterms **above** Buyer Notes, and no `[NC …]` marker anywhere.
-
-Record what you actually saw for each of the seven points. Do not report this task complete on a subset.
 
 - [ ] **Step 7: Full backend regression sweep**
 
@@ -1955,7 +1966,7 @@ POSTGRES_PASSWORD=<DB_PASSWORD> POSTGRES_DB=epms JWT_SECRET_KEY=test-secret-key 
 python -m pytest tests -q 2>&1 | tail -15
 ```
 
-Compare the failure count against the count on `main` measured the same way. **Measure that baseline yourself** — this suite carries a large pre-existing failure population and the number drifts; do not compare against a number quoted from another branch or another session.
+Compare against **Global Constraints → Recorded baselines**. This suite carries a large pre-existing failure population and takes over 10 minutes; run it once, in the foreground, and read the summary line. **Never `git stash`.**
 
 - [ ] **Step 8: Commit**
 
