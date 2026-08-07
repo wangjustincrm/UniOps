@@ -35,7 +35,7 @@
 
 approval-api 的审批引擎会写入两类不代表"真人在这一步点了批准"的事件，必须区分：
 
-- `comment` 以 `Auto-skipped` 开头 —— 该步骤被跳过（部门无 Director、配置的 Supervisor
+- `comment` 含 `Auto-skipped` —— 该步骤被跳过（部门无 Director、配置的 Supervisor
   失效等），`actor_id` 是提交人而非审批人。**必须排除**，否则申请人会被误列为审批人。
 - `comment` 为 `Auto-approved (same approver holds both roles)` —— 真人一人兼两个角色，
   引擎自动带过后续步骤。**必须保留**，该人会以两个不同角色各出现一行。
@@ -44,7 +44,7 @@ approval-api 的审批引擎会写入两类不代表"真人在这一步点了批
 
 ### 2.4 GR 的 UUID 兜底缺陷
 
-`app/crud/gr.py` 有 5 处形如 `payload.received_by or str(created_by)` /
+`app/crud/gr.py` 有 6 处形如 `payload.received_by or str(created_by)` /
 `req.acknowledged_by or str(actor_id)` 的兜底。浏览器路径会传 `user?.name`（真实姓名），
 但非浏览器路径（NC 导入、PMS 导入、Teams 审批、直接调 API）不传，于是**把 UUID 字符串
 存进了姓名字段**，PDF 上就会印出一串 UUID。
@@ -122,7 +122,7 @@ or acknowledged_by`，否则一张两个字符串字段都为空的 GR 会连 Cr
 
 ### 3.4 GR UUID 兜底修复
 
-`app/crud/gr.py` 5 处兜底改为先查 `users.full_name`，查不到才回落 UUID 字符串：
+`app/crud/gr.py` 6 处兜底改为先查 `users.full_name`，查不到才回落 UUID 字符串：
 
 ```python
 gr.acknowledged_by = req.acknowledged_by or await _user_name(db, actor_id) or str(actor_id)
