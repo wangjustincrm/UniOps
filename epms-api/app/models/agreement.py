@@ -56,7 +56,9 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
 
-    # draft | in_review | active | expired | closed | cancelled
+    # draft | in_review | returned | active | expired | closed | cancelled
+    # "returned" is produced by the approval engine on a return action (see
+    # approval-api/app/crud/engine.py "agr" entry) — EDITABLE_STATUSES accepts it.
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="draft", index=True)
     approval_step_idx: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 

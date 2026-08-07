@@ -5,15 +5,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.authz import require_permission
-from app.core.deps import SessionDep
+from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import agreement as agr_crud
 from app.crud import vendor as vendor_crud
 from app.schemas.agreement import (
+    AgreementActionRequest,
     AgreementCreate,
     AgreementListResponse,
     AgreementResponse,
     AgreementUpdate,
 )
+from app.services.approval_client import delegate_action
 
 router = APIRouter(prefix="/agreements", tags=["purchase-agreements"])
 
@@ -72,3 +74,28 @@ async def update_agreement(
                    "Changing terms after approval requires a new approval round.",
         )
     return await agr_crud.update(db, agr, body)
+
+
+@router.post("/{agreement_id}/action", response_model=AgreementResponse)
+async def agreement_action(
+    agreement_id: uuid.UUID,
+    body: AgreementActionRequest,
+    db: SessionDep,
+    user: CurrentUserPayload,
+    token: BearerToken,
+):
+    # Gated by the open approval task, not by epms.agreement.write — approval
+    # authority comes from the approval engine, mirroring po.py::po_action.
+    agr = await agr_crud.get_by_id(db, agreement_id)
+    if agr is None:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    try:
+        await delegate_action("agr", str(agreement_id), body.action, body.comment, token)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    await db.refresh(agr)
+    return agr

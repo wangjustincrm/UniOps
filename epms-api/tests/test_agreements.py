@@ -177,3 +177,26 @@ async def test_patch_agreement_only_in_draft(admin_client, test_engine):
 
     blocked = await admin_client.patch(f"{AGR_URL}/{created['id']}", json={"title": "Nope"})
     assert blocked.status_code == 409
+
+
+async def test_agreement_action_endpoint_delegates(admin_client, test_engine, monkeypatch):
+    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(vendor_id))).json()
+
+    calls = []
+
+    async def _fake_delegate(doc_type, doc_id, action, comment, token):
+        calls.append((doc_type, doc_id, action))
+        return {"status": "in_review", "step_idx": 1}
+
+    monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
+
+    r = await admin_client.post(f"{AGR_URL}/{created['id']}/action",
+                                json={"action": "submit", "comment": None})
+    assert r.status_code == 200, r.text
+    assert calls == [("agr", created["id"], "submit")]
+
+
+async def test_agreement_action_unknown_id_404(admin_client):
+    r = await admin_client.post(f"{AGR_URL}/{uuid.uuid4()}/action", json={"action": "submit"})
+    assert r.status_code == 404
