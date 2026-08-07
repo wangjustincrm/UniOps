@@ -27,10 +27,10 @@
 
 ### Recorded baselines
 
-Measured on this worktree at the branch point (`d57578d`, before any task ran):
-
-- **epms-api full suite** (`python -m pytest tests -q`, >10 min): see `.superpowers/sdd/2026-08-07-nc-po-buyer-details/baseline-epms-api.txt` for the summary line. Compare against that file, never against a number quoted from another branch or session.
+- **epms-api full suite** (`python -m pytest tests -q`): **not measured at the branch point.** An attempt was abandoned because the whole repo shares ONE `epms_test` database and the run collided with a task's own tests. The full-suite comparison therefore happens once, in Task 9 Step 7, run strictly serially with nothing else touching the database. Task-level verification uses the named test files only.
 - **epms frontend** (`npx tsc -p tsconfig.app.json`): measured in Task 6 Step 1 and recorded there; every later frontend task compares against it.
+
+**Test-database concurrency is the hard rule here:** every epms-api test run in this repo — any task, any baseline, any spot check — targets the same `epms_test` database. Only one may run at a time. Never start one in the background and then start another.
 
 ### Standard commands
 
