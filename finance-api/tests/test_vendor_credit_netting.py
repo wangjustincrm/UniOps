@@ -661,15 +661,17 @@ async def test_voucher_for_partial_payment_with_credit_applied(db_session):
 # copy here (not imported: alembic version modules use op.execute(), which
 # needs an alembic Operations/MigrationContext bound to the connection, not
 # a plain AsyncSession) so these two tests can exercise its exact SQL under
-# both guard conditions without invoking alembic from a test. The migration
-# itself binds :id unqualified (fine under alembic's sync psycopg2 driver,
-# same as the 0007_purchase_expense_mapping precedent) — CAST(:id AS uuid)
-# is added only here because this test runs it over asyncpg, which (unlike
-# psycopg2) requires an explicit cast for a bound str against a uuid column
-# in an INSERT ... SELECT list.
+# both guard conditions without invoking alembic from a test. This service's
+# alembic/env.py builds its engine with create_async_engine — alembic runs
+# under asyncpg here in every environment, test and production alike, same
+# as this test. The migration binds a uuid.UUID object (`id=uuid.uuid4()`);
+# SQLAlchemy infers a bind parameter's type from the Python value, so a UUID
+# object types correctly against the uuid column with no CAST needed. This
+# test binds uuid.uuid4() the same way, so the SQL below is now a genuinely
+# literal copy of the migration's — no CAST, no divergence.
 _SEED_VENDOR_CREDIT_CLEARING_MAPPING = sa.text(
     "INSERT INTO account_mappings (id, mapping_type, source_code, account_code) "
-    "SELECT CAST(:id AS uuid), 'line_role', 'vendor_credit_clearing', '1123' "
+    "SELECT :id, 'line_role', 'vendor_credit_clearing', '1123' "
     "WHERE EXISTS (SELECT 1 FROM chart_of_accounts WHERE code = '1123') "
     "ON CONFLICT (mapping_type, source_code) DO NOTHING"
 )
@@ -729,8 +731,8 @@ async def test_clearing_mapping_seeds_and_stamps_when_account_1123_present(db_se
     ))
     await db_session.flush()
 
-    await db_session.execute(_SEED_VENDOR_CREDIT_CLEARING_MAPPING.bindparams(id=str(uuid.uuid4())))
-    await db_session.execute(_SEED_VENDOR_CREDIT_CLEARING_MAPPING.bindparams(id=str(uuid.uuid4())))
+    await db_session.execute(_SEED_VENDOR_CREDIT_CLEARING_MAPPING.bindparams(id=uuid.uuid4()))
+    await db_session.execute(_SEED_VENDOR_CREDIT_CLEARING_MAPPING.bindparams(id=uuid.uuid4()))
     await db_session.flush()
 
     rows = (await db_session.execute(sa.text(

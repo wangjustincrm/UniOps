@@ -280,10 +280,26 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
     const creditable = lines.filter((ln) => ln.doc_kind === 'pa' || ln.doc_kind === 'pa_dir')
     if (creditable.length === 0) return
     let cancelled = false
-    void Promise.all(
+    // allSettled, not all: one line's suggestCredits failing must not blank
+    // the whole panel — the lines that did resolve should still render their
+    // FIFO preview. A doc missing from `suggestions` just falls back to the
+    // server's automatic default at execute time (safe), but the operator
+    // still needs to be told the preview is incomplete, or they might read
+    // "no panel" as "no credits" — hence the flash on any failure.
+    void Promise.allSettled(
       creditable.map(async (ln) => [ln.doc_id, await suggestCredits(ln.doc_kind, ln.doc_id)] as const),
-    ).then((entries) => {
-      if (!cancelled) setSuggestions(Object.fromEntries(entries))
+    ).then((results) => {
+      if (cancelled) return
+      const entries: Array<readonly [string, CreditSuggestResponse]> = []
+      let failed = 0
+      for (const r of results) {
+        if (r.status === 'fulfilled') entries.push(r.value)
+        else failed++
+      }
+      setSuggestions(Object.fromEntries(entries))
+      if (failed > 0) {
+        onError(`Could not load the vendor-credit preview for ${failed} of ${creditable.length} line(s) — the automatic default will still apply when you execute.`)
+      }
     })
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
