@@ -655,14 +655,26 @@ export function MatrixGrid({
         </ConfirmDialog>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-neutral-200">
-        <div
-          ref={scrollRef}
-          onScroll={onScroll}
-          className="overflow-y-auto"
-          style={{ height, maxWidth: '100%' }}
-        >
-          <table className="min-w-full border-collapse text-xs" aria-describedby={report ? `${gridId}-report` : undefined}>
+      {/* Single scroll container for BOTH axes — deliberately not the earlier
+          "overflow-x-auto wrapper around an overflow-y-auto inner div" split.
+          Setting only one axis's overflow to a non-visible value forces the
+          UA to compute the OTHER axis as `auto` too (CSS overflow spec), so
+          that split silently produced two independent scroll containers —
+          each becoming the "nearest scrolling ancestor" for a different
+          axis of position:sticky. That's what broke the sticky thead/tfoot/
+          first-column: their containing block for sticky offsets became
+          ambiguous between the two nested containers. One container with
+          both axes explicit removes the ambiguity, so thead's `top-0`,
+          tfoot's `bottom-0`, and the first column's `left-0` all stick
+          relative to the same, single scrollport (see the follow-up brief,
+          "Lock the header + Total row and scroll within the page"). */}
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="overflow-x-auto overflow-y-auto rounded-lg border border-neutral-200"
+        style={{ height, maxWidth: '100%' }}
+      >
+        <table className="min-w-full border-collapse text-xs" aria-describedby={report ? `${gridId}-report` : undefined}>
             <thead className="sticky top-0 z-20 bg-neutral-50">
               <tr>
                 <th className="sticky left-0 z-30 bg-neutral-50 border-b border-r border-neutral-200 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600 min-w-32">
@@ -778,7 +790,6 @@ export function MatrixGrid({
               </tr>
             </tfoot>
           </table>
-        </div>
       </div>
     </div>
   )
