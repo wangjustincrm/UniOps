@@ -457,6 +457,26 @@ async def match(
     if req.agreement_id is not None:
         return await _match_to_agreement(db, invoice, req, matched_by)
 
+    # Symmetric cleanup for the agreement→PO direction (code review finding,
+    # 2026-08-07): _match_to_agreement above clears every PO field on a route
+    # switch; this is the mirror image. Without it an invoice moved back to
+    # the PO route would keep pointing at a stale agreement — inflating that
+    # agreement's NTE/consumed_amount with an invoice it no longer backs,
+    # while ALSO carrying PO fields. Currently unreachable through the API
+    # (POST /match 409s on an already-"matched" invoice — which every
+    # agreement match produces — and PATCH's rematch path only fires when
+    # po_id/gr_ids are already set, neither true for an agreement invoice),
+    # but crud.match() must hold this invariant regardless of which future
+    # caller reaches it; 1B is expected to open exactly this gate.
+    previous_agreement_id = invoice.agreement_id
+    if previous_agreement_id is not None:
+        invoice.agreement_id = None
+        invoice.agreement_number = None
+        invoice.legacy_settlement = False
+        invoice.legacy_settlement_reason = None
+    invoice.match_route = "po"
+    invoice.match_route_auto = False
+
     now = datetime.now(timezone.utc)
     allocs = await _normalize_allocations(invoice, req)
 
@@ -670,6 +690,11 @@ async def match(
 
     await db.flush()
     await db.refresh(invoice)
+    if previous_agreement_id is not None:
+        # This invoice no longer counts against the agreement it used to
+        # settle against — release it, same as the agreement branch does when
+        # moving between two agreements.
+        await _recompute_consumed(db, previous_agreement_id)
     return invoice
 
 
@@ -795,6 +820,15 @@ async def update(db: AsyncSession, invoice: Invoice, payload: InvoiceUpdate) -> 
         await _apply_gr_selection(db, invoice, list(payload.gr_ids))
     invoice.total_amount = invoice.amount + invoice.tax_amount
     await db.flush()
+    # Agreement route: total_amount can change here (amount/tax edit) on an
+    # already-"matched" agreement invoice without ever going back through
+    # match() — rematch_from_existing below only fires when po_id or gr_ids
+    # are already set, neither of which an agreement invoice carries. Without
+    # this, consumed_amount silently drifts from the edited total and both the
+    # NTE warning and the progress bar under-report (code review finding,
+    # 2026-08-07).
+    if invoice.agreement_id is not None:
+        await _recompute_consumed(db, invoice.agreement_id)
     await db.refresh(invoice)
     return invoice
 
@@ -834,6 +868,7 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
             "Only unmatched or exception invoices may be deleted."
         )
     po_id = invoice.po_id
+    agreement_id = invoice.agreement_id
     await db.delete(invoice)
     await db.flush()
     # If this was the last invoice keeping a create_pa task alive for its PO,
@@ -841,6 +876,14 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
     if po_id is not None:
         from app.crud.task import _complete_orphan_create_pa_tasks
         await _complete_orphan_create_pa_tasks(db, po_id)
+    # Agreement route: the FK (purchase_agreements.id ← invoices.agreement_id)
+    # is ondelete="RESTRICT" on the AGREEMENT side only — it blocks deleting
+    # the agreement while invoices reference it, it does NOT block deleting
+    # the invoice. A hard-deleted invoice must not leave the agreement's
+    # consumed_amount permanently inflated by a row that no longer exists
+    # (code review finding, 2026-08-07).
+    if agreement_id is not None:
+        await _recompute_consumed(db, agreement_id)
 
 
 # ── Status update ──────────────────────────────────────────────────────────────
