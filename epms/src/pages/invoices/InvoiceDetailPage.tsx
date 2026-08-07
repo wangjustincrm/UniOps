@@ -253,6 +253,10 @@ export default function InvoiceDetailPage() {
   const varianceAbs = Math.abs(Number(inv.variance ?? 0))
   const variancePctAbs = Math.abs(Number(inv.variance_pct ?? 0))
   const hasException = inv.status === 'exception'
+  // Agreement route (Phase 1A): no PO/GR, so the PO-vs-GR-vs-Invoice 3-way
+  // table doesn't apply — there is nothing to reconcile against but the
+  // agreement itself.
+  const isAgreementRoute = inv.match_route === 'agreement'
 
   const tabs = [
     { key: 'details' as const, label: 'Invoice Details' },
@@ -293,7 +297,7 @@ export default function InvoiceDetailPage() {
             (isAp || inv.uploaded_by === user?.id || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)) && (
             <Button size="sm" className="gap-1.5" onClick={() => setShowMatchPanel((v) => !v)}>
               <GitMerge className="h-3.5 w-3.5" />
-              Match to PO
+              Match Invoice
             </Button>
           )}
           {isAp && !!inv && (inv.status === 'unmatched' || inv.status === 'exception') && !editing && (
@@ -469,6 +473,29 @@ export default function InvoiceDetailPage() {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Linked Documents</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(() => {
+                    // Agreement route (Phase 1A): the PO slot shows the agreement
+                    // instead — there is no PO on this route at all.
+                    if (inv.match_route === 'agreement' && inv.agreement_id) {
+                      return (
+                        <div className="col-span-2 rounded-lg border border-neutral-200 px-3 py-2.5 flex flex-col gap-1.5">
+                          <p className="text-xs text-neutral-400">Agreement</p>
+                          <Link
+                            to={`/agreements/${inv.agreement_id}`}
+                            className="text-sm font-mono font-medium text-primary-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            {inv.agreement_number ?? inv.agreement_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
+                          </Link>
+                          {inv.legacy_settlement && (
+                            <div className="flex flex-col gap-1 pt-1">
+                              <Badge variant="warning" className="self-start">Settled without receipt</Badge>
+                              {inv.legacy_settlement_reason && (
+                                <p className="text-xs text-neutral-500">{inv.legacy_settlement_reason}</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    }
                     const linkedPos = Array.from(
                       new Map(
                         (inv.allocations ?? []).map((a) => [a.po_id, a.po_number ?? a.po_id.slice(0, 8)]),
@@ -500,7 +527,7 @@ export default function InvoiceDetailPage() {
                       </div>
                     )
                   })()}
-                  {gr ? (
+                  {inv.match_route === 'agreement' ? null : gr ? (
                     <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2.5">
                       <div>
                         <p className="text-xs text-neutral-400">Goods Receipt</p>
@@ -878,6 +905,41 @@ export default function InvoiceDetailPage() {
                   <p className="text-xs text-neutral-400">Go to the Unmatched Queue to link this invoice to a PO</p>
                   <Link to="/invoices"><Button variant="secondary" size="sm">Go to Unmatched Queue</Button></Link>
                 </div>
+              ) : isAgreementRoute ? (
+                <div className="rounded-xl border border-success-200 bg-success-50 p-5 flex flex-col gap-3">
+                  <div className="flex items-center gap-4">
+                    <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-semibold text-success-700">
+                        Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)} — settled without receipt evidence
+                      </p>
+                      {inv.matched_at && (
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-neutral-500">
+                    This is the agreement route (Phase 1A): no PO or goods receipt exists to reconcile against, so there
+                    is no 3-way match here. Amounts are paid in full from the agreement in lieu of a PO/GR check.
+                  </p>
+                  {inv.legacy_settlement && (
+                    <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 flex flex-col gap-1">
+                      <Badge variant="warning" className="self-start">Settled without receipt</Badge>
+                      {inv.legacy_settlement_reason && (
+                        <p className="text-xs text-warning-800">{inv.legacy_settlement_reason}</p>
+                      )}
+                    </div>
+                  )}
+                  {inv.agreement_id && (
+                    <Link to={`/agreements/${inv.agreement_id}`}>
+                      <Button variant="secondary" size="sm" className="self-start gap-1.5">
+                        View Agreement <ExternalLink className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  )}
+                </div>
               ) : (
                 <>
                   {/* Summary row */}
@@ -1031,7 +1093,9 @@ export default function InvoiceDetailPage() {
                   inv.matched_at && {
                     date: inv.matched_at,
                     actor: inv.matched_by_name ?? 'System',
-                    action: `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
+                    action: isAgreementRoute
+                      ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — settled without receipt evidence`
+                      : `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
                     color: hasException ? 'bg-danger-600' : 'bg-success-600',
                   },
                   {

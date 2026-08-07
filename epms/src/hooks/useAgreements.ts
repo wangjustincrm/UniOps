@@ -6,6 +6,7 @@ import {
   type UpdateAgreementBody,
   type AgreementActionBody,
 } from '@/services/agreement'
+import { invoiceService } from '@/services/invoices'
 
 // Without explicit page/page_size the caller wants the complete list, so we
 // page through the API (server defaults to 20 rows and silently truncates).
@@ -14,6 +15,19 @@ export function useAgreements(filters?: AgreementFilters) {
   return useQuery({
     queryKey: ['agreements', filters],
     queryFn: () => (paged ? agreementService.list(filters) : agreementService.listAll(filters)),
+  })
+}
+
+// Agreement candidates for a given invoice (same vendor, admission window) —
+// backs the Agreements tab in MatchPanel. Task 9: no client-side filtering on
+// top of what the server returns, per the brief — the server's admission
+// window rule is authoritative.
+export function useAgreementCandidates(invoiceId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['invoices', invoiceId, 'agreement-candidates'],
+    queryFn: () => invoiceService.agreementCandidates(invoiceId),
+    enabled: Boolean(invoiceId) && enabled,
+    staleTime: 30_000,
   })
 }
 

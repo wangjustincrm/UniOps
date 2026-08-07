@@ -28,7 +28,7 @@ import { AssignMatchDialog } from './AssignMatchDialog'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
-// offered the "Match to PO" action — the backend would 403.
+// offered the "Match Invoice" action (PO or Agreement route) — the backend would 403.
 const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
 
 // PO statuses an invoice can be matched/allocated against.
@@ -1031,7 +1031,7 @@ function UnmatchedTab() {
                               onClick={() => { setDeletingId(null); setExpandedId(expandedId === inv.id ? null : inv.id) }}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors"
                             >
-                              Match to PO
+                              Match Invoice
                               {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                             </button>
                           )}

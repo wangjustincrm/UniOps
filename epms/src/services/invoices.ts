@@ -1,5 +1,6 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiPo } from '@/services/po'
+import type { AgreementListResponse } from '@/services/agreement'
 
 export interface InvoiceLineItem {
   id?:          string
@@ -64,6 +65,11 @@ export interface ApiInvoice {
   // Agreement route (house-account / no-PO matching) — Phase 1A only.
   agreement_id?: string | null
   agreement_number?: string | null
+  // Which route this invoice was matched through. Only ever written as "po" or
+  // "agreement" by the backend (epms-api/app/crud/invoice.py) — null before
+  // any match. Not the same as `status`; a PO-route invoice keeps match_route
+  // "po" even after review/exception handling.
+  match_route?: 'po' | 'agreement' | null
   // 1A has no receipt evidence at all: every agreement match is flagged and
   // must carry a reason. This is the escape-hatch health metric Finance watches.
   legacy_settlement?: boolean
@@ -132,6 +138,12 @@ export interface MatchInvoiceBody {
   gr_ids?:       string[]
   po_line_ids?:  string[]
   reference_po_id?: string
+  // Agreement route (Phase 1A) — takes priority over every PO field on the
+  // backend when set (epms-api/app/schemas/invoice.py InvoiceMatchRequest).
+  // legacy_settlement_reason is mandatory in practice: a blank/whitespace-only
+  // value is rejected server-side with 422.
+  agreement_id?: string
+  legacy_settlement_reason?: string
 }
 
 export interface ResolveExceptionBody {
@@ -178,6 +190,13 @@ export const invoiceService = {
   // assignees without related PRs still see them.
   matchCandidates: (id: string) =>
     api.get<{ items: ApiPo[]; total: number }>(`/invoices/${id}/match-candidates`),
+
+  // Candidate agreements for the agreement route (same vendor, inside the
+  // admission window — active, or expired-but-within-grace). Authorized
+  // identically to matchCandidates, NOT by a generic agreement scope. The
+  // server's admission window is the rule — do not filter further client-side.
+  agreementCandidates: (id: string) =>
+    api.get<AgreementListResponse>(`/invoices/${id}/agreement-candidates`),
 
   // Assignee bounces the match assignment back to the assigner (note required).
   declineMatch: (id: string, note: string) =>
