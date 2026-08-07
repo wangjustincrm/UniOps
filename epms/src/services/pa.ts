@@ -66,6 +66,13 @@ export interface ApiPa {
   // checks need the real type).
   po_id: string | null
   po_number: string | null
+  // Agreement-sourced PAs (Phase 1A) carry these instead — both null for a
+  // PO-sourced PA. Mirrors PaResponse.agreement_id/agreement_number
+  // (epms-api/app/schemas/pa.py) — added when the agreement create route
+  // (Task 10) needed to distinguish "this PA belongs to my agreement" from
+  // the po_id/po_number pair, which the backend leaves null on this route.
+  agreement_id?: string | null
+  agreement_number?: string | null
   invoice_ids: string[]
   prepayment_pct?: number
   expected_settlement_date?: string
@@ -97,7 +104,12 @@ export interface CreatePaBody {
   other_charges_note?: string
   vendor_id: string
   vendor_name: string
-  po_id: string
+  // Exactly one of po_id / agreement_id must be set — the backend 422s on a
+  // body with neither or both (PaCreate._exactly_one_source in
+  // epms-api/app/schemas/pa.py). The agreement route (Task 10) has no PO,
+  // no GR, and no receipt-override fields — none of those apply there.
+  po_id?: string
+  agreement_id?: string
   invoice_ids?: string[]
   gr_ids?: string[]
   prepayment_pa_id?: string
@@ -109,6 +121,7 @@ export interface CreatePaBody {
   notes?: string
   // Receipt gate — set when a non-prepayment PA is submitted without a matched,
   // GR-backed invoice. Requires pa_override_receipt permission; backend re-checks.
+  // Never sent on the agreement route (no receipt gate exists there).
   receipt_override?: boolean
   receipt_override_reason?: string | null
 }

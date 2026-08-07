@@ -5,6 +5,7 @@ import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { StatusBadge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useCreatePa, usePas, usePa } from '@/hooks/usePas'
 import { paService } from '@/services/pa'
@@ -12,8 +13,73 @@ import { usePos } from '@/hooks/usePos'
 import { useAuthStore } from '@/stores/auth.store'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useGrs } from '@/hooks/useGrs'
+import { useAgreement } from '@/hooks/useAgreements'
 import { useRolePermissions } from '@/hooks/useConfig'
 import type { ApiPo } from '@/services/po'
+import type { ApiInvoice } from '@/services/invoices'
+import type { DocumentStatus } from '@/types'
+
+// Invoice multi-select list — shared by the PO route (all invoices for the PO)
+// and the agreement route (matched-but-unpaid invoices only). A row already
+// claimed by another open PA (`lockedIds`) renders disabled with a tag, same
+// convention on both routes.
+function InvoiceSelectList({
+  invoices, selectedIds, lockedIds, onToggle,
+}: {
+  invoices: ApiInvoice[]
+  selectedIds: Set<string>
+  lockedIds: Set<string>
+  onToggle: (id: string) => void
+}) {
+  return (
+    <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
+      {invoices.map((inv) => {
+        const isLocked = lockedIds.has(inv.id)
+        return (
+          <label
+            key={inv.id}
+            className={cn(
+              'flex items-center gap-3 px-4 py-3 transition-colors',
+              isLocked
+                ? 'cursor-not-allowed bg-neutral-50 opacity-60'
+                : 'cursor-pointer hover:bg-primary-50',
+              !isLocked && selectedIds.has(inv.id) && 'bg-primary-50'
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={selectedIds.has(inv.id)}
+              onChange={() => !isLocked && onToggle(inv.id)}
+              disabled={isLocked}
+              className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600 disabled:opacity-50"
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="font-mono text-xs font-semibold text-primary-700">{inv.internal_ref}</span>
+                  {isLocked && (
+                    <span className="shrink-0 inline-flex items-center rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
+                      Already in PA
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
+              </div>
+              <div className="text-xs text-neutral-500 mt-0.5">
+                #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · <span className="capitalize">{inv.status}</span>
+              </div>
+              <div className="flex items-center gap-3 mt-1 text-[11px] text-neutral-400">
+                <span>Pre-tax <span className="font-mono text-neutral-600">{formatAmount(inv.amount, inv.currency)}</span></span>
+                <span className="text-neutral-200">·</span>
+                <span>Tax <span className="font-mono text-neutral-600">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
+              </div>
+            </div>
+          </label>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function PaCreatePage() {
   const replaceTab = useReplaceTab(epmsRoutes)
@@ -27,6 +93,16 @@ export default function PaCreatePage() {
   const settleFromId = searchParams.get('settleFrom') ?? ''
   const lockedFromSettle = Boolean(settleFromId)
   const { data: sourcePrepay } = usePa(settleFromId)
+
+  // ── Agreement mode ──────────────────────────────────────────────────────────
+  // Deep-linked from the agreement detail page or an agreement-matched invoice:
+  // ?agreement_id=<agreement>. No PO, no GR, no receipt gate/override on this
+  // route — the agreement is the authorization and the linked invoice(s) are
+  // the only evidence of real spend (Phase 1A has no pickup slips).
+  const agreementIdFromUrl = searchParams.get('agreement_id') ?? ''
+  const isAgreementMode = Boolean(agreementIdFromUrl)
+  const { data: agreement } = useAgreement(agreementIdFromUrl)
+
   // ── Step 1 — PO selection ──────────────────────────────────────────────────
   // A Task Inbox "Create PA" task deep-links ?poId=<po>. Pre-select that PO and
   // present it as already chosen (with a Change affordance) so the user isn't
@@ -39,6 +115,8 @@ export default function PaCreatePage() {
   // Tracks the PO we've already applied matched-invoice/GR defaults for, so the
   // auto-selection runs once per PO and never re-checks boxes the user cleared.
   const autoSelectedForPoRef = useRef<string | null>(null)
+  // Same idea for agreement mode (no GR side-effect there — there is never a GR).
+  const autoSelectedForAgreementRef = useRef<string | null>(null)
 
   // ── Step 2 — Link invoices / GRs + type + PO lines ───────────────────────
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
@@ -92,29 +170,53 @@ export default function PaCreatePage() {
   const selectedPo: ApiPo | undefined =
     eligiblePos.find((p) => p.id === selectedPoId) ?? allPos.find((p) => p.id === selectedPoId)
 
-  const { data: invoicesData } = useInvoices(selectedPoId ? { po_id: selectedPoId } : undefined)
-  const { data: grsData } = useGrs(selectedPoId ? { po_id: selectedPoId } : undefined)
-  const { data: poActivePas } = usePas(selectedPoId ? { po_id: selectedPoId } : undefined)
-  const poInvoices = invoicesData?.items ?? []
+  const { data: invoicesData } = useInvoices(
+    selectedPoId
+      ? { po_id: selectedPoId }
+      : isAgreementMode
+        ? { agreement_id: agreementIdFromUrl }
+        : undefined
+  )
+  // GRs never exist on the agreement route — skip the fetch entirely there.
+  const { data: grsData } = useGrs(selectedPoId ? { po_id: selectedPoId } : undefined, !isAgreementMode)
+  const { data: poActivePas } = usePas(selectedPoId ? { po_id: selectedPoId } : undefined, !isAgreementMode)
+  // GET /pa has no agreement_id filter — narrow server-side via `search` on the
+  // agreement number (matches PaymentApplication.agreement_number ilike), then
+  // re-filter client-side on the real agreement_id column below.
+  const { data: agreementActivePas } = usePas(
+    agreement ? { search: agreement.number } : undefined,
+    isAgreementMode && Boolean(agreement),
+  )
+  const docInvoices = invoicesData?.items ?? []
+  // "Matched-but-unpaid" invoices for the agreement route's invoice picker.
+  const agreementInvoiceCandidates = docInvoices.filter((inv) => inv.status === 'matched')
 
   // Receipt gate — a non-prepayment PA normally requires a matched invoice backed
   // by a goods receipt. Finance-authorized users can override with a reason.
-  const hasThreeWay = poInvoices.some(
+  // The agreement route has no goods receipt, ever (Phase 1A has no pickup
+  // slips) — the matched invoice(s) required below are the only evidence, so
+  // this gate and its override never apply there.
+  const hasThreeWay = docInvoices.some(
     (inv) => inv.status === 'matched' && (!!inv.gr_id || (inv.gr_ids?.length ?? 0) > 0),
   )
   const isPrepayment = paType === 'prepayment'
   const canOverride = user?.role === 'system_admin' || !!perms?.pa_override_receipt
-  const receiptBlocked = !isPrepayment && !hasThreeWay
+  const receiptBlocked = !isAgreementMode && !isPrepayment && !hasThreeWay
   const receiptOverrideMissing = receiptBlocked && (!canOverride || !receiptOverride || !receiptOverrideReason.trim())
 
   // settlement/balance「Original Prepayment PA」下拉数据源:本 PO 下未作废的预付 PA
+  // (PO-only — agreement mode only ever creates pa_type='regular')
   const linkablePrepayments = (poActivePas?.items ?? []).filter(
     (p) => p.pa_type === 'prepayment' && !['cancelled', 'rejected'].includes(p.status)
   )
 
-  // Invoices already claimed by an active PA (not cancelled/rejected) on this PO
+  // Invoices already claimed by an active PA (not cancelled/rejected) — on this
+  // PO in PO mode, or on this agreement in agreement mode.
+  const agreementPaItems = (agreementActivePas?.items ?? []).filter(
+    (pa) => pa.agreement_id === agreementIdFromUrl
+  )
   const lockedInvoiceIds = new Set<string>(
-    (poActivePas?.items ?? [])
+    (isAgreementMode ? agreementPaItems : (poActivePas?.items ?? []))
       .filter((pa) => !['cancelled', 'rejected'].includes(pa.status))
       .flatMap((pa) => pa.invoice_ids)
   )
@@ -128,7 +230,7 @@ export default function PaCreatePage() {
   // pre-tax/tax are the source of truth for the charge breakdown — a PO whose
   // snapshotted tax_rate is 0/null (e.g. a freight vendor set up without a rate)
   // would otherwise auto-fill 0 tax even when the matched invoice carries HST.
-  const selectedInvoices  = poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))
+  const selectedInvoices  = docInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))
   const hasLinkedInvoices = selectedInvoices.length > 0
   const invoiceSubtotal   = selectedInvoices.reduce((s, inv) => s + Number(inv.amount), 0)
   const invoiceTax        = selectedInvoices.reduce((s, inv) => s + Number(inv.tax_amount), 0)
@@ -163,16 +265,29 @@ export default function PaCreatePage() {
   // net==0 settlement = pure reconciliation: no cash, no bank, no standard approval
   const isReconcileOnly  = isSettlementType && grossTotal > 0 && netPayable === 0
 
-  // Tax follows the PO being paid: the PO already snapshotted its rate/code from
-  // Finance Tax Settings (mdm-api), so PA inherits it rather than re-deriving.
-  // Falls back to 13% only for legacy POs with no rate recorded.
-  const paTaxRate = selectedPo ? Number(selectedPo.tax_rate) : 0.13
-  const paTaxCode = selectedPo?.tax_code ?? null
+  // Tax follows the document being paid — the PO snapshotted its rate/code from
+  // Finance Tax Settings (mdm-api) for the PO route; the agreement carries its
+  // own tax_code/tax_rate for the agreement route (same mdm-api origin, set at
+  // agreement creation). Falls back to 13% only when neither has a rate recorded.
+  const paTaxRate = isAgreementMode
+    ? (agreement?.tax_rate != null ? Number(agreement.tax_rate) : 0.13)
+    : (selectedPo ? Number(selectedPo.tax_rate) : 0.13)
+  const paTaxCode = isAgreementMode ? (agreement?.tax_code ?? null) : (selectedPo?.tax_code ?? null)
+  // Currency for every amount on this form — the PO's currency in PO mode, the
+  // agreement's in agreement mode.
+  const formCurrency = isAgreementMode ? (agreement?.currency ?? 'CAD') : (selectedPo?.currency ?? 'CAD')
+  const contextSelected = isAgreementMode ? Boolean(agreement) : Boolean(selectedPo)
+  // Consumed / Not-to-Exceed for the agreement summary card — both arrive as
+  // JSON strings, Number()-coerced here before any arithmetic/comparison. This
+  // ceiling only warns; it is never checked in validation/handleSubmit below.
+  const agreementConsumed = agreement ? Number(agreement.consumed_amount) : 0
+  const agreementCeiling = agreement?.not_to_exceed ? Number(agreement.not_to_exceed) : null
+  const agreementOverCeiling = agreementCeiling !== null && agreementConsumed > agreementCeiling
 
   // Reset when PO changes. Skipped in Settle mode — there the source-prepayment
   // effect below owns PO/type/prepayment prefill and the PO is locked.
   useEffect(() => {
-    if (lockedFromSettle) return
+    if (lockedFromSettle || isAgreementMode) return
     const po = allPos.find((p) => p.id === selectedPoId)
     autoSelectedForPoRef.current = null
     setSelectedInvoiceIds(new Set())
@@ -211,7 +326,7 @@ export default function PaCreatePage() {
     // Wait until every list query for this PO has resolved.
     if (invoicesData === undefined || grsData === undefined || poActivePas === undefined) return
 
-    const matchedInvoices = poInvoices.filter(
+    const matchedInvoices = docInvoices.filter(
       (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id)
     )
 
@@ -228,14 +343,32 @@ export default function PaCreatePage() {
     if (matchedGrs.length > 0) setSelectedGrIds(new Set(matchedGrs.map((g) => g.id)))
   }, [selectedPoId, invoicesData, grsData, poActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fill title when PO is selected (if not yet typed).
-  // Also depends on selectedPo?.id so it re-runs when React Query data loads
-  // after navigating here via ?poId= URL param.
+  // Agreement mode's equivalent: pre-select the agreement's matched-but-unpaid
+  // invoices (status 'matched', not already claimed by another open PA on this
+  // agreement). No GR side-effect — there is never a GR on this route.
   useEffect(() => {
-    if (selectedPo && !title) {
+    if (!isAgreementMode || !agreementIdFromUrl) return
+    if (autoSelectedForAgreementRef.current === agreementIdFromUrl) return
+    if (invoicesData === undefined || agreementActivePas === undefined) return
+
+    const matchedInvoices = docInvoices.filter(
+      (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id)
+    )
+    autoSelectedForAgreementRef.current = agreementIdFromUrl
+    if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(matchedInvoices.map((i) => i.id)))
+  }, [isAgreementMode, agreementIdFromUrl, invoicesData, agreementActivePas]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fill title when a PO or agreement is selected (if not yet typed).
+  // Also depends on selectedPo?.id / agreement?.id so it re-runs when React
+  // Query data loads after navigating here via ?poId= / ?agreement_id=.
+  useEffect(() => {
+    if (title) return
+    if (!isAgreementMode && selectedPo) {
       setTitle(`Payment — ${selectedPo.vendor_name} ${selectedPo.number}`)
+    } else if (isAgreementMode && agreement) {
+      setTitle(`Payment — ${agreement.vendor_name} ${agreement.number}`)
     }
-  }, [selectedPoId, selectedPo?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAgreementMode, selectedPoId, selectedPo?.id, agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill pre-tax: prefer the linked invoices' real pre-tax; fall back to the
   // selected PO lines when the PA links no invoice (GR-only / manual payment).
@@ -253,39 +386,49 @@ export default function PaCreatePage() {
     if (taxManuallyEdited) return
     if (hasLinkedInvoices) {
       setTaxAmount(invoiceTax.toFixed(2))
-    } else if (selectedPo?.currency === 'CAD' && subtotalNum > 0) {
+    } else if (formCurrency === 'CAD' && subtotalNum > 0) {
       setTaxAmount((subtotalNum * paTaxRate).toFixed(2))
     } else {
       setTaxAmount('')
     }
-  }, [hasLinkedInvoices, invoiceTax, subtotalNum, selectedPo?.currency, paTaxRate, taxManuallyEdited]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasLinkedInvoices, invoiceTax, subtotalNum, formCurrency, paTaxRate, taxManuallyEdited]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Validation
   const errors: string[] = []
   if (submitted) {
-    if (!selectedPo)     errors.push('Please select a PO')
-    if (!title.trim())   errors.push('PA Title is required')
-    if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
-    if (taxNum < 0)      errors.push('Tax amount cannot be negative')
-    if (paType === 'prepayment' && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100))
-      errors.push('Prepayment percentage must be between 1 and 100')
-    if (paType === 'prepayment' && !expectedSettlement)
-      errors.push('Expected settlement date is required for prepayment')
-    if (isSettlementType && !prepaymentPaId)
-      errors.push('Original Prepayment PA is required')
-    // A settlement may net to zero (fully covered by the prepayment — pure
-    // reconciliation). Only non-settlement PAs require a positive amount; the
-    // invoice value itself is already guarded by the pre-tax check above.
-    if (!isSettlementType && netPayable <= 0)
-      errors.push('Total payment amount must be greater than zero')
-    if (isSettlementType && appliedNum > grossTotal + 0.01)
-      errors.push('Prepayment applied cannot exceed the invoice total')
-    if (receiptOverrideMissing)
-      errors.push(
-        canOverride
-          ? 'Check the override box and provide a reason to proceed without a goods receipt'
-          : 'No goods receipt linked to a matched invoice — create a Goods Receipt first',
-      )
+    if (isAgreementMode) {
+      if (!agreement) errors.push('Agreement not found')
+      if (agreement && selectedInvoiceIds.size === 0)
+        errors.push('Select at least one invoice matched to this agreement')
+      if (!title.trim()) errors.push('PA Title is required')
+      if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
+      if (taxNum < 0) errors.push('Tax amount cannot be negative')
+      if (netPayable <= 0) errors.push('Total payment amount must be greater than zero')
+    } else {
+      if (!selectedPo)     errors.push('Please select a PO')
+      if (!title.trim())   errors.push('PA Title is required')
+      if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
+      if (taxNum < 0)      errors.push('Tax amount cannot be negative')
+      if (paType === 'prepayment' && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100))
+        errors.push('Prepayment percentage must be between 1 and 100')
+      if (paType === 'prepayment' && !expectedSettlement)
+        errors.push('Expected settlement date is required for prepayment')
+      if (isSettlementType && !prepaymentPaId)
+        errors.push('Original Prepayment PA is required')
+      // A settlement may net to zero (fully covered by the prepayment — pure
+      // reconciliation). Only non-settlement PAs require a positive amount; the
+      // invoice value itself is already guarded by the pre-tax check above.
+      if (!isSettlementType && netPayable <= 0)
+        errors.push('Total payment amount must be greater than zero')
+      if (isSettlementType && appliedNum > grossTotal + 0.01)
+        errors.push('Prepayment applied cannot exceed the invoice total')
+      if (receiptOverrideMissing)
+        errors.push(
+          canOverride
+            ? 'Check the override box and provide a reason to proceed without a goods receipt'
+            : 'No goods receipt linked to a matched invoice — create a Goods Receipt first',
+        )
+    }
   }
 
   const toggleInvoice = (id: string) => {
@@ -314,6 +457,42 @@ export default function PaCreatePage() {
 
   const handleSubmit = async () => {
     setSubmitted(true)
+    if (isAgreementMode) {
+      if (!agreement) return
+      if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
+      if (selectedInvoiceIds.size === 0) return
+      if (netPayable <= 0) return
+      try {
+        const newPa = await createPa.mutateAsync({
+          title: title.trim(),
+          pa_type: 'regular',
+          currency: agreement.currency,
+          subtotal: subtotalNum,
+          tax_amount: taxNum,
+          tax_code: taxNum > 0 ? paTaxCode ?? undefined : null,
+          tax_rate: taxNum > 0
+            ? (paTaxRate > 0 ? paTaxRate : subtotalNum > 0 ? Number((taxNum / subtotalNum).toFixed(4)) : null)
+            : null,
+          shipping_amount: shippingNum || undefined,
+          other_charges: otherNum || undefined,
+          other_charges_note: otherNum > 0 ? otherChargesNote.trim() || undefined : undefined,
+          vendor_id: agreement.vendor_id,
+          vendor_name: agreement.vendor_name,
+          agreement_id: agreement.id,
+          invoice_ids: Array.from(selectedInvoiceIds),
+          notes: notes.trim() || undefined,
+        })
+        if (newPa.status === 'draft') {
+          await paService.action(newPa.id, { action: 'submit' })
+        }
+        await queryClient.invalidateQueries({ queryKey: ['pas'] })
+        await queryClient.invalidateQueries({ queryKey: ['agreements'] })
+        replaceTab('/pa')
+      } catch {
+        // error handled by mutation
+      }
+      return
+    }
     if (!selectedPo) return
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
     if (!isSettlementType && netPayable <= 0) return
@@ -387,7 +566,9 @@ export default function PaCreatePage() {
         </button>
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">New Payment Application</h1>
-          <p className="text-sm text-neutral-500 mt-0.5">Create a payment request linked to a PO</p>
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {isAgreementMode ? 'Create a payment request against an agreement' : 'Create a payment request linked to a PO'}
+          </p>
         </div>
       </div>
 
@@ -395,7 +576,42 @@ export default function PaCreatePage() {
         {/* Main form */}
         <div className="col-span-2 flex flex-col gap-5">
 
-          {/* ── Step 1 — Select PO ─────────────────────────────────────────── */}
+          {/* ── Step 1 — Select PO / Agreement ─────────────────────────────── */}
+          {isAgreementMode ? (
+            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
+              <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
+                Agreement
+              </h2>
+              {!agreement ? (
+                <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading agreement…</p>
+              ) : (
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-xs font-semibold text-primary-700">{agreement.number}</span>
+                    <StatusBadge status={agreement.status as DocumentStatus} />
+                  </div>
+                  <div className="text-sm text-neutral-700 mt-0.5">{agreement.title}</div>
+                  <div className="text-xs text-neutral-400 mt-0.5">{agreement.vendor_name}</div>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-neutral-500">
+                    <span>
+                      Consumed {formatAmount(agreementConsumed, agreement.currency)}
+                      {agreementCeiling !== null ? ` / NTE ${formatAmount(agreementCeiling, agreement.currency)}` : ' / No ceiling'}
+                    </span>
+                    {agreementOverCeiling && (
+                      <span className="inline-flex items-center gap-1 font-medium text-warning-700">
+                        <AlertTriangle className="h-3 w-3" /> Over ceiling — warning only
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-neutral-400 mt-2">
+                    No purchase order and no goods receipt on this route — the agreement is the
+                    authorization and the matched invoice(s) below are the evidence.
+                  </p>
+                </div>
+              )}
+            </div>
+          ) : (
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
             <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
@@ -474,9 +690,10 @@ export default function PaCreatePage() {
               </div>
             )}
           </div>
+          )}
 
-          {/* ── Step 2 — Link Invoices / GRs + PA Type ─────────────────────── */}
-          {selectedPo && (
+          {/* ── Step 2 — Link Invoices / GRs + PA Type (PO mode only) ──────── */}
+          {!isAgreementMode && selectedPo && (
             <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-5">
               <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">2</span>
@@ -489,57 +706,17 @@ export default function PaCreatePage() {
                   <FileText className="h-3.5 w-3.5" /> Invoices for this PO
                   <span className="text-neutral-400 font-normal">(select all that apply)</span>
                 </p>
-                {poInvoices.length === 0 ? (
+                {docInvoices.length === 0 ? (
                   <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
                     No invoices found for this PO yet
                   </p>
                 ) : (
-                  <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
-                    {poInvoices.map((inv) => {
-                      const isLocked = lockedInvoiceIds.has(inv.id)
-                      return (
-                        <label
-                          key={inv.id}
-                          className={cn(
-                            'flex items-center gap-3 px-4 py-3 transition-colors',
-                            isLocked
-                              ? 'cursor-not-allowed bg-neutral-50 opacity-60'
-                              : 'cursor-pointer hover:bg-primary-50',
-                            !isLocked && selectedInvoiceIds.has(inv.id) && 'bg-primary-50'
-                          )}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedInvoiceIds.has(inv.id)}
-                            onChange={() => !isLocked && toggleInvoice(inv.id)}
-                            disabled={isLocked}
-                            className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600 disabled:opacity-50"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <span className="font-mono text-xs font-semibold text-primary-700">{inv.internal_ref}</span>
-                                {isLocked && (
-                                  <span className="shrink-0 inline-flex items-center rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-600">
-                                    Already in PA
-                                  </span>
-                                )}
-                              </div>
-                              <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
-                            </div>
-                            <div className="text-xs text-neutral-500 mt-0.5">
-                              #{inv.vendor_invoice_number} · {formatDate(inv.invoice_date)} · <span className="capitalize">{inv.status}</span>
-                            </div>
-                            <div className="flex items-center gap-3 mt-1 text-[11px] text-neutral-400">
-                              <span>Pre-tax <span className="font-mono text-neutral-600">{formatAmount(inv.amount, inv.currency)}</span></span>
-                              <span className="text-neutral-200">·</span>
-                              <span>Tax <span className="font-mono text-neutral-600">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
-                            </div>
-                          </div>
-                        </label>
-                      )
-                    })}
-                  </div>
+                  <InvoiceSelectList
+                    invoices={docInvoices}
+                    selectedIds={selectedInvoiceIds}
+                    lockedIds={lockedInvoiceIds}
+                    onToggle={toggleInvoice}
+                  />
                 )}
               </div>
 
@@ -689,7 +866,7 @@ export default function PaCreatePage() {
                   ))}
                 </div>
 
-                {isSettlementType && (
+                {isSettlementType && !isAgreementMode && (
                   <div className="flex flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 p-4 mt-1">
                     <p className="text-xs text-amber-700 font-medium">
                       Settlement reconciles a prepayment after delivery; it pays only the remaining balance (final invoice − prepaid).
@@ -770,8 +947,41 @@ export default function PaCreatePage() {
             </div>
           )}
 
-          {/* ── Step 3 — Charge Breakdown & Details ────────────────────────── */}
-          {selectedPo && (
+          {/* ── Step 2 (agreement mode) — Link Invoices only ────────────────── */}
+          {isAgreementMode && (
+            <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-4">
+              <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">2</span>
+                Link Invoices
+              </h2>
+              <div className="flex flex-col gap-2">
+                <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
+                  <FileText className="h-3.5 w-3.5" /> Invoices matched to this agreement
+                  <span className="text-neutral-400 font-normal">(select all that apply)</span>
+                </p>
+                <p className="text-[11px] text-neutral-400">
+                  No purchase order and no goods receipt on this route — every matched invoice
+                  here was recorded as a legacy settlement with a reason at match time. There is
+                  no PO-line or goods-receipt selection to make.
+                </p>
+                {agreementInvoiceCandidates.length === 0 ? (
+                  <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
+                    No unpaid invoices matched to this agreement yet.
+                  </p>
+                ) : (
+                  <InvoiceSelectList
+                    invoices={agreementInvoiceCandidates}
+                    selectedIds={selectedInvoiceIds}
+                    lockedIds={lockedInvoiceIds}
+                    onToggle={toggleInvoice}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ── Step 3 — Charge Breakdown & Details (shared by both modes) ─── */}
+          {contextSelected && (
             <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-5">
               <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">3</span>
@@ -800,7 +1010,7 @@ export default function PaCreatePage() {
 
               {/* Charge breakdown */}
               <div className="flex flex-col gap-3">
-                <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({selectedPo.currency})</p>
+                <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({formCurrency})</p>
 
                 <div className="grid grid-cols-2 gap-3">
                   {/* Pre-tax */}
@@ -830,7 +1040,7 @@ export default function PaCreatePage() {
                       {!taxManuallyEdited && hasLinkedInvoices && (
                         <span className="ml-1.5 text-[10px] font-normal text-neutral-400">from invoice</span>
                       )}
-                      {!taxManuallyEdited && !hasLinkedInvoices && selectedPo?.currency === 'CAD' && subtotalNum > 0 && (
+                      {!taxManuallyEdited && !hasLinkedInvoices && formCurrency === 'CAD' && subtotalNum > 0 && (
                         <span className="ml-1.5 text-[10px] font-normal text-neutral-400">{`${(paTaxRate * 100).toFixed(0)}% HST`}</span>
                       )}
                     </label>
@@ -921,11 +1131,11 @@ export default function PaCreatePage() {
                     <>
                       <div className="flex items-center justify-between text-xs text-neutral-500">
                         <span>Gross total</span>
-                        <span className="font-mono">{formatAmount(grossTotal, selectedPo.currency)}</span>
+                        <span className="font-mono">{formatAmount(grossTotal, formCurrency)}</span>
                       </div>
                       <div className="flex items-center justify-between text-xs text-neutral-500">
                         <span>Prepayment applied</span>
-                        <span className="font-mono">−{formatAmount(appliedNum, selectedPo.currency)}</span>
+                        <span className="font-mono">−{formatAmount(appliedNum, formCurrency)}</span>
                       </div>
                     </>
                   )}
@@ -937,7 +1147,7 @@ export default function PaCreatePage() {
                       'font-mono font-bold text-xl',
                       netPayable > 0 ? 'text-primary-700' : 'text-neutral-300'
                     )}>
-                      {netPayable > 0 ? formatAmount(netPayable, selectedPo.currency) : formatAmount(0, selectedPo.currency)}
+                      {netPayable > 0 ? formatAmount(netPayable, formCurrency) : formatAmount(0, formCurrency)}
                     </span>
                   </div>
                   {isReconcileOnly && (
@@ -1009,7 +1219,7 @@ export default function PaCreatePage() {
           {/* Actions */}
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={() => replaceTab('/pa')}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!selectedPo || receiptOverrideMissing} className="gap-2">
+            <Button onClick={handleSubmit} disabled={!contextSelected || receiptOverrideMissing} className="gap-2">
               <CreditCard className="h-4 w-4" />
               {isReconcileOnly ? 'Reconcile Prepayment' : 'Submit Payment Application'}
             </Button>
@@ -1021,27 +1231,35 @@ export default function PaCreatePage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sticky top-6">
             <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide mb-3">Payment Summary</p>
 
-            {!selectedPo ? (
-              <p className="text-xs text-neutral-400 text-center py-4">Select a PO to see summary</p>
+            {!contextSelected ? (
+              <p className="text-xs text-neutral-400 text-center py-4">
+                {isAgreementMode ? 'Loading agreement…' : 'Select a PO to see summary'}
+              </p>
             ) : (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5 text-xs">
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Vendor</span>
-                    <span className="text-neutral-800 font-medium text-right max-w-[60%]">{selectedPo.vendor_name}</span>
+                    <span className="text-neutral-800 font-medium text-right max-w-[60%]">
+                      {isAgreementMode ? agreement?.vendor_name : selectedPo?.vendor_name}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-neutral-500">PO Total</span>
-                    <span className="font-mono font-semibold text-neutral-900">{formatAmount(selectedPo.total, selectedPo.currency)}</span>
+                    <span className="text-neutral-500">{isAgreementMode ? 'Agreement' : 'PO Total'}</span>
+                    <span className="font-mono font-semibold text-neutral-900">
+                      {isAgreementMode ? agreement?.number : formatAmount(selectedPo?.total ?? 0, formCurrency)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Invoices linked</span>
                     <span className="text-neutral-700">{selectedInvoiceIds.size}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">GRs linked</span>
-                    <span className="text-neutral-700">{selectedGrIds.size}</span>
-                  </div>
+                  {!isAgreementMode && (
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">GRs linked</span>
+                      <span className="text-neutral-700">{selectedGrIds.size}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Type</span>
                     <span className="text-neutral-700 capitalize">{paType}</span>
@@ -1053,33 +1271,33 @@ export default function PaCreatePage() {
                   <div className="border-t border-neutral-200 pt-3 flex flex-col gap-1.5 text-xs">
                     <div className="flex justify-between text-neutral-500">
                       <span>Pre-tax</span>
-                      <span className="font-mono">{formatAmount(subtotalNum, selectedPo.currency)}</span>
+                      <span className="font-mono">{formatAmount(subtotalNum, formCurrency)}</span>
                     </div>
                     <div className="flex justify-between text-neutral-500">
                       <span>Tax</span>
-                      <span className="font-mono">{formatAmount(taxNum, selectedPo.currency)}</span>
+                      <span className="font-mono">{formatAmount(taxNum, formCurrency)}</span>
                     </div>
                     {shippingNum > 0 && (
                       <div className="flex justify-between text-neutral-500">
                         <span>Shipping</span>
-                        <span className="font-mono">{formatAmount(shippingNum, selectedPo.currency)}</span>
+                        <span className="font-mono">{formatAmount(shippingNum, formCurrency)}</span>
                       </div>
                     )}
                     {otherNum > 0 && (
                       <div className="flex justify-between text-neutral-500">
                         <span>Other</span>
-                        <span className="font-mono">{formatAmount(otherNum, selectedPo.currency)}</span>
+                        <span className="font-mono">{formatAmount(otherNum, formCurrency)}</span>
                       </div>
                     )}
                     {isSettlementType && appliedNum > 0 && (
                       <div className="flex justify-between text-neutral-500">
                         <span>Prepayment applied</span>
-                        <span className="font-mono">−{formatAmount(appliedNum, selectedPo.currency)}</span>
+                        <span className="font-mono">−{formatAmount(appliedNum, formCurrency)}</span>
                       </div>
                     )}
                     <div className="flex justify-between font-semibold text-neutral-800 border-t border-neutral-200 pt-1.5 mt-0.5">
                       <span>{isSettlementType ? 'Net Payable' : 'Total'}</span>
-                      <span className="font-mono">{formatAmount(netPayable, selectedPo.currency)}</span>
+                      <span className="font-mono">{formatAmount(netPayable, formCurrency)}</span>
                     </div>
                   </div>
                 )}
