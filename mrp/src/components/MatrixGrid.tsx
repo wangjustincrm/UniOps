@@ -72,6 +72,19 @@ export interface MatrixGridProps {
   /** Optional number formatter for display (defaults to en-US grouping, 0 decimals). */
   formatValue?: (n: number) => string
   /**
+   * Display/entry-unit scale factor — purely cosmetic, the canonical `value`/
+   * `onChange` map stays in whatever unit the caller's data actually is
+   * (e.g. kg). When set (e.g. 1000 for a kg-stored grid shown in tonnes),
+   * each editable cell's edit buffer divides the stored value by this before
+   * showing it and multiplies a typed number back up before calling
+   * `onCommit` — see MatrixCell. Read-only/frozen cells are unaffected here;
+   * their display goes through the caller's `formatValue`, which the caller
+   * is responsible for scaling consistently with this prop (see Sales
+   * Forecast's `displayUnit` toggle). Defaults to 1 (no scaling) so every
+   * other MatrixGrid caller is unaffected.
+   */
+  unitScale?: number
+  /**
    * Imperatively focus one cell — set by the parent right after it appends a
    * new row (e.g. ForecastPage's "Add Product") so the planner can start
    * typing immediately, same as any keyboard-driven navigation (scrolls the
@@ -157,6 +170,7 @@ export function MatrixGrid({
   rows: rowsProp, cols, value, onChange, frozenKeys, readOnly = false, height = 480,
   rowHeaderLabel = 'Row', rowTotalLabel = 'Total', colTotalLabel = 'Total',
   formatValue = defaultFormat,
+  unitScale = 1,
   focusRequest = null, onFocusRequestHandled, clearRowId = null, onRowCleared, rowActions,
   resolveMaterial, highlightColIds, tintRowIds, rowBadge, onCellHistoryClick,
 }: MatrixGridProps) {
@@ -699,6 +713,7 @@ export function MatrixGrid({
                           invalidRaw={invalidRaw}
                           selected={isInSelection(rowIdx, colIdx)}
                           formatValue={formatValue}
+                          unitScale={unitScale}
                           onSelect={(extend) => focusCell(rowIdx, colIdx, extend)}
                           onCommit={(v) => setCellValue(rowIdx, colIdx, v)}
                           onHistoryClick={onCellHistoryClick
@@ -762,6 +777,7 @@ type NavDir = 'up' | 'down' | 'left' | 'right' | 'tab' | 'enter'
 
 function MatrixCell({
   cellKeyAttr, registerRef, value, hasEntry, frozen, readOnly, locked, modified, invalidRaw, selected, formatValue,
+  unitScale = 1,
   onSelect, onCommit, onNavigate, onHistoryClick,
 }: {
   /** `${rowId}::${colId}` — exposed as data-testid for automated/manual verification, not used by the component itself. */
@@ -778,6 +794,8 @@ function MatrixCell({
   invalidRaw: string | undefined
   selected: boolean
   formatValue: (n: number) => string
+  /** Display/entry-unit scale factor — see MatrixGridProps.unitScale. Defaults to 1. */
+  unitScale?: number
   /** Mouse click only — `extend=true` on a shift-click grows the selection range from the existing anchor. Deliberately NOT driven by focus events: a focus event fires on the just-clicked cell before its click event does, so reading shiftKey there would reset the anchor to the new cell before the extend could apply. */
   onSelect: (extend: boolean) => void
   onCommit: (v: number) => void
@@ -790,7 +808,7 @@ function MatrixCell({
   // "adjusting state when a prop changes" pattern) rather than a setState-
   // in-effect, which the stricter react-hooks lint rule flags as a
   // cascading-render risk.
-  const external = hasEntry ? String(value) : ''
+  const external = hasEntry ? String(value / unitScale) : ''
   const [local, setLocal] = useState(external)
   const [syncedExternal, setSyncedExternal] = useState(external)
   if (external !== syncedExternal) {
@@ -805,7 +823,11 @@ function MatrixCell({
       return
     }
     const n = parseFloat(trimmed.replace(/[,$]/g, ''))
-    onCommit(Number.isFinite(n) ? n : 0)
+    // Scale back up to the canonical (stored) unit — e.g. tonnes typed by
+    // the planner -> kg stored (see MatrixGridProps.unitScale). Rounded to
+    // 3 decimals to avoid float dust landing in a Numeric(18,3) column
+    // (0.251 t * 1000 could otherwise commit as 250.99999999999997).
+    onCommit(Number.isFinite(n) ? Math.round(n * unitScale * 1000) / 1000 : 0)
   }
 
   const nonEditable = readOnly || frozen

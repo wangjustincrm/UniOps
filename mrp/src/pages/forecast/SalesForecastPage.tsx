@@ -48,6 +48,26 @@ function formatQty(n: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
 
+/** Display-only unit toggle for the grid — the stored/planning unit is
+ *  always kg (net-requirement and MPS capacity depend on it); this only
+ *  scales what's shown/typed. See DISPLAY_UNIT_STORAGE_KEY below and the
+ *  `unitScale`/`formatValue` wiring on <MatrixGrid> further down. */
+type DisplayUnit = 'kg' | 't'
+const DISPLAY_UNIT_STORAGE_KEY = 'mrp.forecast.displayUnit'
+
+function loadDisplayUnit(): DisplayUnit {
+  try {
+    const v = window.localStorage.getItem(DISPLAY_UNIT_STORAGE_KEY)
+    return v === 'kg' || v === 't' ? v : 't'
+  } catch {
+    return 't' // localStorage unavailable (e.g. privacy mode) — fall back to the default
+  }
+}
+
+function formatTonnes(kg: number): string {
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(kg / 1000)
+}
+
 /** 'YYYY-MM' for the current month, in the browser's local time — no date lib. */
 function currentMonthStr(): string {
   const d = new Date()
@@ -109,6 +129,24 @@ export default function SalesForecastPage() {
   // would wipe the undo stack and drop focus mid-type on every autosave.
   const [committed, setCommitted] = useState<CellValueMap>(new Map())
   const [liveCells, setLiveCells] = useState<CellValueMap>(new Map())
+  // Row a SERVER-loaded product only stays visible while it still has at
+  // least one non-zero cell in the current edited state (liveCells) — a
+  // product cleared to fully-empty disappears from the grid (session-added
+  // rows are exempt, see matrixRows below). `initialized` gates this: it
+  // flips true the first time the baseline-apply block below actually runs
+  // (i.e. once gridQuery.data has loaded and liveCells holds the real
+  // server data, not the empty initial Map). Before that, every server row
+  // is shown unfiltered — otherwise the empty initial liveCells would make
+  // every row look "cleared" for one render and flash-hide the whole grid
+  // on first load. Deliberately NOT `liveCells.size > 0` as the guard: that
+  // would make cleared rows reappear (falling back to something non-empty)
+  // the moment a planner legitimately clears the entire table down to zero.
+  const [initialized, setInitialized] = useState(false)
+  // Display-only unit for the grid — kg is the canonical/stored unit
+  // everywhere else in this file (committed/liveCells/dirtyCells/autosave
+  // payload); this only scales what MatrixGrid shows and parses on input,
+  // via its `unitScale`/`formatValue` props. See DISPLAY_UNIT_STORAGE_KEY.
+  const [displayUnit, setDisplayUnit] = useState<DisplayUnit>(() => loadDisplayUnit())
   const [syncedBaseline, setSyncedBaseline] = useState<CellValueMap>(new Map())
   const [addedRows, setAddedRows] = useState<Map<string, MaterialOption>>(new Map())
   // Codes added this session that are known to be durably persisted —
@@ -192,6 +230,7 @@ export default function SalesForecastPage() {
     setSyncedBaseline(baseline)
     setCommitted(baseline)
     setLiveCells(baseline)
+    if (!initialized) setInitialized(true)
   }
 
   if (gridKey !== syncedGridKeyForAddedRows) {
@@ -215,19 +254,31 @@ export default function SalesForecastPage() {
     return out
   }, [committed, liveCells])
 
-  const matrixRows: MatrixRow[] = useMemo(() => {
-    const serverRows = gridQuery.data?.rows ?? []
-    const serverCodes = new Set(serverRows.map((r) => r.material_code))
-    const extraRows = [...addedRows.values()].filter((m) => !serverCodes.has(m.code))
-    return [
-      ...serverRows.map((r) => ({ id: r.material_code, label: r.name ?? r.material_code })),
-      ...extraRows.map((m) => ({ id: m.code, label: m.name ? `${m.code} — ${m.name}` : m.code })),
-    ]
-  }, [gridQuery.data, addedRows])
   const matrixCols: MatrixCol[] = useMemo(
     () => (gridQuery.data?.months ?? []).map((m) => ({ id: m, label: m })),
     [gridQuery.data],
   )
+
+  const matrixRows: MatrixRow[] = useMemo(() => {
+    const serverRows = gridQuery.data?.rows ?? []
+    const serverCodes = new Set(serverRows.map((r) => r.material_code))
+    const extraRows = [...addedRows.values()].filter((m) => !serverCodes.has(m.code))
+    // A server-loaded row disappears once it has no non-zero cell left in
+    // the CURRENTLY EDITED state (liveCells) — not the server's baseline —
+    // so clearing a product's whole row drops it live, without a save round
+    // trip. Session-added rows (extraRows, from "Add Product") are always
+    // kept: they're the planner's working rows, even before they hold a
+    // value. Gated by `initialized` (see its comment above) so the very
+    // first render — before liveCells has been seeded from the server at
+    // all — shows every server row instead of filtering against an empty map.
+    const visibleServerRows = !initialized
+      ? serverRows
+      : serverRows.filter((r) => matrixCols.some((c) => (liveCells.get(cellKey(r.material_code, c.id)) ?? 0) !== 0))
+    return [
+      ...visibleServerRows.map((r) => ({ id: r.material_code, label: r.name ?? r.material_code })),
+      ...extraRows.map((m) => ({ id: m.code, label: m.name ? `${m.code} — ${m.name}` : m.code })),
+    ]
+  }, [gridQuery.data, addedRows, initialized, matrixCols, liveCells])
 
   // Past-column read-only enforcement — every material x every month before
   // currentMonth. Built from the union of visible rows AND the full
@@ -345,6 +396,19 @@ export default function SalesForecastPage() {
     if (savedResetTimer.current) window.clearTimeout(savedResetTimer.current)
   }, [])
 
+  // Persist the display-unit choice across visits. Purely a display/entry
+  // preference — never touches committed/liveCells (kg) or the autosave
+  // payload, and changing it does not remount <MatrixGrid> (displayUnit is
+  // not part of gridKey), so in-progress edits and undo history survive a
+  // toggle.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DISPLAY_UNIT_STORAGE_KEY, displayUnit)
+    } catch {
+      // localStorage unavailable — the toggle still works for this session
+    }
+  }, [displayUnit])
+
   // Never lose an edit silently to a closed tab — warn while an autosave is
   // still pending or in flight.
   useEffect(() => {
@@ -394,6 +458,14 @@ export default function SalesForecastPage() {
     setClearRowId(code)
     setFocusRequest((f) => (f?.rowId === code ? null : f))
   }
+
+  // Derived from displayUnit — purely display/entry, threaded into
+  // <MatrixGrid> below. committed/liveCells/dirtyCells/the autosave payload
+  // never see these; they stay in kg regardless of what's selected here.
+  const gridUnitScale = displayUnit === 't' ? 1000 : 1
+  const gridFormatValue = displayUnit === 't' ? formatTonnes : formatQty
+  const rowTotalLabel = displayUnit === 't' ? 'Total (t)' : 'Total (kg)'
+  const colTotalLabel = displayUnit === 't' ? 'Monthly Sum (t)' : 'Monthly Sum (kg)'
 
   async function handleGenerateOutlook(anchorMonth: string, horizonMonths: number) {
     setOutlookBusy(true)
@@ -448,6 +520,31 @@ export default function SalesForecastPage() {
               />
             </div>
           )}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-neutral-500">Unit</span>
+            <div role="group" aria-label="Display unit" className="inline-flex overflow-hidden rounded-lg border border-neutral-200">
+              <Button
+                type="button"
+                size="sm"
+                variant={displayUnit === 'kg' ? 'primary' : 'secondary'}
+                aria-pressed={displayUnit === 'kg'}
+                onClick={() => setDisplayUnit('kg')}
+                className="h-11 min-w-11 rounded-none border-0"
+              >
+                KG
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={displayUnit === 't' ? 'primary' : 'secondary'}
+                aria-pressed={displayUnit === 't'}
+                onClick={() => setDisplayUnit('t')}
+                className="h-11 min-w-11 rounded-none border-0 border-l border-neutral-200"
+              >
+                Tonne
+              </Button>
+            </div>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-4 text-[11px] text-neutral-500">
           <span className="flex items-center gap-1"><Lock className="h-3 w-3 text-neutral-400" /> Past months are locked</span>
@@ -478,9 +575,10 @@ export default function SalesForecastPage() {
             readOnly={!canWriteForecast}
             height={560}
             rowHeaderLabel="Product"
-            rowTotalLabel="Total"
-            colTotalLabel="Monthly Sum"
-            formatValue={formatQty}
+            rowTotalLabel={rowTotalLabel}
+            colTotalLabel={colTotalLabel}
+            formatValue={gridFormatValue}
+            unitScale={gridUnitScale}
             focusRequest={focusRequest}
             onFocusRequestHandled={() => setFocusRequest(null)}
             clearRowId={clearRowId}
