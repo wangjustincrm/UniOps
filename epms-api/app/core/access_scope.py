@@ -21,6 +21,7 @@ from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
+from app.models.agreement import PurchaseAgreement
 from app.models.cost_center import CostCenter
 from app.models.pr import PurchaseRequest
 from app.models.po import PurchaseOrder
@@ -391,6 +392,64 @@ async def visible_po_subquery(
     )
 
 
+async def visible_agreement_subquery(
+    db: AsyncSession,
+    user: dict,
+) -> Optional[Select]:
+    """Return a scalar subquery of visible purchase_agreement ids, or None (=
+    unrestricted).
+
+    Agreements have no PR/PO chain to walk (they ARE the authorisation, not
+    something raised from one) but they do carry their own `department_id`
+    directly, plus `created_by` / `owner_id`. This mirrors
+    `visible_pr_subquery`'s department-oversight model role-for-role, just
+    resolved straight off the agreement row instead of through a cost-center
+    join:
+      • any unrestricted role → None (all agreements)
+      • requester              → agreements they created or are the named owner of
+      • dept_manager/dept_admin → agreements in their own department
+      • gm / opm                → agreements in their mapped departments
+      • director                → agreements in their directed departments
+      • supervisor               → agreements created by a direct report
+    A restricted role that matches none of the above (e.g. a bare requester who
+    neither created nor owns anything, no department) gets an always-false
+    predicate — deny by default, not an accidental fall-through to unrestricted.
+    """
+    role = user.get("role", "")
+    user_id = uuid.UUID(user["sub"])
+    codes = await _effective_role_codes(db, role, user_id)
+
+    if any(c not in _RESTRICTED_ROLES for c in codes):
+        return None  # unrestricted
+
+    conds = []
+    if "requester" in codes:
+        conds.append(PurchaseAgreement.created_by == user_id)
+        conds.append(PurchaseAgreement.owner_id == user_id)
+
+    dept_ids: set[uuid.UUID] = set()
+    if codes & {"dept_manager", "dept_admin"}:
+        own = await _user_dept_id(db, user_id)
+        if own:
+            dept_ids.add(own)
+    for gm_role in ("gm", "opm"):
+        if gm_role in codes:
+            dept_ids.update(await _mapped_dept_ids(db, gm_role))
+    if "director" in codes:
+        dept_ids.update(await _director_dept_ids(db, user_id))
+    if dept_ids:
+        conds.append(PurchaseAgreement.department_id.in_(dept_ids))
+
+    if "supervisor" in codes:
+        reports = select(User.id).where(User.supervisor_id == user_id)
+        conds.append(PurchaseAgreement.created_by.in_(reports))
+
+    if not conds:
+        return select(PurchaseAgreement.id).where(sa.false())
+
+    return select(PurchaseAgreement.id).where(or_(*conds))
+
+
 async def is_pr_visible(db: AsyncSession, pr_id: uuid.UUID, scope: dict) -> bool:
     """True if the given PR id falls inside the user's pr_subq (or unrestricted)."""
     if not _scope_allows_view(scope, "view_pr"):
@@ -434,12 +493,12 @@ async def is_gr_visible(db: AsyncSession, gr, scope: dict) -> bool:
 
 
 async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
-    """True if PA is in chain (po_subq) OR — for requester — was created by them."""
+    """True if PA is in chain (po_subq/agr_subq) OR — for requester — was
+    created by them, OR the caller holds an open approval task for it."""
     if not _scope_allows_view(scope, "view_pa"):
         return False
-    po_subq = scope["po_subq"]
-    if po_subq is None:
-        return True
+    if not scope["restrict"]:
+        return True  # unrestricted: po_subq/agr_subq are both None together
     # Requester direct creation: PA created_by themselves is always visible to them.
     if scope["role"] == "requester" and pa.created_by == scope["user_id"]:
         return True
@@ -454,10 +513,23 @@ async def is_pa_visible(db: AsyncSession, pa, scope: dict) -> bool:
     )).scalar_one_or_none()
     if has_task is not None:
         return True
+
+    # Agreement-sourced PA: scoped off the agreement's own department/owner —
+    # there is no PO/PR chain to walk. OA's Direct PAs (both po_id AND
+    # agreement_id NULL) never reach here; the endpoint layer 404s those before
+    # calling is_pa_visible.
+    if pa.agreement_id is not None:
+        row = (await db.execute(
+            select(PurchaseAgreement.id)
+            .where(PurchaseAgreement.id == pa.agreement_id)
+            .where(PurchaseAgreement.id.in_(scope["agr_subq"]))
+        )).scalar_one_or_none()
+        return row is not None
+
     if pa.po_id is None:
         return False
     row = (await db.execute(
-        select(PurchaseOrder.id).where(PurchaseOrder.id == pa.po_id).where(PurchaseOrder.id.in_(po_subq))
+        select(PurchaseOrder.id).where(PurchaseOrder.id == pa.po_id).where(PurchaseOrder.id.in_(scope["po_subq"]))
     )).scalar_one_or_none()
     return row is not None
 
@@ -469,6 +541,7 @@ async def build_scope(db: AsyncSession, user: dict) -> dict:
       {
         "pr_subq":  Select | None,  # scalar subquery of visible PR ids
         "po_subq":  Select | None,  # scalar subquery of visible PO ids
+        "agr_subq": Select | None,  # scalar subquery of visible agreement ids
         "user_id":  uuid.UUID,
         "role":     str,
         "restrict": bool,           # False = unrestricted (see all)
@@ -481,11 +554,13 @@ async def build_scope(db: AsyncSession, user: dict) -> dict:
     """
     pr_subq = await visible_pr_subquery(db, user)
     po_subq = await visible_po_subquery(db, user, pr_subq)
+    agr_subq = await visible_agreement_subquery(db, user)
     user_id = uuid.UUID(user["sub"])
     perms = await _effective_permissions(db, user.get("role", ""), user_id)
     return {
         "pr_subq":  pr_subq,
         "po_subq":  po_subq,
+        "agr_subq": agr_subq,
         "user_id":  user_id,
         "role":     user.get("role", ""),
         "restrict": pr_subq is not None,

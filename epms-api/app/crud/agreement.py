@@ -91,6 +91,27 @@ async def update(
     return agr
 
 
+def is_admissible(agr: PurchaseAgreement, on_date: date | None = None) -> bool:
+    """Whether NEW spend may be raised against this agreement right now — an
+    invoice match, or (Task 7) a Payment Application.
+
+    Same admission rule as `candidates_for_vendor`'s SQL predicate below:
+    status == "active", OR status == "expired" and still inside its grace
+    window. That query is a multi-row WHERE clause (can't call this function
+    per-row without breaking to Python-side filtering); this is the single-row
+    Python-side twin for call sites that already hold one loaded row (PA
+    creation). ⚠️ SIBLING COPY — keep this rule in lock-step with
+    candidates_for_vendor if either changes (see access_scope.py's
+    "SIBLING COPY" convention for the same situation elsewhere in this repo).
+    """
+    today = on_date or date.today()
+    if agr.status == "active":
+        return True
+    if agr.status == "expired":
+        return (today - agr.valid_to).days <= agr.grace_days
+    return False
+
+
 async def candidates_for_vendor(
     db: AsyncSession, vendor_id: uuid.UUID, on_date: date | None = None
 ) -> list[PurchaseAgreement]:

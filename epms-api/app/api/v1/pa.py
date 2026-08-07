@@ -58,6 +58,7 @@ async def list_pas(
         department_id=department_id, search=search,
         created_by=created_by,
         po_ids_subq=scope["po_subq"],
+        agr_ids_subq=scope["agr_subq"],
         page=page, page_size=page_size,
     )
     await enrich_current_step(db, "pa", items)
@@ -95,20 +96,49 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         agr = await agr_crud.get_by_id(db, body.agreement_id)
         if agr is None:
             raise HTTPException(status_code=404, detail="Agreement not found")
+        # No PO on this route means none of the PO-scoped prepayment/settlement/
+        # balance guards below (vendor cap, ownership-of-prepayment-PA, applied ≤
+        # prepaid) ever run — allowing pa_type through here would let a caller
+        # skip them entirely (e.g. settle someone else's PO-based prepayment PA
+        # by routing through an unrelated agreement). Only the plain-pay type is
+        # meaningful without a PO to prepay against or settle.
+        if body.pa_type != "regular":
+            raise HTTPException(
+                status_code=422,
+                detail="Only pa_type='regular' can be raised against an agreement "
+                       "(prepayment/settlement/balance require a PO).",
+            )
+        # The agreement itself is the PA's authorisation — it must actually be
+        # approved (or still inside its post-expiry grace window) before it can
+        # back a payment. Same admission rule invoices are matched under.
+        if not agr_crud.is_admissible(agr):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Agreement {agr.number} is not active (status={agr.status}) "
+                       "or is past its grace window — a PA cannot be raised against it.",
+            )
+        # There is no receipt gate on this route (never any GR) — the linked
+        # invoice(s) are the ONLY evidence this PA pays real, already-billed
+        # spend rather than an arbitrary amount against an approved ceiling.
+        if not body.invoice_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="At least one invoice matched to this agreement is required "
+                       "— there is no goods-receipt override on this route.",
+            )
         # Every listed invoice must actually be matched to THIS agreement —
         # otherwise a PA could pay an unrelated invoice off an approved ceiling.
-        if body.invoice_ids:
-            rows = (await db.execute(
-                select(Invoice.id, Invoice.agreement_id)
-                .where(Invoice.id.in_(body.invoice_ids))
-            )).all()
-            if len(rows) != len(set(body.invoice_ids)):
-                raise HTTPException(status_code=422, detail="One or more invoices not found")
-            stray = [str(r.id) for r in rows if r.agreement_id != body.agreement_id]
-            if stray:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Invoice(s) not matched to agreement {agr.number}: {', '.join(stray)}")
+        rows = (await db.execute(
+            select(Invoice.id, Invoice.agreement_id)
+            .where(Invoice.id.in_(body.invoice_ids))
+        )).all()
+        if len(rows) != len(set(body.invoice_ids)):
+            raise HTTPException(status_code=422, detail="One or more invoices not found")
+        stray = [str(r.id) for r in rows if r.agreement_id != body.agreement_id]
+        if stray:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invoice(s) not matched to agreement {agr.number}: {', '.join(stray)}")
         # 收货闸门不适用:协议路线定义上就没有 GR(1A 无 pickup slip,1B 才有)。
         created = await pa_crud.create(
             db, body,
@@ -344,7 +374,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     from app.core.access_scope import is_pa_visible
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     scope = await build_scope(db, user)
     if not await is_pa_visible(db, pa, scope):
@@ -355,7 +385,7 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
 @router.patch("/{pa_id}", response_model=PaResponse)
 async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWriteDep):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
@@ -371,7 +401,7 @@ async def pa_action(
     token: BearerToken,
 ):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     try:
         if body.action == "process":
@@ -447,7 +477,7 @@ async def confirm_settlement(
     """Finance sign-off for a zero-cash settlement that has a variance (overpaid).
     No payment is made — it reconciles the prepayment and closes the invoice."""
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.pa_type != "settlement" or pa.payment_amount != 0:
         raise HTTPException(
@@ -465,7 +495,7 @@ async def confirm_settlement(
 @router.get("/{pa_id}/events", response_model=list[ApprovalEventResponse])
 async def pa_approval_events(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserPayload):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     return await pa_crud.get_approval_events(db, pa_id)
 
