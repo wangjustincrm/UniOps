@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
 from app.models.vendor_credit import (
-    AVAILABLE, PENDING_REVIEW, SOURCE_UPLOAD, VOID, VendorCredit,
+    AVAILABLE, EXHAUSTED, PENDING_REVIEW, SOURCE_UPLOAD, VOID, VendorCredit,
 )
 from app.schemas.vendor_credit import VendorCreditCreate
 
@@ -284,3 +284,40 @@ async def select_credits_for_payment(
         picks.append((credit, take))
         remaining_base -= take
     return picks
+
+
+async def apply_credits(
+    db: AsyncSession, picks: list[tuple[VendorCredit, Decimal]], *,
+    payment_record_id: uuid.UUID, batch_id: uuid.UUID | None,
+    doc_kind: str, doc_id: uuid.UUID, doc_number: str | None,
+    applied_by: uuid.UUID,
+) -> Decimal:
+    """Consume `picks` against one payment and return the total applied.
+
+    Call this only AFTER the PaymentRecord has been flushed — its id is stored
+    on every application row. Runs in the caller's transaction so the payment
+    and the credit decrements commit or roll back together; a partial outcome
+    here is money that exists in one place and not the other.
+    """
+    from app.models.vendor_credit import VendorCreditApplication
+
+    total = _ZERO
+    now = datetime.now(timezone.utc)
+    for credit, take in picks:
+        credit.applied_amount = credit.applied_amount + take
+        credit.remaining_amount = credit.remaining_amount - take
+        if credit.remaining_amount <= _ZERO:
+            credit.status = EXHAUSTED
+        db.add(VendorCreditApplication(
+            credit_id=credit.id,
+            payment_record_id=payment_record_id,
+            batch_id=batch_id,
+            doc_kind=doc_kind,
+            doc_id=doc_id,
+            doc_number=doc_number,
+            applied_amount=take,
+            applied_at=now,
+            applied_by=applied_by,
+        ))
+        total += take
+    return total

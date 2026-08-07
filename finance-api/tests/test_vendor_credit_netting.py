@@ -213,3 +213,108 @@ async def test_explicit_id_belonging_to_another_vendor_aborts(db_session):
         await crud.select_credits_for_payment(
             db_session, vendor_id=uuid.uuid4(), currency="CAD",
             base=Decimal("50.00"), credit_ids=[other.id])
+
+
+@pytest.mark.anyio
+async def test_apply_writes_rows_and_decrements(db_session):
+    from app.crud import vendor_credit as crud
+    from app.models.vendor_credit import VendorCreditApplication
+    vid, prid, actor = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    c = _credit(vendor_id=vid, amount=Decimal("80.00"),
+                total_amount=Decimal("80.00"), remaining_amount=Decimal("80.00"))
+    db_session.add(c)
+    await db_session.flush()
+
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD", base=Decimal("30.00"))
+    total = await crud.apply_credits(
+        db_session, picks, payment_record_id=prid, batch_id=None,
+        doc_kind="pa", doc_id=uuid.uuid4(), doc_number="PA-1", applied_by=actor)
+    await db_session.flush()
+
+    assert total == Decimal("30.00")
+    assert c.applied_amount == Decimal("30.00")
+    assert c.remaining_amount == Decimal("50.00")
+    assert c.status == "available"          # partially consumed, still usable
+
+    rows = (await db_session.execute(
+        sa.select(VendorCreditApplication).where(
+            VendorCreditApplication.payment_record_id == prid))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].applied_amount == Decimal("30.00")
+    assert rows[0].applied_by == actor
+
+
+@pytest.mark.anyio
+async def test_fully_consumed_credit_becomes_exhausted(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    c = _credit(vendor_id=vid, amount=Decimal("25.00"),
+                total_amount=Decimal("25.00"), remaining_amount=Decimal("25.00"))
+    db_session.add(c)
+    await db_session.flush()
+
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD", base=Decimal("25.00"))
+    await crud.apply_credits(
+        db_session, picks, payment_record_id=uuid.uuid4(), batch_id=None,
+        doc_kind="pa", doc_id=uuid.uuid4(), doc_number="PA-2",
+        applied_by=uuid.uuid4())
+    await db_session.flush()
+
+    assert c.remaining_amount == Decimal("0.00")
+    assert c.status == "exhausted"
+
+
+@pytest.mark.anyio
+async def test_apply_keeps_the_balance_check_satisfied(db_session):
+    """applied + remaining must still equal total, or the DB CHECK rejects it."""
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    c = _credit(vendor_id=vid, amount=Decimal("60.00"),
+                total_amount=Decimal("60.00"), remaining_amount=Decimal("60.00"))
+    db_session.add(c)
+    await db_session.flush()
+
+    picks = await crud.select_credits_for_payment(
+        db_session, vendor_id=vid, currency="CAD", base=Decimal("15.00"))
+    await crud.apply_credits(
+        db_session, picks, payment_record_id=uuid.uuid4(), batch_id=None,
+        doc_kind="pa", doc_id=uuid.uuid4(), doc_number="PA-3",
+        applied_by=uuid.uuid4())
+    await db_session.flush()   # would raise if ck_vendor_credits_balance broke
+
+    assert c.applied_amount + c.remaining_amount == c.total_amount
+
+
+@pytest.mark.anyio
+async def test_apply_of_nothing_is_a_noop(db_session):
+    from app.crud import vendor_credit as crud
+    total = await crud.apply_credits(
+        db_session, [], payment_record_id=uuid.uuid4(), batch_id=None,
+        doc_kind="pa", doc_id=uuid.uuid4(), doc_number="PA-4",
+        applied_by=uuid.uuid4())
+    assert total == Decimal("0")
+
+
+@pytest.mark.anyio
+async def test_one_credit_spanning_two_payments(db_session):
+    from app.crud import vendor_credit as crud
+    vid = uuid.uuid4()
+    c = _credit(vendor_id=vid, amount=Decimal("100.00"),
+                total_amount=Decimal("100.00"), remaining_amount=Decimal("100.00"))
+    db_session.add(c)
+    await db_session.flush()
+
+    for amount in (Decimal("40.00"), Decimal("60.00")):
+        picks = await crud.select_credits_for_payment(
+            db_session, vendor_id=vid, currency="CAD", base=amount)
+        await crud.apply_credits(
+            db_session, picks, payment_record_id=uuid.uuid4(), batch_id=None,
+            doc_kind="pa", doc_id=uuid.uuid4(), doc_number="PA-x",
+            applied_by=uuid.uuid4())
+        await db_session.flush()
+
+    assert c.applied_amount == Decimal("100.00")
+    assert c.remaining_amount == Decimal("0.00")
+    assert c.status == "exhausted"
