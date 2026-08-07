@@ -202,11 +202,14 @@ class VendorCredit(UUIDPrimaryKey, TimestampMixin, Base):
                         name="ck_vendor_credits_nonneg"),
         CheckConstraint("applied_amount + remaining_amount = total_amount",
                         name="ck_vendor_credits_balance"),
-        # A rejected/voided upload must not block re-uploading a corrected one.
+        # A rejected/voided credit must not block re-uploading a corrected one.
+        # NOT scoped to source='upload': the same vendor document arriving both by
+        # manual upload and by a later QBO import would otherwise create two rows
+        # and double the credit pool, invisibly to drift detection.
         Index("uq_vendor_credits_vendor_docno",
               "vendor_id", "vendor_credit_number",
               unique=True,
-              postgresql_where=text("source = 'upload' AND status <> 'void'")),
+              postgresql_where=text("status <> 'void'")),
         Index("uq_vendor_credits_source_ref",
               "source", "source_ref",
               unique=True,
@@ -297,7 +300,7 @@ def upgrade() -> None:
     op.create_index(
         "uq_vendor_credits_vendor_docno", "vendor_credits",
         ["vendor_id", "vendor_credit_number"], unique=True,
-        postgresql_where=sa.text("source = 'upload' AND status <> 'void'"),
+        postgresql_where=sa.text("status <> 'void'"),
     )
     op.create_index(
         "uq_vendor_credits_source_ref", "vendor_credits",
