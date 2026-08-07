@@ -29,6 +29,7 @@ from app.models.ap_invoice import ApInvoice
 from app.models.bank import BankAccount
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
+from app.crud import vendor_credit as vendor_credit_crud
 from app.services import budget_client
 from app.schemas.payment_execute import PaymentExecuteRequest, PaymentExecuteResponse
 from app.services.posting import emit_event
@@ -306,18 +307,38 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
                     ap.paid_amount = ap.total_amount
 
         bank = await _resolve_bank(db, req.bank_account_id, pa.currency)
-        amount = req.amount_paid if req.amount_paid is not None else pa.payment_amount
+        base = req.amount_paid if req.amount_paid is not None else pa.payment_amount
+
+        # Vendor credits reduce the cash that leaves the bank. Selection takes row
+        # locks, so it must happen inside this transaction, immediately before the
+        # PaymentRecord — a credit consumed without its payment (or the reverse)
+        # is money that exists in one place and not the other.
+        picks = await vendor_credit_crud.select_credits_for_payment(
+            db, vendor_id=pa.vendor_id, currency=pa.currency,
+            base=base, credit_ids=req.credit_ids,
+        )
+        credit_applied = sum((take for _, take in picks), Decimal("0"))
+        net = base - credit_applied
+
         record = PaymentRecord(
             doc_kind=doc_kind, doc_id=pa.id, doc_number=pa.pa_number,
             pa_id=pa.id, pa_number=pa.pa_number,
             vendor_id=pa.vendor_id, vendor_name=pa.vendor_name,
             payment_date=pay_date, payment_method=req.payment_method,
-            reference=req.reference, amount=amount, currency=pa.currency,
+            reference=req.reference, amount=net, credit_applied=credit_applied,
+            currency=pa.currency,
             recorded_by=recorded_by, notes=req.notes, batch_id=batch_id,
             bank_account_id=req.bank_account_id,
         )
         db.add(record)
         await db.flush()
+
+        if picks:
+            await vendor_credit_crud.apply_credits(
+                db, picks, payment_record_id=record.id, batch_id=batch_id,
+                doc_kind=doc_kind, doc_id=pa.id, doc_number=pa.pa_number,
+                applied_by=recorded_by,
+            )
 
         event_id = await emit_event(
             db,

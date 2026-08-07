@@ -318,3 +318,142 @@ async def test_one_credit_spanning_two_payments(db_session):
     assert c.applied_amount == Decimal("100.00")
     assert c.remaining_amount == Decimal("0.00")
     assert c.status == "exhausted"
+
+
+def _pa(**over):
+    # NOTE: the brief's version of this helper passed fields (gr_ids, subtotal,
+    # tax_amount, shipping_amount, other_charges, approval_step_idx) that do not
+    # exist on the actual PaymentApplication model (app/models/pa.py) — it raised
+    # TypeError on construction. Corrected to the model's real columns, matching
+    # the existing `_pa()` helper in tests/test_payment_execute.py; semantics
+    # (payment_amount / vendor_id / vendor_name / currency / status) unchanged.
+    from app.models.pa import PaymentApplication
+    kw = dict(
+        pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="Test PA", pa_type="PA-DIR",
+        vendor_id=uuid.uuid4(), vendor_name="ULINE",
+        invoice_ids=[], payment_amount=Decimal("100.00"), currency="CAD",
+        status="approved", created_by=uuid.uuid4(),
+    )
+    kw.update(over)
+    return PaymentApplication(**kw)
+
+
+async def _run_execute(db, pa, *, user_id, credit_ids=None, amount_paid=None):
+    from app.crud import payment_execute
+    from app.schemas.payment_execute import PaymentExecuteRequest
+    return await payment_execute.execute(
+        db,
+        PaymentExecuteRequest(
+            doc_kind="pa", doc_id=pa.id, payment_method="bank_transfer",
+            credit_ids=credit_ids, amount_paid=amount_paid,
+        ),
+        {"sub": str(user_id), "role": "system_admin"},
+    )
+
+
+@pytest.mark.anyio
+async def test_payment_is_reduced_by_available_credit(db_session):
+    from app.models.payment import PaymentRecord
+    actor = uuid.uuid4()
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=actor)
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+    assert rec.amount == Decimal("70.00")
+    assert rec.credit_applied == Decimal("30.00")
+    assert res.new_status == "processed"
+
+
+@pytest.mark.anyio
+async def test_credit_larger_than_payment_pays_zero_cash(db_session):
+    """Zero-cash settlement: the record and the PA still complete."""
+    from app.models.payment import PaymentRecord
+    pa = _pa(payment_amount=Decimal("40.00"))
+    db_session.add(pa)
+    c = _credit(vendor_id=pa.vendor_id, amount=Decimal("100.00"),
+                total_amount=Decimal("100.00"), remaining_amount=Decimal("100.00"))
+    db_session.add(c)
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+    assert rec.amount == Decimal("0.00")
+    assert rec.credit_applied == Decimal("40.00")
+    assert c.remaining_amount == Decimal("60.00")
+    assert c.status == "available"
+    assert pa.status == "processed"
+    assert pa.paid_at is not None
+
+
+@pytest.mark.anyio
+async def test_empty_credit_ids_pays_in_full(db_session):
+    """[] must mean 'do not apply', not 'apply the default'."""
+    from app.models.payment import PaymentRecord
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4(), credit_ids=[])
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+    assert rec.amount == Decimal("100.00")
+    assert rec.credit_applied == Decimal("0.00")
+
+
+@pytest.mark.anyio
+async def test_credit_of_another_currency_is_not_applied(db_session):
+    from app.models.payment import PaymentRecord
+    pa = _pa(payment_amount=Decimal("100.00"), currency="USD")
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, currency="CAD"))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+    assert rec.amount == Decimal("100.00")
+    assert rec.credit_applied == Decimal("0.00")
+
+
+@pytest.mark.anyio
+async def test_unavailable_explicit_credit_aborts_the_payment(db_session):
+    """The whole execution rolls back — no partial payment, no partial apply."""
+    from app.crud.vendor_credit import CreditUnavailable
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    voided = _credit(vendor_id=pa.vendor_id, status="void")
+    db_session.add(voided)
+    await db_session.flush()
+
+    with pytest.raises(CreditUnavailable):
+        await _run_execute(db_session, pa, user_id=uuid.uuid4(),
+                           credit_ids=[voided.id])
+
+
+@pytest.mark.anyio
+async def test_partial_payment_nets_against_the_amount_actually_paid(db_session):
+    from app.models.payment import PaymentRecord
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("90.00"),
+                           total_amount=Decimal("90.00"),
+                           remaining_amount=Decimal("90.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4(),
+                             amount_paid=Decimal("50.00"))
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+    assert rec.credit_applied == Decimal("50.00")
+    assert rec.amount == Decimal("0.00")
