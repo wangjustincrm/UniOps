@@ -238,6 +238,51 @@ async def test_production_lead_months_clamped_to_current_month_flags_shortfall(
     assert line["demand_month"] == months[0]
     assert line["plan_month"] == months[0]  # clamped up to current_month == demand_month
     assert line["lead_shortfall"] is True
+    assert line["capacity_gap"] is False  # ample capacity -- shortfall isn't masking a capacity gap
+
+
+@pytest.mark.anyio
+async def test_recalculate_keeps_locked_lead_shortfall_line_fixed(client, db_session, admin_token, monkeypatch):
+    """A locked line's `lead_shortfall=True` must survive `recalculate_run`
+    unchanged -- `generate_mps`'s `locked_planned` `PlannedLine`s never set
+    `lead_shortfall` (it defaults False on the dataclass), so the endpoint
+    must read the previously-stored value back off the DB row for locked
+    lines (see mps.py's `locked_lead_shortfall` dict) rather than letting it
+    silently reset to False on every recalculate. Same clamped-to-
+    current-month setup as
+    test_production_lead_months_clamped_to_current_month_flags_shortfall,
+    but here the shortfall line is locked before recalculating."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(0)  # this month -- D-1 would be in the past -> clamp
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 1},
+        headers=headers,
+    )).json()
+    line = run["lines"][0]
+    assert line["lead_shortfall"] is True  # sanity: same clamp as the sibling test above
+
+    lock = await client.patch(
+        f"/api/v1/mps/runs/{run['id']}/lines/{line['id']}",
+        json={"locked_by_planner": True},
+        headers=headers,
+    )
+    assert lock.status_code == 200, lock.text
+    assert lock.json()["lead_shortfall"] is True  # PATCH echoes the line unchanged
+
+    r = await client.post(f"/api/v1/mps/runs/{run['id']}/recalculate", headers=headers)
+    assert r.status_code == 200, r.text
+    recalced_lines = r.json()["lines"]
+    assert len(recalced_lines) == 1
+    recalced_line = recalced_lines[0]
+    assert recalced_line["locked_by_planner"] is True
+    assert recalced_line["plan_month"] == line["plan_month"]  # unchanged, still locked in place
+    assert recalced_line["lead_shortfall"] is True  # must NOT have reset to False
 
 
 @pytest.mark.anyio
