@@ -20,14 +20,20 @@ const TYPE_LABELS: Record<AgreementType, string> = {
   milestone: 'Milestone',
 }
 
+// Full AgreementStatus set, including 'submitted' and 'rejected' — omitting
+// either leaves an agreement in that state unfilterable (an agreement waiting
+// on its very first approval sits in 'submitted', not 'in_review'; see
+// AgreementDetailPage's APPROVABLE_STATUSES comment for why).
 const STATUS_FILTER_OPTIONS: { value: string; label: string }[] = [
   { value: 'all', label: 'All Statuses' },
   { value: 'draft', label: 'Draft' },
+  { value: 'submitted', label: 'Submitted' },
   { value: 'in_review', label: 'In Review' },
   { value: 'active', label: 'Active' },
   { value: 'expired', label: 'Expired' },
   { value: 'closed', label: 'Closed' },
   { value: 'returned', label: 'Returned' },
+  { value: 'rejected', label: 'Rejected' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 

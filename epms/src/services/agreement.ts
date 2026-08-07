@@ -2,12 +2,14 @@ import { api, fetchAllPages } from '@/lib/api'
 
 export type AgreementStatus =
   | 'draft'
+  | 'submitted'
   | 'in_review'
   | 'active'
   | 'expired'
   | 'closed'
   | 'cancelled'
   | 'returned'
+  | 'rejected'
 
 export type AgreementType = 'house_account' | 'recurring' | 'milestone'
 

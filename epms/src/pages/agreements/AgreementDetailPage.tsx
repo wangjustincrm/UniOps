@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
-  ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink,
+  ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
@@ -25,8 +25,14 @@ const TYPE_LABELS: Record<AgreementType, string> = {
 }
 
 // Statuses in which the agreement is still awaiting the current approver's
-// decision. Mirrors PoDetailPage's APPROVABLE_STATUSES.
-const APPROVABLE_STATUSES: AgreementStatus[] = ['in_review']
+// decision. Mirrors PoDetailPage's APPROVABLE_STATUSES = ['submitted', 'in_review'].
+// 'submitted' matters here: the engine's submit branch (engine.py:911) sets
+// status to "submitted" and creates the step-0 approve_agr task WITHOUT ever
+// touching "in_review" — that only gets written after the FIRST approve
+// (engine.py:1018), when a next step remains. Approval-meta confirms this is
+// the correct set: _DOC_META["agr"]["valid_approve"] = ("submitted", "in_review")
+// (approval-api/app/crud/engine.py:102).
+const APPROVABLE_STATUSES: AgreementStatus[] = ['submitted', 'in_review']
 
 // Fallback used only if this CompanyConfig row predates workflow_defs.agr —
 // mirrors AGR_WORKFLOW's seed default in epms-api/app/schemas/agreement.py.
@@ -229,8 +235,16 @@ export default function AgreementDetailPage() {
 
   const perms = useRolePermissions().data?.permissions
   const canWrite = user?.role === 'system_admin' || !!perms?.['epms.agreement.write']
-  const canSubmit = canWrite && agreement?.status === 'draft'
-  const canCancel = canWrite && !!agreement && ['draft', 'in_review', 'returned'].includes(agreement.status)
+  // Matches epms-api/app/crud/agreement.py:13 EDITABLE_STATUSES = ("draft", "returned") —
+  // both are submit-able AND edit-able. 'returned' must have both, or the
+  // Return action is a permanent dead end: the creator can neither fix nor
+  // resubmit what came back.
+  const canSubmit = canWrite && !!agreement && ['draft', 'returned'].includes(agreement.status)
+  const canEdit = canWrite && !!agreement && ['draft', 'returned'].includes(agreement.status)
+  // Matches approval-api's _DOC_META["agr"]["valid_cancel"] = ("draft", "returned", "submitted")
+  // (engine.py:104) — NOT "in_review": once a human has already acted (the
+  // first approve moves it to in_review), cancel is no longer offered.
+  const canCancel = canWrite && !!agreement && ['draft', 'returned', 'submitted'].includes(agreement.status)
 
   // Approval gating follows the open-task convention used across PR/PO/PA:
   // the Approve button only appears when the current user holds an active
@@ -296,6 +310,14 @@ export default function AgreementDetailPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            {canEdit && (
+              <Link to={`/agreements/${agreement.id}/edit`}>
+                <Button variant="secondary" size="sm">
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit
+                </Button>
+              </Link>
+            )}
             {canSubmit && (
               <Button
                 variant="secondary"

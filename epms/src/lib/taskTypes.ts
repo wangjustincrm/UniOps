@@ -43,6 +43,8 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   review_match: 'Review Invoice Match',
   match_invoice: 'Match Invoice to PO',
   process_pa: 'Process Payment Application',
+  approve_agr: 'Approve Agreement',
+  revise_agr: 'Revise Agreement',
   revise_pr: 'Revise Purchase Request',
   revise_po: 'Revise Purchase Order',
   revise_pa: 'Revise Payment Application',
@@ -63,6 +65,7 @@ const HREF_MAP: Record<string, string> = {
   gr: '/gr',
   invoice: '/invoices',
   pa: '/pa',
+  agr: '/agreements',
 }
 
 // A task carries a type plus the document it anchors on. Accept the minimal shape
