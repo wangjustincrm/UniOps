@@ -160,6 +160,12 @@ class InvoiceResponse(BaseModel):
     allocations: list[AllocationResponse] = Field(default_factory=list)
     match_assignee_id: uuid.UUID | None = None
     match_assignee_name: str | None = None
+    agreement_id: uuid.UUID | None = None
+    agreement_number: str | None = None
+    match_route: str | None = None
+    match_route_auto: bool = False
+    legacy_settlement: bool = False
+    legacy_settlement_reason: str | None = None
 
     @model_validator(mode='after')
     def _set_uploaded_at(self) -> 'InvoiceResponse':

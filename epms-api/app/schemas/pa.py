@@ -143,6 +143,8 @@ class PaResponse(BaseModel):
     receipt_override_reason: str | None = None
     receipt_override_by: uuid.UUID | None = None
     current_step: CurrentStep | None = None
+    agreement_id: uuid.UUID | None = None
+    agreement_number: str | None = None
 
     model_config = {"from_attributes": True}
 

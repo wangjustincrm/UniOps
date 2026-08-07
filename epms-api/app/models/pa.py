@@ -25,6 +25,14 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     )
     po_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
+    # Agreement-sourced PA: po_id is NULL and this is set instead. EPMS's PA list
+    # admits a PA when EITHER is non-NULL (OA's Direct PAs have both NULL).
+    agreement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_agreements.id", ondelete="RESTRICT"),
+        nullable=True, index=True
+    )
+    agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("business_partners.id", ondelete="RESTRICT"),
         nullable=False, index=True

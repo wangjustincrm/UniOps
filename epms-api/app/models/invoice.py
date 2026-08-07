@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -58,6 +58,28 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     gr_number: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # All linked GR IDs (UUID strings); gr_id/gr_number hold the first for backward compat
     gr_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+
+    # ── Agreement route (blanket/house-account/contract spend) ────────────────
+    # Mutually exclusive with the PO route in practice, but both columns are kept
+    # nullable so a re-match can flip an invoice from one route to the other.
+    agreement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_agreements.id", ondelete="RESTRICT"),
+        nullable=True, index=True
+    )
+    agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # "po" | "agreement" — which candidate pool this invoice was matched against.
+    match_route: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # True only when the system resolved the route itself (1B). A human override
+    # sets it False, which doubles as a health signal: a vendor whose route is
+    # constantly corrected by hand has a mis-registered vendor_reference.
+    match_route_auto: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false")
+    # ⚠️ Backlog escape hatch: paid against an agreement with NO pickup-slip
+    # evidence. Opened for the 1A invoice backlog; MUST be narrowed once 1B ships
+    # slip reconciliation, or it becomes the standard way to bypass matching.
+    legacy_settlement: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false")
+    legacy_settlement_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # 3-way match results
     matched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
