@@ -201,9 +201,9 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.CheckConstraint("applied_amount > 0", name="ck_vendor_credit_applications_positive"),
     )
-    op.create_index("ix_vca_credit_id", "vendor_credit_applications", ["credit_id"])
-    op.create_index("ix_vca_payment_record_id", "vendor_credit_applications", ["payment_record_id"])
-    op.create_index("ix_vca_doc_id", "vendor_credit_applications", ["doc_id"])
+    op.create_index("ix_vendor_credit_applications_credit_id", "vendor_credit_applications", ["credit_id"])
+    op.create_index("ix_vendor_credit_applications_payment_record_id", "vendor_credit_applications", ["payment_record_id"])
+    op.create_index("ix_vendor_credit_applications_doc_id", "vendor_credit_applications", ["doc_id"])
 
     op.add_column("payment_records",
                   sa.Column("credit_applied", sa.Numeric(15, 2), nullable=False, server_default="0"))
