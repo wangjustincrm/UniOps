@@ -1512,7 +1512,75 @@ Then, at both `GroupLine(...)` construction sites in that module (near lines 206
 
 - [ ] **Step 4: Show the figures in the rendered advice**
 
-In `finance-api/app/services/remittance_template.py`, in the per-line row builder, add the two figures beside the existing amount cell — render `Gross`, `Credits applied` and `Net paid` for any line where `credit_applied` is non-zero, and keep the current single-amount layout when it is zero, so ordinary remittances look exactly as they do today. Use the existing `_money(...)` helper for every figure so currency formatting stays consistent.
+In `finance-api/app/services/remittance_template.py`, the `rows = "".join(...)` generator
+currently emits three cells per line: reference, date, amount. Replace that generator with a
+per-line helper so a netted line can explain itself, while an ordinary line renders exactly as
+it does today:
+
+```python
+    _CELL = "padding:8px;border-bottom:1px solid #eee"
+
+    def _amount_cell(l) -> str:
+        """An ordinary line shows one figure. A line whose payment was reduced by a
+        vendor credit shows all three, because the vendor is receiving less than
+        their invoice and the advice is the only place that says why."""
+        if not l.credit_applied:
+            return (f"<td style='{_CELL};text-align:right'>"
+                    f"{_money(l.amount, group.currency)}</td>")
+        return (
+            f"<td style='{_CELL};text-align:right'>"
+            f"<div>{_money(l.gross, group.currency)}</div>"
+            f"<div style='color:#666;font-size:12px'>"
+            f"less credits {_money(l.credit_applied, group.currency)}</div>"
+            f"<div style='font-weight:600'>{_money(l.amount, group.currency)}</div>"
+            f"</td>"
+        )
+
+    rows = "".join(
+        "<tr>"
+        f"<td style='{_CELL}'>"
+        f"{escape(l.vendor_inv_no if is_vendor else l.doc_number)}</td>"
+        f"<td style='{_CELL}'>{l.payment_date}</td>"
+        + _amount_cell(l) +
+        "</tr>"
+        for l in group.lines
+    )
+```
+
+The stacked `<div>`s live inside the existing amount cell rather than adding new columns,
+because the surrounding table's header row and column count are defined elsewhere in the
+template and adding a column would desynchronise them. Every figure goes through the existing
+`_money(...)` helper so currency formatting stays consistent.
+
+Then add a rendering test to `finance-api/tests/test_vendor_credit_netting.py`:
+
+```python
+def test_remittance_row_explains_a_netted_line():
+    from app.crud.remittance import GroupLine, PayeeGroup
+    from app.services import remittance_template
+
+    group = PayeeGroup(
+        recipient_kind="vendor", party_id=uuid.uuid4(), party_name="ULINE",
+        email="ap@uline.test", currency="CAD",
+        lines=[
+            GroupLine(vendor_inv_no="INV-1", doc_number="PA-1",
+                      payment_date=date(2026, 8, 7), amount=Decimal("70.00"),
+                      credit_applied=Decimal("30.00"), gross=Decimal("100.00")),
+            GroupLine(vendor_inv_no="INV-2", doc_number="PA-2",
+                      payment_date=date(2026, 8, 7), amount=Decimal("50.00")),
+        ],
+        total=Decimal("120.00"),
+    )
+    html = remittance_template.render(
+        group, company_name="CRM", reference="REF-1", template={}, logo_data_url=None)
+
+    assert "less credits" in html          # the netted line explains itself
+    assert "100.00" in html and "70.00" in html
+    assert html.count("less credits") == 1  # the ordinary line is unchanged
+```
+
+If `render(...)` takes a different keyword set in this codebase, call it the way
+`tests/test_remittance.py` already does and keep the assertions.
 
 - [ ] **Step 5: Run the tests**
 
