@@ -115,6 +115,10 @@ class VendorCreditApplication(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("vendor_credits.id", ondelete="RESTRICT"),
         nullable=False, index=True,
     )
+    # No FK: payment_records is finance-owned in this same service, but the
+    # application row must survive a payment being voided/deleted for audit
+    # purposes, so the reference is deliberately soft, same rationale as
+    # VendorCredit.vendor_id above.
     payment_record_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True,
     )

@@ -52,6 +52,19 @@ async def test_migration_builds_applications_table(db_session):
     ))).scalars().all()
     assert pr == ["credit_applied"]
 
+    # Pins the migration's explicit index names to the model's default
+    # SQLAlchemy-generated names (index=True, no explicit `name=`). If these
+    # ever drift apart, `alembic revision --autogenerate` will silently
+    # propose dropping and recreating indexes on a live table.
+    idx = (await db_session.execute(sa.text(
+        "SELECT indexname FROM pg_indexes WHERE tablename = 'vendor_credit_applications'"
+    ))).scalars().all()
+    assert {
+        "ix_vendor_credit_applications_credit_id",
+        "ix_vendor_credit_applications_payment_record_id",
+        "ix_vendor_credit_applications_doc_id",
+    } <= set(idx)
+
 
 @pytest.mark.anyio
 async def test_application_rejects_non_positive_amount(db_session):
