@@ -33,16 +33,34 @@ call sites now selects that column:
 - `app/crud/remittance.py`, `app/api/v1/remittance.py` (remittance)
 - `app/services/nc_ap_export.py` (NC AP export)
 
-**If the finance-api image starts before `ag02_agreement_links` has run on the
-shared database, every one of those reads fails with `UndefinedColumn` for
-`payment_applications.agreement_id`** — not just agreement-sourced PAs. AP
-list, paying anything, payment batches, remittance, and the NC AP export all
-break simultaneously, for every PA regardless of route.
+`expense-api` (OA) mirrors the same column
+(`expense-api/app/models/pa.py`), because `po_id IS NULL` stopped meaning "OA
+Direct PA" the moment agreements shipped — `is_direct` has to read
+`agreement_id` to tell an EPMS agreement PA apart from OA's own. Every
+`select(PaymentApplication)` in the service therefore selects it too:
+
+- `app/api/v1/pa.py` (PA list, PA detail, `/pa/{id}/action`, `/pa/{id}/pay`)
+- `app/api/v1/tasks.py` (OA task list)
+- `app/crud/pa.py` (the queries behind all of the above)
+
+**If the finance-api OR expense-api image starts before `ag02_agreement_links`
+has run on the shared database, every one of those reads fails with
+`UndefinedColumn` for `payment_applications.agreement_id`** — not just
+agreement-sourced PAs. On the finance side: AP list, paying anything, payment
+batches, remittance, and the NC AP export. On the OA side: the PA list, PA
+detail, PA approve/return, `/pa/{id}/pay`, and the OA task list. All of it
+breaks simultaneously, for every PA regardless of route, and OA's task list
+failing takes down the landing surface users hit first.
+
+There is no separate-database hazard to reason about: production `expense-api`
+merges the shared `x-db-env` anchor (`docker-compose.prod.yml:25`, service
+block at :201-206), so its `DATABASE_URL` is the same `epms` database epms-api
+and finance-api use. **Ordering is the whole of the constraint.**
 
 **Migrations must complete before any service (epms-api, finance-api,
-approval-api) is brought up on the new image.** Follow the standard order —
-`migrate-prod.sh` first, then `docker compose up -d` — do not reorder this
-for this release.
+expense-api, approval-api) is brought up on the new image.** Follow the
+standard order — `migrate-prod.sh` first, then `docker compose up -d` — do not
+reorder this for this release.
 
 ## If something fails — stop conditions and rollback
 
@@ -91,9 +109,9 @@ identity statements are `ON CONFLICT DO NOTHING`, so re-running is safe.
 
 The extra columns are *inert* to the previous release: nothing in the old code
 reads `agreement_id`, so leaving them in place costs nothing. Dropping them, by
-contrast, breaks the **new** finance-api instantly and irreversibly for the
-duration — and finance-api is the service most likely to still be running
-mid-rollback. The safe rollback is **code only**: redeploy the previous image
+contrast, breaks the **new** finance-api *and* expense-api instantly and
+irreversibly for the duration — and those two are the services most likely to
+still be running mid-rollback. The safe rollback is **code only**: redeploy the previous image
 tags and leave the schema at `ag02_agreement_links`. The same applies to
 `0006_agreement_perms` — surplus permission grants for a permission key nothing
 reads are harmless; revoking them is not, and re-running the migration later
