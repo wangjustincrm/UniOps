@@ -84,11 +84,15 @@ class VendorCredit(UUIDPrimaryKey, TimestampMixin, Base):
                         name="ck_vendor_credits_nonneg"),
         CheckConstraint("applied_amount + remaining_amount = total_amount",
                         name="ck_vendor_credits_balance"),
+        # One vendor document = one live row, regardless of how it arrived: a
+        # manual upload and a later Phase C QBO import of the same credit note
+        # must collide, or the vendor's available credit silently doubles.
+        # Must stay byte-for-byte in step with alembic 0030_vendor_credits.
         # A rejected/voided upload must not block re-uploading a corrected one.
         Index("uq_vendor_credits_vendor_docno",
               "vendor_id", "vendor_credit_number",
               unique=True,
-              postgresql_where=text("source = 'upload' AND status <> 'void'")),
+              postgresql_where=text("status <> 'void'")),
         Index("uq_vendor_credits_source_ref",
               "source", "source_ref",
               unique=True,

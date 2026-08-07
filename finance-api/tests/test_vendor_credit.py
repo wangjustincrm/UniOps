@@ -181,6 +181,77 @@ async def test_unique_vendor_docno_allows_reupload_after_void(db_session):
 
 
 @pytest.mark.anyio
+async def test_unique_vendor_docno_spans_sources(db_session):
+    """uq_vendor_credits_vendor_docno is NOT scoped by `source`.
+
+    A credit note AP uploads manually and the same vendor document pulled in
+    later by the Phase C QBO import are one document, not two. If the index
+    were scoped to source = 'upload', both rows would live and the vendor's
+    available credit pool would silently double — with each row looking
+    legitimate on its own, so drift detection could not see it.
+    """
+    from app.models.vendor_credit import (
+        PENDING_REVIEW, SOURCE_QBO_IMPORT, SOURCE_UPLOAD, VendorCredit,
+    )
+
+    vendor_id = uuid.uuid4()
+    docno = f"VCN-{uuid.uuid4().hex[:8]}"
+    await db_session.execute(sa.insert(VendorCredit).values(
+        **_row(vendor_id=vendor_id, vendor_credit_number=docno,
+               source=SOURCE_UPLOAD, status=PENDING_REVIEW)))
+
+    with pytest.raises(IntegrityError) as exc:
+        await db_session.execute(sa.insert(VendorCredit).values(
+            **_row(vendor_id=vendor_id, vendor_credit_number=docno,
+                   source=SOURCE_QBO_IMPORT, status=PENDING_REVIEW)))
+    assert "uq_vendor_credits_vendor_docno" in str(exc.value)
+    await db_session.rollback()
+
+
+@pytest.mark.anyio
+async def test_unique_vendor_docno_void_carve_out_survives_across_sources(db_session):
+    """Widening the predicate to every source must not cost the void carve-out:
+    a voided row still lets the same vendor document be recorded again, even
+    when the second row arrives from a different source."""
+    from app.models.vendor_credit import (
+        PENDING_REVIEW, SOURCE_QBO_IMPORT, SOURCE_UPLOAD, VOID, VendorCredit,
+    )
+
+    vendor_id = uuid.uuid4()
+    docno = f"VCN-{uuid.uuid4().hex[:8]}"
+    await db_session.execute(sa.insert(VendorCredit).values(
+        **_row(vendor_id=vendor_id, vendor_credit_number=docno,
+               source=SOURCE_UPLOAD, status=VOID)))
+
+    # Must not raise.
+    await db_session.execute(sa.insert(VendorCredit).values(
+        **_row(vendor_id=vendor_id, vendor_credit_number=docno,
+               source=SOURCE_QBO_IMPORT, status=PENDING_REVIEW)))
+
+
+@pytest.mark.anyio
+async def test_create_rejects_document_already_present_from_another_source(db_session):
+    """crud._find_duplicate must match the index it fast-paths: a QBO-imported
+    row for the same (vendor, document number) makes a manual upload a
+    DuplicateCredit (409), not a raw IntegrityError surfacing as a 500."""
+    from app.crud import vendor_credit as crud
+    from app.models.vendor_credit import (
+        PENDING_REVIEW, SOURCE_QBO_IMPORT, VendorCredit,
+    )
+
+    vid = uuid.uuid4()
+    docno = "11DJ-MFHX-N4JG"      # the number _create_payload() uses
+    await db_session.execute(sa.insert(VendorCredit).values(
+        **_row(vendor_id=vid, vendor_credit_number=docno,
+               source=SOURCE_QBO_IMPORT, status=PENDING_REVIEW)))
+    await db_session.commit()
+
+    with pytest.raises(crud.DuplicateCredit):
+        await crud.create(db_session, payload=_create_payload(vendor_id=vid),
+                          uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
+
+
+@pytest.mark.anyio
 async def test_unique_source_ref_blocks_duplicate_but_allows_null(db_session):
     """uq_vendor_credits_source_ref: two rows sharing (source, source_ref)
     collide when source_ref is set, but rows with source_ref IS NULL never
@@ -602,6 +673,56 @@ async def test_reject_success_flips_to_void_with_persisted_note(client):
     body = r.json()
     assert body["status"] == "void"
     assert body["review_note"] == "wrong vendor"
+
+
+@pytest.mark.anyio
+async def test_get_for_update_returns_the_row_under_a_lock(db_session, pending_credit):
+    """FOR UPDATE has to be valid SQL against this table (no outer join, no
+    aggregate) and still return the row — otherwise the review routes would
+    500 rather than lock."""
+    from app.crud import vendor_credit as crud
+    locked = await crud.get_for_update(db_session, pending_credit.id)
+    assert locked is not None and locked.id == pending_credit.id
+
+    stmt = str(sa.select(type(locked)).where(
+        type(locked).id == pending_credit.id).with_for_update())
+    assert "FOR UPDATE" in stmt
+
+
+@pytest.mark.anyio
+async def test_review_routes_lock_the_row_and_reads_do_not(client, monkeypatch):
+    """approve/reject/void guard on status and applied_amount check-then-act, so
+    they must load the row FOR UPDATE; a concurrent Phase B application would
+    otherwise be lost-updated (no CHECK constraint catches a void, which moves
+    no monetary column). The read routes must NOT take that lock."""
+    from app.crud import vendor_credit as crud
+
+    real = crud.get_for_update
+    calls = {"n": 0}
+
+    async def spy(db, credit_id):
+        calls["n"] += 1
+        return await real(db, credit_id)
+
+    monkeypatch.setattr(crud, "get_for_update", spy)
+
+    created = (await client.post("/finance/v1/vendor-credits",
+                                 json=_api_body(), headers=_h())).json()
+
+    # Read path: unlocked.
+    await client.get(f"/finance/v1/vendor-credits/{created['id']}", headers=_h())
+    assert calls["n"] == 0
+
+    # Each mutating route locks exactly once.
+    await client.post(f"/finance/v1/vendor-credits/{created['id']}/approve",
+                      json={}, headers=_h("system_admin"))
+    assert calls["n"] == 1
+    await client.post(f"/finance/v1/vendor-credits/{created['id']}/void",
+                      json={"note": "no longer needed"}, headers=_h("system_admin"))
+    assert calls["n"] == 2
+    await client.post(f"/finance/v1/vendor-credits/{created['id']}/reject",
+                      json={"note": "already void"}, headers=_h("system_admin"))
+    assert calls["n"] == 3
 
 
 @pytest.mark.anyio

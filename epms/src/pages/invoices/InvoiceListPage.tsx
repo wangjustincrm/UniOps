@@ -100,8 +100,22 @@ function fmtSize(bytes: number): string {
 
 interface UploadModalProps {
   onClose: () => void
-  onUploaded: (id: string) => void
+  // `kind` tells the caller which collection the id belongs to. A vendor credit
+  // id is NOT an invoice id — routing one to /invoices/:id lands on "Invoice not
+  // found" and pushes the operator into re-uploading a credit that was in fact
+  // created (409 duplicate). Defaults to 'invoice' for the many invoice-path
+  // call sites below.
+  onUploaded: (id: string, kind?: 'invoice' | 'credit') => void
 }
+
+/** Display-time sign derivation for the amount fields — NOT a normalisation
+ *  point. The single normalisation of a credit's sign lives server-side in
+ *  finance-api app/crud/vendor_credit.py `_positive()`. Here we only choose
+ *  what to show: a credit note is entered as a positive figure, an invoice
+ *  keeps whatever OCR parsed (including a negative, so the `amtNum <= 0`
+ *  guard can fire). */
+const displayAmount = (raw: number, kind: 'invoice' | 'credit_note'): string =>
+  String(kind === 'credit_note' ? Math.abs(raw) : raw)
 
 function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const { data: invoicesData } = useInvoices()
@@ -131,6 +145,13 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const [docType, setDocType] = useState<'invoice' | 'credit_note'>('invoice')
   const [docTypeAutoDetected, setDocTypeAutoDetected] = useState(false)
   const [taxAmount, setTaxAmount] = useState('')
+  // The header figures exactly as OCR parsed them, kept untouched so switching
+  // the document type can re-derive the displayed amounts from the source of
+  // truth rather than from an already-abs()'d value. Without this, a credit
+  // note detected at -0.04 stays 0.04 after the user switches back to "Regular
+  // Invoice" and sails through epms-api's InvoiceCreate.amount gt=0 backstop.
+  const [rawAmount, setRawAmount] = useState<number | null>(null)
+  const [rawTax,    setRawTax]    = useState<number | null>(null)
   const [currency, setCurrency] = useState('CAD')
   const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<InvoiceLineItem[]>([])
@@ -157,6 +178,8 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setLineItems([])
     setDocType('invoice')
     setDocTypeAutoDetected(false)
+    setRawAmount(null)
+    setRawTax(null)
 
     setParsing(true)
     try {
@@ -168,9 +191,23 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
       // Two independent signals, OR'd: what the model called it, and the
       // structural fact of a negative total. Either one flips the form.
+      //
+      // The structural test is HEADER-ONLY — the pre-tax amount, or pre-tax
+      // plus tax, being negative. It deliberately does NOT look at line items:
+      // an ordinary payable invoice routinely carries a negative line. Return
+      // and discount rows arrive from OCR as `quantity: -1`, and expense-api's
+      // _normalize_negative_quantities() (app/services/ocr_service.py) flips
+      // that sign onto unit_price, leaving the line amount negative under a
+      // positive header. Keying on lines would flip such an invoice into
+      // Credit Note mode under a banner claiming the total is negative, and an
+      // accepted default would record a payable as a credit — it would never
+      // reach the payment queue, and would later net down a real payment.
+      const headerTotal = fields.amount === null
+        ? null
+        : fields.amount + (fields.taxAmount ?? 0)
       const looksNegative =
         (fields.amount !== null && fields.amount < 0) ||
-        (fields.lineItems?.some((l) => l.line_total < 0) ?? false)
+        (headerTotal !== null && headerTotal < 0)
       const detected = fields.documentType === 'credit_note' || looksNegative
       setDocType(detected ? 'credit_note' : 'invoice')
       setDocTypeAutoDetected(detected)
@@ -205,8 +242,11 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
         setNetTermsHint(`Calculated from NET ${fields.paymentTermsNetDays} terms (issue date + ${fields.paymentTermsNetDays} days)`)
       }
 
-      if (fields.amount    !== null)  { setAmount(String(detected ? Math.abs(fields.amount) : fields.amount)); filled.add('amount') }
-      if (fields.taxAmount !== null)  { setTaxAmount(String(detected ? Math.abs(fields.taxAmount) : fields.taxAmount)); filled.add('taxAmount') }
+      const kind = detected ? 'credit_note' : 'invoice'
+      setRawAmount(fields.amount)
+      setRawTax(fields.taxAmount)
+      if (fields.amount    !== null)  { setAmount(displayAmount(fields.amount, kind)); filled.add('amount') }
+      if (fields.taxAmount !== null)  { setTaxAmount(displayAmount(fields.taxAmount, kind)); filled.add('taxAmount') }
       if (fields.currency && ['CAD','USD','EUR','RMB'].includes(fields.currency)) {
         setCurrency(fields.currency); filled.add('currency')
       }
@@ -240,6 +280,18 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
     setDragging(false)
     const f = e.dataTransfer.files[0]
     if (f) void handleFile(f)
+  }
+
+  // The only way the document type changes after parsing. Re-deriving the
+  // displayed amounts from rawAmount/rawTax (what OCR actually read off the
+  // header) is what makes the switch reversible: flipping back to "Regular
+  // Invoice" restores the negative figure, so the `amtNum <= 0` guard below
+  // fires again instead of letting a mis-classified credit through as a
+  // positive invoice. No-ops when there is nothing parsed (manual entry).
+  const changeDocType = (next: 'invoice' | 'credit_note') => {
+    setDocType(next)
+    if (rawAmount !== null) setAmount(displayAmount(rawAmount, next))
+    if (rawTax    !== null) setTaxAmount(displayAmount(rawTax, next))
   }
 
   const amtNum = parseFloat(amount) || 0
@@ -329,12 +381,19 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
           const form = new FormData()
           form.append('file', file.raw)
           const token = useAuthStore.getState().token
+          // Non-fatal — the credit is already created — but a non-OK response
+          // must still be reported. Phase A offers no other way to view the
+          // document, so silently swallowing a 413/500 leaves a credit whose
+          // file_name names a file that was never stored. Mirrors the invoice
+          // branch below.
           await fetch(
             `${EXPENSE_BASE}/api/v1/invoice-attachments?invoice_id=${credit.id}&invoice_source=credit`,
             { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form },
-          ).catch((e) => console.error('Credit note attachment upload failed:', e))
+          ).then((res) => {
+            if (!res.ok) console.error('Credit note attachment upload failed:', res.status)
+          }).catch((e) => console.error('Credit note attachment upload failed:', e))
         }
-        onUploaded(credit.id)
+        onUploaded(credit.id, 'credit')
       } catch (err) {
         const status = (err as { status?: number }).status
         setSubmitError(
@@ -608,12 +667,12 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
                       type error. Widen back to compare; always evaluates false here,
                       same as the unnarrowed comparison would. */}
                   <input type="radio" checked={(docType as string) === 'invoice'}
-                         onChange={() => setDocType('invoice')} />
+                         onChange={() => changeDocType('invoice')} />
                   Regular Invoice
                 </label>
                 <label className="flex items-center gap-1.5">
                   <input type="radio" checked={docType === 'credit_note'}
-                         onChange={() => setDocType('credit_note')} />
+                         onChange={() => changeDocType('credit_note')} />
                   Credit Note
                 </label>
               </div>
@@ -623,7 +682,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               Document type: {docType === 'credit_note' ? 'Credit Note' : 'Invoice'}
               {' · '}
               <button type="button" className="text-primary-600 underline"
-                      onClick={() => setDocType(docType === 'invoice' ? 'credit_note' : 'invoice')}>
+                      onClick={() => changeDocType(docType === 'invoice' ? 'credit_note' : 'invoice')}>
                 Change
               </button>
             </p>
@@ -1615,7 +1674,10 @@ export default function InvoiceListPage() {
       {showUpload && (
         <UploadModal
           onClose={() => setShowUpload(false)}
-          onUploaded={(id) => { setShowUpload(false); navigate(`/invoices/${id}`) }}
+          onUploaded={(id, kind) => {
+            setShowUpload(false)
+            navigate(kind === 'credit' ? '/vendor-credits' : `/invoices/${id}`)
+          }}
         />
       )}
     </div>

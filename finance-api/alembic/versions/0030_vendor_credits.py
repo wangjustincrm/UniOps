@@ -65,7 +65,14 @@ def upgrade() -> None:
     op.create_index(
         "uq_vendor_credits_vendor_docno", "vendor_credits",
         ["vendor_id", "vendor_credit_number"], unique=True,
-        postgresql_where=sa.text("source = 'upload' AND status <> 'void'"),
+        # Deliberately NOT scoped by source. One vendor document is one row,
+        # whatever brought it in: if AP uploads a credit note manually and the
+        # Phase C QBO import later pulls the same document, a source-scoped
+        # predicate would let both rows live and silently double the vendor's
+        # available credit — with both rows looking legitimate to drift
+        # detection. The status <> 'void' carve-out stays: a rejected credit
+        # must still be re-uploadable under the same document number.
+        postgresql_where=sa.text("status <> 'void'"),
     )
     op.create_index(
         "uq_vendor_credits_source_ref", "vendor_credits",

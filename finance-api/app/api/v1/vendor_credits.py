@@ -39,6 +39,16 @@ async def _load(db: AsyncSession, credit_id: uuid.UUID):
     return credit
 
 
+async def _load_for_update(db: AsyncSession, credit_id: uuid.UUID):
+    """Used by approve/reject/void only. Their status and applied_amount guards
+    are check-then-act and need the row locked for the length of the
+    transaction — see crud.get_for_update. The GET routes stay unlocked."""
+    credit = await crud.get_for_update(db, credit_id)
+    if credit is None:
+        raise HTTPException(status_code=404, detail="Vendor credit not found")
+    return credit
+
+
 @router.post("", response_model=VendorCreditResponse, status_code=201)
 async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
                                db: AsyncSession = Depends(get_db)):
@@ -77,7 +87,7 @@ async def get_vendor_credit(credit_id: uuid.UUID, user: CurrentUser,
 async def approve_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReview,
                                 user: dict = Depends(require_permission(_MANAGE_KEY)),
                                 db: AsyncSession = Depends(get_db)):
-    credit = await _load(db, credit_id)
+    credit = await _load_for_update(db, credit_id)
     uid, name = _actor(user)
     try:
         credit = await crud.approve(db, credit, reviewed_by=uid,
@@ -93,7 +103,7 @@ async def approve_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReview,
 async def reject_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
                                user: dict = Depends(require_permission(_MANAGE_KEY)),
                                db: AsyncSession = Depends(get_db)):
-    credit = await _load(db, credit_id)
+    credit = await _load_for_update(db, credit_id)
     uid, name = _actor(user)
     try:
         credit = await crud.reject(db, credit, reviewed_by=uid,
@@ -109,7 +119,7 @@ async def reject_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
 async def void_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
                              user: dict = Depends(require_permission(_MANAGE_KEY)),
                              db: AsyncSession = Depends(get_db)):
-    credit = await _load(db, credit_id)
+    credit = await _load_for_update(db, credit_id)
     uid, name = _actor(user)
     try:
         credit = await crud.void(db, credit, reviewed_by=uid,

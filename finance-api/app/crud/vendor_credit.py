@@ -7,7 +7,7 @@ path — manual upload today, QBO import in Phase C — gets the same treatment
 and the CHECK constraint can be trusted.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -41,11 +41,18 @@ def _positive(v: Decimal) -> Decimal:
 
 async def _find_duplicate(db: AsyncSession, vendor_id: uuid.UUID,
                           doc_number: str) -> VendorCredit | None:
+    """The fast-path twin of uq_vendor_credits_vendor_docno.
+
+    Its predicate must stay identical to the index's, or the two disagree and
+    the IntegrityError fallback in create() cannot find the row that won: the
+    index is NOT scoped by source (a manually uploaded credit and the same
+    vendor document later pulled in by the Phase C QBO import are one document,
+    not two), so neither is this.
+    """
     return (await db.execute(
         select(VendorCredit).where(
             VendorCredit.vendor_id == vendor_id,
             VendorCredit.vendor_credit_number == doc_number,
-            VendorCredit.source == SOURCE_UPLOAD,
             VendorCredit.status != VOID,
         )
     )).scalars().first()
@@ -65,8 +72,13 @@ async def create(db: AsyncSession, *, payload: VendorCreditCreate,
         raise DuplicateCredit(dup)
 
     now = datetime.now(timezone.utc)
+    # The number's date component is the LOCAL date, matching every other
+    # numbering helper in this service (app/crud/ap_invoice.py:23,
+    # app/crud/ar.py:32). The company is in Toronto (UTC-4/-5), so a UTC date
+    # here would stamp tomorrow's date on anything created after ~20:00 local.
+    # uploaded_at stays a UTC timestamp.
     number = await next_number(
-        db, VendorCredit.credit_number, f"VC-{now.date():%Y%m%d}-", 4)
+        db, VendorCredit.credit_number, f"VC-{date.today():%Y%m%d}-", 4)
 
     vc = VendorCredit(
         credit_number=number,
@@ -171,6 +183,23 @@ async def void(db: AsyncSession, credit: VendorCredit, *,
 async def get_by_id(db: AsyncSession, credit_id: uuid.UUID) -> VendorCredit | None:
     return (await db.execute(
         select(VendorCredit).where(VendorCredit.id == credit_id)
+    )).scalars().first()
+
+
+async def get_for_update(db: AsyncSession,
+                         credit_id: uuid.UUID) -> VendorCredit | None:
+    """Row-locked load for the mutating review routes.
+
+    void()'s "has this already been applied?" guard is check-then-act. Under a
+    plain SELECT, a void running alongside a Phase B credit application reads
+    applied_amount = 0, passes the guard, and then marks void a credit the
+    payment has meanwhile consumed. No CHECK constraint catches it: void moves
+    no monetary column, so ck_vendor_credits_balance and
+    ck_vendor_credits_nonneg both still hold. FOR UPDATE serialises the two.
+    Read-only routes deliberately do not take this lock.
+    """
+    return (await db.execute(
+        select(VendorCredit).where(VendorCredit.id == credit_id).with_for_update()
     )).scalars().first()
 
 
