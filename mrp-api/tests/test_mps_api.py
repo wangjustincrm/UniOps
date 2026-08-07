@@ -39,6 +39,17 @@ async def _no_shelf_life(token):
     return {}
 
 
+async def _shelf_life_18(token):
+    """S0093 has an 18-month shelf life -- unlike `_no_shelf_life`, this lets
+    the engine actually pre-build (floor(18*(1-0.3333)) = 12 months of
+    headroom). Needed for lead-time tests that expect a genuinely successful
+    early placement: with `_no_shelf_life`, ANY placement before the demand
+    month is illegal (fail-safe unknown-shelf-life rule, see mps_engine.py's
+    docstring), so a lead-shifted target would always come back as a
+    capacity_gap regardless of how much capacity room there is."""
+    return {"S0093": 18}
+
+
 async def _confirmed_version(db_session, *, start="2026-09", months=3, material="S0093", monthly_qty="100"):
     month_list = mps_module._generate_months(start, months)
     version = ForecastVersion(
@@ -57,6 +68,25 @@ async def _confirmed_version(db_session, *, start="2026-09", months=3, material=
     await db_session.commit()
     await db_session.refresh(version)
     return {"id": str(version.id)}, month_list
+
+
+def _shift_month(month: str, delta: int) -> str:
+    """'YYYY-MM' + delta months, no date-library import -- mirrors
+    mps_engine.py's private `_shift_month` (kept local here rather than
+    imported so these tests don't couple to that module's private API)."""
+    year, mon = (int(p) for p in month.split("-"))
+    idx = year * 12 + (mon - 1) + delta
+    y, m0 = divmod(idx, 12)
+    return f"{y:04d}-{m0 + 1:02d}"
+
+
+def _future_month(offset_months: int) -> str:
+    """A `YYYY-MM` guaranteed >= `offset_months` months ahead of whenever the
+    test actually runs -- computed from the same wall clock
+    `app/api/v1/mps.py`'s create_run/recalculate_run use for `current_month`,
+    so lead-time tests stay deterministic regardless of the calendar date the
+    suite happens to run on."""
+    return _shift_month(datetime.now(timezone.utc).strftime("%Y-%m"), offset_months)
 
 
 async def _factory_rule(client, headers, *, max_sku_count=50, max_output_qty="1000000"):
@@ -87,13 +117,16 @@ async def test_generate_run_and_confirm_release_end_to_end(client, db_session, a
     await _factory_rule(client, headers)
 
     r = await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )
     assert r.status_code == 201, r.text
     run = r.json()
     assert run["status"] == "draft"
     assert run["run_no"].startswith("MPS-")
     assert Decimal(run["safety_margin_fraction"]) == Decimal("0.3333")
+    assert run["production_lead_months"] == 0
     lines = run["lines"]
     assert len(lines) == 3
     # No opening stock anywhere -> net_requirement == forecast qty each
@@ -105,6 +138,7 @@ async def test_generate_run_and_confirm_release_end_to_end(client, db_session, a
         assert Decimal(by_month[m]["qty"]) == Decimal("100")
         assert by_month[m]["material_code"] == "S0093"
         assert by_month[m]["capacity_gap"] is False
+        assert by_month[m]["lead_shortfall"] is False  # lead_months=0 -> never clamped
 
     run_id = run["id"]
     rel = await client.post(f"/api/v1/mps/runs/{run_id}/confirm-release", headers=headers)
@@ -128,13 +162,122 @@ async def test_generate_run_and_confirm_release_end_to_end(client, db_session, a
 
 
 @pytest.mark.anyio
+async def test_production_lead_months_shifts_plan_month_and_is_echoed(client, db_session, admin_token, monkeypatch):
+    """POST /mps/runs with production_lead_months=1 stores it on the run and
+    a produced line for demand month D lands in plan_month == D-1 (ample
+    runway before D, so the current_month floor never clamps it ->
+    lead_shortfall=False). Ample shelf life (`_shelf_life_18`, not
+    `_no_shelf_life`) is required here -- unknown shelf life would make this
+    lead-driven pre-build illegal regardless of capacity (see mps_engine.py's
+    fail-safe rule), turning it into a capacity_gap instead."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(2)  # D-1 stays well after "now" regardless of test run date
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    r = await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 1},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    run = r.json()
+    assert run["production_lead_months"] == 1
+    lines = run["lines"]
+    assert len(lines) == 1
+    line = lines[0]
+    assert line["demand_month"] == months[0]
+    assert line["plan_month"] == _shift_month(months[0], -1)
+    assert line["lead_shortfall"] is False
+    assert line["capacity_gap"] is False
+
+
+@pytest.mark.anyio
+async def test_production_lead_months_omitted_defaults_to_one(client, db_session, admin_token, monkeypatch):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(2)
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    r = await client.post(
+        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    run = r.json()
+    assert run["production_lead_months"] == 1
+    assert run["lines"][0]["plan_month"] == _shift_month(months[0], -1)
+
+
+@pytest.mark.anyio
+async def test_production_lead_months_clamped_to_current_month_flags_shortfall(
+    client, db_session, admin_token, monkeypatch,
+):
+    """When the lead-adjusted target would fall before 'now', it is clamped
+    to current_month and the line is flagged lead_shortfall=True -- demand
+    due THIS month with a 1-month lead has no runway left."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(0)  # this month -- D-1 would be in the past
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    r = await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 1},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    run = r.json()
+    assert run["production_lead_months"] == 1
+    line = run["lines"][0]
+    assert line["demand_month"] == months[0]
+    assert line["plan_month"] == months[0]  # clamped up to current_month == demand_month
+    assert line["lead_shortfall"] is True
+
+
+@pytest.mark.anyio
+async def test_recalculate_uses_stored_production_lead_months(client, db_session, admin_token, monkeypatch):
+    """recalculate_run must read production_lead_months back off the run
+    (not silently reset to a different lead) and re-derive lead_shortfall for
+    the freshly (re)placed, non-locked lines."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(2)
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 1},
+        headers=headers,
+    )).json()
+    assert run["lines"][0]["plan_month"] == _shift_month(months[0], -1)
+
+    r = await client.post(f"/api/v1/mps/runs/{run['id']}/recalculate", headers=headers)
+    assert r.status_code == 200, r.text
+    recalced = r.json()
+    assert recalced["production_lead_months"] == 1
+    assert recalced["lines"][0]["plan_month"] == _shift_month(months[0], -1)
+    assert recalced["lines"][0]["lead_shortfall"] is False
+    assert recalced["lines"][0]["capacity_gap"] is False
+
+
+@pytest.mark.anyio
 async def test_confirm_release_requires_permission(client, db_session, admin_token, non_admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
     version, _ = await _confirmed_version(db_session)
     await _factory_rule(client, headers)
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
 
     import uniops_authz.core as authz_core
@@ -193,7 +336,9 @@ async def test_material_with_sufficient_opening_stock_produces_no_line(client, d
     await db_session.commit()
 
     r = await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )
     assert r.status_code == 201, r.text
     lines = r.json()["lines"]
@@ -229,7 +374,9 @@ async def test_get_run_includes_capacity_occupancy(client, db_session, admin_tok
     await _factory_rule(client, headers, max_sku_count=5, max_output_qty="1000")
 
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
 
     r = await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)
@@ -285,7 +432,9 @@ async def test_get_run_includes_demand_context_per_line(client, db_session, admi
     await db_session.commit()
 
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     assert len(run["lines"]) == 2  # both months produce a net requirement
 
@@ -338,7 +487,9 @@ async def test_get_run_demand_context_is_frozen_snapshot_not_live(client, db_ses
     await db_session.commit()
 
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     run_id = run["id"]
 
@@ -376,7 +527,9 @@ async def test_patch_line_marks_manual_adjusted_and_can_lock(client, db_session,
     await _factory_rule(client, headers)
 
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     line = run["lines"][0]
 
@@ -400,7 +553,9 @@ async def test_recalculate_keeps_locked_line_fixed(client, db_session, admin_tok
     await _factory_rule(client, headers)
 
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     line = run["lines"][0]
 
@@ -436,7 +591,9 @@ async def test_confirm_release_skips_capacity_gap_lines(client, db_session, admi
     await _factory_rule(client, headers, max_sku_count=50, max_output_qty="50")
 
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     assert len(run["lines"]) == 1
     assert run["lines"][0]["capacity_gap"] is True
@@ -479,7 +636,9 @@ async def test_confirm_release_clears_prior_cycle_demand_across_forecast_version
     )
     await _factory_rule(client, headers)
     r1 = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": v1["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": v1["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     rel1 = await client.post(f"/api/v1/mps/runs/{r1['id']}/confirm-release", headers=headers)
     assert rel1.status_code == 200, rel1.text
@@ -488,7 +647,9 @@ async def test_confirm_release_clears_prior_cycle_demand_across_forecast_version
         db_session, start="2026-10", months=1, material="S0093", monthly_qty="120",
     )
     r2 = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": v2["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": v2["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     rel2 = await client.post(f"/api/v1/mps/runs/{r2['id']}/confirm-release", headers=headers)
     assert rel2.status_code == 200, rel2.text
@@ -509,7 +670,9 @@ async def test_patch_line_rejects_malformed_plan_month(client, db_session, admin
     version, months = await _confirmed_version(db_session, months=1)
     await _factory_rule(client, headers)
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     line = run["lines"][0]
 
@@ -539,7 +702,9 @@ async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_sessio
     await _factory_rule(client, headers)
 
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
     assert len(run["lines"]) == 1
     line = run["lines"][0]
@@ -578,7 +743,9 @@ async def test_export_run_requires_permission(client, db_session, admin_token, n
     version, _ = await _confirmed_version(db_session, months=1)
     await _factory_rule(client, headers)
     run = (await client.post(
-        "/api/v1/mps/runs", json={"forecast_version_id": version["id"]}, headers=headers,
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": 0},
+        headers=headers,
     )).json()
 
     import uniops_authz.core as authz_core

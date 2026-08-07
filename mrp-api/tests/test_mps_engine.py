@@ -246,3 +246,25 @@ def test_shelf_life_shorter_than_lead_is_a_gap():
     out = generate_mps([DemandItem("A", "2026-11", Decimal("10"))], UNL,
                        {"A": 1}, Decimal("0"), lead_months=2, current_month="2026-08")
     assert out[0].capacity_gap is True and out[0].shelf_life_ok is False
+
+
+def test_lead_clamped_and_capacity_full_at_current_month_is_gap_with_shortfall():
+    # T1-review carry-over: lead_shortfall=True and capacity_gap=True on the
+    # SAME line. lead=3 pushes standard_target ("2026-07") before
+    # current_month ("2026-08") -> clamp -> lead_shortfall=True. The item's
+    # own 100 qty alone already exceeds the 50 output cap at the clamped
+    # target, and there is no earlier month to search (current_month is the
+    # floor) -> capacity_gap=True too. Ample shelf life (18mo, offset 2 <=
+    # 12) means the gap is a pure capacity shortfall, not a shelf-life one.
+    out = generate_mps(
+        [DemandItem("A", "2026-10", Decimal("100"))],
+        CapacityLimits(max_sku_count=1, max_output_qty=Decimal("50")),
+        {"A": 18}, Decimal("0.3333"), lead_months=3, current_month="2026-08",
+    )
+    assert len(out) == 1
+    line = out[0]
+    assert line.plan_month == "2026-08"          # clamped to current_month
+    assert line.lead_shortfall is True
+    assert line.capacity_gap is True
+    assert line.is_prebuild is False              # gap lines are never is_prebuild
+    assert line.shelf_life_ok is True              # blocked by capacity, not shelf life

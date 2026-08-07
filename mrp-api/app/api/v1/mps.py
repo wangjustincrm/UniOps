@@ -141,6 +141,10 @@ _MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 class MpsRunCreate(BaseModel):
     forecast_version_id: uuid.UUID
     safety_margin_fraction: Decimal | None = None
+    # Months production is scheduled ahead of a demand month -- fed straight
+    # into mps_engine.generate_mps's lead_months param. None (omitted) means
+    # "use the default", matching safety_margin_fraction's own contract.
+    production_lead_months: int | None = None
 
 
 class MpsLineResponse(BaseModel):
@@ -164,6 +168,10 @@ class MpsLineResponse(BaseModel):
     # defaulting NULL (pre-mrp07 lines) to 0 -- never a live recompute.
     demand_forecast: Decimal = Decimal("0")
     opening_stock: Decimal = Decimal("0")
+    # Production lead time (mrp08): true when the run's production_lead_months
+    # called for production to have already started (target clamped to
+    # current_month) -- see mps_engine.py's "Production lead time" docstring.
+    lead_shortfall: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -178,6 +186,7 @@ class MpsRunResponse(BaseModel):
     safety_margin_fraction: Decimal
     generated_by: uuid.UUID | None
     stats: dict | None
+    production_lead_months: int
 
     model_config = {"from_attributes": True}
 
@@ -330,6 +339,7 @@ async def _run_detail_response(db: SessionDep, run: MrpMpsRun) -> MpsRunDetailRe
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
         status=run.status, safety_margin_fraction=run.safety_margin_fraction,
         generated_by=run.generated_by, stats=run.stats,
+        production_lead_months=run.production_lead_months,
         lines=[_line_response(l) for l in lines],
     )
 
@@ -373,6 +383,7 @@ def _line_response(line: MrpMpsLine) -> MpsLineResponse:
         manual_adjusted=line.manual_adjusted, status=line.status,
         demand_forecast=line.demand_forecast if line.demand_forecast is not None else Decimal("0"),
         opening_stock=line.opening_stock if line.opening_stock is not None else Decimal("0"),
+        lead_shortfall=line.lead_shortfall,
     )
 
 
@@ -419,11 +430,15 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     safety_margin = body.safety_margin_fraction
     if safety_margin is None:
         safety_margin = DEFAULT_SAFETY_MARGIN_FRACTION
+    lead = body.production_lead_months if body.production_lead_months is not None else 1
 
     demands = await _build_demand_items(db, version)
     limits = await _resolve_capacity_limits(db, version.horizon_start_month)
     shelf_life = await resolve_shelf_life(token)
-    lines = generate_mps(demands, limits, shelf_life, safety_margin)
+    lines = generate_mps(
+        demands, limits, shelf_life, safety_margin,
+        lead_months=lead, current_month=datetime.now(timezone.utc).strftime("%Y-%m"),
+    )
     # Snapshot the demand context (gross forecast + rolled-forward opening
     # stock) onto each line NOW, at generate time -- see
     # `_build_demand_context`'s docstring for why reads no longer recompute
@@ -440,6 +455,7 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
         safety_margin_fraction=safety_margin,
         generated_by=_sub_to_uuid(payload),
         stats=_compute_stats(lines),
+        production_lead_months=lead,
     )
     db.add(run)
     await db.flush()  # assign run.id for the lines' FK below
@@ -454,6 +470,7 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
             prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
             capacity_gap=line.capacity_gap, locked_by_planner=False, manual_adjusted=False,
             demand_forecast=demand_forecast, opening_stock=opening_stock,
+            lead_shortfall=line.lead_shortfall,
         ))
 
     await db.commit()
@@ -471,6 +488,7 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
         status=run.status, safety_margin_fraction=run.safety_margin_fraction,
         generated_by=run.generated_by, stats=run.stats,
+        production_lead_months=run.production_lead_months,
         lines=[_line_response(l) for l in lines],
         capacity_occupancy=occupancy,
     )
@@ -537,6 +555,11 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     locked_demand_context = {
         (l.material_code, l.demand_month): (l.demand_forecast, l.opening_stock) for l in locked_existing
     }
+    # A locked line's already-stored lead_shortfall flag must likewise survive
+    # unchanged -- generate_mps's `locked_planned` PlannedLine construction
+    # below doesn't set lead_shortfall (it defaults False on PlannedLine), so
+    # without this it would silently reset to False on every recalculate.
+    locked_lead_shortfall = {(l.material_code, l.demand_month): l.lead_shortfall for l in locked_existing}
     locked_keys = set(locked_manual_adjusted)
 
     # Demand for a material/month already covered by a locked line must NOT
@@ -549,7 +572,12 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     ]
     limits = await _resolve_capacity_limits(db, run.horizon_start_month)
     shelf_life = await resolve_shelf_life(token)
-    lines = generate_mps(demands, limits, shelf_life, run.safety_margin_fraction, locked=locked_planned)
+    lead = run.production_lead_months
+    lines = generate_mps(
+        demands, limits, shelf_life, run.safety_margin_fraction,
+        lead_months=lead, current_month=datetime.now(timezone.utc).strftime("%Y-%m"),
+        locked=locked_planned,
+    )
     # Snapshot the demand context for the newly (re)placed, non-locked lines
     # -- same write-time contract as create_run.
     ctx = await _build_demand_context(db, version)
@@ -563,16 +591,19 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
             demand_forecast, opening_stock = locked_demand_context.get(
                 (line.material_code, line.demand_month), (Decimal("0"), Decimal("0"))
             )
+            lead_shortfall = locked_lead_shortfall.get((line.material_code, line.demand_month), False)
         else:
             demand_forecast, opening_stock = ctx.get(line.material_code, {}).get(
                 line.demand_month, (Decimal("0"), Decimal("0"))
             )
+            lead_shortfall = line.lead_shortfall
         db.add(MrpMpsLine(
             run_id=run.id, material_code=line.material_code, demand_month=line.demand_month,
             plan_month=line.plan_month, qty=line.qty, is_prebuild=line.is_prebuild,
             prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
             capacity_gap=line.capacity_gap, locked_by_planner=line.locked, manual_adjusted=manual_adjusted,
             demand_forecast=demand_forecast, opening_stock=opening_stock,
+            lead_shortfall=lead_shortfall,
         ))
     run.stats = _compute_stats(lines)
 

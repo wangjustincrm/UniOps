@@ -30,6 +30,11 @@ class MrpMpsRun(Base, UUIDPrimaryKey, TimestampMixin):
     safety_margin_fraction: Mapped[object] = mapped_column(Numeric(6, 4), default=0)  # shelf-life pre-build safety, e.g. 0.3333
     generated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     stats: Mapped[dict | None] = mapped_column(JSONB)
+    # Production lead time task (mrp08): months production is scheduled ahead
+    # of a demand month, fed straight into mps_engine.generate_mps's
+    # lead_months param. Default 1 keeps pre-existing/omitted runs planning
+    # one month ahead rather than silently reproducing lead_months=0.
+    production_lead_months: Mapped[int] = mapped_column(default=1, server_default="1")
 
 
 class MrpMpsLine(Base, UUIDPrimaryKey, TimestampMixin):
@@ -54,3 +59,9 @@ class MrpMpsLine(Base, UUIDPrimaryKey, TimestampMixin):
     # side falls back to 0 (see app/api/v1/mps.py's _line_response).
     demand_forecast: Mapped[object | None] = mapped_column(Numeric(18, 3))
     opening_stock: Mapped[object | None] = mapped_column(Numeric(18, 3))
+    # Production lead time task (mrp08): mirrors mps_engine.PlannedLine's
+    # lead_shortfall -- true when the run's production_lead_months called for
+    # production to have already started (the target was clamped to
+    # current_month). See app/services/mps_engine.py's "Production lead time"
+    # docstring section.
+    lead_shortfall: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
