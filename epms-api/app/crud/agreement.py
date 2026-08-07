@@ -1,0 +1,91 @@
+"""CRUD for Purchase Agreement (AGR)."""
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.crud._numbering import next_number
+from app.models.agreement import PurchaseAgreement
+from app.schemas.agreement import AgreementCreate, AgreementUpdate
+
+# 只有 draft 可编辑 —— 一旦进入审批,改额度/有效期/供应商必须重走审批(spec §6)。
+EDITABLE_STATUSES = ("draft", "returned")
+
+
+async def _next_number(db: AsyncSession) -> str:
+    ym = datetime.now(timezone.utc).strftime("%Y%m")
+    return await next_number(db, PurchaseAgreement.number, f"AGR-{ym}-", width=4)
+
+
+async def get_by_id(db: AsyncSession, agreement_id: uuid.UUID) -> PurchaseAgreement | None:
+    return (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == agreement_id)
+    )).scalar_one_or_none()
+
+
+async def get_all(
+    db: AsyncSession,
+    *,
+    status: str | None = None,
+    vendor_id: uuid.UUID | None = None,
+    agreement_type: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[PurchaseAgreement], int]:
+    q = select(PurchaseAgreement)
+    if status:
+        q = q.where(PurchaseAgreement.status == status)
+    if vendor_id:
+        q = q.where(PurchaseAgreement.vendor_id == vendor_id)
+    if agreement_type:
+        q = q.where(PurchaseAgreement.agreement_type == agreement_type)
+    if search:
+        like = f"%{search}%"
+        q = q.where(or_(
+            PurchaseAgreement.number.ilike(like),
+            PurchaseAgreement.title.ilike(like),
+            PurchaseAgreement.vendor_name.ilike(like),
+            PurchaseAgreement.vendor_reference.ilike(like),
+            PurchaseAgreement.contract_no.ilike(like),
+        ))
+
+    total = (await db.execute(
+        select(func.count()).select_from(q.subquery())
+    )).scalar_one()
+
+    rows = (await db.execute(
+        q.order_by(PurchaseAgreement.created_at.desc())
+         .offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return list(rows), total
+
+
+async def create(
+    db: AsyncSession,
+    body: AgreementCreate,
+    *,
+    vendor_name: str,
+    created_by: uuid.UUID,
+) -> PurchaseAgreement:
+    agr = PurchaseAgreement(
+        number=await _next_number(db),
+        vendor_name=vendor_name,
+        created_by=created_by,
+        **body.model_dump(),
+    )
+    db.add(agr)
+    await db.commit()
+    await db.refresh(agr)
+    return agr
+
+
+async def update(
+    db: AsyncSession, agr: PurchaseAgreement, body: AgreementUpdate
+) -> PurchaseAgreement:
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(agr, field, value)
+    await db.commit()
+    await db.refresh(agr)
+    return agr

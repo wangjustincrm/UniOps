@@ -29,6 +29,8 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     "budget.opening.write":  ("budget",  "Edit Opening Balances",   122),
     "mdm.finance.write":     ("mdm",     "Edit Finance Master Data", 130),
     "mdm.vendor.write":      ("mdm",     "Edit Vendor Master Data",  131),
+    "epms.agreement.read":   ("epms",    "View Agreements",          104),
+    "epms.agreement.write":  ("epms",    "Create / Edit Agreements", 105),
 }
 
 # key -> roles admitted TODAY (system_admin included everywhere: short-circuit)
@@ -46,6 +48,9 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "budget.opening.write": ("system_admin", "finance_manager", "finance_bp"),
     "mdm.finance.write":    ("system_admin", "finance_manager", "ap_clerk"),
     "mdm.vendor.write":     ("system_admin", "vendor_manager", "finance_manager"),
+    "epms.agreement.read":  ("system_admin", "procurement_officer", "procurement_manager",
+                             "ap_clerk", "finance_bp", "finance_manager", "auditor"),
+    "epms.agreement.write": ("system_admin", "procurement_officer", "procurement_manager"),
 }
 
 
