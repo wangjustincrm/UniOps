@@ -102,8 +102,8 @@ lines             : list[PoImportedLineUpdate]   # { id: UUID, supplier_item_id:
 3. **行更新**：对 `lines` 中每个 id，必须存在且 `po_id` 等于本 PO，否则 400；只写 `supplier_item_id` 与 `sample` 两列。请求中未出现的行不动，**不删不建**。
 4. **税额重算**：若传了 `tax_rate`，`tax_amount = round(subtotal * tax_rate, 2)`，`total = subtotal + tax_amount`。`subtotal` 永不由本端点改动。
 5. 置 `buyer_edited_at = now()`。
-6. 写 `admin_audit_log`（记录 PO 号与改动字段集合）。
-7. 提交后触发 PDF 重生成（见 §4）。
+6. 写 `admin_audit_log`（`action='edit'`、`system='epms'`、`entity='po'`、`record_id`/`record_number`，`before`/`after` 存改动字段的前后值 JSONB）。
+7. PDF 重生成由前端在保存成功后调用既有端点完成（见 §4），本端点不触发后台任务。
 
 ### 为什么用专用端点而非放宽 `PATCH /po/{id}`
 
@@ -118,16 +118,26 @@ lines             : list[PoImportedLineUpdate]   # { id: UUID, supplier_item_id:
 需要同步登记的位置（与 `epms.po.write` / `epms.pa.write` 的既有登记点一致）：
 
 - `identity-api/scripts/seed_phase2_keys.py`：`PHASE2_KEYS` + `PHASE2_DEFAULTS`
-- `epms-api/app/crud/config.py`：矩阵镜像（`_P(...)` 角色默认表）
 - identity-api 新迁移 `0006_po_edit_imported`（`down_revision = "0005_procurement_officer_pa"`），幂等插入 `permission_defs` 行并 grant 给上述两个角色
+
+**不需要**改 `epms-api/app/crud/config.py`：该文件的 `_DEFAULT_ROLE_PERMISSIONS` 只覆盖 phase-1 键（`view_*` / `create_*` 等），实测不含任何 phase-2 键（`epms.po.write` / `epms.pa.write` / `epms.gr.receive` 在其中出现 0 次）。epms-api 的 `require_permission` 直接读 identity 的 `role_permissions` 表（同一物理库，无 HTTP、无缓存，见 `app/core/deps.py:74-91`），所以 identity 侧登记即生效。
+
+同理，`epms-api/tests/conftest.py` 的 `_seed_default_matrix()` 也只播种 phase-1 键，**测试必须自己插** `permission_defs` + `role_permissions` 行（先例：`tests/test_pa_on_behalf_authz.py::_grant_pa_write`）。
 
 **不改** `identity-api/scripts/verify_gate_parity.py`：该文件是冻结基线，按既有约定不随新键同步。
 
 ## 4. PDF（`pdf_po.py` + `po.py`）
 
-### 重生成
+### 重生成：复用既有端点，不写新代码
 
-`_generate_po_pdf_background()` 现在遇到同名附件直接 `return`（`po.py:163-170`）。新增 `force: bool = False` 参数：`force=True` 时先删除该 PO 下同名 `PoAttachment` 记录再生成上传。NC 补录端点以 `force=True` 调用；审批通过路径继续用默认 `force=False`，行为不变。
+`POST /api/v1/po/{po_id}/attachments/regenerate-pdf` 已存在（`app/api/v1/po_attachments.py:84-133`），且已经做了「删除同名旧附件（含 file server 上的对象）→ 重新渲染 → 重新上传 → 落新 `PoAttachment`」的完整流程。其状态门禁 `_PDF_STATUSES` 为 `{approved, issued, partially_received, fully_received, closed}`，**已包含 `issued`**，NC PO 直接可用。
+
+因此：
+
+- **不改** `_generate_po_pdf_background()`，也不新增 `force` 参数。审批路径完全不动。
+- 补录保存成功后，由**前端**接着调用既有的 `useRegeneratePoPdf(poId)` mutation（`hooks/usePos.ts:106-112`）。它本就 invalidate `['pos', poId, 'attachments']`，附件列表自动刷新。
+- 该端点需要 `BearerToken` 才能向 file server 上传，从前端发起天然带着 token；若改由后端 PATCH 内部触发，还得把 token 透传进后台任务并复制一遍删除/上传逻辑。
+- 重生成失败时前端明确报错并提示可重试，不静默吞掉（PO 数据已保存成功，PDF 陈旧是可恢复状态）。
 
 ### 版式
 
@@ -168,19 +178,40 @@ lines             : list[PoImportedLineUpdate]   # { id: UUID, supplier_item_id:
 
 - 只读展示（非输入框）：Vendor、Currency、Type、Title、Budget Code
 - 可编辑：Expected Delivery、Delivery Address、Incoterms（单行 `Input`）、Tax Code + Tax Rate、Prepaid、Buyer Notes
-- 行项目区使用 `PrLineItems`，开启锁定模式
+- 行项目区使用新的 `ImportedPoLineItems` 组件（见下）
 - 进页先校验 `source === 'nc' && status === 'issued'`，不满足则提示并跳回 Detail
 - 税率沿用既有 Create/Edit PO 的规则：`effectiveTaxRate = currency === 'CAD' ? taxRate : 0`（`PoEditPage.tsx:105`）。非 CAD 币种下税率输入禁用并显示 0，避免新页与既有两页出现三种口径
-- 保存调用新端点，成功后回 Detail 页并提示 PDF 正在重新生成
+- 保存调用新端点；成功后接着调用 `useRegeneratePoPdf(id)` 重生成 PDF，再回 Detail 页。PDF 重生成失败时单独提示，不影响已保存的数据
 
-### `components/pr/PrLineItems.tsx`
+### 新组件 `components/po/ImportedPoLineItems.tsx`（不改 `PrLineItems`）
 
-新增两个可选 prop（默认 `false`，PR 侧与既有 PO 页零影响）：
+行项目区**不复用** `PrLineItems`，而是新建一个自包含的小组件。
 
-- `lockedExceptSupplier?: boolean`：除 Supplier Item ID / Sample 外全部 readOnly，隐藏增行按钮、禁用删行按钮
-- `showSample?: boolean`：显示 Sample 输入列
+理由：`PrLineItems` 有 768 行，携带零件选择器（Type 3）、ERP 物料选择器（Type 1）、拖拽排序、增删行、单位下拉、行级校验，以及**桌面表格与移动卡片两套渲染**——NC 补录场景一个都用不到。它有 **4 个消费页面**（`PrCreatePage`、`PrEditPage`、`PoCreatePage`、`PoEditPage`），加一个「除 Supplier Item ID 外全锁」的开关要在两套渲染里改十几个控件，等于用 4 个页面的回归面换零收益。
 
-该组件有**桌面表格**与**移动卡片**两套渲染（约 `:489` 与 `:671` 两处），两处都要改。类型 `PrLineItem`（`epms/src/types`）新增 `sample?: string`。
+新组件的职责：把锁定列渲染成纯文本，只出两个输入框。
+
+```
+interface ImportedPoLine {
+  id: string                 // po_line_items.id，提交时原样回传
+  description: string        // 只读文本
+  materialId?: string | null // 只读文本
+  qty: number                // 只读文本
+  unit: string               // 只读文本
+  unitPrice: number          // 只读文本
+  lineTotal: number          // 只读文本
+  supplierItemId: string     // 可编辑
+  sample: string             // 可编辑
+}
+
+interface ImportedPoLineItemsProps {
+  items: ImportedPoLine[]
+  onChange: (items: ImportedPoLine[]) => void
+  currency: string
+}
+```
+
+无增行/删行按钮、无拖拽、无校验（两个字段都可为空）。类型 `PrLineItem` **不动**，`PrLineItems.tsx` **一行不改**。
 
 ### 服务层
 
@@ -206,7 +237,8 @@ lines             : list[PoImportedLineUpdate]   # { id: UUID, supplier_item_id:
 - `incoterms` 有值：PDF 含该文本，且**位置在 Buyer Notes 之前**（断言两段在 story 中的相对顺序，不只断言存在）
 - `incoterms` 为空：不渲染该行（无空 label 残留）
 - NC PO 且 `buyer_notes` 为空：PDF **不含** `notes` 里的 NC 标记
-- `force=True`：旧附件被替换而非跳过
+
+（不再需要「`force=True` 替换旧附件」的测试——复用的 `regenerate-pdf` 端点已有既存行为，本期不改它。）
 
 ### 前端
 
