@@ -7,9 +7,10 @@
 // Backend is mrp-api's /mps/* (app/api/v1/mps.py, Task 4) — see mpsApi.ts's
 // header for the endpoint contracts and permission keys. Not wired into
 // nav/routes here — that's Task 7.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, RefreshCw, Sparkles, AlertTriangle } from 'lucide-react'
+import { Loader2, RefreshCw, Sparkles, AlertTriangle, Download, PackageCheck, X as XIcon } from 'lucide-react'
 import { Button, FormField } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ToastStack } from '@/components/Toast'
@@ -18,11 +19,9 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
-import { forecastApi } from '@/pages/forecast/forecastApi'
-import { bomStatusApi } from '@/pages/forecast/bomStatusApi'
+import { forecastApi, saveBlob } from '@/pages/forecast/forecastApi'
 import { mpsApi, type MpsLine } from './mpsApi'
-import { CapacityBars } from './CapacityBars'
-import { MpsLineTable } from './MpsLineTable'
+import { ProductionMatrix } from './ProductionMatrix'
 import { AdjustDrawer } from './AdjustDrawer'
 
 function errMsg(err: unknown, fallback: string): string {
@@ -33,7 +32,75 @@ function formatQty(n: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(n)
 }
 
-const EMPTY_STRING_SET: ReadonlySet<string> = new Set()
+// Display-only unit toggle for the matrix — the stored/planning unit is
+// always kg (capacity/MPS math depends on it); this only scales what's
+// shown. Same convention as SalesForecastPage's DisplayUnit/localStorage
+// pair, distinct storage key per page.
+type DisplayUnit = 'kg' | 't'
+const DISPLAY_UNIT_STORAGE_KEY = 'mrp.plan.displayUnit'
+
+function loadDisplayUnit(): DisplayUnit {
+  try {
+    const v = window.localStorage.getItem(DISPLAY_UNIT_STORAGE_KEY)
+    return v === 'kg' || v === 't' ? v : 't'
+  } catch {
+    return 't' // localStorage unavailable (e.g. privacy mode) — fall back to the default
+  }
+}
+
+/** A single ProductionMatrix Planned cell can aggregate more than one
+ *  MpsLine (e.g. two different demand_months pre-built into the same
+ *  plan_month) — see ProductionMatrix.tsx's `onAdjustCell` contract and
+ *  Task 4's report. This picker lets the planner disambiguate which of the
+ *  underlying lines they meant to adjust before the single-line
+ *  AdjustDrawer opens. */
+function AdjustCellPicker({
+  lines, materialsByCode, formatValue, onPick, onClose,
+}: {
+  lines: MpsLine[]
+  materialsByCode: Map<string, MaterialOption>
+  formatValue: (kg: number) => string
+  onPick: (line: MpsLine) => void
+  onClose: () => void
+}) {
+  const code = lines[0]?.material_code ?? ''
+  const name = materialsByCode.get(code)?.name
+
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
+      <div role="dialog" aria-modal="true" aria-label={`Select a line to adjust for ${code}`} className="w-full max-w-sm rounded-xl border border-neutral-200 bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-neutral-200 px-5 py-4">
+          <div>
+            <h2 className="text-base font-semibold text-neutral-900">Select a line</h2>
+            <p className="font-mono text-xs text-neutral-500">{code}{name && name !== code ? ` · ${name}` : ''}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center text-neutral-400 hover:text-neutral-600"
+          >
+            <XIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="max-h-80 overflow-y-auto px-2 py-2">
+          {lines.map((line) => (
+            <button
+              key={line.id}
+              type="button"
+              onClick={() => onPick(line)}
+              className="flex min-h-[44px] w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-primary-50 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            >
+              <span className="text-neutral-600">demand {line.demand_month}</span>
+              <span className="font-mono text-neutral-900">{formatValue(Number(line.qty))}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
 
 export default function ProductionPlanPage() {
   const queryClient = useQueryClient()
@@ -41,6 +108,21 @@ export default function ProductionPlanPage() {
   const permsQuery = usePermissions()
   const canExecute = !!permsQuery.data?.permissions['mrp.run.execute']
   const canRelease = !!permsQuery.data?.permissions['mrp.proposal.confirm']
+  const canView = !!permsQuery.data?.permissions['mrp.report.view']
+
+  // ── Display unit (kg/tonne) ─────────────────────────────────────────────
+  const [displayUnit, setDisplayUnit] = useState<DisplayUnit>(() => loadDisplayUnit())
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DISPLAY_UNIT_STORAGE_KEY, displayUnit)
+    } catch {
+      // localStorage unavailable — display-only preference, safe to drop
+    }
+  }, [displayUnit])
+  function formatValue(kg: number): string {
+    const n = displayUnit === 't' ? kg / 1000 : kg
+    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(n)
+  }
 
   // ── Confirmed forecast versions (Generate can only run off one — mps.py's
   // create_run() 409s otherwise, so the picker only ever offers confirmed
@@ -117,29 +199,6 @@ export default function ProductionPlanPage() {
     return map
   }, [materialsAllQuery.data])
 
-  // No-BOM flagging (Continuous Sales Forecast Task 9, spec §8b): 1B never
-  // explodes BOMs, so this is display-only — but a planner reviewing a run
-  // should still see which lines have no established formulation yet.
-  // Same batch source (mdm-api's /boms/exist) the Sales Forecast grid uses —
-  // see bomStatusApi.ts — so "has a BOM" is defined in exactly one place.
-  const runProductCodes = useMemo(
-    () => [...new Set((run?.lines ?? []).map((l) => l.material_code))].sort(),
-    [run],
-  )
-  const bomStatusQuery = useQuery({
-    queryKey: ['mps-bom-status', runProductCodes],
-    queryFn: () => bomStatusApi.withBom(runProductCodes),
-    enabled: runProductCodes.length > 0,
-    staleTime: 5 * 60_000,
-  })
-  const noBomCodes = useMemo(() => {
-    const withBom = bomStatusQuery.data
-    if (!withBom) return EMPTY_STRING_SET
-    const s = new Set<string>()
-    for (const code of runProductCodes) if (!withBom.has(code)) s.add(code)
-    return s
-  }, [runProductCodes, bomStatusQuery.data])
-
   // ── Generate / Recalculate ──────────────────────────────────────────────
   const [generating, setGenerating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
@@ -172,25 +231,42 @@ export default function ProductionPlanPage() {
     }
   }
 
-  // ── Lock / Unlock selected ──────────────────────────────────────────────
-  const [bulkBusy, setBulkBusy] = useState(false)
+  // ── Adjust one line (from a matrix Planned cell) ────────────────────────
+  // A cell can aggregate more than one MpsLine (ProductionMatrix.tsx's
+  // onAdjustCell contract) — a single-line cell goes straight to the
+  // drawer; a multi-line cell opens AdjustCellPicker first so the planner
+  // disambiguates. Locking a line is now done from inside AdjustDrawer
+  // itself (a `locked_by_planner` checkbox) rather than a bulk table
+  // selection — MpsLineTable's row-checkbox Lock/Unlock action bar is
+  // retired along with the table.
+  const [adjustTarget, setAdjustTarget] = useState<MpsLine | null>(null)
+  const [pickerLines, setPickerLines] = useState<MpsLine[] | null>(null)
 
-  async function handleSetLocked(lineIds: string[], locked: boolean) {
-    if (!runId || lineIds.length === 0) return
-    setBulkBusy(true)
-    try {
-      await Promise.all(lineIds.map((id) => mpsApi.adjustLine(runId, id, { locked_by_planner: locked })))
-      toasts.success(`${locked ? 'Locked' : 'Unlocked'} ${lineIds.length} line${lineIds.length === 1 ? '' : 's'}.`)
-      await invalidateRun()
-    } catch (err) {
-      toasts.error(errMsg(err, `Could not ${locked ? 'lock' : 'unlock'} the selected line(s) — please retry.`))
-    } finally {
-      setBulkBusy(false)
+  function handleAdjustCell(lines: MpsLine[]) {
+    if (lines.length === 0) return
+    if (lines.length === 1) {
+      setAdjustTarget(lines[0])
+      return
     }
+    setPickerLines(lines)
   }
 
-  // ── Adjust one line ──────────────────────────────────────────────────────
-  const [adjustTarget, setAdjustTarget] = useState<MpsLine | null>(null)
+  // ── Export ───────────────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false)
+
+  async function handleExport() {
+    if (!runId) return
+    setExporting(true)
+    try {
+      const blob = await mpsApi.exportRun(runId, displayUnit)
+      saveBlob(blob, null, 'production-plan.xlsx')
+      toasts.success('Production plan exported.')
+    } catch (err) {
+      toasts.error(errMsg(err, 'Could not export this run — please retry.'))
+    } finally {
+      setExporting(false)
+    }
+  }
 
   // ── Confirm & Release ────────────────────────────────────────────────────
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState(false)
@@ -221,8 +297,6 @@ export default function ProductionPlanPage() {
     }
   }
 
-  const actionBusy = bulkBusy || recalculating
-
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -240,7 +314,7 @@ export default function ProductionPlanPage() {
         )}
       </div>
 
-      {/* ── Toolbar: version picker + Generate/Recalculate ─────────────── */}
+      {/* ── Toolbar: version picker + unit toggle + Generate/Recalculate/Export/Release ── */}
       <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg border border-neutral-200 bg-white p-3">
         <div className="flex flex-wrap items-end gap-3">
           <FormField
@@ -261,28 +335,76 @@ export default function ProductionPlanPage() {
               ))}
             </select>
           </FormField>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-neutral-500">Unit</span>
+            <div role="group" aria-label="Display unit" className="inline-flex overflow-hidden rounded-lg border border-neutral-200">
+              <Button
+                type="button"
+                size="sm"
+                variant={displayUnit === 'kg' ? 'primary' : 'secondary'}
+                aria-pressed={displayUnit === 'kg'}
+                onClick={() => setDisplayUnit('kg')}
+                className="h-11 min-w-11 rounded-none border-0"
+              >
+                KG
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={displayUnit === 't' ? 'primary' : 'secondary'}
+                aria-pressed={displayUnit === 't'}
+                onClick={() => setDisplayUnit('t')}
+                className="h-11 min-w-11 rounded-none border-0 border-l border-neutral-200"
+              >
+                Tonne
+              </Button>
+            </div>
+          </div>
         </div>
 
-        {canExecute && (
-          <div className="flex items-center gap-2">
-            <Button
-              type="button" size="sm" className="min-h-[44px]"
-              onClick={handleGenerate}
-              disabled={!selectedVersionId || generating}
-            >
-              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-              Generate
-            </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {canExecute && (
+            <>
+              <Button
+                type="button" size="sm" className="min-h-[44px]"
+                onClick={handleGenerate}
+                disabled={!selectedVersionId || generating}
+              >
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                Generate
+              </Button>
+              <Button
+                type="button" variant="secondary" size="sm" className="min-h-[44px]"
+                onClick={handleRecalculate}
+                disabled={!run || isReleased || recalculating}
+              >
+                {recalculating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Recalculate
+              </Button>
+            </>
+          )}
+          {run && canView && (
             <Button
               type="button" variant="secondary" size="sm" className="min-h-[44px]"
-              onClick={handleRecalculate}
-              disabled={!run || isReleased || recalculating}
+              onClick={handleExport}
+              disabled={exporting}
             >
-              {recalculating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Recalculate
+              {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+              Export
             </Button>
-          </div>
-        )}
+          )}
+          {run && !isReleased && canRelease && (
+            <Button
+              type="button" size="sm" className="min-h-[44px]"
+              onClick={() => setReleaseConfirmOpen(true)}
+              disabled={recalculating || releasing}
+            >
+              <PackageCheck className="h-3.5 w-3.5" />
+              Confirm &amp; Release
+            </Button>
+          )}
+        </div>
       </div>
 
       {isReleased && (
@@ -327,24 +449,25 @@ export default function ProductionPlanPage() {
       )}
 
       {run && run.lines.length > 0 && (
-        <>
-          <CapacityBars occupancy={run.capacity_occupancy} />
+        <ProductionMatrix
+          key={run.id}
+          lines={run.lines}
+          materialsByCode={materialsByCode}
+          unitScale={displayUnit === 't' ? 1000 : 1}
+          formatValue={formatValue}
+          readOnly={isReleased}
+          onAdjustCell={handleAdjustCell}
+        />
+      )}
 
-          <MpsLineTable
-            key={run.id}
-            lines={run.lines}
-            materialsByCode={materialsByCode}
-            noBomCodes={noBomCodes}
-            readOnly={isReleased}
-            canExecute={canExecute}
-            canRelease={canRelease}
-            actionBusy={actionBusy}
-            onLockSelected={(ids) => handleSetLocked(ids, true)}
-            onUnlockSelected={(ids) => handleSetLocked(ids, false)}
-            onAdjustLine={setAdjustTarget}
-            onConfirmReleaseClick={() => setReleaseConfirmOpen(true)}
-          />
-        </>
+      {pickerLines && (
+        <AdjustCellPicker
+          lines={pickerLines}
+          materialsByCode={materialsByCode}
+          formatValue={formatValue}
+          onPick={(line) => { setPickerLines(null); setAdjustTarget(line) }}
+          onClose={() => setPickerLines(null)}
+        />
       )}
 
       {adjustTarget && runId && (

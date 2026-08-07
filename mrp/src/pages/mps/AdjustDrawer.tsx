@@ -1,12 +1,15 @@
-// Adjust a single MPS line's qty/plan_month — design §6.6 page 3. Portaled
-// to document.body as a right-side drawer, same convention as
+// Adjust a single MPS line's qty/plan_month/lock — design §6.6 page 3.
+// Portaled to document.body as a right-side drawer, same convention as
 // capacity/RuleDrawer.tsx (see that file's header note and
 // feedback_uniops_overlay_dropdown_portal in project memory).
 //
-// Deliberately narrow: only qty and plan_month are editable here (brief:
-// "edit qty or plan_month for one line"). Locking is a bulk action from the
-// table's own action bar (MpsLineTable's Lock/Unlock selected), not part of
-// this form.
+// qty and plan_month were always editable here (brief: "edit qty or
+// plan_month for one line"). Locking used to be a bulk action from
+// MpsLineTable's own action bar (row checkboxes + Lock/Unlock selected) —
+// Production Plan Matrix Task 5 retired that table in favor of
+// ProductionMatrix.tsx's per-cell click-to-adjust, so locking moved into
+// this single-line form as a `locked_by_planner` checkbox instead of being
+// dropped.
 import { useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, Loader2, X as XIcon } from 'lucide-react'
@@ -46,6 +49,7 @@ export function AdjustDrawer({
 }) {
   const [qty, setQty] = useState(line.qty)
   const [planMonth, setPlanMonth] = useState(line.plan_month)
+  const [locked, setLocked] = useState(line.locked_by_planner)
   const [errors, setErrors] = useState<FormErrors>({})
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -59,8 +63,9 @@ export function AdjustDrawer({
     setSubmitting(true)
     setSubmitError(null)
     try {
-      await mpsApi.adjustLine(runId, line.id, { qty: Number(qty), plan_month: planMonth })
-      notifySuccess(`Adjusted ${line.material_code} — ${planMonth}, qty ${qty}.`)
+      await mpsApi.adjustLine(runId, line.id, { qty: Number(qty), plan_month: planMonth, locked_by_planner: locked })
+      const lockNote = locked === line.locked_by_planner ? '' : locked ? ', locked' : ', unlocked'
+      notifySuccess(`Adjusted ${line.material_code} — ${planMonth}, qty ${qty}${lockNote}.`)
       onSaved()
       onClose()
     } catch (err) {
@@ -117,11 +122,16 @@ export function AdjustDrawer({
               />
             </FormField>
 
-            {line.locked_by_planner && (
-              <p role="status" className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-                This line is locked. Saving here keeps it locked — use Unlock in the table if you want it to move on the next Recalculate.
-              </p>
-            )}
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-sm text-neutral-700">
+              <input
+                type="checkbox"
+                checked={locked}
+                onChange={(e) => setLocked(e.target.checked)}
+                disabled={submitting}
+                className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+              />
+              Locked (excluded from the next Recalculate)
+            </label>
 
             {submitError && (
               <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">

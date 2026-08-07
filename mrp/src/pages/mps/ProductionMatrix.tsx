@@ -5,8 +5,8 @@
 // bespoke, purpose-built display table — NOT the editable `MatrixGrid`
 // (@/components/MatrixGrid) that Sales Forecast uses: there is no
 // paste/undo/keyboard-nav here, only aggregation plus a click-to-adjust
-// affordance on Planned cells. T5 mounts this next to (or instead of)
-// MpsLineTable.tsx.
+// affordance on Planned cells. T5 mounted this in ProductionPlanPage.tsx in
+// place of the old CapacityBars.tsx + MpsLineTable.tsx (both retired).
 //
 // Sticky pattern ported verbatim from MatrixGrid.tsx's own header comment
 // (itself the Sales Forecast sticky fix): ONE `overflow-auto` container
