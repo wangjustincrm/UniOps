@@ -93,7 +93,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, func, select
 
 from app.api.v1.net_requirement import _generate_months, _load_forecast_by_material
@@ -144,7 +144,10 @@ class MpsRunCreate(BaseModel):
     # Months production is scheduled ahead of a demand month -- fed straight
     # into mps_engine.generate_mps's lead_months param. None (omitted) means
     # "use the default", matching safety_margin_fraction's own contract.
-    production_lead_months: int | None = None
+    # Bounded 0-12 server-side (the UI already clamps to this range, but a
+    # direct API caller must not be able to pass e.g. -1, which would
+    # schedule production AFTER its demand month).
+    production_lead_months: int | None = Field(default=None, ge=0, le=12)
 
 
 class MpsLineResponse(BaseModel):

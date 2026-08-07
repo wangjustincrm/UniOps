@@ -408,6 +408,7 @@ export default function ProductionPlanPage() {
                     setLeadMonths(Number.isFinite(n) ? Math.min(12, Math.max(0, Math.trunc(n))) : 0)
                   }}
                   disabled={generating}
+                  title="Applies when you Generate a new run; Recalculate keeps the run's lead."
                   className="flex h-11 w-20 rounded-lg border border-neutral-200 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                 />
               </FormField>

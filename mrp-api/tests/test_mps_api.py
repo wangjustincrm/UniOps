@@ -412,6 +412,31 @@ async def test_generate_run_requires_confirmed_forecast_version(client, db_sessi
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("bad_lead", [-1, 13])
+async def test_generate_run_rejects_out_of_range_production_lead_months(
+    client, db_session, admin_token, monkeypatch, bad_lead,
+):
+    """production_lead_months is bounded 0-12 server-side (mps.py's
+    `MpsRunCreate.production_lead_months` `Field(ge=0, le=12)`) -- a direct
+    API caller passing a negative value would schedule production AFTER its
+    demand month (nonsensical), and the UI only clamps 0-12 client-side, so
+    the API itself must reject out-of-range values with 422 rather than
+    silently accepting them. Request-body validation runs before the
+    forecast-version lookup, so this 422s even though `version` here is a
+    real confirmed version built the same way the other tests build one."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, _months = await _confirmed_version(db_session)
+
+    r = await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_months": bad_lead},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.anyio
 async def test_get_run_includes_capacity_occupancy(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
