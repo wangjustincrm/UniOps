@@ -40,13 +40,16 @@ monkeypatch this exact module attribute with a plain callable, and
 `app/api/v1/series.py` imports `resolve_current_user_name` as a bare name
 (not accessed via this module) so a test can
 `monkeypatch.setattr(series, "resolve_current_user_name", ...)` — same idiom
-`app/api/v1/consignment.py` uses for `lookup_lot`. This call is a single
-request (not `mdm_client.py`'s paging loop), so it's called directly rather
-than bounced onto a worker thread via `anyio.to_thread.run_sync` — a single
-short GET, bounded by `IDENTITY_API_TIMEOUT_SECONDS`, blocking the event
-loop briefly is judged an acceptable trade-off on this one write path,
-consistent with how small identity-api gets is documented in
-`app/core/config.py`.
+`app/api/v1/consignment.py` uses for `lookup_lot`. Both functions here stay
+plain, synchronous `def`s (not `async def`) for that same reason: tests
+monkeypatch this exact module attribute with a plain callable, no async mock
+needed. This is a blocking `httpx.Client` call, so — same as
+`consignment.py`'s `lookup_lot` and `mdm_client.py`'s `fetch_materials` —
+the caller (`app/api/v1/series.py`'s `PUT /series/cells`) must run it via
+`anyio.to_thread.run_sync`, never call it directly inside an `async def`
+endpoint; doing so would stall that uvicorn worker's entire event loop
+(every concurrent request it's serving, not just this one) for up to
+`IDENTITY_API_TIMEOUT_SECONDS` whenever identity-api is slow or down.
 """
 from __future__ import annotations
 

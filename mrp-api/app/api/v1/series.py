@@ -49,6 +49,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
@@ -210,8 +211,14 @@ async def put_series_cells(body: SeriesCellsUpsertRequest, db: SessionDep, paylo
     # Once per request, not once per cell — see this module's docstring and
     # identity_client.resolve_current_user_name's docstring. Never raises:
     # identity-api being down must not block the save, just degrade to no
-    # name on this write's change-log rows.
-    changed_by_name = resolve_current_user_name(token)
+    # name on this write's change-log rows. resolve_current_user_name is a
+    # blocking sync httpx.Client call, so it must run off the event loop —
+    # calling it directly here would stall this uvicorn worker's ENTIRE
+    # event loop (every concurrent request it's serving, not just this one)
+    # for up to IDENTITY_API_TIMEOUT_SECONDS whenever identity-api is slow.
+    # Same anyio.to_thread.run_sync idiom app/api/v1/consignment.py uses for
+    # its own blocking lookup_lot call (see that module, lines ~177-183).
+    changed_by_name = await anyio.to_thread.run_sync(resolve_current_user_name, token)
     cells = [
         CellChange(material_code=c.material_code, month=c.month, qty=c.qty, uom=c.uom)
         for c in body.cells
