@@ -21,7 +21,8 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 import { fetchPreview, scopeKey } from '@/services/remittance'
-import { suggestCredits, type CreditSuggestResponse } from '@/services/vendorCredits'
+import { planApplications, plannedTotal, suggestCredits,
+         type CreditSuggestResponse } from '@/services/vendorCredits'
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -313,16 +314,16 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
     })
   }
 
-  /** Sum of `apply` for a doc's suggested credits, minus anything the
-   * operator has deselected. Money fields are Decimal-as-string — Number()
-   * before every arithmetic op. */
-  const appliedFor = (docId: string): number => {
+  /** What the server would actually apply to this doc given the current
+   * selection. Recomputed with planApplications (capped FIFO over the still-
+   * checked credits) rather than summing the preview's `apply` values: those
+   * were computed in the FULL FIFO context and stop being true the moment a
+   * credit is deselected — see planApplications' doc comment for the worked
+   * example. */
+  const planFor = (docId: string) => {
     const s = suggestions[docId]
-    if (!s) return 0
-    const off = deselected[docId] ?? new Set<string>()
-    return s.suggested
-      .filter((c) => !off.has(c.credit_id))
-      .reduce((sum, c) => sum + Number(c.apply), 0)
+    if (!s) return []
+    return planApplications(s, deselected[docId] ?? new Set<string>())
   }
 
   const execute = useMutation({
@@ -459,7 +460,13 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
                     .map((ln) => {
                       const s = suggestions[ln.doc_id]!
                       const off = deselected[ln.doc_id] ?? new Set<string>()
-                      const applied = appliedFor(ln.doc_id)
+                      const plan = planFor(ln.doc_id)
+                      // What each still-checked credit would actually take,
+                      // keyed for the per-row figure below. A credit absent
+                      // here contributes nothing: either deselected, or the
+                      // base ran out before FIFO reached it.
+                      const takeById = new Map(plan.map((p) => [p.credit.credit_id, p.take]))
+                      const applied = plannedTotal(plan)
                       const net = Number(s.gross) - applied
                       return (
                         <div key={ln.doc_id} className="border-b border-neutral-100 pb-3 last:border-0 last:pb-0 last:pt-0">
@@ -472,15 +479,27 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
                             </span>
                           </div>
                           <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                            {s.suggested.map((c) => (
-                              <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-neutral-600">
-                                <input type="checkbox" checked={!off.has(c.credit_id)}
-                                       onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
-                                <span className="font-mono">{c.credit_number}</span>
-                                <span className="text-neutral-400">{c.credit_date}</span>
-                                <span className="font-mono">{fmtMoney(c.apply)}</span>
-                              </label>
-                            ))}
+                            {s.suggested.map((c) => {
+                              const take = takeById.get(c.credit_id)
+                              return (
+                                <label key={c.credit_id} className="flex items-center gap-1.5 text-xs text-neutral-600">
+                                  <input type="checkbox" checked={!off.has(c.credit_id)}
+                                         onChange={() => toggleCredit(ln.doc_id, c.credit_id)} />
+                                  <span className="font-mono">{c.credit_number}</span>
+                                  <span className="text-neutral-400">{c.credit_date}</span>
+                                  {/* The recomputed take, never c.apply — a
+                                      deselection reshuffles what every later
+                                      credit contributes, so showing the
+                                      preview figure would keep the individual
+                                      rows lying even once the total is right.
+                                      Excluded (or unreached) credits show
+                                      their remaining balance struck through. */}
+                                  {take === undefined
+                                    ? <span className="font-mono text-neutral-300 line-through">{fmtMoney(c.remaining)}</span>
+                                    : <span className="font-mono">{fmtMoney(String(take))}</span>}
+                                </label>
+                              )
+                            })}
                           </div>
                         </div>
                       )

@@ -1,26 +1,37 @@
 """Vendor Credit API — record and review vendor credit notes.
 
-Gating rationale (spec §8): creating and reading need only a valid token,
-matching "if you can upload an invoice you can upload a credit note". A created
-credit is `pending_review` and confers nothing until approved, so the real gate
-sits on the review actions, which require epms.vendor_credit.manage.
+Gating rationale (spec §8): creating and reading a CREDIT NOTE need only a
+valid token, matching "if you can upload an invoice you can upload a credit
+note". A created credit is `pending_review` and confers nothing until approved,
+so the real gate sits on the review actions, which require
+epms.vendor_credit.manage.
+
+That openness covers credit-note data only. The two routes here that return
+PAYMENT data — /suggest (a PA's gross and net) and /{id}/applications (which
+payments a credit was consumed by, for how much, by whom) — are gated by
+`authorize_finance_read`, exactly as app/api/v1/payments.py's own reads are.
+Without it any authenticated employee, including OA-only users with no finance
+role, could read payment amounts through this router.
 """
 import uuid
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import require_permission
 from app.core.deps import CurrentUser
+from app.core.read_authz import authorize_finance_read
 from app.crud import vendor_credit as crud
 from app.db.base import get_db
+from app.models.mirrors import User
 from app.models.pa import PaymentApplication
+from app.models.vendor_credit import VendorCreditApplication
 from app.schemas.vendor_credit import (
-    CreditSuggestion, CreditSuggestResponse, VendorCreditCreate,
-    VendorCreditListResponse, VendorCreditReject, VendorCreditResponse,
-    VendorCreditReview,
+    CreditSuggestion, CreditSuggestResponse, VendorCreditApplicationListResponse,
+    VendorCreditApplicationRow, VendorCreditCreate, VendorCreditListResponse,
+    VendorCreditReject, VendorCreditResponse, VendorCreditReview,
 )
 
 router = APIRouter(prefix="/vendor-credits", tags=["vendor-credits"])
@@ -90,7 +101,11 @@ async def suggest_credits(user: CurrentUser,
 
     Declared before /{credit_id} so FastAPI does not try to parse the literal
     "suggest" as a UUID.
+
+    Gated: the response carries the PA's gross and net, which is payment data
+    (see the module docstring) — not the deliberately open credit-note data.
     """
+    await authorize_finance_read(db, user)
     if doc_kind not in ("pa", "pa_dir"):
         raise HTTPException(
             status_code=422,
@@ -128,6 +143,48 @@ async def suggest_credits(user: CurrentUser,
 async def get_vendor_credit(credit_id: uuid.UUID, user: CurrentUser,
                             db: AsyncSession = Depends(get_db)):
     return await _load(db, credit_id)
+
+
+@router.get("/{credit_id}/applications",
+            response_model=VendorCreditApplicationListResponse)
+async def list_vendor_credit_applications(credit_id: uuid.UUID, user: CurrentUser,
+                                          db: AsyncSession = Depends(get_db)):
+    """Where this credit went: one row per payment it was netted against.
+
+    The only read path for `vendor_credit_applications`, and the only place
+    inside the system that explains a short payment other than the remittance
+    email sent to the vendor. Gated by `authorize_finance_read` — it names
+    payment records, documents and amounts.
+    """
+    await authorize_finance_read(db, user)
+    await _load(db, credit_id)          # 404 for an unknown credit, not an empty list
+
+    rows = list((await db.execute(
+        select(VendorCreditApplication)
+        .where(VendorCreditApplication.credit_id == credit_id)
+        .order_by(VendorCreditApplication.applied_at.desc())
+    )).scalars().all())
+    total_applied = (await db.execute(
+        select(func.coalesce(func.sum(VendorCreditApplication.applied_amount),
+                             Decimal("0.00")))
+        .where(VendorCreditApplication.credit_id == credit_id)
+    )).scalar_one()
+
+    actor_ids = {r.applied_by for r in rows}
+    names: dict[uuid.UUID, str] = {}
+    if actor_ids:
+        for u in (await db.execute(
+            select(User).where(User.id.in_(actor_ids))
+        )).scalars().all():
+            names[u.id] = u.full_name or u.email
+
+    items = []
+    for r in rows:
+        row = VendorCreditApplicationRow.model_validate(r)
+        row.applied_by_name = names.get(r.applied_by)
+        items.append(row)
+    return VendorCreditApplicationListResponse(
+        items=items, total=len(items), total_applied=total_applied)
 
 
 @router.post("/{credit_id}/approve", response_model=VendorCreditResponse)

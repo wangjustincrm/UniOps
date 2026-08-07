@@ -317,7 +317,12 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             db, vendor_id=pa.vendor_id, currency=pa.currency,
             base=base, credit_ids=req.credit_ids,
         )
-        credit_applied = sum((take for _, take in picks), Decimal("0"))
+        # Decimal("0.00"), not Decimal("0"): an empty `picks` would otherwise
+        # store scale-0 zero and serialize as "0" where every other credit
+        # figure in the system (app/crud/vendor_credit.py, /suggest) says
+        # "0.00". Same value on the way to Numeric(15,2), consistent on the way
+        # back out.
+        credit_applied = sum((take for _, take in picks), Decimal("0.00"))
         net = base - credit_applied
 
         record = PaymentRecord(
@@ -390,6 +395,16 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         )
 
     # expense_claim
+    #
+    # Vendor credits are a vendor-AP instrument: they net against what the
+    # company owes a SUPPLIER, never against an employee reimbursement. Reject
+    # the parameter loudly rather than letting eligibility fall out of "this
+    # branch happens not to read req.credit_ids" — a caller that passed credits
+    # here believed they would be applied, and silently paying the claim in
+    # full would leave the credit unconsumed with nobody told.
+    if req.credit_ids:
+        raise ValueError("Vendor credits do not apply to expense claims")
+
     claim = (await db.execute(
         select(ExpenseClaim).where(ExpenseClaim.id == req.doc_id)
     )).scalar_one_or_none()

@@ -824,6 +824,183 @@ async def test_suggest_404s_for_an_unknown_document(client):
 
 
 @pytest.mark.anyio
+async def test_suggest_denies_a_caller_without_finance_authority(client, db_session):
+    """`/suggest` returns a PA's gross and net plus the vendor credit numbers
+    behind the difference — payment data, gated exactly like the Payments hub's
+    own reads. Phase A left the credit-note CRUD open to any valid token ("if
+    you can upload an invoice you can upload a credit note"); that openness
+    deliberately does not extend to this route, or an OA-only employee with no
+    finance role could read what the company is about to pay a supplier."""
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/vendor-credits/suggest",
+                         params={"doc_kind": "pa", "doc_id": str(pa.id)},
+                         headers=_h(role="requester"))
+    assert r.status_code == 403, r.text
+    # 403 before anything else: an unauthorized caller must not be able to use
+    # the 404/422 responses to probe which PA ids exist either.
+    r = await client.get("/finance/v1/vendor-credits/suggest",
+                         params={"doc_kind": "pa", "doc_id": str(uuid.uuid4())},
+                         headers=_h(role="requester"))
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.anyio
+async def test_suggest_allows_a_finance_bp_assigned_as_an_additional_role(client, db_session):
+    """The gate honours identity `user_roles` assignments, not just the JWT's
+    primary role — same lookup the payment executor uses for write access. A
+    Finance BP assigned through role_management must still see the preview."""
+    uid = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'finance_bp')"),
+        {"u": str(uid)})
+    pa = _pa(payment_amount=Decimal("40.00"))
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/vendor-credits/suggest",
+                         params={"doc_kind": "pa", "doc_id": str(pa.id)},
+                         headers=_h(role="requester", sub=uid))
+    assert r.status_code == 200, r.text
+    assert r.json()["net"] == "40.00"
+
+
+@pytest.mark.anyio
+async def test_applications_endpoint_reports_where_a_credit_went(client, db_session):
+    """`vendor_credit_applications` had no read path at all: a payment short by
+    a credit was inexplicable inside the system, explained only in the email
+    sent to the vendor."""
+    actor = uuid.uuid4()
+    pa = _pa(payment_amount=Decimal("80.00"))
+    credit = _credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                     total_amount=Decimal("30.00"), remaining_amount=Decimal("30.00"))
+    db_session.add_all([pa, credit])
+    await db_session.flush()
+    res = await _run_execute(db_session, pa, user_id=actor)
+
+    r = await client.get(f"/finance/v1/vendor-credits/{credit.id}/applications",
+                         headers=_h())
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 1
+    assert body["total_applied"] == "30.00"
+    row = body["items"][0]
+    assert row["applied_amount"] == "30.00"
+    assert row["doc_number"] == pa.pa_number
+    # _pa() carries no po_id, so execute() derives doc_kind 'pa_dir' from the
+    # document rather than trusting the request's 'pa' — asserted here so the
+    # application row is proven to record the RESOLVED kind.
+    assert row["doc_kind"] == "pa_dir"
+    assert row["payment_record_id"] == str(res.payment_record_id)
+    assert row["applied_by"] == str(actor)
+
+
+@pytest.mark.anyio
+async def test_applications_of_an_unused_credit_is_an_empty_list(client, db_session):
+    credit = _credit()
+    db_session.add(credit)
+    await db_session.flush()
+
+    body = (await client.get(
+        f"/finance/v1/vendor-credits/{credit.id}/applications", headers=_h())).json()
+    assert body["items"] == []
+    assert body["total"] == 0
+    assert body["total_applied"] == "0.00"
+
+
+@pytest.mark.anyio
+async def test_applications_404s_for_an_unknown_credit(client):
+    r = await client.get(
+        f"/finance/v1/vendor-credits/{uuid.uuid4()}/applications", headers=_h())
+    assert r.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_applications_denies_a_caller_without_finance_authority(client, db_session):
+    credit = _credit()
+    db_session.add(credit)
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/vendor-credits/{credit.id}/applications",
+                         headers=_h(role="requester"))
+    assert r.status_code == 403, r.text
+
+
+@pytest.mark.anyio
+async def test_expense_claim_rejects_credit_ids(db_session):
+    """Eligibility is enforced, not left to fall out of a branch that happens
+    not to read req.credit_ids. A caller that passed credits believed they
+    would be applied; paying the claim in full and silently leaving the credit
+    unconsumed is the failure this rejects."""
+    from app.crud import payment_execute
+    from app.models.mirrors import ExpenseClaim
+    from app.schemas.payment_execute import PaymentExecuteRequest
+
+    claim = ExpenseClaim(claim_number=f"EXP-{uuid.uuid4().hex[:6]}", claim_type="EXP",
+                         status="approved", employee_id=uuid.uuid4(),
+                         employee_name="Jane Doe", currency="CAD",
+                         total_amount=Decimal("50.00"), tax_amount=Decimal("0"),
+                         net_amount=Decimal("50.00"))
+    db_session.add(claim)
+    await db_session.flush()
+
+    with pytest.raises(ValueError, match="do not apply to expense claims"):
+        await payment_execute.execute(
+            db_session,
+            PaymentExecuteRequest(doc_kind="expense_claim", doc_id=claim.id,
+                                  credit_ids=[uuid.uuid4()]),
+            {"sub": str(uuid.uuid4()), "role": "system_admin"},
+        )
+
+
+@pytest.mark.anyio
+async def test_expense_claim_with_no_credit_ids_still_pays(db_session):
+    """Guard against over-reaching on the line above: `credit_ids=None` (the
+    automatic default every existing caller sends) and `[]` must both remain
+    perfectly legal for a claim."""
+    from app.crud import payment_execute
+    from app.models.mirrors import ExpenseClaim
+    from app.schemas.payment_execute import PaymentExecuteRequest
+
+    for credit_ids in (None, []):
+        claim = ExpenseClaim(claim_number=f"EXP-{uuid.uuid4().hex[:6]}", claim_type="EXP",
+                             status="approved", employee_id=uuid.uuid4(),
+                             employee_name="Jane Doe", currency="CAD",
+                             total_amount=Decimal("50.00"), tax_amount=Decimal("0"),
+                             net_amount=Decimal("50.00"))
+        db_session.add(claim)
+        await db_session.flush()
+        res = await payment_execute.execute(
+            db_session,
+            PaymentExecuteRequest(doc_kind="expense_claim", doc_id=claim.id,
+                                  credit_ids=credit_ids),
+            {"sub": str(uuid.uuid4()), "role": "system_admin"},
+        )
+        assert res.new_status == "paid"
+
+
+@pytest.mark.anyio
+async def test_credit_applied_is_stored_at_scale_two_when_nothing_applies(db_session):
+    """M5: the accumulator seed. A payment that nets nothing must still report
+    "0.00", the scale every other credit figure in the system uses."""
+    from app.models.payment import PaymentRecord
+    pa = _pa(payment_amount=Decimal("25.00"))
+    db_session.add(pa)
+    await db_session.flush()
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+    assert rec.credit_applied == Decimal("0.00")
+    assert str(rec.credit_applied) == "0.00"
+
+
+@pytest.mark.anyio
 async def test_batch_line_defaults_to_automatic_netting(db_session):
     from app.crud import payment_batch
     from app.models.payment import PaymentRecord

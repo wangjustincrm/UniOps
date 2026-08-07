@@ -36,7 +36,13 @@ interface PaymentRow {
   payment_date: string
   payment_method: string
   reference: string | null
+  /** Decimal-as-string. The NET cash that left the bank — a vendor credit may
+   * have reduced it. Gross = Number(amount) + Number(credit_applied). */
   amount: string
+  /** Decimal-as-string. Vendor credit netted off this payment; "0.00" when
+   * none was (which is every payment before Phase B, and every expense-claim
+   * payment). */
+  credit_applied: string
   currency: string
   status: string
   batch_id: string | null
@@ -486,7 +492,8 @@ export default function PaymentsPage() {
                 <th className="px-3 py-2">Date</th>
                 <th className="px-3 py-2">Document</th>
                 <th className="px-3 py-2">Payee</th>
-                <th className="px-3 py-2 text-right">Amount</th>
+                <th className="px-3 py-2 text-right" title="Cash that left the bank, net of any vendor credit">Amount</th>
+                <th className="px-3 py-2 text-right" title="Vendor credit netted off this payment. Gross = Amount + Credit.">Credit</th>
                 <th className="px-3 py-2">Method</th>
                 <th className="px-3 py-2">Source</th>
                 <th className="px-3 py-2">Status</th>
@@ -495,10 +502,10 @@ export default function PaymentsPage() {
             </thead>
             <tbody>
               {isLoading && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>
+                <tr><td colSpan={10} className="px-3 py-6 text-center text-neutral-400">Loading…</td></tr>
               )}
               {!isLoading && rows.length === 0 && (
-                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">No payments match the current filters.</td></tr>
+                <tr><td colSpan={10} className="px-3 py-6 text-center text-neutral-400">No payments match the current filters.</td></tr>
               )}
               {rows.map((r, i) => (
                 <tr key={r.id} className={cn('cursor-pointer border-t border-neutral-100 hover:bg-neutral-50', i % 2 && 'bg-neutral-50/40')}
@@ -512,6 +519,12 @@ export default function PaymentsPage() {
                   <td className="px-3 py-2 font-mono text-xs">{r.doc_number ?? '—'}</td>
                   <td className="px-3 py-2">{r.payee_name ?? '—'}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.amount, r.currency)}</td>
+                  {/* Without this the short payment has no explanation inside
+                      the app at all — `amount` is already net. Dash rather
+                      than "0.00" so a genuinely netted row stands out. */}
+                  <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">
+                    {Number(r.credit_applied ?? 0) > 0 ? fmtMoney(r.credit_applied, r.currency) : '—'}
+                  </td>
                   <td className="px-3 py-2 text-xs uppercase text-neutral-500">{r.payment_method}</td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{r.batch_id ? 'Batch' : 'Single'}</td>
                   <td className="px-3 py-2"><PaymentStatusBadge status={r.status} /></td>
@@ -582,7 +595,13 @@ function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => 
             <span className="ml-2"><PaymentStatusBadge status={row.status} /></span>
           </h2>
           <p className="mt-1 text-sm text-neutral-500">
-            {row.payee_name ?? '—'} · <span className="font-mono">{fmtMoney(row.amount, row.currency)}</span> · {row.payment_date}
+            {row.payee_name ?? '—'} · <span className="font-mono">{fmtMoney(row.amount, row.currency)}</span>
+            {Number(row.credit_applied ?? 0) > 0 && (
+              <span className="text-neutral-400">
+                {' '}(gross <span className="font-mono">{fmtMoney(String(Number(row.amount) + Number(row.credit_applied)), row.currency)}</span>
+                {' '}less <span className="font-mono">{fmtMoney(row.credit_applied, row.currency)}</span> vendor credit)
+              </span>
+            )} · {row.payment_date}
             {row.batch_id && <span className="ml-1 text-neutral-400">· part of a batch</span>}
           </p>
         </div>

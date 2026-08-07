@@ -86,3 +86,28 @@ class CreditSuggestResponse(BaseModel):
     suggested: list[CreditSuggestion]
     credit_applied: Decimal
     net: Decimal
+
+
+class VendorCreditApplicationRow(BaseModel):
+    """One (credit, payment) application — the audit trail for why a payment
+    was short. `applied_by_name` is resolved from the users mirror at read
+    time; the table stores only the id."""
+    id: uuid.UUID
+    credit_id: uuid.UUID
+    payment_record_id: uuid.UUID
+    batch_id: uuid.UUID | None
+    doc_kind: str
+    doc_id: uuid.UUID
+    doc_number: str | None
+    applied_amount: Decimal
+    applied_at: datetime
+    applied_by: uuid.UUID
+    applied_by_name: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class VendorCreditApplicationListResponse(BaseModel):
+    items: list[VendorCreditApplicationRow]
+    total: int
+    total_applied: Decimal

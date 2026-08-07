@@ -2,6 +2,7 @@ import csv
 import io
 import uuid
 from datetime import date
+from decimal import Decimal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -9,7 +10,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.deps import _FINANCE_ROLES, BearerToken, CurrentUser
+from app.core.deps import BearerToken, CurrentUser
+from app.core.read_authz import authorize_finance_read
 from app.db.base import get_db
 from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
@@ -67,31 +69,13 @@ async def record_payment_deprecated(_: CurrentUser = ...):
 
 
 async def _authorize_read(db: AsyncSession, user: dict) -> None:
-    """Gate for the Payments hub's read surface (list / summary / export).
+    """Thin alias kept for this module's call sites.
 
-    Deliberately NOT `payment_execute._check_can_pay` — that bar is for
-    *executing* a payment (see create_batch/execute_batch below, and
-    app/api/v1/remittance.py's `_authorize`), which is stricter than needed
-    to merely *view* payment history. `_FINANCE_ROLES` (app.core.deps) is
-    already declared for exactly this — "who may see finance data" — but was
-    never wired to any endpoint, which is how any authenticated employee
-    (including OA-only users with no finance role) could hit
-    GET /payments/export and download every payment the company has made.
-    finance_bp / finance_manager granted as an ADDITIONAL identity role
-    assignment (not the JWT's primary `role`) also qualify — same lookup
-    `_check_can_pay` uses for write access, so a Finance BP assigned via
-    role_management sees the same payments they can execute.
+    The rule itself now lives in app/core/read_authz.py so
+    app/api/v1/vendor_credits.py's /suggest can share it verbatim rather than
+    grow a second copy that drifts. See that module for the rationale.
     """
-    role = user.get("role", "")
-    if role in _FINANCE_ROLES:
-        return
-    try:
-        user_id = uuid.UUID(str(user.get("sub", "")))
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
-    codes = await payment_execute._user_role_codes(db, user_id, role)
-    if not codes & _FINANCE_ROLES:
-        raise HTTPException(status_code=403, detail="Insufficient role to view payments")
+    await authorize_finance_read(db, user)
 
 
 class PaymentFilters(BaseModel):
@@ -188,15 +172,21 @@ async def export_payments(filters: PaymentFilters = Depends(),
     def _iter():
         buf = io.StringIO()
         w = csv.writer(buf)
+        # `amount` stays the NET cash that left the bank (column position and
+        # meaning unchanged for anyone with an existing import). `gross` and
+        # `credit_applied` are appended so a short payment is explicable from
+        # the export alone: gross = amount + credit_applied.
         w.writerow(["payment_date", "doc_kind", "doc_number", "payee", "amount",
-                    "currency", "payment_method", "source", "status"])
+                    "currency", "payment_method", "source", "status",
+                    "gross", "credit_applied"])
         yield buf.getvalue()
         for r in rows:
             buf.seek(0), buf.truncate(0)
+            credit = r.credit_applied or Decimal("0.00")
             w.writerow([r.payment_date, r.doc_kind or "", r.doc_number or "",
                         payee_by_id.get(r.id) or "", r.amount, r.currency,
                         r.payment_method, "batch" if r.batch_id else "single",
-                        r.status])
+                        r.status, r.amount + credit, credit])
             yield buf.getvalue()
 
     return StreamingResponse(_iter(), media_type="text/csv", headers={

@@ -39,3 +39,48 @@ export interface CreditSuggestResponse {
 export const suggestCredits = (docKind: string, docId: string) =>
   financeApi.get<CreditSuggestResponse>(
     `/vendor-credits/suggest?doc_kind=${docKind}&doc_id=${docId}`)
+
+export interface PlannedApplication {
+  credit: CreditSuggestion
+  /** What the server would ACTUALLY apply to this credit given the current
+   * selection — not `credit.apply`. */
+  take: number
+}
+
+/**
+ * Re-run the server's capped FIFO over only the credits still selected.
+ *
+ * `suggestion.apply` is NOT reusable once the operator deselects anything: it
+ * was computed inside the FULL FIFO context, where a later credit had already
+ * been squeezed by an earlier one. When the server receives an explicit id
+ * list it re-runs capped FIFO over just those ids, which is a different
+ * allocation.
+ *
+ * Concrete: gross 100, c1 remaining 60, c2 remaining 80 → preview says c1
+ * apply 60, c2 apply 40. Deselect c1 and summing `apply` claims credits 40 /
+ * net 60, while the server applies c2 = min(80, 100) = 80 → net 20, consuming
+ * 80 of c2. Hence this loop, which mirrors
+ * app/crud/vendor_credit.py:select_credits_for_payment exactly: oldest first
+ * (the payload is already in that order), each take capped at the remaining
+ * base, stop once the base is exhausted.
+ *
+ * Money fields are Decimal-as-string — Number() before every arithmetic op.
+ */
+export function planApplications(
+  s: CreditSuggestResponse, off: Set<string>,
+): PlannedApplication[] {
+  const gross = Number(s.gross)
+  const out: PlannedApplication[] = []
+  let sum = 0
+  for (const c of s.suggested) {
+    if (off.has(c.credit_id)) continue
+    const take = Math.min(Number(c.remaining), gross - sum)
+    if (take <= 0) break
+    sum += take
+    out.push({ credit: c, take })
+  }
+  return out
+}
+
+export const plannedTotal = (plan: PlannedApplication[]): number =>
+  plan.reduce((sum, p) => sum + p.take, 0)
