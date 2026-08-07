@@ -38,7 +38,9 @@ class GroupLine:
     vendor_inv_no: str
     doc_number: str
     payment_date: date
-    amount: Decimal
+    amount: Decimal                       # net cash paid
+    credit_applied: Decimal = Decimal("0")
+    gross: Decimal = Decimal("0")
 
 
 @dataclass
@@ -203,7 +205,9 @@ async def _vendor_groups(db: AsyncSession,
             out[pa.vendor_id] = g
         number = inv_no.get(pa.id, "")
         g.lines.append(GroupLine(vendor_inv_no=number, doc_number=pa.pa_number,
-                                  payment_date=r.payment_date, amount=r.amount))
+                                  payment_date=r.payment_date, amount=r.amount,
+                                  credit_applied=r.credit_applied,
+                                  gross=r.amount + r.credit_applied))
         g.total += r.amount
         g.payment_record_ids.append(r.id)
 
@@ -249,7 +253,9 @@ async def _employee_groups(db: AsyncSession,
         # Claim number is the meaningful reference internally — employee
         # groups are exempt from the vendor-invoice-number requirement.
         g.lines.append(GroupLine(vendor_inv_no="", doc_number=claim.claim_number,
-                                  payment_date=r.payment_date, amount=r.amount))
+                                  payment_date=r.payment_date, amount=r.amount,
+                                  credit_applied=r.credit_applied,
+                                  gross=r.amount + r.credit_applied))
         g.total += r.amount
         g.payment_record_ids.append(r.id)
 

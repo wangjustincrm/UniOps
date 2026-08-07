@@ -100,13 +100,30 @@ def render(group: PayeeGroup, *, company_name: str, reference: str,
     color = _safe_color(template.get("brand_color"))
     show_logo = bool(template.get("show_logo")) and bool(logo_data_url)
 
+    _CELL = "padding:8px;border-bottom:1px solid #eee"
+
+    def _amount_cell(l) -> str:
+        """An ordinary line shows one figure. A line whose payment was reduced by a
+        vendor credit shows all three, because the vendor is receiving less than
+        their invoice and the advice is the only place that says why."""
+        if not l.credit_applied:
+            return (f"<td style='{_CELL};text-align:right'>"
+                    f"{_money(l.amount, group.currency)}</td>")
+        return (
+            f"<td style='{_CELL};text-align:right'>"
+            f"<div>{_money(l.gross, group.currency)}</div>"
+            f"<div style='color:#666;font-size:12px'>"
+            f"less credits {_money(l.credit_applied, group.currency)}</div>"
+            f"<div style='font-weight:600'>{_money(l.amount, group.currency)}</div>"
+            f"</td>"
+        )
+
     rows = "".join(
         "<tr>"
-        f"<td style='padding:8px;border-bottom:1px solid #eee'>"
+        f"<td style='{_CELL}'>"
         f"{escape(l.vendor_inv_no if is_vendor else l.doc_number)}</td>"
-        f"<td style='padding:8px;border-bottom:1px solid #eee'>{l.payment_date}</td>"
-        f"<td style='padding:8px;border-bottom:1px solid #eee;text-align:right'>"
-        f"{_money(l.amount, group.currency)}</td>"
+        f"<td style='{_CELL}'>{l.payment_date}</td>"
+        + _amount_cell(l) +
         "</tr>"
         for l in group.lines
     )

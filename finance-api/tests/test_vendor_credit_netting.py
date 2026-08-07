@@ -979,3 +979,63 @@ async def test_execute_batch_route_coerces_credit_ids_by_doc_keys(client, db_ses
         PaymentRecord.doc_id == pa.id))).scalar_one()
     assert rec.credit_applied == Decimal("0.00")
     assert rec.amount == Decimal("100.00")
+
+
+# ── Task 8: remittance advice explains a short payment ──────────────────────
+
+@pytest.mark.anyio
+async def test_remittance_line_carries_gross_and_credit(db_session):
+    from app.crud import remittance
+    from app.models.payment import PaymentRecord
+
+    pa = _pa(payment_amount=Decimal("100.00"))
+    db_session.add(pa)
+    db_session.add(_credit(vendor_id=pa.vendor_id, amount=Decimal("30.00"),
+                           total_amount=Decimal("30.00"),
+                           remaining_amount=Decimal("30.00")))
+    await db_session.flush()
+
+    res = await _run_execute(db_session, pa, user_id=uuid.uuid4())
+    await db_session.flush()
+
+    rec = (await db_session.execute(sa.select(PaymentRecord).where(
+        PaymentRecord.id == res.payment_record_id))).scalar_one()
+
+    line = remittance.GroupLine(
+        vendor_inv_no="INV-1", doc_number=rec.pa_number,
+        payment_date=rec.payment_date, amount=rec.amount,
+        credit_applied=rec.credit_applied, gross=rec.amount + rec.credit_applied,
+    )
+    assert line.amount == Decimal("70.00")
+    assert line.credit_applied == Decimal("30.00")
+    assert line.gross == Decimal("100.00")
+
+
+def test_remittance_row_explains_a_netted_line():
+    # NOTE: the brief's render(...) call omits `payment_method`, which is a
+    # required keyword-only argument of the real render() in this codebase
+    # (see tests/test_remittance.py's calls) — added here per the brief's own
+    # fallback instruction rather than changing render()'s signature. render()
+    # also returns (subject, html), not html alone; unpacked accordingly.
+    from app.crud.remittance import GroupLine, PayeeGroup
+    from app.services import remittance_template
+
+    group = PayeeGroup(
+        recipient_kind="vendor", party_id=uuid.uuid4(), party_name="ULINE",
+        email="ap@uline.test", currency="CAD",
+        lines=[
+            GroupLine(vendor_inv_no="INV-1", doc_number="PA-1",
+                      payment_date=date(2026, 8, 7), amount=Decimal("70.00"),
+                      credit_applied=Decimal("30.00"), gross=Decimal("100.00")),
+            GroupLine(vendor_inv_no="INV-2", doc_number="PA-2",
+                      payment_date=date(2026, 8, 7), amount=Decimal("50.00")),
+        ],
+        total=Decimal("120.00"),
+    )
+    _, html = remittance_template.render(
+        group, company_name="CRM", reference="REF-1", payment_method="bank_transfer",
+        template={}, logo_data_url=None)
+
+    assert "less credits" in html          # the netted line explains itself
+    assert "100.00" in html and "70.00" in html
+    assert html.count("less credits") == 1  # the ordinary line is unchanged
