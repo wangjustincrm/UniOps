@@ -31,6 +31,48 @@
 - **Overlay UI** (dropdowns, popovers) must `createPortal` to `document.body` with `position: fixed` to escape `overflow` clipping.
 - **Commit per task.** Do not push; the user approves pushes separately.
 
+- **Test env (corrected 2026-08-07 — the value written below in older task bodies is wrong).** The local Postgres container `uniops_postgres` runs on `localhost:5432` with user **`epms`**, password **`7c0a03bb8c2afef690d1852f8dc3a0195932db5f0f1670e9`**, DB `epms_test` (approval-api: `approval_test`). Any task step showing `POSTGRES_USER=uniops` or `<local docker pw>` is stale — use these values.
+- **Baseline confirmed 2026-08-07:** epms-api full suite = **69 failed, 542 passed** (11m08s). approval-api = 53 passed.
+- **⚠️ Do NOT use the `seeded_vendor` / `system_user_id` conftest fixtures in these tests.** They insert through `pg_cur`, a **separate psycopg2 connection whose transaction is never committed**, so rows are invisible to the async ORM session and to API calls — you get `ForeignKeyViolationError` or a 404 "Vendor not found". (`seeded_vendor` also returns a **tuple `(id, name)`**, not a dict, so `seeded_vendor["id"]` raises `TypeError`.) Confirmed empirically during Task 1. Every test body in Tasks 2, 5, 6, and 7 that references `seeded_vendor["id"]` or `system_user_id` must instead seed through the async session using this helper, which Task 2 adds to `epms-api/tests/test_agreements.py` and later tasks import:
+
+  ```python
+  # epms-api/tests/test_agreements.py — shared by the agreement test modules.
+  import uuid
+
+  from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+  from app.crud import user as user_crud
+  from app.models.vendor import Vendor
+  from app.schemas.auth import RegisterRequest
+
+
+  async def seed_vendor_and_user(test_engine, vendor_name="Princess Auto"):
+      """Seed a vendor + user through the ASYNC session and commit them.
+
+      The conftest `seeded_vendor` / `system_user_id` fixtures write through an
+      uncommitted psycopg2 connection that the async engine cannot see; anything
+      touching the ORM or the API needs committed rows on the same engine.
+      Returns (vendor_id: uuid.UUID, vendor_name: str, user_id: uuid.UUID).
+      """
+      factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+      async with factory() as db:
+          vendor = Vendor(
+              code=f"V-{uuid.uuid4().hex[:8]}", name=vendor_name, category="supplier",
+              contact_name="AP Contact", contact_email="ap@example.com",
+          )
+          db.add(vendor)
+          user = await user_crud.create(db, RegisterRequest(
+              email=f"agr-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+              full_name="Agreement Tester", role="procurement_officer",
+          ))
+          await db.commit()
+          await db.refresh(vendor)
+          await db.refresh(user)
+          return vendor.id, vendor.name, user.id
+  ```
+
+  Read `epms-api/tests/test_backfill_invoice_gr_links.py` for the established precedent. Where a task's test body says `seeded_vendor["id"]`, use `str(vendor_id)` from this helper; where it says `system_user_id`, use `user_id`.
+
 ## Out of Scope for 1A
 
 Pickup Slips, slip↔invoice reconciliation, the E2/E3 exception queue, recurring payment schedules, milestone schedules, NTE threshold notifications, and the OCR reference-number auto-resolution. 1A ships **manual route selection only** — the operator picks "Agreements" in the match panel. Auto-resolution is 1B.
