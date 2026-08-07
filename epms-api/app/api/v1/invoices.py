@@ -300,7 +300,12 @@ async def match_invoice(
     if inv.status not in ("unmatched", "exception"):
         raise HTTPException(status_code=409, detail=f"Invoice already in status '{inv.status}'")
     require_review = not (is_ap or is_uploader)
-    from app.crud.invoice import AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired
+    from app.crud.invoice import (
+        AgreementMatchInvalid,
+        AllocationImbalance,
+        FeeOnlyLinkRequired,
+        LegacyMatchUnsupported,
+    )
     try:
         # No GR picked in the request → attach the GRs that already received these
         # lines (goods-first, invoice-later). A selection sent by the caller, even
@@ -373,7 +378,7 @@ async def match_invoice(
 
         await _attach_match_assignees(db, [result])
         return result
-    except (AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired) as exc:
+    except (AgreementMatchInvalid, AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))

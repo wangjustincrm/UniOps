@@ -96,6 +96,13 @@ class InvoiceMatchRequest(BaseModel):
     # the PO this invoice is associated with for traceability. Ignored when
     # allocations are present. The fees are paid in full via the AP header.
     reference_po_id: uuid.UUID | None = None
+    # Agreement route: takes priority over every PO field when set. The invoice
+    # is linked to the agreement for traceability and paid in full from the AP
+    # header — there is no line reference to measure a variance against.
+    agreement_id: uuid.UUID | None = None
+    # 1A only: no pickup slips exist yet, so an agreement match is by definition
+    # settled without receipt evidence and must record why.
+    legacy_settlement_reason: str | None = None
 
 
 class InvoiceExceptionRequest(BaseModel):

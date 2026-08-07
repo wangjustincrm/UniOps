@@ -4,10 +4,12 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agreement import PurchaseAgreement
 from app.models.invoice import Invoice
+from app.models.task import Task
 from tests.test_agreements import seed_vendor_and_user
 
 pytestmark = pytest.mark.asyncio
@@ -152,3 +154,182 @@ async def test_expired_agreement_past_grace_is_not_a_candidate(admin_client, tes
     ids = [i["id"] for i in (await admin_client.get(
         f"{INV_URL}/{inv['id']}/agreement-candidates")).json()["items"]]
     assert str(agr.id) not in ids
+
+
+# ── match() agreement branch ────────────────────────────────────────────────
+
+async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_engine):
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                       not_to_exceed=Decimal("50000.00"))
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id),
+        "legacy_settlement_reason": "Backlog statement, paper slips held by Finance",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "matched"
+    assert body["agreement_id"] == str(agr.id)
+    assert body["agreement_number"] == agr.number
+    assert body["match_route"] == "agreement"
+    assert body["match_route_auto"] is False
+    assert body["po_id"] is None
+    assert Decimal(body["variance"]) == Decimal("0")
+    assert body["legacy_settlement"] is True
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+    assert fresh.consumed_amount == Decimal("1000.00")
+
+
+async def test_match_to_agreement_requires_a_reason_in_1a(admin_client, test_engine):
+    """1A has no pickup slips, so every agreement match is a legacy settlement
+    and must carry a reason. 1B replaces this with real slip reconciliation."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id)
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match",
+                                json={"agreement_id": str(agr.id)})
+    assert r.status_code == 422
+    assert "reason" in r.text.lower()
+
+
+async def test_match_to_agreement_rejects_vendor_mismatch(admin_client, test_engine):
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    other_vendor_id, _other_name, _other_user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Other Vendor")
+    agr = await _make_active_agreement(test_engine, other_vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id)
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id), "legacy_settlement_reason": "x"})
+    assert r.status_code == 422
+    assert "vendor" in r.text.lower()
+
+
+async def test_match_to_draft_agreement_is_refused(admin_client, test_engine):
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id, status="draft")
+    inv = await _upload_invoice(admin_client, vendor_id)
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id), "legacy_settlement_reason": "x"})
+    assert r.status_code == 422
+
+
+async def test_agreement_match_does_not_block_when_over_nte(admin_client, test_engine):
+    """NTE warns, it does not block (user decision). An invoice that pushes
+    consumed_amount past the ceiling must still match."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                       not_to_exceed=Decimal("100.00"))
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+    assert r.status_code == 200, r.text
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+    assert fresh.consumed_amount == Decimal("1000.00")   # over the 100.00 ceiling, allowed
+
+
+async def test_rematch_from_agreement_to_po_releases_consumption(admin_client, test_engine):
+    """Re-matching must not leave the agreement's consumed_amount inflated.
+
+    The HTTP /match endpoint refuses a second call once status="matched" (409 —
+    a separate, pre-existing gate unrelated to this task), so calling POST
+    /match twice through admin_client would "pass" even with a buggy `+=`
+    accumulator, since the second call would simply never run. To genuinely
+    exercise re-match idempotency this drives app.crud.invoice.match() directly
+    against the same invoice/agreement pair twice, the way rematch_from_existing
+    does internally for the PO route.
+    """
+    from app.crud.invoice import match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, legacy_settlement_reason="first pass"), matched_by=user_id)
+    # Re-match to the SAME agreement — consumption must not double-count.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, legacy_settlement_reason="corrected"), matched_by=user_id)
+
+    async with factory() as db:
+        fresh = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+    assert fresh.consumed_amount == Decimal("1000.00")
+
+
+async def test_rematch_moves_consumption_between_agreements(admin_client, test_engine):
+    """If an invoice moves from one agreement to another, BOTH must be
+    recomputed — the old one releases the amount, the new one picks it up."""
+    from app.crud.invoice import match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr_a = await _make_active_agreement(test_engine, vendor_id, user_id)
+    agr_b = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr_a.id, legacy_settlement_reason="first pass"), matched_by=user_id)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr_b.id, legacy_settlement_reason="moved to B"), matched_by=user_id)
+
+    async with factory() as db:
+        fresh_a = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr_a.id))).scalar_one()
+        fresh_b = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr_b.id))).scalar_one()
+    assert fresh_a.consumed_amount == Decimal("0")
+    assert fresh_b.consumed_amount == Decimal("1000.00")
+
+
+async def test_agreement_match_does_not_notify_create_pa_requester(admin_client, test_engine):
+    """A PO with no PR previously broadcast an acknowledgement task to 59 people,
+    twice (see project_uniops_gr_no_pr_requester_broadcast). An agreement match
+    has po_id=None, so there is no PR requester to notify — assert no create_pa
+    task row appears. Compared as a before/after delta so the assertion holds
+    regardless of create_pa rows left behind by other tests in this
+    session-scoped test_engine."""
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        before = len((await db.execute(
+            select(Task.id).where(Task.type == "create_pa")
+        )).all())
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+    assert r.status_code == 200, r.text
+
+    async with factory() as db:
+        after = len((await db.execute(
+            select(Task.id).where(Task.type == "create_pa")
+        )).all())
+    assert after == before

@@ -1,6 +1,6 @@
 """CRUD for Invoice with 3-way match logic."""
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete as sa_delete
@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.models.agreement import PurchaseAgreement
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -242,6 +243,10 @@ class FeeOnlyLinkRequired(ValueError):
     reference PO to link it to (→ HTTP 422)."""
 
 
+class AgreementMatchInvalid(Exception):
+    """The invoice cannot be matched to the requested agreement (→ HTTP 422)."""
+
+
 async def _normalize_allocations(invoice: Invoice, req: InvoiceMatchRequest) -> list[AllocationInput]:
     """Return the effective allocation list. Legacy single-PO requests become one
     PO-header-level allocation covering the full invoice total."""
@@ -342,6 +347,102 @@ async def _discover_grs_for_allocations(
     return [g for g in found if not (g in seen or seen.add(g))]
 
 
+async def _recompute_consumed(db: AsyncSession, agreement_id: uuid.UUID) -> None:
+    """consumed_amount is derived, never incremented.
+
+    Deriving it from the invoice set makes re-match idempotent: incrementing
+    would double-count every correction, and the number drives the NTE warning
+    banner AP looks at.
+    """
+    total = (await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), Decimal("0")))
+        .where(Invoice.agreement_id == agreement_id)
+    )).scalar_one()
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == agreement_id)
+    )).scalar_one()
+    agr.consumed_amount = total
+
+
+async def _match_to_agreement(
+    db: AsyncSession, invoice: Invoice, req: InvoiceMatchRequest, matched_by: uuid.UUID
+) -> Invoice:
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == req.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError(f"Agreement {req.agreement_id} not found")
+    if agr.vendor_id != invoice.vendor_id:
+        raise AgreementMatchInvalid(
+            "Agreement must belong to the same vendor as the invoice")
+
+    # Mirrors crud/agreement.py:candidates_for_vendor's admission rule exactly
+    # (status == active, OR expired-but-still-inside-grace) — this is the same
+    # predicate rewritten as an interval comparison instead of an integer day
+    # difference; both agree because valid_to + grace_days >= today
+    # ⟺ today - valid_to <= grace_days.
+    today = date.today()
+    in_window = agr.status == "active" or (
+        agr.status == "expired"
+        and agr.valid_to + timedelta(days=agr.grace_days or 0) >= today
+    )
+    if not in_window:
+        raise AgreementMatchInvalid(
+            f"Agreement {agr.number} is {agr.status} and outside its grace window; "
+            "renew it before matching invoices to it.")
+
+    # 1A: no pickup slips exist, so every agreement match settles without receipt
+    # evidence. Force the operator to say why, and flag the row — this path MUST
+    # be narrowed once 1B ships slip reconciliation.
+    reason = (req.legacy_settlement_reason or "").strip()
+    if not reason:
+        raise AgreementMatchInvalid(
+            "A reason is required to settle an agreement invoice without receipt evidence")
+
+    previous_agreement_id = invoice.agreement_id
+
+    # Clear any PO-route state so a re-routed invoice doesn't carry stale links.
+    await db.execute(sa_delete(InvoicePoAllocation).where(
+        InvoicePoAllocation.invoice_id == invoice.id))
+    invoice.po_id = None
+    invoice.po_number = None
+    invoice.matched_po_line_ids = None
+    invoice.matched_reference_total = None
+    invoice.gr_ids = None
+    invoice.gr_id = None
+    invoice.gr_number = None
+
+    invoice.agreement_id = agr.id
+    invoice.agreement_number = agr.number
+    invoice.match_route = "agreement"
+    invoice.match_route_auto = False        # 1A is manual selection only
+    invoice.legacy_settlement = True
+    invoice.legacy_settlement_reason = reason
+    invoice.po_total = Decimal("0")
+    invoice.gr_value = None
+    invoice.variance = Decimal("0")
+    invoice.variance_pct = Decimal("0")
+    invoice.exception_reason = None
+    invoice.matched_at = datetime.now(timezone.utc)
+    invoice.matched_by = matched_by
+    invoice.matched_by_name = (await db.execute(
+        select(User.full_name).where(User.id == matched_by)
+    )).scalar_one_or_none()
+    invoice.status = "matched"
+
+    await db.flush()
+    # consumed_amount must reflect BOTH sides of a route change: the newly-linked
+    # agreement gains this invoice, and — if the invoice previously pointed at a
+    # different agreement — that agreement must shed it, or its consumed_amount
+    # stays permanently inflated by an invoice it no longer backs.
+    await _recompute_consumed(db, agr.id)
+    if previous_agreement_id and previous_agreement_id != agr.id:
+        await _recompute_consumed(db, previous_agreement_id)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
 async def match(
     db: AsyncSession,
     invoice: Invoice,
@@ -350,6 +451,12 @@ async def match(
     require_review: bool = False,
     auto_link_grs: bool = False,
 ) -> Invoice:
+    # Agreement route short-circuits: it shares none of the PO allocation
+    # machinery (no lines, no GRs, no balance check), and running that first
+    # would reject a valid monthly statement.
+    if req.agreement_id is not None:
+        return await _match_to_agreement(db, invoice, req, matched_by)
+
     now = datetime.now(timezone.utc)
     allocs = await _normalize_allocations(invoice, req)
 
