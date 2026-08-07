@@ -561,8 +561,16 @@ export default function SalesForecastPage() {
         <>
           {matrixRows.length === 0 && (
             <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-              No products yet. Add one above, or paste a full forecast table copied from Excel (a product-code column
-              creates the rows for you — no need to add products by hand first).
+              {/* Two distinct empty states share matrixRows.length===0: genuinely
+                  no products loaded/added yet (the material master itself is
+                  empty for this range) vs. every existing product having been
+                  cleared to zero (see matrixRows' row-has-data filter above) —
+                  the latter still has real products server-side, so it must
+                  NOT tell the planner to paste a table / add products from
+                  scratch, which would be misleading. */}
+              {(gridQuery.data.rows.length === 0 && addedRows.size === 0)
+                ? 'No products yet. Add one above, or paste a full forecast table copied from Excel (a product-code column creates the rows for you — no need to add products by hand first).'
+                : 'All products are currently zero for this range. Edit a cell to bring a product back into view.'}
             </p>
           )}
           <MatrixGrid

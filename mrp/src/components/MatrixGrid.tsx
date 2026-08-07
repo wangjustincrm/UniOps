@@ -37,7 +37,7 @@ import {
   isFullTablePaste, planFullTablePaste, formatFullTablePasteReport,
   selectionToTsv, normalizeRange,
   type GridRow, type GridCol, type PastePlan, type FullTablePastePlan,
-  type PasteAnchor, type RangeSelection, type MaterialResolver,
+  type PasteAnchor, type RangeSelection, type MaterialResolver, type CellWrite,
 } from './matrixGrid/pasteLogic'
 import { ConfirmDialog } from './ConfirmDialog'
 
@@ -317,9 +317,24 @@ export function MatrixGrid({
 
   // ── Apply a paste plan (shared by direct-apply and confirm-then-apply) ──
 
+  // Pasted numeric text is parsed in DISPLAY units (same as what the
+  // planner sees/types into a single cell — see MatrixCell.commit()), but
+  // plan.updates values come straight out of pasteLogic's pure parseFloat,
+  // with no knowledge of `unitScale`. Scale (and round to 3dp, same as
+  // MatrixCell.commit(), for the Numeric(18,3) qty column) here at the
+  // paste boundary — where `unitScale` is in scope — rather than inside
+  // pasteLogic, which stays a framework/unit-agnostic pure module. A no-op
+  // map when unitScale is 1 (the default every other MatrixGrid caller
+  // gets) so nothing changes for them. `invalidCells` (non-numeric pasted
+  // text) is untouched — those never had a numeric value to scale.
+  const scalePasteValues = useCallback(<T extends CellWrite,>(updates: T[]): T[] => {
+    if (unitScale === 1 || updates.length === 0) return updates
+    return updates.map((u) => ({ ...u, value: Math.round(u.value * unitScale * 1000) / 1000 }))
+  }, [unitScale])
+
   const applyRectPlan = useCallback((plan: PastePlan) => {
     if (plan.updates.length > 0) {
-      applyUpdater((prev) => applyPasteUpdates(prev, plan.updates))
+      applyUpdater((prev) => applyPasteUpdates(prev, scalePasteValues(plan.updates)))
     }
     if (plan.invalidCells.length > 0) {
       setInvalidByKey((prevMap) => {
@@ -331,14 +346,14 @@ export function MatrixGrid({
       })
     }
     setReport(formatPasteReport(plan))
-  }, [applyUpdater, rows, cols])
+  }, [applyUpdater, rows, cols, scalePasteValues])
 
   // Row-creating paste: commits the new rows AND their cell values as one
   // history snapshot (commitCellsAndRows, not commitCells) — that's what
   // makes rows-created-plus-values a single undo step, per the design spec.
   const applyFullTablePlan = useCallback((plan: FullTablePastePlan) => {
     setHistory((h) => commitCellsAndRows(h, (prev) => {
-      const cells = plan.updates.length > 0 ? applyPasteUpdates(prev.cells, plan.updates) : prev.cells
+      const cells = plan.updates.length > 0 ? applyPasteUpdates(prev.cells, scalePasteValues(plan.updates)) : prev.cells
       if (plan.newRows.length === 0) return { cells, extraRows: prev.extraRows }
       const known = new Set([...rows.map((r) => r.id), ...prev.extraRows.map((r) => r.id)])
       const toAdd = plan.newRows.filter((r) => !known.has(r.id))
@@ -353,7 +368,7 @@ export function MatrixGrid({
       })
     }
     setReport(formatFullTablePasteReport(plan))
-  }, [rows])
+  }, [rows, scalePasteValues])
 
   // ── Excel paste — window-level listener ──────────────────────────────
   // Mirrors epms BreakdownMatrixModal.tsx lines 327-370: only intercept
