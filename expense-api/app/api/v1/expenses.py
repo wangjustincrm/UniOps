@@ -12,6 +12,7 @@ from app.crud import expense as expense_crud
 from app.schemas.expense import (
     ExpenseActionRequest,
     ExpenseClaimCreate,
+    ExpenseClaimListItem,
     ExpenseClaimListResponse,
     ExpenseClaimResponse,
     ExpenseClaimUpdate,
@@ -154,6 +155,13 @@ def can_delete_claim(claim, user_id: uuid.UUID, role: str) -> bool:
     return role == "system_admin" or claim.employee_id == user_id
 
 
+def _list_item(claim, user_id: uuid.UUID, role: str) -> ExpenseClaimListItem:
+    """Serialize one list row, stamping the server-computed delete permission."""
+    item = ExpenseClaimListItem.model_validate(claim)
+    item.can_delete = can_delete_claim(claim, user_id, role)
+    return item
+
+
 @router.get("", response_model=ExpenseClaimListResponse)
 async def list_expenses(
     db: SessionDep,
@@ -184,7 +192,7 @@ async def list_expenses(
             employee_id=employee_id, page=page, page_size=page_size,
         )
         return ExpenseClaimListResponse(
-            items=[ExpenseClaimListItem.model_validate(c) for c in items],
+            items=[_list_item(c, user_id, role) for c in items],
             total=total,
         )
 
@@ -235,7 +243,7 @@ async def list_expenses(
     )).scalars().all())
 
     return ExpenseClaimListResponse(
-        items=[ExpenseClaimListItem.model_validate(c) for c in paged],
+        items=[_list_item(c, user_id, role) for c in paged],
         total=total,
     )
 
@@ -395,6 +403,7 @@ class ClaimPermissions(BaseModel):
     is_owner: bool
     can_approve: bool      # may approve / return / reject the current pending step
     can_pay: bool          # may record payment (status = approved)
+    can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
 
 
 @router.get("/{claim_id}/permissions", response_model=ClaimPermissions)
@@ -426,7 +435,12 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
             or "finance_manager" in codes
         )
 
-    return ClaimPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)
+    return ClaimPermissions(
+        is_owner=is_owner,
+        can_approve=can_approve,
+        can_pay=can_pay,
+        can_delete=can_delete_claim(claim, user_id, role),
+    )
 
 
 class ApprovalStepOut(BaseModel):

@@ -251,3 +251,64 @@ async def test_tra_referenced_by_a_trv_is_refused():
         await db.delete(await db.get(ExpenseClaim, uuid.UUID(trv_id)))
         await db.delete(await db.get(ExpenseClaim, uuid.UUID(claim_id)))
         await db.commit()
+
+
+# ── Task 3: can_delete surfaced to the frontend ──────────────────────────────
+
+@pytest.mark.asyncio
+async def test_list_marks_own_draft_deletable_and_others_not():
+    owner = str(uuid.uuid4())
+    mine = await _seed_tra(owner, "draft")
+    theirs = await _seed_tra(str(uuid.uuid4()), "draft")
+
+    async with _client_for("system_admin", str(uuid.uuid4())) as admin:
+        admin_rows = {i["id"]: i for i in (
+            await admin.get("/api/v1/expenses", params={"type": "TRA", "page_size": 100})
+        ).json()["items"]}
+    assert admin_rows[mine]["can_delete"] is True
+    assert admin_rows[theirs]["can_delete"] is True, "system_admin may delete anyone's"
+
+    async with _client_for("employee", owner) as client:
+        rows = {i["id"]: i for i in (
+            await client.get("/api/v1/expenses", params={"type": "TRA"})
+        ).json()["items"]}
+    assert rows[mine]["can_delete"] is True
+    assert theirs not in rows, "a co-worker's draft is not visible at all"
+
+    async with db_module.AsyncSessionLocal() as db:
+        for cid in (mine, theirs):
+            await db.delete(await db.get(ExpenseClaim, uuid.UUID(cid)))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_list_marks_approved_tra_not_deletable():
+    owner = str(uuid.uuid4())
+    claim_id = await _seed_tra(owner, "approved")
+    async with _client_for("employee", owner) as client:
+        rows = {i["id"]: i for i in (
+            await client.get("/api/v1/expenses", params={"type": "TRA"})
+        ).json()["items"]}
+    assert rows[claim_id]["can_delete"] is False
+
+    async with db_module.AsyncSessionLocal() as db:
+        await db.delete(await db.get(ExpenseClaim, uuid.UUID(claim_id)))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_permissions_endpoint_reports_can_delete():
+    owner = str(uuid.uuid4())
+    claim_id = await _seed_tra(owner, "submitted")
+
+    async with _client_for("employee", owner) as client:
+        mine = (await client.get(f"/api/v1/expenses/{claim_id}/permissions")).json()
+    assert mine["can_delete"] is True
+
+    async with _client_for("dept_manager", str(uuid.uuid4())) as approver:
+        theirs = (await approver.get(f"/api/v1/expenses/{claim_id}/permissions")).json()
+    assert theirs["can_delete"] is False
+
+    async with db_module.AsyncSessionLocal() as db:
+        await db.delete(await db.get(ExpenseClaim, uuid.UUID(claim_id)))
+        await db.commit()

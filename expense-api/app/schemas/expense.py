@@ -221,6 +221,9 @@ class ExpenseClaimListItem(BaseModel):
     submitted_at: Optional[datetime]
     approved_at: Optional[datetime]
     created_at: datetime
+    # Stamped per row by list_expenses — the list page renders its delete
+    # affordance from this and holds no permission logic of its own.
+    can_delete: bool = False
 
 
 class ExpenseClaimListResponse(BaseModel):
