@@ -19,6 +19,7 @@
 // axes explicit removes the ambiguity.
 import { useMemo } from 'react'
 import { Lock, AlertTriangle } from 'lucide-react'
+import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
 import type { MpsLine } from './mpsApi'
@@ -64,6 +65,12 @@ interface ProductionMatrixProps {
    *  this is built from mdm-api's materials master). A lookup miss falls
    *  back to showing the bare code. */
   materialsByCode: Map<string, MaterialOption>
+  /** Product codes with NO approved BOM yet (Continuous Sales Forecast Task
+   *  9, spec §8b) — sourced from mdm-api's /boms/exist by the page (see
+   *  bomStatusApi.ts), same batch call the Sales Forecast grid uses.
+   *  Display only: 1B never explodes BOMs, so this changes nothing about
+   *  adjust/lock/release. Optional: omitted, no product shows the badge. */
+  noBomCodes?: ReadonlySet<string>
   /**
    * Display-unit scale (1 or 1000, mirroring MatrixGrid's `unitScale`) —
    * accepted for interface parity with the page's unit toggle, but NOT used
@@ -85,6 +92,7 @@ interface ProductionMatrixProps {
 export function ProductionMatrix({
   lines,
   materialsByCode,
+  noBomCodes,
   unitScale: _unitScale,
   formatValue,
   onAdjustCell,
@@ -168,6 +176,7 @@ export function ProductionMatrix({
             <ProductRows
               key={product.code}
               product={product}
+              noBom={!!noBomCodes?.has(product.code)}
               planMonths={planMonths}
               getCell={getCell}
               formatValue={formatValue}
@@ -186,6 +195,7 @@ const METRIC_ROWS: MetricRow[] = ['Demand', 'Available', 'Planned']
 
 function ProductRows({
   product,
+  noBom,
   planMonths,
   getCell,
   formatValue,
@@ -193,6 +203,7 @@ function ProductRows({
   readOnly,
 }: {
   product: { code: string; name: string }
+  noBom: boolean
   planMonths: string[]
   getCell: (materialCode: string, planMonth: string) => MatrixCell
   formatValue: (kg: number) => string
@@ -209,7 +220,18 @@ function ProductRows({
               className="sticky left-0 z-10 border-b border-r border-neutral-200 bg-white px-3 py-1.5 align-top text-left font-medium text-neutral-800"
               style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
             >
-              <span className="block truncate font-mono text-xs">{product.code}</span>
+              <span className="flex items-center gap-1.5">
+                <span className="truncate font-mono text-xs">{product.code}</span>
+                {noBom && (
+                  // Badge (packages/shell) doesn't spread rest props onto its
+                  // <span> — a `title` passed directly to it is silently
+                  // dropped. Wrap it in a plain span instead (matches the old
+                  // MpsLineTable.tsx convention).
+                  <span title="No approved BOM yet — Phase 1C material calc will skip this product">
+                    <Badge variant="warning">No BOM</Badge>
+                  </span>
+                )}
+              </span>
               {product.name !== product.code && (
                 <span className="block truncate text-[11px] font-normal text-neutral-400">{product.name}</span>
               )}

@@ -20,6 +20,7 @@ import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { forecastApi, saveBlob } from '@/pages/forecast/forecastApi'
+import { bomStatusApi } from '@/pages/forecast/bomStatusApi'
 import { mpsApi, type MpsLine } from './mpsApi'
 import { ProductionMatrix } from './ProductionMatrix'
 import { AdjustDrawer } from './AdjustDrawer'
@@ -31,6 +32,8 @@ function errMsg(err: unknown, fallback: string): string {
 function formatQty(n: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(n)
 }
+
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set()
 
 // Display-only unit toggle for the matrix — the stored/planning unit is
 // always kg (capacity/MPS math depends on it); this only scales what's
@@ -198,6 +201,29 @@ export default function ProductionPlanPage() {
     for (const m of materialsAllQuery.data ?? []) map.set(m.code, m)
     return map
   }, [materialsAllQuery.data])
+
+  // No-BOM flagging (Continuous Sales Forecast Task 9, spec §8b): 1B never
+  // explodes BOMs, so this is display-only — but a planner reviewing a run
+  // should still see which lines have no established formulation yet.
+  // Same batch source (mdm-api's /boms/exist) the Sales Forecast grid uses —
+  // see bomStatusApi.ts — so "has a BOM" is defined in exactly one place.
+  const runProductCodes = useMemo(
+    () => [...new Set((run?.lines ?? []).map((l) => l.material_code))].sort(),
+    [run],
+  )
+  const bomStatusQuery = useQuery({
+    queryKey: ['mps-bom-status', runProductCodes],
+    queryFn: () => bomStatusApi.withBom(runProductCodes),
+    enabled: runProductCodes.length > 0,
+    staleTime: 5 * 60_000,
+  })
+  const noBomCodes = useMemo(() => {
+    const withBom = bomStatusQuery.data
+    if (!withBom) return EMPTY_STRING_SET
+    const s = new Set<string>()
+    for (const code of runProductCodes) if (!withBom.has(code)) s.add(code)
+    return s
+  }, [runProductCodes, bomStatusQuery.data])
 
   // ── Generate / Recalculate ──────────────────────────────────────────────
   const [generating, setGenerating] = useState(false)
@@ -453,9 +479,10 @@ export default function ProductionPlanPage() {
           key={run.id}
           lines={run.lines}
           materialsByCode={materialsByCode}
+          noBomCodes={noBomCodes}
           unitScale={displayUnit === 't' ? 1000 : 1}
           formatValue={formatValue}
-          readOnly={isReleased}
+          readOnly={isReleased || !canExecute}
           onAdjustCell={handleAdjustCell}
         />
       )}
