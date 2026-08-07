@@ -104,7 +104,7 @@ Three new tables, all in `finance-api`, one alembic migration.
 - `CHECK (total_amount > 0)`
 - `CHECK (applied_amount >= 0 AND remaining_amount >= 0)`
 - `CHECK (applied_amount + remaining_amount = total_amount)`
-- Partial unique index on `(vendor_id, vendor_credit_number) WHERE source = 'upload'` — blocks duplicate manual uploads at insert time
+- Partial unique index on `(vendor_id, vendor_credit_number) WHERE status <> 'void'` — blocks duplicate credit notes at insert time while letting a rejected one be re-uploaded. **Deliberately NOT scoped to `source = 'upload'`**: the same vendor document arriving both by manual upload and by a Phase C QBO import would otherwise create two rows and double the credit pool, invisibly to the §7.5 drift detection since both rows look legitimate.
 - Partial unique index on `(source, source_ref) WHERE source_ref IS NOT NULL` — makes the QBO import idempotent
 - Partial index on `(vendor_id, currency) WHERE status = 'available' AND remaining_amount > 0` — serves the FIFO lookup
 
