@@ -315,12 +315,19 @@ async def update_imported_details(
     if line_changes:
         after["lines"] = line_changes
 
-    if after:
-        # Marks the PO for nc_purchase_sync/writer.py's tax-rate guard. Gated
-        # on an actual change (mirrors the caller's `if after:` audit-log
-        # gate) — a no-op save must not silently arm re-sync protection for a
-        # PO nothing was ever hand-edited on.
+    if "tax_rate" in after:
+        # Marks the PO for nc_purchase_sync/writer.py's tax-rate guard, which
+        # reads this column as "the tax rate was set by hand" and keeps it
+        # (re-deriving tax_amount/total from NC's fresh subtotal) instead of
+        # letting NC's own tax_rate/tax_amount/total overwrite it. Gated
+        # specifically on the tax rate having changed — NOT on `if after:` —
+        # because an edit that only touches e.g. Incoterms or a line's
+        # Supplier Item ID must not freeze NC's tax on this PO forever.
+        before["buyer_edited_at"] = (
+            po.buyer_edited_at.isoformat() if po.buyer_edited_at is not None else None
+        )
         po.buyer_edited_at = datetime.now(timezone.utc)
+        after["buyer_edited_at"] = po.buyer_edited_at.isoformat()
 
     await db.flush()
     await db.refresh(po)

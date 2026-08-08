@@ -7,9 +7,12 @@ Create Date: 2026-08-07
 purchase_orders.notes belongs to the NC mirror — every incremental sync
 rewrites it with NC's own memo plus [NC Paid] / [NC Closed <date>] markers
 that finance reads. buyer_notes/incoterms therefore get their own columns,
-which the sync writer deliberately never touches. buyer_edited_at marks a PO
-whose tax rate was set by hand so the sync can keep that rate instead of
-overwriting it with NC's.
+which the sync writer deliberately never touches. buyer_edited_at is stamped
+only when a buyer-initiated edit changes tax_rate, marking a PO whose tax
+rate was set by hand so the sync can keep that rate (re-deriving tax_amount/
+total from NC's fresh subtotal) instead of overwriting it with NC's. Editing
+unrelated fields (Incoterms, a line's Supplier Item ID, ...) must not stamp
+this column.
 """
 import sqlalchemy as sa
 from alembic import op

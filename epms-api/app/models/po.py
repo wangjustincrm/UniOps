@@ -45,6 +45,12 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
     # nc_purchase_sync/writer.py must never add these to its UPDATE lists.
     buyer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     incoterms: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Set only when a buyer-initiated edit changes tax_rate (see crud.po.
+    # update_imported_details). nc_purchase_sync/writer.py reads this as "the
+    # tax rate was set by hand" and, while it is non-null, keeps the stored
+    # tax_rate instead of NC's incoming value, re-deriving tax_amount/total
+    # from NC's fresh subtotal. Editing unrelated fields (Incoterms, a line's
+    # Supplier Item ID, ...) must NOT stamp this column.
     buyer_edited_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

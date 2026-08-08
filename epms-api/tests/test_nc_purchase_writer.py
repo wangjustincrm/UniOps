@@ -402,6 +402,49 @@ def test_upsert_preserves_buyer_details_and_manual_tax(pg_cur, seeded_vendor, sy
     assert pg_cur.fetchone() == ("SKU-9", "500 g")
 
 
+def test_upsert_takes_nc_tax_when_edit_did_not_touch_tax_rate(pg_cur, seeded_vendor, system_user_id):
+    """A buyer edit that only fills in Incoterms/Supplier Item ID — never the tax
+    rate — must NOT arm the tax-rate guard. crud.po.update_imported_details only
+    stamps buyer_edited_at when "tax_rate" is among the changed fields, so this
+    simulates that: buyer_notes/incoterms/supplier_item_id/sample change but
+    buyer_edited_at is left NULL. The next NC upsert must still adopt NC's
+    tax_rate/tax_amount/total verbatim, not silently freeze them."""
+    from app.services.nc_purchase_sync import writer
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    # A buyer edit that never touched tax_rate — buyer_edited_at stays NULL.
+    pg_cur.execute(
+        "update purchase_orders set buyer_notes=%s, incoterms=%s "
+        "where nc_source_pk='O1'",
+        ("Ship in one lot", "FOB Shanghai"))
+    pg_cur.execute(
+        "update po_line_items set supplier_item_id=%s, sample=%s where nc_source_pk='OL1'",
+        ("SKU-9", "500 g"))
+    pg_cur.execute(
+        "select buyer_edited_at from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone()[0] is None
+
+    # NC re-sends the order with a new subtotal and its own non-zero tax.
+    payload["orders"][0]["subtotal"] = Decimal("200.00")
+    payload["orders"][0]["tax_rate"] = Decimal("0.05")
+    payload["orders"][0]["tax_amount"] = Decimal("10.00")
+    payload["orders"][0]["total"] = Decimal("210.00")
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "select tax_rate, tax_amount, total from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone() == (Decimal("0.05"), Decimal("10.00"), Decimal("210.00"))
+
+    # And the buyer's earlier edits are still intact — untouched by this sync.
+    pg_cur.execute(
+        "select buyer_notes, incoterms from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone() == ("Ship in one lot", "FOB Shanghai")
+    pg_cur.execute(
+        "select supplier_item_id, sample from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone() == ("SKU-9", "500 g")
+
+
 def test_upsert_takes_nc_tax_when_po_was_never_buyer_edited(pg_cur, seeded_vendor, system_user_id):
     """Guard against over-reach: with buyer_edited_at NULL the mirror must still
     take NC's tax verbatim, exactly as before this change."""
