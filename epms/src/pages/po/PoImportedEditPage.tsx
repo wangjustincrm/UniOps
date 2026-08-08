@@ -10,6 +10,7 @@ import { ImportedPoLineItems, type ImportedPoLine } from '@/components/po/Import
 import { usePo, useUpdatePoImportedDetails, useRegeneratePoPdf } from '@/hooks/usePos'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { formatAmount } from '@/lib/utils'
+import type { ImportedDetailsBody } from '@/services/po'
 
 /** Buyer-detail form for an NC-imported PO.
  *
@@ -67,11 +68,18 @@ export default function PoImportedEditPage() {
   }, [po?.id])
 
   const editable = po?.source === 'nc' && po?.status === 'issued'
+  const isCadOrder = po?.currency === 'CAD'
   // Same rule as PoCreatePage / PoEditPage — tax only applies to CAD orders.
-  const effectiveTaxRate = po?.currency === 'CAD' ? taxRate : 0
+  // On a non-CAD NC PO this page never touches tax (see handleSave), so the
+  // preview below must show the PO's own stored tax_amount/total rather than
+  // recompute off a rate this page never sends — otherwise it reads as "tax
+  // will be cleared on save" when it will not be.
+  const effectiveTaxRate = isCadOrder ? taxRate : 0
   const subtotal = Number(po?.subtotal ?? 0)
-  const taxAmount = Math.round(subtotal * effectiveTaxRate * 100) / 100
-  const total = subtotal + taxAmount
+  const taxAmount = isCadOrder
+    ? Math.round(subtotal * effectiveTaxRate * 100) / 100
+    : Number(po?.tax_amount ?? 0)
+  const total = isCadOrder ? subtotal + taxAmount : Number(po?.total ?? subtotal)
   const currency = po?.currency ?? 'CAD'
 
   const handleSave = async () => {
@@ -79,14 +87,10 @@ export default function PoImportedEditPage() {
     setIsSubmitting(true)
     setError(null)
     try {
-      await saveDetails.mutateAsync({
+      const payload: ImportedDetailsBody = {
         expected_delivery: expectedDelivery || null,
         delivery_address: deliveryAddress || null,
         incoterms: incoterms || null,
-        // Mirror PoEditPage's rule: never send a tax code paired with a zero
-        // rate (non-CAD orders always have effectiveTaxRate === 0).
-        tax_code: effectiveTaxRate > 0 ? taxCode : null,
-        tax_rate: effectiveTaxRate,
         is_prepaid: isPrepaid,
         buyer_notes: buyerNotes || null,
         lines: lines.map((l) => ({
@@ -97,7 +101,21 @@ export default function PoImportedEditPage() {
           supplier_item_id: l.supplierItemId || null,
           sample: l.sample || null,
         })),
-      })
+      }
+      // Tax only applies to CAD orders — this page has no input for it on a
+      // non-CAD PO (see isCadOrder above). NC POs are not always CAD and not
+      // always zero-tax, so omit tax_rate/tax_code entirely rather than
+      // sending 0/null: the backend's absent-key contract (model_fields_set)
+      // leaves the stored tax_rate/tax_amount/total untouched. Sending zero
+      // here would zero out real tax on every non-CAD save, even one that
+      // only changed e.g. Incoterms.
+      if (isCadOrder) {
+        // Mirror PoEditPage's rule: never send a tax code paired with a zero
+        // rate.
+        payload.tax_code = effectiveTaxRate > 0 ? taxCode : null
+        payload.tax_rate = effectiveTaxRate
+      }
+      await saveDetails.mutateAsync(payload)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save changes')
       setIsSubmitting(false)
