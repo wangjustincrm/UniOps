@@ -199,16 +199,6 @@ export function ProductionMatrix({
 type MetricRow = 'Demand' | 'Available' | 'Planned'
 const METRIC_ROWS: MetricRow[] = ['Demand', 'Available', 'Planned']
 
-// A subtle colour bar on the (sticky) Metric label column encodes each row's
-// identity without flooding the whole data row with a solid tint — the data
-// cells stay white so Planned's green band is the only real colour and reads
-// as the actionable output. Keep in sync with MetricCell's Planned tint.
-const METRIC_ACCENT: Record<MetricRow, string> = {
-  Demand: 'border-l-2 border-l-neutral-300',
-  Available: 'border-l-2 border-l-primary-400',
-  Planned: 'border-l-2 border-l-success-500',
-}
-
 // Demand/Available context values: a real 0 is rendered as muted as the "—"
 // no-data dash so the (many) zero cells recede instead of shouting.
 function MetricValue({
@@ -277,10 +267,7 @@ function ProductRows({
             </td>
           )}
           <td
-            className={cn(
-              'sticky z-10 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-medium text-neutral-500',
-              METRIC_ACCENT[metric],
-            )}
+            className="sticky z-10 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-medium text-neutral-500"
             style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
           >
             {metric}
