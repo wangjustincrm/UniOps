@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock,
+  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
@@ -12,7 +12,7 @@ import { groupTasks } from '@/lib/groupTasks'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
-import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS } from '@/components/layout/navConfig'
+import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -461,6 +461,10 @@ export default function PortalHome() {
   const hasBookingAccess =
     role === 'system_admin' ||
     BOOKING_ACCESS_PERMS.some((p) => !!perms?.[p])
+  // MRP visibility mirrors the sidebar (navConfig: gated on mrp.report.view,
+  // every MRP page's on-load reads need it); system_admin sees everything.
+  const hasMrpAccess =
+    role === 'system_admin' || !!perms?.['mrp.report.view']
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -476,6 +480,9 @@ export default function PortalHome() {
   // can access (don't deep-link to /finance/ap which needs view_finance).
   const financeHref = session ? `${FINANCE_URL}/#__session=${session}` : FINANCE_URL
   const bookingHref = session ? `${BOOKING_URL}/#__session=${session}` : BOOKING_URL
+  // Bare MRP root (redirects to its default page) — same shape as navConfig's
+  // resolveNavHref('mrp'), separate origin so the session fragment rides along.
+  const mrpHref = session ? `${MRP_URL}/#__session=${session}` : MRP_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -615,6 +622,15 @@ export default function PortalHome() {
       label: 'Meeting Rooms',
       description: 'Find and book meeting rooms',
       href: bookingHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
+    ...(hasMrpAccess ? [{
+      icon: <Network className="h-5 w-5 text-indigo-600" />,
+      iconBg: 'bg-indigo-50',
+      label: 'MRP',
+      description: 'Demand forecast, MPS production planning, BOM explorer',
+      href: mrpHref,
       healthy: undefined,
       loading: false,
     }] : []),
