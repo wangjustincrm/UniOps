@@ -12,6 +12,16 @@ import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { formatAmount } from '@/lib/utils'
 import type { ImportedDetailsBody } from '@/services/po'
 
+// Same mapping as PoDetailPage.tsx / PoListPage.tsx.
+const TYPE_LABELS: Record<number, string> = {
+  1: 'Raw Mat./Pack.',
+  2: 'Consumables',
+  3: 'Spare Parts',
+  4: 'Service',
+  5: 'Fixed Asset',
+  6: 'Project',
+}
+
 /** Buyer-detail form for an NC-imported PO.
  *
  *  Only reachable for source='nc' + status='issued'. Vendor, currency, title,
@@ -179,6 +189,7 @@ export default function PoImportedEditPage() {
           <div><dt className="text-xs text-neutral-500">Vendor</dt><dd className="text-neutral-900">{po.vendor_name}</dd></div>
           <div><dt className="text-xs text-neutral-500">Currency</dt><dd className="text-neutral-900">{po.currency}</dd></div>
           <div><dt className="text-xs text-neutral-500">Title</dt><dd className="text-neutral-900">{po.title}</dd></div>
+          <div><dt className="text-xs text-neutral-500">Procurement Type</dt><dd className="text-neutral-900">{TYPE_LABELS[po.type] ?? `Type ${po.type}`}</dd></div>
           <div><dt className="text-xs text-neutral-500">Budget Code</dt><dd className="text-neutral-900">{po.budget_code || '—'}</dd></div>
         </dl>
 

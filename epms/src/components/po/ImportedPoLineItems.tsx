@@ -71,6 +71,7 @@ export function ImportedPoLineItems({ items, onChange, currency }: ImportedPoLin
                   onChange={(e) => update(i, { supplierItemId: e.target.value })}
                   placeholder="SKU / catalog #"
                   aria-label={`Supplier item ID for line ${i + 1}`}
+                  maxLength={100}
                   className="h-8 w-full rounded border border-neutral-300 bg-white px-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary-600"
                 />
               </td>
@@ -81,6 +82,7 @@ export function ImportedPoLineItems({ items, onChange, currency }: ImportedPoLin
                   onChange={(e) => update(i, { sample: e.target.value })}
                   placeholder="e.g. 500 g"
                   aria-label={`Sample requirement for line ${i + 1}`}
+                  maxLength={100}
                   className="h-8 w-full rounded border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
                 />
               </td>
