@@ -199,6 +199,32 @@ export function ProductionMatrix({
 type MetricRow = 'Demand' | 'Available' | 'Planned'
 const METRIC_ROWS: MetricRow[] = ['Demand', 'Available', 'Planned']
 
+// A subtle colour bar on the (sticky) Metric label column encodes each row's
+// identity without flooding the whole data row with a solid tint — the data
+// cells stay white so Planned's green band is the only real colour and reads
+// as the actionable output. Keep in sync with MetricCell's Planned tint.
+const METRIC_ACCENT: Record<MetricRow, string> = {
+  Demand: 'border-l-2 border-l-neutral-300',
+  Available: 'border-l-2 border-l-primary-400',
+  Planned: 'border-l-2 border-l-success-500',
+}
+
+// Demand/Available context values: a real 0 is rendered as muted as the "—"
+// no-data dash so the (many) zero cells recede instead of shouting.
+function MetricValue({
+  value,
+  hasData,
+  formatValue,
+}: {
+  value: number
+  hasData: boolean
+  formatValue: (kg: number) => string
+}) {
+  if (!hasData) return <span className="text-neutral-300">—</span>
+  if (value === 0) return <span className="text-neutral-300">{formatValue(0)}</span>
+  return <>{formatValue(value)}</>
+}
+
 function ProductRows({
   product,
   noBom,
@@ -219,7 +245,14 @@ function ProductRows({
   return (
     <>
       {METRIC_ROWS.map((metric, i) => (
-        <tr key={metric} className="border-b border-neutral-100 last:border-0">
+        <tr
+          key={metric}
+          className={cn(
+            'border-b border-neutral-100 last:border-0',
+            // Thicker rule between product groups (above each product's first row).
+            i === 0 && 'border-t-2 border-t-neutral-300',
+          )}
+        >
           {i === 0 && (
             <td
               rowSpan={METRIC_ROWS.length}
@@ -244,7 +277,10 @@ function ProductRows({
             </td>
           )}
           <td
-            className="sticky z-10 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-medium text-neutral-500"
+            className={cn(
+              'sticky z-10 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-medium text-neutral-500',
+              METRIC_ACCENT[metric],
+            )}
             style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
           >
             {metric}
@@ -287,16 +323,16 @@ function MetricCell({
   // overrides this base tint on the cells that need it.
   if (metric === 'Demand') {
     return (
-      <td className="h-10 border-b border-r border-neutral-200 bg-neutral-100 px-2 text-right font-mono text-neutral-700">
-        {hasData ? formatValue(cell.demand) : <span className="text-neutral-300">—</span>}
+      <td className="h-10 border-b border-r border-neutral-100 bg-white px-2 text-right font-mono text-neutral-700">
+        <MetricValue value={cell.demand} hasData={hasData} formatValue={formatValue} />
       </td>
     )
   }
 
   if (metric === 'Available') {
     return (
-      <td className="h-10 border-b border-r border-neutral-200 bg-primary-100 px-2 text-right font-mono text-neutral-700">
-        {hasData ? formatValue(cell.available) : <span className="text-neutral-300">—</span>}
+      <td className="h-10 border-b border-r border-neutral-100 bg-white px-2 text-right font-mono text-neutral-500">
+        <MetricValue value={cell.available} hasData={hasData} formatValue={formatValue} />
       </td>
     )
   }
@@ -315,7 +351,7 @@ function MetricCell({
 
   if (!hasProduction) {
     return (
-      <td className="h-10 border-b border-r border-neutral-200 bg-success-100 px-2 text-right font-mono text-neutral-300">—</td>
+      <td className="h-10 border-b border-r border-neutral-100 bg-success-50 px-2 text-right font-mono text-neutral-300">—</td>
     )
   }
 
@@ -337,12 +373,12 @@ function MetricCell({
   return (
     <td
       className={cn(
-        'h-10 border-b border-r border-neutral-200 px-2 text-right font-mono text-sm font-bold',
+        'h-10 border-b border-r border-neutral-100 px-2 text-right font-mono text-sm font-bold',
         cell.gap
-          ? 'bg-danger-100 text-danger-700'
+          ? 'bg-danger-50 text-danger-700'
           : showShortfall
-            ? 'bg-warning-100 text-warning-800'
-            : 'bg-success-100 text-neutral-800',
+            ? 'bg-warning-50 text-warning-800'
+            : 'bg-success-50 text-neutral-800',
       )}
     >
       {readOnly ? (
