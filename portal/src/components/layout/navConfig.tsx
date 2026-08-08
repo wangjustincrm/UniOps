@@ -22,7 +22,7 @@ import {
 // import.meta.env directly (rather than via HrefContext, whose oa/vms/etc.
 // fields are populated by PortalSidebar/PortalPageLayout/PortalHome) so this
 // file is the single place that needs to change to wire the new module in.
-const MRP_URL = (import.meta.env.VITE_MRP_URL as string | undefined) || 'http://localhost:5179'
+export const MRP_URL = (import.meta.env.VITE_MRP_URL as string | undefined) || 'http://localhost:5179'
 
 export interface NavItemDef {
   label: string
