@@ -21,6 +21,13 @@ const TAX_LABELS: Record<number, string> = {
 export function generatePoHtml(po: ApiPo, config: CompanyConfig): string {
   const tpl = config.pdf_templates?.po ?? { show_logo: true, header_note: '', footer_note: '', show_terms: true, terms_text: '' }
   const hasMaterial = po.type === 1 || po.type === 3
+  const hasSample = po.line_items.some((item) => item.sample)
+  // Same split as pdf_po.py: purchase_orders.notes belongs to the NC mirror —
+  // every sync rewrites it with NC's own memo plus [NC Paid] / [NC Closed
+  // <date>] markers that finance reads internally. Falling back to it on an
+  // NC PO would print those internal markers on this vendor-facing preview,
+  // so only non-NC POs fall back to it.
+  const buyerNotesText = po.buyer_notes || (po.source !== 'nc' ? po.notes : '')
 
   // Inline styles on every cell — html2canvas does not reliably read CSS classes
   // from injected stylesheets; inline styles are always applied.
@@ -41,6 +48,7 @@ export function generatePoHtml(po: ApiPo, config: CompanyConfig): string {
       ${hasMaterial ? `<td ${TD('font-family:Courier New,monospace;font-size:11px;', i)}>${escHtml(item.material_id ?? '—')}</td>` : ''}
       <td ${TD('text-align:right;font-family:Courier New,monospace;width:80px;', i)}>${item.qty}</td>
       <td ${TD('width:85px;', i)}>${escHtml(item.unit)}</td>
+      ${hasSample ? `<td ${TD('width:90px;', i)}>${escHtml(item.sample ?? '—')}</td>` : ''}
       <td ${TD('text-align:right;font-family:Courier New,monospace;width:120px;', i)}>${formatAmount(item.unit_price, po.currency)}</td>
       <td ${TD('text-align:right;font-family:Courier New,monospace;font-weight:600;width:120px;', i)}>${formatAmount(item.line_total, po.currency)}</td>
     </tr>
@@ -160,13 +168,14 @@ ${headerNoteHtml}
     <div class="meta-row"><span class="label">PO Number</span><span class="value">${escHtml(po.number)}</span></div>
     <div class="meta-row"><span class="label">PO Date</span><span class="value">${formatDate(po.created_at)}</span></div>
     <div class="meta-row"><span class="label">Procurement Type</span><span class="value">Type ${po.type} — ${TYPE_LABELS[po.type]}</span></div>
-    ${po.notes ? `<div class="meta-row"><span class="label">Notes</span><span class="value">${escHtml(po.notes)}</span></div>` : ''}
+    ${buyerNotesText ? `<div class="meta-row"><span class="label">Notes</span><span class="value">${escHtml(buyerNotesText)}</span></div>` : ''}
   </div>
   <div class="meta-block">
     <h3>Delivery</h3>
     <div class="meta-row"><span class="label">Vendor</span><span class="value">${escHtml(po.vendor_name)}</span></div>
     <div class="meta-row"><span class="label">Expected Delivery</span><span class="value">${po.expected_delivery ? formatDate(po.expected_delivery) : '—'}</span></div>
     <div class="meta-row"><span class="label">Delivery Address</span><span class="value">${escHtml(deliveryAddr)}</span></div>
+    ${po.incoterms ? `<div class="meta-row"><span class="label">Incoterms</span><span class="value">${escHtml(po.incoterms)}</span></div>` : ''}
   </div>
 </div>
 
@@ -179,6 +188,7 @@ ${headerNoteHtml}
       ${hasMaterial ? `<th ${TH('width:120px;')}>Material ID</th>` : ''}
       <th ${TH('text-align:right;width:80px;')}>Qty</th>
       <th ${TH('width:85px;')}>Unit</th>
+      ${hasSample ? `<th ${TH('width:90px;')}>Sample</th>` : ''}
       <th ${TH('text-align:right;width:120px;')}>Unit Price</th>
       <th ${TH('text-align:right;width:120px;')}>Line Total</th>
     </tr>
