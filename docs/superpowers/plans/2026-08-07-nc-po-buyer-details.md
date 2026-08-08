@@ -1983,3 +1983,42 @@ git commit -m "feat(epms-ui): PO detail shows Edit Details, Incoterms, Buyer Not
 - Migrations: epms-api `nc03_po_buyer_details`, identity-api `0006_po_edit_imported` → the release **must** run `migrate-prod.sh`.
 - Images to rebuild: `epms-api`, `epms`, `identity-api`.
 - After deploying, confirm in Portal Admin → Access Control that `Edit Imported (NC) POs` is ticked for **ERP PA Officer**. The migration seeds it, but verify rather than assume.
+
+---
+
+## Known follow-ups (parked, not blockers)
+
+Adjudicated at the final review. None affect current behaviour; each is a real
+improvement someone should pick up.
+
+1. **No test pins the `buyer_edited_at` stamping condition.** `epms-api/app/crud/po.py:316`
+   gates the stamp on `"tax_rate" in after`. Reverting that to `if after:` — which is the
+   bug that froze NC's tax on every buyer edit — leaves the whole suite green: the writer
+   test drives the column by raw SQL, and `test_po_buyer_details.py` only asserts the
+   positive case. One assertion in `test_omitted_key_leaves_the_stored_value_untouched`
+   (whose second PATCH sends only `buyer_notes`) would close it.
+
+2. **A tax rate set equal to the stored one does not arm the sync guard.**
+   `epms-api/app/crud/po.py:284` requires `payload.tax_rate != po.tax_rate`, so a buyer who
+   deliberately confirms "No tax" on a PO NC shipped at 0% leaves it unstamped, and a later
+   NC sync carrying 13% is adopted. This follows directly from the `"tax_rate" in after`
+   condition and is intended, but it is a narrowing worth knowing about.
+
+3. **Line-item text still reaches ReportLab unescaped.** `epms-api/app/services/pdf_po.py:120-126`
+   passes `description`, `supplier_item_id` and `sample` to `Paragraph` raw, and `_cell` (`:76`)
+   does the same for vendor name and delivery address. `sample` is a column this branch created
+   and whose input this branch exposes, so a buyer typing `Bag <2 kg>` gets it silently dropped
+   from the vendor's PDF — the same defect class fixed for `incoterms`/`buyer_notes`, one column
+   over. The fix is the same `escape()` call.
+
+4. **The HTML preview document and the real PO PDF have drifted.** `epms/src/lib/po-document.ts`
+   has no Supplier ID column (the PDF always prints one), does not convert Buyer Notes newlines
+   to `<br/>`, and lacks the PDF's whitespace-only `.strip()` guard.
+
+5. **`PoImportedEditPage` is the only page suppressing the prefill-effect lint rule**, while
+   `PoEditPage` / `PaEditPage` / `PrEditPage` carry the identical pattern unsuppressed. Repo-level
+   inconsistency worth resolving one way or the other.
+
+6. **`admin_audit_log.actor_email` is always the empty string** for this endpoint, because
+   identity's JWT carries no `email` claim. Same as the pre-existing `admin.py::_actor` convention,
+   not introduced here — but it makes the audit trail less useful than it looks.
