@@ -755,18 +755,27 @@ export default function PoDetailPage() {
                       <dd className="text-neutral-900">{po.incoterms}</dd>
                     </div>
                   )}
-                  {/* purchase_orders.notes is NC-owned on synced POs — every sync rewrites
-                      it with NC's memo plus [NC Paid] / [NC Closed] markers meant for
-                      finance, never buyer text. buyer_notes holds the real buyer-facing
-                      text; non-NC POs (whose Create PO page labels this field "Buyer Notes
-                      / Terms & Conditions") fall back to notes. This mirrors pdf_po.py so
-                      the detail page and the PDF never disagree. */}
+                  {/* purchase_orders.notes means two different things depending on origin:
+                      buyer text (from the Create PO page's "Buyer Notes / Terms &
+                      Conditions" box) on native POs, but ERP-owned sync text (rewritten
+                      every NC sync with [NC Paid] / [NC Closed <date>] markers for
+                      finance) on NC POs. The rows below are gated accordingly — Buyer
+                      Notes only falls back to notes on non-NC POs, and NC Sync Notes is a
+                      separate, NC-only row so the markers stay visible to finance here on
+                      the internal detail page without leaking into the vendor-facing PDF,
+                      which mirrors this same split (pdf_po.py) and prints neither NC row. */}
                   {(po.buyer_notes || (po.source !== 'nc' ? po.notes : undefined)) && (
                     <div className="flex flex-col gap-0.5 sm:col-span-2">
                       <dt className="text-xs font-medium text-neutral-500">Buyer Notes</dt>
                       <dd className="whitespace-pre-wrap text-neutral-900">
                         {po.buyer_notes || po.notes}
                       </dd>
+                    </div>
+                  )}
+                  {po.source === 'nc' && po.notes && (
+                    <div className="flex flex-col gap-0.5 sm:col-span-2">
+                      <dt className="text-xs font-medium text-neutral-500">NC Sync Notes</dt>
+                      <dd className="whitespace-pre-wrap text-neutral-900">{po.notes}</dd>
                     </div>
                   )}
                   <div className="flex flex-col gap-0.5">
