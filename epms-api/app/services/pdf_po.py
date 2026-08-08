@@ -1,6 +1,7 @@
 """PDF generator for Purchase Orders using ReportLab."""
 from datetime import datetime, timezone
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -162,9 +163,13 @@ def generate_po_pdf(
     story += [Spacer(1, 3 * mm), totals, Spacer(1, 6 * mm)]
 
     # ── Incoterms ─────────────────────────────────────────────────────────────
+    # Free text from the buyer-detail form — escape before handing to Paragraph,
+    # which parses its content as mini-XML (unescaped "&"/"<"/">" raise or
+    # silently swallow text; see the two escape() sites in this function).
     if po.incoterms:
         story += [
-            Table([[Paragraph("Incoterms", lbl_style), Paragraph(po.incoterms, val_style)]],
+            Table([[Paragraph("Incoterms", lbl_style),
+                    Paragraph(escape(po.incoterms).replace("\n", "<br/>"), val_style)]],
                   colWidths=[25 * mm, W - 25 * mm]),
             Spacer(1, 4 * mm),
         ]
@@ -179,7 +184,7 @@ def generate_po_pdf(
     if buyer_text and buyer_text.strip():
         story += [
             Paragraph("BUYER NOTES", sec_style),
-            Paragraph(buyer_text.strip(), val_style),
+            Paragraph(escape(buyer_text.strip()).replace("\n", "<br/>"), val_style),
             Spacer(1, 4 * mm),
         ]
 
