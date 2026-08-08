@@ -78,7 +78,9 @@ export default function PoImportedEditPage() {
         expected_delivery: expectedDelivery || null,
         delivery_address: deliveryAddress || null,
         incoterms: incoterms || null,
-        tax_code: taxCode,
+        // Mirror PoEditPage's rule: never send a tax code paired with a zero
+        // rate (non-CAD orders always have effectiveTaxRate === 0).
+        tax_code: effectiveTaxRate > 0 ? taxCode : null,
         tax_rate: effectiveTaxRate,
         is_prepaid: isPrepaid,
         buyer_notes: buyerNotes || null,
