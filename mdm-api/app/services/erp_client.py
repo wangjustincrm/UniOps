@@ -1,4 +1,4 @@
-"""HTTP client for the external ERP (Firmus) MDM API."""
+"""HTTP client for the NC ERP master-data HTTP interface."""
 from __future__ import annotations
 from datetime import datetime
 from typing import Any
@@ -13,9 +13,10 @@ class ErpError(Exception):
 
 
 _PATHS = {
-    "material": "/firmusData/touch_mdm_mes/material/getMaterialInfo",
-    "supplier": "/firmusData/touch_mdm_mes/supplier/getSupplierInfo",
-    "person":   "/firmusData/touch_mdm_mes/person/getPersonInfo",
+    "material":   "/firmusData/touch_mdm_mes/material/getMaterialInfo",
+    "supplier":   "/firmusData/touch_mdm_mes/supplier/getSupplierInfo",
+    "person":     "/firmusData/touch_mdm_mes/person/getPersonInfo",
+    "unit_tranf": "/firmusData/touch_mdm_mes/unitTranf/getUnitTranfInfo",
 }
 
 
@@ -66,3 +67,6 @@ class ErpClient:
 
     async def fetch_persons(self, ts: datetime) -> list[dict[str, Any]]:
         return await self._post(_PATHS["person"], ts)
+
+    async def fetch_unit_tranf(self, ts: datetime) -> list[dict[str, Any]]:
+        return await self._post(_PATHS["unit_tranf"], ts)

@@ -4,7 +4,13 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 from app.db.base import Base
 from app.core.config import settings
-from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state  # noqa: F401
+from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, material, nc_bom, bom, material_supplier, uom_conversion, sync_state, uom  # noqa: F401
+# M14 (final-phase review): sync_state (NcSyncState / nc_sync_state) and uom
+# (UnitOfMeasure / units_of_measure) were both missing from this import list
+# — target_metadata is Base.metadata, which only gets populated with the
+# tables whose model modules have actually been imported somewhere. Without
+# these two, a future `alembic revision --autogenerate` would see those
+# tables as "not in metadata" and propose DROP TABLE statements for them.
 
 config = context.config
 if config.config_file_name is not None:

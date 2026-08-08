@@ -56,7 +56,7 @@ if [ "$SMOKE_ONLY" -eq 0 ]; then
   # docker postgres (localhost:5432), independent of each service's .env.
   export TEST_DATABASE_URL="postgresql+asyncpg://epms:epms_dev@localhost:5432/mdm_test"
   export REDIS_HOST=localhost
-  for svc in finance-api approval-api identity-api mdm-api; do
+  for svc in finance-api approval-api identity-api mdm-api mrp-api; do
     section "$svc — pytest"
     PYTHON=$(find_python "$ROOT/$svc")
     if [ -z "$PYTHON" ]; then
