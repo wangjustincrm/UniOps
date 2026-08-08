@@ -97,19 +97,37 @@ def generate_po_pdf(
     td_r_style = _s("td_r", fontSize=8, textColor=_DARK, fontName="Helvetica",
                     leading=11, alignment=2)
 
-    col_w = [8 * mm, W * 0.28, 26 * mm, 15 * mm, 14 * mm, 28 * mm, 28 * mm]
-    headers = ["#", "Description", "Supplier ID", "Qty", "Unit", "Unit Price", "Line Total"]
+    # Sample is a buyer-supplied, NC-import-only field. Rendering the column
+    # only when some line actually carries one keeps every pre-existing PO's
+    # layout byte-identical. Width check (W = 170mm): fixed columns
+    # 8+26+15+14+28+28 = 119mm, Description 0.18*W = 30.6mm, Sample 20mm
+    # -> 169.6mm, inside W. Description at 0.20*W would overflow at 173mm.
+    show_sample = any(getattr(item, "sample", None) for item in po.line_items)
+    if show_sample:
+        col_w = [8 * mm, W * 0.18, 26 * mm, 15 * mm, 14 * mm, 20 * mm, 28 * mm, 28 * mm]
+        headers = ["#", "Description", "Supplier ID", "Qty", "Unit", "Sample",
+                   "Unit Price", "Line Total"]
+    else:
+        col_w = [8 * mm, W * 0.28, 26 * mm, 15 * mm, 14 * mm, 28 * mm, 28 * mm]
+        headers = ["#", "Description", "Supplier ID", "Qty", "Unit",
+                   "Unit Price", "Line Total"]
+
     rows: list = [[Paragraph(h, th_style) for h in headers]]
     for i, item in enumerate(po.line_items, 1):
-        rows.append([
+        row = [
             Paragraph(str(i),                              td_style),
             Paragraph(item.description,                    td_style),
             Paragraph(item.supplier_item_id or "",         td_style),
             Paragraph(str(item.qty),                       td_r_style),
             Paragraph(item.unit or "",                     td_style),
+        ]
+        if show_sample:
+            row.append(Paragraph(getattr(item, "sample", None) or "", td_style))
+        row += [
             Paragraph(f"{float(item.unit_price):,.2f}",    td_r_style),
             Paragraph(f"{float(item.line_total):,.2f}",    td_r_style),
-        ])
+        ]
+        rows.append(row)
 
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
@@ -142,6 +160,28 @@ def generate_po_pdf(
         ("TOPPADDING", (0, 0), (-1, -1), 2),
     ]))
     story += [Spacer(1, 3 * mm), totals, Spacer(1, 6 * mm)]
+
+    # ── Incoterms ─────────────────────────────────────────────────────────────
+    if po.incoterms:
+        story += [
+            Table([[Paragraph("Incoterms", lbl_style), Paragraph(po.incoterms, val_style)]],
+                  colWidths=[25 * mm, W - 25 * mm]),
+            Spacer(1, 4 * mm),
+        ]
+
+    # ── Buyer Notes ───────────────────────────────────────────────────────────
+    # NC owns purchase_orders.notes: every sync rewrites it with NC's memo plus
+    # [NC Paid] / [NC Closed] markers meant for finance. Falling back to it on an
+    # NC PO would print those internal markers on the vendor's copy, so only
+    # non-NC POs fall back (that is where the Create PO page's "Buyer Notes /
+    # Terms & Conditions" box lands — it never reached the PDF before).
+    buyer_text = po.buyer_notes or (po.notes if po.source != "nc" else None)
+    if buyer_text and buyer_text.strip():
+        story += [
+            Paragraph("BUYER NOTES", sec_style),
+            Paragraph(buyer_text.strip(), val_style),
+            Spacer(1, 4 * mm),
+        ]
 
     # ── Terms & Conditions (from template) ───────────────────────────────────
     if tmpl.get("show_terms") and tmpl.get("terms_text"):
