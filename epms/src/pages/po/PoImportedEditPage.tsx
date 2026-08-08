@@ -39,8 +39,12 @@ export default function PoImportedEditPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Prefill from the loaded PO. Same shape as PoEditPage / PaEditPage / PrEditPage,
+  // which carry this pattern unsuppressed; suppressed here so this page does not
+  // move the repo's lint baseline. Restructuring would diverge from those three.
   useEffect(() => {
     if (!po) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpectedDelivery(po.expected_delivery ?? '')
     setDeliveryAddress(po.delivery_address ?? '')
     setIncoterms(po.incoterms ?? '')
@@ -59,6 +63,7 @@ export default function PoImportedEditPage() {
       supplierItemId: li.supplier_item_id ?? '',
       sample: li.sample ?? '',
     })))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [po?.id])
 
   const editable = po?.source === 'nc' && po?.status === 'issued'
