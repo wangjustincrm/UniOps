@@ -19,7 +19,7 @@ scripts already touched and self-sufficient on a fresh one. Unlike migration
 0004_erp_pa_officer_role, which this migration transitively follows.
 
 Revision id length: alembic_version_identity.version_num is varchar(32);
-"0006_po_edit_imported" is 20 characters.
+"0006_po_edit_imported" is 21 characters.
 """
 from alembic import op
 
@@ -43,8 +43,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Only the grant and the key this migration introduced. role_defs is shared
-    # with the seed scripts and other roles' grants — leave it alone.
+    # Only the grant this migration added. permission_defs is shared with the
+    # seed scripts and other roles' grants — leave it alone. In particular, do
+    # NOT delete the permission_defs row: system_admin's grant to this key is
+    # seeded in identity-api/scripts/seed_phase2_keys.py, so deleting the key
+    # here would break that grant's foreign key.
     op.execute(
-        f"DELETE FROM role_permissions WHERE permission_key = '{_KEY}'")
-    op.execute(f"DELETE FROM permission_defs WHERE key = '{_KEY}'")
+        f"DELETE FROM role_permissions WHERE role_code = '{_ROLE}' "
+        f"AND permission_key = '{_KEY}'")
