@@ -16,7 +16,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { downloadPdf } from '@/lib/pdf-utils'
 import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
 import { useGrs } from '@/hooks/useGrs'
@@ -549,6 +549,17 @@ export default function PoDetailPage() {
     hasApproveTask
   const canPlaceOrder = isProcurementOfficer && po?.status === 'approved'
   const canEdit = isProcurementOfficer && po && ['draft', 'returned'].includes(po.status)
+  // NC-imported POs never reach draft/returned, so canEdit above can never fire
+  // for them. Buyer detail (supplier item IDs, samples, Incoterms, delivery,
+  // notes) is filled in through a separate, deliberately narrow endpoint —
+  // gated by the Access Control Matrix, not a hardcoded role list, so the
+  // button and PATCH /po/{id}/imported-details cannot disagree.
+  const perms = useRolePermissions().data?.permissions
+  const canEditImported =
+    !!po &&
+    po.source === 'nc' &&
+    po.status === 'issued' &&
+    (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
   const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
   // PA creation: available to AP Clerk, Finance roles, and System Admin when PO is in a payable state
   const canCreatePa =
@@ -597,6 +608,9 @@ export default function PoDetailPage() {
   }
 
   const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [])
+  // Mirrors the PDF: the Sample column only appears when some line carries one,
+  // so POs without samples keep their existing layout.
+  const showSample = po.line_items.some((li) => li.sample)
   const hasMaterial = po.type === 1 || po.type === 3
 
   return (
@@ -644,6 +658,12 @@ export default function PoDetailPage() {
               <Button variant="secondary" size="sm" onClick={() => navigate(`/po/${po.id}/edit`)}>
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
+              </Button>
+            )}
+            {canEditImported && (
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/po/${po.id}/edit-imported`)}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Details
               </Button>
             )}
             {canWithdraw && (
@@ -722,7 +742,6 @@ export default function PoDetailPage() {
                     ['Created', formatDate(po.created_at)],
                     ['Expected Delivery', po.expected_delivery ? formatDate(po.expected_delivery) : '—'],
                     ['Delivery Address', po.delivery_address || '—'],
-                    ['Buyer Notes', po.notes || '—'],
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
@@ -730,6 +749,26 @@ export default function PoDetailPage() {
                       <dd className="text-neutral-900">{value}</dd>
                     </div>
                   ))}
+                  {po.incoterms && (
+                    <div className="flex flex-col gap-0.5">
+                      <dt className="text-xs font-medium text-neutral-500">Incoterms</dt>
+                      <dd className="text-neutral-900">{po.incoterms}</dd>
+                    </div>
+                  )}
+                  {/* purchase_orders.notes is NC-owned on synced POs — every sync rewrites
+                      it with NC's memo plus [NC Paid] / [NC Closed] markers meant for
+                      finance, never buyer text. buyer_notes holds the real buyer-facing
+                      text; non-NC POs (whose Create PO page labels this field "Buyer Notes
+                      / Terms & Conditions") fall back to notes. This mirrors pdf_po.py so
+                      the detail page and the PDF never disagree. */}
+                  {(po.buyer_notes || (po.source !== 'nc' ? po.notes : undefined)) && (
+                    <div className="flex flex-col gap-0.5 sm:col-span-2">
+                      <dt className="text-xs font-medium text-neutral-500">Buyer Notes</dt>
+                      <dd className="whitespace-pre-wrap text-neutral-900">
+                        {po.buyer_notes || po.notes}
+                      </dd>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs font-medium text-neutral-500">Prepayment PO</dt>
                     <dd>
@@ -783,6 +822,9 @@ export default function PoDetailPage() {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-20">Qty</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-20">Unit</th>
+                          {showSample && (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-24">Sample</th>
+                          )}
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Line Total</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-neutral-500 w-28">Received</th>
@@ -804,6 +846,9 @@ export default function PoDetailPage() {
                               <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
                               <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
                               <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
+                              {showSample && (
+                                <td className="px-4 py-2.5 text-neutral-500">{item.sample || '—'}</td>
+                              )}
                               <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, po.currency)}</td>
                               <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
