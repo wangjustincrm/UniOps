@@ -287,7 +287,7 @@ function MetricCell({
   // overrides this base tint on the cells that need it.
   if (metric === 'Demand') {
     return (
-      <td className="border-b border-r border-neutral-200 bg-neutral-50 px-2 py-1.5 text-right font-mono text-neutral-700">
+      <td className="h-10 border-b border-r border-neutral-200 bg-neutral-50 px-2 text-right font-mono text-neutral-700">
         {hasData ? formatValue(cell.demand) : <span className="text-neutral-300">—</span>}
       </td>
     )
@@ -295,7 +295,7 @@ function MetricCell({
 
   if (metric === 'Available') {
     return (
-      <td className="border-b border-r border-neutral-200 bg-primary-50/40 px-2 py-1.5 text-right font-mono text-neutral-700">
+      <td className="h-10 border-b border-r border-neutral-200 bg-primary-50/40 px-2 text-right font-mono text-neutral-700">
         {hasData ? formatValue(cell.available) : <span className="text-neutral-300">—</span>}
       </td>
     )
@@ -315,7 +315,7 @@ function MetricCell({
 
   if (!hasProduction) {
     return (
-      <td className="border-b border-r border-neutral-200 bg-success-50/50 px-2 py-1.5 text-right font-mono text-neutral-300">—</td>
+      <td className="h-10 border-b border-r border-neutral-200 bg-success-50/50 px-2 text-right font-mono text-neutral-300">—</td>
     )
   }
 
@@ -337,7 +337,7 @@ function MetricCell({
   return (
     <td
       className={cn(
-        'border-b border-r border-neutral-200 px-2 py-1.5 text-right font-mono font-semibold',
+        'h-10 border-b border-r border-neutral-200 px-2 text-right font-mono text-sm font-bold',
         cell.gap
           ? 'bg-danger-50 text-danger-700'
           : showShortfall
@@ -352,7 +352,7 @@ function MetricCell({
           type="button"
           onClick={() => onAdjustCell(cell.cellLines)}
           title={cellTitle}
-          className="inline-flex min-h-11 w-full items-center justify-end rounded px-1 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          className="inline-flex h-full w-full items-center justify-end rounded px-1 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
         >
           {valueNode}
         </button>
