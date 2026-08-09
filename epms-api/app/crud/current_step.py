@@ -11,6 +11,7 @@ from app.models.user import User
 # English labels matching the default workflow node labels.
 ROLE_LABELS: dict[str, str] = {
     "supervisor": "Supervisor",
+    "ap_clerk": "AP Clerk",
     "dept_manager": "Dept Manager",
     "director": "Director",
     "procurement_manager": "Procurement Manager",

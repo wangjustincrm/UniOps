@@ -165,3 +165,13 @@ async def test_actor_name_falls_back_to_id_when_user_is_gone(test_engine):
         missing = uuid.uuid4()
 
         assert await _actor_name(db, missing) == str(missing)
+
+
+def test_role_label_renders_ap_clerk_uppercase():
+    """ap_clerk appears on real PA approval chains; the .title() fallback would
+    render it "Ap Clerk"."""
+    from app.crud.current_step import role_label
+
+    assert role_label("ap_clerk") == "AP Clerk"
+    # the fallback still covers roles with no explicit entry
+    assert role_label("quality_manager") == "Quality Manager"

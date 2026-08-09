@@ -202,7 +202,7 @@ def generate_gr_pdf(
             sig_data.append([*_cell("Received By", received_name)])
         if acknowledged_name:
             sig_data.append([*_cell("Acknowledged By", acknowledged_name)])
-        sig_tbl = Table(sig_data, colWidths=[W * 0.12, W * 0.38])
+        sig_tbl = Table(sig_data, colWidths=[W * 0.16, W * 0.34])
         sig_tbl.setStyle(TableStyle([
             ("TOPPADDING",    (0, 0), (-1, -1), 4),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
