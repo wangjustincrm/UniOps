@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import user as user_crud
+from app.crud.gr import _actor_name
 from app.crud.signatories import approval_signatories, gr_signatories, resolve_user_names
 from app.models.approval import ApprovalEvent
 from app.models.gr import GoodsReceipt
@@ -145,3 +146,22 @@ async def test_resolve_user_names_ignores_none_and_unknown(test_engine):
         names = await resolve_user_names(db, [known.id, None, uuid.uuid4()])
 
         assert names == {known.id: "Ken Known"}
+
+
+@pytest.mark.asyncio
+async def test_actor_name_prefers_full_name_over_uuid(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        user = await _user(db, "Nina Named")
+        await db.commit()
+
+        assert await _actor_name(db, user.id) == "Nina Named"
+
+
+@pytest.mark.asyncio
+async def test_actor_name_falls_back_to_id_when_user_is_gone(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        missing = uuid.uuid4()
+
+        assert await _actor_name(db, missing) == str(missing)

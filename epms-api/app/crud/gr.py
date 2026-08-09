@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
-from app.crud.signatories import gr_signatories
+from app.crud.signatories import gr_signatories, resolve_user_names
 from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.gr_attachment import GrAttachment
@@ -30,6 +30,16 @@ async def _next_number(db: AsyncSession) -> str:
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     prefix = f"GR-{today}-"
     return await next_number(db, GoodsReceipt.number, prefix, width=4)
+
+
+async def _actor_name(db: AsyncSession, actor_id: uuid.UUID) -> str:
+    """Display name for the acting user, falling back to the raw id if unknown.
+
+    The browser sends the display name in the request body; NC/PMS imports and
+    Teams actions do not. Storing a bare UUID in these name columns is what used
+    to print an id on the GR PDF.
+    """
+    return (await resolve_user_names(db, [actor_id])).get(actor_id) or str(actor_id)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -115,6 +125,7 @@ async def create(
 ) -> GoodsReceipt:
     number = await _next_number(db)
     gr_type = "physical" if is_physical(po.type) else "service"
+    received_by_name = payload.received_by or await _actor_name(db, created_by)
 
     gr = GoodsReceipt(
         number=number,
@@ -132,7 +143,7 @@ async def create(
         storage_location=payload.storage_location,
         notes=payload.notes,
         received_at=datetime.now(timezone.utc),
-        received_by=payload.received_by or str(created_by),
+        received_by=received_by_name,
         created_by=created_by,
     )
     db.add(gr)
@@ -216,7 +227,7 @@ async def action(
             raise ValueError(f"Cannot acknowledge GR in status '{gr.status}'")
         await _complete_tasks(db, gr.id)
         gr.acknowledged_at = now
-        gr.acknowledged_by = req.acknowledged_by or str(actor_id)
+        gr.acknowledged_by = req.acknowledged_by or await _actor_name(db, actor_id)
         # Best-effort: acknowledging must not fail because the file server is
         # down — fall back to inline DB storage for the PDF.
         try:
@@ -231,7 +242,7 @@ async def action(
             # instead of creating a requester-role broadcast task.
             gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
             gr.collected_at = now
-            gr.collected_by = req.acknowledged_by or str(actor_id)
+            gr.collected_by = req.acknowledged_by or await _actor_name(db, actor_id)
             await _update_po_received_qty(db, gr)
         elif gr.gr_type == "physical":
             gr.status = "collection_pending"
@@ -247,7 +258,7 @@ async def action(
         await _complete_tasks(db, gr.id)
         gr.status = "collected"
         gr.collected_at = now
-        gr.collected_by = req.collected_by or str(actor_id)
+        gr.collected_by = req.collected_by or await _actor_name(db, actor_id)
         gr.collection_notes = req.collection_notes
         await _update_po_received_qty(db, gr)
 
@@ -262,10 +273,10 @@ async def action(
         await _complete_tasks(db, gr.id)
         if gr.status == "pending_ack":
             gr.acknowledged_at = now
-            gr.acknowledged_by = req.collected_by or str(actor_id)
+            gr.acknowledged_by = req.collected_by or await _actor_name(db, actor_id)
         gr.status = "confirmed"
         gr.collected_at = now
-        gr.collected_by = req.collected_by or str(actor_id)
+        gr.collected_by = req.collected_by or await _actor_name(db, actor_id)
         gr.collection_notes = req.collection_notes
         # Update PO line received_qty and PO status
         await _update_po_received_qty(db, gr)
