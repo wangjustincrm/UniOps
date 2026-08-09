@@ -17,7 +17,8 @@ from reportlab.platypus import (
 
 from app.models.pa import PaymentApplication
 from app.services.pdf_template import (
-    build_logo, footer_note_element, get_tmpl, header_note_element, terms_element,
+    approvals_element, build_logo, footer_note_element, get_tmpl,
+    header_note_element, terms_element,
 )
 
 _PRIMARY = colors.HexColor("#0A7C7C")
@@ -35,6 +36,8 @@ def generate_pa_pdf(
     company_name: str = "EPMS",
     pdf_templates: dict | None = None,
     logo_data_url: str | None = None,
+    requester_name: str | None = None,
+    approvals: list[dict] | None = None,
 ) -> bytes:
     """Render a PaymentApplication to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "pa")
@@ -84,6 +87,7 @@ def generate_pa_pdf(
         return [Paragraph(lbl, lbl_style), Paragraph(val or "—", val_style)]
 
     submitted_str = pa.submitted_at.strftime("%Y-%m-%d") if pa.submitted_at else "—"
+    approved_str = pa.approved_at.strftime("%Y-%m-%d") if pa.approved_at else "—"
 
     meta = Table(
         [
@@ -91,8 +95,15 @@ def generate_pa_pdf(
             [*_cell("Title", pa.title),             *_cell("Type", pa_type_label)],
             [*_cell("Vendor", pa.vendor_name),      *_cell("Currency", pa.currency)],
             [*_cell("PO Number", pa.po_number),     *_cell("Status", pa.status.replace("_", " ").title())],
+            [*_cell("Applied By", requester_name),  *_cell("Date Approved", approved_str)],
         ],
-        colWidths=[W * 0.12, W * 0.38, W * 0.12, W * 0.38],
+        # Label columns widened from 0.12 to 0.14 (value narrowed 0.38 -> 0.36 to
+        # compensate), matching pdf_pr.py's fix: "Date Submitted" needs ~55.14pt at
+        # 8pt Helvetica but the 0.12*W - 8pt padding budget is only ~49.83pt, so it
+        # already wrapped onto two lines before this change (and "Date Approved" /
+        # "Applied By" would only make it worse). See task-3-report.md for the
+        # verified fit under the widened budget.
+        colWidths=[W * 0.14, W * 0.36, W * 0.14, W * 0.36],
     )
     meta.setStyle(TableStyle([
         ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, _LIGHT]),
@@ -171,6 +182,9 @@ def generate_pa_pdf(
         ("LINEABOVE",     (0, 0), (-1, 0), 1, _PRIMARY),
     ]))
     elements.append(total_tbl)
+
+    # ── Approvals ────────────────────────────────────────────────────────────
+    elements.extend(approvals_element(approvals, W))
 
     # ── Prepayment details ───────────────────────────────────────────────────
     if pa.pa_type == "prepayment" and pa.prepayment_pct is not None:

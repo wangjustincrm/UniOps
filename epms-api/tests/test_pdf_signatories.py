@@ -17,8 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.crud import user as user_crud
 from app.crud.signatories import approval_signatories
 from app.models.approval import ApprovalEvent
+from app.models.pa import PaLineItem, PaymentApplication
 from app.models.pr import PrLineItem, PurchaseRequest
+from app.models.vendor import Vendor
 from app.schemas.auth import RegisterRequest
+from app.services.pdf_pa import generate_pa_pdf
 from app.services.pdf_pr import generate_pr_pdf
 
 _STREAM_RE = re.compile(rb"stream\r?\n(.*?)endstream", re.DOTALL)
@@ -113,3 +116,46 @@ async def test_pr_pdf_without_signatories_still_renders(test_engine):
 
         assert pdf_bytes[:4] == b"%PDF"
         assert b"Approvals" not in _pdf_text(pdf_bytes)
+
+
+@pytest.mark.asyncio
+async def test_pa_pdf_prints_applicant_and_approvers(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        applicant = await _user(db, "Amy Applicant")
+        finance = await _user(db, "Fred Finance")
+        vendor = Vendor(
+            code=f"V{uuid.uuid4().hex[:6]}", name="PA PDF Vendor",
+            category="general", contact_name="Vendor Contact",
+            contact_email="vendor@example.com",
+        )
+        db.add(vendor)
+        await db.flush()
+        pa = PaymentApplication(
+            pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="PDF signatory PA",
+            vendor_id=vendor.id, vendor_name=vendor.name, pa_type="regular",
+            subtotal=Decimal("100.00"), tax_amount=Decimal("0"),
+            payment_amount=Decimal("100.00"), currency="CAD", status="approved",
+            created_by=applicant.id,
+            line_items=[PaLineItem(
+                description="Service", qty=Decimal("1"), unit="ea",
+                unit_price=Decimal("100.00"), line_total=Decimal("100.00"), sort_order=0)],
+        )
+        db.add(pa)
+        await db.flush()
+        db.add(ApprovalEvent(
+            document_type="pa", document_id=pa.id, document_number=pa.pa_number,
+            step_idx=0, action="approve", actor_id=finance.id,
+            actor_role="finance_manager"))
+        await db.commit()
+
+        requester_name, approvals = await approval_signatories(db, "pa", pa.id, pa.created_by)
+        pdf_bytes = generate_pa_pdf(pa, "Test Co", None, None, requester_name, approvals)
+
+        assert pdf_bytes[:4] == b"%PDF"
+        text = _pdf_text(pdf_bytes)
+        assert b"Applied By" in text
+        assert b"Amy Applicant" in text
+        assert b"Approvals" in text
+        assert b"Fred Finance" in text
+        assert b"Finance Manager" in text

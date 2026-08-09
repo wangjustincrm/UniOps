@@ -378,11 +378,16 @@ async def pa_action(
         cfg_r = await db.execute(sa_select(CompanyConfig).limit(1))
         cfg = cfg_r.scalar_one_or_none()
         company_name = cfg.name if cfg else "EPMS"
+        from app.crud.signatories import approval_signatories
+        requester_name, approvals = await approval_signatories(
+            db, "pa", pa_id, pa.created_by
+        )
         loop = asyncio.get_event_loop()
         pdf_bytes = await loop.run_in_executor(
             None, generate_pa_pdf, pa, company_name,
             cfg.pdf_templates if cfg else None,
             cfg.logo_data_url if cfg else None,
+            requester_name, approvals,
         )
         existing = await db.execute(
             sa_select(PaAttachment).where(
