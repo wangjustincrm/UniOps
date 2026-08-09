@@ -35,6 +35,9 @@ def generate_gr_pdf(
     company_name: str = "EPMS",
     pdf_templates: dict | None = None,
     logo_data_url: str | None = None,
+    created_by_name: str | None = None,
+    received_by: str | None = None,
+    acknowledged_by: str | None = None,
 ) -> bytes:
     """Render a GoodsReceipt to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "gr")
@@ -85,6 +88,11 @@ def generate_gr_pdf(
     received_str = gr.received_at.strftime("%Y-%m-%d") if gr.received_at else "—"
     acknowledged_str = gr.acknowledged_at.strftime("%Y-%m-%d") if gr.acknowledged_at else "—"
     gr_type_label = "Physical" if gr.gr_type == "physical" else "Service"
+
+    # crud/gr.py passes names already resolved against the users table; falling
+    # back to the columns keeps the two legacy no-argument callers working.
+    received_name = received_by if received_by is not None else gr.received_by
+    acknowledged_name = acknowledged_by if acknowledged_by is not None else gr.acknowledged_by
 
     meta = Table(
         [
@@ -183,15 +191,17 @@ def generate_gr_pdf(
         elements.append(Paragraph("Notes", sec_style))
         elements.append(Paragraph(gr.notes, val_style))
 
-    # ── Received / Acknowledged by ───────────────────────────────────────────
-    if gr.received_by or gr.acknowledged_by:
+    # ── Created / Received / Acknowledged by ─────────────────────────────────
+    if created_by_name or received_name or acknowledged_name:
         elements.append(Spacer(1, 5 * mm))
         elements.append(Paragraph("Signatures", sec_style))
         sig_data = []
-        if gr.received_by:
-            sig_data.append([*_cell("Received By", gr.received_by)])
-        if gr.acknowledged_by:
-            sig_data.append([*_cell("Acknowledged By", gr.acknowledged_by)])
+        if created_by_name:
+            sig_data.append([*_cell("Created By", created_by_name)])
+        if received_name:
+            sig_data.append([*_cell("Received By", received_name)])
+        if acknowledged_name:
+            sig_data.append([*_cell("Acknowledged By", acknowledged_name)])
         sig_tbl = Table(sig_data, colWidths=[W * 0.12, W * 0.38])
         sig_tbl.setStyle(TableStyle([
             ("TOPPADDING",    (0, 0), (-1, -1), 4),

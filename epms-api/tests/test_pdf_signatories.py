@@ -15,12 +15,15 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import user as user_crud
-from app.crud.signatories import approval_signatories
+from app.crud.signatories import approval_signatories, gr_signatories
 from app.models.approval import ApprovalEvent
+from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.pa import PaLineItem, PaymentApplication
+from app.models.po import PurchaseOrder
 from app.models.pr import PrLineItem, PurchaseRequest
 from app.models.vendor import Vendor
 from app.schemas.auth import RegisterRequest
+from app.services.pdf_gr import generate_gr_pdf
 from app.services.pdf_pa import generate_pa_pdf
 from app.services.pdf_pr import generate_pr_pdf
 
@@ -159,3 +162,54 @@ async def test_pa_pdf_prints_applicant_and_approvers(test_engine):
         assert b"Approvals" in text
         assert b"Fred Finance" in text
         assert b"Finance Manager" in text
+
+
+@pytest.mark.asyncio
+async def test_gr_pdf_prints_creator_and_resolves_uuid_acknowledger(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        creator = await _user(db, "Wally Warehouse")
+        acker = await _user(db, "Adam Acknowledger")
+        vendor = Vendor(
+            code=f"V{uuid.uuid4().hex[:6]}", name="GR PDF Vendor",
+            category="general", contact_name="Vendor Contact",
+            contact_email="vendor@example.com",
+        )
+        db.add(vendor)
+        await db.flush()
+        po = PurchaseOrder(
+            number=f"PO-{uuid.uuid4().hex[:8]}", title="GR PDF PO", type=2,
+            status="issued", vendor_id=vendor.id, vendor_name=vendor.name,
+            currency="CAD", subtotal=Decimal("0"), total=Decimal("0"),
+            created_by=creator.id,
+        )
+        db.add(po)
+        await db.flush()
+        gr = GoodsReceipt(
+            number=f"GR-{uuid.uuid4().hex[:8]}", title="GR PDF signatories",
+            po_id=po.id, po_number=po.number, vendor_id=vendor.id,
+            vendor_name=vendor.name, gr_type="physical", procurement_type=2,
+            currency="CAD", status="collection_pending",
+            received_by="Wally Warehouse",
+            acknowledged_by=str(acker.id),   # non-browser caller stored a raw UUID
+            created_by=creator.id,
+            line_items=[GrLineItem(
+                description="Widget", qty_ordered=Decimal("3"), qty_received=Decimal("3"),
+                unit="ea", unit_price=Decimal("50.00"), line_total=Decimal("150.00"),
+                condition="good", sort_order=0)],
+        )
+        db.add(gr)
+        await db.commit()
+
+        sig = await gr_signatories(db, gr)
+        pdf_bytes = generate_gr_pdf(
+            gr, "Test Co", None, None,
+            sig["created_by_name"], sig["received_by"], sig["acknowledged_by"],
+        )
+
+        assert pdf_bytes[:4] == b"%PDF"
+        text = _pdf_text(pdf_bytes)
+        assert b"Created By" in text
+        assert b"Wally Warehouse" in text
+        assert b"Adam Acknowledger" in text
+        assert str(acker.id).encode("ascii") not in text   # the raw UUID never prints

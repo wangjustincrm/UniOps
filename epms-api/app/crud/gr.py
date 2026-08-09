@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
+from app.crud.signatories import gr_signatories
 from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.gr_attachment import GrAttachment
@@ -608,11 +609,13 @@ async def _attach_gr_pdf(
 ) -> None:
     """Generate a confirmed-GR PDF and store it via file server (PRD §3.4)."""
     import asyncio
+    sig = await gr_signatories(db, gr)
     loop = asyncio.get_running_loop()
     pdf_bytes = await loop.run_in_executor(
         None, generate_gr_pdf, gr, company_name,
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
+        sig["created_by_name"], sig["received_by"], sig["acknowledged_by"],
     )
     filename = f"{gr.number}.pdf"
     if token:
