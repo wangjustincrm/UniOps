@@ -1242,22 +1242,17 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ## 基线数字
 
-**尚未取得可信基线 —— 实施前必须先补测。**
+**已取得（2026-08-07，独占跑，无并发）：`69 failed, 542 passed` in 839.86s。**
 
-2026-08-07 在本分支起点（未改任何代码）跑了一次全量，结果 `118 failed, 403 passed,
-91 errors in 990.75s`。这个数字**作废**：91 个 error 全是
+命令即"跑测环境"一节那条，目标 `tests/`。逐条失败清单存于
+`.superpowers/sdd/2026-08-07-pdf-signatories/baseline-failures.txt`（69 行，含
+`tests/test_pr.py` 的 9 条）。**PDF 相关测试在基线里全绿** —— 本次改动碰的任何
+PDF 测试出现失败，一定是新引入的。
+
+首次尝试测得的 `118 failed, 403 passed, 91 errors` **作废**：91 个 error 全是
 `DependentObjectsStillExistError: cannot drop table business_partners ... constraint
-purchase_agreements_vendor_id_fkey`，即跑到一半时共用的 `epms_test` 库里又冒出了
-`purchase_agreements` 表。排查发现**另一个会话正在并发跑 epms-api 套件**（观察到
-python pytest 进程 32108 → 66500 接连启动，跑的是 `test_stale_approve_task_cleanup.py`
-等本分支没动过的文件）。测试库是所有 worktree 共用的，`Base.metadata.drop_all` 因此互相打架。
-
-参考量级：记忆记录 `d57578d` 的正常基线约 **69 failed / 542 passed**，与 118/403/91 相差甚远。
-
-**实施前动作：**
-
-1. 确认没有并发的 epms-api pytest：
-   `Get-CimInstance Win32_Process -Filter "Name like 'python%'"`（PowerShell）
-2. 清掉残留表：
-   `docker exec uniops_postgres psql -U epms -d epms_test -c "DROP TABLE IF EXISTS purchase_agreements CASCADE"`
-3. 独占跑一次全量，把 `X failed, Y passed` 填到这里，作为后续每个任务比对的基准。
+purchase_agreements_vendor_id_fkey`，起因是另一个会话在并发跑 epms-api 套件、把
+`purchase_agreements` 建回了共用的 `epms_test` 库，两边的 `Base.metadata.drop_all`
+互相打架。重测前的处置：确认无并发 python 进程 →
+`docker exec uniops_postgres psql -U epms -d epms_test -c "DROP TABLE IF EXISTS purchase_agreements CASCADE"`
+→ 独占跑。**测试库是所有 worktree 共用的，跑套件前务必确认没有第二个 pytest 在跑。**
