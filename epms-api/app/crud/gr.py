@@ -393,7 +393,7 @@ async def _auto_complete_requester_steps(
     gr.acknowledged_at = now
     gr.acknowledged_by = "auto (no PR requester)"
     gr.collected_at = now
-    gr.collected_by = str(actor_id)
+    gr.collected_by = await _actor_name(db, actor_id)
     gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
 
     cfg = await _get_config(db)
