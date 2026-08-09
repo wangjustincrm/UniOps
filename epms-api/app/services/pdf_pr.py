@@ -17,7 +17,8 @@ from reportlab.platypus import (
 
 from app.models.pr import PurchaseRequest
 from app.services.pdf_template import (
-    build_logo, footer_note_element, get_tmpl, header_note_element, terms_element,
+    approvals_element, build_logo, footer_note_element, get_tmpl,
+    header_note_element, terms_element,
 )
 
 PR_TYPES = {
@@ -44,6 +45,8 @@ def generate_pr_pdf(
     company_name: str = "EPMS",
     pdf_templates: dict | None = None,
     logo_data_url: str | None = None,
+    requester_name: str | None = None,
+    approvals: list[dict] | None = None,
 ) -> bytes:
     """Render a PurchaseRequest to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "pr")
@@ -97,6 +100,7 @@ def generate_pr_pdf(
     created_str = pr.created_at.strftime("%Y-%m-%d") if pr.created_at else "—"
     required_str = pr.required_by.strftime("%Y-%m-%d") if pr.required_by else "—"
     pr_type_str = PR_TYPES.get(pr.type, str(pr.type))
+    submitted_str = pr.submitted_at.strftime("%Y-%m-%d") if pr.submitted_at else "—"
 
     meta = Table(
         [
@@ -105,8 +109,12 @@ def generate_pr_pdf(
             [*_cell("Vendor", pr.vendor_name),       *_cell("Currency", pr.currency)],
             [*_cell("Department", pr.department_name), *_cell("Required By", required_str)],
             [*_cell("Cost Center", pr.cost_center_name), *_cell("Budget Code", pr.budget_code)],
+            [*_cell("Requested By", requester_name), *_cell("Submitted", submitted_str)],
         ],
-        colWidths=[W * 0.12, W * 0.38, W * 0.12, W * 0.38],
+        # Label columns widened from 0.12 to 0.14 (value narrowed 0.38 -> 0.36 to
+        # compensate) so "Requested By" (~50.2pt at 8pt Helvetica) fits without
+        # wrapping onto two lines within the available cell width after padding.
+        colWidths=[W * 0.14, W * 0.36, W * 0.14, W * 0.36],
     )
     meta.setStyle(TableStyle([
         ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, _LIGHT]),
@@ -186,6 +194,9 @@ def generate_pr_pdf(
         ("LINEABOVE",     (0, 0), (-1, 0), 1, _PRIMARY),
     ]))
     elements.append(total_tbl)
+
+    # ── Approvals ────────────────────────────────────────────────────────────
+    elements.extend(approvals_element(approvals, W))
 
     # ── Notes ────────────────────────────────────────────────────────────────
     if pr.notes:
