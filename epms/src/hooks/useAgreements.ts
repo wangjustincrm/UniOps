@@ -70,10 +70,29 @@ export function useAgreementAction(id: string) {
 
   return useMutation({
     mutationFn: (body: AgreementActionBody) => agreementService.action(id, body),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['agreements'] })
-      queryClient.invalidateQueries({ queryKey: ['agreements', id] })
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
+    // The await is load-bearing, not tidiness. invalidateQueries only *schedules*
+    // a background refetch; without awaiting it, the mutation settles immediately,
+    // isPending flips false, and AgreementDetailPage re-enables "Submit for
+    // Approval" while the header still renders the pre-action status. A second
+    // click in that window posts submit against an already-submitted agreement
+    // and the backend correctly answers 409 ("Cannot submit AGR in status
+    // 'submitted'") — which reads to the user as "submit is broken" even though
+    // it worked. Awaiting keeps isPending true until the refetch settles, so the
+    // button is only re-armed once the status on screen is the real one.
+    // The ['agreements'] key prefix-matches both the list and ['agreements', id],
+    // so one await covers the detail query too. It never rejects: refetch errors
+    // land in query state, not the promise.
+    //
+    // ['tasks'] is awaited for the same reason, one step later: the detail page
+    // derives canApprove from the open-task list, and approving at step 0 leaves
+    // the status *still* approvable ('in_review'). Refresh the agreement without
+    // the tasks and the Approve button re-renders off a completed task.
+    // ['dashboard'] gates no control here, so it stays fire-and-forget.
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['agreements'] }),
+        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      ])
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Agreement action failed'),
