@@ -7,6 +7,13 @@ export interface PortalUser {
   full_name: string
   role: string
   department_id: string | null
+  /**
+   * Server-side flag from /auth/me. True ⇒ the account must rotate its password
+   * before using UniOps (admin-created first login, admin reset, or a password
+   * past the Admin → Security expiry window). Portal blocks on it via
+   * ProtectedRoute, and it rides the SSO handoff so sub-apps honour it too.
+   */
+  must_change_password?: boolean
 }
 
 interface AuthState {
@@ -18,6 +25,7 @@ interface AuthState {
   isAuthenticated: boolean
 
   setUser: (user: PortalUser, token: string, refreshToken: string) => void
+  clearMustChangePassword: () => void
   setMfaPending: (mfaToken: string) => void
   setMfaVerified: () => void
   isMfaValid: () => boolean
@@ -36,6 +44,11 @@ export const useAuthStore = create<AuthState>()(
 
       setUser: (user, token, refreshToken) =>
         set({ user, token, refreshToken, isAuthenticated: true, mfaPendingToken: null }),
+
+      clearMustChangePassword: () =>
+        set((state) =>
+          state.user ? { user: { ...state.user, must_change_password: false } } : {}
+        ),
 
       setMfaPending: (mfaToken) =>
         set({ mfaPendingToken: mfaToken }),
