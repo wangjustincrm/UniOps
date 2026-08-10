@@ -81,15 +81,19 @@ def _as_uuid(value) -> uuid.UUID | None:
 
 
 async def gr_signatories(db: AsyncSession, gr) -> dict:
-    """Return the names a GR PDF prints: creator, receiver, acknowledger.
+    """Return the names a GR PDF prints: creator, receiver, acknowledger, collector.
 
-    ``received_by`` / ``acknowledged_by`` are free-text columns the browser fills
-    with the user's full name, but non-browser callers (NC import, PMS import,
-    Teams) leave them empty and crud/gr.py's fallback stored a bare UUID string.
-    Anything that parses as a UUID is looked up and replaced so PDFs for those
-    rows print a name instead of an id.
+    ``received_by`` / ``acknowledged_by`` / ``collected_by`` are free-text columns
+    the browser fills with the user's full name, but non-browser callers (NC
+    import, PMS import, Teams) leave them empty and crud/gr.py's fallback stored
+    a bare UUID string. Anything that parses as a UUID is looked up and replaced
+    so PDFs for those rows print a name instead of an id.
     """
-    stored = {"received_by": gr.received_by, "acknowledged_by": gr.acknowledged_by}
+    stored = {
+        "received_by": gr.received_by,
+        "acknowledged_by": gr.acknowledged_by,
+        "collected_by": gr.collected_by,
+    }
     as_uuid = {key: _as_uuid(value) for key, value in stored.items()}
     names = await resolve_user_names(
         db, [gr.created_by, *(u for u in as_uuid.values() if u is not None)]

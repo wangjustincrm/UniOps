@@ -280,6 +280,17 @@ async def action(
         gr.collection_notes = req.collection_notes
         # Update PO line received_qty and PO status
         await _update_po_received_qty(db, gr)
+        # Best-effort: confirming must not fail because the file server is down —
+        # fall back to inline DB storage for the PDF. Service GRs collapse
+        # acknowledge + confirm into this one step and would otherwise never get
+        # a PDF; physical GRs already have one from acknowledge, and
+        # _attach_gr_pdf replaces it so this ends with exactly one, now carrying
+        # Collected By (must run after gr.collected_by is assigned above).
+        try:
+            await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GR %s confirm: PDF upload failed (%s); storing inline", gr.number, exc)
+            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
 
     elif act == "reject":
         if gr.status != "collection_pending" or gr.gr_type != "service":
@@ -618,7 +629,14 @@ async def _attach_gr_pdf(
     token: str | None = None,
     cfg: CompanyConfig | None = None,
 ) -> None:
-    """Generate a confirmed-GR PDF and store it via file server (PRD §3.4)."""
+    """Generate a GR PDF and store it via file server (PRD §3.4).
+
+    Idempotent: replaces any existing ``<number>.pdf`` attachment (row + backing
+    file) first. This is called from both the acknowledge branch and the confirm
+    branch of ``action()`` — a physical GR walks acknowledge → confirm and must
+    end up with exactly one PDF (the confirm-time one, which additionally has
+    Collected By filled in), not two.
+    """
     import asyncio
     sig = await gr_signatories(db, gr)
     loop = asyncio.get_running_loop()
@@ -627,8 +645,26 @@ async def _attach_gr_pdf(
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
         sig["created_by_name"], sig["received_by"], sig["acknowledged_by"],
+        sig["collected_by"],
     )
     filename = f"{gr.number}.pdf"
+
+    # Replace any prior auto-PDF of the same name (row + backing file) so
+    # repeated calls (acknowledge, then confirm) end with exactly one attachment.
+    existing = (await db.execute(
+        select(GrAttachment).where(
+            GrAttachment.gr_id == gr.id,
+            GrAttachment.filename == filename,
+        )
+    )).scalars().all()
+    if existing:
+        from app.services.attachment_helper import delete_from_file_server
+        for att in existing:
+            if att.storage_key and token:
+                await delete_from_file_server(att.storage_key, token)
+            await db.delete(att)
+        await db.flush()
+
     if token:
         from app.services.attachment_helper import upload_to_file_server
         storage_key = await upload_to_file_server(

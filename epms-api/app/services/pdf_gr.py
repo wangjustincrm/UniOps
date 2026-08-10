@@ -38,6 +38,7 @@ def generate_gr_pdf(
     created_by_name: str | None = None,
     received_by: str | None = None,
     acknowledged_by: str | None = None,
+    collected_by: str | None = None,
 ) -> bytes:
     """Render a GoodsReceipt to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "gr")
@@ -95,6 +96,7 @@ def generate_gr_pdf(
     # back to the columns keeps the two legacy no-argument callers working.
     received_name = received_by if received_by is not None else gr.received_by
     acknowledged_name = acknowledged_by if acknowledged_by is not None else gr.acknowledged_by
+    collected_name = collected_by if collected_by is not None else gr.collected_by
 
     meta = Table(
         [
@@ -193,8 +195,8 @@ def generate_gr_pdf(
         elements.append(Paragraph("Notes", sec_style))
         elements.append(Paragraph(gr.notes, val_style))
 
-    # ── Created / Received / Acknowledged by ─────────────────────────────────
-    if created_by_name or received_name or acknowledged_name:
+    # ── Created / Received / Acknowledged / Collected by ─────────────────────
+    if created_by_name or received_name or acknowledged_name or collected_name:
         elements.append(Spacer(1, 5 * mm))
         elements.append(Paragraph("Signatures", sec_style))
         sig_data = []
@@ -204,6 +206,8 @@ def generate_gr_pdf(
             sig_data.append([*_cell("Received By", received_name)])
         if acknowledged_name:
             sig_data.append([*_cell("Acknowledged By", acknowledged_name)])
+        if collected_name:
+            sig_data.append([*_cell("Collected By", collected_name)])
         sig_tbl = Table(sig_data, colWidths=[W * 0.16, W * 0.34])
         sig_tbl.setStyle(TableStyle([
             ("TOPPADDING",    (0, 0), (-1, -1), 4),
