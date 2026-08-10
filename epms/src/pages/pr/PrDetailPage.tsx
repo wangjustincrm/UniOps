@@ -200,6 +200,7 @@ export default function PrDetailPage() {
   const prAction = usePrAction(id ?? '')
   const { data: attachments = [] } = usePrAttachments(id ?? '')
   const deleteAttachment = useDeleteAttachment(id ?? '')
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const regeneratePdf = useRegeneratePrPdf(id ?? '')
   const { data: budgetData } = useBudgetOverview()
   const budgetAccount = pr?.budget_code
@@ -522,6 +523,11 @@ export default function PrDetailPage() {
                   </button>
                 )}
               </div>
+              {downloadError && (
+                <div className="mb-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+                  {downloadError}
+                </div>
+              )}
               {attachments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />
@@ -536,7 +542,12 @@ export default function PrDetailPage() {
                       <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
                       <button
                         type="button"
-                        onClick={() => prAttachmentService.download(id!, att.id, att.filename)}
+                        onClick={() => {
+                          setDownloadError(null)
+                          prAttachmentService.download(id!, att.id, att.filename).catch(() => {
+                            setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
+                          })
+                        }}
                         className="text-xs text-primary-600 hover:underline"
                       >
                         Download

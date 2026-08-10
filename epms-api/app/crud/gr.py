@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
+from app.crud.signatories import gr_signatories, resolve_user_names
 from app.models.config import CompanyConfig
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.gr_attachment import GrAttachment
@@ -29,6 +30,16 @@ async def _next_number(db: AsyncSession) -> str:
     today = datetime.now(timezone.utc).strftime("%Y%m%d")
     prefix = f"GR-{today}-"
     return await next_number(db, GoodsReceipt.number, prefix, width=4)
+
+
+async def _actor_name(db: AsyncSession, actor_id: uuid.UUID) -> str:
+    """Display name for the acting user, falling back to the raw id if unknown.
+
+    The browser sends the display name in the request body; NC/PMS imports and
+    Teams actions do not. Storing a bare UUID in these name columns is what used
+    to print an id on the GR PDF.
+    """
+    return (await resolve_user_names(db, [actor_id])).get(actor_id) or str(actor_id)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -114,6 +125,7 @@ async def create(
 ) -> GoodsReceipt:
     number = await _next_number(db)
     gr_type = "physical" if is_physical(po.type) else "service"
+    received_by_name = payload.received_by or await _actor_name(db, created_by)
 
     gr = GoodsReceipt(
         number=number,
@@ -131,7 +143,7 @@ async def create(
         storage_location=payload.storage_location,
         notes=payload.notes,
         received_at=datetime.now(timezone.utc),
-        received_by=payload.received_by or str(created_by),
+        received_by=received_by_name,
         created_by=created_by,
     )
     db.add(gr)
@@ -215,7 +227,7 @@ async def action(
             raise ValueError(f"Cannot acknowledge GR in status '{gr.status}'")
         await _complete_tasks(db, gr.id)
         gr.acknowledged_at = now
-        gr.acknowledged_by = req.acknowledged_by or str(actor_id)
+        gr.acknowledged_by = req.acknowledged_by or await _actor_name(db, actor_id)
         # Best-effort: acknowledging must not fail because the file server is
         # down — fall back to inline DB storage for the PDF.
         try:
@@ -230,7 +242,7 @@ async def action(
             # instead of creating a requester-role broadcast task.
             gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
             gr.collected_at = now
-            gr.collected_by = req.acknowledged_by or str(actor_id)
+            gr.collected_by = req.acknowledged_by or await _actor_name(db, actor_id)
             await _update_po_received_qty(db, gr)
         elif gr.gr_type == "physical":
             gr.status = "collection_pending"
@@ -246,7 +258,7 @@ async def action(
         await _complete_tasks(db, gr.id)
         gr.status = "collected"
         gr.collected_at = now
-        gr.collected_by = req.collected_by or str(actor_id)
+        gr.collected_by = req.collected_by or await _actor_name(db, actor_id)
         gr.collection_notes = req.collection_notes
         await _update_po_received_qty(db, gr)
 
@@ -261,13 +273,24 @@ async def action(
         await _complete_tasks(db, gr.id)
         if gr.status == "pending_ack":
             gr.acknowledged_at = now
-            gr.acknowledged_by = req.collected_by or str(actor_id)
+            gr.acknowledged_by = req.collected_by or await _actor_name(db, actor_id)
         gr.status = "confirmed"
         gr.collected_at = now
-        gr.collected_by = req.collected_by or str(actor_id)
+        gr.collected_by = req.collected_by or await _actor_name(db, actor_id)
         gr.collection_notes = req.collection_notes
         # Update PO line received_qty and PO status
         await _update_po_received_qty(db, gr)
+        # Best-effort: confirming must not fail because the file server is down —
+        # fall back to inline DB storage for the PDF. Service GRs collapse
+        # acknowledge + confirm into this one step and would otherwise never get
+        # a PDF; physical GRs already have one from acknowledge, and
+        # _attach_gr_pdf replaces it so this ends with exactly one, now carrying
+        # Collected By (must run after gr.collected_by is assigned above).
+        try:
+            await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GR %s confirm: PDF upload failed (%s); storing inline", gr.number, exc)
+            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
 
     elif act == "reject":
         if gr.status != "collection_pending" or gr.gr_type != "service":
@@ -381,7 +404,7 @@ async def _auto_complete_requester_steps(
     gr.acknowledged_at = now
     gr.acknowledged_by = "auto (no PR requester)"
     gr.collected_at = now
-    gr.collected_by = str(actor_id)
+    gr.collected_by = await _actor_name(db, actor_id)
     gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
 
     cfg = await _get_config(db)
@@ -606,15 +629,42 @@ async def _attach_gr_pdf(
     token: str | None = None,
     cfg: CompanyConfig | None = None,
 ) -> None:
-    """Generate a confirmed-GR PDF and store it via file server (PRD §3.4)."""
+    """Generate a GR PDF and store it via file server (PRD §3.4).
+
+    Idempotent: replaces any existing ``<number>.pdf`` attachment (row + backing
+    file) first. This is called from both the acknowledge branch and the confirm
+    branch of ``action()`` — a physical GR walks acknowledge → confirm and must
+    end up with exactly one PDF (the confirm-time one, which additionally has
+    Collected By filled in), not two.
+    """
     import asyncio
+    sig = await gr_signatories(db, gr)
     loop = asyncio.get_running_loop()
     pdf_bytes = await loop.run_in_executor(
         None, generate_gr_pdf, gr, company_name,
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
+        sig["created_by_name"], sig["received_by"], sig["acknowledged_by"],
+        sig["collected_by"],
     )
     filename = f"{gr.number}.pdf"
+
+    # Replace any prior auto-PDF of the same name (row + backing file) so
+    # repeated calls (acknowledge, then confirm) end with exactly one attachment.
+    existing = (await db.execute(
+        select(GrAttachment).where(
+            GrAttachment.gr_id == gr.id,
+            GrAttachment.filename == filename,
+        )
+    )).scalars().all()
+    if existing:
+        from app.services.attachment_helper import delete_from_file_server
+        for att in existing:
+            if att.storage_key and token:
+                await delete_from_file_server(att.storage_key, token)
+            await db.delete(att)
+        await db.flush()
+
     if token:
         from app.services.attachment_helper import upload_to_file_server
         storage_key = await upload_to_file_server(

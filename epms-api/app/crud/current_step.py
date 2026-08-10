@@ -11,6 +11,7 @@ from app.models.user import User
 # English labels matching the default workflow node labels.
 ROLE_LABELS: dict[str, str] = {
     "supervisor": "Supervisor",
+    "ap_clerk": "AP Clerk",
     "dept_manager": "Dept Manager",
     "director": "Director",
     "procurement_manager": "Procurement Manager",
@@ -34,7 +35,7 @@ ROLE_ORDER: dict[str, int] = {
 }
 
 
-def _label(role: str) -> str:
+def role_label(role: str) -> str:
     return ROLE_LABELS.get(role) or role.replace("_", " ").title()
 
 
@@ -78,7 +79,7 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> N
             continue
         it.current_step = {
             "role": t.assigned_role,
-            "label": _label(t.assigned_role),
+            "label": role_label(t.assigned_role),
             "approver_name": name_by_user.get(t.assigned_user_id) if t.assigned_user_id else None,
             "since": t.created_at,
         }

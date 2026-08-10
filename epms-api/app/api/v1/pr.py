@@ -160,11 +160,17 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
             if existing:
                 return
 
+            from app.crud.signatories import approval_signatories
+            requester_name, approvals = await approval_signatories(
+                fresh_db, "pr", pr_id, pr_row.created_by
+            )
+
             loop = asyncio.get_event_loop()
             pdf_bytes = await loop.run_in_executor(
                 None, generate_pr_pdf, pr_row, company_name,
                 cfg.pdf_templates if cfg else None,
                 cfg.logo_data_url if cfg else None,
+                requester_name, approvals,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{pr_number}.pdf", "application/pdf", "pr", pr_id, token,

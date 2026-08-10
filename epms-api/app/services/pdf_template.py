@@ -6,11 +6,12 @@ from typing import Any
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import HRFlowable, Image, Paragraph, Spacer
+from reportlab.platypus import HRFlowable, Image, Paragraph, Spacer, Table, TableStyle
 
 _GRAY = colors.HexColor("#737373")
 _PRIMARY = colors.HexColor("#0A7C7C")
 _DARK = colors.HexColor("#1A1A1A")
+_LIGHT = colors.HexColor("#F5F5F5")
 
 
 def _s(name: str, **kw) -> ParagraphStyle:
@@ -77,6 +78,42 @@ def terms_element(text: str) -> list:
         Paragraph("Terms & Conditions", sec_style),
         Paragraph(text.strip(), body_style),
     ]
+
+
+def approvals_element(approvals: list[dict] | None, W: float) -> list:
+    """Approval-history table shared by the PR and PA PDFs.
+
+    `approvals` comes from app/crud/signatories.approval_signatories(); each entry
+    is {"role", "name", "at"}. Returns [] when there is nothing to show so the
+    section disappears entirely rather than printing an empty header.
+    """
+    if not approvals:
+        return []
+    sec_style = _s("appr_sec", fontSize=10, textColor=_PRIMARY,
+                   fontName="Helvetica-Bold", spaceAfter=4)
+    th_style = _s("appr_th", fontSize=8, textColor=colors.white, fontName="Helvetica-Bold")
+    td_style = _s("appr_td", fontSize=8, textColor=_DARK, fontName="Helvetica")
+
+    rows = [[Paragraph(h, th_style) for h in ("Step", "Approved By", "Date")]]
+    for entry in approvals:
+        at = entry.get("at")
+        rows.append([
+            Paragraph(entry.get("role") or "—", td_style),
+            Paragraph(entry.get("name") or "—", td_style),
+            Paragraph(at.strftime("%Y-%m-%d") if at else "—", td_style),
+        ])
+
+    tbl = Table(rows, colWidths=[W * 0.30, W * 0.45, W * 0.25], repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ("BACKGROUND",     (0, 0), (-1, 0), _PRIMARY),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, _LIGHT]),
+        ("TOPPADDING",     (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",  (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",    (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING",   (0, 0), (-1, -1), 4),
+        ("VALIGN",         (0, 0), (-1, -1), "TOP"),
+    ]))
+    return [Spacer(1, 5 * mm), Paragraph("Approvals", sec_style), tbl]
 
 
 def get_tmpl(cfg_pdf_templates: dict | None, doc_type: str) -> dict:
