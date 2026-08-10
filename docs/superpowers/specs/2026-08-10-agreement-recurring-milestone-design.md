@@ -10,7 +10,7 @@
 
 Phase 1A 只落了 `house_account`。`agreement_type` 的另外两个取值（`recurring` / `milestone`）目前是纯标签——能选、能筛，但没有任何行为。这是原设计"第二期 / 第三期"的分期结果，不是遗漏（模型注释 `only house_account is wired in 1A`）。
 
-本期把第二期（recurring）整体做完，第三期（milestone）只做录入。同时补两个 Create 页的缺口：预算科目选择器、协议附件。
+本期把第二期（recurring）整体做完；第三期（milestone）走简化路线——阶段清单录入 + 人工把发票 Match 到阶段，不排日历、不做验收闸门。同时补两个 Create 页的缺口：预算科目选择器、协议附件。
 
 **用户拍板记录**
 
@@ -23,6 +23,7 @@ Phase 1A 只落了 `house_account`。`agreement_type` 的另外两个取值（`r
 | 5 | Recurring 履约确认 | **做**（原设计补偿控制第 5 条） |
 | 6 | 附件是否必填 | **可选**，任何状态都不强制 |
 | 7 | Quarterly 起始月 | **显式字段**，不从 `valid_from` 推导 |
+| 8 | Milestone 简化 | 阶段时间是**纯文本**（"合同签署后 1 周内"），不存实际日期；付款时人工把发票 Match 到具体阶段 |
 
 ---
 
@@ -30,7 +31,7 @@ Phase 1A 只落了 `house_account`。`agreement_type` 的另外两个取值（`r
 
 ### 1.1 新表 `agreement_payment_schedule`
 
-按原设计 §5.3 的通用结构建，**milestone 专用列一并建出**（本期只写 `milestone_name` / `amount_pct` / `expected_amount` / `expected_date` / `trigger_condition`，验收列留空）。
+按原设计 §5.3 的通用结构建，**milestone 专用列一并建出**。本期 milestone 只写 `milestone_name` / `sequence` / `expected_timing` / `expected_amount` / `amount_pct`；`trigger_condition` 与验收两列建了但不写、不在 UI 出现（第三期用）。
 
 | 列 | 类型 | 说明 |
 |---|---|---|
@@ -39,7 +40,8 @@ Phase 1A 只落了 `house_account`。`agreement_type` 的另外两个取值（`r
 | `schedule_type` | String(20) | `period` \| `milestone` |
 | `sequence` | Integer | 期次/阶段序号，从 1 起 |
 | `expected_amount` | Numeric(15,2) nullable | 选填（决策 3） |
-| `expected_date` | Date nullable | period=到票日；milestone=预计达成日 |
+| `expected_date` | Date nullable | **period 专用**（到票日）。milestone 永远为 NULL，见 `expected_timing` |
+| `expected_timing` | String(255) nullable | **milestone 专用**。纯文本时间描述，如 "Within 1 week after contract signing"。阶段的时间点普遍是相对合同事件的（签署后、到货后、验收后），落成日历日期既填不准也没人维护 |
 | `status` | String(20) | `pending` \| `received` \| `overdue` \| `waived` |
 | `invoice_id` | UUID nullable | 认领到的发票 |
 | `period_label` | String(20) nullable | 见 §4.2 |
@@ -47,7 +49,7 @@ Phase 1A 只落了 `house_account`。`agreement_type` 的另外两个取值（`r
 | `overdue_after_days` | Integer nullable | 同上 |
 | `milestone_name` | String(255) nullable | |
 | `amount_pct` | Numeric(5,2) nullable | 占合同总额百分比 |
-| `trigger_condition` | Text nullable | |
+| `trigger_condition` | Text nullable | **本期不在 UI 上出现**。这是第三期的**验收判定条件**（"设备验收合格"），与 `expected_timing` 的"什么时候"是两回事，不要合并成一个字段 |
 | `accepted_by` | UUID nullable FK → `users` | 见下方说明 |
 | `accepted_at` | timestamptz nullable | |
 
@@ -154,6 +156,8 @@ quarterly / yearly 的**首期判定**：期起始月在年历上构成无限序
 
 ### 4.3 发票认领
 
+本节只适用 `recurring`。`milestone` 的匹配是人工选阶段，见 §5.2；`house_account` 走 Phase 1A 的 slip 对账路径，不变。
+
 发票匹配到 `recurring` 协议时：
 
 1. 候选 = 该协议 `schedule_type='period'` 且 `status ∈ (pending, overdue)` 的行
@@ -181,7 +185,7 @@ recurring 免 GR，**履约确认是它唯一的代偿**。不做的话，网络
 
 挂在 epms-api 已有的每日后台循环上（`app/tasks/daily_followup.py` 的同一模式，lifespan 启动）：
 
-- **状态扫描**（无条件跑）：`status='pending'` 且 `expected_date + overdue_after_days < today` 的行置 `overdue`
+- **状态扫描**（无条件跑）：`schedule_type='period'` 且 `status='pending'` 且 `expected_date + overdue_after_days < today` 的行置 `overdue`。milestone 行没有 `expected_date`，天然不在扫描范围内——但**查询条件要显式带上 `schedule_type='period'`**，别指望 `expected_date IS NULL` 顺带把它们滤掉
 - **通知**：向协议 `owner_id` 发缺票提醒，受新开关 `notification_settings.agreement_overdue_enabled` 控制，**默认 `true`**
 
 > 默认值是刻意的。`daily_followup_enabled` 默认 OFF 导致上线后没人知道要去 admin 打开、提醒一直没发（见 `project_uniops_daily_followup_toggle`）。缺票告警是本期功能自带的核心价值，默认关等于白做。开关的作用是"吵了可以关掉"，不是"要用得先找到它"。
@@ -190,15 +194,38 @@ recurring 免 GR，**履约确认是它唯一的代偿**。不做的话，网络
 
 ## 5. Milestone 本期边界
 
-**做**：阶段清单录入（Create/Edit 页可增删行）、详情页展示进度。字段 = `milestone_name` / `sequence` / `expected_amount` 或 `amount_pct` / `expected_date` / `trigger_condition`。
+Milestone 走**简化路线**（决策 8）：不排日历、不自动认领、不做验收闸门，但阶段行**参与匹配**——付款时人工把发票挂到具体阶段。
 
-阶段行**随协议一同保存**（draft 阶段就落库），不像 period 行那样等审批通过才生成——阶段清单本身就是要送审的内容之一。
+### 5.1 录入
 
-`amount_pct` 与 `expected_amount` 二选一录入、另一个推算，**推算基数是 `not_to_exceed`**（协议上唯一的总额字段）。未填 `not_to_exceed` 时 `amount_pct` 不可用，只能录绝对金额——这条要在 UI 上直接体现（NTE 为空时百分比输入框禁用并给出原因），不要让用户填完才报错。
+阶段清单在 Create / Edit 页可增删行，**随协议一同保存**（draft 阶段就落库）——阶段清单本身就是要送审的内容之一，不像 period 行那样等审批通过才生成。
 
-**不做**（留到第三期，原设计已定）：阶段验收确认（`accepted_by` 写入）、E8"未验收不许认领"拦截、与现有 PA `prepayment` / `settlement` 机制的映射核对。
+| 字段 | 说明 |
+|---|---|
+| `milestone_name` | 阶段名，必填 |
+| `sequence` | 顺序 |
+| `expected_timing` | **纯文本**时间描述，如 "Within 1 week after contract signing" |
+| `expected_amount` / `amount_pct` | 二选一录入，另一个推算 |
 
-**因此**：`milestone` 协议的发票走与 `house_account` 相同的通用路径——挂到协议、不挂排期行、不写 `schedule_id`。阶段行本期纯粹是**计划的记录与展示**，不参与任何匹配或闸门判定。这一点必须在 UI 上说清楚（阶段区块加一句说明），否则用户会以为建了阶段就有阶段控制。
+**不存 `expected_date`**。阶段的时间点普遍是相对合同事件的（签署后、到货后、验收合格后），强行落成日历日期只会得到一个填的时候就不准、之后也没人维护的数字。文本反而是诚实的表达。
+
+代价必须认下来：没有日期就**没有逾期概念**，milestone 阶段不参与 §4.5 的逾期扫描，系统不会提醒"这个阶段拖了三个月还没开票"。这是简化换来的，不是遗漏。
+
+`amount_pct` 与 `expected_amount` 二选一、另一个推算，**推算基数是 `not_to_exceed`**（协议上唯一的总额字段）。未填 `not_to_exceed` 时 `amount_pct` 不可用——UI 上直接禁用百分比输入并给出原因，不要让用户填完才报错。
+
+### 5.2 匹配
+
+发票匹配到 `milestone` 协议时：**人工从该协议的阶段列表里选一个**，写 `invoice.schedule_id`，该行置 `received`。
+
+- **没有自动认领**。没有日期、金额也未必准，自动猜只会猜错
+- **不做金额校验**。选中阶段后并排显示"预期 vs 发票金额"供人眼判断，差多少都不拦——协议本身的 NTE 预警（只警不拦）已经覆盖了超支这条线
+- **一个阶段只能被认领一次**。已 `received` 的阶段不再出现在候选列表里；确需重挂先解除原发票的关联
+
+### 5.3 本期明确不做
+
+阶段验收确认（`accepted_by` / `accepted_at` 写入）、E8"未验收不许认领"拦截、与现有 PA `prepayment` / `settlement` 机制的映射核对——全部留到第三期，原设计已定。
+
+**所以 milestone 发票没有履约确认闸门**：选中阶段即可建 PA，不像 recurring 那样要先确认。这是 milestone 与 recurring 在本期唯一的控制强度差异，`POST /pa` 的校验分支要按 `agreement_type` 区分，不能一刀切。
 
 ---
 
@@ -240,7 +267,7 @@ recurring 免 GR，**履约确认是它唯一的代偿**。不做的话，网络
 
 **逾期扫描**：边界日（正好等于 `expected_date + overdue_after_days` 当天不算逾期）、开关 OFF 时不发通知但**状态照样扫**。
 
-**Milestone 录入**：`amount_pct` ↔ `expected_amount` 互算正确；`not_to_exceed` 为空时 `amount_pct` 不可用；阶段行在 draft 状态即落库；milestone 协议的发票**不**写 `schedule_id`。
+**Milestone**：`amount_pct` ↔ `expected_amount` 互算正确；`not_to_exceed` 为空时 `amount_pct` 不可用；阶段行在 draft 状态即落库；人工选阶段后写 `schedule_id` 且行置 `received`；**已 `received` 的阶段不再出现在候选列表**；milestone 发票建 PA **不需要**履约确认（与 recurring 相反，这一对分支要各有一例）；逾期扫描**不碰** milestone 行。
 
 **回归基线**（动手前自己量，别照抄）：epms-api 套件失败集合须与基线逐条相同；`epms` 前端 `npx tsc -p tsconfig.app.json` 错误数须与基线一致。
 
@@ -250,7 +277,8 @@ recurring 免 GR，**履约确认是它唯一的代偿**。不做的话，网络
 
 - **每日循环是单实例假设**。epms-api 若扩到多副本，逾期扫描会重复跑。这是 `daily_followup` 既有的问题，本期沿用同一模式，不新增也不解决。
 - **FIFO 认领在发票乱序到达时会认错**（供应商补开上上个月的票）。兜底是人工在 `match_review` 指定期次。若实际运行中乱序频繁，再考虑从 OCR 抓账单周期。
-- **Milestone 半成品的表达风险**。阶段行建了但不参与控制，UI 说明不到位会让用户误以为有阶段闸门。
+- **Milestone 阶段没有逾期概念**。时间是纯文本（决策 8），因此系统不会提醒"这个阶段拖了三个月还没开票"。简化换来的代价，若将来发现阶段拖期是真问题，再考虑加一个可选的"最迟日期"字段——但不要回头把 `expected_timing` 改成日期，那个字段的价值恰恰在于它能表达相对时间。
+- **Milestone 匹配全靠人工**。选错阶段没有任何校验会挡住（不比对金额、不看顺序）。可接受的前提是阶段数量少（通常 3-5 个）且金额并排显示；阶段多起来后误选风险会上升。
 - **`accepted_by` 双语义**。复用两列服务 period 履约确认与 milestone 阶段验收，读代码必须先看 `schedule_type`。已在模型与 schema 注释中写明，但仍是认知负担。
 - **分支距离**。本期建立在 `feature/purchase-agreement`（25 提交）之上，而 `origin/main` 已前进 167 提交。再叠一期功能会让最终 rebase 更难。节奏问题，非设计问题——若决定先落地 1A 再开新分支做本期，本设计不受影响。
 
