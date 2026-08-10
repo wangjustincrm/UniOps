@@ -221,3 +221,37 @@ async def test_gr_pdf_prints_creator_and_resolves_uuid_acknowledger(test_engine)
         # operations is rejoined before searching.
         collapsed = re.sub(rb"[^0-9a-fA-F-]", b"", text)
         assert str(acker.id).encode("ascii") not in collapsed
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    ["app.services.pdf_pr", "app.services.pdf_pa", "app.services.pdf_gr"],
+)
+def test_header_company_name_reserves_enough_vertical_space(module_name):
+    """The company name must not bleed out of its line box onto the subtitle.
+
+    ReportLab's ParagraphStyle.leading defaults to 12 whatever fontSize is set,
+    so the 18pt company name reserved a 12pt box while its glyphs needed
+    16.65pt and rendered on top of the subtitle beneath it. This reads whatever
+    size and leading the header actually uses and checks the invariant, so
+    restyling the header stays free as long as leading keeps up with fontSize.
+    """
+    import importlib
+    import re
+
+    from reportlab.pdfbase.pdfmetrics import getAscentDescent
+
+    mod = importlib.import_module(module_name)
+    source = open(mod.__file__, encoding="utf-8").read()
+    match = re.search(
+        r'co_style = _s\(\s*"co",\s*fontSize=(\d+),\s*leading=(\d+)', source
+    )
+    assert match, f"{module_name}: header co_style must set both fontSize and leading"
+
+    font_size, leading = int(match.group(1)), int(match.group(2))
+    ascent, descent = getAscentDescent("Helvetica-Bold", font_size)
+    needed = ascent - descent
+    assert leading >= needed, (
+        f"{module_name}: company name is {font_size}pt needing {needed:.2f}pt but "
+        f"leading is only {leading}pt — it will overlap the subtitle"
+    )

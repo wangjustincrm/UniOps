@@ -53,8 +53,10 @@ def generate_gr_pdf(
         bottomMargin=20 * mm,
     )
 
-    co_style = _s("co", fontSize=18, textColor=_DARK, fontName="Helvetica-Bold")
-    sub_style = _s("sub", fontSize=10, textColor=_GRAY, fontName="Helvetica")
+    # ReportLab's ParagraphStyle leading defaults to 12 regardless of fontSize, so an
+    # 18pt company name overflowed its line box by 9.6pt and sat on the subtitle.
+    co_style = _s("co", fontSize=15, leading=18, textColor=_DARK, fontName="Helvetica-Bold")
+    sub_style = _s("sub", fontSize=10, leading=13, textColor=_GRAY, fontName="Helvetica")
     num_style = _s("num", fontSize=14, textColor=_PRIMARY, fontName="Helvetica-Bold", alignment=2)
     tag_style = _s("tag", fontSize=8, textColor=_PRIMARY, fontName="Helvetica-Bold", alignment=2)
     lbl_style = _s("lbl", fontSize=8, textColor=_GRAY, fontName="Helvetica")
