@@ -57,9 +57,11 @@ async def _claim_preview(db: AsyncSession, claim) -> dict[str, int]:
 
 
 async def _claim_delete(db: AsyncSession, claim) -> dict[str, int]:
-    refs = await purge_shared_refs(db, claim.id)
-    await db.delete(claim)  # line_items / trip_items / attachments / expense_approval_events cascade via FK
-    return {"expense_claims": 1, **refs}
+    # Shared with the OA-facing DELETE /expenses/{id} (Travel Applications) so
+    # the two cannot drift on what a claim delete has to clean up.
+    from app.crud.expense import delete_claim
+
+    return await delete_claim(db, claim)
 
 
 # ── ExpenseInvoice ────────────────────────────────────────────────────────────

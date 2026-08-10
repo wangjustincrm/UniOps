@@ -1,4 +1,5 @@
 """Expense claim endpoints — EXP / MIL / TRV / CFM (OA module)."""
+import logging
 import uuid
 from typing import Annotated
 
@@ -11,15 +12,19 @@ from app.crud import expense as expense_crud
 from app.schemas.expense import (
     ExpenseActionRequest,
     ExpenseClaimCreate,
+    ExpenseClaimListItem,
     ExpenseClaimListResponse,
     ExpenseClaimResponse,
     ExpenseClaimUpdate,
     PaymentRecordRequest,
 )
 from app.services.approval_client import delegate_action
+from app.services.attachment_helper import delete_from_file_server
 from app.services import finance_client
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
+
+logger = logging.getLogger(__name__)
 
 # Roles that can trigger the pay action (kept for my_actions inbox logic).
 # Intentionally fixed — payment authority is a hardcoded financial-role set,
@@ -133,6 +138,30 @@ async def _can_act_on_claim(db, claim, user_id: uuid.UUID, role: str | None = No
     return False
 
 
+_DELETABLE_STATUSES = ("draft", "returned", "submitted", "in_review")
+
+
+def can_delete_claim(claim, user_id: uuid.UUID, role: str) -> bool:
+    """Whether `user_id` may hard-delete `claim`. Pure — no queries.
+
+    Deliberately does not check for a referencing TRV: that would be one query
+    per row on every list render, for a case the status rule already makes
+    unreachable. The DELETE endpoint runs that check.
+    """
+    if claim.claim_type != "TRA":
+        return False
+    if claim.status not in _DELETABLE_STATUSES:
+        return False
+    return role == "system_admin" or claim.employee_id == user_id
+
+
+def _list_item(claim, user_id: uuid.UUID, role: str) -> ExpenseClaimListItem:
+    """Serialize one list row, stamping the server-computed delete permission."""
+    item = ExpenseClaimListItem.model_validate(claim)
+    item.can_delete = can_delete_claim(claim, user_id, role)
+    return item
+
+
 @router.get("", response_model=ExpenseClaimListResponse)
 async def list_expenses(
     db: SessionDep,
@@ -173,7 +202,7 @@ async def list_expenses(
             page=page, page_size=page_size,
         )
         return ExpenseClaimListResponse(
-            items=[ExpenseClaimListItem.model_validate(c) for c in items],
+            items=[_list_item(c, user_id, role) for c in items],
             total=total,
         )
 
@@ -226,7 +255,7 @@ async def list_expenses(
     )).scalars().all())
 
     return ExpenseClaimListResponse(
-        items=[ExpenseClaimListItem.model_validate(c) for c in paged],
+        items=[_list_item(c, user_id, role) for c in paged],
         total=total,
     )
 
@@ -386,6 +415,7 @@ class ClaimPermissions(BaseModel):
     is_owner: bool
     can_approve: bool      # may approve / return / reject the current pending step
     can_pay: bool          # may record payment (status = approved)
+    can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
 
 
 @router.get("/{claim_id}/permissions", response_model=ClaimPermissions)
@@ -417,7 +447,12 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
             or "finance_manager" in codes
         )
 
-    return ClaimPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)
+    return ClaimPermissions(
+        is_owner=is_owner,
+        can_approve=can_approve,
+        can_pay=can_pay,
+        can_delete=can_delete_claim(claim, user_id, role),
+    )
 
 
 class ApprovalStepOut(BaseModel):
@@ -540,6 +575,75 @@ async def update_expense(
         raise HTTPException(status_code=409, detail=str(exc))
     await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
     return ExpenseClaimResponse.model_validate(claim)
+
+
+@router.delete("/{claim_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_travel_application(
+    claim_id: uuid.UUID,
+    db: SessionDep,
+    user: CurrentUserDep,
+    token: BearerTokenDep,
+):
+    """Hard-delete an unapproved Travel Application.
+
+    Restricted to TRA: EXP/MIL/TRV carry budget and payment consequences, so
+    this does not open hard delete for them. The record is gone for good —
+    approval history included — and the claim number is retired (numbering
+    takes max-suffix + 1 and never reuses a gap).
+    """
+    from sqlalchemy import func, select as sa_select
+    from app.models.expense import ExpenseClaim as EC
+
+    claim = await expense_crud.get_by_id(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+
+    user_id = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+
+    # Type and status are checked before ownership on purpose: the owner of an
+    # approved TRA should be told it is too late, not that they lack rights.
+    if claim.claim_type != "TRA":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only Travel Applications can be deleted, not {claim.claim_type}",
+        )
+    if claim.status not in _DELETABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete a Travel Application in status '{claim.status}'",
+        )
+    if not can_delete_claim(claim, user_id, role):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the applicant can delete this Travel Application",
+        )
+
+    # travel_application_id is ON DELETE SET NULL, so a referencing TRV would
+    # silently lose its authorization basis. Unreachable today (the TRV gate
+    # requires an APPROVED TRA, and approved is not deletable) — one query to
+    # keep it that way if the two rules ever drift.
+    referencing = (await db.execute(
+        sa_select(func.count()).select_from(EC)
+        .where(EC.travel_application_id == claim_id)
+    )).scalar_one()
+    if referencing:
+        raise HTTPException(
+            status_code=409,
+            detail="This Travel Application is referenced by a travel expense claim",
+        )
+
+    # Drop attachment blobs before the rows cascade away, otherwise file-api
+    # accumulates orphans. Best-effort: the claim going away matters more.
+    for att in claim.attachments:
+        if att.file_id:
+            try:
+                await delete_from_file_server(uuid.UUID(att.file_id), token)
+            except Exception:
+                logger.warning("file-api delete failed for %s; continuing", att.file_id)
+
+    await expense_crud.delete_claim(db, claim)
+    await db.commit()
 
 
 @router.post("/{claim_id}/action", response_model=ExpenseClaimResponse)
