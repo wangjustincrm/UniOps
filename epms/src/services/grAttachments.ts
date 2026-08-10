@@ -31,21 +31,20 @@ export const grAttachmentService = {
     return res.json()
   },
 
-  download: (grId: string, attId: string, filename: string) => {
-    fetch(`${base()}/gr/${grId}/attachments/${attId}/download`, {
+  download: async (grId: string, attId: string, filename: string): Promise<void> => {
+    const res = await fetch(`${base()}/gr/${grId}/attachments/${attId}/download`, {
       headers: token() ? { Authorization: `Bearer ${token()}` } : {},
-    }).then(async (res) => {
-      if (!res.ok) return
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
     })
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 
   delete: async (grId: string, attId: string): Promise<void> => {

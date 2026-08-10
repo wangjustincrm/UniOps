@@ -31,21 +31,20 @@ export const poAttachmentService = {
     return res.json()
   },
 
-  download: (poId: string, attId: string, filename: string) => {
-    fetch(`${base()}/po/${poId}/attachments/${attId}/download`, {
+  download: async (poId: string, attId: string, filename: string): Promise<void> => {
+    const res = await fetch(`${base()}/po/${poId}/attachments/${attId}/download`, {
       headers: token() ? { Authorization: `Bearer ${token()}` } : {},
-    }).then(async (res) => {
-      if (!res.ok) return
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
     })
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 
   delete: async (poId: string, attId: string): Promise<void> => {
