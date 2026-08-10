@@ -230,12 +230,15 @@ async def list_claims(
     claim_type: str | None = None,
     status: str | None = None,
     employee_id: uuid.UUID | None = None,
+    exclude_types: list[str] | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[ExpenseClaim], int]:
     q = select(ExpenseClaim).order_by(ExpenseClaim.created_at.desc())
     if claim_type:
         q = q.where(ExpenseClaim.claim_type == claim_type)
+    if exclude_types:
+        q = q.where(ExpenseClaim.claim_type.not_in(exclude_types))
     if status:
         q = q.where(ExpenseClaim.status == status)
     if employee_id:
