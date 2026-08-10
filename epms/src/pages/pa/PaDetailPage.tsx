@@ -96,9 +96,14 @@ function TimelineStep({
 
 type ApprovalAction = 'approve' | 'return' | 'reject'
 
-function ApprovalModal({ action, paNumber, onConfirm, onClose }: {
+// isPending: the modal stays mounted until the action resolves, so without it
+// the confirm button is live for the whole request. A second click re-posts the
+// same action — usually a 409 the user reads as a failure, but for 'approve' it
+// can silently consume the NEXT step's task when the same person approves two
+// consecutive steps. ProcessModal already gates on `busy` for the same reason.
+function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending }: {
   action: ApprovalAction; paNumber: string
-  onConfirm: (comment: string) => void; onClose: () => void
+  onConfirm: (comment: string) => void; onClose: () => void; isPending: boolean
 }) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
@@ -132,9 +137,9 @@ function ApprovalModal({ action, paNumber, onConfirm, onClose }: {
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
-            <button disabled={needsComment && !comment.trim()} onClick={() => onConfirm(comment)}
+            <button disabled={(needsComment && !comment.trim()) || isPending} onClick={() => onConfirm(comment)}
               className={cn('inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed', cfg.btn)}>
-              {cfg.icon}{cfg.label}
+              {cfg.icon}{isPending ? 'Working…' : cfg.label}
             </button>
           </div>
         </div>
@@ -767,6 +772,7 @@ export default function PaDetailPage() {
           paNumber={pa.pa_number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
           onClose={() => setPendingAction(null)}
+          isPending={paAction.isPending}
         />
       )}
       {processOpen && (

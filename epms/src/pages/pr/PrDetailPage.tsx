@@ -85,9 +85,15 @@ interface ApprovalModalProps {
   prNumber: string
   onConfirm: (comment: string) => void
   onClose: () => void
+  // The modal stays mounted until the action resolves, so without this the
+  // confirm button is live for the whole request. A second click re-posts the
+  // same action: usually a 409 the user reads as a failure, but for 'approve'
+  // it can silently consume the NEXT step's task when the same person approves
+  // two consecutive steps — two levels passed on one intended click.
+  isPending: boolean
 }
 
-function ApprovalModal({ action, prNumber, onConfirm, onClose }: ApprovalModalProps) {
+function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
@@ -161,7 +167,7 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose }: ApprovalModalPr
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
-              disabled={!canSubmit}
+              disabled={!canSubmit || isPending}
               onClick={() => onConfirm(comment)}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
@@ -169,7 +175,7 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose }: ApprovalModalPr
               )}
             >
               {config.icon}
-              {config.label}
+              {isPending ? 'Working…' : config.label}
             </button>
           </div>
         </div>
@@ -333,6 +339,7 @@ export default function PrDetailPage() {
                       prAction.mutate({ action: 'cancel' })
                     }
                   }}
+                  disabled={prAction.isPending}
                 >
                   Withdraw
                 </Button>
@@ -651,6 +658,7 @@ export default function PrDetailPage() {
           prNumber={pr.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
           onClose={() => setPendingAction(null)}
+          isPending={prAction.isPending}
         />
       )}
     </div>
