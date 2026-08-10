@@ -5,7 +5,9 @@ from datetime import datetime
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz_matrix import has_permission, user_role_codes
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.models.invoice_attachment import InvoiceAttachment
 from app.services.attachment_helper import (
@@ -31,9 +33,52 @@ class AttachmentMeta(BaseModel):
     download_url: str | None = None
 
 
-def _can_access_invoice_attachment(att: InvoiceAttachment, user_id: uuid.UUID, role: str) -> bool:
+async def _role_grants_read(
+    db: AsyncSession, user_id: uuid.UUID, role: str, invoice_source: str
+) -> bool:
+    """Whether the caller's ROLES (independent of who uploaded the file) may
+    read attachments of an invoice from `invoice_source`.
+
+    `invoice_attachments` is shared, and the two sources have genuinely
+    different access models — collapsing them onto "did you upload it" (the
+    original IDOR fix, b345e09) is what emptied the EPMS Invoice Detail
+    Attachments panel for everyone outside AP/finance: in production 7272 of
+    7275 rows are EPMS invoices, almost all uploaded by AP or the PMS import.
+
+      epms → a procurement document. Gated on the same Access Control key
+             EPMS's own invoice endpoints use, `view_invoice`. Per-document
+             scope stays with epms-api, which is the authority deciding
+             whether the caller can open the invoice at all; this service has
+             no equivalent of its access_scope and a second, drifting copy
+             would hide files from people who can see the invoice itself.
+      oa   → a personal reimbursement receipt. Stays owner-only, with payer
+             roles (AP/finance) able to review — that privacy model was the
+             point of the audit fix and is unchanged here.
+
+    Both branches now resolve the caller's FULL role set (primary ∪
+    user_roles). The old check compared the JWT's primary role against
+    _CAN_PAY, so an ap_clerk holding that as an ADDITIONAL role failed it —
+    the same class of bug as the dept_admin role-code drift.
+    """
     from app.api.v1.expenses import _CAN_PAY
-    return att.uploaded_by == user_id or role == "system_admin" or role in _CAN_PAY
+    if role == "system_admin":
+        return True
+    if invoice_source == "epms":
+        return await has_permission(db, user_id, role, "view_invoice")
+    return bool(await user_role_codes(db, user_id, role) & _CAN_PAY)
+
+
+async def _can_delete_invoice_attachment(
+    db: AsyncSession, att: InvoiceAttachment, user_id: uuid.UUID, role: str
+) -> bool:
+    """Deletion stays as tight as the audit fix left it — uploader or a payer
+    role. Being allowed to READ an invoice's file must not confer the right to
+    remove it, so this deliberately does NOT consult `view_invoice`.
+    """
+    from app.api.v1.expenses import _CAN_PAY
+    if role == "system_admin" or att.uploaded_by == user_id:
+        return True
+    return bool(await user_role_codes(db, user_id, role) & _CAN_PAY)
 
 
 def _meta(att: InvoiceAttachment, base_url: str = "") -> AttachmentMeta:
@@ -108,7 +153,10 @@ async def list_attachments(
     )
     uid = uuid.UUID(user["sub"])
     role = user.get("role", "")
-    return [_meta(a) for a in result.scalars() if _can_access_invoice_attachment(a, uid, role)]
+    # One matrix read for the whole page — the role verdict is the same for
+    # every row, only `uploaded_by` varies.
+    role_may_read = await _role_grants_read(db, uid, role, invoice_source)
+    return [_meta(a) for a in result.scalars() if role_may_read or a.uploaded_by == uid]
 
 
 @router.get("/{attachment_id}/file")
@@ -122,7 +170,9 @@ async def serve_attachment(
     att = await db.get(InvoiceAttachment, attachment_id)
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
-    if not _can_access_invoice_attachment(att, uuid.UUID(user["sub"]), user.get("role", "")):
+    uid = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+    if att.uploaded_by != uid and not await _role_grants_read(db, uid, role, att.invoice_source):
         raise HTTPException(status_code=403, detail="Not authorized to access this attachment")
     if not att.storage_key:
         raise HTTPException(status_code=410, detail="File not available (legacy record without storage key)")
@@ -139,7 +189,7 @@ async def delete_attachment(
     att = await db.get(InvoiceAttachment, attachment_id)
     if not att:
         raise HTTPException(status_code=404, detail="Attachment not found")
-    if not _can_access_invoice_attachment(att, uuid.UUID(user["sub"]), user.get("role", "")):
+    if not await _can_delete_invoice_attachment(db, att, uuid.UUID(user["sub"]), user.get("role", "")):
         raise HTTPException(status_code=403, detail="Not authorized to access this attachment")
     if att.storage_key:
         await delete_from_file_server(att.storage_key, token)
