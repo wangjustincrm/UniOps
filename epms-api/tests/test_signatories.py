@@ -76,6 +76,51 @@ async def test_approval_signatories_skips_auto_skipped_steps(test_engine):
 
 
 @pytest.mark.asyncio
+async def test_approval_signatories_excludes_pms_migration_stamp(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await _user(db, "Priya Requester")
+        admin = await _user(db, "System Administrator")
+        manager = await _user(db, "Marco Manager")
+        pr = await _pr(db, requester.id)
+        db.add_all([
+            _event(pr, 0, manager.id, "dept_manager"),
+            _event(pr, 1, admin.id, "finance_manager",
+                   comment="Auto-approved on behalf of Finance Manager — PMS migration "
+                            "(PMS status APPROVED)"),
+        ])
+        await db.commit()
+
+        _, approvals = await approval_signatories(db, "pr", pr.id, pr.created_by)
+
+        assert [a["name"] for a in approvals] == ["Marco Manager"]
+        assert [a["role"] for a in approvals] == ["Dept Manager"]
+
+
+@pytest.mark.asyncio
+async def test_approval_signatories_skips_prefixed_auto_skip_variants(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await _user(db, "Reggie Requester")
+        manager = await _user(db, "Mira Manager")
+        gm = await _user(db, "Greg General")
+        pr = await _pr(db, requester.id)
+        db.add_all([
+            _event(pr, 0, manager.id, "dept_manager"),
+            _event(pr, 1, requester.id, "director",
+                   comment="[reconstructed] Auto-skipped (director not in legacy system)"),
+            _event(pr, 2, requester.id, "gm_or_opm",
+                   comment="Re-synced (config change): Auto-skipped (department has no Director)"),
+            _event(pr, 3, gm.id, "gm_or_opm"),
+        ])
+        await db.commit()
+
+        _, approvals = await approval_signatories(db, "pr", pr.id, pr.created_by)
+
+        assert [a["name"] for a in approvals] == ["Mira Manager", "Greg General"]
+
+
+@pytest.mark.asyncio
 async def test_approval_signatories_keeps_auto_approved_dual_role(test_engine):
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:

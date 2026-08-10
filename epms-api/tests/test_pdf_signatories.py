@@ -212,4 +212,12 @@ async def test_gr_pdf_prints_creator_and_resolves_uuid_acknowledger(test_engine)
         assert b"Created By" in text
         assert b"Wally Warehouse" in text
         assert b"Adam Acknowledger" in text
-        assert str(acker.id).encode("ascii") not in text   # the raw UUID never prints
+        # A naive contiguous substring search here is a no-op guard: a 36-char
+        # UUID at 9pt Helvetica is ~163.6pt wide, wider than the GR Signatures
+        # value column (0.34 * W - 8 ~= 155.84pt), so reportlab wraps it and
+        # emits it as two separate text-showing operators. The raw bytes of the
+        # UUID are never contiguous in the decoded stream even when printed.
+        # Strip everything but hex digits/hyphens so a UUID split across draw
+        # operations is rejoined before searching.
+        collapsed = re.sub(rb"[^0-9a-fA-F-]", b"", text)
+        assert str(acker.id).encode("ascii") not in collapsed

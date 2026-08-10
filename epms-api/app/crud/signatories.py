@@ -15,13 +15,21 @@ from app.crud.current_step import role_label
 from app.models.approval import ApprovalEvent
 from app.models.user import User
 
-# approval-api records an "approve" event for steps nobody actually acted on
-# (the department has no Director, the configured Supervisor is inactive, ...).
-# Its actor is the submitter, not an approver, so listing it would print the
-# requester's own name in the Approvals table. The sibling marker
-# "Auto-approved (same approver holds both roles)" IS a real person and stays.
+# approval-api and the PMS migration both write action="approve" rows that no
+# human actually decided. Their actor is the submitter or the admin service
+# account, so listing them would credit the wrong person on the PDF.
+#   "Auto-skipped (...)"                          — the step was skipped outright.
+#     Also appears prefixed: "[reconstructed] ..." and "Re-synced (config change): ..."
+#   "Auto-approved on behalf of <role> — PMS migration (...)" — backfilled at import.
+# The sibling "Auto-approved (same approver holds both roles)" IS a real person
+# holding two posts and must stay.
 # Same discriminator the PR/PA detail timelines use client-side.
-_AUTO_SKIP_MARKER = "Auto-skipped"
+_MACHINE_APPROVAL_MARKERS = ("Auto-skipped", "Auto-approved on behalf of")
+
+
+def _is_machine_approval(comment: str | None) -> bool:
+    text = comment or ""
+    return any(marker in text for marker in _MACHINE_APPROVAL_MARKERS)
 
 
 async def resolve_user_names(
@@ -59,7 +67,7 @@ async def approval_signatories(
     approvals = [
         {"role": role_label(ev.actor_role), "name": name, "at": ev.created_at}
         for ev, name in rows
-        if _AUTO_SKIP_MARKER not in (ev.comment or "")
+        if not _is_machine_approval(ev.comment)
     ]
     return requester, approvals
 
