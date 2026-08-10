@@ -61,6 +61,22 @@ async def test_engine():
         await conn.execute(text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # Same story for the Access Control matrix (identity-owned, same
+        # physical DB in prod, read with raw SQL by app/core/authz_matrix.py).
+        # These must exist for EVERY test, not just the ones that seed them:
+        # invoice_attachments' authz reads them on every call, so without the
+        # shadow any unrelated attachment test blows up on UndefinedTable.
+        for ddl in (
+            "CREATE TABLE role_defs (code varchar(50) PRIMARY KEY,"
+            " is_active boolean NOT NULL DEFAULT true)",
+            "CREATE TABLE role_permissions (role_code varchar(50) NOT NULL,"
+            " permission_key varchar(100) NOT NULL, PRIMARY KEY (role_code, permission_key))",
+            "CREATE TABLE role_permission_locks (role_code varchar(50) NOT NULL,"
+            " permission_key varchar(100) NOT NULL, PRIMARY KEY (role_code, permission_key))",
+        ):
+            table = ddl.split()[2]
+            await conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+            await conn.execute(text(ddl))
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
