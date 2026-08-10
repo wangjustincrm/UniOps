@@ -498,6 +498,16 @@ async def _routing_department_id(
     """Department that drives dept-based approval routing (dept_manager /
     gm_or_opm / director). Prefer the department explicitly selected on the
     originating PR; fall back to the routing user's own department (legacy)."""
+    # 协议自带 department_id(建档时选定),没有 PR 可追溯 —— 直接用它。
+    # 必须与可见性口径一致:epms-api 的 PA 列表按 PurchaseAgreement.department_id
+    # 收窄(crud/pa.py)。若这里改用提交人部门,受限审批人会收到任务却在列表里
+    # 找不到单据;而且提交人无部门时(常见:采购/系统账号)整条链直接 409 卡死,
+    # 尽管协议自己的部门明明有在职经理。
+    if doc_type == "agr":
+        dept = getattr(doc, "department_id", None)
+        if dept:
+            return dept
+
     pr_id = None
     if doc_type == "pr":
         pr_id = doc.id

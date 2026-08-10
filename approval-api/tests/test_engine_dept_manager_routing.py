@@ -153,3 +153,85 @@ async def test_supervisor_resolution_unaffected_by_pr_department(engine_db_sessi
         db, requester.id, {str(dept_a): True, str(dept_b): True}
     )
     assert sup == supervisor.id
+
+
+# ── Agreement (agr) routing ───────────────────────────────────────────────────
+# A Purchase Agreement carries its own department_id (chosen at creation) and has
+# no PR to trace back through, so _routing_department_id must read it directly.
+#
+# Regression for the 409 hit on the first real submit in dev: the agreement's
+# department (Engineering) had an active Department Manager, but routing fell
+# through to the SUBMITTER's department — which was NULL for the procurement /
+# system account — and the submit died with "no active Department Manager is
+# configured for the requester's department". The document's own department was
+# ignored entirely.
+#
+# This also keeps routing and visibility on the same key: epms-api scopes the PA
+# list by PurchaseAgreement.department_id (crud/pa.py). If routing used the
+# submitter's department instead, a restricted approver could hold the task yet
+# never see the document in their list.
+
+async def _make_draft_agreement(db, creator: User, department_id):
+    from datetime import date
+
+    from app.models.agreement import PurchaseAgreement
+
+    agr = PurchaseAgreement(
+        number=f"AGR-TEST-{uuid.uuid4().hex[:4]}",
+        title="Engine agr routing test",
+        status="draft",
+        approval_step_idx=0,
+        vendor_name="Test Vendor",
+        valid_from=date(2026, 1, 1),
+        valid_to=date(2026, 12, 31),
+        department_id=department_id,
+        created_by=creator.id,
+    )
+    db.add(agr)
+    await db.flush()
+    return agr
+
+
+async def test_agr_routes_on_the_agreements_own_department(engine_db_session):
+    """The agreement's department drives routing even when the submitter has a
+    DIFFERENT department — the document's choice wins, not the submitter's."""
+    db = engine_db_session
+    agr_dept = uuid.uuid4()
+    submitter_dept = uuid.uuid4()
+    submitter = User(id=uuid.uuid4(), role="procurement_officer",
+                     department_id=submitter_dept, is_active=True)
+    db.add(submitter)
+    await db.flush()
+    agr = await _make_draft_agreement(db, submitter, agr_dept)
+
+    resolved = await _routing_department_id(db, "agr", agr, submitter.id)
+    assert resolved == agr_dept, "routing must use the agreement's department"
+    assert resolved != submitter_dept
+
+
+async def test_agr_routes_when_the_submitter_has_no_department(engine_db_session):
+    """The failing case from dev: submitter.department_id is NULL. Routing must
+    still resolve from the agreement rather than returning None (which surfaces
+    as a 409 'no active Department Manager for the requester's department')."""
+    db = engine_db_session
+    agr_dept = uuid.uuid4()
+    submitter = User(id=uuid.uuid4(), role="system_admin",
+                     department_id=None, is_active=True)
+    db.add(submitter)
+    await db.flush()
+    agr = await _make_draft_agreement(db, submitter, agr_dept)
+
+    assert await _routing_department_id(db, "agr", agr, submitter.id) == agr_dept
+
+
+async def test_agr_without_a_department_falls_back_to_the_submitter(engine_db_session):
+    """An agreement with no department of its own keeps the legacy fallback."""
+    db = engine_db_session
+    submitter_dept = uuid.uuid4()
+    submitter = User(id=uuid.uuid4(), role="procurement_officer",
+                     department_id=submitter_dept, is_active=True)
+    db.add(submitter)
+    await db.flush()
+    agr = await _make_draft_agreement(db, submitter, None)
+
+    assert await _routing_department_id(db, "agr", agr, submitter.id) == submitter_dept

@@ -18,6 +18,7 @@ from app.models.po import PurchaseOrder
 from app.models.posting import PostingEvent, PostingLine
 from app.models.pr import PurchaseRequest
 from app.models.routing import ApprovalBackup, DeptRouting
+from app.models.agreement import PurchaseAgreement
 from app.models.task import Task
 from app.models.user import User
 
@@ -70,6 +71,9 @@ _ENGINE_TABLES = [
     PaymentApplication.__table__,
     PurchaseOrder.__table__,
     PurchaseRequest.__table__,
+    # Agreements route through the same engine (agr action key); routing tests
+    # insert real rows, so the table must exist in the engine schema.
+    PurchaseAgreement.__table__,
     Task.__table__,
     ApprovalEvent.__table__,
     DeptRouting.__table__,
