@@ -156,7 +156,11 @@ quarterly / yearly 的**首期判定**：期起始月在年历上构成无限序
 
 ### 4.3 发票认领
 
-本节只适用 `recurring`。`milestone` 的匹配是人工选阶段，见 §5.2；`house_account` 走 Phase 1A 的 slip 对账路径，不变。
+本节只适用 `recurring`。`milestone` 的匹配是人工选阶段，见 §5.2；`house_account` 走 Phase 1A 的路径，不变。
+
+> **必须同时修掉的 1A 遗留**：`_match_to_agreement`（`epms-api/app/crud/invoice.py:371`）目前**对所有协议类型**强制要求 `legacy_settlement_reason` 并把发票标成 `legacy_settlement=True`。那是 1A 的"无凭证付款"通道——当时协议匹配确实没有任何凭证。现在 recurring 有排期行 + 履约确认、milestone 有阶段行，都是真凭证，不该再走这个口子。
+>
+> 改为**按 `agreement_type` 分支**：`house_account` 保持原样（仍需理由、仍标 legacy）；`recurring` / `milestone` 不要求理由、`legacy_settlement=False`。不改的话，本期做的所有凭证工作都会被这个统一标记抹平，协议详情页的"settled without receipt"计数会把每一张正常的周期账单都算进去，这个健康度指标就废了。
 
 发票匹配到 `recurring` 协议时：
 
@@ -220,6 +224,7 @@ Milestone 走**简化路线**（决策 8）：不排日历、不自动认领、�
 - **没有自动认领**。没有日期、金额也未必准，自动猜只会猜错
 - **不做金额校验**。选中阶段后并排显示"预期 vs 发票金额"供人眼判断，差多少都不拦——协议本身的 NTE 预警（只警不拦）已经覆盖了超支这条线
 - **一个阶段只能被认领一次**。已 `received` 的阶段不再出现在候选列表里；确需重挂先解除原发票的关联
+- **不标 `legacy_settlement`**。阶段行就是凭证，见 §4.3 的遗留说明
 
 ### 5.3 本期明确不做
 
