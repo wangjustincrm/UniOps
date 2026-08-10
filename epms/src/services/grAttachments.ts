@@ -16,6 +16,9 @@ export const grAttachmentService = {
   list: (grId: string) =>
     api.get<AttachmentMeta[]>(`/gr/${grId}/attachments`),
 
+  regeneratePdf: (grId: string) =>
+    api.post<AttachmentMeta>(`/gr/${grId}/attachments/regenerate-pdf`),
+
   upload: async (grId: string, file: File): Promise<AttachmentMeta> => {
     const form = new FormData()
     form.append('file', file)
