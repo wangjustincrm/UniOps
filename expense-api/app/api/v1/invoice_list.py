@@ -90,6 +90,30 @@ async def _user_role_codes(db: AsyncSession, user_id: uuid.UUID, base_role: str)
     return codes
 
 
+async def _caller_department_id(db: AsyncSession, user: dict) -> uuid.UUID | None:
+    """The caller's own department, resolved from `users.department_id`.
+
+    NOT from the JWT. `create_access_token` — epms-api's and identity-api's
+    alike — emits `{sub, role, type}` and nothing else, so the
+    `user["department_id"]` this used to read was always None and the
+    dept_manager/dept_admin branch below never appended a single PO subquery:
+    those roles silently fell through to own-uploads-only. Same failure as the
+    blank Employee column (see test_expense_employee_name.py) — reading off the
+    token what only the database has. epms-api resolves it from the column
+    (app/core/access_scope.py) and this mirrors it.
+
+    The token is still honoured if it ever starts carrying the claim, so adding
+    it later is a no-op here rather than a conflict.
+    """
+    raw = user.get("department_id")
+    if raw:
+        return uuid.UUID(str(raw))
+    row = (await db.execute(sa.text(
+        "SELECT department_id FROM users WHERE id = :u"),
+        {"u": str(user["sub"])})).scalar_one_or_none()
+    return row
+
+
 async def _gm_opm_dept_ids(db: AsyncSession, role: str) -> list[uuid.UUID]:
     """Department ids whose gm_or_opm routing resolves to `role` ('gm' | 'opm').
 
@@ -163,9 +187,9 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
         epms_own_uploads = True   # requester also sees their own unmatched uploads
 
     if codes & {"dept_manager", "dept_admin"}:
-        dept_id_raw = user.get("department_id")
-        if dept_id_raw:
-            po_selects.append(await _epms_po_subq_for_dept(db, uuid.UUID(dept_id_raw)))
+        dept_id = await _caller_department_id(db, user)
+        if dept_id:
+            po_selects.append(await _epms_po_subq_for_dept(db, dept_id))
 
     # Departments this user oversees, from gm/opm mapping AND (multi-department)
     # director assignment. Director spans multiple departments too, so like GM it
