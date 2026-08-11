@@ -1017,3 +1017,66 @@ async def test_rematch_from_recurring_to_po_releases_schedule_row(admin_client, 
     assert fresh_inv.po_id == uuid.UUID(po["id"])
     assert released_row.status == "pending"
     assert released_row.invoice_id is None
+
+
+# ── Fix round (Task 7 review, Important #3): review_match reject must also ──
+# release a claimed schedule row — the sibling case to the rematch-to-PO
+# release above. Before this fix, review_match()'s reject branch detached
+# agreement_id/agreement_number/match_route but never touched schedule_id,
+# so a delegate who genuinely claimed a real period (require_review is
+# delegate-driven, independent of whether claim_next_period succeeded) and
+# then got rejected would leave that period permanently "received" against
+# an invoice that no longer backs it — no later invoice could ever claim it.
+
+async def test_agreement_match_review_reject_releases_recurring_schedule_row(
+        admin_client, test_engine):
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.crud.invoice import review_match as crud_review_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        # require_review=True with an in-tolerance amount: the period IS
+        # claimed, but the match still lands in match_review (delegate-shaped
+        # call, mirroring test_agreement_match_by_delegate_requires_review).
+        matched = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                                   matched_by=user_id, require_review=True)
+        await db.commit()
+    assert matched.status == "match_review"
+    assert matched.schedule_id is not None
+    claimed_schedule_id = matched.schedule_id
+
+    async with factory() as db:
+        claimed_row_before = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == claimed_schedule_id))).scalar_one()
+    assert claimed_row_before.status == "received"
+    assert claimed_row_before.invoice_id == inv_id
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        rejected = await crud_review_match(db, db_inv, "reject", "wrong statement", user_id)
+        await db.commit()
+    assert rejected.schedule_id is None
+    assert rejected.status == "unmatched"
+
+    async with factory() as db:
+        released_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == claimed_schedule_id))).scalar_one()
+    assert released_row.status == "pending"
+    assert released_row.invoice_id is None

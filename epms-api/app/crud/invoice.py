@@ -485,6 +485,31 @@ async def _match_to_agreement(
     return invoice
 
 
+async def _release_schedule_row(db: AsyncSession, invoice: Invoice) -> None:
+    """Release a claimed AgreementPaymentSchedule row back to "pending" and
+    clear invoice.schedule_id, when the invoice that claimed it is being
+    detached from its agreement (route switch, or a match_review rejection).
+
+    Extracted (code review finding, Task 7 fix round) so the release logic
+    lives in exactly one place: originally only match()'s agreement→PO
+    cleanup called this, but review_match()'s reject path detaches the same
+    agreement link without ever touching schedule_id — leaving the period
+    permanently marked "received" against an invoice that no longer backs
+    it, so it can never be claimed by a later invoice and silently
+    under-reports what's still owed. Both call sites now share this.
+    """
+    if invoice.schedule_id is None:
+        return
+    claimed_row = (await db.execute(
+        select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == invoice.schedule_id)
+    )).scalar_one_or_none()
+    if claimed_row is not None:
+        claimed_row.status = "pending"
+        claimed_row.invoice_id = None
+    invoice.schedule_id = None
+
+
 async def match(
     db: AsyncSession,
     invoice: Invoice,
@@ -523,15 +548,7 @@ async def match(
         invoice.agreement_number = None
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
-        if invoice.schedule_id is not None:
-            claimed_row = (await db.execute(
-                select(AgreementPaymentSchedule).where(
-                    AgreementPaymentSchedule.id == invoice.schedule_id)
-            )).scalar_one_or_none()
-            if claimed_row is not None:
-                claimed_row.status = "pending"
-                claimed_row.invoice_id = None
-            invoice.schedule_id = None
+        await _release_schedule_row(db, invoice)
     invoice.match_route = "po"
     invoice.match_route_auto = False
 
@@ -816,6 +833,14 @@ async def review_match(
             invoice.match_route = None
             invoice.legacy_settlement = False
             invoice.legacy_settlement_reason = None
+            # Code review finding (Task 7 fix round): a delegate can claim a
+            # REAL period (schedule_id set, row status="received") and still
+            # land in match_review (require_review is delegate-driven, not
+            # only "no claimable row") — rejecting that match must release
+            # the row the same way match()'s agreement→PO switch already
+            # does, or the period stays permanently "received" against an
+            # invoice that no longer backs it and can never be claimed again.
+            await _release_schedule_row(db, invoice)
     await db.flush()
     await db.refresh(invoice)
     if released_agreement_id is not None:

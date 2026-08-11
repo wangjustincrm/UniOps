@@ -137,7 +137,8 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # Every listed invoice must actually be matched to THIS agreement —
         # otherwise a PA could pay an unrelated invoice off an approved ceiling.
         rows = (await db.execute(
-            select(Invoice.id, Invoice.internal_ref, Invoice.agreement_id, Invoice.status)
+            select(Invoice.id, Invoice.internal_ref, Invoice.agreement_id, Invoice.status,
+                   Invoice.schedule_id)
             .where(Invoice.id.in_(body.invoice_ids))
         )).all()
         if len(rows) != len(set(body.invoice_ids)):
@@ -167,10 +168,32 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # milestone 本期没有验收闸门(设计 §5.3),house_account 走 slip 路径,
         # 所以这里按 agreement_type 分支,不能一刀切。
         if agr.agreement_type == "recurring":
+            # Code review finding (Task 7 fix round): an INNER JOIN on
+            # Invoice.schedule_id == AgreementPaymentSchedule.id silently
+            # drops any invoice with schedule_id IS NULL from the result set
+            # instead of flagging it — and that state is reachable, not
+            # theoretical: claim_next_period returns None when nothing is
+            # claimable (out of tolerance, or the schedule is exhausted),
+            # routing the invoice to match_review with schedule_id left NULL;
+            # an AP reviewer's plain approve() there sets status="matched"
+            # unconditionally without ever touching schedule_id. That invoice
+            # would then sail through every check above (payable status,
+            # "matched to this agreement") with the confirmation control
+            # never having applied to it at all. So the unlinked case must be
+            # rejected on its own, checked directly against `rows` rather
+            # than through a join that can only see invoices already linked.
+            unlinked = [r.internal_ref for r in rows if r.schedule_id is None]
+            if unlinked:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(f"Invoice(s) not linked to a billing period: {', '.join(unlinked)}. "
+                            "They were never claimed against a scheduled period (out of "
+                            "tolerance or no candidate row when matched) — this needs to be "
+                            "resolved before a payment can be raised against them."))
+            schedule_ids = [r.schedule_id for r in rows]
             unconfirmed = (await db.execute(
                 select(AgreementPaymentSchedule.period_label)
-                .join(Invoice, Invoice.schedule_id == AgreementPaymentSchedule.id)
-                .where(Invoice.id.in_(body.invoice_ids),
+                .where(AgreementPaymentSchedule.id.in_(schedule_ids),
                        AgreementPaymentSchedule.accepted_at.is_(None))
             )).scalars().all()
             if unconfirmed:

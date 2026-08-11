@@ -467,3 +467,122 @@ async def test_agreement_pa_refused_for_invoice_still_in_match_review(admin_clie
                         "unit_price": "1000.00", "line_total": "1000.00"}],
     })
     assert r3.status_code == 201, r3.text
+
+
+# ── Fix round 3 (Task 7 review, Critical): the confirmation gate's INNER JOIN ──
+# let an unlinked recurring invoice straight through. The join
+# (Invoice.schedule_id == AgreementPaymentSchedule.id) produces zero rows —
+# and therefore no complaint — for any invoice whose schedule_id is NULL.
+# That state is reachable via the routine out-of-tolerance path: claim_next_
+# period returns None, the invoice lands in match_review with schedule_id
+# left NULL, and an AP reviewer's plain approve() there sets status="matched"
+# unconditionally, never touching schedule_id. The gate must reject that
+# invoice directly (checked against the already-fetched `rows`, not a join
+# that can only see invoices already linked to a row).
+
+async def test_recurring_pa_refused_when_invoice_never_claimed_a_period(admin_client, test_engine):
+    from decimal import Decimal
+
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.models.invoice import Invoice
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _vn, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Gate Bypass Vendor")
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    # Wildly outside [950, 1050] — no period row is ever claimable.
+    inv = await _upload_invoice(admin_client, vendor_id, amount="9999.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        matched = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                                   matched_by=user_id)
+        await db.commit()
+    assert matched.status == "match_review"
+    assert matched.schedule_id is None
+
+    # AP reviewer approves — status flips to "matched" but schedule_id stays
+    # NULL forever: review_match()'s approve branch never touches it.
+    r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match-review", json={
+        "action": "approve", "note": "checked against the vendor portal"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"
+
+    pa = await admin_client.post(PA_URL, json={
+        "title": "Should be refused", "agreement_id": str(agr.id), "invoice_ids": [inv["id"]],
+        "subtotal": "9999.00", "tax_amount": "0.00", "payment_amount": "9999.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "9999.00", "line_total": "9999.00"}],
+    })
+    assert pa.status_code == 422, pa.text
+    assert "not linked to a billing period" in pa.text
+
+
+async def test_house_account_pa_not_gated_by_schedule_id(admin_client, agreement_matched_invoice):
+    """house_account invoices never get a schedule_id — ensure_period_rows only
+    ever runs for agreement_type='recurring'. The new recurring-only gate must
+    not reach for schedule_id on this route at all, or every house_account PA
+    (the entire pre-existing suite above) would start failing."""
+    inv, agr = agreement_matched_invoice
+    assert agr.agreement_type == "house_account"
+    r = await admin_client.post(PA_URL, json={
+        "title": "House account statement", "agreement_id": str(agr.id),
+        "invoice_ids": [inv["id"]],
+        "subtotal": "1000.00", "tax_amount": "0.00", "payment_amount": "1000.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "1000.00", "line_total": "1000.00"}],
+    })
+    assert r.status_code == 201, r.text
+
+
+async def test_milestone_pa_not_gated_by_confirmation(admin_client, test_engine):
+    """milestone has no acceptance step in this phase (design §5.3) — a
+    milestone-matched invoice (schedule_id IS set, to the milestone row, with
+    accepted_at always NULL in 1B) must still be payable; the recurring-only
+    gate must not reach it."""
+    from app.crud.invoice import match as crud_match
+    from app.models.agreement_schedule import AgreementPaymentSchedule
+    from app.models.invoice import Invoice
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _vn, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Milestone Gate Vendor")
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                       agreement_type="milestone")
+    inv = await _upload_invoice(admin_client, vendor_id, amount="500.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = AgreementPaymentSchedule(
+            agreement_id=agr.id, schedule_type="milestone", sequence=1,
+            milestone_name="Deposit", status="pending")
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, schedule_id=row.id), matched_by=user_id)
+        await db.commit()
+
+    pa = await admin_client.post(PA_URL, json={
+        "title": "Milestone payment", "agreement_id": str(agr.id), "invoice_ids": [inv["id"]],
+        "subtotal": "500.00", "tax_amount": "0.00", "payment_amount": "500.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "500.00", "line_total": "500.00"}],
+    })
+    assert pa.status_code == 201, pa.text

@@ -1,9 +1,10 @@
 """排期行的落库与查询。周期日期算法在 app/services/agreement_schedule.py。"""
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
@@ -12,6 +13,8 @@ from app.models.task import Task
 from app.models.user import User
 from app.schemas.agreement import MilestoneRowIn
 from app.services.agreement_schedule import build_period_rows
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_milestone_amounts(
@@ -153,17 +156,42 @@ async def claim_milestone(
     return row
 
 
-async def _confirm_assignee(db: AsyncSession, agr: PurchaseAgreement) -> uuid.UUID | None:
-    """协议责任人优先;没设 owner 就落到该部门的在职经理。"""
+async def _confirm_assignee(
+    db: AsyncSession, agr: PurchaseAgreement
+) -> tuple[uuid.UUID | None, str | None]:
+    """协议责任人优先;没设 owner 就落到该部门的在职经理。
+
+    经理身份看 EFFECTIVE role —— base role(users.role)或者 user_roles 里的
+    附加角色授权,两者都算,不能只查 users.role。access_scope._effective_role_codes
+    / role_holder_ids 就是按这个口径判定"谁持有某个角色"的;只查 users.role 会漏掉
+    只靠 grant 拿到 dept_manager 的人(code review finding,Task 7 修复轮)。
+
+    Returns (assignee user id or None, the role that assignment came through —
+    None if nothing resolved at all). The caller uses the second element as
+    Task.assigned_role instead of hardcoding one: when owner_id resolves, the
+    task is assigned to a SPECIFIC person and assigned_role should describe
+    who they actually are, not always claim "dept_manager" (code review
+    finding — harmless for visibility since assigned_user_id is set, but
+    wrong stored data).
+    """
     if agr.owner_id:
-        return agr.owner_id
+        role = (await db.execute(
+            select(User.role).where(User.id == agr.owner_id)
+        )).scalar_one_or_none()
+        return agr.owner_id, (role or "dept_manager")
     if not agr.department_id:
-        return None
-    return (await db.execute(
-        select(User.id).where(User.department_id == agr.department_id,
-                              User.role == "dept_manager",
-                              User.is_active.is_(True)).limit(1)
-    )).scalar_one_or_none()
+        return None, None
+    mgr_id = (await db.execute(text(
+        "SELECT id::text FROM users "
+        " WHERE department_id = :dept AND role = 'dept_manager' AND is_active "
+        "UNION "
+        "SELECT u.id::text FROM users u JOIN user_roles ur ON ur.user_id = u.id "
+        " WHERE ur.role_code = 'dept_manager' AND u.department_id = :dept AND u.is_active "
+        "LIMIT 1"
+    ), {"dept": str(agr.department_id)})).scalar_one_or_none()
+    if mgr_id:
+        return uuid.UUID(mgr_id), "dept_manager"
+    return None, None
 
 
 async def create_confirm_task(
@@ -174,14 +202,52 @@ async def create_confirm_task(
     这是普通任务,不是审批流 —— 不进 workflow_defs,不需要新的 action key。
     期次塞在 document_number 里而不是给 tasks 加列:tasks 被三个服务镜像。
     """
+    assignee_id, assigned_role = await _confirm_assignee(db, agr)
+    if assignee_id is None:
+        # 没有 owner、也没有(哪怕算上附加角色)在职部门经理可指派。这里不能像
+        # 别处一样退回"assigned_role='dept_manager' + assigned_user_id=None"的
+        # 角色广播 —— task.py::get_for_role 里 dept_manager 不在
+        # _PERSONAL_APPROVAL_ROLES 排除名单里,一条 NULL-assignee 的 dept_manager
+        # 任务会广播进**全公司**每个 dept_manager 的收件箱,这既不精确又会把无关
+        # 部门的经理拖进来(该文件另一处 _PERSONAL_APPROVAL_ROLES 的注释描述的正
+        # 是这同一类"跨部门任务泄漏")。所以宁可不广播:改存一个没人会在
+        # broadcast_roles 里撞上的 role("system_admin"——system_admin 调
+        # get_for_role 本来就不做角色过滤,总能看到全部任务),同时把这个"没人
+        # 能确认"的状态大声报出来——不能悄悄吞掉,否则这一期就会卡在"未确认"
+        # 永远付不出去,而没人知道是为什么。
+        logger.error(
+            "confirm_period task for agreement %s (id=%s) period %s has no "
+            "resolvable assignee (%s) — created unassigned; visible only to "
+            "system_admin until manually reassigned",
+            agr.number, agr.id, row.period_label,
+            "no owner_id and no department_id" if not agr.department_id
+            else "no owner_id and no active dept_manager (base role or grant) "
+                 "in its department",
+        )
+        from app.services import notification as notification_service
+        notification_service.fire_and_forget_admin_alert(
+            f"[EPMS] Confirm-service task for {agr.number} has no assignee",
+            (
+                f"Agreement <b>{agr.number}</b> just claimed an invoice against "
+                f"period <b>{row.period_label}</b>, but no one could be assigned to "
+                f"confirm the service was delivered — it has no owner, and its "
+                f"department has no active department manager (by base role or "
+                f"granted role). Payment cannot be raised for this period until "
+                f"someone confirms it, and right now nobody has been asked to. "
+                f"Please set an owner on the agreement (or an active department "
+                f"manager for its department), then confirm the period manually."
+            ),
+        )
+        assigned_role = "system_admin"
+
     db.add(Task(
         type="confirm_period",
         priority="normal",
         document_type="agr",
         document_id=agr.id,
         document_number=f"{agr.number} · {row.period_label}",
-        assigned_role="dept_manager",
-        assigned_user_id=await _confirm_assignee(db, agr),
+        assigned_role=assigned_role,
+        assigned_user_id=assignee_id,
         title=f"Confirm service for {row.period_label}: {agr.title}",
         description=(
             f"An invoice has been matched to {agr.number} for {row.period_label}. "

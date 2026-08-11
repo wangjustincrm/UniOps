@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import agreement_schedule as sched_crud
@@ -177,3 +177,96 @@ async def test_milestone_rows_cannot_be_confirmed_in_this_phase(test_engine):
         with pytest.raises(ValueError, match="later phase"):
             await sched_crud.confirm_period(db, agr, row.id, user.id)
         await db.commit()
+
+
+# ── Fix round (Task 7 review, Important #2 + Minor #4) ──────────────────────
+# _confirm_assignee originally only queried users.role == 'dept_manager' —
+# missing managers who hold the role as a GRANT (identity's user_roles,
+# same physical DB), the same effective-role union access_scope /
+# role_holder_ids already use everywhere else. And it always hardcoded
+# assigned_role="dept_manager" even when owner_id resolved the assignee
+# directly, who may hold a completely different role.
+
+async def test_department_manager_held_only_as_a_granted_role_is_found(test_engine):
+    """A user whose BASE role is something else entirely (e.g. requester) but
+    who holds dept_manager as an ADDITIONAL role via user_roles must still be
+    picked up — mirrors access_scope._effective_role_codes / role_holder_ids,
+    which treat base role and grants as equally valid."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        mgr = await user_crud.create(db, RegisterRequest(
+            email=f"grantmgr-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+            full_name="Grant Manager", role="requester"))
+        dept = Department(code=f"D-{uuid.uuid4().hex[:6]}", name=f"Ops-{uuid.uuid4().hex[:6]}",
+                          is_active=True)
+        db.add(dept)
+        await db.flush()
+        mgr.department_id = dept.id
+        await db.execute(text(
+            "INSERT INTO user_roles(user_id, role_code) VALUES (:u, 'dept_manager')"),
+            {"u": str(mgr.id)})
+        agr.owner_id = None
+        agr.department_id = dept.id
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        await sched_crud.create_confirm_task(db, agr, row)
+        await db.commit()
+        task = (await db.execute(select(Task).where(
+            Task.document_id == agr.id, Task.type == "confirm_period"))).scalar_one()
+        assert task.assigned_role == "dept_manager"
+        assert task.assigned_user_id == mgr.id
+
+
+async def test_owner_assignee_stores_their_actual_role_not_a_hardcoded_one(test_engine):
+    """When owner_id resolves the assignee, assigned_role must describe who
+    they actually are (e.g. 'procurement_officer'), not always claim
+    'dept_manager' — harmless for visibility since assigned_user_id is set
+    directly, but wrong stored data (code review finding)."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)   # _seed's user is procurement_officer
+        agr.owner_id = user.id
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        await sched_crud.create_confirm_task(db, agr, row)
+        await db.commit()
+        task = (await db.execute(select(Task).where(
+            Task.document_id == agr.id, Task.type == "confirm_period"))).scalar_one()
+        assert task.assigned_user_id == user.id
+        assert task.assigned_role == "procurement_officer"
+
+
+async def test_unresolvable_assignee_is_not_a_silent_broadcast(test_engine, monkeypatch):
+    """No owner, and its department has no active dept_manager (by base role
+    OR grant) at all — the task must NOT fall back to
+    assigned_role='dept_manager' + assigned_user_id=None: that combination is
+    a COMPANY-WIDE broadcast to every dept_manager in the system
+    (task.py::get_for_role's role-broadcast branch; dept_manager is not in
+    _PERSONAL_APPROVAL_ROLES). It must instead be recorded loudly: an admin
+    alert fires, and the task is stored in a way that does not leak into an
+    unrelated department's manager's inbox."""
+    alerts: list[tuple] = []
+    monkeypatch.setattr(
+        "app.services.notification.fire_and_forget_admin_alert",
+        lambda subject, body: alerts.append((subject, body)),
+    )
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        dept = Department(code=f"D-{uuid.uuid4().hex[:6]}", name=f"Empty-{uuid.uuid4().hex[:6]}",
+                          is_active=True)
+        db.add(dept)
+        await db.flush()
+        agr.owner_id = None
+        agr.department_id = dept.id   # a real department, but nobody manages it
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        await sched_crud.create_confirm_task(db, agr, row)
+        await db.commit()
+        task = (await db.execute(select(Task).where(
+            Task.document_id == agr.id, Task.type == "confirm_period"))).scalar_one()
+        assert task.assigned_user_id is None
+        assert task.assigned_role != "dept_manager"
+        assert len(alerts) == 1
+        assert agr.number in alerts[0][1]
