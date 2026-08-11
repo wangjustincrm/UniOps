@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.agreement_attachments import router as agreement_attachments_router
 from app.api.v1.agreements import router as agreements_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.config import router as config_router
@@ -48,6 +49,7 @@ api_router.include_router(invoice_tax_router)
 api_router.include_router(pa_router)
 api_router.include_router(pa_attachments_router)
 api_router.include_router(agreements_router)
+api_router.include_router(agreement_attachments_router)
 api_router.include_router(tasks_router)
 api_router.include_router(config_router)
 api_router.include_router(pms_import_router)
