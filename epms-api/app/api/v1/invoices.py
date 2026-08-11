@@ -77,25 +77,50 @@ async def _has_open_match_task(db, user_id: uuid.UUID, invoice_id: uuid.UUID) ->
 
 
 async def _on_invoice_matched(db, invoice) -> None:
-    """发票 match 后按是否达成 3-way 分流:
-    - 已挂 GR(gr_id 非空) → create_pa 任务(Requester)
-    - 未挂 GR → confirm_receipt 催收货(物理→warehouse_staff 池 / 服务→Requester)
-    """
-    from app.schemas.gr import is_physical
-    if not invoice.po_id:
-        return
-    po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == invoice.po_id))).scalar_one_or_none()
-    if po is None:
-        return
-    pr = None
-    if po.pr_id:
-        pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == po.pr_id))).scalar_one_or_none()
+    """发票 match 后,对**每一个**被这张发票买单的 PO 按是否达成 3-way 分流:
+    - 已收货 → create_pa 任务(Requester)
+    - 未收货 → confirm_receipt 催收货(物理→warehouse_staff 池 / 服务→Requester)
 
-    three_way = invoice.status == "matched" and invoice.gr_id is not None
-    if three_way:
-        await _create_or_renotify_create_pa(db, po, pr, invoice)   # = 原 create_pa 逻辑抽出
-    else:
-        await _create_or_renotify_confirm_receipt(db, po, pr, invoice, is_physical(po.type))
+    一票多 PO 时表头 Invoice.po_id 只是其中一个;其余 PO 靠
+    invoice_po_allocations 挂上来,同样要拿到任务,否则它们的货款没人提付款
+    申请(生产 PO-400-2607-12)。3-way 判定统一走
+    crud.po.po_has_three_way_matched_invoice —— 对表头 PO 等价于原来的
+    `invoice.gr_id is not None`,对分摊 PO 则要求该 PO 自己有 GR。
+    """
+    from app.crud.po import po_has_three_way_matched_invoice
+    from app.models.invoice_allocation import InvoicePoAllocation
+    from app.schemas.gr import is_physical
+
+    po_ids: list[uuid.UUID] = []
+    if invoice.po_id:
+        po_ids.append(invoice.po_id)
+    for pid in (await db.execute(
+        select(InvoicePoAllocation.po_id)
+        .where(InvoicePoAllocation.invoice_id == invoice.id).distinct()
+    )).scalars().all():
+        if pid not in po_ids:
+            po_ids.append(pid)
+    if not po_ids:
+        return
+
+    for po_id in po_ids:
+        po = (await db.execute(
+            select(PurchaseOrder).where(PurchaseOrder.id == po_id)
+        )).scalar_one_or_none()
+        if po is None:
+            continue
+        pr = None
+        if po.pr_id:
+            pr = (await db.execute(
+                select(PurchaseRequest).where(PurchaseRequest.id == po.pr_id)
+            )).scalar_one_or_none()
+
+        three_way = (invoice.status == "matched"
+                     and await po_has_three_way_matched_invoice(db, po.id))
+        if three_way:
+            await _create_or_renotify_create_pa(db, po, pr, invoice)   # = 原 create_pa 逻辑抽出
+        else:
+            await _create_or_renotify_confirm_receipt(db, po, pr, invoice, is_physical(po.type))
 
 
 async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
