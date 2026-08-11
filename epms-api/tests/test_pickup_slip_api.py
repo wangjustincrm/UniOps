@@ -326,8 +326,17 @@ async def test_patch_reason_on_pending_ap_review_slip_stays_pending_and_does_not
 # terms. Every test above runs as admin_client (system_admin), which
 # uniops_authz short-circuits past ANY permission check (see
 # packages/authz/uniops_authz/core.py's `if role == "system_admin"`) — none
-# of them can tell a correct key from a wrong (or missing) one. This test
-# is the one that can. ───────────────────────────────────────────────────
+# of them can tell a correct key from a wrong (or missing) one. These two
+# tests are the ones that can.
+#
+# Both grant rows are cleaned up in a `finally` block: role_defs/
+# permission_defs/role_permissions are SESSION-level tables (created once,
+# not per-test) and conftest.py's _restore_default_matrix only ever
+# INSERT ... ON CONFLICT DO NOTHING — it never deletes a row that isn't in
+# the default matrix. Without the cleanup, a grant made here would silently
+# outlive this test and leak into every later test in the same pytest
+# session, e.g. quietly making a future "ap_clerk/dept_admin can't do X"
+# test pass for the wrong reason if that file happens to run afterward. ───
 
 async def test_non_admin_without_slip_write_grant_is_403_then_201_once_granted(
     admin_client, test_engine,
@@ -352,24 +361,83 @@ async def test_non_admin_without_slip_write_grant_is_403_then_201_once_granted(
             "VALUES ('ap_clerk','epms.agreement.read') ON CONFLICT DO NOTHING"))
         await db.commit()
 
-    from tests.conftest import _authenticated_client
-    async with await _authenticated_client(test_engine, "ap_clerk") as c:
-        r = await c.post(_slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="PRE-GRANT"))
-        assert r.status_code == 403, r.text
+    try:
+        from tests.conftest import _authenticated_client
+        async with await _authenticated_client(test_engine, "ap_clerk") as c:
+            r = await c.post(_slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="PRE-GRANT"))
+            assert r.status_code == 403, r.text
 
-        # Grant the NEW key mid-test (mirrors what identity 0007_slip_write_perm
-        # does in production for ap_clerk) — require_permission re-queries
-        # role_permissions on every request (packages/authz/uniops_authz/core.py),
-        # so no re-login / new token is needed for the grant to take effect.
+            # Grant the NEW key mid-test (mirrors what identity 0007_slip_write_perm
+            # does in production for ap_clerk) — require_permission re-queries
+            # role_permissions on every request (packages/authz/uniops_authz/core.py),
+            # so no re-login / new token is needed for the grant to take effect.
+            async with factory() as db:
+                await db.execute(text(
+                    "INSERT INTO permission_defs(key,module,label,sort) "
+                    "VALUES ('epms.agreement.slip.write','epms','Record Pickup Slips',106) "
+                    "ON CONFLICT (key) DO NOTHING"))
+                await db.execute(text(
+                    "INSERT INTO role_permissions(role_code,permission_key) "
+                    "VALUES ('ap_clerk','epms.agreement.slip.write') ON CONFLICT DO NOTHING"))
+                await db.commit()
+
+            r2 = await c.post(_slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="POST-GRANT"))
+            assert r2.status_code == 201, r2.text
+    finally:
         async with factory() as db:
             await db.execute(text(
-                "INSERT INTO permission_defs(key,module,label,sort) "
-                "VALUES ('epms.agreement.slip.write','epms','Record Pickup Slips',106) "
-                "ON CONFLICT (key) DO NOTHING"))
-            await db.execute(text(
-                "INSERT INTO role_permissions(role_code,permission_key) "
-                "VALUES ('ap_clerk','epms.agreement.slip.write') ON CONFLICT DO NOTHING"))
+                "DELETE FROM role_permissions WHERE role_code = 'ap_clerk' "
+                "AND permission_key IN ('epms.agreement.read', 'epms.agreement.slip.write')"))
             await db.commit()
 
-        r2 = await c.post(_slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="POST-GRANT"))
-        assert r2.status_code == 201, r2.text
+
+async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, test_engine):
+    """Fix-round 1 (Critical): the first cut of identity 0007_slip_write_perm
+    granted dept_admin ONLY epms.agreement.slip.write. dept_admin was never in
+    0006's epms.agreement.read grant set, so that alone left dept_admin unable
+    to reach the page at all — no Agreements nav entry (Sidebar.tsx gates it
+    on epms.agreement.read), GET /agreements/{id} 403s (AgrReadDep), GET
+    .../slips 403s too. The fix adds an epms.agreement.read grant for
+    dept_admin alongside the slip-write one. This test pins BOTH halves —
+    read reachability AND the actual record action — so a future edit that
+    drops either one fails loudly instead of shipping a permission that
+    looks granted in the matrix but does nothing.
+    """
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await db.execute(text(
+            "INSERT INTO permission_defs(key,module,label,sort) "
+            "VALUES ('epms.agreement.read','epms','View Agreements',104) "
+            "ON CONFLICT (key) DO NOTHING"))
+        await db.execute(text(
+            "INSERT INTO permission_defs(key,module,label,sort) "
+            "VALUES ('epms.agreement.slip.write','epms','Record Pickup Slips',106) "
+            "ON CONFLICT (key) DO NOTHING"))
+        await db.execute(text(
+            "INSERT INTO role_permissions(role_code,permission_key) "
+            "VALUES ('dept_admin','epms.agreement.read') ON CONFLICT DO NOTHING"))
+        await db.execute(text(
+            "INSERT INTO role_permissions(role_code,permission_key) "
+            "VALUES ('dept_admin','epms.agreement.slip.write') ON CONFLICT DO NOTHING"))
+        await db.commit()
+
+    try:
+        from tests.conftest import _authenticated_client
+        async with await _authenticated_client(test_engine, "dept_admin") as c:
+            r_get = await c.get(f"{AGR_URL}/{agr['id']}")
+            assert r_get.status_code == 200, r_get.text
+
+            r_list = await c.get(_slips_url(agr["id"]))
+            assert r_list.status_code == 200, r_list.text
+
+            r_post = await c.post(
+                _slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="DEPT-ADMIN-1"))
+            assert r_post.status_code == 201, r_post.text
+    finally:
+        async with factory() as db:
+            await db.execute(text(
+                "DELETE FROM role_permissions WHERE role_code = 'dept_admin' "
+                "AND permission_key IN ('epms.agreement.read', 'epms.agreement.slip.write')"))
+            await db.commit()

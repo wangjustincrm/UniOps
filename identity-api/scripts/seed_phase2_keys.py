@@ -50,14 +50,20 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "mdm.finance.write":    ("system_admin", "finance_manager", "ap_clerk"),
     "mdm.vendor.write":     ("system_admin", "vendor_manager", "finance_manager"),
     # Byte-for-byte the same role set as identity 0006_agreement_perms._GRANTS
-    # (the two halves of one registration). Includes every role that can sit in
-    # the `agr` approval chain — without a read grant the step-0 approver 403s
-    # on GET /agreements/{id} and no agreement can ever be activated. "gm_or_opm"
-    # is deliberately absent: it is a pseudo-role resolved into gm/opm and is not
-    # a role_defs code (role_permissions.role_code FKs to it).
+    # (the two halves of one registration), PLUS dept_admin (fix-round 1 on
+    # 0007_slip_write_perm — see that migration's docstring): dept_admin got
+    # epms.agreement.slip.write below without epms.agreement.read, a key that
+    # opens a door it can't reach (no read grant means no nav entry, no
+    # GET /agreements/{id}, no GET .../slips). Includes every role that can
+    # sit in the `agr` approval chain — without a read grant the step-0
+    # approver 403s on GET /agreements/{id} and no agreement can ever be
+    # activated. "gm_or_opm" is deliberately absent: it is a pseudo-role
+    # resolved into gm/opm and is not a role_defs code (role_permissions.
+    # role_code FKs to it).
     "epms.agreement.read":  ("system_admin", "procurement_officer", "procurement_manager",
                              "ap_clerk", "finance_bp", "finance_manager", "auditor",
-                             "dept_manager", "director", "gm", "opm", "requester"),
+                             "dept_manager", "director", "gm", "opm", "requester",
+                             "dept_admin"),
     "epms.agreement.write": ("system_admin", "procurement_officer", "procurement_manager"),
     # Byte-for-byte the same role set as identity 0007_slip_write_perm._GRANTS.
     # Deliberately narrower than epms.agreement.write's grant set — recording
