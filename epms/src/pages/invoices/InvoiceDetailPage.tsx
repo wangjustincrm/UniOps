@@ -253,10 +253,37 @@ export default function InvoiceDetailPage() {
   const varianceAbs = Math.abs(Number(inv.variance ?? 0))
   const variancePctAbs = Math.abs(Number(inv.variance_pct ?? 0))
   const hasException = inv.status === 'exception'
-  // Agreement route (Phase 1A): no PO/GR, so the PO-vs-GR-vs-Invoice 3-way
-  // table doesn't apply — there is nothing to reconcile against but the
-  // agreement itself.
+  // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
+  // apply — there is nothing to reconcile against but the agreement itself.
   const isAgreementRoute = inv.match_route === 'agreement'
+
+  // Whole-branch review (I1): every place that DESCRIBES an agreement-route
+  // match used to assert "settled without receipt evidence" from
+  // `isAgreementRoute` alone — the 3-Way Match banner, its body copy, and the
+  // permanent History entry — while the "Settled without receipt" badge two
+  // blocks below was already conditional on `legacy_settlement`. So a
+  // slip-backed match rendered a page that contradicted itself AND
+  // contradicted the agreement detail page's legacySettlementCount, which
+  // this whole feature exists to make honest again. Derive the wording once,
+  // from the same field the badge uses, so all three read from one source.
+  //
+  // Three shapes, mirroring the backend's review_match copy
+  // (epms-api/app/api/v1/invoices.py): legacy settlement (truly no evidence),
+  // house_account backed by claimed pickup slips, and everything else
+  // (recurring / milestone, which bill from a schedule row rather than from
+  // receipts). Deliberately no version numbers in user-facing copy.
+  const claimedSlipCount = inv.slip_ids?.length ?? 0
+  const slipNoun = claimedSlipCount === 1 ? 'pickup slip' : 'pickup slips'
+  const agreementEvidenceSummary = inv.legacy_settlement
+    ? 'settled without receipt evidence'
+    : claimedSlipCount > 0
+      ? `backed by ${claimedSlipCount} ${slipNoun}`
+      : 'settled against the agreement'
+  const agreementEvidenceDetail = inv.legacy_settlement
+    ? 'There is no PO or goods receipt on the agreement route, and no pickup slip was claimed for this invoice, so there is nothing to reconcile against. It was settled on the agreement alone, against the recorded reason below.'
+    : claimedSlipCount > 0
+      ? `There is no PO or goods receipt on the agreement route. Instead, ${claimedSlipCount} ${slipNoun} recorded against the agreement ${claimedSlipCount === 1 ? 'is' : 'are'} claimed as the receipt evidence for this invoice; the slip photos are attached to the agreement and carried through to the payment application.`
+      : 'There is no PO or goods receipt on the agreement route. This invoice is settled against the agreement itself — recurring and milestone agreements bill from their schedule rows, so there is no 3-way match here.'
 
   const tabs = [
     { key: 'details' as const, label: 'Invoice Details' },
@@ -473,8 +500,8 @@ export default function InvoiceDetailPage() {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Linked Documents</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(() => {
-                    // Agreement route (Phase 1A): the PO slot shows the agreement
-                    // instead — there is no PO on this route at all.
+                    // Agreement route: the PO slot shows the agreement instead —
+                    // there is no PO on this route at all.
                     if (inv.match_route === 'agreement' && inv.agreement_id) {
                       return (
                         <div className="col-span-2 rounded-lg border border-neutral-200 px-3 py-2.5 flex flex-col gap-1.5">
@@ -485,14 +512,33 @@ export default function InvoiceDetailPage() {
                           >
                             {inv.agreement_number ?? inv.agreement_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
                           </Link>
-                          {inv.legacy_settlement && (
+                          {inv.legacy_settlement ? (
                             <div className="flex flex-col gap-1 pt-1">
                               <Badge variant="warning" className="self-start">Settled without receipt</Badge>
                               {inv.legacy_settlement_reason && (
                                 <p className="text-xs text-neutral-500">{inv.legacy_settlement_reason}</p>
                               )}
                             </div>
-                          )}
+                          ) : claimedSlipCount > 0 ? (
+                            /* Whole-branch review (I2): slip_variance_reason was write-only
+                               end to end — MatchPanel collected it, the API returned it, and
+                               nothing ever rendered it. It is the mirror image of
+                               legacy_settlement_reason (why this invoice was settled with no
+                               evidence at all) and the two are mutually exclusive by
+                               construction: crud/invoice.py only records a variance reason on
+                               a slip-backed match, and only a legacy reason on a slip-less
+                               one. Render them in the same slot, on the same branch. */
+                            <div className="flex flex-col gap-1 pt-1">
+                              <Badge variant="success" className="self-start">
+                                {claimedSlipCount} {slipNoun} claimed
+                              </Badge>
+                              {inv.slip_variance_reason && (
+                                <p className="text-xs text-neutral-500">
+                                  Amount variance: {inv.slip_variance_reason}
+                                </p>
+                              )}
+                            </div>
+                          ) : null}
                         </div>
                       )
                     }
@@ -911,7 +957,7 @@ export default function InvoiceDetailPage() {
                     <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
                     <div>
                       <p className="text-sm font-semibold text-success-700">
-                        Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)} — settled without receipt evidence
+                        Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)} — {agreementEvidenceSummary}
                       </p>
                       {inv.matched_at && (
                         <p className="text-xs text-neutral-500 mt-0.5">
@@ -920,18 +966,30 @@ export default function InvoiceDetailPage() {
                       )}
                     </div>
                   </div>
-                  <p className="text-xs text-neutral-500">
-                    This is the agreement route (Phase 1A): no PO or goods receipt exists to reconcile against, so there
-                    is no 3-way match here. Amounts are paid in full from the agreement in lieu of a PO/GR check.
-                  </p>
-                  {inv.legacy_settlement && (
+                  <p className="text-xs text-neutral-500">{agreementEvidenceDetail}</p>
+                  {inv.legacy_settlement ? (
                     <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 flex flex-col gap-1">
                       <Badge variant="warning" className="self-start">Settled without receipt</Badge>
                       {inv.legacy_settlement_reason && (
                         <p className="text-xs text-warning-800">{inv.legacy_settlement_reason}</p>
                       )}
                     </div>
-                  )}
+                  ) : claimedSlipCount > 0 ? (
+                    /* I2, second of the two agreement blocks on this page — see the
+                       Linked Documents block above for why the variance reason and the
+                       legacy reason share one slot. Both blocks have to agree; a fix
+                       applied to only one of them recreates the split I1 came from. */
+                    <div className="rounded-lg border border-success-200 bg-white px-3 py-2.5 flex flex-col gap-1">
+                      <Badge variant="success" className="self-start">
+                        {claimedSlipCount} {slipNoun} claimed
+                      </Badge>
+                      {inv.slip_variance_reason && (
+                        <p className="text-xs text-neutral-600">
+                          Amount variance: {inv.slip_variance_reason}
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                   {inv.agreement_id && (
                     <Link to={`/agreements/${inv.agreement_id}`}>
                       <Button variant="secondary" size="sm" className="self-start gap-1.5">
@@ -1093,8 +1151,11 @@ export default function InvoiceDetailPage() {
                   inv.matched_at && {
                     date: inv.matched_at,
                     actor: inv.matched_by_name ?? 'System',
+                    // I1: this entry is the permanent audit trace — the one place a
+                    // false "settled without receipt evidence" outlives the page it was
+                    // rendered on. Same derived wording as the banner above.
                     action: isAgreementRoute
-                      ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — settled without receipt evidence`
+                      ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
                       : `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
                     color: hasException ? 'bg-danger-600' : 'bg-success-600',
                   },
