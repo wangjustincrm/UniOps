@@ -8,6 +8,7 @@ import {
   type PlaceOrderBody,
 } from '@/services/po'
 import { api } from '@/lib/api'
+import { poAttachmentService } from '@/services/poAttachments'
 
 export interface PoAttachmentMeta {
   id: string
@@ -100,6 +101,22 @@ export function usePoAttachments(poId: string) {
     queryFn: () => api.get<PoAttachmentMeta[]>(`/po/${poId}/attachments`),
     enabled: Boolean(poId),
     staleTime: 30_000,
+  })
+}
+
+export function useUploadPoAttachment(poId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => poAttachmentService.upload(poId, file),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pos', poId, 'attachments'] }),
+  })
+}
+
+export function useDeletePoAttachment(poId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (attId: string) => poAttachmentService.delete(poId, attId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pos', poId, 'attachments'] }),
   })
 }
 

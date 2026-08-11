@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { financeApi } from '@/lib/api'
 import {
   ArrowLeft, CheckCircle2, Clock, AlertTriangle, ChevronDown,
-  CreditCard, FileText, ExternalLink, Landmark, Paperclip, X,
+  CreditCard, FileText, ExternalLink, Landmark, X,
   RotateCcw, XCircle, Pencil, MessageSquare, SkipForward,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -16,8 +16,9 @@ import { usePo } from '@/hooks/usePos'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
-import { usePaAttachments, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
+import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { PA_TYPE_LABEL, type PaStatus } from '@/services/pa'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 
@@ -229,6 +230,7 @@ export default function PaDetailPage() {
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
   const { data: attachments = [] } = usePaAttachments(id ?? '')
+  const uploadAttachment = useUploadPaAttachment(id ?? '')
   const deleteAttachment = useDeletePaAttachment(id ?? '')
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const regeneratePdf = useRegeneratePaPdf(id ?? '')
@@ -647,41 +649,20 @@ export default function PaDetailPage() {
                   {downloadError}
                 </div>
               )}
-              {attachments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />
-                  <p className="text-sm text-neutral-400">No attachments uploaded</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {attachments.map((att) => (
-                    <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-                      <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-                      <span className="flex-1 truncate text-sm text-neutral-700">{att.filename}</span>
-                      <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDownloadError(null)
-                          paAttachmentService.download(id!, att.id, att.filename).catch(() => {
-                            setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
-                          })
-                        }}
-                        className="text-xs text-primary-600 hover:underline"
-                      >
-                        Download
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteAttachment.mutate(att.id)}
-                        className="text-neutral-300 hover:text-danger-500"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <AttachmentsEditor
+                inputId="pa-detail-file-upload"
+                attachments={attachments}
+                isUploading={uploadAttachment.isPending}
+                isDeleting={deleteAttachment.isPending}
+                onUpload={(file) => uploadAttachment.mutateAsync(file)}
+                onDelete={(attId) => deleteAttachment.mutate(attId)}
+                onDownload={(att) => {
+                  setDownloadError(null)
+                  paAttachmentService.download(id!, att.id, att.filename).catch(() => {
+                    setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
+                  })
+                }}
+              />
             </div>
           )}
 

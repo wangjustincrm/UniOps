@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Paperclip, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
@@ -13,8 +13,9 @@ import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/use
 import type { ApiEvent } from '@/services/pr'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
-import { usePrAttachments, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
+import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
 import { prAttachmentService } from '@/services/prAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { generatePrHtml } from '@/lib/pr-document'
 import { downloadPdf } from '@/lib/pdf-utils'
@@ -199,6 +200,7 @@ export default function PrDetailPage() {
   const { data: events } = usePrEvents(id ?? '')
   const prAction = usePrAction(id ?? '')
   const { data: attachments = [] } = usePrAttachments(id ?? '')
+  const uploadAttachment = useUploadAttachment(id ?? '')
   const deleteAttachment = useDeleteAttachment(id ?? '')
   const [downloadError, setDownloadError] = useState<string | null>(null)
   const regeneratePdf = useRegeneratePrPdf(id ?? '')
@@ -528,41 +530,20 @@ export default function PrDetailPage() {
                   {downloadError}
                 </div>
               )}
-              {attachments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />
-                  <p className="text-sm text-neutral-400">No attachments uploaded</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {attachments.map((att) => (
-                    <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-                      <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-                      <span className="flex-1 truncate text-sm text-neutral-700">{att.filename}</span>
-                      <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDownloadError(null)
-                          prAttachmentService.download(id!, att.id, att.filename).catch(() => {
-                            setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
-                          })
-                        }}
-                        className="text-xs text-primary-600 hover:underline"
-                      >
-                        Download
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteAttachment.mutate(att.id)}
-                        className="text-neutral-300 hover:text-danger-500"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <AttachmentsEditor
+                inputId="pr-detail-file-upload"
+                attachments={attachments}
+                isUploading={uploadAttachment.isPending}
+                isDeleting={deleteAttachment.isPending}
+                onUpload={(file) => uploadAttachment.mutateAsync(file)}
+                onDelete={(attId) => deleteAttachment.mutate(attId)}
+                onDownload={(att) => {
+                  setDownloadError(null)
+                  prAttachmentService.download(id!, att.id, att.filename).catch(() => {
+                    setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
+                  })
+                }}
+              />
             </div>
           )}
 

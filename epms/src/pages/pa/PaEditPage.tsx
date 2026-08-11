@@ -7,6 +7,9 @@ import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDo
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { usePa, useUpdatePa } from '@/hooks/usePas'
+import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment } from '@/hooks/usePaAttachments'
+import { paAttachmentService } from '@/services/paAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { paService } from '@/services/pa'
 import { usePo } from '@/hooks/usePos'
 import { useInvoices } from '@/hooks/useInvoices'
@@ -18,6 +21,11 @@ export default function PaEditPage() {
   const queryClient = useQueryClient()
   const { data: pa, isLoading } = usePa(id ?? '')
   const updatePa = useUpdatePa()
+  // Attachments hang off the saved PA, so upload/delete apply immediately
+  // rather than waiting for Save (same semantics as the Detail page).
+  const { data: attachments = [] } = usePaAttachments(id ?? '')
+  const uploadAttachment = useUploadPaAttachment(id ?? '')
+  const deleteAttachment = useDeletePaAttachment(id ?? '')
 
   // ── Step 1 — PO is fixed, just fetch it ───────────────────────────────────
   const { data: po } = usePo(pa?.po_id ?? '')
@@ -588,6 +596,23 @@ export default function PaEditPage() {
                 className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
               />
             </div>
+          </div>
+
+          {/* Attachments */}
+          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
+              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+            </div>
+            <AttachmentsEditor
+              inputId="pa-edit-file-upload"
+              attachments={attachments}
+              isUploading={uploadAttachment.isPending}
+              isDeleting={deleteAttachment.isPending}
+              onUpload={(file) => uploadAttachment.mutateAsync(file)}
+              onDelete={(attId) => deleteAttachment.mutate(attId)}
+              onDownload={(att) => { void paAttachmentService.download(id!, att.id, att.filename).catch(() => {}) }}
+            />
           </div>
 
           {/* Errors */}
