@@ -69,6 +69,13 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # 认领到的排期行(recurring 自动 FIFO / milestone 人工选)。
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # 本次对账覆盖的小票集合 —— 对应 gr_ids 的角色。**数组**:逐笔发票下长度为 1,
+    # 月结汇总单下长度为 N。用单值会把"一张发票只对一张小票"这个供应商的偶然
+    # 事实固化成模型(设计 §2.3)。
+    slip_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    # 小票合计与发票金额的差额说明。**与 legacy_settlement_reason 分开存**:
+    # "对上了但差几块"与"根本没有凭证"是两件事,混存会让 legacy 计数失去意义。
+    slip_variance_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     # "po" | "agreement" — which candidate pool this invoice was matched against.
     match_route: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # True only when the system resolved the route itself (1B). A human override
