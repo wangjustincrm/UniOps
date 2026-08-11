@@ -17,7 +17,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import agreement_slip as agreement_slip_crud
-from app.crud.invoice import AgreementMatchInvalid, match as crud_match
+from app.crud.invoice import (
+    AgreementMatchInvalid,
+    delete as crud_delete,
+    match as crud_match,
+)
 from app.models.agreement_slip import AgreementPickupSlip
 from app.models.invoice import Invoice
 from app.schemas.agreement_slip import SlipCreate
@@ -318,3 +322,66 @@ async def test_rematch_without_slips_releases_previously_claimed_slip(admin_clie
         )).scalar_one()
     assert released_slip.status == "open"
     assert released_slip.invoice_id is None
+
+
+async def test_deleting_an_invoice_releases_the_slips_it_claimed(admin_client, test_engine):
+    """Whole-branch review (I4): crud.invoice.delete() — the plain
+    DELETE /invoices/{id} path — must release claimed slips, exactly like the
+    Data Maintenance delete path (app/admin/registry.py::_invoice_delete)
+    already does. The release was only ever wired into DM, so the two delete
+    paths disagreed on the same shared helper.
+
+    The status guard on delete() ("unmatched or exception only") does NOT make
+    this unreachable: Data Maintenance declares invoice.status an editable
+    enum containing "unmatched" and applies it with a bare setattr and no
+    hooks — resetting a matched invoice back to unmatched to re-match it is
+    the documented move — which is what the setattr below reproduces.
+    Delete it in that state without releasing, and the slip is stranded
+    "reconciled" pointing at a row that no longer exists: update() and void()
+    both refuse a reconciled slip, and _release_agreement_evidence can only
+    reach it through invoice.slip_ids, which the delete just destroyed. That
+    slip can never be claimed by any invoice again.
+    """
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        slip = await _create_slip(db, agr, user_id, amount="100.00")
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        matched = await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, slip_ids=[slip.id]), matched_by=user_id)
+        assert matched.slip_ids == [str(slip.id)]
+        await db.commit()
+
+    async with factory() as db:
+        claimed = (await db.execute(
+            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+        )).scalar_one()
+        assert claimed.status == "reconciled"
+        assert claimed.invoice_id == inv_id
+
+    # Data Maintenance resetting the status back for a re-match: a bare
+    # setattr, no hooks — the same thing app/admin/service.py does.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        db_inv.status = "unmatched"
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_delete(db, db_inv)
+        await db.commit()
+
+    async with factory() as db:
+        assert (await db.execute(
+            select(Invoice).where(Invoice.id == inv_id))).scalar_one_or_none() is None
+        released = (await db.execute(
+            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+        )).scalar_one()
+    assert released.status == "open", "slip stranded as reconciled by a deleted invoice"
+    assert released.invoice_id is None

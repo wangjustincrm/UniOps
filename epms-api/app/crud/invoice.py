@@ -1135,6 +1135,25 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
         )
     po_id = invoice.po_id
     agreement_id = invoice.agreement_id
+    # Whole-branch review (I4): release the agreement-side evidence BEFORE the
+    # row goes away — same helper, same order as the Data Maintenance delete
+    # path (app/admin/registry.py::_invoice_delete). It was only ever wired up
+    # over there, so the two delete paths disagreed.
+    #
+    # Reachable despite the status guard above: neither
+    # agreement_payment_schedule.invoice_id nor agreement_pickup_slips
+    # .invoice_id has an FK back to invoices (shared table, three other
+    # services touch it), and Data Maintenance declares invoice.status an
+    # editable enum including "unmatched" (registry.py) applied by a bare
+    # setattr with no hooks (admin/service.py) — resetting a matched invoice
+    # to "unmatched" for a re-match is the documented way to do that, and it
+    # is exactly the path the comment in match() above already admits exists.
+    # Delete it in that state and the slips are stranded "reconciled" pointing
+    # at a row that no longer exists: update() and void() both refuse a
+    # reconciled slip, and _release_agreement_evidence can only ever discover
+    # them through invoice.slip_ids — which just got deleted. No invoice can
+    # ever claim those slips again.
+    await _release_agreement_evidence(db, invoice)
     await db.delete(invoice)
     await db.flush()
     # If this was the last invoice keeping a create_pa task alive for its PO,
