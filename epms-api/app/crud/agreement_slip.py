@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_slip import AgreementPickupSlip
-from app.schemas.agreement_slip import SlipCreate
+from app.schemas.agreement_slip import SlipCreate, SlipUpdate, validate_totals
 
 
 async def create(
@@ -36,7 +36,28 @@ async def list_for_agreement(
     return list(rows)
 
 
-VOIDABLE = ("open", "pending_ap_review")
+# 唯二可离开的活跃态 —— reconciled 已被发票认领(编辑/作废会让发票挂着一份
+# 跟匹配依据对不上的凭证)、rejected/voided 已经是终态。PATCH 复用同一个
+# 集合(review finding #1):既然 void 只放行这两个状态,编辑没道理更宽松。
+EDITABLE = ("open", "pending_ap_review")
+VOIDABLE = EDITABLE
+
+
+async def update(db: AsyncSession, slip: AgreementPickupSlip, body: SlipUpdate) -> AgreementPickupSlip:
+    if slip.status not in EDITABLE:
+        raise ValueError(
+            f"Slip is {slip.status}; only an open or pending-AP-review slip can be "
+            "edited. Editing a reconciled slip would desync it from the invoice "
+            "it was matched against without a trace; a rejected or voided slip is final.")
+    for field, value in body.model_dump(exclude_unset=True).items():
+        setattr(slip, field, value)
+    # 对合并后的行校验,不是对 patch body 本身 —— 一次只改 amount/tax_amount/
+    # total_amount 三者之一的 PATCH,必须按合并后的整行判断是否还自洽
+    # (review finding #1):校验 body 自身在这里永远通过,因为大多数 PATCH
+    # 天生只带一个金额字段。
+    validate_totals(amount=slip.amount, tax_amount=slip.tax_amount, total_amount=slip.total_amount)
+    await db.flush()
+    return slip
 
 
 async def void(db: AsyncSession, slip: AgreementPickupSlip) -> None:

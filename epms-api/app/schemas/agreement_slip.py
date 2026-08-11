@@ -6,6 +6,19 @@ from decimal import Decimal
 from pydantic import BaseModel, model_validator
 
 
+def validate_totals(*, amount: Decimal, tax_amount: Decimal, total_amount: Decimal) -> None:
+    """Shared by SlipCreate's schema validator and crud.agreement_slip.update()
+    (post-merge, on the MERGED row) — same drift-avoidance rationale as
+    agreement.py's validate_recurrence/validate_validity_window: two copies
+    of this check could silently diverge. Three amounts are OCR-prefilled
+    and all independently editable; a person changing one and forgetting
+    another is the normal case, not the exception, and later reconciliation
+    arithmetic reads total_amount, so an inconsistency here is not cosmetic.
+    """
+    if total_amount != amount + tax_amount:
+        raise ValueError("total_amount must equal amount + tax_amount")
+
+
 class SlipCreate(BaseModel):
     slip_date: date
     slip_ref: str | None = None
@@ -18,10 +31,8 @@ class SlipCreate(BaseModel):
 
     @model_validator(mode="after")
     def _totals_are_consistent(self):
-        # 三个金额都由 OCR 预填且都可编辑,人改了一个忘了另一个是常态;
-        # 不校验的话对账差额会莫名其妙。
-        if self.total_amount != self.amount + self.tax_amount:
-            raise ValueError("total_amount must equal amount + tax_amount")
+        validate_totals(
+            amount=self.amount, tax_amount=self.tax_amount, total_amount=self.total_amount)
         return self
 
 
@@ -34,6 +45,14 @@ class SlipUpdate(BaseModel):
     picked_by: uuid.UUID | None = None
     missing_slip_reason: str | None = None
     notes: str | None = None
+
+    # Deliberately NO totals validator here (unlike SlipCreate): a PATCH body
+    # is partial and usually only touches one of the three amount fields, so
+    # a validator that only sees `self` has nothing coherent to check against
+    # (same reasoning as AgreementUpdate vs validate_recurrence in
+    # schemas/agreement.py). The check instead runs in
+    # crud.agreement_slip.update() against the MERGED post-patch row, via the
+    # shared validate_totals() above.
 
 
 class SlipResponse(BaseModel):

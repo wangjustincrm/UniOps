@@ -162,3 +162,94 @@ async def test_slips_of_another_agreement_are_not_listed(admin_client, test_engi
     ids = {s["id"] for s in listed.json()["items"]}
     assert slip1["id"] in ids
     assert len(listed.json()["items"]) == 1
+
+
+# ── Review round 1, Critical #1: PATCH must not be reachable on a claimed or
+# decided slip, and a partial amount edit must not leave the row internally
+# inconsistent. ──────────────────────────────────────────────────────────
+
+async def test_patch_reconciled_slip_is_409(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(user_id))).json()
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = (await db.execute(select(AgreementPickupSlip).where(
+            AgreementPickupSlip.id == uuid.UUID(slip["id"])))).scalar_one()
+        row.status = "reconciled"
+        row.invoice_id = uuid.uuid4()
+        await db.commit()
+
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}", json={"notes": "edited after reconciliation"})
+    assert r.status_code == 409, r.text
+
+
+async def test_patch_rejected_slip_is_409(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, missing_slip_reason="Slip lost"))).json()
+    rejected = (await admin_client.post(
+        f"{_slips_url(agr['id'])}/{slip['id']}/ap-review", json={"action": "reject"})).json()
+    assert rejected["status"] == "rejected"
+
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}", json={"notes": "edited after rejection"})
+    assert r.status_code == 409, r.text
+
+
+async def test_patch_amount_only_breaks_totals_is_rejected(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    # amount=100.00, tax_amount=13.00, total_amount=113.00 from _slip_payload
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(user_id))).json()
+
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}", json={"amount": "150.00"})
+    assert r.status_code == 409, r.text
+
+    unchanged = await admin_client.get(_slips_url(agr["id"]), params={"status": "open"})
+    row = [s for s in unchanged.json()["items"] if s["id"] == slip["id"]][0]
+    assert row["amount"] == "100.00"   # patch must not have partially applied
+
+
+async def test_patch_coherent_amounts_on_open_slip_succeeds(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(user_id))).json()
+
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}",
+        json={"amount": "50.00", "tax_amount": "6.50", "total_amount": "56.50"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["amount"] == "50.00"
+    assert body["tax_amount"] == "6.50"
+    assert body["total_amount"] == "56.50"
+
+
+# ── Review round 1, Important #2: the partial unique index on
+# (agreement_id, slip_ref) is a real collision path (re-entry by a second
+# person, or a client retry after a timeout) — it must surface as 409, not
+# an unhandled 500. ──────────────────────────────────────────────────────
+
+async def test_create_slip_duplicate_slip_ref_is_409(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r1 = await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="DUP-REF-1"))
+    assert r1.status_code == 201, r1.text
+
+    r2 = await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="DUP-REF-1"))
+    assert r2.status_code == 409, r2.text
+    assert "DUP-REF-1" in r2.text
+
+
+async def test_patch_duplicate_slip_ref_is_409(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="TAKEN"))
+    other = (await admin_client.post(
+        _slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="FREE"))).json()
+
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{other['id']}", json={"slip_ref": "TAKEN"})
+    assert r.status_code == 409, r.text
+    assert "TAKEN" in r.text
