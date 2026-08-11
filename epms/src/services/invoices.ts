@@ -41,6 +41,10 @@ export interface ApiInvoice {
   gr_id?: string
   gr_number?: string
   gr_ids?: string[]
+  // house_account with slip_ids only: which pickup slips this invoice claims —
+  // JSONB array on the backend (Invoice.slip_ids), null before any claim, never
+  // an empty array (see crud/invoice.py: cleared to null on unclaim, never []).
+  slip_ids?: string[] | null
   match_assignee_id?: string | null
   match_assignee_name?: string | null
   matched_at?: string

@@ -168,6 +168,13 @@ class InvoiceResponse(BaseModel):
     gr_id: uuid.UUID | None
     gr_number: str | None
     gr_ids: list | None = None
+    # Pickup slips this invoice claims (house_account route, Task 5). Same
+    # JSONB-array-on-the-model shape as gr_ids above — was missing from this
+    # response model even though Invoice.slip_ids exists on the ORM object
+    # (models/invoice.py), which silently dropped it on every /invoices and
+    # /invoices/{id} response. Needed by useChainAttachments' slip lineage
+    # branch (epms/src/hooks/useChainAttachments.ts).
+    slip_ids: list | None = None
     matched_at: datetime | None
     matched_by: uuid.UUID | None
     matched_by_name: str | None

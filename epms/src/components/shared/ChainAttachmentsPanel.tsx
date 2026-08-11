@@ -4,7 +4,7 @@
  */
 import { useState } from 'react'
 import {
-  X, Download, Printer, FileText, Package, Warehouse, Receipt, CreditCard, Loader2,
+  X, Download, Printer, FileText, Package, Warehouse, Receipt, CreditCard, Loader2, ImageIcon,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth.store'
 import { useChainAttachments, type ChainDocGroup, type ChainAttachment } from '@/hooks/useChainAttachments'
@@ -17,6 +17,7 @@ const DOC_ICON: Record<ChainDocGroup['docType'], React.ReactNode> = {
   PR: <FileText className="h-3.5 w-3.5" />,
   PO: <Package className="h-3.5 w-3.5" />,
   GR: <Warehouse className="h-3.5 w-3.5" />,
+  SLIP: <ImageIcon className="h-3.5 w-3.5" />,
   INV: <Receipt className="h-3.5 w-3.5" />,
   PA: <CreditCard className="h-3.5 w-3.5" />,
 }

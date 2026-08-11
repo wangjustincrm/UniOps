@@ -1,14 +1,23 @@
 /**
- * useChainAttachments — resolve a PA's DIRECT document lineage (PR, PO, GR, INV,
- * PA) and aggregate every document's attachments into one grouped model.
+ * useChainAttachments — resolve a PA's DIRECT document lineage (PR, PO, GR,
+ * SLIP, INV, PA) and aggregate every document's attachments into one grouped
+ * model.
  *
  * Lineage (see spec §2): PA → its invoices (pa.invoice_ids) → those invoices'
- * GRs (invoice.gr_ids, de-duplicated) → PA's PO (pa.po_id) → PO's PR (po.pr_id).
- * A prepayment PA with no invoices collapses to PA + PO + PR.
+ * GRs (invoice.gr_ids, de-duplicated) → PA's PO (pa.po_id) → PO's PR
+ * (po.pr_id). A prepayment PA with no invoices collapses to PA + PO + PR.
+ *
+ * Task 11 adds a sibling branch off the same invoices: house_account matches
+ * carry pickup-slip evidence instead of a GR — invoice.slip_ids (JSONB array,
+ * de-duplicated across invoices, same shape as gr_ids). Unlike GRs, slips have
+ * no "get by id" endpoint — only GET /agreements/{agreementId}/slips (list).
+ * So resolving slip_ids → slip detail (slip_ref/date/amount for the group
+ * label) goes through each claiming invoice's agreement_id first.
  *
  * Attachment sources differ by service:
- *   PR/PO/GR/PA → epms-api  /{type}/{id}/attachments        (+ /{attId}/download)
- *   INV         → expense-api /invoice-attachments?...       (+ /{attId}/file)
+ *   PR/PO/GR/PA → epms-api  /{type}/{id}/attachments               (+ /{attId}/download)
+ *   SLIP        → epms-api  /agreements/{agrId}/slips/{id}/attachments (+ /{attId}/download)
+ *   INV         → expense-api /invoice-attachments?...              (+ /{attId}/file)
  */
 import { useMemo } from 'react'
 import { useQueries } from '@tanstack/react-query'
@@ -23,6 +32,8 @@ import { grAttachmentService } from '@/services/grAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
 import { invoiceService } from '@/services/invoices'
 import { grService } from '@/services/gr'
+import { agreementSlipService, type ApiSlip } from '@/services/agreementSlips'
+import { agreementSlipAttachmentService } from '@/services/agreementSlipAttachments'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 
@@ -35,7 +46,7 @@ export interface ChainAttachment {
   printable: boolean
 }
 export interface ChainDocGroup {
-  docType: 'PR' | 'PO' | 'GR' | 'INV' | 'PA'
+  docType: 'PR' | 'PO' | 'GR' | 'SLIP' | 'INV' | 'PA'
   docNumber: string
   docId: string
   attachments: ChainAttachment[]
@@ -59,6 +70,32 @@ function mapEpmsAtt(
     fetchUrl: `${API_BASE}/${seg}/${docId}/attachments/${a.id}/download`,
     printable: isPrintable(a.content_type),
   }
+}
+
+/** Slip attachments are scoped by BOTH agreement_id and slip_id in the URL
+ * (see services/agreementSlipAttachments.ts) — a 2-segment path, unlike the
+ * single-id `mapEpmsAtt` above, so it gets its own tiny mapper. */
+function mapSlipAtt(
+  agreementId: string,
+  slipId: string,
+  a: { id: string; filename: string; content_type: string; file_size: number },
+): ChainAttachment {
+  return {
+    id: a.id,
+    filename: a.filename,
+    contentType: a.content_type,
+    sizeBytes: a.file_size,
+    fetchUrl: `${API_BASE}/agreements/${agreementId}/slips/${slipId}/attachments/${a.id}/download`,
+    printable: isPrintable(a.content_type),
+  }
+}
+
+// Group label per the branch owner's ruling: never a bare UUID. slip_ref when
+// present, else date + amount (amount arrives as a Decimal-string on ApiSlip —
+// Number() before formatting, same convention as agreementSlips.ts callers).
+function slipLabel(s: ApiSlip): string {
+  if (s.slip_ref) return s.slip_ref
+  return `${s.slip_date} · $${Number(s.total_amount).toFixed(2)}`
 }
 
 export function useChainAttachments(paId: string) {
@@ -104,6 +141,52 @@ export function useChainAttachments(paId: string) {
     (typeof grQueries)[number]['data']
   >[]
 
+  // Slip ids: union of slip_ids across the resolved invoices, de-duplicated —
+  // same shape as grIds above (house_account's evidence array vs. PO route's).
+  const slipIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const inv of invoices) for (const sid of inv.slip_ids ?? []) s.add(sid)
+    return [...s]
+  }, [invoices])
+
+  // No "get slip by id" endpoint exists — only GET /agreements/{id}/slips
+  // (list). Resolve via each claiming invoice's agreement_id, one list query
+  // per distinct agreement (de-duplicated, so a PA whose invoices all claim
+  // slips off the same agreement issues exactly one query, not one per slip).
+  const slipAgreementIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const inv of invoices) {
+      if ((inv.slip_ids ?? []).length > 0 && inv.agreement_id) s.add(inv.agreement_id)
+    }
+    return [...s]
+  }, [invoices])
+
+  const agreementSlipListQueries = useQueries({
+    queries: slipAgreementIds.map((agrId) => ({
+      queryKey: ['agreement-slips', agrId],
+      queryFn: () => agreementSlipService.list(agrId),
+      enabled: !!agrId,
+      staleTime: 30_000,
+    })),
+  })
+
+  // Resolved slip details, in slipIds order — filters the fetched agreement
+  // slip lists down to only the ids this PA's invoices actually claim.
+  // Dependency is an identity key of fetched slip ids (same technique as
+  // `groupsKey` below) rather than the raw query `.data` objects, since a new
+  // array/object reference on every render would otherwise defeat memoization.
+  const slipListsKey = agreementSlipListQueries
+    .map((q) => (q.data?.items ?? []).map((s) => s.id).join(','))
+    .join(';')
+  const slips = useMemo(() => {
+    const byId = new Map<string, ApiSlip>()
+    for (const q of agreementSlipListQueries) {
+      for (const s of q.data?.items ?? []) byId.set(s.id, s)
+    }
+    return slipIds.map((id) => byId.get(id)).filter((s): s is ApiSlip => !!s)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slipIds, slipListsKey])
+
   // ── Attachment-list queries, one per resolved doc ──────────────────────────
   // (Built via .map() over a 0-or-1-element array — not a ternary tuple literal —
   // so useQueries' overload resolution sees a uniform array type instead of a
@@ -119,6 +202,13 @@ export function useChainAttachments(paId: string) {
   })
   const grAtt = useQueries({
     queries: grs.map((g) => ({ queryKey: ['gr-att', g.id], queryFn: () => grAttachmentService.list(g.id), staleTime: 30_000 })),
+  })
+  const slipAtt = useQueries({
+    queries: slips.map((s) => ({
+      queryKey: ['slip-att', s.id],
+      queryFn: () => agreementSlipAttachmentService.list(s.agreement_id, s.id),
+      staleTime: 30_000,
+    })),
   })
   const invAtt = useQueries({
     queries: invoices.map((inv) => ({
@@ -145,19 +235,21 @@ export function useChainAttachments(paId: string) {
     })),
   })
 
-  // ── Assemble grouped model in paper-trail order: PR, PO, GR(s), INV(s), PA ──
-  // Single identity key built from actual doc/attachment ids — reflects add/
-  // delete/reassign correctly (unlike stringifying data objects, which only
-  // detects count changes), and satisfies the react-hooks/use-memo "simple
-  // expression" rule with one dependency.
+  // ── Assemble grouped model in paper-trail order: PR, PO, GR(s), SLIP(s), ──
+  // ── INV(s), PA. Single identity key built from actual doc/attachment ids —
+  // reflects add/delete/reassign correctly (unlike stringifying data objects,
+  // which only detects count changes), and satisfies the react-hooks/use-memo
+  // "simple expression" rule with one dependency.
   const groupsKey = [
     pr?.id, po?.id, pa?.id,
     grs.map((g) => g.id).join(','),
+    slips.map((s) => s.id).join(','),
     invoices.map((i) => i.id).join(','),
     (prAtt[0]?.data ?? []).map((a) => a.id).join(','),
     (poAtt[0]?.data ?? []).map((a) => a.id).join(','),
     (paAtt[0]?.data ?? []).map((a) => a.id).join(','),
     grAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
+    slipAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
     invAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
   ].join(';')
 
@@ -166,6 +258,7 @@ export function useChainAttachments(paId: string) {
     if (pr) out.push({ docType: 'PR', docNumber: pr.number, docId: pr.id, attachments: (prAtt[0]?.data ?? []).map((a) => mapEpmsAtt('pr', pr.id, a)) })
     if (po) out.push({ docType: 'PO', docNumber: po.number, docId: po.id, attachments: (poAtt[0]?.data ?? []).map((a) => mapEpmsAtt('po', po.id, a)) })
     grs.forEach((g, i) => out.push({ docType: 'GR', docNumber: g.number, docId: g.id, attachments: (grAtt[i]?.data ?? []).map((a) => mapEpmsAtt('gr', g.id, a)) }))
+    slips.forEach((s, i) => out.push({ docType: 'SLIP', docNumber: slipLabel(s), docId: s.id, attachments: (slipAtt[i]?.data ?? []).map((a) => mapSlipAtt(s.agreement_id, s.id, a)) }))
     invoices.forEach((inv, i) => out.push({ docType: 'INV', docNumber: inv.internal_ref, docId: inv.id, attachments: invAtt[i]?.data ?? [] }))
     if (pa) out.push({ docType: 'PA', docNumber: pa.pa_number, docId: pa.id, attachments: (paAtt[0]?.data ?? []).map((a) => mapEpmsAtt('pa', pa.id, a)) })
     return out
@@ -180,15 +273,25 @@ export function useChainAttachments(paId: string) {
   const isLoading =
     paLoading || poLoading || prLoading ||
     invoiceQueries.some((q) => q.isLoading) || grQueries.some((q) => q.isLoading) ||
+    agreementSlipListQueries.some((q) => q.isLoading) ||
     prAtt.some((q) => q.isLoading) || poAtt.some((q) => q.isLoading) ||
     paAtt.some((q) => q.isLoading) || grAtt.some((q) => q.isLoading) ||
+    slipAtt.some((q) => q.isLoading) ||
     invAtt.some((q) => q.isLoading)
 
+  // Mirrors every other branch's error handling exactly: a failed query (e.g.
+  // agreementSlipListQueries 403ing because some other agreement isn't in the
+  // caller's scope) flips this flag, which only drives a non-blocking warning
+  // banner in ChainAttachmentsPanel — `groups` above still renders whatever
+  // resolved successfully. It never crashes the aggregation or silently
+  // empties it; per-doc failures just don't contribute their own attachments.
   const error =
     paError || poError || prError ||
     invoiceQueries.some((q) => q.isError) || grQueries.some((q) => q.isError) ||
+    agreementSlipListQueries.some((q) => q.isError) ||
     prAtt.some((q) => q.isError) || poAtt.some((q) => q.isError) ||
     paAtt.some((q) => q.isError) || grAtt.some((q) => q.isError) ||
+    slipAtt.some((q) => q.isError) ||
     invAtt.some((q) => q.isError)
 
   return { groups, total, isLoading, error }
