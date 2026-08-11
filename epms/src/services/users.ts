@@ -91,7 +91,10 @@ export const userService = {
   listAll: (filters?: Omit<UserFilters, 'page' | 'page_size'>): Promise<UserListResponse> =>
     fetchAllPages((page, page_size) => userService.list({ ...filters, page, page_size })),
 
-  directory: (opts?: { search?: string; role?: string; department_id?: string; department_ids?: string[] }) =>
+  directory: (opts?: {
+    search?: string; role?: string; department_id?: string; department_ids?: string[]
+    page?: number; page_size?: number
+  }) =>
     api.get<UserBriefListResponse>('/users/directory', {
       search: opts?.search || undefined,
       role: opts?.role || undefined,
@@ -99,8 +102,19 @@ export const userService = {
       // the PR list Requester picker for a Director/GM covering several depts.
       department_ids: opts?.department_ids && opts.department_ids.length ? opts.department_ids : undefined,
       department_id: opts?.department_id || undefined,
-      page_size: 100,
+      page: opts?.page ?? undefined,
+      page_size: opts?.page_size ?? 100,
     }),
+
+  // Full directory, paged through — GET /users/directory caps page_size at 100
+  // server-side (Query(..., le=100)), so a single call silently truncates past
+  // 100 users the same way GET /users truncates past its default 20. Anyone
+  // needing to resolve an arbitrary id (not search-as-you-type a picker) must
+  // page through, same rationale as listAll() above.
+  directoryAll: (
+    opts?: { search?: string; role?: string; department_id?: string; department_ids?: string[] }
+  ): Promise<UserBriefListResponse> =>
+    fetchAllPages((page, page_size) => userService.directory({ ...opts, page, page_size }), 100),
 
   get: (id: string) =>
     api.get<ApiUser>(`/users/${id}`),

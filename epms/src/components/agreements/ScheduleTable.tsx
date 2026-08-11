@@ -7,7 +7,7 @@ import { formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { useConfirmPeriod } from '@/hooks/useAgreements'
 import type { ApiScheduleRow } from '@/services/agreement'
 import type { ApiTask } from '@/services/tasks'
-import type { ApiUser } from '@/services/users'
+import type { ApiUserBrief } from '@/services/users'
 
 interface ScheduleTableProps {
   scheduleType: 'period' | 'milestone'
@@ -23,14 +23,16 @@ interface ScheduleTableProps {
   // rows for this agreement. Same open-task convention as the Approve button
   // elsewhere on this page (useTasks({ is_completed: false })).
   myOpenTasks: ApiTask[]
-  // Full user list for resolving accepted_by (a UUID) to a display name.
-  // undefined when the list hasn't loaded or the caller isn't allowed to fetch
-  // it (GET /users is system_admin-only) — resolveName() degrades to showing
-  // the timestamp alone rather than ever rendering a bare UUID.
-  users: ApiUser[] | undefined
+  // Full user directory (GET /users/directory — open to any authenticated
+  // user, unlike system_admin-only GET /users) for resolving accepted_by (a
+  // UUID) to a display name. undefined only while the query hasn't settled
+  // yet — resolveUserName() degrades to showing the timestamp alone rather
+  // than ever rendering a bare UUID if a specific id still doesn't resolve
+  // (e.g. a deactivated user dropped from the directory).
+  users: ApiUserBrief[] | undefined
 }
 
-function resolveUserName(users: ApiUser[] | undefined, id: string | null): string | undefined {
+function resolveUserName(users: ApiUserBrief[] | undefined, id: string | null): string | undefined {
   if (!id || !users) return undefined
   return users.find((u) => u.id === id)?.full_name
 }

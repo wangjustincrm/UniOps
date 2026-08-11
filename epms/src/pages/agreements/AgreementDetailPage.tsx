@@ -17,7 +17,7 @@ import { useAgreement, useAgreementAction, useAgreementSchedule } from '@/hooks/
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTasks } from '@/hooks/useTasks'
 import { useInvoices } from '@/hooks/useInvoices'
-import { useUsers } from '@/hooks/useUsers'
+import { useUserDirectory } from '@/hooks/useUsers'
 import {
   useAgreementAttachments, useUploadAgreementAttachment, useDeleteAgreementAttachment,
 } from '@/hooks/useAgreementAttachments'
@@ -317,12 +317,11 @@ export default function AgreementDetailPage() {
     (sum, r) => sum + (r.expected_amount !== null ? Number(r.expected_amount) : 0), 0
   )
 
-  // GET /users is system_admin-only (app/api/v1/users.py) — for every other
-  // caller this query 403s and `data` stays undefined. ScheduleTable already
-  // degrades gracefully (falls back to showing the confirmation timestamp
-  // alone), so this is a silent, non-fatal downgrade for non-admin viewers,
-  // not a bug to work around here.
-  const { data: usersData } = useUsers()
+  // GET /users/directory (unlike GET /users) is open to any authenticated
+  // user — this is what lets the "Confirmed" column resolve accepted_by to a
+  // name for the dept_manager who actually holds the confirm task, not just
+  // for a system_admin viewer.
+  const { data: usersData } = useUserDirectory()
 
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
   const attachments = attachmentsData ?? []
