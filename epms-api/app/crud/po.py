@@ -10,7 +10,9 @@ from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
+from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -524,17 +526,42 @@ async def get_approval_events(
 
 
 async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
-    """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已挂 GR(gr_id 非空)。
+    """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已收货。
 
     这是 PA 收货闸门 / create_pa 触发 / confirm_receipt 停发 的统一真相源。
     GR 一创建即由 _autofill_gr_to_matched_invoices 写 gr_id → 立即达成 3-way,
     不要求收货确认(collected/confirmed)。
+
+    发票挂到 PO 有两种方式,两种都算(与 crud.invoice.get_all 的可见性口径、
+    api.v1.pa 的「发票是否属于本 PO」校验一致):
+      1. 表头直连 Invoice.po_id —— 收货证据用发票自己的 gr_id(原口径不变)。
+      2. 行级分摊 invoice_po_allocations(一票多 PO)—— 此时发票的 gr_id 可能
+         指向**别的** PO 的 GR,拿它当本 PO 的收货证据会放行未收货的付款,
+         所以要求本 PO 自己有 GR。
+    只认表头会让分摊 PO 永远拿不到 create_pa 且被闸门 422 挡住(生产
+    PO-400-2607-12:发票表头是 PO-400-2607-11,242 元静默漏付)。
     """
-    row = (await db.execute(
+    header = (await db.execute(
         select(Invoice.id).where(
             Invoice.po_id == po_id,
             Invoice.status == "matched",
             Invoice.gr_id.is_not(None),
         ).limit(1)
     )).scalar_one_or_none()
-    return row is not None
+    if header is not None:
+        return True
+
+    allocated = (await db.execute(
+        select(InvoicePoAllocation.invoice_id)
+        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+        .where(
+            InvoicePoAllocation.po_id == po_id,
+            Invoice.status == "matched",
+        ).limit(1)
+    )).scalar_one_or_none()
+    if allocated is None:
+        return False
+    own_gr = (await db.execute(
+        select(GoodsReceipt.id).where(GoodsReceipt.po_id == po_id).limit(1)
+    )).scalar_one_or_none()
+    return own_gr is not None

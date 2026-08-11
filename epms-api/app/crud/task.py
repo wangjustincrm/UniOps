@@ -354,9 +354,26 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
         Invoice.gr_id.is_not(None),
         Invoice.created_at >= _BACKFILL_MIN_CREATED,
     )
+    # 一票多 PO:表头之外的 PO 只在 invoice_po_allocations 里出现,header-only 的
+    # 查询看不见它们(生产 PO-400-2607-12 就这么漏掉的)。发票的 gr_id 可能是
+    # 别的 PO 的 GR,所以这里的收货证据取「本 PO 自己有 GR」——与
+    # crud.po.po_has_three_way_matched_invoice 同口径。
+    recent_matched_alloc_pos = (
+        select(InvoicePoAllocation.po_id)
+        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+        .where(
+            Invoice.status == "matched",
+            Invoice.created_at >= _BACKFILL_MIN_CREATED,
+        )
+    )
+    pos_with_gr = select(GoodsReceipt.po_id)
     candidates_q = select(PurchaseOrder).where(
         PurchaseOrder.status.in_(("issued", "partially_received", "fully_received")),
-        PurchaseOrder.id.in_(recent_matched_pos),
+        or_(
+            PurchaseOrder.id.in_(recent_matched_pos),
+            and_(PurchaseOrder.id.in_(recent_matched_alloc_pos),
+                 PurchaseOrder.id.in_(pos_with_gr)),
+        ),
         PurchaseOrder.id.not_in(pos_with_pa),
         PurchaseOrder.id.not_in(pos_with_open_task),
     )
