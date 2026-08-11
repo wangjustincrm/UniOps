@@ -133,7 +133,7 @@ deliberate choice you make there.
 | Suite | Result |
 |---|---|
 | expense-api, full, one pass | 155 passed / 0 failed (baseline 146 + 9 new) |
-| epms-api, full, one pass | see below |
+| epms-api, full, one pass | 69 failed / 782 passed — failure set identical to the pre-branch baseline in both directions (69/716), so zero regressions; the branch adds 66 net passing tests |
 | epms frontend `tsc -p tsconfig.app.json` | 58 errors = baseline, TS 5.9.3 |
 | identity-api `test_phase2_keys.py` | 4 passed / 0 failed |
 

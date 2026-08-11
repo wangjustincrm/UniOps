@@ -112,12 +112,24 @@ async def _slip_integrity_error(
             ).order_by(AgreementPickupSlip.created_at)
         )).scalars().first()
         if conflict is not None:
+            # A `reconciled` conflict needs different advice: void() rejects it
+            # (VOIDABLE is open/pending_ap_review) and ap_review() only accepts
+            # pending_ap_review, so telling the clerk to "void or reject that
+            # slip" would send them straight into a second 409. The only way
+            # out is to detach the invoice holding it, which releases the slip
+            # back to `open` via _release_agreement_evidence.
+            if conflict.status == "reconciled":
+                remedy = (f"It has already been claimed by an invoice. Re-match or "
+                          f"detach that invoice first — the slip returns to 'open' "
+                          f"and its reference is free again.")
+            else:
+                remedy = ("Void or reject that slip if it was entered in error, "
+                          "then record this one again.")
             return HTTPException(
                 status_code=409,
                 detail=f"Slip reference '{slip_ref}' is already recorded for "
                        f"agreement {agr_number} by slip {conflict.id}, which is "
-                       f"'{conflict.status}'. Void or reject that slip if it was "
-                       f"entered in error, then record this one again.",
+                       f"'{conflict.status}'. {remedy}",
             )
 
     constraint = getattr(getattr(exc, "orig", None), "constraint_name", None)
