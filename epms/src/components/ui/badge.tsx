@@ -30,6 +30,11 @@ const STATUS_CONFIG: Record<
   // Purchase Agreement — 'active' is the approval-terminal status (not 'approved').
   active: { label: 'Active', variant: 'success', dot: 'bg-success-600' },
   expired: { label: 'Expired', variant: 'warning', dot: 'bg-warning-500' },
+  // Agreement payment-schedule row statuses.
+  pending: { label: 'Pending', variant: 'neutral', dot: 'bg-neutral-400' },
+  received: { label: 'Received', variant: 'info', dot: 'bg-primary-500' },
+  overdue: { label: 'Overdue', variant: 'danger', dot: 'bg-danger-600' },
+  waived: { label: 'Waived', variant: 'dark', dot: 'bg-neutral-400' },
 }
 
 export function StatusBadge({ status, label }: { status: DocumentStatus; label?: string }) {

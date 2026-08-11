@@ -35,6 +35,15 @@ export type DocumentStatus =
   // Purchase Agreement statuses (approval terminal state is 'active', not 'approved')
   | 'active'
   | 'expired'
+  // Agreement payment-schedule row statuses (agreement_payment_schedule.status) —
+  // distinct from the agreement's own DocumentStatus above. 'received' means an
+  // invoice has been matched to the row, NOT that it's been human-confirmed —
+  // confirmation is tracked separately via accepted_by/accepted_at and never
+  // changes this status. 'waived' = excused from the schedule, no payment expected.
+  | 'pending'
+  | 'received'
+  | 'overdue'
+  | 'waived'
 
 export type ProcurementType = 1 | 2 | 3 | 4 | 5 | 6
 
