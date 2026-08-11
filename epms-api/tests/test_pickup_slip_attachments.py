@@ -66,6 +66,18 @@ async def slip_id(admin_client, test_engine):
     return agr["id"], slip["id"]
 
 
+@pytest.fixture
+async def other_agreement_id(admin_client, test_engine):
+    # A second, unrelated agreement — real and existing, but it does not own
+    # `slip_id`'s slip. This is the case a bare `slip_id`-only query cannot
+    # tell apart from the correct agreement: the slip row exists, so any
+    # lookup that ignores agreement_id "succeeds" against the wrong parent.
+    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    agr = (await admin_client.post(
+        AGR_URL, json=_agr_payload(vendor_id, agreement_type="house_account"))).json()
+    return agr["id"]
+
+
 async def test_upload_then_list_returns_the_file(admin_client, slip_id):
     agreement_id, sid = slip_id
     res = await admin_client.post(
@@ -119,3 +131,68 @@ async def test_download_returns_the_bytes(admin_client, slip_id):
     res = await admin_client.get(f"{_slips_url(agreement_id)}/{sid}/attachments/{att_id}/download")
     assert res.status_code == 200
     assert res.content == b"\xff\xd8\xff payload"
+
+
+# --- Cross-agreement scoping ------------------------------------------------
+#
+# The slip in `slip_id` genuinely exists — under agreement A. These tests
+# reach it through `other_agreement_id`'s (agreement B's) URL instead. A
+# `slip_id`-only query cannot distinguish this from the correct agreement,
+# since the slip row itself is real; only checking `AgreementPickupSlip.id ==
+# slip_id AND .agreement_id == agreement_id` (via `_get_slip_or_404`) catches
+# it. This is a stronger case than "slip does not exist at all" — it is the
+# case that actually caught the missing-scope-check bug.
+
+
+async def test_list_through_wrong_agreement_is_404(admin_client, slip_id, other_agreement_id):
+    agreement_id, sid = slip_id
+    await admin_client.post(
+        f"{_slips_url(agreement_id)}/{sid}/attachments",
+        files={"file": ("x.jpg", b"\xff\xd8\xff", "image/jpeg")},
+    )
+    res = await admin_client.get(f"{_slips_url(other_agreement_id)}/{sid}/attachments")
+    assert res.status_code == 404, res.text
+
+
+async def test_upload_through_wrong_agreement_is_404(admin_client, slip_id, other_agreement_id):
+    _, sid = slip_id
+    res = await admin_client.post(
+        f"{_slips_url(other_agreement_id)}/{sid}/attachments",
+        files={"file": ("x.jpg", b"\xff\xd8\xff", "image/jpeg")},
+    )
+    assert res.status_code == 404, res.text
+
+
+async def test_download_through_wrong_agreement_is_404(admin_client, slip_id, other_agreement_id):
+    agreement_id, sid = slip_id
+    up = await admin_client.post(
+        f"{_slips_url(agreement_id)}/{sid}/attachments",
+        files={"file": ("x.jpg", b"\xff\xd8\xff secret", "image/jpeg")},
+    )
+    att_id = up.json()["id"]
+    res = await admin_client.get(
+        f"{_slips_url(other_agreement_id)}/{sid}/attachments/{att_id}/download"
+    )
+    assert res.status_code == 404, res.text
+
+
+async def test_delete_through_wrong_agreement_is_404_and_does_not_delete(
+    admin_client, slip_id, other_agreement_id, fake_file_server,
+):
+    agreement_id, sid = slip_id
+    up = await admin_client.post(
+        f"{_slips_url(agreement_id)}/{sid}/attachments",
+        files={"file": ("x.jpg", b"\xff\xd8\xff", "image/jpeg")},
+    )
+    att_id = up.json()["id"]
+
+    res = await admin_client.delete(
+        f"{_slips_url(other_agreement_id)}/{sid}/attachments/{att_id}"
+    )
+    assert res.status_code == 404, res.text
+
+    # Nothing was actually destroyed: no delete call reached the file server,
+    # and the attachment is still there through the real (correct) agreement.
+    assert fake_file_server.deleted == []
+    listed = await admin_client.get(f"{_slips_url(agreement_id)}/{sid}/attachments")
+    assert [a["id"] for a in listed.json()] == [att_id]

@@ -62,6 +62,7 @@ async def _get_slip_or_404(
 async def list_attachments(
     agreement_id: uuid.UUID, slip_id: uuid.UUID, db: SessionDep, _: SlipAttReadDep,
 ):
+    await _get_slip_or_404(db, agreement_id, slip_id)
     result = await db.execute(
         select(AgreementSlipAttachment)
         .where(AgreementSlipAttachment.slip_id == slip_id)
@@ -103,6 +104,7 @@ async def download_attachment(
     agreement_id: uuid.UUID, slip_id: uuid.UUID, att_id: uuid.UUID,
     db: SessionDep, _: SlipAttReadDep, token: BearerToken,
 ):
+    await _get_slip_or_404(db, agreement_id, slip_id)
     result = await db.execute(
         select(AgreementSlipAttachment).where(
             AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.slip_id == slip_id
@@ -126,6 +128,7 @@ async def delete_attachment(
     agreement_id: uuid.UUID, slip_id: uuid.UUID, att_id: uuid.UUID,
     db: SessionDep, _: SlipAttWriteDep, token: BearerToken,
 ):
+    await _get_slip_or_404(db, agreement_id, slip_id)
     result = await db.execute(
         select(AgreementSlipAttachment).where(
             AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.slip_id == slip_id
