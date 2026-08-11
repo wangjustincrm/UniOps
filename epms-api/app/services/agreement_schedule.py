@@ -13,6 +13,10 @@ MAX_PERIOD_ROWS = 500
 
 RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly")
 
+# quarterly/yearly 的 anchor_month 承载的是真实账期锚点(比如季度账单常年跑
+# 2/5/8/11 而不是日历季度),不能也不该从 valid_from 反推 —— 那是 monthly 的规则。
+_TYPES_REQUIRING_ANCHOR = ("quarterly", "yearly")
+
 
 class TooManyPeriods(ValueError):
     """有效期 × 周期长度会生成超过 MAX_PERIOD_ROWS 行。"""
@@ -97,9 +101,19 @@ def build_period_rows(
       - 期起始日 <= valid_to 的期都保留,即使 expected_date 晚于 valid_to
         (月结票总在期末之后才到,与 grace_days 的意图一致)
       - 超过 MAX_PERIOD_ROWS 行 → TooManyPeriods
+      - quarterly/yearly 必须显式提供 anchor_month —— 不能从 valid_from 推导,
+        因为真实账期锚点(如季度账单常年跑 2/5/8/11)与合同生效月无关;
+        缺失时静默套用 valid_from 会产出一份看似合理、实则错误的排期表。
     """
     if recurring_type not in RECURRING_TYPES:
         raise ValueError(f"Unknown recurring_type {recurring_type!r}")
+
+    if recurring_type in _TYPES_REQUIRING_ANCHOR and anchor_month is None:
+        raise ValueError(
+            f"anchor_month is required for recurring_type={recurring_type!r}: "
+            "the billing anchor (e.g. quarterly cycles that run Feb/May/Aug/Nov) "
+            "cannot be safely inferred from valid_from."
+        )
 
     if recurring_type == "weekly":
         rows = _weekly_rows(valid_from, valid_to, expected_invoice_day)

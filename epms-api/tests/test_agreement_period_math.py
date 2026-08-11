@@ -126,3 +126,50 @@ def test_unknown_recurring_type_raises():
             recurring_type="fortnightly", valid_from=date(2026, 1, 1),
             valid_to=date(2026, 6, 1), expected_invoice_day=1, anchor_month=None,
         )
+
+
+def test_quarterly_without_anchor_month_raises():
+    with pytest.raises(ValueError):
+        build_period_rows(
+            recurring_type="quarterly", valid_from=date(2026, 1, 5),
+            valid_to=date(2026, 12, 31), expected_invoice_day=10, anchor_month=None,
+        )
+
+
+def test_yearly_without_anchor_month_raises():
+    with pytest.raises(ValueError):
+        build_period_rows(
+            recurring_type="yearly", valid_from=date(2026, 1, 10),
+            valid_to=date(2028, 12, 31), expected_invoice_day=15, anchor_month=None,
+        )
+
+
+def test_weekly_mid_week_valid_from_drops_leading_partial_week():
+    # valid_from 落在周三(2026-01-07);首期周的周一到票日(1 号,2026-01-05)
+    # 早于 valid_from,应被首期跳过规则丢弃。
+    rows = build_period_rows(
+        recurring_type="weekly", valid_from=date(2026, 1, 7),
+        valid_to=date(2026, 1, 25), expected_invoice_day=1, anchor_month=None,
+    )
+    assert all(r.expected_date >= date(2026, 1, 7) for r in rows)
+    assert date(2026, 1, 5) not in [r.expected_date for r in rows]
+
+
+def test_weekly_label_is_exact_not_just_a_prefix():
+    rows = build_period_rows(
+        recurring_type="weekly", valid_from=date(2026, 1, 5),
+        valid_to=date(2026, 1, 25), expected_invoice_day=3, anchor_month=None,
+    )
+    assert rows[0].period_label == "2026-W02"
+
+
+def test_monthly_ignores_anchor_month():
+    with_anchor = build_period_rows(
+        recurring_type="monthly", valid_from=date(2026, 1, 1),
+        valid_to=date(2026, 3, 31), expected_invoice_day=5, anchor_month=7,
+    )
+    without_anchor = build_period_rows(
+        recurring_type="monthly", valid_from=date(2026, 1, 1),
+        valid_to=date(2026, 3, 31), expected_invoice_day=5, anchor_month=None,
+    )
+    assert [r.period_label for r in with_anchor] == [r.period_label for r in without_anchor]
