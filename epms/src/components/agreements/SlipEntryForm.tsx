@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Upload, Loader2, Info, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +9,7 @@ import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateSlip } from '@/hooks/useAgreementSlips'
 import { agreementSlipAttachmentService } from '@/services/agreementSlipAttachments'
 import { ocrService } from '@/services/agreementSlips'
+import { slipAttachmentsQueryKey } from './SlipTable'
 
 // The backend (schemas/agreement_slip.py::validate_totals) checks
 // amount + tax_amount == total_amount as exact Decimal equality against a
@@ -35,6 +37,7 @@ export function SlipEntryForm({ agreementId }: SlipEntryFormProps) {
   const { data: usersData } = useUserDirectory()
   const users = usersData?.items ?? []
   const createSlip = useCreateSlip(agreementId)
+  const queryClient = useQueryClient()
 
   const [file, setFile] = useState<File | null>(null)
   const [ocrState, setOcrState] = useState<'idle' | 'loading' | 'success' | 'failed'>('idle')
@@ -144,6 +147,16 @@ export function SlipEntryForm({ agreementId }: SlipEntryFormProps) {
       setIsUploadingAttachment(true)
       try {
         await agreementSlipAttachmentService.upload(agreementId, slip.id, file)
+        // Load-bearing await, same rationale as useCreateSlip/useVoidSlip's
+        // onSuccess: without it, SlipTable's attachments cell (staleTime 5min,
+        // see SlipTable.tsx) can already have cached the empty pre-upload
+        // list by the time this resolves, and nothing else was ever going to
+        // ask it to refetch — before this fix the row silently showed "—"
+        // for up to 5 minutes after a successful upload. Un-awaited, the
+        // invalidate is only *scheduled*, so this component could finish
+        // (and a fast re-render of SlipTable could re-read cache) before the
+        // refetch actually lands.
+        await queryClient.invalidateQueries({ queryKey: slipAttachmentsQueryKey(agreementId, slip.id) })
       } catch (err) {
         alert(err instanceof Error ? err.message : 'Slip was recorded, but the photo failed to upload.')
       } finally {

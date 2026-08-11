@@ -38,7 +38,10 @@ function isAged(slip: ApiSlip): boolean {
 // on every Void/Approve/Reject click, N requests at a time. Attachment
 // metadata for a slip doesn't change when the slip's status changes, so
 // there's nothing for those mutations to invalidate here anyway.
-function slipAttachmentsQueryKey(agreementId: string, slipId: string) {
+// Exported so SlipEntryForm can invalidate the exact same key after its
+// post-create attachment upload — see the comment at that call site for why
+// this must be kept in sync rather than each side hand-rolling its own copy.
+export function slipAttachmentsQueryKey(agreementId: string, slipId: string) {
   return ['agreement-slip-attachments', agreementId, slipId] as const
 }
 
