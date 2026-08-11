@@ -11,6 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
+from app.crud import agreement_slip as agreement_slip_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.agreement_slip import AgreementPickupSlip
@@ -408,12 +409,34 @@ async def _match_to_agreement(
     # "settled without receipt" 计数里,那个健康度指标就废了。
     claimed_row = None
     if agr.agreement_type == "house_account":
-        reason = (req.legacy_settlement_reason or "").strip()
-        if not reason:
-            raise AgreementMatchInvalid(
-                "A reason is required to settle an agreement invoice without receipt evidence")
-        invoice.legacy_settlement = True
-        invoice.legacy_settlement_reason = reason
+        # Task 5: house_account now has real evidence available — pickup slips
+        # (built in Tasks 1-4) play the role a GR plays on the PO route. Only
+        # when NONE are selected does this fall back to 1A's no-evidence
+        # settlement, so the reason is required for exactly the invoices that
+        # actually have no receipt behind them.
+        slip_ids = req.slip_ids or []
+        if slip_ids:
+            try:
+                claimed = await agreement_slip_crud.claim(db, agr, slip_ids, invoice)
+            except ValueError as exc:
+                raise AgreementMatchInvalid(str(exc)) from exc
+            invoice.slip_ids = [str(s.id) for s in claimed]
+            invoice.slip_variance_reason = (req.slip_variance_reason or "").strip() or None
+            invoice.legacy_settlement = False
+            invoice.legacy_settlement_reason = None
+        else:
+            # 一张小票都没选 —— 这才是真正的无凭证付款,1A 的通道保留给它。
+            # 收窄的意义就在这里:有凭证时不该被问"为什么没有凭证",
+            # 否则协议详情那个健康度计数恒等于 100%,什么也暴露不了。
+            reason = (req.legacy_settlement_reason or "").strip()
+            if not reason:
+                raise AgreementMatchInvalid(
+                    "Select the pickup slips this invoice covers, or give a reason "
+                    "for settling it without any receipt evidence")
+            invoice.legacy_settlement = True
+            invoice.legacy_settlement_reason = reason
+            invoice.slip_ids = None
+            invoice.slip_variance_reason = None
     else:
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None

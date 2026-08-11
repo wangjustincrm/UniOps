@@ -789,7 +789,10 @@ async def test_recurring_match_does_not_flag_legacy_settlement(test_engine, admi
 
 
 async def test_house_account_match_still_requires_a_reason(test_engine, admin_client):
-    """1A 行为不变:house_account 仍是无凭证通道,理由仍必填。"""
+    """Task 5 narrows this, doesn't remove it: with no pickup slips selected,
+    house_account is still the no-evidence settlement channel from 1A and a
+    reason is still required. (The "slips selected" case is covered by
+    test_slip_match.py — that's where legacy_settlement stops being forced.)"""
     from app.crud.invoice import AgreementMatchInvalid, match as crud_match
     from app.schemas.invoice import InvoiceMatchRequest
 
@@ -801,7 +804,7 @@ async def test_house_account_match_still_requires_a_reason(test_engine, admin_cl
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        with pytest.raises(AgreementMatchInvalid, match="reason is required"):
+        with pytest.raises(AgreementMatchInvalid, match="give a reason"):
             await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
                              matched_by=user_id)
 

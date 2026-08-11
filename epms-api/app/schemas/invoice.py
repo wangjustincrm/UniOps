@@ -100,11 +100,24 @@ class InvoiceMatchRequest(BaseModel):
     # is linked to the agreement for traceability and paid in full from the AP
     # header — there is no line reference to measure a variance against.
     agreement_id: uuid.UUID | None = None
-    # house_account only (1B): that route has no schedule row to claim, so it
-    # remains a legacy settlement by definition and must record why. recurring
-    # and milestone claim a real schedule row instead — see schedule_id below —
-    # and never require this field.
+    # house_account only. Two mutually-exclusive sub-paths (Task 5):
+    #   - slip_ids given → real evidence, claimed pickup slips back this
+    #     invoice; legacy_settlement_reason is ignored and legacy_settlement
+    #     lands False. slip_variance_reason optionally explains a mismatch
+    #     between the slips' total and the invoice total (no amount check is
+    #     enforced here — see slip_variance_reason below).
+    #   - slip_ids omitted/empty → the 1A no-evidence fallback: this remains a
+    #     legacy settlement and legacy_settlement_reason is required.
+    # recurring and milestone claim a real schedule row instead — see
+    # schedule_id below — and never read either of these two fields.
     legacy_settlement_reason: str | None = None
+    # house_account with slip_ids only: which pickup slips this invoice covers.
+    slip_ids: list[uuid.UUID] | None = None
+    # house_account with slip_ids only: free-text note when the claimed slips'
+    # total doesn't line up with the invoice total. Stored separately from
+    # legacy_settlement_reason — it explains a variance on a genuinely
+    # evidenced settlement, not the absence of evidence.
+    slip_variance_reason: str | None = None
     # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。recurring 默认由 FIFO
     # 自动认领,不读这个字段;但显式传入时是人工指定期次的逃生舱(whole-branch
     # review 补齐 spec §4.3 step 5):FIFO 认不到期次(超容差 / 无候选行)会永久

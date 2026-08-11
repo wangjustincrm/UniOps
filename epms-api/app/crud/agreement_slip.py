@@ -68,6 +68,41 @@ async def void(db: AsyncSession, slip: AgreementPickupSlip) -> None:
     await db.flush()
 
 
+async def claim(
+    db: AsyncSession, agr: PurchaseAgreement, slip_ids: list[uuid.UUID], invoice,
+) -> list[AgreementPickupSlip]:
+    """Claim one or more OPEN pickup slips against `invoice` (house_account match,
+    Task 5). Duplicate ids are deduped (order-preserving) and treated as one —
+    the caller picking the same slip twice from a UI multi-select is not a
+    reason to fail the whole match.
+
+    Two passes on purpose: validate every id BEFORE mutating any row. A
+    single-pass "validate-then-mutate-as-we-go" loop would leave earlier slips
+    already flipped to reconciled/invoice_id-set in the session's identity map
+    when a later id fails — the caller (`_match_to_agreement`) converts our
+    ValueError to a 422 and does not roll back, so those partial writes would
+    ride along on the next successful flush.
+    """
+    seen_ids = list(dict.fromkeys(slip_ids))
+    rows: list[AgreementPickupSlip] = []
+    for slip_id in seen_ids:
+        slip = (await db.execute(
+            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip_id)
+        )).scalar_one_or_none()
+        if slip is None or slip.agreement_id != agr.id:
+            raise ValueError(
+                f"Pickup slip {slip_id} does not belong to agreement {agr.number}")
+        if slip.status != "open":
+            raise ValueError(
+                f"Pickup slip {slip_id} is {slip.status}; only an open slip can be claimed")
+        rows.append(slip)
+    for slip in rows:
+        slip.status = "reconciled"
+        slip.invoice_id = invoice.id
+    await db.flush()
+    return rows
+
+
 async def ap_review(
     db: AsyncSession, slip: AgreementPickupSlip, action: str, reviewer_id: uuid.UUID,
 ) -> AgreementPickupSlip:
