@@ -104,10 +104,13 @@ async def _slip_integrity_error(
     # produces the duplicate message when a conflicting live row really is
     # sitting there.
     if slip_ref is not None and _sqlstate(exc) in (_PG_UNIQUE_VIOLATION, None):
+        # Task 2 renamed the column to receipt_ref on the real model (this
+        # router still speaks in "slip" terms pending Task 3's full rename;
+        # only the attribute name below had to move to keep working).
         conflict = (await db.execute(
             select(AgreementPickupSlip).where(
                 AgreementPickupSlip.agreement_id == agreement_id,
-                AgreementPickupSlip.slip_ref == slip_ref,
+                AgreementPickupSlip.receipt_ref == slip_ref,
                 AgreementPickupSlip.status.notin_(RETIRED_SLIP_STATUSES),
             ).order_by(AgreementPickupSlip.created_at)
         )).scalars().first()
@@ -163,7 +166,7 @@ async def create_slip(
     try:
         return await slip_crud.create(db, agr, body, created_by=uuid.UUID(user["sub"]))
     except IntegrityError as exc:
-        raise await _slip_integrity_error(db, exc, agreement_id, agr_number, body.slip_ref)
+        raise await _slip_integrity_error(db, exc, agreement_id, agr_number, body.receipt_ref)
 
 
 @router.patch("/{slip_id}", response_model=SlipResponse)
@@ -179,7 +182,7 @@ async def update_slip(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except IntegrityError as exc:
-        raise await _slip_integrity_error(db, exc, agreement_id, agr_number, body.slip_ref)
+        raise await _slip_integrity_error(db, exc, agreement_id, agr_number, body.receipt_ref)
 
 
 @router.delete("/{slip_id}", status_code=status.HTTP_204_NO_CONTENT)

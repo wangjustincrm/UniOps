@@ -68,9 +68,12 @@ async def list_attachments(
     agreement_id: uuid.UUID, slip_id: uuid.UUID, db: SessionDep, _: SlipAttReadDep,
 ):
     await _get_slip_or_404(db, agreement_id, slip_id)
+    # Task 2 renamed the FK column to receipt_id on the real model (this
+    # router still speaks in "slip" terms pending Task 3's full rename; only
+    # the attribute name below had to move to keep working).
     result = await db.execute(
         select(AgreementSlipAttachment)
-        .where(AgreementSlipAttachment.slip_id == slip_id)
+        .where(AgreementSlipAttachment.receipt_id == slip_id)
         .order_by(AgreementSlipAttachment.created_at)
     )
     return [_meta(r) for r in result.scalars().all()]
@@ -92,7 +95,7 @@ async def upload_attachment(
         "agreement_slip", slip_id, token,
     )
     att = AgreementSlipAttachment(
-        slip_id=slip_id,
+        receipt_id=slip_id,
         filename=file.filename or "attachment",
         content_type=file.content_type or "application/octet-stream",
         file_size=len(data),
@@ -112,7 +115,7 @@ async def download_attachment(
     await _get_slip_or_404(db, agreement_id, slip_id)
     result = await db.execute(
         select(AgreementSlipAttachment).where(
-            AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.slip_id == slip_id
+            AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.receipt_id == slip_id
         )
     )
     att = result.scalar_one_or_none()
@@ -136,7 +139,7 @@ async def delete_attachment(
     await _get_slip_or_404(db, agreement_id, slip_id)
     result = await db.execute(
         select(AgreementSlipAttachment).where(
-            AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.slip_id == slip_id
+            AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.receipt_id == slip_id
         )
     )
     att = result.scalar_one_or_none()
