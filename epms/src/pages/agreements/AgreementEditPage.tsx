@@ -70,7 +70,11 @@ export default function AgreementEditPage() {
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
   const taxCodes = useTaxCodes()
-  const { data: scheduleData } = useAgreementSchedule(id ?? '')
+  const {
+    data: scheduleData,
+    isError: scheduleErrored,
+    refetch: refetchSchedule,
+  } = useAgreementSchedule(id ?? '')
 
   const [title, setTitle] = useState('')
   const [contractNo, setContractNo] = useState('')
@@ -194,12 +198,27 @@ export default function AgreementEditPage() {
     )
   }, [agreement, scheduleData, milestonesHydrated])
 
-  // True while a milestone agreement's stage rows have not yet arrived from
-  // the schedule endpoint — Save must be blocked for the whole window, not
-  // just have its payload silently altered, so the user sees WHY nothing
-  // happens rather than being able to click and get an unexplained delay.
-  const milestonesPending =
-    !!agreement && agreement.agreement_type === 'milestone' && !milestonesHydrated
+  // Three-way state for a milestone agreement's stage rows, per review round
+  // 2 finding 1: the FIRST fix blocked Save on `!milestonesHydrated` alone,
+  // which is correct while the schedule query is genuinely in flight but
+  // WRONG if it fails outright — a persistently-failing GET would leave
+  // `milestonesHydrated` false forever, permanently disabling Save (even for
+  // a title-only edit) with no error and no way out. The three states have
+  // to be told apart:
+  //   - loading  → Save blocked, "Loading stages…" (unchanged from round 1)
+  //   - errored  → Save ALLOWED. Omitting `milestones` from the PATCH body
+  //                (handled below in handleSave, gated on milestonesHydrated
+  //                specifically, not on "not still loading") means "leave
+  //                stages alone" — exactly correct when they couldn't be
+  //                read, and strictly safer than either guessing at their
+  //                content or bricking the rest of the form over it. Shown
+  //                with an inline error + Retry, not silently treated as "no
+  //                stages".
+  //   - loaded   → normal MilestoneEditor, Save allowed.
+  const milestonesLoading =
+    !!agreement && agreement.agreement_type === 'milestone' && !milestonesHydrated && !scheduleErrored
+  const milestonesErrored =
+    !!agreement && agreement.agreement_type === 'milestone' && !milestonesHydrated && scheduleErrored
 
   const validate = (): boolean => {
     const e: Record<string, string> = {}
@@ -227,12 +246,16 @@ export default function AgreementEditPage() {
   }
 
   const handleSave = async (andSubmit: boolean) => {
-    // Defense in depth alongside the button's `disabled={milestonesPending}`
+    // Defense in depth alongside the button's `disabled={milestonesLoading}`
     // below: even if this is reached some other way, refuse to build a
     // `milestones` payload from rows that are still the pre-hydration `[]`
     // placeholder — that would read as "the user deleted every stage" and
-    // `replace_milestone_rows` would honor it (review finding 1).
-    if (milestonesPending) return
+    // `replace_milestone_rows` would honor it (review finding 1). Note this
+    // only blocks the LOADING window, not the errored one — a schedule fetch
+    // that failed outright must not also disable saving everything else on
+    // the form (round 2 finding 1); the `milestones` key is simply left out
+    // of the body below in that case (gated on `milestonesHydrated`).
+    if (milestonesLoading) return
     if (!validate()) return
     setIsSubmitting(true)
     try {
@@ -270,14 +293,16 @@ export default function AgreementEditPage() {
         body.expected_amount_per_period = recurringValue.amountPerPeriod ? Number(recurringValue.amountPerPeriod) : null
         body.tolerance_pct = recurringValue.tolerancePct ? Number(recurringValue.tolerancePct) : null
         body.overdue_after_days = recurringValue.overdueAfterDays ? Number(recurringValue.overdueAfterDays) : null
-      } else if (agreement?.agreement_type === 'milestone') {
+      } else if (agreement?.agreement_type === 'milestone' && milestonesHydrated) {
         // Always resent on save — this is the round-trip that lets an empty
         // `rows` array explicitly clear all stages (AgreementUpdate.milestones:
-        // None = leave alone, [] = clear — see schemas/agreement.py). Safe to
-        // do unconditionally here ONLY because the `milestonesPending` guard
-        // above already returned if `milestoneRows` might still be the
-        // pre-hydration `[]` placeholder rather than the real (possibly
-        // genuinely empty) stage list.
+        // None = leave alone, [] = clear — see schemas/agreement.py). Gated on
+        // `milestonesHydrated`, not just the type, so this branch can only run
+        // once `milestoneRows` is known to be the REAL stage list — covering
+        // both the loading window (blocked earlier by `milestonesLoading`)
+        // and the errored one (Save is allowed to proceed, but `milestones`
+        // is simply omitted here, which is "leave stages alone" — the only
+        // safe thing to do when they couldn't be read).
         body.milestones = milestoneRows
           .filter((r) => r.milestone_name.trim())
           .map((r) => ({
@@ -577,7 +602,7 @@ export default function AgreementEditPage() {
           {agreement.agreement_type === 'milestone' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
               <h2 className="text-base font-semibold text-neutral-900">Milestone Stages</h2>
-              {milestonesPending ? (
+              {milestonesLoading ? (
                 // Not "no stages" — the schedule query hasn't resolved yet.
                 // Rendering MilestoneEditor with rows=[] here would look
                 // identical to a genuinely empty stage list, which is exactly
@@ -586,6 +611,21 @@ export default function AgreementEditPage() {
                 // loading state instead, and Save stays disabled below until
                 // this clears.
                 <p className="text-sm text-neutral-400">Loading stages…</p>
+              ) : milestonesErrored ? (
+                // Round 2 finding 1: a persistently failing schedule fetch
+                // must not read as "there are no stages", and must not brick
+                // the rest of the form either — Save stays available below
+                // (handleSave simply omits `milestones` from the PATCH,
+                // which is "leave stages alone", the safe default when they
+                // couldn't be read at all).
+                <div className="flex flex-col items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3">
+                  <p className="text-sm text-warning-700">
+                    Could not load the stage schedule. Saving now will leave the existing stages unchanged.
+                  </p>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => refetchSchedule()}>
+                    Retry
+                  </Button>
+                </div>
               ) : (
                 <MilestoneEditor
                   rows={milestoneRows}
@@ -648,17 +688,17 @@ export default function AgreementEditPage() {
               <Button variant="ghost">Cancel</Button>
             </Link>
             <div className="flex items-center gap-3">
-              {milestonesPending && (
+              {milestonesLoading && (
                 <p className="text-xs text-neutral-400">Loading stages before Save can be used…</p>
               )}
               <Button
                 variant="secondary"
                 onClick={() => handleSave(false)}
-                disabled={isSubmitting || milestonesPending}
+                disabled={isSubmitting || milestonesLoading}
               >
                 Save Draft
               </Button>
-              <Button onClick={() => handleSave(true)} disabled={isSubmitting || milestonesPending}>
+              <Button onClick={() => handleSave(true)} disabled={isSubmitting || milestonesLoading}>
                 {isSubmitting ? 'Submitting…' : 'Save & Submit'}
               </Button>
             </div>

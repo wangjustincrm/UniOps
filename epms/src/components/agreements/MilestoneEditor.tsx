@@ -31,35 +31,60 @@ export function MilestoneEditor(props: {
   // "no ceiling set" for the purpose of enabling the percentage column.
   const pctEnabled = nte !== null && nte > 0
 
-  // Review finding 2: the server stores whatever pair (%, Amount) it's given
-  // and never re-derives one from the other once both are populated
-  // (_resolve_milestone_amounts: "两个都给了就都存,不去纠正用户") — and every
-  // row in this editor gets BOTH fields written the moment either is touched
-  // (see updateFromPct/updateFromAmount below). So a stage entered as "30% of
-  // NTE" silently drifts out of sync with its own definition the instant NTE
-  // changes, unless something re-anchors it. Chosen fix: recompute, not warn
-  // — every row that has a % set gets its Amount recomputed against the NEW
-  // ceiling whenever NTE changes, keeping "% of NTE" true by construction
-  // instead of asking the user to notice a discrepancy. Rows with no % set
-  // (pure absolute-amount stages) are untouched — there is nothing to
-  // recompute FROM. Skips the initial mount (prevNteRef seeded from the
-  // first render's value) so this doesn't fire before the user has changed
-  // anything, same skip-on-mount shape as BudgetAccountCascade's
-  // prevDepartmentId guard.
+  // `rows`/`onChange` as of the LATEST render, readable from inside the
+  // debounced timeout below without making it a dependency (which would
+  // defeat the debounce — see the effect's own comment). A plain
+  // during-render assignment, not an effect: always current by the time the
+  // timeout fires, including edits made to OTHER rows during the debounce
+  // window that a stale closure would otherwise clobber.
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+
+  // Review finding 2 (round 1): the server stores whatever pair (%, Amount)
+  // it's given and never re-derives one from the other once both are
+  // populated (_resolve_milestone_amounts: "两个都给了就都存,不去纠正用户").
+  // Chosen fix: recompute, not warn — every row that has a % SET gets its
+  // Amount recomputed against the NEW ceiling whenever NTE changes, keeping
+  // "% of NTE" true by construction instead of asking the user to notice a
+  // discrepancy.
+  //
+  // Review finding 2 (round 2): this only works if "has a % set" reliably
+  // means "the user typed a percentage" — but updateFromAmount used to
+  // backfill amount_pct too, so a stage entered as a flat "$500" became
+  // stored identically to one entered as "5%", and the NEXT NTE change would
+  // silently overwrite that user's dollar figure. Fixed at the source in
+  // updateFromAmount below (it no longer touches amount_pct at all), which
+  // makes this effect's `r.amount_pct` check unambiguous: present now means
+  // exactly "the user entered a percentage", nothing else.
+  //
+  // Debounced (round 2, cosmetic-but-reported-as-broken): notToExceed is a
+  // plain text input one level up, so `nte` changes on every keystroke while
+  // the user is typing a new ceiling — recomputing synchronously on each one
+  // made every eligible row visibly flicker through intermediate values. The
+  // 400ms delay lets a run of keystrokes settle before this fires once,
+  // against the final value only. `prevNteRef` is only reassigned INSIDE the
+  // timeout body, so a value that gets superseded before its timeout fires
+  // never updates it — comparisons always run against the ceiling the user
+  // actually stopped on, not an intermediate one that never really "landed".
+  // Skips the initial mount (prevNteRef seeded from the first render's
+  // value) so this doesn't fire before the user has changed anything, same
+  // skip-on-mount shape as BudgetAccountCascade's prevDepartmentId guard.
   const prevNteRef = useRef(nte)
   useEffect(() => {
-    const prevNte = prevNteRef.current
-    prevNteRef.current = nte
-    if (prevNte === nte || nte === null || nte <= 0) return
-    onChange(rows.map((r) => {
-      if (!r.amount_pct) return r
-      const pct = Number(r.amount_pct)
-      if (!Number.isFinite(pct)) return r
-      return { ...r, expected_amount: String(Math.round(nte * pct) / 100) }
-    }))
-    // rows/onChange intentionally excluded — this effect only reacts to NTE
-    // changing, and always wants the latest rows/onChange from the render in
-    // which that happens (same convention as BudgetAccountCascade).
+    const timer = setTimeout(() => {
+      const prevNte = prevNteRef.current
+      prevNteRef.current = nte
+      if (prevNte === nte || nte === null || nte <= 0) return
+      onChange(rowsRef.current.map((r) => {
+        if (!r.amount_pct) return r
+        const pct = Number(r.amount_pct)
+        if (!Number.isFinite(pct)) return r
+        return { ...r, expected_amount: String(Math.round(nte * pct) / 100) }
+      }))
+    }, 400)
+    return () => clearTimeout(timer)
+    // onChange intentionally excluded — same convention as BudgetAccountCascade.
+    // rows/rowsRef intentionally excluded — that's the whole point of the ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nte])
 
@@ -69,7 +94,8 @@ export function MilestoneEditor(props: {
 
   // % of NTE -> Amount, computed live so the user never has to do the math
   // themselves (brief step 2: "输入 % 时按 Number(notToExceed) * pct / 100
-  // 实时算出 Amount 并回填").
+  // 实时算出 Amount 并回填"). This is the ONLY place amount_pct is written —
+  // see updateFromAmount below for why that matters.
   const updateFromPct = (index: number, pctStr: string) => {
     if (!pctEnabled) return
     const pct = Number(pctStr)
@@ -79,15 +105,30 @@ export function MilestoneEditor(props: {
     update(index, { amount_pct: pctStr, expected_amount: amount })
   }
 
-  // Amount -> % of NTE, the inverse direction.
+  // Amount -> a read-only derived % shown next to it (see derivedPct below),
+  // NOT a stored amount_pct. Review finding 2 (round 2): this used to
+  // backfill amount_pct whenever pctEnabled, which made a row the user typed
+  // as a flat dollar amount indistinguishable — in the stored data — from
+  // one they typed as a percentage; the NTE-recompute effect above could
+  // then silently rewrite that dollar figure on the next ceiling change.
+  // Explicitly nulling amount_pct here (not just "not setting" it) also
+  // un-links a row that previously WAS percentage-derived: editing its
+  // Amount directly is the user overriding the percentage relationship, and
+  // the row should stop being treated as percentage-derived from that point
+  // on, not keep a stale % from before this edit.
   const updateFromAmount = (index: number, amountStr: string) => {
-    const amount = Number(amountStr)
-    const row = rows[index]
-    let pctStr = row?.amount_pct ?? ''
-    if (pctEnabled && amountStr !== '' && Number.isFinite(amount)) {
-      pctStr = String(Math.round((amount / (nte as number)) * 100 * 100) / 100)
-    }
-    update(index, { expected_amount: amountStr, amount_pct: pctEnabled ? pctStr : row?.amount_pct })
+    update(index, { expected_amount: amountStr, amount_pct: null })
+  }
+
+  // Purely a render-time computation for rows with no stored amount_pct —
+  // never written back via onChange/update, which is what makes it "not a
+  // stored value" per the review comment. Returns null (render nothing) when
+  // there's no ceiling to derive against or no amount to derive from.
+  const derivedPct = (row: MilestoneRowIn): string | null => {
+    if (!pctEnabled || row.amount_pct) return null
+    const amt = row.expected_amount ? Number(row.expected_amount) : NaN
+    if (!Number.isFinite(amt)) return null
+    return (Math.round((amt / (nte as number)) * 100 * 100) / 100).toFixed(2)
   }
 
   const addRow = () => onChange([...rows, newMilestoneRow()])
@@ -120,7 +161,9 @@ export function MilestoneEditor(props: {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => (
+            {rows.map((row, i) => {
+              const dp = derivedPct(row)
+              return (
               <tr
                 key={i}
                 className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 ? 'bg-neutral-50/50' : 'bg-white')}
@@ -156,6 +199,12 @@ export function MilestoneEditor(props: {
                     onChange={(e) => updateFromAmount(i, e.target.value)}
                     className={cn(cellInputClass, 'text-right')}
                   />
+                  {/* Read-only, computed at render time, never stored — see
+                      derivedPct's comment. Only shown for a row the user
+                      defined in dollars (no amount_pct of its own). */}
+                  {dp !== null && (
+                    <p className="mt-0.5 text-right text-[10px] text-neutral-400">≈ {dp}% of NTE</p>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <input
@@ -181,7 +230,8 @@ export function MilestoneEditor(props: {
                   </button>
                 </td>
               </tr>
-            ))}
+              )
+            })}
             {rows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-3 py-6 text-center text-sm text-neutral-400">
