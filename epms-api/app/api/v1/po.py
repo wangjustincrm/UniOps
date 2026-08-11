@@ -16,6 +16,7 @@ from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
 from app.crud.current_step import enrich_current_step
 from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoListResponse, PoResponse, PoUpdate
@@ -63,13 +64,27 @@ async def list_pos(
     # Resolved here in batch because pr_requester_id is not a column on the PO.
     pr_requester_map: dict[uuid.UUID, uuid.UUID] = {}
     if items:
+        listed_ids = [po.id for po in items]
         rows = await db.execute(
             select(Invoice.po_id).where(
-                Invoice.po_id.in_([po.id for po in items]),
+                Invoice.po_id.in_(listed_ids),
                 Invoice.status != "paid",
             ).distinct()
         )
         unpaid_invoice_po_ids = {r for r in rows.scalars().all() if r is not None}
+        # An invoice can pay for several POs: the header links one, the rest hang
+        # off invoice_po_allocations. Counting only the header hid the allocated
+        # POs from the PA create page's PO picker (it offers
+        # `is_prepaid || has_unpaid_invoice`), so nobody could raise their PA.
+        alloc_rows = await db.execute(
+            select(InvoicePoAllocation.po_id)
+            .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+            .where(
+                InvoicePoAllocation.po_id.in_(listed_ids),
+                Invoice.status != "paid",
+            ).distinct()
+        )
+        unpaid_invoice_po_ids |= {r for r in alloc_rows.scalars().all() if r is not None}
 
         pr_ids = [po.pr_id for po in items if po.pr_id is not None]
         if pr_ids:

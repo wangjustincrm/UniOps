@@ -16,7 +16,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { downloadPdf } from '@/lib/pdf-utils'
 import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
 import { useGrs } from '@/hooks/useGrs'
@@ -538,6 +538,7 @@ export default function PoDetailPage() {
   // grants system_admin every task. Showing the Approve button only when the current
   // user holds an active approve_po task for THIS PO keeps the button consistent with
   // the inbox and follows whatever workflow is configured in the engine.
+  const paPerms = useRolePermissions().data?.permissions
   const { data: myTasks } = useTasks({ is_completed: false })
   const hasApproveTask = !!po && !!(myTasks?.items ?? []).some(
     (t) => t.document_id === po.id && t.type === 'approve_po'
@@ -550,12 +551,16 @@ export default function PoDetailPage() {
   const canPlaceOrder = isProcurementOfficer && po?.status === 'approved'
   const canEdit = isProcurementOfficer && po && ['draft', 'returned'].includes(po.status)
   const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
-  // PA creation: available to AP Clerk, Finance roles, and System Admin when PO is in a payable state
+  // PA creation is permission-driven, exactly like the PA list's Create button
+  // (PaListPage): the Access Control matrix decides, not a hard-coded role list.
+  // A hard-coded list also read only the JWT's primary role, so an ADDITIONAL
+  // role granted through user_roles (e.g. a Procurement Officer allowed to raise
+  // PAs on someone's behalf) never saw the button even with the matrix ticked.
   const canCreatePa =
     OA_BASE_URL &&
     po &&
     ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
-    ['ap_clerk', 'finance_manager', 'finance_bp', 'system_admin'].includes(user?.role ?? '')
+    (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   const isServicePo = po?.type === 4
   // Physical PO: warehouse/procurement roles, PO must be issued or partially received
   // Service PO: the *requester of the linked PR* (not the PO creator, not a generic
