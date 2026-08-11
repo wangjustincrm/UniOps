@@ -67,6 +67,8 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=True, index=True
     )
     agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # 认领到的排期行(recurring 自动 FIFO / milestone 人工选)。
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # "po" | "agreement" — which candidate pool this invoice was matched against.
     match_route: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # True only when the system resolved the route itself (1B). A human override

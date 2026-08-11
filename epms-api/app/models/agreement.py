@@ -52,6 +52,25 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
 
     department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     budget_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True)
+
+    # ── recurring 专用(agreement_type='recurring' 时必填,其余类型必须为空) ──
+    # weekly | monthly | quarterly | yearly
+    recurring_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 到票日。weekly=1..7(ISO,周一=1);其余=1..31,遇短月钳到月末。
+    expected_invoice_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 1..12,仅 quarterly / yearly 使用。**不从 valid_from 推导** —— 很多季度账单
+    # 按合同起始月走(起始月 2 月 → 2/5/8/11),而签订日未必等于账单周期起点。
+    anchor_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expected_amount_per_period: Mapped[Decimal | None] = mapped_column(
+        Numeric(15, 2), nullable=True)
+    # 百分数:5.00 = ±5%
+    tolerance_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    overdue_after_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, server_default="7")
+
     # 协议责任人 —— NTE 预警与到期提醒的收件人。
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
