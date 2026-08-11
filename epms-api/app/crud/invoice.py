@@ -403,6 +403,26 @@ async def _match_to_agreement(
             f"(status={agr.status}, valid to {agr.valid_to} + {agr.grace_days or 0}d grace); "
             "renew it before matching invoices to it.")
 
+    # Review fix (Important #1, Task 5 round 1): release any evidence this
+    # invoice is CURRENTLY holding — a claimed schedule row and/or claimed
+    # pickup slips — before the type branch below claims new evidence (or
+    # falls back to the no-evidence reason). Without this, a rematch through
+    # this function (e.g. Data Maintenance resets invoice.status back to
+    # "unmatched" with no release hook, then the invoice is POSTed to /match
+    # again) silently overwrites invoice.slip_ids / invoice.schedule_id —
+    # the previously-claimed rows stay "reconciled"/"received" with
+    # invoice_id still pointing at this invoice forever, and since
+    # _release_agreement_evidence only ever discovers rows via
+    # invoice.slip_ids/.schedule_id, they become permanently unreachable
+    # (update()/void() both refuse a reconciled slip; there is no UI path
+    # back to open). This also covers switching agreement TYPE (house_account
+    # holding slips → recurring/milestone claiming a schedule row): the old
+    # code never touched slip_ids in that branch at all, leaving a stale
+    # pointer at a slip that now belongs to nobody's current match.
+    # No-op when the invoice holds neither (the normal first-time-match case).
+    if invoice.slip_ids or invoice.schedule_id:
+        await _release_agreement_evidence(db, invoice)
+
     # 1A 曾把**所有**协议匹配都当成"无凭证付款":那时协议匹配确实没有任何凭证。
     # 1B 之后 recurring 有排期行 + 履约确认、milestone 有阶段行,都是真凭证 ——
     # 再统一标 legacy 会把每一张正常的周期账单算进协议详情页的

@@ -346,13 +346,42 @@ async def match_invoice(
             # 0 (there is no PO line to compare against — that's the entire
             # point of the legacy_settlement escape hatch), so the PO route's
             # "non-zero variance (0)" wording would be self-contradictory here.
+            #
+            # Review fix (Important #2, Task 5 round 1): branch on
+            # legacy_settlement rather than assuming every "agreement" route
+            # match is a no-evidence legacy settlement. Task 5 made that no
+            # longer true for house_account: a match with claimed pickup
+            # slips has legacy_settlement=False and legacy_settlement_reason
+            # =None, so the old unconditional wording told AP reviewers
+            # "...as a legacy settlement (no receipt evidence): None" about
+            # an invoice that DOES have receipt evidence — the exact opposite
+            # of what happened. The whole point of narrowing legacy_settlement
+            # was to make this review panel trustworthy.
             if result.match_route == "agreement":
-                review_description = (
-                    f"Invoice {inv.internal_ref} was matched to agreement "
-                    f"{result.agreement_number} as a legacy settlement (no receipt "
-                    f"evidence): {result.legacy_settlement_reason}. Please review and "
-                    "approve or reject."
-                )
+                if result.legacy_settlement:
+                    review_description = (
+                        f"Invoice {inv.internal_ref} was matched to agreement "
+                        f"{result.agreement_number} as a legacy settlement (no receipt "
+                        f"evidence): {result.legacy_settlement_reason}. Please review and "
+                        "approve or reject."
+                    )
+                elif result.slip_ids:
+                    review_description = (
+                        f"Invoice {inv.internal_ref} was matched to agreement "
+                        f"{result.agreement_number} against {len(result.slip_ids)} claimed "
+                        "pickup slip(s) as receipt evidence. Please review and approve or "
+                        "reject."
+                    )
+                else:
+                    # recurring/milestone: claimed a real billing-schedule row
+                    # instead (see the agreement's schedule for which one) —
+                    # neither a legacy settlement nor slip-backed, so say
+                    # nothing that isn't true of both.
+                    review_description = (
+                        f"Invoice {inv.internal_ref} was matched to agreement "
+                        f"{result.agreement_number} against a billing schedule row. "
+                        "Please review and approve or reject."
+                    )
             else:
                 review_description = (
                     f"Invoice {inv.internal_ref} was matched with a non-zero variance "

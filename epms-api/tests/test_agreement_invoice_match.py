@@ -568,11 +568,60 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
             PurchaseAgreement.id == agr.id))).scalar_one()
     assert review_task is not None
     assert review_task.assigned_role == "ap_clerk"
+    # No-evidence settlement: the review description must say so and quote
+    # the reason (Task 5 round-1 review fix, Important #2 — this branch is
+    # unchanged from before Task 5; the NEW branches are covered by
+    # test_agreement_match_by_delegate_with_slips_review_description below).
+    assert "as a legacy settlement (no receipt evidence): backlog" in review_task.description
     # A pending-review invoice still reserves against the ceiling — the same
     # "every linked invoice counts, no status filter" contract _recompute_
     # consumed already implements; it isn't a real spend yet, but it also isn't
     # released until approved or rejected.
     assert agr_fresh.consumed_amount == Decimal("1000.00")
+
+
+async def test_agreement_match_by_delegate_with_slips_review_description(admin_client, test_engine):
+    """Task 5 round-1 review fix (Important #2): a delegate matching a
+    house_account invoice WITH claimed pickup slips must not get the "as a
+    legacy settlement (no receipt evidence): None" description — that invoice
+    has real evidence, and the old unconditional wording asserted the exact
+    opposite of what happened. The review description must say slips were
+    claimed, and must not claim "no receipt evidence" or print "None"."""
+    from tests.test_slip_match import _create_slip
+
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Slip Review Text Vendor")
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        slip = await _create_slip(db, agr, user_id, amount="100.00")
+
+    delegate_client, delegate_id = await _delegate_client(test_engine)
+    try:
+        r_assign = await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
+                                           json={"user_id": str(delegate_id)})
+        assert r_assign.status_code == 200, r_assign.text
+
+        r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
+            "agreement_id": str(agr.id), "slip_ids": [str(slip.id)]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["status"] == "match_review"
+        assert body["legacy_settlement"] is False
+    finally:
+        await delegate_client.aclose()
+
+    async with factory() as db:
+        review_task = (await db.execute(select(Task).where(
+            Task.type == "review_match", Task.document_type == "invoice",
+            Task.document_id == uuid.UUID(inv["id"]), Task.is_completed.is_(False),
+        ))).scalar_one_or_none()
+    assert review_task is not None
+    assert "no receipt evidence" not in review_task.description
+    assert "None" not in review_task.description
+    assert "1 claimed pickup slip" in review_task.description
 
 
 async def test_agreement_match_by_ap_completes_terminally(admin_client, test_engine):

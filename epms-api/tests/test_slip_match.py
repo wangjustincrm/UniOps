@@ -264,3 +264,57 @@ async def test_empty_slip_ids_list_is_treated_as_no_slips_selected(admin_client,
         with pytest.raises(AgreementMatchInvalid, match="give a reason"):
             await crud_match(db, db_inv, InvoiceMatchRequest(
                 agreement_id=agr.id, slip_ids=[]), matched_by=user_id)
+
+
+# ── Review round 1, Important #1: _match_to_agreement never released
+# evidence a rematch was about to overwrite — a claimed slip stayed
+# "reconciled" forever with no UI path back to open. ────────────────────────
+
+async def test_rematch_without_slips_releases_previously_claimed_slip(admin_client, test_engine):
+    """Claim a slip, then rematch the SAME invoice through _match_to_agreement
+    a second time without selecting it — the shape a Data Maintenance
+    status-reset-then-repost produces (invoice.status forced back to
+    "unmatched" with no release hook, then POSTed to /match again), or any
+    other future caller that re-runs match() on an already-matched invoice.
+    The slip must come back to "open" with invoice_id cleared, not stay
+    "reconciled" forever with a dangling pointer no UI can undo (update()/
+    void() both refuse a reconciled slip)."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        slip = await _create_slip(db, agr, user_id, amount="100.00")
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        first = await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, slip_ids=[slip.id]), matched_by=user_id)
+    assert first.slip_ids == [str(slip.id)]
+
+    async with factory() as db:
+        fresh_slip = (await db.execute(
+            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+        )).scalar_one()
+    assert fresh_slip.status == "reconciled"
+    assert fresh_slip.invoice_id == inv_id
+
+    # Rematch the same invoice to the same agreement, this time selecting no
+    # slips at all — the no-evidence fallback.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        second = await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, legacy_settlement_reason="corrected — wrong slip picked"),
+            matched_by=user_id)
+
+    assert second.legacy_settlement is True
+    assert second.slip_ids is None
+
+    async with factory() as db:
+        released_slip = (await db.execute(
+            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+        )).scalar_one()
+    assert released_slip.status == "open"
+    assert released_slip.invoice_id is None
