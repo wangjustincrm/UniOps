@@ -413,3 +413,57 @@ async def test_reassign_notifies_new_assignee_not_previous(admin_client, monkeyp
     assert second in logged_users, "改派后新被指派人从未收到通知(收件人解析到了旧值)"
     # 最后一次通知应当发给新被指派人
     assert logs[-1].user_id == second
+
+
+# ── Whole-branch review (D): the assignment task's copy was hard-coded PO
+# wording. On the agreement route there are no PO lines and no allocation
+# step, so the assignee was told to do a thing that does not exist — the same
+# defect as the review_match copy Task 5 fixed one function over. ────────
+
+@pytest.mark.asyncio
+async def test_assign_match_keeps_po_wording_when_no_agreement_is_linked(admin_client):
+    # The default must stay PO wording: assignment is allowed while the
+    # invoice is still unmatched, and in that state the route is genuinely
+    # unknown — AP assigns first, whoever matches decides the route later.
+    v = await _make_vendor(admin_client, "VND-ASSIGN-ROUTE-PO")
+    inv = await _make_invoice(admin_client, v["id"], number="ASSIGN-ROUTE-PO")
+    assignee = await _make_user()
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
+                                json={"user_id": str(assignee)})
+    assert r.status_code == 200, r.text
+
+    task = await _open_match_task(inv["id"])
+    assert task.title == f"Match invoice {inv['internal_ref']} to PO"
+    assert "PO lines" in task.description
+
+
+@pytest.mark.asyncio
+async def test_assign_match_uses_agreement_wording_for_an_agreement_invoice(admin_client):
+    from tests.test_agreements import AGR_URL, _agr_payload
+
+    v = await _make_vendor(admin_client, "VND-ASSIGN-ROUTE-AGR")
+    agr = (await admin_client.post(AGR_URL, json=_agr_payload(v["id"]))).json()
+    inv = await _make_invoice(admin_client, v["id"], number="ASSIGN-ROUTE-AGR")
+    assignee = await _make_user()
+
+    # An invoice already linked to an agreement and knocked back to exception
+    # — the state in which re-assignment actually happens on this route.
+    import app.db.session as session_module
+    from app.models.invoice import Invoice
+    async with session_module.AsyncSessionLocal() as db:
+        row = (await db.execute(select(Invoice).where(
+            Invoice.id == uuid.UUID(inv["id"])))).scalar_one()
+        row.agreement_id = uuid.UUID(agr["id"])
+        row.status = "exception"
+        await db.commit()
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
+                                json={"user_id": str(assignee)})
+    assert r.status_code == 200, r.text
+
+    task = await _open_match_task(inv["id"])
+    assert agr["number"] in task.title
+    assert "PO" not in task.title
+    assert "PO lines" not in task.description
+    assert "pickup slips" in task.description

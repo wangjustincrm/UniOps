@@ -12,6 +12,7 @@ from app.crud import agreement as agreement_crud
 from app.crud import agreement_slip as agreement_slip_crud
 from app.crud import invoice as invoice_crud
 from app.crud import vendor as vendor_crud
+from app.models.agreement import PurchaseAgreement
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
@@ -668,15 +669,53 @@ async def assign_match(
         Task.is_completed.is_(False),
     ))).scalar_one_or_none()
 
-    description = (
-        f"You have been assigned to match invoice {inv.internal_ref} "
-        f"({inv.vendor_name}, {inv.currency} {inv.total_amount}) to its purchase order(s). "
-        f"Open the invoice and allocate its lines to the PO lines."
-    )
+    # Whole-branch review (D): the assignment task's copy was hard-coded PO
+    # wording — "Match invoice X to PO" / "allocate its lines to the PO lines"
+    # — and told anyone assigned on the agreement route to do something that
+    # does not exist there. There are no PO lines on an agreement, and no
+    # allocation step; what that person actually has to do is record the
+    # pickup slips on the agreement and then come back and claim them.
+    # Same defect and same fix as the review_match copy above.
+    #
+    # The branch is on `inv.agreement_id`, not on match_route or agreement
+    # type: assignment is allowed while the invoice is still "unmatched" or
+    # "exception", and in that state the invoice usually has NO agreement link
+    # yet (AP assigns first, the route is decided later by whoever matches).
+    # PO wording is the right default for that genuinely-unknown case — this
+    # only re-words the case where the link already exists, i.e. the invoice
+    # was matched to an agreement and then knocked back to exception, or AP
+    # pre-linked it. No lookup, no guess.
+    agr_number = None
+    if inv.agreement_id is not None:
+        agr_number = (await db.execute(
+            select(PurchaseAgreement.number).where(
+                PurchaseAgreement.id == inv.agreement_id))).scalar_one_or_none()
+
+    if inv.agreement_id is not None:
+        agr_label = f"agreement {agr_number}" if agr_number else "its agreement"
+        title = f"Match invoice {inv.internal_ref} to {agr_label}"
+        description = (
+            f"You have been assigned to match invoice {inv.internal_ref} "
+            f"({inv.vendor_name}, {inv.currency} {inv.total_amount}) to {agr_label}. "
+            f"There is no purchase order or goods receipt on this route: open the "
+            f"agreement, make sure the supporting pickup slips are recorded, then "
+            f"open the invoice and claim them."
+        )
+    else:
+        title = f"Match invoice {inv.internal_ref} to PO"
+        description = (
+            f"You have been assigned to match invoice {inv.internal_ref} "
+            f"({inv.vendor_name}, {inv.currency} {inv.total_amount}) to its purchase order(s). "
+            f"Open the invoice and allocate its lines to the PO lines."
+        )
     if existing is not None:
         existing.assigned_user_id = assignee.id
         existing.created_by = assigner_id
         existing.description = description
+        # Title too, not just the description: a reassignment after the route
+        # became known would otherwise keep the stale PO title in the inbox
+        # list, which is the only text the assignee sees before opening it.
+        existing.title = title
         task = existing
     else:
         task = Task(
@@ -686,7 +725,7 @@ async def assign_match(
             assigned_role="assigned",            # 非真实角色,防止角色池广播
             assigned_user_id=assignee.id,
             created_by=assigner_id,
-            title=f"Match invoice {inv.internal_ref} to PO",
+            title=title,
             description=description,
             vendor=inv.vendor_name, amount=inv.total_amount,
         )
