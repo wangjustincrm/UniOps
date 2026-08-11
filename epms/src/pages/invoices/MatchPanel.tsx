@@ -285,7 +285,14 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // house_account slip selection (Task 10) — see the slipsQuery block below.
   const [selectedSlipIds, setSelectedSlipIds] = useState<string[]>([])
   const [slipVarianceReason, setSlipVarianceReason] = useState('')
+  // slipRefInput is the raw, live input value (controlled). slipRefCommitted
+  // only updates on blur/Enter — review fix (Important 2): matching on every
+  // keystroke let a short reference number's IN-PROGRESS value (e.g. typing
+  // "10010" passes through "1001") match a DIFFERENT, wrong slip along the
+  // way, and that wrong match never got un-picked. Only the committed value
+  // drives matching now.
   const [slipRefInput, setSlipRefInput] = useState('')
+  const [slipRefCommitted, setSlipRefCommitted] = useState('')
 
   const selectedAgreement = agreementCandidates.find((a) => a.id === selectedAgreementId)
   const isHouseAccount = selectedAgreement?.agreement_type === 'house_account'
@@ -299,13 +306,26 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // Gated the same way scheduleQuery is above — enabled only when needed.
   const slipsQuery = useAgreementSlips(isHouseAccount ? selectedAgreementId : '', 'open')
   const openSlips: ApiSlip[] = slipsQuery.data?.items ?? []
-  const slipsLoading = slipsQuery.isLoading
+  // Review fix (round-1 trailer, guard-timing note): the accelerators used to
+  // gate on `slipsQuery.isLoading`, which in TanStack Query v5 is a DERIVED
+  // flag (`isPending && isFetching`) whose value during the exact render a
+  // disabled query flips to enabled isn't part of any documented contract.
+  // `isSuccess`/`isError` are the query's actual terminal status flags —
+  // querying them directly can't strand the one-shot guard on an
+  // unconfirmed timing assumption. Also used below to gate the "Loading…"
+  // copy and the no-evidence reason box (Important 7) — same reasoning
+  // applies to both, so there's no separate `isLoading`-based flag to drift
+  // out of sync with it.
+  const slipsSettled = slipsQuery.isSuccess || slipsQuery.isError
   // Design decision 3 (task brief): a fetch failure must render as a DISTINCT
   // error state, never silently as "this agreement has no slips" — that
   // would make the operator think the agreement is genuinely clean and send
   // them to the legacy no-evidence reason box, quietly bypassing the
   // evidence chain Tasks 1-9 built. See the error branch rendered below.
   const slipsErrored = slipsQuery.isError
+  // Distinguishes "never loaded anything" from "have cached data, this
+  // fetch just failed" — see the render logic below (review fix, Minor 8).
+  const hasSlipList = openSlips.length > 0
   const sortedOpenSlips = [...openSlips].sort(
     (a, b) => new Date(b.slip_date).getTime() - new Date(a.slip_date).getTime()
   )
@@ -315,46 +335,82 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   const slipVarianceAmount = selectedSlipTotal - invoiceTotalAmount
   const slipVarianceIsZero = centsEqual(selectedSlipTotal, invoiceTotalAmount)
 
+  // Tracks which slip (at most one) is CURRENTLY checked because an
+  // accelerator put it there, as opposed to a manual click — lets the
+  // effect below swap its own pick without ever touching one the operator
+  // chose by hand (design decision 1). Reset alongside the rest of the
+  // per-agreement state in AgreementCandidateRow's onSelect below.
+  const autoSelectedSlipIdRef = useRef<string | null>(null)
+  // One-shot latch for the amount+date guess specifically — see the combined
+  // effect below for why "one-shot" no longer means "one render, ever" but
+  // "one determination, deferred while a reference match is in play."
+  const slipPreselectAppliedRef = useRef(false)
+
   const toggleSlip = (slipId: string) => {
+    if (autoSelectedSlipIdRef.current === slipId) {
+      // The operator is taking manual control of a slip an accelerator
+      // picked — stop treating it as "ours" so a later accelerator swap
+      // can't fight a manual (re-)check/uncheck (design decision 1).
+      autoSelectedSlipIdRef.current = null
+    }
     setSelectedSlipIds((prev) => (prev.includes(slipId) ? prev.filter((id) => id !== slipId) : [...prev, slipId]))
   }
 
-  // Accelerated path 1 (task brief): typing the invoice's own reference
-  // number pre-selects the matching slip, if one exists. Reactive to typing
-  // (not a one-shot effect) so it fires the moment a match appears, per the
-  // brief's manual-verification script (#6). Deliberately does not
-  // deselect anything when the input is cleared or changed — the operator
-  // stays in control of what's checked (design decision 1).
+  // Combined accelerator decision (review fix, Important 1 + 2). The two
+  // paths used to be independent effects that only ever ADDED to the
+  // selection — the real failure mode: path 2's amount+date guess fires
+  // automatically the instant slips finish loading (no operator action
+  // needed), and later, typing a matching reference number in path 1 added
+  // a SECOND slip on top of it. Two real slips get claimed, the total looks
+  // roughly 2x the invoice, the (non-blocking, "recommended" not required)
+  // variance box makes it trivially easy to wave through, and the backend's
+  // claim() does no amount check at all — the surplus slip gets silently
+  // `reconciled` against the WRONG invoice with no UI path back to `open`.
+  // Exactly the "predicting wrong beats not predicting" failure the task's
+  // design decision 1 was written to prevent, just arrived at by stacking
+  // two individually-correct predictions instead of one wrong one.
+  //
+  // Fix: at most ONE accelerator-picked slip is ever checked at a time,
+  // tracked via autoSelectedSlipIdRef. Priority mirrors the brief's own
+  // ordering — an explicit reference match (path 1) always wins over the
+  // automatic amount+date guess (path 2); when a NEW desired pick differs
+  // from the previous one, the previous pick is unchecked before the new
+  // one is checked, never both at once. The amount+date guess itself still
+  // fires at most once (slipPreselectAppliedRef) — but that "once" is now
+  // deferred past any render where a reference match is already in play,
+  // so clearing the reference field later can still let it run.
   useEffect(() => {
-    if (!isHouseAccount) return
-    const ref = slipRefInput.trim()
-    if (!ref) return
-    const match = openSlips.find((s) => s.slip_ref != null && s.slip_ref.trim() === ref)
-    if (match) setSelectedSlipIds((prev) => (prev.includes(match.id) ? prev : [...prev, match.id]))
-  }, [isHouseAccount, slipRefInput, openSlips])
+    if (!isHouseAccount || !slipsSettled) return
 
-  // Accelerated path 2 (task brief, design decision 1): pre-select ONLY when
-  // exactly one open slip has a total_amount equal to the invoice total AND
-  // a slip_date within the 14 days before the invoice date. Multiple matches
-  // = do NOT pre-select any of them — a wrong pre-selection the operator
-  // waves through is worse than none at all. Runs once per agreement
-  // selection (guarded by slipPreselectAppliedRef, reset alongside the other
-  // per-agreement state in AgreementCandidateRow's onSelect below) so it
-  // never overrides a manual (de)selection made after slips finish loading.
-  const slipPreselectAppliedRef = useRef(false)
-  useEffect(() => {
-    if (!isHouseAccount || slipPreselectAppliedRef.current || slipsLoading) return
-    slipPreselectAppliedRef.current = true
-    const invoiceDateMs = new Date(inv.invoice_date).getTime()
-    const uniqueMatches = openSlips.filter((s) => {
-      if (!centsEqual(Number(s.total_amount), invoiceTotalAmount)) return false
-      const daysBefore = (invoiceDateMs - new Date(s.slip_date).getTime()) / 86_400_000
-      return daysBefore >= 0 && daysBefore <= 14
-    })
-    if (uniqueMatches.length === 1) {
-      setSelectedSlipIds((prev) => (prev.includes(uniqueMatches[0].id) ? prev : [...prev, uniqueMatches[0].id]))
+    const committedRef = slipRefCommitted.trim()
+    const refMatch = committedRef
+      ? openSlips.find((s) => s.slip_ref != null && s.slip_ref.trim() === committedRef) ?? null
+      : null
+
+    let desired: ApiSlip | null = refMatch
+    if (!desired && !slipPreselectAppliedRef.current) {
+      const invoiceDateMs = new Date(inv.invoice_date).getTime()
+      const uniqueMatches = openSlips.filter((s) => {
+        if (!centsEqual(Number(s.total_amount), invoiceTotalAmount)) return false
+        const daysBefore = (invoiceDateMs - new Date(s.slip_date).getTime()) / 86_400_000
+        return daysBefore >= 0 && daysBefore <= 14
+      })
+      desired = uniqueMatches.length === 1 ? uniqueMatches[0] : null
+      slipPreselectAppliedRef.current = true
     }
-  }, [isHouseAccount, slipsLoading, openSlips, invoiceTotalAmount, inv.invoice_date])
+
+    const desiredId = desired?.id ?? null
+    if (desiredId === autoSelectedSlipIdRef.current) return
+
+    const previousAutoId = autoSelectedSlipIdRef.current
+    autoSelectedSlipIdRef.current = desiredId
+    setSelectedSlipIds((prev) => {
+      let next = prev
+      if (previousAutoId && next.includes(previousAutoId)) next = next.filter((id) => id !== previousAutoId)
+      if (desiredId && !next.includes(desiredId)) next = [...next, desiredId]
+      return next
+    })
+  }, [isHouseAccount, slipsSettled, openSlips, slipRefCommitted, invoiceTotalAmount, inv.invoice_date])
 
   // Task 6's backend branches on agreement_type: recurring FIFO-claims a period
   // by default (schedule_id optional — see the manual-assignment override
@@ -570,16 +626,18 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                   onSelect={() => {
                     // A previously-picked stage/slip selection belongs to the
                     // PREVIOUS agreement — stale if left set across a
-                    // selection change. Also re-arms the accelerated-path
-                    // pre-selection (slipPreselectAppliedRef) so it runs
-                    // fresh against the NEW agreement's slips.
+                    // selection change. Also re-arms the accelerator
+                    // decision (slipPreselectAppliedRef + autoSelectedSlipIdRef)
+                    // so it runs fresh against the NEW agreement's slips.
                     setSelectedAgreementId(agr.id)
                     setSelectedScheduleId('')
                     setSelectedSlipIds([])
                     setSlipVarianceReason('')
                     setSlipRefInput('')
+                    setSlipRefCommitted('')
                     setLegacyReason('')
                     slipPreselectAppliedRef.current = false
+                    autoSelectedSlipIdRef.current = null
                   }}
                 />
               ))}
@@ -593,9 +651,14 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
           {isHouseAccount && (
             <div className="flex flex-col gap-3">
               {/* Reference-number accelerator (design decision 1, path 1):
-                  matching is exact against slip_ref — no fuzzy search. Does
-                  not deselect anything on its own; the operator stays in
-                  control. */}
+                  matching is exact against slip_ref — no fuzzy search.
+                  Matches on blur/Enter, not every keystroke (review fix,
+                  Important 2) — matching mid-keystroke let an in-progress
+                  short reference number pass through a DIFFERENT real
+                  slip's number on the way to the one actually being typed.
+                  The combined accelerator effect above cleanly swaps its
+                  own pick when the committed value changes; the operator's
+                  own manual (de)selections are never touched. */}
               <div className="flex flex-col gap-1">
                 <label className="text-xs font-medium text-neutral-700">
                   Reference on the invoice (optional)
@@ -604,48 +667,80 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                   type="text"
                   value={slipRefInput}
                   onChange={(e) => setSlipRefInput(e.target.value)}
+                  onBlur={() => setSlipRefCommitted(slipRefInput)}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return
+                    e.preventDefault()
+                    setSlipRefCommitted(slipRefInput)
+                  }}
                   placeholder="e.g. the counter receipt # printed on the invoice"
                   className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
                 />
               </div>
 
-              {slipsErrored ? (
-                // Design decision 3: a fetch failure is NEVER rendered as an
-                // empty slip list — that would read as "this agreement
-                // genuinely has no slips" and send the operator straight to
-                // the no-evidence reason box below, silently bypassing the
-                // evidence chain. Submit stays enabled either way (via the
-                // no-evidence fallback that appears since selectedSlipIds
-                // stays empty here).
+              {/* Design decision 3 + review fix (Minor 8): a fetch failure
+                  is NEVER rendered as an empty slip list — that would read
+                  as "this agreement genuinely has no slips" and send the
+                  operator straight to the no-evidence reason box, silently
+                  bypassing the evidence chain. But a BACKGROUND refetch
+                  failure (react-query's default refetchOnWindowFocus) must
+                  not blow away a list the operator already has slips
+                  checked in either — hasSlipList tells the two failure
+                  shapes apart: no cached data at all gets the full-width
+                  error (nothing else to show), cached-but-stale gets a
+                  compact banner ABOVE the still-interactive list so
+                  existing selections stay visible and un-checkable. */}
+              {slipsErrored && !hasSlipList && (
                 <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                  <p>Couldn't load pickup slips — you may not have permission to view them. You can still submit by explaining why below.</p>
-                </div>
-              ) : slipsLoading ? (
-                <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
-                  Loading pickup slips…
-                </p>
-              ) : sortedOpenSlips.length === 0 ? (
-                <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
-                  No open pickup slips on this agreement.
-                </p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-medium text-neutral-700">
-                    Which pickup slip(s) does this invoice cover?
-                  </label>
-                  <div className="flex flex-col gap-2">
-                    {sortedOpenSlips.map((slip) => (
-                      <SlipCandidateRow
-                        key={slip.id}
-                        slip={slip}
-                        selected={selectedSlipIds.includes(slip.id)}
-                        onToggle={() => toggleSlip(slip.id)}
-                        currency={selectedAgreement?.currency ?? inv.currency}
-                      />
-                    ))}
+                  <div className="flex flex-1 items-center justify-between gap-2">
+                    <p>Couldn't load pickup slips — you may not have permission to view them. You can still submit by explaining why below.</p>
+                    <Button size="sm" variant="secondary" onClick={() => slipsQuery.refetch()} disabled={slipsQuery.isFetching}>
+                      {slipsQuery.isFetching ? 'Retrying…' : 'Retry'}
+                    </Button>
                   </div>
                 </div>
+              )}
+              {(!slipsErrored || hasSlipList) && (
+                <>
+                  {slipsErrored && hasSlipList && (
+                    <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <div className="flex flex-1 items-center justify-between gap-2">
+                        <p>Couldn't refresh the pickup slip list — showing the last one loaded.</p>
+                        <Button size="sm" variant="secondary" onClick={() => slipsQuery.refetch()} disabled={slipsQuery.isFetching}>
+                          {slipsQuery.isFetching ? 'Retrying…' : 'Retry'}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {!slipsSettled ? (
+                    <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+                      Loading pickup slips…
+                    </p>
+                  ) : sortedOpenSlips.length === 0 ? (
+                    <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+                      No open pickup slips on this agreement. (Slips still awaiting AP review aren't listed here.)
+                    </p>
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs font-medium text-neutral-700">
+                        Which pickup slip(s) does this invoice cover?
+                      </label>
+                      <div className="flex flex-col gap-2">
+                        {sortedOpenSlips.map((slip) => (
+                          <SlipCandidateRow
+                            key={slip.id}
+                            slip={slip}
+                            selected={selectedSlipIds.includes(slip.id)}
+                            onToggle={() => toggleSlip(slip.id)}
+                            currency={selectedAgreement?.currency ?? inv.currency}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {selectedSlipIds.length > 0 && (
@@ -682,7 +777,16 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                 </div>
               )}
 
-              {selectedSlipIds.length === 0 && (
+              {/* Review fix (Important 7): while the slip list is still
+                  loading, selectedSlipIds is necessarily empty — without the
+                  slipsSettled guard this required, red-asterisked box used
+                  to flash open on every panel mount (before the list has had
+                  a chance to say otherwise), and its whole purpose is to be
+                  the thing this feature makes rare. Only render it once we
+                  actually know there's nothing selected (settled — loaded
+                  with none picked, OR the fetch failed and there was never
+                  anything to pick from). */}
+              {selectedSlipIds.length === 0 && slipsSettled && (
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-neutral-700">
                     No pickup slips selected — reason for settling without receipt evidence <span className="text-danger-600">*</span>
@@ -691,6 +795,17 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                     This invoice will be paid against the agreement with no pickup slip to reconcile against.
                     Explain why — this is recorded for audit.
                   </p>
+                  {/* Review fix (Important 6): when this box is showing
+                      BECAUSE the slip list failed to load (not because the
+                      agreement genuinely has none), submitting here still
+                      records a permanent legacy_settlement=True — say so
+                      explicitly, so it's an informed choice rather than a
+                      silent evidence-chain bypass. */}
+                  {slipsErrored && (
+                    <p className="text-[11px] font-medium text-warning-700">
+                      The pickup slip list failed to load — settling now will record this invoice as having no receipt evidence, even if slips actually exist. Consider retrying above first.
+                    </p>
+                  )}
                   <textarea
                     rows={3}
                     value={legacyReason}
