@@ -15,6 +15,37 @@ export type AgreementType = 'house_account' | 'recurring' | 'milestone'
 
 export type AgreementAction = 'submit' | 'approve' | 'return' | 'cancel'
 
+export type RecurringType = 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+
+// Decimal fields (expected_amount, tolerance_pct, amount_pct) arrive from the
+// API as JSON strings — same Pydantic-Decimal serialisation as ApiAgreement.
+// Number()-coerce before any arithmetic/comparison.
+export interface ApiScheduleRow {
+  id: string
+  agreement_id: string
+  schedule_type: 'period' | 'milestone'
+  sequence: number
+  expected_amount: string | null
+  expected_date: string | null
+  expected_timing: string | null
+  status: 'pending' | 'received' | 'overdue' | 'waived'
+  invoice_id: string | null
+  period_label: string | null
+  tolerance_pct: string | null
+  overdue_after_days: number | null
+  milestone_name: string | null
+  amount_pct: string | null
+  accepted_by: string | null
+  accepted_at: string | null
+}
+
+export interface MilestoneRowIn {
+  milestone_name: string
+  expected_timing?: string | null
+  expected_amount?: string | null
+  amount_pct?: string | null
+}
+
 // Decimal fields (not_to_exceed, consumed_amount, tax_rate) arrive from the API
 // as JSON strings — Pydantic serialises Decimal that way. Number()-coerce at
 // every arithmetic/comparison site (see AgreementListPage/DetailPage).
@@ -39,6 +70,13 @@ export interface ApiAgreement {
   department_id?: string | null
   budget_code?: string | null
   owner_id?: string | null
+  cost_center_id?: string | null
+  recurring_type?: RecurringType | null
+  expected_invoice_day?: number | null
+  anchor_month?: number | null
+  expected_amount_per_period?: string | null
+  tolerance_pct?: string | null
+  overdue_after_days?: number | null
   status: AgreementStatus
   approval_step_idx: number
   notes?: string | null
@@ -65,6 +103,14 @@ export interface CreateAgreementBody {
   budget_code?: string
   owner_id?: string
   notes?: string
+  cost_center_id?: string
+  recurring_type?: RecurringType
+  expected_invoice_day?: number
+  anchor_month?: number
+  expected_amount_per_period?: number
+  tolerance_pct?: number
+  overdue_after_days?: number
+  milestones?: MilestoneRowIn[]
 }
 
 // PATCH /agreements/{id} applies `model_dump(exclude_unset=True)`, so an
@@ -88,6 +134,14 @@ export interface UpdateAgreementBody {
   budget_code?: string | null
   owner_id?: string | null
   notes?: string | null
+  cost_center_id?: string | null
+  recurring_type?: RecurringType | null
+  expected_invoice_day?: number | null
+  anchor_month?: number | null
+  expected_amount_per_period?: number | null
+  tolerance_pct?: number | null
+  overdue_after_days?: number | null
+  milestones?: MilestoneRowIn[] | null
 }
 
 export interface AgreementActionBody {
@@ -127,4 +181,10 @@ export const agreementService = {
 
   action: (id: string, body: AgreementActionBody) =>
     api.post<ApiAgreement>(`/agreements/${id}/action`, body),
+
+  schedule: (id: string) =>
+    api.get<{ items: ApiScheduleRow[] }>(`/agreements/${id}/schedule`),
+
+  confirmPeriod: (agreementId: string, rowId: string) =>
+    api.post<ApiScheduleRow>(`/agreements/${agreementId}/schedule/${rowId}/confirm`),
 }

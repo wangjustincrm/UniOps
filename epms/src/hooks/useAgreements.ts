@@ -65,6 +65,36 @@ export function useUpdateAgreement() {
   })
 }
 
+export function useAgreementSchedule(agreementId: string) {
+  return useQuery({
+    queryKey: ['agreements', agreementId, 'schedule'],
+    queryFn: () => agreementService.schedule(agreementId),
+    enabled: Boolean(agreementId),
+  })
+}
+
+export function useConfirmPeriod(agreementId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (rowId: string) => agreementService.confirmPeriod(agreementId, rowId),
+    // await is load-bearing, same rationale as useAgreementAction above: without
+    // it isPending flips false before the schedule/task refetch lands, the
+    // Confirm button re-arms on stale data, and a second click 409s against an
+    // already-confirmed row. Both keys gate visibility here — the schedule
+    // table derives its own status column, and the task list backs whether
+    // the caller still holds an open confirm_period task for this row.
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['agreements'] }),
+        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+      ])
+    },
+    onError: (err: unknown) =>
+      alert(err instanceof Error ? err.message : 'Failed to confirm the period'),
+  })
+}
+
 export function useAgreementAction(id: string) {
   const queryClient = useQueryClient()
 
