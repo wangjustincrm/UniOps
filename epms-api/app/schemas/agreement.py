@@ -14,6 +14,42 @@ AGR_WORKFLOW = [
 ]
 
 AGREEMENT_TYPES = ("house_account", "recurring", "milestone")
+RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly")
+ANCHORED_TYPES = ("quarterly", "yearly")
+
+
+class MilestoneRowIn(BaseModel):
+    milestone_name: str = Field(min_length=1, max_length=255)
+    # 纯文本时间(决策 8):"Within 1 week after contract signing"。阶段时间几乎
+    # 总是相对合同事件的,落成日历日期只会得到一个填时就不准、之后没人维护的数字。
+    expected_timing: str | None = Field(default=None, max_length=255)
+    expected_amount: Decimal | None = Field(default=None, ge=0)
+    amount_pct: Decimal | None = Field(default=None, ge=0, le=100)
+
+
+class ScheduleRowResponse(BaseModel):
+    id: uuid.UUID
+    agreement_id: uuid.UUID
+    schedule_type: str
+    sequence: int
+    expected_amount: Decimal | None
+    expected_date: date | None
+    expected_timing: str | None
+    status: str
+    invoice_id: uuid.UUID | None
+    period_label: str | None
+    tolerance_pct: Decimal | None
+    overdue_after_days: int | None
+    milestone_name: str | None
+    amount_pct: Decimal | None
+    accepted_by: uuid.UUID | None
+    accepted_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class ScheduleListResponse(BaseModel):
+    items: list[ScheduleRowResponse]
 
 
 class AgreementCreate(BaseModel):
@@ -35,10 +71,63 @@ class AgreementCreate(BaseModel):
     owner_id: uuid.UUID | None = None
     notes: str | None = None
 
+    cost_center_id: uuid.UUID | None = None
+    recurring_type: str | None = None
+    expected_invoice_day: int | None = Field(default=None, ge=1, le=31)
+    anchor_month: int | None = Field(default=None, ge=1, le=12)
+    expected_amount_per_period: Decimal | None = Field(default=None, ge=0)
+    tolerance_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    overdue_after_days: int | None = Field(default=None, ge=0, le=365)
+    milestones: list[MilestoneRowIn] = Field(default_factory=list)
+
     @model_validator(mode="after")
     def _validity_window_is_ordered(self):
         if self.valid_to < self.valid_from:
             raise ValueError("valid_to must be on or after valid_from")
+        return self
+
+    @model_validator(mode="after")
+    def _recurrence_is_coherent(self):
+        if self.agreement_type == "recurring":
+            if self.recurring_type not in RECURRING_TYPES:
+                raise ValueError(
+                    "recurring_type is required for a recurring agreement "
+                    f"(one of {', '.join(RECURRING_TYPES)})")
+            if self.expected_invoice_day is None:
+                raise ValueError("expected_invoice_day is required for a recurring agreement")
+            if self.recurring_type == "weekly" and not 1 <= self.expected_invoice_day <= 7:
+                raise ValueError(
+                    "For a weekly cycle expected_invoice_day is a weekday, 1..7 (1 = Monday)")
+            if self.recurring_type in ANCHORED_TYPES and self.anchor_month is None:
+                raise ValueError(
+                    f"anchor_month is required for a {self.recurring_type} cycle — real "
+                    "billing cycles often do not start in January, and the contract start "
+                    "date is not a reliable proxy for the billing anchor")
+            # 生成不出来的排期,建档时就该挡住,而不是等审批通过那一刻才炸。
+            from app.services.agreement_schedule import TooManyPeriods, build_period_rows
+            try:
+                build_period_rows(
+                    recurring_type=self.recurring_type, valid_from=self.valid_from,
+                    valid_to=self.valid_to, expected_invoice_day=self.expected_invoice_day,
+                    anchor_month=self.anchor_month)
+            except TooManyPeriods as exc:
+                raise ValueError(str(exc)) from exc
+        else:
+            bad = [n for n in ("recurring_type", "expected_invoice_day", "anchor_month",
+                               "expected_amount_per_period", "tolerance_pct")
+                   if getattr(self, n) is not None]
+            if bad:
+                raise ValueError(f"{', '.join(bad)} only apply to a recurring agreement")
+        return self
+
+    @model_validator(mode="after")
+    def _milestones_are_coherent(self):
+        if self.milestones and self.agreement_type != "milestone":
+            raise ValueError("milestones can only be set on a milestone agreement")
+        if any(m.amount_pct is not None for m in self.milestones) and self.not_to_exceed is None:
+            raise ValueError(
+                "amount_pct needs not_to_exceed as its base — set a ceiling on the "
+                "agreement, or enter absolute amounts on the stages")
         return self
 
 
@@ -57,6 +146,16 @@ class AgreementUpdate(BaseModel):
     budget_code: str | None = Field(default=None, max_length=100)
     owner_id: uuid.UUID | None = None
     notes: str | None = None
+
+    cost_center_id: uuid.UUID | None = None
+    recurring_type: str | None = None
+    expected_invoice_day: int | None = Field(default=None, ge=1, le=31)
+    anchor_month: int | None = Field(default=None, ge=1, le=12)
+    expected_amount_per_period: Decimal | None = Field(default=None, ge=0)
+    tolerance_pct: Decimal | None = Field(default=None, ge=0, le=100)
+    overdue_after_days: int | None = Field(default=None, ge=0, le=365)
+    # None = 不动阶段行(维持既有排期);[] = 清空阶段行。
+    milestones: list[MilestoneRowIn] | None = None
 
 
 class AgreementActionRequest(BaseModel):
@@ -85,6 +184,13 @@ class AgreementResponse(BaseModel):
     department_id: uuid.UUID | None
     budget_code: str | None
     owner_id: uuid.UUID | None
+    cost_center_id: uuid.UUID | None
+    recurring_type: str | None
+    expected_invoice_day: int | None
+    anchor_month: int | None
+    expected_amount_per_period: Decimal | None
+    tolerance_pct: Decimal | None
+    overdue_after_days: int | None
     status: str
     approval_step_idx: int
     notes: str | None

@@ -5,6 +5,7 @@ from datetime import date, datetime, timezone
 from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud import agreement_schedule
 from app.crud._numbering import next_number
 from app.models.agreement import PurchaseAgreement
 from app.schemas.agreement import AgreementCreate, AgreementUpdate
@@ -73,9 +74,12 @@ async def create(
         number=await _next_number(db),
         vendor_name=vendor_name,
         created_by=created_by,
-        **body.model_dump(),
+        **body.model_dump(exclude={"milestones"}),
     )
     db.add(agr)
+    await db.flush()
+    if body.milestones:
+        await agreement_schedule.replace_milestone_rows(db, agr, body.milestones)
     await db.commit()
     await db.refresh(agr)
     return agr
@@ -84,8 +88,14 @@ async def create(
 async def update(
     db: AsyncSession, agr: PurchaseAgreement, body: AgreementUpdate
 ) -> PurchaseAgreement:
-    for field, value in body.model_dump(exclude_unset=True).items():
+    for field, value in body.model_dump(exclude_unset=True, exclude={"milestones"}).items():
         setattr(agr, field, value)
+    # None = leave the stage rows alone; [] = clear them. Only a body that
+    # actually carries the key (exclude_unset would drop an absent one, but
+    # milestones defaults to None on AgreementUpdate so "not set" and
+    # "explicitly None" already coincide) triggers a replace.
+    if body.milestones is not None:
+        await agreement_schedule.replace_milestone_rows(db, agr, body.milestones)
     await db.commit()
     await db.refresh(agr)
     return agr

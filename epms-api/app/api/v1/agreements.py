@@ -73,7 +73,10 @@ async def update_agreement(
             detail=f"Agreement is {agr.status}; only a draft agreement can be edited. "
                    "Changing terms after approval requires a new approval round.",
         )
-    return await agr_crud.update(db, agr, body)
+    try:
+        return await agr_crud.update(db, agr, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.post("/{agreement_id}/action", response_model=AgreementResponse)
