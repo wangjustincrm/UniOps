@@ -4,12 +4,12 @@ import { AlertTriangle, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { useDeclineMatch, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
-import { useAgreementCandidates } from '@/hooks/useAgreements'
+import { useAgreementCandidates, useAgreementSchedule } from '@/hooks/useAgreements'
 import { useAuthStore } from '@/stores/auth.store'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import type { ApiInvoice, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
-import type { ApiAgreement } from '@/services/agreement'
+import type { ApiAgreement, ApiScheduleRow } from '@/services/agreement'
 import type { DocumentStatus } from '@/types'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
 
@@ -60,6 +60,87 @@ function AgreementCandidateRow({
   )
 }
 
+// Mirrors the backend's claim_next_period tolerance check (crud/agreement_schedule.py):
+// expected ± (expected * tolerance_pct / 100). Both operands must already be
+// Number()-coerced by the caller — decimal fields arrive as JSON strings.
+function withinPeriodTolerance(amount: number, expected: number, tolerancePct: number): boolean {
+  const span = (expected * tolerancePct) / 100
+  return amount >= expected - span && amount <= expected + span
+}
+
+// recurring — preview of the period the server will FIFO-claim on submit (no
+// date-window guessing on either side, see claim_next_period's comment).
+function RecurringPeriodPreview({
+  loading, row, invoiceTotal, currency,
+}: { loading: boolean; row: ApiScheduleRow | undefined; invoiceTotal: number; currency: string }) {
+  if (loading) {
+    return (
+      <p className="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-xs text-neutral-400">
+        Loading the payment schedule…
+      </p>
+    )
+  }
+  if (!row) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+        <p>No open period is available to claim on this agreement — this invoice will go to review for manual assignment.</p>
+      </div>
+    )
+  }
+  const label = row.period_label ?? `Period #${row.sequence}`
+  const expected = row.expected_amount != null ? Number(row.expected_amount) : null
+  const tolerancePct = row.tolerance_pct != null ? Number(row.tolerance_pct) : 0
+  const outOfTolerance = expected !== null && !withinPeriodTolerance(invoiceTotal, expected, tolerancePct)
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="rounded-lg border border-primary-200 bg-white px-3 py-2.5 text-xs text-neutral-700">
+        This invoice will be claimed against <span className="font-medium text-neutral-900">{label}</span>
+        {expected !== null && <> (expected {formatAmount(expected, currency)})</>}
+        {row.status === 'overdue' && <span className="ml-1.5 font-medium text-warning-700">· overdue</span>}
+      </div>
+      {outOfTolerance && (
+        <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+          <p>Amount is outside the tolerance for {label} — this invoice will go to review for manual assignment.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// milestone — single-select stage row. Only rows with invoice_id === null are
+// ever passed in (a claimed stage must not be offered again).
+function MilestoneStageRow({
+  row, selected, onSelect, currency,
+}: { row: ApiScheduleRow; selected: boolean; onSelect: () => void; currency: string }) {
+  const expected = row.expected_amount != null ? Number(row.expected_amount) : null
+  return (
+    <label
+      className={cn(
+        'flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors',
+        selected ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:bg-neutral-50',
+      )}
+    >
+      <input
+        type="radio"
+        name="milestone-stage"
+        checked={selected}
+        onChange={onSelect}
+        className="mt-1 h-4 w-4 text-primary-600 focus:ring-primary-500"
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-neutral-900">{row.milestone_name ?? `Stage #${row.sequence}`}</p>
+        <p className="text-xs text-neutral-500">
+          {row.expected_timing ?? 'No timing specified'}
+          {expected !== null && ` · Expected ${formatAmount(expected, currency)}`}
+        </p>
+      </div>
+    </label>
+  )
+}
+
 // Inline 3-way match panel — used by the Unmatched queue rows AND the invoice
 // detail page (Task Inbox / email deep links land there).
 export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => void }) {
@@ -96,7 +177,39 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
 
   const [selectedAgreementId, setSelectedAgreementId] = useState('')
   const [legacyReason, setLegacyReason] = useState('')
-  const canSubmitAgreement = !!selectedAgreementId && legacyReason.trim().length > 0
+  const [selectedScheduleId, setSelectedScheduleId] = useState('')
+
+  const selectedAgreement = agreementCandidates.find((a) => a.id === selectedAgreementId)
+  const isHouseAccount = selectedAgreement?.agreement_type === 'house_account'
+  const isRecurring = selectedAgreement?.agreement_type === 'recurring'
+  const isMilestone = selectedAgreement?.agreement_type === 'milestone'
+
+  // Task 6's backend branches on agreement_type: recurring FIFO-claims a period
+  // (no schedule_id from the client), milestone requires a manually-picked
+  // schedule_id, house_account has no schedule rows at all. Only fetch when the
+  // selection actually needs it — the hook itself gates on a truthy id.
+  const scheduleQuery = useAgreementSchedule(isRecurring || isMilestone ? selectedAgreementId : '')
+  const scheduleRows: ApiScheduleRow[] = scheduleQuery.data?.items ?? []
+  const scheduleLoading = scheduleQuery.isLoading
+
+  const nextPeriodRow = isRecurring
+    ? [...scheduleRows]
+        .filter((r) => r.schedule_type === 'period' && (r.status === 'pending' || r.status === 'overdue'))
+        .sort((a, b) => a.sequence - b.sequence)[0]
+    : undefined
+
+  const milestoneRows = isMilestone
+    ? [...scheduleRows]
+        .filter((r) => r.schedule_type === 'milestone' && r.invoice_id === null)
+        .sort((a, b) => a.sequence - b.sequence)
+    : []
+
+  const canSubmitAgreement = !!selectedAgreementId && (
+    isHouseAccount ? legacyReason.trim().length > 0 :
+    isMilestone ? (!scheduleLoading && !!selectedScheduleId) :
+    isRecurring ? !scheduleLoading :
+    false
+  )
 
   const me = useAuthStore.getState().user
   const isMyAssignment = inv.match_assignee_id != null && inv.match_assignee_id === me?.id
@@ -122,8 +235,17 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
 
   const handleMatchAgreement = () => {
     if (!canSubmitAgreement) return
+    // house_account: legacy_settlement_reason required, no schedule_id (no
+    // schedule rows exist for that type). recurring: neither field — the
+    // server FIFO-claims the next pending/overdue period itself. milestone:
+    // schedule_id required, no reason (Task 6 branch — see MatchPanel brief).
     matchInvoiceMutation.mutate(
-      { id: inv.id, agreement_id: selectedAgreementId, legacy_settlement_reason: legacyReason.trim() },
+      {
+        id: inv.id,
+        agreement_id: selectedAgreementId,
+        ...(isHouseAccount ? { legacy_settlement_reason: legacyReason.trim() } : {}),
+        ...(isMilestone ? { schedule_id: selectedScheduleId } : {}),
+      },
       {
         onSuccess: () => {
           onClose()
@@ -224,34 +346,91 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                   key={agr.id}
                   agreement={agr}
                   selected={selectedAgreementId === agr.id}
-                  onSelect={() => setSelectedAgreementId(agr.id)}
+                  onSelect={() => {
+                    // A previously-picked stage belongs to the PREVIOUS agreement —
+                    // stale if left set across a selection change.
+                    setSelectedAgreementId(agr.id)
+                    setSelectedScheduleId('')
+                  }}
                 />
               ))}
             </div>
           )}
 
-          {/* Mandatory reason — this stands in for the goods receipt evidence
-              that doesn't exist yet in Phase 1A (pickup slips ship later). */}
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-700">
-              Reason for settling without receipt evidence <span className="text-danger-600">*</span>
-            </label>
-            <p className="text-[11px] text-neutral-500">
-              This invoice will be paid against the agreement with no pickup slip to reconcile against.
-              Explain why — this is recorded for audit.
-            </p>
-            <textarea
-              rows={3}
-              value={legacyReason}
-              onChange={(e) => setLegacyReason(e.target.value)}
-              placeholder="e.g. Monthly house-account statement for vendor counter pickups; pickup slips not yet digitized."
-              className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
+          {/* house_account — mandatory reason. This stands in for the goods
+              receipt evidence that doesn't exist for that type (no schedule
+              rows, no pickup slips). Untouched from Phase 1A. */}
+          {isHouseAccount && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-neutral-700">
+                Reason for settling without receipt evidence <span className="text-danger-600">*</span>
+              </label>
+              <p className="text-[11px] text-neutral-500">
+                This invoice will be paid against the agreement with no pickup slip to reconcile against.
+                Explain why — this is recorded for audit.
+              </p>
+              <textarea
+                rows={3}
+                value={legacyReason}
+                onChange={(e) => setLegacyReason(e.target.value)}
+                placeholder="e.g. Monthly house-account statement for vendor counter pickups; pickup slips not yet digitized."
+                className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
+              />
+            </div>
+          )}
+
+          {/* recurring — no reason field: the server FIFO-claims the next
+              pending/overdue period itself (see claim_next_period). Preview
+              which one, and warn (without blocking) if the total falls
+              outside its tolerance. */}
+          {isRecurring && (
+            <RecurringPeriodPreview
+              loading={scheduleLoading}
+              row={nextPeriodRow}
+              invoiceTotal={Number(inv.total_amount)}
+              currency={selectedAgreement?.currency ?? inv.currency}
             />
-          </div>
+          )}
+
+          {/* milestone — no reason field, no amount check: expected vs actual
+              is shown for a human to judge (Task 6 backend does no validation
+              here). Only unclaimed stages (invoice_id === null) are listed. */}
+          {isMilestone && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-neutral-700">
+                Which stage does this invoice pay for? <span className="text-danger-600">*</span>
+              </label>
+              {scheduleLoading ? (
+                <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+                  Loading stages…
+                </p>
+              ) : milestoneRows.length === 0 ? (
+                <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
+                  No unclaimed stages on this agreement.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {milestoneRows.map((row) => (
+                    <MilestoneStageRow
+                      key={row.id}
+                      row={row}
+                      selected={selectedScheduleId === row.id}
+                      onSelect={() => setSelectedScheduleId(row.id)}
+                      currency={selectedAgreement?.currency ?? inv.currency}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-end">
             <Button onClick={handleMatchAgreement} disabled={!canSubmitAgreement || matchInvoiceMutation.isPending}>
-              {matchInvoiceMutation.isPending ? 'Matching...' : 'Confirm legacy settlement & match'}
+              {matchInvoiceMutation.isPending
+                ? 'Matching...'
+                : isHouseAccount
+                ? 'Confirm legacy settlement & match'
+                : 'Match to agreement'}
             </Button>
           </div>
         </div>

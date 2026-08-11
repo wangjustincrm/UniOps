@@ -144,6 +144,10 @@ export interface MatchInvoiceBody {
   // value is rejected server-side with 422.
   agreement_id?: string
   legacy_settlement_reason?: string
+  // milestone only — which schedule row (stage) this invoice pays for. recurring
+  // FIFO-claims its own row server-side and never reads this; house_account has
+  // no schedule rows at all. See InvoiceMatchRequest.schedule_id (epms-api).
+  schedule_id?: string
 }
 
 export interface ResolveExceptionBody {

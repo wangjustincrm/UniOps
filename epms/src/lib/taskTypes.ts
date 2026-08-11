@@ -45,6 +45,7 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   process_pa: 'Process Payment Application',
   approve_agr: 'Approve Agreement',
   revise_agr: 'Revise Agreement',
+  confirm_period: 'Confirm Service Period',
   revise_pr: 'Revise Purchase Request',
   revise_po: 'Revise Purchase Order',
   revise_pa: 'Revise Payment Application',
