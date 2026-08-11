@@ -1,4 +1,4 @@
-"""Invoice ↔ Agreement matching (Phase 1A: manual route, no slips)."""
+"""Invoice ↔ Agreement matching (Phase 1A: manual route, no receipts)."""
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
@@ -193,7 +193,7 @@ async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_eng
 
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
         "agreement_id": str(agr.id),
-        "legacy_settlement_reason": "Backlog statement, paper slips held by Finance",
+        "legacy_settlement_reason": "Backlog statement, paper receipts held by Finance",
     })
     assert r.status_code == 200, r.text
     body = r.json()
@@ -214,8 +214,9 @@ async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_eng
 
 
 async def test_match_to_agreement_requires_a_reason_in_1a(admin_client, test_engine):
-    """1A has no pickup slips, so every agreement match is a legacy settlement
-    and must carry a reason. 1B replaces this with real slip reconciliation."""
+    """1A has no agreement receipts, so every agreement match is a legacy
+    settlement and must carry a reason. 1B replaces this with real receipt
+    reconciliation."""
     vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id)
@@ -571,7 +572,7 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
     # No-evidence settlement: the review description must say so and quote
     # the reason (Task 5 round-1 review fix, Important #2 — this branch is
     # unchanged from before Task 5; the NEW branches are covered by
-    # test_agreement_match_by_delegate_with_slips_review_description below).
+    # test_agreement_match_by_delegate_with_receipts_review_description below).
     assert "as a legacy settlement (no receipt evidence): backlog" in review_task.description
     # A pending-review invoice still reserves against the ceiling — the same
     # "every linked invoice counts, no status filter" contract _recompute_
@@ -580,23 +581,23 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
     assert agr_fresh.consumed_amount == Decimal("1000.00")
 
 
-async def test_agreement_match_by_delegate_with_slips_review_description(admin_client, test_engine):
+async def test_agreement_match_by_delegate_with_receipts_review_description(admin_client, test_engine):
     """Task 5 round-1 review fix (Important #2): a delegate matching a
-    house_account invoice WITH claimed pickup slips must not get the "as a
+    house_account invoice WITH claimed receipts must not get the "as a
     legacy settlement (no receipt evidence): None" description — that invoice
     has real evidence, and the old unconditional wording asserted the exact
-    opposite of what happened. The review description must say slips were
+    opposite of what happened. The review description must say receipts were
     claimed, and must not claim "no receipt evidence" or print "None"."""
-    from tests.test_slip_match import _create_slip
+    from tests.test_receipt_match import _create_receipt
 
     vendor_id, _vendor_name, user_id = await seed_vendor_and_user(
-        test_engine, vendor_name="Slip Review Text Vendor")
+        test_engine, vendor_name="Receipt Review Text Vendor")
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slip = await _create_slip(db, agr, user_id, amount="100.00")
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
 
     delegate_client, delegate_id = await _delegate_client(test_engine)
     try:
@@ -605,7 +606,7 @@ async def test_agreement_match_by_delegate_with_slips_review_description(admin_c
         assert r_assign.status_code == 200, r_assign.text
 
         r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
-            "agreement_id": str(agr.id), "slip_ids": [str(slip.id)]})
+            "agreement_id": str(agr.id), "receipt_ids": [str(receipt.id)]})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["status"] == "match_review"
@@ -621,14 +622,14 @@ async def test_agreement_match_by_delegate_with_slips_review_description(admin_c
     assert review_task is not None
     assert "no receipt evidence" not in review_task.description
     assert "None" not in review_task.description
-    assert "1 claimed pickup slip" in review_task.description
+    assert "1 claimed receipt(s)" in review_task.description
 
 
 async def test_recurring_no_claimable_row_review_description_does_not_lie(admin_client, test_engine):
     """Task 5 round-2 review fix: recurring's FIFO auto-claim can legitimately
     come up empty (no pending/overdue row, or the amount is out of tolerance)
     — that's the only way this branch is reached with schedule_id still None,
-    legacy_settlement False, and slip_ids empty, and it's exactly why
+    legacy_settlement False, and receipt_ids empty, and it's exactly why
     require_review got set. The old fallback wording ("...against a billing
     schedule row") would tell the AP reviewer a period WAS claimed when
     nothing was — the same shape of lie Important #2 fixed, just without a
@@ -769,7 +770,7 @@ async def test_agreement_match_review_approve_keeps_link_and_consumed(admin_clie
         await delegate_client.aclose()
 
     r2 = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={
-        "action": "approve", "note": "statement checked against the paper slips"})
+        "action": "approve", "note": "statement checked against the paper receipts"})
     assert r2.status_code == 200, r2.text
     body = r2.json()
     assert body["status"] == "matched"
@@ -895,10 +896,10 @@ async def test_recurring_match_does_not_flag_legacy_settlement(test_engine, admi
 
 
 async def test_house_account_match_still_requires_a_reason(test_engine, admin_client):
-    """Task 5 narrows this, doesn't remove it: with no pickup slips selected,
+    """Task 5 narrows this, doesn't remove it: with no receipts selected,
     house_account is still the no-evidence settlement channel from 1A and a
-    reason is still required. (The "slips selected" case is covered by
-    test_slip_match.py — that's where legacy_settlement stops being forced.)"""
+    reason is still required. (The "receipts selected" case is covered by
+    test_receipt_match.py — that's where legacy_settlement stops being forced.)"""
     from app.crud.invoice import AgreementMatchInvalid, match as crud_match
     from app.schemas.invoice import InvoiceMatchRequest
 
@@ -1483,30 +1484,30 @@ async def test_data_maintenance_invoice_delete_releases_the_schedule_row(
 
 
 # ── Task 4: _release_schedule_row → _release_agreement_evidence must also ──
-# free claimed slips at BOTH call sites, not just the schedule-row half.
-# test_slip_release.py proves the helper itself is correct in isolation;
+# free claimed receipts at BOTH call sites, not just the schedule-row half.
+# test_receipt_release.py proves the helper itself is correct in isolation;
 # these two drive the REAL entry points (match()'s agreement→PO switch,
 # review_match()'s reject path) because a unit test on the helper says
 # nothing about whether the call sites still call it — this project has
 # already shipped a rename that silently dropped a caller once
-# (_release_schedule_row's own history, see its docstring). Slip writing
-# itself (invoice.slip_ids / slip_variance_reason) is Task 5/6 work and not
-# built yet, so these tests seed the claim directly on the DB rows — the
+# (_release_schedule_row's own history, see its docstring). Receipt writing
+# itself (invoice.receipt_ids / receipt_variance_reason) is Task 5/6 work and
+# not built yet, so these tests seed the claim directly on the DB rows — the
 # same shape review will produce once it exists — rather than going through
 # an unimplemented request field.
 
-async def test_route_switch_to_po_releases_claimed_slips(admin_client, test_engine):
+async def test_route_switch_to_po_releases_claimed_receipts(admin_client, test_engine):
     """Mirrors test_rematch_from_agreement_to_po_releases_consumption, but for
-    a house_account invoice holding THREE slips instead of a recurring
-    schedule row. A release loop that frees only the first slip would pass a
-    single-slip test and still leave the agreement under-reporting what's
-    owed — so this asserts all three."""
+    a house_account invoice holding THREE receipts instead of a recurring
+    schedule row. A release loop that frees only the first receipt would pass
+    a single-receipt test and still leave the agreement under-reporting
+    what's owed — so this asserts all three."""
     from app.crud.invoice import match as crud_match
-    from app.models.agreement_slip import AgreementPickupSlip
+    from app.models.agreement_receipt import AgreementReceipt
     from app.schemas.invoice import AllocationInput, InvoiceMatchRequest
 
     vendor_id, _vendor_name, user_id = await seed_vendor_and_user(
-        test_engine, vendor_name="Slip Route Switch Vendor")
+        test_engine, vendor_name="Receipt Route Switch Vendor")
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
     inv_id = uuid.UUID(inv["id"])
@@ -1518,26 +1519,26 @@ async def test_route_switch_to_po_releases_claimed_slips(admin_client, test_engi
         await crud_match(db, db_inv, InvoiceMatchRequest(
             agreement_id=agr.id, legacy_settlement_reason="statement"), matched_by=user_id)
 
-    # Seed three slips claimed by this invoice — the shape Task 5/6's match
+    # Seed three receipts claimed by this invoice — the shape Task 5/6's match
     # will produce, written directly since that path doesn't exist yet.
     async with factory() as db:
-        slips = [
-            AgreementPickupSlip(
-                agreement_id=agr.id, slip_date=date(2026, 7, 15), slip_ref=f"RS-{i}",
+        receipts = [
+            AgreementReceipt(
+                agreement_id=agr.id, receipt_date=date(2026, 7, 15), receipt_ref=f"RS-{i}",
                 amount=Decimal("300.00"), tax_amount=Decimal("0"), total_amount=Decimal("300.00"),
-                picked_by=user_id, created_by=user_id, status="reconciled", invoice_id=inv_id)
+                received_by=user_id, created_by=user_id, status="reconciled", invoice_id=inv_id)
             for i in range(3)
         ]
-        db.add_all(slips)
+        db.add_all(receipts)
         await db.flush()
-        slip_ids = [s.id for s in slips]
+        receipt_ids = [s.id for s in receipts]
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        db_inv.slip_ids = [str(s) for s in slip_ids]
-        db_inv.slip_variance_reason = "rounding"
+        db_inv.receipt_ids = [str(s) for s in receipt_ids]
+        db_inv.receipt_variance_reason = "rounding"
         await db.commit()
 
     po = (await admin_client.post("/api/v1/po", json={
-        "title": "Slip route switch PO", "type": 2, "vendor_id": str(vendor_id),
+        "title": "Receipt route switch PO", "type": 2, "vendor_id": str(vendor_id),
         "currency": "CAD", "tax_rate": "0.00",
         "line_items": [{"description": "Widget", "qty": "1", "unit": "EA",
                         "unit_price": "1000.00"}],
@@ -1547,7 +1548,7 @@ async def test_route_switch_to_po_releases_claimed_slips(admin_client, test_engi
     po_line_id = uuid.UUID(po["line_items"][0]["id"])
 
     # Move the invoice to the PO route — the invoice no longer backs the
-    # slips it claimed.
+    # receipts it claimed.
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         await crud_match(db, db_inv, InvoiceMatchRequest(allocations=[
@@ -1559,29 +1560,29 @@ async def test_route_switch_to_po_releases_claimed_slips(admin_client, test_engi
 
     async with factory() as db:
         fresh_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        released_rows = (await db.execute(select(AgreementPickupSlip).where(
-            AgreementPickupSlip.id.in_(slip_ids)))).scalars().all()
+        released_rows = (await db.execute(select(AgreementReceipt).where(
+            AgreementReceipt.id.in_(receipt_ids)))).scalars().all()
 
     assert fresh_inv.match_route == "po"
-    assert fresh_inv.slip_ids is None
-    assert fresh_inv.slip_variance_reason is None
+    assert fresh_inv.receipt_ids is None
+    assert fresh_inv.receipt_variance_reason is None
     assert len(released_rows) == 3
     assert all(r.status == "open" for r in released_rows)
     assert all(r.invoice_id is None for r in released_rows)
 
 
-async def test_match_review_reject_releases_claimed_slips(admin_client, test_engine):
+async def test_match_review_reject_releases_claimed_receipts(admin_client, test_engine):
     """Mirrors test_agreement_match_review_reject_releases_recurring_schedule_row
-    for the slip side: a delegate-shaped house_account match lands in
-    match_review holding claimed slips, AP rejects it, and every slip must
-    come back — not just the first one."""
+    for the receipt side: a delegate-shaped house_account match lands in
+    match_review holding claimed receipts, AP rejects it, and every receipt
+    must come back — not just the first one."""
     from app.crud.invoice import match as crud_match
     from app.crud.invoice import review_match as crud_review_match
-    from app.models.agreement_slip import AgreementPickupSlip
+    from app.models.agreement_receipt import AgreementReceipt
     from app.schemas.invoice import InvoiceMatchRequest
 
     vendor_id, _name, user_id = await seed_vendor_and_user(
-        test_engine, vendor_name="Slip Reject Vendor")
+        test_engine, vendor_name="Receipt Reject Vendor")
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
     inv_id = uuid.UUID(inv["id"])
@@ -1596,19 +1597,19 @@ async def test_match_review_reject_releases_claimed_slips(admin_client, test_eng
     assert matched.status == "match_review"
 
     async with factory() as db:
-        slips = [
-            AgreementPickupSlip(
-                agreement_id=agr.id, slip_date=date(2026, 7, 15), slip_ref=f"RJ-{i}",
+        receipts = [
+            AgreementReceipt(
+                agreement_id=agr.id, receipt_date=date(2026, 7, 15), receipt_ref=f"RJ-{i}",
                 amount=Decimal("300.00"), tax_amount=Decimal("0"), total_amount=Decimal("300.00"),
-                picked_by=user_id, created_by=user_id, status="reconciled", invoice_id=inv_id)
+                received_by=user_id, created_by=user_id, status="reconciled", invoice_id=inv_id)
             for i in range(3)
         ]
-        db.add_all(slips)
+        db.add_all(receipts)
         await db.flush()
-        slip_ids = [s.id for s in slips]
+        receipt_ids = [s.id for s in receipts]
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        db_inv.slip_ids = [str(s) for s in slip_ids]
-        db_inv.slip_variance_reason = "rounding"
+        db_inv.receipt_ids = [str(s) for s in receipt_ids]
+        db_inv.receipt_variance_reason = "rounding"
         await db.commit()
 
     async with factory() as db:
@@ -1616,12 +1617,12 @@ async def test_match_review_reject_releases_claimed_slips(admin_client, test_eng
         rejected = await crud_review_match(db, db_inv, "reject", "wrong statement", user_id)
         await db.commit()
     assert rejected.status == "unmatched"
-    assert rejected.slip_ids is None
-    assert rejected.slip_variance_reason is None
+    assert rejected.receipt_ids is None
+    assert rejected.receipt_variance_reason is None
 
     async with factory() as db:
-        released_rows = (await db.execute(select(AgreementPickupSlip).where(
-            AgreementPickupSlip.id.in_(slip_ids)))).scalars().all()
+        released_rows = (await db.execute(select(AgreementReceipt).where(
+            AgreementReceipt.id.in_(receipt_ids)))).scalars().all()
     assert len(released_rows) == 3
     assert all(r.status == "open" for r in released_rows)
     assert all(r.invoice_id is None for r in released_rows)

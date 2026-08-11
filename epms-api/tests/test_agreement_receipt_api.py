@@ -1,15 +1,10 @@
 """Agreement receipt endpoints: create, list, void, AP review.
 
-⚠️ These tests exercise app/api/v1/agreement_slips.py — the router itself is
-still named/routed/tagged in "slip" terms (URL segment `/slips`,
-`AgreementPickupSlip`-aliased local names) pending Task 3's full rename; only
-its internal attribute references were patched in Task 2 to keep it working
-against the renamed schemas/crud/model (see app/crud/agreement_slip.py and
-app/schemas/agreement_slip.py — both now thin compat shims onto
-app/crud/agreement_receipt.py and app/schemas/agreement_receipt.py). The
-REQUEST/RESPONSE bodies below use the new field names (receipt_date,
-receipt_ref, received_by, missing_receipt_reason, receipt_type) because those
-come from ReceiptCreate/ReceiptResponse, which Task 2 owns outright.
+These tests exercise app/api/v1/agreement_receipts.py, which Task 3 renamed
+fully onto AgreementReceipt / ReceiptCreate / ReceiptResponse — router prefix,
+tags, dependency names, and URL segment (`/receipts`) all speak in "receipt"
+terms now, with a single deliberate exception: the write permission key
+itself stays `epms.agreement.slip.write` (Task 4 renames that).
 """
 import uuid
 
@@ -55,9 +50,7 @@ async def _create_agreement(admin_client, test_engine):
 
 
 def _receipts_url(agreement_id):
-    # The router (app/api/v1/agreement_slips.py) still lives at .../slips —
-    # renaming the URL segment itself is Task 3's job, not Task 2's.
-    return f"{AGR_URL}/{agreement_id}/slips"
+    return f"{AGR_URL}/{agreement_id}/receipts"
 
 
 async def test_create_receipt_with_photo_lands_open(admin_client, test_engine):
@@ -517,8 +510,8 @@ async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, t
     0006's epms.agreement.read grant set, so that alone left dept_admin unable
     to reach the page at all — no Agreements nav entry (Sidebar.tsx gates it
     on epms.agreement.read), GET /agreements/{id} 403s (AgrReadDep), GET
-    .../slips 403s too. The fix adds an epms.agreement.read grant for
-    dept_admin alongside the slip-write one. This test pins BOTH halves —
+    .../receipts 403s too. The fix adds an epms.agreement.read grant for
+    dept_admin alongside the receipt-write one. This test pins BOTH halves —
     read reachability AND the actual record action — so a future edit that
     drops either one fails loudly instead of shipping a permission that
     looks granted in the matrix but does nothing.
@@ -564,7 +557,7 @@ async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, t
 
 
 # ── Task 10 review round 2, Finding B: the house_account matching UI
-# (MatchPanel) used to call GET /agreements/{id}/slips directly — gated on
+# (MatchPanel) used to call GET /agreements/{id}/receipts directly — gated on
 # epms.agreement.read, a permission NOT granted by default to several roles
 # that can legitimately match an invoice (its own uploader among them; also
 # warehouse_staff / supervisor / cfo / vendor_manager / erp_pa_officer in
@@ -572,7 +565,7 @@ async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, t
 # the receipt list and silently fell back to the no-evidence settlement path —
 # exactly the deadlock list_agreement_candidates' own docstring warns about,
 # one layer down. The fix is a new invoice-scoped route
-# (GET /invoices/{id}/agreements/{agreement_id}/slips) authorised by the
+# (GET /invoices/{id}/agreements/{agreement_id}/receipts) authorised by the
 # SAME shared helper (_require_invoice_match_access) list_match_candidates
 # and list_agreement_candidates already used — not a parallel copy.
 #
@@ -628,7 +621,7 @@ async def test_invoice_scoped_receipt_list_reachable_by_uploader_without_agreeme
         transport=ASGITransport(app=create_app()), base_url="http://test",
         headers={"Authorization": f"Bearer {token}"},
     ) as uploader_client:
-        r = await uploader_client.get(f"/api/v1/invoices/{inv.id}/agreements/{agr.id}/slips")
+        r = await uploader_client.get(f"/api/v1/invoices/{inv.id}/agreements/{agr.id}/receipts")
         assert r.status_code == 200, r.text
         assert r.json() == {"items": [], "total": 0}
 
@@ -652,7 +645,7 @@ async def test_invoice_scoped_receipt_list_403s_for_unrelated_caller(admin_clien
 
     outsider_client, _outsider_id = await _delegate_client(test_engine)
     try:
-        r = await outsider_client.get(f"/api/v1/invoices/{inv['id']}/agreements/{agr.id}/slips")
+        r = await outsider_client.get(f"/api/v1/invoices/{inv['id']}/agreements/{agr.id}/receipts")
         assert r.status_code == 403, r.text
     finally:
         await outsider_client.aclose()

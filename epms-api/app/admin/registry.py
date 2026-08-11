@@ -76,8 +76,8 @@ async def _invoice_delete(db: AsyncSession, inv) -> dict[str, int]:
     # to "pending"/"overdue") and never swept by the overdue sweep (which
     # only ever touches "pending" rows). Release it back first, the same
     # helper every other detach path (route switch, match_review reject) uses
-    # — it also releases any claimed pickup slips (Task 4), for the same
-    # reason on the house_account side.
+    # — it also releases any claimed agreement receipts (Task 4), for the
+    # same reason on the house_account side.
     await _release_agreement_evidence(db, inv)
     summary = await purge_workflow_refs(db, inv.id)
     await db.delete(inv)            # invoice has no child tables in epms

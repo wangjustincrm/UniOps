@@ -1,4 +1,4 @@
-"""Pickup slip attachment endpoints."""
+"""Agreement receipt attachment endpoints."""
 import uuid
 from typing import Annotated
 
@@ -10,23 +10,24 @@ from sqlalchemy import select
 from app.core.authz import require_permission
 from app.core.config import settings
 from app.core.deps import BearerToken, SessionDep
-from app.models.agreement_slip import AgreementPickupSlip
-from app.models.agreement_slip_attachment import AgreementSlipAttachment
+from app.models.agreement_receipt import AgreementReceipt
+from app.models.agreement_receipt_attachment import AgreementReceiptAttachment
 from app.services.attachment_helper import delete_from_file_server, proxy_download, upload_to_file_server
 
 router = APIRouter(
-    prefix="/agreements/{agreement_id}/slips/{slip_id}/attachments", tags=["pickup-slip-attachments"]
+    prefix="/agreements/{agreement_id}/receipts/{receipt_id}/attachments", tags=["agreement-receipt-attachments"]
 )
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
-SlipAttReadDep = Annotated[dict, Depends(require_permission("epms.agreement.read"))]
-# Same key as agreement_slips.py's SlipRecordDep, not epms.agreement.write:
-# a slip's photo/proof attachments are part of recording the slip itself
-# (SlipEntryForm uploads them as step 2 of a single create-then-attach flow),
+ReceiptAttReadDep = Annotated[dict, Depends(require_permission("epms.agreement.read"))]
+# Same key as agreement_receipts.py's ReceiptRecordDep, not epms.agreement.write:
+# a receipt's photo/proof attachments are part of recording the receipt itself
+# (ReceiptEntryForm uploads them as step 2 of a single create-then-attach flow),
 # not part of editing the agreement's own terms. Someone who can record a
-# slip but can't attach its photo would be a dead end.
-SlipAttWriteDep = Annotated[dict, Depends(require_permission("epms.agreement.slip.write"))]
+# receipt but can't attach its photo would be a dead end. The permission key
+# itself is untouched here (Task 4 renames it).
+ReceiptAttWriteDep = Annotated[dict, Depends(require_permission("epms.agreement.slip.write"))]
 
 
 class AttachmentMeta(BaseModel):
@@ -40,7 +41,7 @@ class AttachmentMeta(BaseModel):
     model_config = {"from_attributes": True}
 
 
-def _meta(att: AgreementSlipAttachment) -> AttachmentMeta:
+def _meta(att: AgreementReceiptAttachment) -> AttachmentMeta:
     dl_url = f"{settings.FILE_SERVER_URL}/files/{att.storage_key}" if att.storage_key else None
     return AttachmentMeta(
         id=att.id, filename=att.filename,
@@ -49,42 +50,39 @@ def _meta(att: AgreementSlipAttachment) -> AttachmentMeta:
     )
 
 
-async def _get_slip_or_404(
-    db: SessionDep, agreement_id: uuid.UUID, slip_id: uuid.UUID,
-) -> AgreementPickupSlip:
-    slip = (await db.execute(
-        select(AgreementPickupSlip).where(
-            AgreementPickupSlip.id == slip_id,
-            AgreementPickupSlip.agreement_id == agreement_id,
+async def _get_receipt_or_404(
+    db: SessionDep, agreement_id: uuid.UUID, receipt_id: uuid.UUID,
+) -> AgreementReceipt:
+    receipt = (await db.execute(
+        select(AgreementReceipt).where(
+            AgreementReceipt.id == receipt_id,
+            AgreementReceipt.agreement_id == agreement_id,
         )
     )).scalar_one_or_none()
-    if slip is None:
-        raise HTTPException(status_code=404, detail="Slip not found")
-    return slip
+    if receipt is None:
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return receipt
 
 
 @router.get("", response_model=list[AttachmentMeta])
 async def list_attachments(
-    agreement_id: uuid.UUID, slip_id: uuid.UUID, db: SessionDep, _: SlipAttReadDep,
+    agreement_id: uuid.UUID, receipt_id: uuid.UUID, db: SessionDep, _: ReceiptAttReadDep,
 ):
-    await _get_slip_or_404(db, agreement_id, slip_id)
-    # Task 2 renamed the FK column to receipt_id on the real model (this
-    # router still speaks in "slip" terms pending Task 3's full rename; only
-    # the attribute name below had to move to keep working).
+    await _get_receipt_or_404(db, agreement_id, receipt_id)
     result = await db.execute(
-        select(AgreementSlipAttachment)
-        .where(AgreementSlipAttachment.receipt_id == slip_id)
-        .order_by(AgreementSlipAttachment.created_at)
+        select(AgreementReceiptAttachment)
+        .where(AgreementReceiptAttachment.receipt_id == receipt_id)
+        .order_by(AgreementReceiptAttachment.created_at)
     )
     return [_meta(r) for r in result.scalars().all()]
 
 
 @router.post("", response_model=AttachmentMeta, status_code=status.HTTP_201_CREATED)
 async def upload_attachment(
-    agreement_id: uuid.UUID, slip_id: uuid.UUID, file: UploadFile,
-    db: SessionDep, user: SlipAttWriteDep, token: BearerToken,
+    agreement_id: uuid.UUID, receipt_id: uuid.UUID, file: UploadFile,
+    db: SessionDep, user: ReceiptAttWriteDep, token: BearerToken,
 ):
-    await _get_slip_or_404(db, agreement_id, slip_id)
+    await _get_receipt_or_404(db, agreement_id, receipt_id)
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 25 MB limit")
@@ -92,10 +90,10 @@ async def upload_attachment(
     storage_key = await upload_to_file_server(
         data, file.filename or "attachment",
         file.content_type or "application/octet-stream",
-        "agreement_slip", slip_id, token,
+        "agreement_receipt", receipt_id, token,
     )
-    att = AgreementSlipAttachment(
-        receipt_id=slip_id,
+    att = AgreementReceiptAttachment(
+        receipt_id=receipt_id,
         filename=file.filename or "attachment",
         content_type=file.content_type or "application/octet-stream",
         file_size=len(data),
@@ -109,13 +107,13 @@ async def upload_attachment(
 
 @router.get("/{att_id}/download")
 async def download_attachment(
-    agreement_id: uuid.UUID, slip_id: uuid.UUID, att_id: uuid.UUID,
-    db: SessionDep, _: SlipAttReadDep, token: BearerToken,
+    agreement_id: uuid.UUID, receipt_id: uuid.UUID, att_id: uuid.UUID,
+    db: SessionDep, _: ReceiptAttReadDep, token: BearerToken,
 ):
-    await _get_slip_or_404(db, agreement_id, slip_id)
+    await _get_receipt_or_404(db, agreement_id, receipt_id)
     result = await db.execute(
-        select(AgreementSlipAttachment).where(
-            AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.receipt_id == slip_id
+        select(AgreementReceiptAttachment).where(
+            AgreementReceiptAttachment.id == att_id, AgreementReceiptAttachment.receipt_id == receipt_id
         )
     )
     att = result.scalar_one_or_none()
@@ -133,13 +131,13 @@ async def download_attachment(
 
 @router.delete("/{att_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_attachment(
-    agreement_id: uuid.UUID, slip_id: uuid.UUID, att_id: uuid.UUID,
-    db: SessionDep, _: SlipAttWriteDep, token: BearerToken,
+    agreement_id: uuid.UUID, receipt_id: uuid.UUID, att_id: uuid.UUID,
+    db: SessionDep, _: ReceiptAttWriteDep, token: BearerToken,
 ):
-    await _get_slip_or_404(db, agreement_id, slip_id)
+    await _get_receipt_or_404(db, agreement_id, receipt_id)
     result = await db.execute(
-        select(AgreementSlipAttachment).where(
-            AgreementSlipAttachment.id == att_id, AgreementSlipAttachment.receipt_id == slip_id
+        select(AgreementReceiptAttachment).where(
+            AgreementReceiptAttachment.id == att_id, AgreementReceiptAttachment.receipt_id == receipt_id
         )
     )
     att = result.scalar_one_or_none()

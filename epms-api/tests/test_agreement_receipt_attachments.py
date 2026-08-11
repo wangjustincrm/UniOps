@@ -45,14 +45,14 @@ class _FakeFileServer:
 @pytest.fixture(autouse=True)
 def fake_file_server(monkeypatch):
     """Patch the three outbound helpers AS IMPORTED into the router module —
-    `app.api.v1.agreement_slip_attachments.upload_to_file_server` etc. — not
-    at their definition site in `app.services.attachment_helper`, since the
-    router already bound the original names at import time.
+    `app.api.v1.agreement_receipt_attachments.upload_to_file_server` etc. —
+    not at their definition site in `app.services.attachment_helper`, since
+    the router already bound the original names at import time.
     """
     fake = _FakeFileServer()
-    monkeypatch.setattr("app.api.v1.agreement_slip_attachments.upload_to_file_server", fake.upload)
-    monkeypatch.setattr("app.api.v1.agreement_slip_attachments.proxy_download", fake.download)
-    monkeypatch.setattr("app.api.v1.agreement_slip_attachments.delete_from_file_server", fake.delete)
+    monkeypatch.setattr("app.api.v1.agreement_receipt_attachments.upload_to_file_server", fake.upload)
+    monkeypatch.setattr("app.api.v1.agreement_receipt_attachments.proxy_download", fake.download)
+    monkeypatch.setattr("app.api.v1.agreement_receipt_attachments.delete_from_file_server", fake.delete)
     return fake
 
 
@@ -141,7 +141,7 @@ async def test_download_returns_the_bytes(admin_client, receipt_id):
 # A `receipt_id`-only query cannot distinguish this from the correct
 # agreement, since the receipt row itself is real; only checking
 # `AgreementReceiptAttachment.receipt_id == receipt_id AND (parent receipt's)
-# agreement_id == agreement_id` (via `_get_slip_or_404`) catches it. This is
+# agreement_id == agreement_id` (via `_get_receipt_or_404`) catches it. This is
 # a stronger case than "receipt does not exist at all" — it is the case that
 # actually caught the missing-scope-check bug.
 

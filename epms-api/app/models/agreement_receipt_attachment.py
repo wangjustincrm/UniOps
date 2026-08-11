@@ -19,9 +19,3 @@ class AgreementReceiptAttachment(UUIDPrimaryKey, TimestampMixin, Base):
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     storage_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-
-
-# TODO(Task 3): delete this alias once app/api/v1/agreement_slip_attachments.py
-# moves onto AgreementReceiptAttachment directly. See agreement_receipt.py for
-# why this exists — same reasoning, same layer boundary.
-AgreementSlipAttachment = AgreementReceiptAttachment

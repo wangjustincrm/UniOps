@@ -466,4 +466,4 @@ async def test_assign_match_uses_agreement_wording_for_an_agreement_invoice(admi
     assert agr["number"] in task.title
     assert "PO" not in task.title
     assert "PO lines" not in task.description
-    assert "pickup slips" in task.description
+    assert "supporting receipts" in task.description

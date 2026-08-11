@@ -260,7 +260,7 @@ async def _backfill_create_po_tasks(db: AsyncSession) -> None:
     is the symmetric safety net so the purchasing office actually sees the work.
 
     Scope: status='approved' AND po_id IS NULL (a PR with a PO needs no task;
-    _complete_stale_create_po_tasks completes any that slipped through).
+    _complete_stale_create_po_tasks completes any that fell through the cracks).
     """
     approved_prs_q = select(PurchaseRequest).where(
         PurchaseRequest.status == "approved",

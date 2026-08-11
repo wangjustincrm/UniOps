@@ -64,7 +64,7 @@ async def _validate_agreement_pa_invoices(
         )
     rows = (await db.execute(
         select(Invoice.id, Invoice.internal_ref, Invoice.agreement_id, Invoice.status,
-               Invoice.schedule_id, Invoice.slip_ids, Invoice.legacy_settlement)
+               Invoice.schedule_id, Invoice.receipt_ids, Invoice.legacy_settlement)
         .where(Invoice.id.in_(invoice_ids))
     )).all()
     if len(rows) != len(set(invoice_ids)):
@@ -91,7 +91,7 @@ async def _validate_agreement_pa_invoices(
             detail="Invoice(s) not cleared for payment — a matched, reviewed "
                    f"invoice is required: {', '.join(not_ready)}")
     # recurring 免 GR,履约确认是它唯一的代偿 —— 未确认的期次不许付款。
-    # milestone 本期没有验收闸门(设计 §5.3),house_account 走 slip 路径(见下方
+    # milestone 本期没有验收闸门(设计 §5.3),house_account 走凭证路径(见下方
     # 紧邻的闸门),所以这里按 agreement_type 分支,不能一刀切。
     if agr.agreement_type == "recurring":
         # Code review finding (Task 7 fix round): an INNER JOIN on
@@ -127,19 +127,20 @@ async def _validate_agreement_pa_invoices(
                 status_code=422,
                 detail=(f"Service has not been confirmed for {', '.join(unconfirmed)}. "
                         "The department must confirm delivery before payment can be raised."))
-    # house_account 免收货,凭证就是小票。1A 时没有小票可挂,所以每张发票都被
-    # 标成 legacy —— 那些存量数据必须继续放行,否则本期改动会卡死历史。
-    # pa.py:94 那句 "house_account 走 slip 路径" 的注释从此才是真的。
+    # house_account 免收货,凭证就是柜台小票/送货单/服务单(receipt_type)。1A 时
+    # 没有凭证可挂,所以每张发票都被标成 legacy —— 那些存量数据必须继续放行,
+    # 否则本期改动会卡死历史。pa.py:94 那句 "house_account 走凭证路径" 的注释
+    # 从此才是真的。
     if agr.agreement_type == "house_account":
         unsupported = [
             r.internal_ref for r in rows
-            if not (r.slip_ids or r.legacy_settlement)
+            if not (r.receipt_ids or r.legacy_settlement)
         ]
         if unsupported:
             raise HTTPException(
                 status_code=422,
-                detail=(f"No pickup slips are attached to {', '.join(unsupported)}. "
-                        "Match the invoice to the slips it covers, or settle it "
+                detail=(f"No receipts are attached to {', '.join(unsupported)}. "
+                        "Match the invoice to the receipts it covers, or settle it "
                         "explicitly without receipt evidence, before raising payment."))
 
 
@@ -235,7 +236,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # see _validate_agreement_pa_invoices, shared with update_pa's PATCH
         # path so the same rules apply there too.
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
-        # 收货闸门不适用:协议路线定义上就没有 GR(1A 无 pickup slip,1B 才有)。
+        # 收货闸门不适用:协议路线定义上就没有 GR(1A 无凭证,1B 才有)。
         created = await pa_crud.create(
             db, body,
             po_number=None,

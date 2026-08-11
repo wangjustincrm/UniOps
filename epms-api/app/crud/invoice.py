@@ -10,11 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.crud import agreement as agreement_crud
+from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
-from app.crud import agreement_slip as agreement_slip_crud
 from app.models.agreement import PurchaseAgreement
+from app.models.agreement_receipt import AgreementReceipt
 from app.models.agreement_schedule import AgreementPaymentSchedule
-from app.models.agreement_slip import AgreementPickupSlip
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -405,22 +405,23 @@ async def _match_to_agreement(
 
     # Review fix (Important #1, Task 5 round 1): release any evidence this
     # invoice is CURRENTLY holding — a claimed schedule row and/or claimed
-    # pickup slips — before the type branch below claims new evidence (or
-    # falls back to the no-evidence reason). Without this, a rematch through
-    # this function (e.g. Data Maintenance resets invoice.status back to
-    # "unmatched" with no release hook, then the invoice is POSTed to /match
-    # again) silently overwrites invoice.slip_ids / invoice.schedule_id —
-    # the previously-claimed rows stay "reconciled"/"received" with
-    # invoice_id still pointing at this invoice forever, and since
-    # _release_agreement_evidence only ever discovers rows via
-    # invoice.slip_ids/.schedule_id, they become permanently unreachable
-    # (update()/void() both refuse a reconciled slip; there is no UI path
-    # back to open). This also covers switching agreement TYPE (house_account
-    # holding slips → recurring/milestone claiming a schedule row): the old
-    # code never touched slip_ids in that branch at all, leaving a stale
-    # pointer at a slip that now belongs to nobody's current match.
+    # agreement receipts — before the type branch below claims new evidence
+    # (or falls back to the no-evidence reason). Without this, a rematch
+    # through this function (e.g. Data Maintenance resets invoice.status back
+    # to "unmatched" with no release hook, then the invoice is POSTed to
+    # /match again) silently overwrites invoice.receipt_ids /
+    # invoice.schedule_id — the previously-claimed rows stay
+    # "reconciled"/"received" with invoice_id still pointing at this invoice
+    # forever, and since _release_agreement_evidence only ever discovers rows
+    # via invoice.receipt_ids/.schedule_id, they become permanently
+    # unreachable (update()/void() both refuse a reconciled receipt; there is
+    # no UI path back to open). This also covers switching agreement TYPE
+    # (house_account holding receipts → recurring/milestone claiming a
+    # schedule row): the old code never touched receipt_ids in that branch at
+    # all, leaving a stale pointer at a receipt that now belongs to nobody's
+    # current match.
     # No-op when the invoice holds neither (the normal first-time-match case).
-    if invoice.slip_ids or invoice.schedule_id:
+    if invoice.receipt_ids or invoice.schedule_id:
         await _release_agreement_evidence(db, invoice)
 
     # 1A 曾把**所有**协议匹配都当成"无凭证付款":那时协议匹配确实没有任何凭证。
@@ -429,34 +430,34 @@ async def _match_to_agreement(
     # "settled without receipt" 计数里,那个健康度指标就废了。
     claimed_row = None
     if agr.agreement_type == "house_account":
-        # Task 5: house_account now has real evidence available — pickup slips
-        # (built in Tasks 1-4) play the role a GR plays on the PO route. Only
-        # when NONE are selected does this fall back to 1A's no-evidence
-        # settlement, so the reason is required for exactly the invoices that
-        # actually have no receipt behind them.
-        slip_ids = req.slip_ids or []
-        if slip_ids:
+        # Task 5: house_account now has real evidence available — agreement
+        # receipts (built in Tasks 1-4) play the role a GR plays on the PO
+        # route. Only when NONE are selected does this fall back to 1A's
+        # no-evidence settlement, so the reason is required for exactly the
+        # invoices that actually have no receipt behind them.
+        receipt_ids = req.receipt_ids or []
+        if receipt_ids:
             try:
-                claimed = await agreement_slip_crud.claim(db, agr, slip_ids, invoice)
+                claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, invoice)
             except ValueError as exc:
                 raise AgreementMatchInvalid(str(exc)) from exc
-            invoice.slip_ids = [str(s.id) for s in claimed]
-            invoice.slip_variance_reason = (req.slip_variance_reason or "").strip() or None
+            invoice.receipt_ids = [str(s.id) for s in claimed]
+            invoice.receipt_variance_reason = (req.receipt_variance_reason or "").strip() or None
             invoice.legacy_settlement = False
             invoice.legacy_settlement_reason = None
         else:
-            # 一张小票都没选 —— 这才是真正的无凭证付款,1A 的通道保留给它。
+            # 一张凭证都没选 —— 这才是真正的无凭证付款,1A 的通道保留给它。
             # 收窄的意义就在这里:有凭证时不该被问"为什么没有凭证",
             # 否则协议详情那个健康度计数恒等于 100%,什么也暴露不了。
             reason = (req.legacy_settlement_reason or "").strip()
             if not reason:
                 raise AgreementMatchInvalid(
-                    "Select the pickup slips this invoice covers, or give a reason "
+                    "Select the receipts this invoice covers, or give a reason "
                     "for settling it without any receipt evidence")
             invoice.legacy_settlement = True
             invoice.legacy_settlement_reason = reason
-            invoice.slip_ids = None
-            invoice.slip_variance_reason = None
+            invoice.receipt_ids = None
+            invoice.receipt_variance_reason = None
     else:
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
@@ -562,13 +563,13 @@ async def _match_to_agreement(
 async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> None:
     """Release every piece of agreement-side evidence an invoice holds — the
     claimed AgreementPaymentSchedule row (single) and any claimed
-    AgreementPickupSlip rows (potentially several) — back to unclaimed, when
+    AgreementReceipt rows (potentially several) — back to unclaimed, when
     the invoice that claimed them is being detached from its agreement
     (route switch, or a match_review rejection).
 
     Renamed from _release_schedule_row (Task 4): it now covers both kinds of
     evidence a purchase agreement can substitute for a goods receipt —
-    schedule rows for recurring agreements, pickup slips for house
+    schedule rows for recurring agreements, agreement receipts for house
     accounts — because Phase 1B already learned the hard way (twice) what
     happens when a release path is duplicated instead of shared: one call
     site drifts and silently skips the release. Same helper, same three call
@@ -647,25 +648,25 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
                             t.completed_at = now
         invoice.schedule_id = None
 
-    # 小票释放 —— 与排期行同理,但小票是**多张**:invoice.slip_ids 是数组。
+    # 凭证释放 —— 与排期行同理,但凭证是**多张**:invoice.receipt_ids 是数组。
     # 逐张放回 open 并清 invoice_id;只动确实由这张发票持有的行(防止把别的
-    # 发票刚认领的同一张小票抢回来 —— 当前不可达,但 Task 6 的匹配分支会写
+    # 发票刚认领的同一张凭证抢回来 —— 当前不可达,但 Task 6 的匹配分支会写
     # 这个字段,不变量要自己成立,不能依赖调用方)。
-    slip_ids = invoice.slip_ids or []
-    if slip_ids:
+    receipt_ids = invoice.receipt_ids or []
+    if receipt_ids:
         rows = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id.in_(slip_ids))
+            select(AgreementReceipt).where(AgreementReceipt.id.in_(receipt_ids))
         )).scalars().all()
         for row in rows:
             if row.invoice_id != invoice.id:
                 logger.warning(
-                    "_release_agreement_evidence: slip %s is claimed by invoice %s, "
+                    "_release_agreement_evidence: receipt %s is claimed by invoice %s, "
                     "not %s — leaving it alone", row.id, row.invoice_id, invoice.id)
                 continue
             row.status = "open"
             row.invoice_id = None
-    invoice.slip_ids = None
-    invoice.slip_variance_reason = None
+    invoice.receipt_ids = None
+    invoice.receipt_variance_reason = None
     await db.flush()
 
 
@@ -1141,18 +1142,18 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
     # over there, so the two delete paths disagreed.
     #
     # Reachable despite the status guard above: neither
-    # agreement_payment_schedule.invoice_id nor agreement_pickup_slips
+    # agreement_payment_schedule.invoice_id nor agreement_receipts
     # .invoice_id has an FK back to invoices (shared table, three other
     # services touch it), and Data Maintenance declares invoice.status an
     # editable enum including "unmatched" (registry.py) applied by a bare
     # setattr with no hooks (admin/service.py) — resetting a matched invoice
     # to "unmatched" for a re-match is the documented way to do that, and it
     # is exactly the path the comment in match() above already admits exists.
-    # Delete it in that state and the slips are stranded "reconciled" pointing
-    # at a row that no longer exists: update() and void() both refuse a
-    # reconciled slip, and _release_agreement_evidence can only ever discover
-    # them through invoice.slip_ids — which just got deleted. No invoice can
-    # ever claim those slips again.
+    # Delete it in that state and the receipts are stranded "reconciled"
+    # pointing at a row that no longer exists: update() and void() both
+    # refuse a reconciled receipt, and _release_agreement_evidence can only
+    # ever discover them through invoice.receipt_ids — which just got
+    # deleted. No invoice can ever claim those receipts again.
     await _release_agreement_evidence(db, invoice)
     await db.delete(invoice)
     await db.flush()

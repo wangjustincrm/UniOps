@@ -1,12 +1,12 @@
-"""Task 5: house_account invoice matching against pickup slips.
+"""Task 5: house_account invoice matching against agreement receipts.
 
 Phase 1A made EVERY house_account match a "legacy settlement" (no evidence,
 reason required) because there was no evidence to have. Tasks 1-4 built real
-evidence — pickup slips — for that route. This is where the two connect:
-selecting slips is now the normal path and stops flagging legacy_settlement;
-the reason-required fallback narrows to the case where no slip was selected
+evidence — agreement receipts — for that route. This is where the two connect:
+selecting receipts is now the normal path and stops flagging legacy_settlement;
+the reason-required fallback narrows to the case where no receipt was selected
 at all. That narrowing is the point — see test_house_account_match_with_
-slips_does_not_flag_legacy's docstring below.
+receipts_does_not_flag_legacy's docstring below.
 """
 import uuid
 from datetime import date
@@ -16,15 +16,15 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.crud import agreement_slip as agreement_slip_crud
+from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud.invoice import (
     AgreementMatchInvalid,
     delete as crud_delete,
     match as crud_match,
 )
-from app.models.agreement_slip import AgreementPickupSlip
+from app.models.agreement_receipt import AgreementReceipt
 from app.models.invoice import Invoice
-from app.schemas.agreement_slip import SlipCreate
+from app.schemas.agreement_receipt import ReceiptCreate
 from app.schemas.invoice import InvoiceMatchRequest
 from tests.test_agreement_invoice_match import _make_active_agreement, _upload_invoice
 from tests.test_agreements import seed_vendor_and_user
@@ -32,29 +32,29 @@ from tests.test_agreements import seed_vendor_and_user
 pytestmark = pytest.mark.asyncio
 
 
-async def _create_slip(
+async def _create_receipt(
     db: AsyncSession, agr, user_id: uuid.UUID, *,
     amount: str = "100.00", tax_amount: str = "0.00", total_amount: str | None = None,
-    slip_ref: str | None = None,
-) -> AgreementPickupSlip:
+    receipt_ref: str | None = None,
+) -> AgreementReceipt:
     total = Decimal(total_amount) if total_amount is not None else Decimal(amount) + Decimal(tax_amount)
-    slip = await agreement_slip_crud.create(
+    receipt = await agreement_receipt_crud.create(
         db, agr,
-        SlipCreate(
-            slip_date=date(2026, 7, 15), slip_ref=slip_ref,
+        ReceiptCreate(
+            receipt_date=date(2026, 7, 15), receipt_ref=receipt_ref,
             amount=Decimal(amount), tax_amount=Decimal(tax_amount), total_amount=total,
-            picked_by=user_id, missing_slip_reason=None, notes=None,
+            received_by=user_id, missing_receipt_reason=None, notes=None,
         ),
         created_by=user_id,
     )
     await db.commit()
-    await db.refresh(slip)
-    return slip
+    await db.refresh(receipt)
+    return receipt
 
 
-async def test_house_account_match_with_slips_does_not_flag_legacy(admin_client, test_engine):
-    """选了小票 → legacy_settlement 为 False、reason 为 None、slip_ids 落库、
-    每张小票转 reconciled 并记 invoice_id。**这是本特性的核心断言** ——
+async def test_house_account_match_with_receipts_does_not_flag_legacy(admin_client, test_engine):
+    """选了凭证 → legacy_settlement 为 False、reason 为 None、receipt_ids 落库、
+    每张凭证转 reconciled 并记 invoice_id。**这是本特性的核心断言** ——
     协议详情那个 "settled without receipt" 计数从此只数真正无凭证的。"""
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
@@ -63,26 +63,26 @@ async def test_house_account_match_with_slips_does_not_flag_legacy(admin_client,
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slip = await _create_slip(db, agr, user_id, amount="100.00")
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         result = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, slip_ids=[slip.id]), matched_by=user_id)
+            agreement_id=agr.id, receipt_ids=[receipt.id]), matched_by=user_id)
 
     assert result.legacy_settlement is False
     assert result.legacy_settlement_reason is None
-    assert result.slip_ids == [str(slip.id)]
+    assert result.receipt_ids == [str(receipt.id)]
 
     async with factory() as db:
-        fresh_slip = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+        fresh_receipt = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
         )).scalar_one()
-    assert fresh_slip.status == "reconciled"
-    assert fresh_slip.invoice_id == inv_id
+    assert fresh_receipt.status == "reconciled"
+    assert fresh_receipt.invoice_id == inv_id
 
 
-async def test_house_account_match_without_slips_still_requires_a_reason(admin_client, test_engine):
+async def test_house_account_match_without_receipts_still_requires_a_reason(admin_client, test_engine):
     """一张都不选 → 回到 1A 的无凭证通道:reason 必填,legacy_settlement=True。"""
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
@@ -105,10 +105,10 @@ async def test_house_account_match_without_slips_still_requires_a_reason(admin_c
 
     assert result.legacy_settlement is True
     assert result.legacy_settlement_reason == "Backlog statement"
-    assert result.slip_ids is None
+    assert result.receipt_ids is None
 
 
-async def test_match_rejects_a_slip_from_another_agreement(admin_client, test_engine):
+async def test_match_rejects_a_receipt_from_another_agreement(admin_client, test_engine):
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr_a = await _make_active_agreement(test_engine, vendor_id, user_id)
     agr_b = await _make_active_agreement(test_engine, vendor_id, user_id)
@@ -117,24 +117,24 @@ async def test_match_rejects_a_slip_from_another_agreement(admin_client, test_en
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        foreign_slip = await _create_slip(db, agr_b, user_id, amount="100.00")
+        foreign_receipt = await _create_receipt(db, agr_b, user_id, amount="100.00")
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         with pytest.raises(AgreementMatchInvalid, match="does not belong"):
             await crud_match(db, db_inv, InvoiceMatchRequest(
-                agreement_id=agr_a.id, slip_ids=[foreign_slip.id]), matched_by=user_id)
+                agreement_id=agr_a.id, receipt_ids=[foreign_receipt.id]), matched_by=user_id)
 
-    # The rejected slip must not have been mutated by the failed attempt.
+    # The rejected receipt must not have been mutated by the failed attempt.
     async with factory() as db:
         fresh = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id == foreign_slip.id)
+            select(AgreementReceipt).where(AgreementReceipt.id == foreign_receipt.id)
         )).scalar_one()
     assert fresh.status == "open"
     assert fresh.invoice_id is None
 
 
-async def _assert_non_open_slip_is_rejected(admin_client, test_engine, status: str) -> None:
+async def _assert_non_open_receipt_is_rejected(admin_client, test_engine, status: str) -> None:
     """pending_ap_review / rejected / reconciled / voided 都不可认领。 Shared body
     for the four status-specific tests below — kept as separate `async def`
     tests rather than @pytest.mark.parametrize because this suite has no
@@ -151,11 +151,11 @@ async def _assert_non_open_slip_is_rejected(admin_client, test_engine, status: s
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slip = await _create_slip(db, agr, user_id, amount="100.00")
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
 
     async with factory() as db:
         row = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
         )).scalar_one()
         row.status = status
         await db.commit()
@@ -164,27 +164,27 @@ async def _assert_non_open_slip_is_rejected(admin_client, test_engine, status: s
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         with pytest.raises(AgreementMatchInvalid, match=status):
             await crud_match(db, db_inv, InvoiceMatchRequest(
-                agreement_id=agr.id, slip_ids=[slip.id]), matched_by=user_id)
+                agreement_id=agr.id, receipt_ids=[receipt.id]), matched_by=user_id)
 
 
-async def test_match_rejects_a_slip_that_is_pending_ap_review(admin_client, test_engine):
-    await _assert_non_open_slip_is_rejected(admin_client, test_engine, "pending_ap_review")
+async def test_match_rejects_a_receipt_that_is_pending_ap_review(admin_client, test_engine):
+    await _assert_non_open_receipt_is_rejected(admin_client, test_engine, "pending_ap_review")
 
 
-async def test_match_rejects_a_slip_that_is_already_reconciled(admin_client, test_engine):
-    await _assert_non_open_slip_is_rejected(admin_client, test_engine, "reconciled")
+async def test_match_rejects_a_receipt_that_is_already_reconciled(admin_client, test_engine):
+    await _assert_non_open_receipt_is_rejected(admin_client, test_engine, "reconciled")
 
 
-async def test_match_rejects_a_slip_that_is_voided(admin_client, test_engine):
-    await _assert_non_open_slip_is_rejected(admin_client, test_engine, "voided")
+async def test_match_rejects_a_receipt_that_is_voided(admin_client, test_engine):
+    await _assert_non_open_receipt_is_rejected(admin_client, test_engine, "voided")
 
 
-async def test_match_rejects_a_slip_that_is_rejected(admin_client, test_engine):
-    await _assert_non_open_slip_is_rejected(admin_client, test_engine, "rejected")
+async def test_match_rejects_a_receipt_that_is_rejected(admin_client, test_engine):
+    await _assert_non_open_receipt_is_rejected(admin_client, test_engine, "rejected")
 
 
 async def test_variance_reason_is_stored_separately_from_legacy_reason(admin_client, test_engine):
-    """差额说明写 slip_variance_reason,不碰 legacy_settlement_reason。"""
+    """差额说明写 receipt_variance_reason,不碰 legacy_settlement_reason。"""
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
@@ -192,21 +192,21 @@ async def test_variance_reason_is_stored_separately_from_legacy_reason(admin_cli
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slip = await _create_slip(db, agr, user_id, amount="95.00")
+        receipt = await _create_receipt(db, agr, user_id, amount="95.00")
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         result = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, slip_ids=[slip.id],
-            slip_variance_reason="Rounding on the counter receipt"), matched_by=user_id)
+            agreement_id=agr.id, receipt_ids=[receipt.id],
+            receipt_variance_reason="Rounding on the counter receipt"), matched_by=user_id)
 
-    assert result.slip_variance_reason == "Rounding on the counter receipt"
+    assert result.receipt_variance_reason == "Rounding on the counter receipt"
     assert result.legacy_settlement_reason is None
     assert result.legacy_settlement is False
 
 
-async def test_match_accepts_multiple_slips(admin_client, test_engine):
-    """N:1 —— slip_ids 长度 3,三张全部 reconciled。"""
+async def test_match_accepts_multiple_receipts(admin_client, test_engine):
+    """N:1 —— receipt_ids 长度 3,三张全部 reconciled。"""
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="300.00")
@@ -214,22 +214,22 @@ async def test_match_accepts_multiple_slips(admin_client, test_engine):
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slips = [
-            await _create_slip(db, agr, user_id, amount="100.00", slip_ref=f"MS-{i}")
+        receipts = [
+            await _create_receipt(db, agr, user_id, amount="100.00", receipt_ref=f"MS-{i}")
             for i in range(3)
         ]
-    slip_ids = [s.id for s in slips]
+    receipt_ids = [s.id for s in receipts]
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         result = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, slip_ids=slip_ids), matched_by=user_id)
+            agreement_id=agr.id, receipt_ids=receipt_ids), matched_by=user_id)
 
-    assert set(result.slip_ids) == {str(sid) for sid in slip_ids}
+    assert set(result.receipt_ids) == {str(sid) for sid in receipt_ids}
 
     async with factory() as db:
         fresh_rows = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id.in_(slip_ids))
+            select(AgreementReceipt).where(AgreementReceipt.id.in_(receipt_ids))
         )).scalars().all()
     assert len(fresh_rows) == 3
     assert all(r.status == "reconciled" for r in fresh_rows)
@@ -238,7 +238,7 @@ async def test_match_accepts_multiple_slips(admin_client, test_engine):
 
 # ── Task 5 brief 裁定 #2: 重复 id 去重按一张处理,空列表等同没选。────────────
 
-async def test_duplicate_slip_ids_are_claimed_once_not_rejected(admin_client, test_engine):
+async def test_duplicate_receipt_ids_are_claimed_once_not_rejected(admin_client, test_engine):
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
@@ -246,17 +246,17 @@ async def test_duplicate_slip_ids_are_claimed_once_not_rejected(admin_client, te
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slip = await _create_slip(db, agr, user_id, amount="100.00")
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         result = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, slip_ids=[slip.id, slip.id]), matched_by=user_id)
+            agreement_id=agr.id, receipt_ids=[receipt.id, receipt.id]), matched_by=user_id)
 
-    assert result.slip_ids == [str(slip.id)]
+    assert result.receipt_ids == [str(receipt.id)]
 
 
-async def test_empty_slip_ids_list_is_treated_as_no_slips_selected(admin_client, test_engine):
+async def test_empty_receipt_ids_list_is_treated_as_no_receipts_selected(admin_client, test_engine):
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
@@ -267,22 +267,22 @@ async def test_empty_slip_ids_list_is_treated_as_no_slips_selected(admin_client,
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         with pytest.raises(AgreementMatchInvalid, match="give a reason"):
             await crud_match(db, db_inv, InvoiceMatchRequest(
-                agreement_id=agr.id, slip_ids=[]), matched_by=user_id)
+                agreement_id=agr.id, receipt_ids=[]), matched_by=user_id)
 
 
 # ── Review round 1, Important #1: _match_to_agreement never released
-# evidence a rematch was about to overwrite — a claimed slip stayed
+# evidence a rematch was about to overwrite — a claimed receipt stayed
 # "reconciled" forever with no UI path back to open. ────────────────────────
 
-async def test_rematch_without_slips_releases_previously_claimed_slip(admin_client, test_engine):
-    """Claim a slip, then rematch the SAME invoice through _match_to_agreement
+async def test_rematch_without_receipts_releases_previously_claimed_receipt(admin_client, test_engine):
+    """Claim a receipt, then rematch the SAME invoice through _match_to_agreement
     a second time without selecting it — the shape a Data Maintenance
     status-reset-then-repost produces (invoice.status forced back to
     "unmatched" with no release hook, then POSTed to /match again), or any
     other future caller that re-runs match() on an already-matched invoice.
-    The slip must come back to "open" with invoice_id cleared, not stay
+    The receipt must come back to "open" with invoice_id cleared, not stay
     "reconciled" forever with a dangling pointer no UI can undo (update()/
-    void() both refuse a reconciled slip)."""
+    void() both refuse a reconciled receipt)."""
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
@@ -290,43 +290,43 @@ async def test_rematch_without_slips_releases_previously_claimed_slip(admin_clie
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slip = await _create_slip(db, agr, user_id, amount="100.00")
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         first = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, slip_ids=[slip.id]), matched_by=user_id)
-    assert first.slip_ids == [str(slip.id)]
+            agreement_id=agr.id, receipt_ids=[receipt.id]), matched_by=user_id)
+    assert first.receipt_ids == [str(receipt.id)]
 
     async with factory() as db:
-        fresh_slip = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+        fresh_receipt = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
         )).scalar_one()
-    assert fresh_slip.status == "reconciled"
-    assert fresh_slip.invoice_id == inv_id
+    assert fresh_receipt.status == "reconciled"
+    assert fresh_receipt.invoice_id == inv_id
 
     # Rematch the same invoice to the same agreement, this time selecting no
-    # slips at all — the no-evidence fallback.
+    # receipts at all — the no-evidence fallback.
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         second = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, legacy_settlement_reason="corrected — wrong slip picked"),
+            agreement_id=agr.id, legacy_settlement_reason="corrected — wrong receipt picked"),
             matched_by=user_id)
 
     assert second.legacy_settlement is True
-    assert second.slip_ids is None
+    assert second.receipt_ids is None
 
     async with factory() as db:
-        released_slip = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+        released_receipt = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
         )).scalar_one()
-    assert released_slip.status == "open"
-    assert released_slip.invoice_id is None
+    assert released_receipt.status == "open"
+    assert released_receipt.invoice_id is None
 
 
-async def test_deleting_an_invoice_releases_the_slips_it_claimed(admin_client, test_engine):
+async def test_deleting_an_invoice_releases_the_receipts_it_claimed(admin_client, test_engine):
     """Whole-branch review (I4): crud.invoice.delete() — the plain
-    DELETE /invoices/{id} path — must release claimed slips, exactly like the
+    DELETE /invoices/{id} path — must release claimed receipts, exactly like the
     Data Maintenance delete path (app/admin/registry.py::_invoice_delete)
     already does. The release was only ever wired into DM, so the two delete
     paths disagreed on the same shared helper.
@@ -336,11 +336,11 @@ async def test_deleting_an_invoice_releases_the_slips_it_claimed(admin_client, t
     enum containing "unmatched" and applies it with a bare setattr and no
     hooks — resetting a matched invoice back to unmatched to re-match it is
     the documented move — which is what the setattr below reproduces.
-    Delete it in that state without releasing, and the slip is stranded
+    Delete it in that state without releasing, and the receipt is stranded
     "reconciled" pointing at a row that no longer exists: update() and void()
-    both refuse a reconciled slip, and _release_agreement_evidence can only
-    reach it through invoice.slip_ids, which the delete just destroyed. That
-    slip can never be claimed by any invoice again.
+    both refuse a reconciled receipt, and _release_agreement_evidence can only
+    reach it through invoice.receipt_ids, which the delete just destroyed. That
+    receipt can never be claimed by any invoice again.
     """
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
@@ -349,18 +349,18 @@ async def test_deleting_an_invoice_releases_the_slips_it_claimed(admin_client, t
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        slip = await _create_slip(db, agr, user_id, amount="100.00")
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         matched = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, slip_ids=[slip.id]), matched_by=user_id)
-        assert matched.slip_ids == [str(slip.id)]
+            agreement_id=agr.id, receipt_ids=[receipt.id]), matched_by=user_id)
+        assert matched.receipt_ids == [str(receipt.id)]
         await db.commit()
 
     async with factory() as db:
         claimed = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
         )).scalar_one()
         assert claimed.status == "reconciled"
         assert claimed.invoice_id == inv_id
@@ -381,7 +381,7 @@ async def test_deleting_an_invoice_releases_the_slips_it_claimed(admin_client, t
         assert (await db.execute(
             select(Invoice).where(Invoice.id == inv_id))).scalar_one_or_none() is None
         released = (await db.execute(
-            select(AgreementPickupSlip).where(AgreementPickupSlip.id == slip.id)
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
         )).scalar_one()
-    assert released.status == "open", "slip stranded as reconciled by a deleted invoice"
+    assert released.status == "open", "receipt stranded as reconciled by a deleted invoice"
     assert released.invoice_id is None

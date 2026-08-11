@@ -90,14 +90,3 @@ class AgreementReceipt(UUIDPrimaryKey, TimestampMixin, Base):
                  postgresql_where=sa.text(
                      "receipt_ref IS NOT NULL AND status NOT IN ('voided', 'rejected')")),
     )
-
-
-# TODO(Task 3): delete this alias once app/crud, app/schemas and app/api move
-# onto AgreementReceipt directly. Kept only so Task 1 (models/migration only)
-# doesn't have to touch those layers — they still import AgreementPickupSlip
-# by name via the app/models/agreement_slip.py shim. Attribute names changed
-# (slip_date -> receipt_date, slip_ref -> receipt_ref, picked_by ->
-# received_by, missing_slip_reason -> missing_receipt_reason); code reached
-# through this alias that touches the old attribute names will break until
-# Task 2/3 move it onto the real names.
-AgreementPickupSlip = AgreementReceipt

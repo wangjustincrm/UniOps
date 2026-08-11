@@ -83,9 +83,9 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     # constantly corrected by hand has a mis-registered vendor_reference.
     match_route_auto: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false")
-    # ⚠️ Backlog escape hatch: paid against an agreement with NO pickup-slip
+    # ⚠️ Backlog escape hatch: paid against an agreement with NO receipt
     # evidence. Opened for the 1A invoice backlog; MUST be narrowed once 1B ships
-    # slip reconciliation, or it becomes the standard way to bypass matching.
+    # receipt reconciliation, or it becomes the standard way to bypass matching.
     legacy_settlement: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false")
     legacy_settlement_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

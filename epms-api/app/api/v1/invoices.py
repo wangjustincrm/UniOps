@@ -9,7 +9,7 @@ from sqlalchemy import select
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.core.access_scope import build_scope
 from app.crud import agreement as agreement_crud
-from app.crud import agreement_slip as agreement_slip_crud
+from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
 from app.crud import vendor as vendor_crud
 from app.models.agreement import PurchaseAgreement
@@ -18,7 +18,7 @@ from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.agreement import AgreementListResponse
-from app.schemas.agreement_slip import SlipListResponse
+from app.schemas.agreement_receipt import ReceiptListResponse
 from app.schemas.invoice import (
     AssignMatchRequest,
     DeclineMatchRequest,
@@ -86,14 +86,14 @@ async def _require_invoice_match_access(db, user: dict, inv) -> None:
     uploader, or the holder of an open match_invoice task on it — never a
     generic scope, or an assignee with no related PR sees zero candidates
     and deadlocks. Shared by every invoice-scoped candidate endpoint
-    (match-candidates, agreement-candidates, and agreement slips) so all
+    (match-candidates, agreement-candidates, and agreement receipts) so all
     three enforce the identical rule instead of hand-rolled copies that can
     silently drift apart (review finding, Task 10 round 2 Finding B: the
-    slip endpoint used to gate on the generic epms.agreement.read instead of
-    this, and several roles that can legitimately match an invoice — e.g.
+    receipt endpoint used to gate on the generic epms.agreement.read instead
+    of this, and several roles that can legitimately match an invoice — e.g.
     warehouse_staff, its own uploader — don't hold that permission, so they
-    403'd on the slip list and fell back to the no-evidence settlement path,
-    silently bypassing the evidence chain Tasks 1-9 built)."""
+    403'd on the receipt list and fell back to the no-evidence settlement
+    path, silently bypassing the evidence chain Tasks 1-9 built)."""
     caller_id = uuid.UUID(user["sub"])
     is_uploader = inv.uploaded_by == caller_id
     if (user.get("role") not in _AP_ROLES and not is_uploader
@@ -373,8 +373,8 @@ async def match_invoice(
             # Review fix (Important #2, Task 5 round 1): branch on
             # legacy_settlement rather than assuming every "agreement" route
             # match is a no-evidence legacy settlement. Task 5 made that no
-            # longer true for house_account: a match with claimed pickup
-            # slips has legacy_settlement=False and legacy_settlement_reason
+            # longer true for house_account: a match with claimed receipts
+            # has legacy_settlement=False and legacy_settlement_reason
             # =None, so the old unconditional wording told AP reviewers
             # "...as a legacy settlement (no receipt evidence): None" about
             # an invoice that DOES have receipt evidence — the exact opposite
@@ -388,17 +388,17 @@ async def match_invoice(
                         f"evidence): {result.legacy_settlement_reason}. Please review and "
                         "approve or reject."
                     )
-                elif result.slip_ids:
+                elif result.receipt_ids:
                     review_description = (
                         f"Invoice {inv.internal_ref} was matched to agreement "
-                        f"{result.agreement_number} against {len(result.slip_ids)} claimed "
-                        "pickup slip(s) as receipt evidence. Please review and approve or "
+                        f"{result.agreement_number} against {len(result.receipt_ids)} claimed "
+                        "receipt(s) as receipt evidence. Please review and approve or "
                         "reject."
                     )
                 elif result.schedule_id is not None:
                     # recurring (auto-claimed or an explicit req.schedule_id)
                     # or milestone: claimed a real billing-schedule row —
-                    # neither a legacy settlement nor slip-backed, so say
+                    # neither a legacy settlement nor receipt-backed, so say
                     # nothing that isn't true of both.
                     review_description = (
                         f"Invoice {inv.internal_ref} was matched to agreement "
@@ -547,16 +547,16 @@ async def list_agreement_candidates(
     return {"items": items, "total": len(items)}
 
 
-@router.get("/{invoice_id}/agreements/{agreement_id}/slips", response_model=SlipListResponse)
-async def list_invoice_agreement_slips(
+@router.get("/{invoice_id}/agreements/{agreement_id}/receipts", response_model=ReceiptListResponse)
+async def list_invoice_agreement_receipts(
     invoice_id: uuid.UUID,
     agreement_id: uuid.UUID,
     db: SessionDep,
     user: CurrentUserPayload,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
 ):
-    """Pickup slips for one of THIS INVOICE's candidate agreements — a
-    separate, invoice-scoped route from GET /agreements/{id}/slips (which
+    """Agreement receipts for one of THIS INVOICE's candidate agreements — a
+    separate, invoice-scoped route from GET /agreements/{id}/receipts (which
     stays gated on epms.agreement.read for the agreement detail page).
 
     Review finding (Task 10 round 2, Finding B): the house_account matching
@@ -564,16 +564,16 @@ async def list_invoice_agreement_slips(
     directly. That permission is not granted to every role that can
     legitimately match an invoice — warehouse_staff, supervisor, cfo,
     vendor_manager, erp_pa_officer among them — so those callers 403'd on
-    the slip list the instant they picked a house_account agreement, and
+    the receipt list the instant they picked a house_account agreement, and
     fell back to the legacy no-evidence settlement path with no idea real
-    evidence existed. A pickup slip carries strictly less information than
-    the agreement itself, which this same caller can already reach via
+    evidence existed. An agreement receipt carries strictly less information
+    than the agreement itself, which this same caller can already reach via
     agreement-candidates, so authorising this route the identical way
     (_require_invoice_match_access, shared with match-candidates and
     agreement-candidates — not a parallel copy) is safe: it can only ever
     widen access to something already visible one layer up, and the
     candidates_for_vendor membership check below still stops it from
-    becoming "any authenticated user reads any agreement's slips" —
+    becoming "any authenticated user reads any agreement's receipts" —
     agreement_id must be one of the invoice's OWN admissible candidates.
     """
     inv = await invoice_crud.get_by_id(db, invoice_id)
@@ -585,7 +585,7 @@ async def list_invoice_agreement_slips(
     if not any(agr.id == agreement_id for agr in candidates):
         raise HTTPException(status_code=404, detail="Agreement not found")
 
-    items = await agreement_slip_crud.list_for_agreement(db, agreement_id, status=status_filter)
+    items = await agreement_receipt_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
 
 
@@ -674,7 +674,7 @@ async def assign_match(
     # — and told anyone assigned on the agreement route to do something that
     # does not exist there. There are no PO lines on an agreement, and no
     # allocation step; what that person actually has to do is record the
-    # pickup slips on the agreement and then come back and claim them.
+    # receipts on the agreement and then come back and claim them.
     # Same defect and same fix as the review_match copy above.
     #
     # The branch is on `inv.agreement_id`, not on match_route or agreement
@@ -695,7 +695,7 @@ async def assign_match(
             f"You have been assigned to match invoice {inv.internal_ref} "
             f"({inv.vendor_name}, {inv.currency} {inv.total_amount}) to {agr_label}. "
             f"There is no purchase order or goods receipt on this route: open the "
-            f"agreement, make sure the supporting pickup slips are recorded, then "
+            f"agreement, make sure the supporting receipts are recorded, then "
             f"open the invoice and claim them."
         )
     else:

@@ -101,23 +101,25 @@ class InvoiceMatchRequest(BaseModel):
     # header — there is no line reference to measure a variance against.
     agreement_id: uuid.UUID | None = None
     # house_account only. Two mutually-exclusive sub-paths (Task 5):
-    #   - slip_ids given → real evidence, claimed pickup slips back this
-    #     invoice; legacy_settlement_reason is ignored and legacy_settlement
-    #     lands False. slip_variance_reason optionally explains a mismatch
-    #     between the slips' total and the invoice total (no amount check is
-    #     enforced here — see slip_variance_reason below).
-    #   - slip_ids omitted/empty → the 1A no-evidence fallback: this remains a
-    #     legacy settlement and legacy_settlement_reason is required.
+    #   - receipt_ids given → real evidence, claimed agreement receipts back
+    #     this invoice; legacy_settlement_reason is ignored and
+    #     legacy_settlement lands False. receipt_variance_reason optionally
+    #     explains a mismatch between the receipts' total and the invoice
+    #     total (no amount check is enforced here — see
+    #     receipt_variance_reason below).
+    #   - receipt_ids omitted/empty → the 1A no-evidence fallback: this
+    #     remains a legacy settlement and legacy_settlement_reason is required.
     # recurring and milestone claim a real schedule row instead — see
     # schedule_id below — and never read either of these two fields.
     legacy_settlement_reason: str | None = None
-    # house_account with slip_ids only: which pickup slips this invoice covers.
-    slip_ids: list[uuid.UUID] | None = None
-    # house_account with slip_ids only: free-text note when the claimed slips'
-    # total doesn't line up with the invoice total. Stored separately from
-    # legacy_settlement_reason — it explains a variance on a genuinely
-    # evidenced settlement, not the absence of evidence.
-    slip_variance_reason: str | None = None
+    # house_account with receipt_ids only: which agreement receipts this
+    # invoice covers.
+    receipt_ids: list[uuid.UUID] | None = None
+    # house_account with receipt_ids only: free-text note when the claimed
+    # receipts' total doesn't line up with the invoice total. Stored
+    # separately from legacy_settlement_reason — it explains a variance on a
+    # genuinely evidenced settlement, not the absence of evidence.
+    receipt_variance_reason: str | None = None
     # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。recurring 默认由 FIFO
     # 自动认领,不读这个字段;但显式传入时是人工指定期次的逃生舱(whole-branch
     # review 补齐 spec §4.3 step 5):FIFO 认不到期次(超容差 / 无候选行)会永久
@@ -168,20 +170,20 @@ class InvoiceResponse(BaseModel):
     gr_id: uuid.UUID | None
     gr_number: str | None
     gr_ids: list | None = None
-    # Pickup slips this invoice claims (house_account route, Task 5). Same
-    # JSONB-array-on-the-model shape as gr_ids above — was missing from this
-    # response model even though Invoice.slip_ids exists on the ORM object
-    # (models/invoice.py), which silently dropped it on every /invoices and
-    # /invoices/{id} response. Needed by useChainAttachments' slip lineage
-    # branch (epms/src/hooks/useChainAttachments.ts).
-    slip_ids: list | None = None
+    # Agreement receipts this invoice claims (house_account route, Task 5).
+    # Same JSONB-array-on-the-model shape as gr_ids above — was missing from
+    # this response model even though Invoice.receipt_ids exists on the ORM
+    # object (models/invoice.py), which silently dropped it on every
+    # /invoices and /invoices/{id} response. Needed by useChainAttachments'
+    # receipt lineage branch (epms/src/hooks/useChainAttachments.ts).
+    receipt_ids: list | None = None
     # Task 11 fix-round 1 (Important): free-text explanation for why the
-    # claimed slips' total doesn't line up with the invoice total
+    # claimed receipts' total doesn't line up with the invoice total
     # (MatchPanel.tsx submits it, crud/invoice.py:444 stores it,
     # models/invoice.py:78 keeps it separate from legacy_settlement_reason
     # on purpose). Was write-only end to end — nothing in epms/src ever read
-    # it back — the same silent-drop bug as slip_ids above, one field over.
-    slip_variance_reason: str | None = None
+    # it back — the same silent-drop bug as receipt_ids above, one field over.
+    receipt_variance_reason: str | None = None
     matched_at: datetime | None
     matched_by: uuid.UUID | None
     matched_by_name: str | None
