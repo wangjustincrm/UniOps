@@ -13,6 +13,7 @@ from app.crud import agreement as agreement_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.agreement_slip import AgreementPickupSlip
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -515,10 +516,20 @@ async def _match_to_agreement(
     return invoice
 
 
-async def _release_schedule_row(db: AsyncSession, invoice: Invoice) -> None:
-    """Release a claimed AgreementPaymentSchedule row back to "pending" and
-    clear invoice.schedule_id, when the invoice that claimed it is being
-    detached from its agreement (route switch, or a match_review rejection).
+async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> None:
+    """Release every piece of agreement-side evidence an invoice holds — the
+    claimed AgreementPaymentSchedule row (single) and any claimed
+    AgreementPickupSlip rows (potentially several) — back to unclaimed, when
+    the invoice that claimed them is being detached from its agreement
+    (route switch, or a match_review rejection).
+
+    Renamed from _release_schedule_row (Task 4): it now covers both kinds of
+    evidence a purchase agreement can substitute for a goods receipt —
+    schedule rows for recurring agreements, pickup slips for house
+    accounts — because Phase 1B already learned the hard way (twice) what
+    happens when a release path is duplicated instead of shared: one call
+    site drifts and silently skips the release. Same helper, same three call
+    sites, now wider scope.
 
     Extracted (code review finding, Task 7 fix round) so the release logic
     lives in exactly one place: originally only match()'s agreement→PO
@@ -546,52 +557,73 @@ async def _release_schedule_row(db: AsyncSession, invoice: Invoice) -> None:
     unconfirmable. (crud.confirm_period already tolerates duplicates via
     `.scalars().all()`; the two layers now agree.)
     """
-    if invoice.schedule_id is None:
-        return
-    claimed_row = (await db.execute(
-        select(AgreementPaymentSchedule).where(
-            AgreementPaymentSchedule.id == invoice.schedule_id)
-    )).scalar_one_or_none()
-    if claimed_row is not None:
-        # Deferred minor from Task 6, folded in here: only release a row this
-        # SAME invoice actually holds. invoice.schedule_id should always point
-        # back at a row whose invoice_id mirrors it (both are only ever set
-        # together, by claim_next_period / claim_specific_period /
-        # claim_milestone) — but if that invariant were ever broken by a bug
-        # elsewhere, blindly releasing here would silently steal a period a
-        # DIFFERENT invoice is legitimately holding.
-        if claimed_row.invoice_id != invoice.id:
-            logger.error(
-                "_release_schedule_row: schedule row %s is claimed by invoice "
-                "%s, not %s (invoice.schedule_id pointed at it anyway) — "
-                "leaving the row untouched, only clearing invoice.schedule_id",
-                claimed_row.id, claimed_row.invoice_id, invoice.id,
-            )
-        else:
-            claimed_row.status = "pending"
-            claimed_row.invoice_id = None
-            claimed_row.accepted_by = None
-            claimed_row.accepted_at = None
-            if claimed_row.period_label is not None:
-                agr_number = (await db.execute(
-                    select(PurchaseAgreement.number).where(
-                        PurchaseAgreement.id == claimed_row.agreement_id)
-                )).scalar_one_or_none()
-                if agr_number is not None:
-                    open_tasks = (await db.execute(
-                        select(Task).where(
-                            Task.document_type == "agr",
-                            Task.document_id == claimed_row.agreement_id,
-                            Task.type == "confirm_period",
-                            Task.document_number == f"{agr_number} · {claimed_row.period_label}",
-                            Task.is_completed.is_(False),
-                        )
-                    )).scalars().all()
-                    now = datetime.now(timezone.utc)
-                    for t in open_tasks:
-                        t.is_completed = True
-                        t.completed_at = now
-    invoice.schedule_id = None
+    if invoice.schedule_id is not None:
+        claimed_row = (await db.execute(
+            select(AgreementPaymentSchedule).where(
+                AgreementPaymentSchedule.id == invoice.schedule_id)
+        )).scalar_one_or_none()
+        if claimed_row is not None:
+            # Deferred minor from Task 6, folded in here: only release a row this
+            # SAME invoice actually holds. invoice.schedule_id should always point
+            # back at a row whose invoice_id mirrors it (both are only ever set
+            # together, by claim_next_period / claim_specific_period /
+            # claim_milestone) — but if that invariant were ever broken by a bug
+            # elsewhere, blindly releasing here would silently steal a period a
+            # DIFFERENT invoice is legitimately holding.
+            if claimed_row.invoice_id != invoice.id:
+                logger.error(
+                    "_release_agreement_evidence: schedule row %s is claimed by "
+                    "invoice %s, not %s (invoice.schedule_id pointed at it "
+                    "anyway) — leaving the row untouched, only clearing "
+                    "invoice.schedule_id",
+                    claimed_row.id, claimed_row.invoice_id, invoice.id,
+                )
+            else:
+                claimed_row.status = "pending"
+                claimed_row.invoice_id = None
+                claimed_row.accepted_by = None
+                claimed_row.accepted_at = None
+                if claimed_row.period_label is not None:
+                    agr_number = (await db.execute(
+                        select(PurchaseAgreement.number).where(
+                            PurchaseAgreement.id == claimed_row.agreement_id)
+                    )).scalar_one_or_none()
+                    if agr_number is not None:
+                        open_tasks = (await db.execute(
+                            select(Task).where(
+                                Task.document_type == "agr",
+                                Task.document_id == claimed_row.agreement_id,
+                                Task.type == "confirm_period",
+                                Task.document_number == f"{agr_number} · {claimed_row.period_label}",
+                                Task.is_completed.is_(False),
+                            )
+                        )).scalars().all()
+                        now = datetime.now(timezone.utc)
+                        for t in open_tasks:
+                            t.is_completed = True
+                            t.completed_at = now
+        invoice.schedule_id = None
+
+    # 小票释放 —— 与排期行同理,但小票是**多张**:invoice.slip_ids 是数组。
+    # 逐张放回 open 并清 invoice_id;只动确实由这张发票持有的行(防止把别的
+    # 发票刚认领的同一张小票抢回来 —— 当前不可达,但 Task 6 的匹配分支会写
+    # 这个字段,不变量要自己成立,不能依赖调用方)。
+    slip_ids = invoice.slip_ids or []
+    if slip_ids:
+        rows = (await db.execute(
+            select(AgreementPickupSlip).where(AgreementPickupSlip.id.in_(slip_ids))
+        )).scalars().all()
+        for row in rows:
+            if row.invoice_id != invoice.id:
+                logger.warning(
+                    "_release_agreement_evidence: slip %s is claimed by invoice %s, "
+                    "not %s — leaving it alone", row.id, row.invoice_id, invoice.id)
+                continue
+            row.status = "open"
+            row.invoice_id = None
+    invoice.slip_ids = None
+    invoice.slip_variance_reason = None
+    await db.flush()
 
 
 async def match(
@@ -632,7 +664,7 @@ async def match(
         invoice.agreement_number = None
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
-        await _release_schedule_row(db, invoice)
+        await _release_agreement_evidence(db, invoice)
     invoice.match_route = "po"
     invoice.match_route_auto = False
 
@@ -924,7 +956,7 @@ async def review_match(
             # the row the same way match()'s agreement→PO switch already
             # does, or the period stays permanently "received" against an
             # invoice that no longer backs it and can never be claimed again.
-            await _release_schedule_row(db, invoice)
+            await _release_agreement_evidence(db, invoice)
     await db.flush()
     await db.refresh(invoice)
     if released_agreement_id is not None:

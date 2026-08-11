@@ -1371,3 +1371,148 @@ async def test_data_maintenance_invoice_delete_releases_the_schedule_row(
             AgreementPaymentSchedule.id == schedule_id))).scalar_one()
     assert released_row.status == "pending"
     assert released_row.invoice_id is None
+
+
+# ── Task 4: _release_schedule_row → _release_agreement_evidence must also ──
+# free claimed slips at BOTH call sites, not just the schedule-row half.
+# test_slip_release.py proves the helper itself is correct in isolation;
+# these two drive the REAL entry points (match()'s agreement→PO switch,
+# review_match()'s reject path) because a unit test on the helper says
+# nothing about whether the call sites still call it — this project has
+# already shipped a rename that silently dropped a caller once
+# (_release_schedule_row's own history, see its docstring). Slip writing
+# itself (invoice.slip_ids / slip_variance_reason) is Task 5/6 work and not
+# built yet, so these tests seed the claim directly on the DB rows — the
+# same shape review will produce once it exists — rather than going through
+# an unimplemented request field.
+
+async def test_route_switch_to_po_releases_claimed_slips(admin_client, test_engine):
+    """Mirrors test_rematch_from_agreement_to_po_releases_consumption, but for
+    a house_account invoice holding THREE slips instead of a recurring
+    schedule row. A release loop that frees only the first slip would pass a
+    single-slip test and still leave the agreement under-reporting what's
+    owed — so this asserts all three."""
+    from app.crud.invoice import match as crud_match
+    from app.models.agreement_slip import AgreementPickupSlip
+    from app.schemas.invoice import AllocationInput, InvoiceMatchRequest
+
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Slip Route Switch Vendor")
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+    inv_line_id = uuid.UUID(inv["line_items"][0]["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, legacy_settlement_reason="statement"), matched_by=user_id)
+
+    # Seed three slips claimed by this invoice — the shape Task 5/6's match
+    # will produce, written directly since that path doesn't exist yet.
+    async with factory() as db:
+        slips = [
+            AgreementPickupSlip(
+                agreement_id=agr.id, slip_date=date(2026, 7, 15), slip_ref=f"RS-{i}",
+                amount=Decimal("300.00"), tax_amount=Decimal("0"), total_amount=Decimal("300.00"),
+                picked_by=user_id, created_by=user_id, status="reconciled", invoice_id=inv_id)
+            for i in range(3)
+        ]
+        db.add_all(slips)
+        await db.flush()
+        slip_ids = [s.id for s in slips]
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        db_inv.slip_ids = [str(s) for s in slip_ids]
+        db_inv.slip_variance_reason = "rounding"
+        await db.commit()
+
+    po = (await admin_client.post("/api/v1/po", json={
+        "title": "Slip route switch PO", "type": 2, "vendor_id": str(vendor_id),
+        "currency": "CAD", "tax_rate": "0.00",
+        "line_items": [{"description": "Widget", "qty": "1", "unit": "EA",
+                        "unit_price": "1000.00"}],
+    }))
+    assert po.status_code in (200, 201), po.text
+    po = po.json()
+    po_line_id = uuid.UUID(po["line_items"][0]["id"])
+
+    # Move the invoice to the PO route — the invoice no longer backs the
+    # slips it claimed.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(allocations=[
+            AllocationInput(invoice_line_id=inv_line_id, po_id=uuid.UUID(po["id"]),
+                            po_line_id=po_line_id, allocated_amount=Decimal("1000.00"),
+                            allocated_tax=Decimal("0.00")),
+        ]), matched_by=user_id)
+        await db.commit()
+
+    async with factory() as db:
+        fresh_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        released_rows = (await db.execute(select(AgreementPickupSlip).where(
+            AgreementPickupSlip.id.in_(slip_ids)))).scalars().all()
+
+    assert fresh_inv.match_route == "po"
+    assert fresh_inv.slip_ids is None
+    assert fresh_inv.slip_variance_reason is None
+    assert len(released_rows) == 3
+    assert all(r.status == "open" for r in released_rows)
+    assert all(r.invoice_id is None for r in released_rows)
+
+
+async def test_match_review_reject_releases_claimed_slips(admin_client, test_engine):
+    """Mirrors test_agreement_match_review_reject_releases_recurring_schedule_row
+    for the slip side: a delegate-shaped house_account match lands in
+    match_review holding claimed slips, AP rejects it, and every slip must
+    come back — not just the first one."""
+    from app.crud.invoice import match as crud_match
+    from app.crud.invoice import review_match as crud_review_match
+    from app.models.agreement_slip import AgreementPickupSlip
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Slip Reject Vendor")
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        matched = await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, legacy_settlement_reason="statement"),
+            matched_by=user_id, require_review=True)
+        await db.commit()
+    assert matched.status == "match_review"
+
+    async with factory() as db:
+        slips = [
+            AgreementPickupSlip(
+                agreement_id=agr.id, slip_date=date(2026, 7, 15), slip_ref=f"RJ-{i}",
+                amount=Decimal("300.00"), tax_amount=Decimal("0"), total_amount=Decimal("300.00"),
+                picked_by=user_id, created_by=user_id, status="reconciled", invoice_id=inv_id)
+            for i in range(3)
+        ]
+        db.add_all(slips)
+        await db.flush()
+        slip_ids = [s.id for s in slips]
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        db_inv.slip_ids = [str(s) for s in slip_ids]
+        db_inv.slip_variance_reason = "rounding"
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        rejected = await crud_review_match(db, db_inv, "reject", "wrong statement", user_id)
+        await db.commit()
+    assert rejected.status == "unmatched"
+    assert rejected.slip_ids is None
+    assert rejected.slip_variance_reason is None
+
+    async with factory() as db:
+        released_rows = (await db.execute(select(AgreementPickupSlip).where(
+            AgreementPickupSlip.id.in_(slip_ids)))).scalars().all()
+    assert len(released_rows) == 3
+    assert all(r.status == "open" for r in released_rows)
+    assert all(r.invoice_id is None for r in released_rows)

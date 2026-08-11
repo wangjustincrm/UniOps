@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import count_polymorphic, purge_workflow_refs
 from app.admin.fields import EntitySchema, FieldSpec, ChildSchema
-from app.crud.invoice import _release_schedule_row
+from app.crud.invoice import _release_agreement_evidence
 from app.models.approval import ApprovalEvent
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
@@ -75,8 +75,10 @@ async def _invoice_delete(db: AsyncSession, inv) -> dict[str, int]:
     # at a now-nonexistent invoice: never re-claimable (status never returns
     # to "pending"/"overdue") and never swept by the overdue sweep (which
     # only ever touches "pending" rows). Release it back first, the same
-    # helper every other detach path (route switch, match_review reject) uses.
-    await _release_schedule_row(db, inv)
+    # helper every other detach path (route switch, match_review reject) uses
+    # — it also releases any claimed pickup slips (Task 4), for the same
+    # reason on the house_account side.
+    await _release_agreement_evidence(db, inv)
     summary = await purge_workflow_refs(db, inv.id)
     await db.delete(inv)            # invoice has no child tables in epms
     return _merge(summary, {"invoices": 1})
