@@ -35,6 +35,11 @@ const STATUS_CONFIG: Record<
   received: { label: 'Received', variant: 'info', dot: 'bg-primary-500' },
   overdue: { label: 'Overdue', variant: 'danger', dot: 'bg-danger-600' },
   waived: { label: 'Waived', variant: 'dark', dot: 'bg-neutral-400' },
+  // House-account pickup slip statuses.
+  pending_ap_review: { label: 'Pending AP Review', variant: 'warning', dot: 'bg-warning-500' },
+  open: { label: 'Open', variant: 'info', dot: 'bg-primary-500' },
+  reconciled: { label: 'Reconciled', variant: 'success', dot: 'bg-success-600' },
+  voided: { label: 'Voided', variant: 'dark', dot: 'bg-neutral-400' },
 }
 
 export function StatusBadge({ status, label }: { status: DocumentStatus; label?: string }) {

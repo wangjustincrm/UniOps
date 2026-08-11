@@ -9,11 +9,14 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { ScheduleTable } from '@/components/agreements/ScheduleTable'
+import { SlipEntryForm } from '@/components/agreements/SlipEntryForm'
+import { SlipTable } from '@/components/agreements/SlipTable'
 import { formatAmount, formatDate, formatBytes, cn } from '@/lib/utils'
 import type { ApprovalStep, DocumentStatus } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { useAgreement, useAgreementAction, useAgreementSchedule } from '@/hooks/useAgreements'
+import { useAgreementSlips } from '@/hooks/useAgreementSlips'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTasks } from '@/hooks/useTasks'
 import { useInvoices } from '@/hooks/useInvoices'
@@ -279,6 +282,11 @@ export default function AgreementDetailPage() {
   const canCreatePaPerm = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
   const canCreatePa =
     canCreatePaPerm && !!agreement && isAgreementAdmissible(agreement) && payableInvoiceCount > 0
+  // Gates the pickup-slip AP Approve/Reject buttons — mirrors the backend's
+  // ApDep = require_permission("epms.invoice.match") on POST .../ap-review
+  // (epms-api/app/api/v1/agreement_slips.py), the same permission that gates
+  // invoice match review elsewhere (InvoiceDetailPage/InvoiceListPage).
+  const canApReviewSlip = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
   // Matches epms-api/app/crud/agreement.py:13 EDITABLE_STATUSES = ("draft", "returned") —
   // both are submit-able AND edit-able. 'returned' must have both, or the
   // Return action is a permanent dead end: the creator can neither fix nor
@@ -322,6 +330,15 @@ export default function AgreementDetailPage() {
   // name for the dept_manager who actually holds the confirm task, not just
   // for a system_admin viewer.
   const { data: usersData } = useUserDirectory()
+
+  // house_account is the only agreement_type with pickup slips at all —
+  // recurring/milestone settle against the payment schedule instead. Skip
+  // the fetch entirely for the other two types, same convention as the
+  // schedule query above.
+  const { data: slipsData } = useAgreementSlips(
+    agreement && agreement.agreement_type === 'house_account' ? agreement.id : ''
+  )
+  const slips = slipsData?.items ?? []
 
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
   const attachments = attachmentsData ?? []
@@ -522,6 +539,31 @@ export default function AgreementDetailPage() {
                 myOpenTasks={myTasks?.items ?? []}
                 users={usersData?.items}
               />
+            </div>
+          )}
+
+          {/* Pickup slips — house_account only. recurring/milestone settle
+              against the payment schedule above instead; house_account has
+              no schedule rows at all (see the comment on scheduleData). */}
+          {agreement.agreement_type === 'house_account' && (
+            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                Pickup Slips <span className="normal-case font-normal text-neutral-400">({slips.length})</span>
+              </h2>
+              <SlipTable
+                agreementId={agreement.id}
+                slips={slips}
+                users={usersData?.items}
+                currency={agreement.currency}
+                canWrite={canWrite}
+                canApReview={canApReviewSlip}
+              />
+              {canWrite && (
+                <div className="border-t border-neutral-100 pt-5">
+                  <h3 className="text-sm font-semibold text-neutral-700 mb-3">Record a Pickup Slip</h3>
+                  <SlipEntryForm agreementId={agreement.id} />
+                </div>
+              )}
             </div>
           )}
 
