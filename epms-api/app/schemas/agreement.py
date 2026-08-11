@@ -18,6 +18,15 @@ RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly")
 ANCHORED_TYPES = ("quarterly", "yearly")
 
 
+def validate_validity_window(*, valid_from: date, valid_to: date) -> None:
+    """Same drift-avoidance rationale as validate_recurrence — shared by
+    AgreementCreate's schema validator and crud.agreement.update(), so a
+    PATCH can't push valid_to before valid_from any more than create() can
+    (task-3 re-review Finding 3: this was still create()-only)."""
+    if valid_to < valid_from:
+        raise ValueError("valid_to must be on or after valid_from")
+
+
 def validate_recurrence(
     *,
     agreement_type: str,
@@ -158,8 +167,7 @@ class AgreementCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validity_window_is_ordered(self):
-        if self.valid_to < self.valid_from:
-            raise ValueError("valid_to must be on or after valid_from")
+        validate_validity_window(valid_from=self.valid_from, valid_to=self.valid_to)
         return self
 
     @model_validator(mode="after")

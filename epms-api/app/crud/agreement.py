@@ -13,6 +13,7 @@ from app.schemas.agreement import (
     AgreementUpdate,
     validate_milestones,
     validate_recurrence,
+    validate_validity_window,
 )
 
 # 只有 draft 可编辑 —— 一旦进入审批,改额度/有效期/供应商必须重走审批(spec §6)。
@@ -85,13 +86,21 @@ async def create(
     await db.flush()
     # `overdue_after_days` carries server_default="7", meant only for recurring
     # agreements (Task 1's model). SQLAlchemy cannot distinguish "explicit
-    # None" from "never set" for a nullable column with a server_default, so
-    # PurchaseAgreement(overdue_after_days=None, ...) — which is exactly what
-    # a house_account/milestone body.model_dump() produces — silently picks
-    # up the recurring default 7 on INSERT anyway. Force it back to NULL for
-    # non-recurring types: an UPDATE (unlike an INSERT) always sends an
-    # explicit bind value, so re-assigning after the initial flush sticks.
-    if body.agreement_type != "recurring" and agr.overdue_after_days is not None:
+    # None" from "never set" for a nullable column with a server_default —
+    # confirmed empirically that resolving the value to None *before*
+    # constructing PurchaseAgreement (e.g.
+    # `overdue_after_days=body.overdue_after_days if body.agreement_type ==
+    # "recurring" else None` folded into the constructor kwargs) makes no
+    # difference: the column is still omitted from the INSERT and the server
+    # default still fires, because SQLAlchemy treats "value is None" and
+    # "attribute never touched" as the same thing at flush time regardless of
+    # when in the code that None was decided. The only way to force a real
+    # NULL past a server_default is a genuine UPDATE — server_default never
+    # fires on UPDATE, which always sends an explicit bind value — hence the
+    # reassignment here happens *after* the initial flush, not folded into
+    # the constructor. See tests/test_agreement_update_rules.py for the
+    # regression test (reads the row back in a fresh session).
+    if body.agreement_type != "recurring":
         agr.overdue_after_days = None
     if body.milestones:
         await agreement_schedule.replace_milestone_rows(db, agr, body.milestones)
@@ -113,8 +122,10 @@ async def update(
     # to judge those fields against — a client could otherwise PATCH a clean
     # agreement into a state create() would have rejected (task-3 review
     # Finding 1: quarterly with no anchor_month, weekly day > 7, a validity
-    # window blown past the row cap, amount_pct stages with no ceiling).
-    # Raises plain ValueError, which the endpoint maps to 409.
+    # window blown past the row cap, amount_pct stages with no ceiling; and
+    # Finding 3 of the re-review: valid_to pushed before valid_from). Raises
+    # plain ValueError, which the endpoint maps to 409.
+    validate_validity_window(valid_from=agr.valid_from, valid_to=agr.valid_to)
     validate_recurrence(
         agreement_type=agr.agreement_type,
         recurring_type=agr.recurring_type,

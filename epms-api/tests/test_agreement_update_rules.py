@@ -12,11 +12,13 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import agreement as agr_crud
 from app.crud import agreement_schedule
 from app.crud import user as user_crud
+from app.models.agreement import PurchaseAgreement
 from app.models.vendor import Vendor
 from app.schemas.agreement import AgreementCreate, AgreementUpdate, MilestoneRowIn
 from app.schemas.auth import RegisterRequest
@@ -110,6 +112,59 @@ async def test_patch_cannot_set_amount_pct_stage_without_a_ceiling(admin_client,
     })
     assert r.status_code == 409, r.text
     assert "not_to_exceed" in r.text
+
+
+async def test_patch_cannot_invert_the_validity_window(admin_client, test_engine):
+    # Re-review Finding 3: _validity_window_is_ordered used to live only on
+    # AgreementCreate — a PATCH could still push valid_to before valid_from.
+    vendor_id, _, _ = await _seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(vendor_id))).json()
+    assert created["valid_from"] == "2026-01-01"
+
+    r = await admin_client.patch(
+        f"{AGR_URL}/{created['id']}", json={"valid_to": "2025-01-01"})
+    assert r.status_code == 409, r.text
+    assert "valid_to must be on or after valid_from" in r.text
+
+
+# ── Re-review Finding 1: the overdue_after_days server_default regression ──
+# create() forces overdue_after_days back to NULL for non-recurring types
+# because a nullable column with server_default="7" silently swallows an
+# explicit None on INSERT (see the comment in crud.agreement.create()). The
+# only trustworthy check is reading the row back from a FRESH session — the
+# returned Python object / response body would look right even if the
+# server_default leak were still there, because both are populated from the
+# same in-memory object create() already patched up before returning.
+
+async def test_new_non_recurring_agreement_has_overdue_after_days_null_in_db(
+    admin_client, test_engine,
+):
+    vendor_id, _, _ = await _seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(
+        AGR_URL, json=_agr_payload(vendor_id, agreement_type="house_account"))).json()
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as fresh_db:
+        row = (await fresh_db.execute(
+            select(PurchaseAgreement).where(PurchaseAgreement.id == uuid.UUID(created["id"]))
+        )).scalar_one()
+        assert row.overdue_after_days is None
+
+
+async def test_new_recurring_agreement_keeps_an_explicit_overdue_after_days(
+    admin_client, test_engine,
+):
+    vendor_id, _, _ = await _seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(
+        vendor_id, agreement_type="recurring", recurring_type="monthly",
+        expected_invoice_day=5, overdue_after_days=14))).json()
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as fresh_db:
+        row = (await fresh_db.execute(
+            select(PurchaseAgreement).where(PurchaseAgreement.id == uuid.UUID(created["id"]))
+        )).scalar_one()
+        assert row.overdue_after_days == 14
 
 
 # ── Finding 3: milestones None vs [] semantics + the claimed-stage guard ───
