@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud import agreement_schedule
 from app.crud._numbering import next_number
 from app.models.agreement import PurchaseAgreement
-from app.schemas.agreement import AgreementCreate, AgreementUpdate
+from app.schemas.agreement import (
+    AgreementCreate,
+    AgreementUpdate,
+    validate_milestones,
+    validate_recurrence,
+)
 
 # 只有 draft 可编辑 —— 一旦进入审批,改额度/有效期/供应商必须重走审批(spec §6)。
 EDITABLE_STATUSES = ("draft", "returned")
@@ -78,6 +83,16 @@ async def create(
     )
     db.add(agr)
     await db.flush()
+    # `overdue_after_days` carries server_default="7", meant only for recurring
+    # agreements (Task 1's model). SQLAlchemy cannot distinguish "explicit
+    # None" from "never set" for a nullable column with a server_default, so
+    # PurchaseAgreement(overdue_after_days=None, ...) — which is exactly what
+    # a house_account/milestone body.model_dump() produces — silently picks
+    # up the recurring default 7 on INSERT anyway. Force it back to NULL for
+    # non-recurring types: an UPDATE (unlike an INSERT) always sends an
+    # explicit bind value, so re-assigning after the initial flush sticks.
+    if body.agreement_type != "recurring" and agr.overdue_after_days is not None:
+        agr.overdue_after_days = None
     if body.milestones:
         await agreement_schedule.replace_milestone_rows(db, agr, body.milestones)
     await db.commit()
@@ -90,11 +105,38 @@ async def update(
 ) -> PurchaseAgreement:
     for field, value in body.model_dump(exclude_unset=True, exclude={"milestones"}).items():
         setattr(agr, field, value)
+
+    # Re-run AgreementCreate's coherence rules against the MERGED state. A
+    # schema-level validator on AgreementUpdate can't do this: PATCH is
+    # partial and usually doesn't carry agreement_type/valid_from/valid_to/
+    # not_to_exceed, so a validator that only sees the patch body has nothing
+    # to judge those fields against — a client could otherwise PATCH a clean
+    # agreement into a state create() would have rejected (task-3 review
+    # Finding 1: quarterly with no anchor_month, weekly day > 7, a validity
+    # window blown past the row cap, amount_pct stages with no ceiling).
+    # Raises plain ValueError, which the endpoint maps to 409.
+    validate_recurrence(
+        agreement_type=agr.agreement_type,
+        recurring_type=agr.recurring_type,
+        expected_invoice_day=agr.expected_invoice_day,
+        anchor_month=agr.anchor_month,
+        expected_amount_per_period=agr.expected_amount_per_period,
+        tolerance_pct=agr.tolerance_pct,
+        overdue_after_days=agr.overdue_after_days,
+        valid_from=agr.valid_from,
+        valid_to=agr.valid_to,
+    )
+
     # None = leave the stage rows alone; [] = clear them. Only a body that
     # actually carries the key (exclude_unset would drop an absent one, but
     # milestones defaults to None on AgreementUpdate so "not set" and
     # "explicitly None" already coincide) triggers a replace.
     if body.milestones is not None:
+        validate_milestones(
+            agreement_type=agr.agreement_type,
+            milestones=body.milestones,
+            not_to_exceed=agr.not_to_exceed,
+        )
         await agreement_schedule.replace_milestone_rows(db, agr, body.milestones)
     await db.commit()
     await db.refresh(agr)

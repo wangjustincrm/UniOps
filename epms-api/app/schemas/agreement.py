@@ -18,6 +18,66 @@ RECURRING_TYPES = ("weekly", "monthly", "quarterly", "yearly")
 ANCHORED_TYPES = ("quarterly", "yearly")
 
 
+def validate_recurrence(
+    *,
+    agreement_type: str,
+    recurring_type: str | None,
+    expected_invoice_day: int | None,
+    anchor_month: int | None,
+    expected_amount_per_period: Decimal | None,
+    tolerance_pct: Decimal | None,
+    overdue_after_days: int | None,
+    valid_from: date,
+    valid_to: date,
+) -> None:
+    """The recurrence coherence rule. Factored out of AgreementCreate's schema
+    validator so crud.agreement.update() can run the SAME check against the
+    merged post-patch state (see task-3 review Finding 1: a schema-level
+    model_validator on AgreementUpdate can't do this — a PATCH body is
+    partial and usually doesn't carry agreement_type/valid_from/valid_to, so
+    a validator that only sees `self` on the partial body has nothing to
+    judge those fields against). Raises plain ValueError; AgreementCreate
+    wraps this call in a model_validator so pydantic turns it into a 422
+    ValidationError, while crud.agreement.update() lets the plain ValueError
+    propagate to the endpoint, which maps it to a 409.
+    """
+    if agreement_type == "recurring":
+        if recurring_type not in RECURRING_TYPES:
+            raise ValueError(
+                "recurring_type is required for a recurring agreement "
+                f"(one of {', '.join(RECURRING_TYPES)})")
+        if expected_invoice_day is None:
+            raise ValueError("expected_invoice_day is required for a recurring agreement")
+        if recurring_type == "weekly" and not 1 <= expected_invoice_day <= 7:
+            raise ValueError(
+                "For a weekly cycle expected_invoice_day is a weekday, 1..7 (1 = Monday)")
+        if recurring_type in ANCHORED_TYPES and anchor_month is None:
+            raise ValueError(
+                f"anchor_month is required for a {recurring_type} cycle — real "
+                "billing cycles often do not start in January, and the contract start "
+                "date is not a reliable proxy for the billing anchor")
+        # 生成不出来的排期,建档/改档时就该挡住,而不是等审批通过那一刻才炸。
+        from app.services.agreement_schedule import TooManyPeriods, build_period_rows
+        try:
+            build_period_rows(
+                recurring_type=recurring_type, valid_from=valid_from,
+                valid_to=valid_to, expected_invoice_day=expected_invoice_day,
+                anchor_month=anchor_month)
+        except TooManyPeriods as exc:
+            raise ValueError(str(exc)) from exc
+    else:
+        bad = [n for n, v in (
+            ("recurring_type", recurring_type),
+            ("expected_invoice_day", expected_invoice_day),
+            ("anchor_month", anchor_month),
+            ("expected_amount_per_period", expected_amount_per_period),
+            ("tolerance_pct", tolerance_pct),
+            ("overdue_after_days", overdue_after_days),
+        ) if v is not None]
+        if bad:
+            raise ValueError(f"{', '.join(bad)} only apply to a recurring agreement")
+
+
 class MilestoneRowIn(BaseModel):
     milestone_name: str = Field(min_length=1, max_length=255)
     # 纯文本时间(决策 8):"Within 1 week after contract signing"。阶段时间几乎
@@ -25,6 +85,22 @@ class MilestoneRowIn(BaseModel):
     expected_timing: str | None = Field(default=None, max_length=255)
     expected_amount: Decimal | None = Field(default=None, ge=0)
     amount_pct: Decimal | None = Field(default=None, ge=0, le=100)
+
+
+def validate_milestones(
+    *,
+    agreement_type: str,
+    milestones: list[MilestoneRowIn],
+    not_to_exceed: Decimal | None,
+) -> None:
+    """Same drift-avoidance rationale as validate_recurrence — shared by
+    AgreementCreate's schema validator and crud.agreement.update()."""
+    if milestones and agreement_type != "milestone":
+        raise ValueError("milestones can only be set on a milestone agreement")
+    if any(m.amount_pct is not None for m in milestones) and not_to_exceed is None:
+        raise ValueError(
+            "amount_pct needs not_to_exceed as its base — set a ceiling on the "
+            "agreement, or enter absolute amounts on the stages")
 
 
 class ScheduleRowResponse(BaseModel):
@@ -88,46 +164,26 @@ class AgreementCreate(BaseModel):
 
     @model_validator(mode="after")
     def _recurrence_is_coherent(self):
-        if self.agreement_type == "recurring":
-            if self.recurring_type not in RECURRING_TYPES:
-                raise ValueError(
-                    "recurring_type is required for a recurring agreement "
-                    f"(one of {', '.join(RECURRING_TYPES)})")
-            if self.expected_invoice_day is None:
-                raise ValueError("expected_invoice_day is required for a recurring agreement")
-            if self.recurring_type == "weekly" and not 1 <= self.expected_invoice_day <= 7:
-                raise ValueError(
-                    "For a weekly cycle expected_invoice_day is a weekday, 1..7 (1 = Monday)")
-            if self.recurring_type in ANCHORED_TYPES and self.anchor_month is None:
-                raise ValueError(
-                    f"anchor_month is required for a {self.recurring_type} cycle — real "
-                    "billing cycles often do not start in January, and the contract start "
-                    "date is not a reliable proxy for the billing anchor")
-            # 生成不出来的排期,建档时就该挡住,而不是等审批通过那一刻才炸。
-            from app.services.agreement_schedule import TooManyPeriods, build_period_rows
-            try:
-                build_period_rows(
-                    recurring_type=self.recurring_type, valid_from=self.valid_from,
-                    valid_to=self.valid_to, expected_invoice_day=self.expected_invoice_day,
-                    anchor_month=self.anchor_month)
-            except TooManyPeriods as exc:
-                raise ValueError(str(exc)) from exc
-        else:
-            bad = [n for n in ("recurring_type", "expected_invoice_day", "anchor_month",
-                               "expected_amount_per_period", "tolerance_pct")
-                   if getattr(self, n) is not None]
-            if bad:
-                raise ValueError(f"{', '.join(bad)} only apply to a recurring agreement")
+        validate_recurrence(
+            agreement_type=self.agreement_type,
+            recurring_type=self.recurring_type,
+            expected_invoice_day=self.expected_invoice_day,
+            anchor_month=self.anchor_month,
+            expected_amount_per_period=self.expected_amount_per_period,
+            tolerance_pct=self.tolerance_pct,
+            overdue_after_days=self.overdue_after_days,
+            valid_from=self.valid_from,
+            valid_to=self.valid_to,
+        )
         return self
 
     @model_validator(mode="after")
     def _milestones_are_coherent(self):
-        if self.milestones and self.agreement_type != "milestone":
-            raise ValueError("milestones can only be set on a milestone agreement")
-        if any(m.amount_pct is not None for m in self.milestones) and self.not_to_exceed is None:
-            raise ValueError(
-                "amount_pct needs not_to_exceed as its base — set a ceiling on the "
-                "agreement, or enter absolute amounts on the stages")
+        validate_milestones(
+            agreement_type=self.agreement_type,
+            milestones=self.milestones,
+            not_to_exceed=self.not_to_exceed,
+        )
         return self
 
 
