@@ -372,15 +372,35 @@ async def match_invoice(
                         "pickup slip(s) as receipt evidence. Please review and approve or "
                         "reject."
                     )
-                else:
-                    # recurring/milestone: claimed a real billing-schedule row
-                    # instead (see the agreement's schedule for which one) —
+                elif result.schedule_id is not None:
+                    # recurring (auto-claimed or an explicit req.schedule_id)
+                    # or milestone: claimed a real billing-schedule row —
                     # neither a legacy settlement nor slip-backed, so say
                     # nothing that isn't true of both.
                     review_description = (
                         f"Invoice {inv.internal_ref} was matched to agreement "
                         f"{result.agreement_number} against a billing schedule row. "
                         "Please review and approve or reject."
+                    )
+                else:
+                    # Review fix (Important #2 follow-up, Task 5 round 2):
+                    # recurring's FIFO auto-claim can legitimately come up
+                    # empty (no pending/overdue row, or the amount is out of
+                    # tolerance) — that's the ONLY way this branch is reached
+                    # with schedule_id still None, and it's exactly why
+                    # require_review got set. Nothing was claimed, so "against
+                    # a billing schedule row" would be the same shape of lie
+                    # Important #2 just fixed, just without the literal
+                    # "None". The reviewer's actual job here isn't a plain
+                    # approve/reject — it's to manually assign which billing
+                    # period this invoice covers (the req.schedule_id escape
+                    # hatch), so the description has to say that instead.
+                    review_description = (
+                        f"Invoice {inv.internal_ref} was matched to agreement "
+                        f"{result.agreement_number}, but no billing period could be "
+                        "auto-claimed (none pending, or the amount is outside "
+                        "tolerance). Please review and manually assign the billing "
+                        "period this invoice covers."
                     )
             else:
                 review_description = (

@@ -624,6 +624,63 @@ async def test_agreement_match_by_delegate_with_slips_review_description(admin_c
     assert "1 claimed pickup slip" in review_task.description
 
 
+async def test_recurring_no_claimable_row_review_description_does_not_lie(admin_client, test_engine):
+    """Task 5 round-2 review fix: recurring's FIFO auto-claim can legitimately
+    come up empty (no pending/overdue row, or the amount is out of tolerance)
+    — that's the only way this branch is reached with schedule_id still None,
+    legacy_settlement False, and slip_ids empty, and it's exactly why
+    require_review got set. The old fallback wording ("...against a billing
+    schedule row") would tell the AP reviewer a period WAS claimed when
+    nothing was — the same shape of lie Important #2 fixed, just without a
+    literal "None". The description must say nothing was auto-claimed and
+    that the reviewer's job is to manually assign a period, not just
+    approve/reject a claim that doesn't exist."""
+    from app.crud import agreement_schedule as sched_crud
+
+    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Recurring No-Claim Review Text Vendor")
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    # Wildly outside [950, 1050] — every period row stays unclaimable.
+    inv = await _upload_invoice(admin_client, vendor_id, amount="5000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    delegate_client, delegate_id = await _delegate_client(test_engine)
+    try:
+        r_assign = await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
+                                           json={"user_id": str(delegate_id)})
+        assert r_assign.status_code == 200, r_assign.text
+
+        r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
+            "agreement_id": str(agr.id)})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["status"] == "match_review"
+        assert body["legacy_settlement"] is False
+    finally:
+        await delegate_client.aclose()
+
+    async with factory() as db:
+        review_task = (await db.execute(select(Task).where(
+            Task.type == "review_match", Task.document_type == "invoice",
+            Task.document_id == inv_id, Task.is_completed.is_(False),
+        ))).scalar_one_or_none()
+        fresh_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+    assert fresh_inv.schedule_id is None
+    assert review_task is not None
+    assert "against a billing schedule row" not in review_task.description
+    assert "no billing period could be auto-claimed" in review_task.description
+
+
 async def test_agreement_match_by_ap_completes_terminally(admin_client, test_engine):
     """The other half of the same gate: an AP caller (admin_client's role is
     system_admin, in _AP_ROLES) matching to an agreement must NOT be routed
