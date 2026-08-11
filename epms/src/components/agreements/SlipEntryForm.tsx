@@ -170,7 +170,14 @@ export function SlipEntryForm({ agreementId }: SlipEntryFormProps) {
         // same way create() would have if the reason had been there from
         // the start.
         const uploadErrMessage = uploadErr instanceof Error ? uploadErr.message : 'unknown error'
-        const slipLabel = slip.slip_ref ? `slip ${slip.slip_ref}` : `slip (ref# ${slip.id})`
+        // Fall back to date + total, NOT slip.id: the table renders neither the
+        // UUID nor any way to search by it, so naming the id would promise a
+        // handle the user cannot actually use. Date and Total are always-visible
+        // columns, and slip_ref is optional (OCR may not find one and the user
+        // may not type one), so this fallback is a routine path, not an edge case.
+        const slipLabel = slip.slip_ref
+          ? `slip ${slip.slip_ref}`
+          : `the slip dated ${slip.slip_date} for ${slip.total_amount}`
         try {
           await agreementSlipService.update(agreementId, slip.id, {
             missing_slip_reason:
