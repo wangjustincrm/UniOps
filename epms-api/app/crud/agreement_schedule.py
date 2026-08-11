@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.schemas.agreement import MilestoneRowIn
+from app.services.agreement_schedule import build_period_rows
 
 
 def _resolve_milestone_amounts(
@@ -61,3 +62,37 @@ async def list_rows(
         .order_by(AgreementPaymentSchedule.schedule_type,
                   AgreementPaymentSchedule.sequence)
     )).scalars().all())
+
+
+async def ensure_period_rows(db: AsyncSession, agr: PurchaseAgreement) -> int:
+    """协议转 active 时生成整个有效期的排期行。
+
+    幂等:已有 period 行就什么都不做 —— 审批可能因 resync 之类的操作重入。
+    非 recurring 协议直接返回 0。
+    """
+    if agr.agreement_type != "recurring" or not agr.recurring_type:
+        return 0
+    existing = (await db.execute(
+        select(AgreementPaymentSchedule.id).where(
+            AgreementPaymentSchedule.agreement_id == agr.id,
+            AgreementPaymentSchedule.schedule_type == "period",
+        ).limit(1)
+    )).first()
+    if existing:
+        return 0
+
+    rows = build_period_rows(
+        recurring_type=agr.recurring_type, valid_from=agr.valid_from,
+        valid_to=agr.valid_to, expected_invoice_day=agr.expected_invoice_day,
+        anchor_month=agr.anchor_month,
+    )
+    for r in rows:
+        db.add(AgreementPaymentSchedule(
+            agreement_id=agr.id, schedule_type="period", sequence=r.sequence,
+            period_label=r.period_label, expected_date=r.expected_date,
+            expected_amount=agr.expected_amount_per_period,
+            tolerance_pct=agr.tolerance_pct, overdue_after_days=agr.overdue_after_days,
+            status="pending",
+        ))
+    await db.flush()
+    return len(rows)

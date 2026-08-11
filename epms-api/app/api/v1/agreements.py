@@ -1,4 +1,5 @@
 """Purchase Agreement endpoints."""
+import logging
 import uuid
 from typing import Annotated
 
@@ -7,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import agreement as agr_crud
+from app.crud import agreement_schedule as agr_sched_crud
 from app.crud import vendor as vendor_crud
 from app.schemas.agreement import (
     AgreementActionRequest,
@@ -14,8 +16,11 @@ from app.schemas.agreement import (
     AgreementListResponse,
     AgreementResponse,
     AgreementUpdate,
+    ScheduleListResponse,
 )
 from app.services.approval_client import delegate_action
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agreements", tags=["purchase-agreements"])
 
@@ -101,4 +106,34 @@ async def agreement_action(
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     await db.refresh(agr)
+    # 排期在这里生成,不在 approval-api 的 _post_approve_agr —— 那样 approval-api
+    # 就得镜像 agreement_payment_schedule,为一个纯 EPMS 概念增加跨服务耦合点。
+    # 状态机归 approval-api,排期归 EPMS。
+    if agr.status == "active":
+        try:
+            await agr_sched_crud.ensure_period_rows(db, agr)
+            await db.commit()
+            await db.refresh(agr)
+        except ValueError:
+            # build_period_rows 理论上不会在这里炸 —— validate_recurrence 在
+            # create/update 时已经用同样的入参跑过一次,一份存进库的协议不该
+            # 再产出无法生成排期的周期参数。但万一它还是炸了:此时审批已经在
+            # approval-api 落地(状态已 active、审批任务已关闭),把 500 扔回
+            # 前端只会让调用方误以为审批本身失败了,而它没有。所以这里既不
+            # 重新抛出,也不静默吞掉——记一条 error 日志留痕,让运维能定位到
+            # "active 但排期为空"的协议,走 resync 手动补建。
+            logger.error(
+                "ensure_period_rows failed for agreement %s (id=%s) after "
+                "approval was already recorded as active; schedule not "
+                "generated, needs manual resync",
+                agr.number, agr.id, exc_info=True,
+            )
     return agr
+
+
+@router.get("/{agreement_id}/schedule", response_model=ScheduleListResponse)
+async def list_schedule(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
+    agr = await agr_crud.get_by_id(db, agreement_id)
+    if agr is None:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    return {"items": await agr_sched_crud.list_rows(db, agreement_id)}
