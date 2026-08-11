@@ -9,11 +9,18 @@ import { useCreateSlip } from '@/hooks/useAgreementSlips'
 import { agreementSlipAttachmentService } from '@/services/agreementSlipAttachments'
 import { ocrService } from '@/services/agreementSlips'
 
-// Amount-triangle tolerance for the amount + tax_amount === total_amount
-// check. A plain `===` fails on values that only differ by float noise
-// (0.1 + 0.2 !== 0.3) even when a human would call them equal — half a cent
-// is well below anything a pickup slip is priced in.
-const AMOUNT_TOLERANCE = 0.01
+// The backend (schemas/agreement_slip.py::validate_totals) checks
+// amount + tax_amount == total_amount as exact Decimal equality against a
+// Numeric(15,2) column — i.e. equality to the cent. A plain float `===`
+// (or a 0.01 tolerance, which is NOT tight enough: 10.00 + 1.30 vs 11.31
+// differs by 0.009999999999999787, which slips under a 0.01 threshold and
+// then 422s server-side) fails to match that. Comparing rounded-to-cent
+// integers kills float noise (0.1 + 0.2 !== 0.3) while staying exactly as
+// strict as the backend, so a value the frontend accepts never bounces off
+// the API.
+function centsEqual(total: number, amount: number, tax: number): boolean {
+  return Math.round(total * 100) === Math.round(amount * 100) + Math.round(tax * 100)
+}
 
 interface SlipEntryFormProps {
   agreementId: string
@@ -113,7 +120,7 @@ export function SlipEntryForm({ agreementId }: SlipEntryFormProps) {
     if (amount === '' || taxAmount === '' || totalAmount === '' || Number.isNaN(amt) || Number.isNaN(tax) || Number.isNaN(tot)) {
       setAmountError('Amount, tax and total are all required')
       hasError = true
-    } else if (Math.abs(tot - (amt + tax)) > AMOUNT_TOLERANCE) {
+    } else if (!centsEqual(tot, amt, tax)) {
       setAmountError('Total must equal amount + tax')
       hasError = true
     } else {
@@ -193,7 +200,12 @@ export function SlipEntryForm({ agreementId }: SlipEntryFormProps) {
           <Input id="slip-date" type="date" value={slipDate} onChange={(e) => setSlipDate(e.target.value)} required />
         </FormField>
         <FormField label="Reference #" htmlFor="slip-ref">
-          <Input id="slip-ref" value={slipRef} onChange={(e) => setSlipRef(e.target.value)} placeholder="Slip / receipt number" />
+          {/* DB column is String(64) — a paste that overflows it raises a
+              psycopg StringDataRightTruncation (DataError), not an
+              IntegrityError, so create_slip's `except IntegrityError` for the
+              friendly 409 doesn't catch it and it falls through to a bare 500.
+              maxLength stops the overflow from ever reaching the request. */}
+          <Input id="slip-ref" value={slipRef} onChange={(e) => setSlipRef(e.target.value)} placeholder="Slip / receipt number" maxLength={64} />
         </FormField>
         <FormField label="Amount (before tax)" required htmlFor="slip-amount">
           <Input id="slip-amount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />

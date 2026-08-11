@@ -24,11 +24,20 @@ export function useCreateSlip(agreementId: string) {
     // *schedules* a background refetch, so without awaiting it isPending
     // flips false and the entry form re-arms while the slip list still shows
     // stale (pre-create) data.
+    //
+    // Scoped to THIS agreement's slip list only — no ['agreements'] (bare)
+    // invalidate. That broad key used to prefix-match every agreement's data
+    // app-wide (every OTHER open agreement's slips/attachments too, plus the
+    // agreement list/header queries), and, within this agreement, every
+    // per-row attachment query as collateral damage on every single mutation.
+    // It was also redundant with the narrow invalidate right below it.
+    // consumed_amount/NTE on the agreement header is derived from matched
+    // INVOICES (crud/invoice.py, e.g. _recompute_consumed), never from
+    // pickup slips directly — create/void/ap-review touch nothing on the
+    // agreement row itself, so there is nothing on ['agreements'] for these
+    // three mutations to invalidate in the first place.
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'slips'] }),
-        queryClient.invalidateQueries({ queryKey: ['agreements'] }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'slips'] })
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create slip'),
   })
@@ -39,11 +48,9 @@ export function useVoidSlip(agreementId: string) {
 
   return useMutation({
     mutationFn: (slipId: string) => agreementSlipService.void(agreementId, slipId),
+    // See useCreateSlip above for why this doesn't also invalidate ['agreements'].
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'slips'] }),
-        queryClient.invalidateQueries({ queryKey: ['agreements'] }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'slips'] })
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to void slip'),
   })
@@ -55,11 +62,9 @@ export function useApReviewSlip(agreementId: string) {
   return useMutation({
     mutationFn: ({ slipId, action }: { slipId: string; action: SlipApReviewAction }) =>
       agreementSlipService.apReview(agreementId, slipId, action),
+    // See useCreateSlip above for why this doesn't also invalidate ['agreements'].
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'slips'] }),
-        queryClient.invalidateQueries({ queryKey: ['agreements'] }),
-      ])
+      await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'slips'] })
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
   })

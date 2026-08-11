@@ -558,7 +558,12 @@ export default function AgreementDetailPage() {
                 canWrite={canWrite}
                 canApReview={canApReviewSlip}
               />
-              {canWrite && (
+              {/* Same admissibility gate as the Create PA button (isAgreementAdmissible,
+                  defined above) — status alone (agreement_type check above) isn't enough:
+                  the backend's create_slip route accepts a POST against a draft/cancelled/
+                  past-grace agreement with no status check of its own, so without this a
+                  slip could be recorded against an agreement that was never approved. */}
+              {canWrite && isAgreementAdmissible(agreement) && (
                 <div className="border-t border-neutral-100 pt-5">
                   <h3 className="text-sm font-semibold text-neutral-700 mb-3">Record a Pickup Slip</h3>
                   <SlipEntryForm agreementId={agreement.id} />

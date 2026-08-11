@@ -30,10 +30,27 @@ function isAged(slip: ApiSlip): boolean {
   return days > SLIP_AGING_DAYS
 }
 
+// A DELIBERATELY SEPARATE top-level query-key namespace, NOT
+// ['agreements', agreementId, 'slips', ...] — react-query's invalidateQueries
+// prefix-matches, so if this lived under the 'agreements' branch, narrowing
+// the slip mutations' invalidation to ['agreements', agreementId, 'slips']
+// (see useAgreementSlips.ts) would still sweep every row's attachment query
+// on every Void/Approve/Reject click, N requests at a time. Attachment
+// metadata for a slip doesn't change when the slip's status changes, so
+// there's nothing for those mutations to invalidate here anyway.
+function slipAttachmentsQueryKey(agreementId: string, slipId: string) {
+  return ['agreement-slip-attachments', agreementId, slipId] as const
+}
+
 function SlipAttachmentsCell({ agreementId, slipId }: { agreementId: string; slipId: string }) {
   const { data } = useQuery({
-    queryKey: ['agreements', agreementId, 'slips', slipId, 'attachments'],
+    queryKey: slipAttachmentsQueryKey(agreementId, slipId),
     queryFn: () => agreementSlipAttachmentService.list(agreementId, slipId),
+    // Attachments are set once at slip-creation time and essentially never
+    // change afterward (no edit/delete UI exists yet) — a long staleTime
+    // stops every re-mount/window-refocus from re-firing all N per-row
+    // requests and re-flooding the browser's 6-connection-per-host queue.
+    staleTime: 5 * 60_000,
   })
   const attachments = data ?? []
   if (attachments.length === 0) return <span className="text-neutral-300">—</span>
@@ -72,20 +89,28 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
   const apReview = useApReviewSlip(agreementId)
   // Mirrors ScheduleTable's pendingRowId convention: the hooks below are
   // single mutation objects shared by every row's button, so isPending alone
-  // can't tell you WHICH row is mid-flight without this.
+  // can't tell you WHICH row is mid-flight without this. pendingReviewKey
+  // additionally encodes the ACTION (`${slipId}:approve` vs `${slipId}:reject`)
+  // — a bare pendingReviewId flipped both buttons on the same row to
+  // "Working…" together, so clicking Reject visibly lit up Approve instead.
   const [pendingVoidId, setPendingVoidId] = useState<string | null>(null)
-  const [pendingReviewId, setPendingReviewId] = useState<string | null>(null)
+  const [pendingReviewKey, setPendingReviewKey] = useState<string | null>(null)
 
   const agedCount = slips.filter(isAged).length
 
-  const handleVoid = (slipId: string) => {
+  const handleVoid = (slipId: string, slipRef: string | null) => {
+    // Voiding is terminal — 'voided' isn't in crud/agreement_slip.py's
+    // VOIDABLE set, so there is no undo. Same confirm() convention as the
+    // other destructive actions in this app (PrDetailPage withdraw/recall,
+    // BudgetCatalogPage delete, etc.).
+    if (!confirm(`Void pickup slip ${slipRef ?? '(no reference #)'}? This cannot be undone.`)) return
     setPendingVoidId(slipId)
     voidSlip.mutate(slipId, { onSettled: () => setPendingVoidId(null) })
   }
 
   const handleReview = (slipId: string, action: 'approve' | 'reject') => {
-    setPendingReviewId(slipId)
-    apReview.mutate({ slipId, action }, { onSettled: () => setPendingReviewId(null) })
+    setPendingReviewKey(`${slipId}:${action}`)
+    apReview.mutate({ slipId, action }, { onSettled: () => setPendingReviewKey(null) })
   }
 
   if (slips.length === 0) {
@@ -111,7 +136,11 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
               <tr className="border-b border-neutral-200 bg-neutral-50">
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Date</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Reference #</th>
-                <th className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500">Amount</th>
+                {/* Renders total_amount (tax-inclusive) — SlipEntryForm labels the
+                    tax-exclusive field "Amount (before tax)", so this column must say
+                    "Total", not "Amount", or the same word means two different things
+                    on the two halves of this feature. */}
+                <th className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500">Total</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Picked up by</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Status</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Attachments</th>
@@ -125,7 +154,8 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                 const canVoid = canWrite && VOIDABLE_STATUSES.has(slip.status)
                 const canReview = canApReview && slip.status === 'pending_ap_review'
                 const rowVoidPending = voidSlip.isPending && pendingVoidId === slip.id
-                const rowReviewPending = apReview.isPending && pendingReviewId === slip.id
+                const rowApprovePending = apReview.isPending && pendingReviewKey === `${slip.id}:approve`
+                const rowRejectPending = apReview.isPending && pendingReviewKey === `${slip.id}:reject`
                 return (
                   <tr key={slip.id} className="border-b border-neutral-100 last:border-0 bg-white">
                     <td className="px-4 py-2.5 text-xs text-neutral-500">
@@ -143,7 +173,21 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                       {formatAmount(Number(slip.total_amount), currency)}
                     </td>
                     <td className="px-4 py-2.5 text-neutral-900">{pickedByName ?? '—'}</td>
-                    <td className="px-4 py-2.5"><StatusBadge status={slip.status as DocumentStatus} /></td>
+                    <td className="px-4 py-2.5">
+                      <StatusBadge status={slip.status as DocumentStatus} />
+                      {/* The entire point of the AP-review step is to weigh this reason —
+                          without it AP is just clicking Approve/Reject blind. Truncated
+                          inline, full text on hover/title since there's no room for a
+                          multi-line reason in a table cell. */}
+                      {slip.status === 'pending_ap_review' && slip.missing_slip_reason && (
+                        <p
+                          className="mt-1 max-w-[14rem] truncate text-xs text-neutral-500"
+                          title={slip.missing_slip_reason}
+                        >
+                          {slip.missing_slip_reason}
+                        </p>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5">
                       <SlipAttachmentsCell agreementId={agreementId} slipId={slip.id} />
                     </td>
@@ -158,7 +202,7 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                               disabled={apReview.isPending}
                             >
                               <CheckCircle2 className="h-3.5 w-3.5" />
-                              {rowReviewPending ? 'Working…' : 'Approve'}
+                              {rowApprovePending ? 'Working…' : 'Approve'}
                             </Button>
                             <Button
                               size="sm"
@@ -167,7 +211,7 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                               disabled={apReview.isPending}
                             >
                               <XCircle className="h-3.5 w-3.5" />
-                              Reject
+                              {rowRejectPending ? 'Working…' : 'Reject'}
                             </Button>
                           </>
                         )}
@@ -175,7 +219,7 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => handleVoid(slip.id)}
+                            onClick={() => handleVoid(slip.id, slip.slip_ref)}
                             disabled={voidSlip.isPending}
                             className={cn('text-danger-600 hover:text-danger-700')}
                           >
