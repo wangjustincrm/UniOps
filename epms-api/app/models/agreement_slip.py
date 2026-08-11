@@ -1,80 +1,17 @@
-"""ORM model for house-account pickup slips.
+"""TODO(Task 3): delete this shim.
 
-一张纸质凭证(柜台小票/送货单)的数字记录。它在 house_account 这条免收货链路上
-扮演 GR 的角色 —— 但 ⚠️ **它不是领用人的数字签认**:小票由员工交给财务、财务
-代录(设计 §0 决策 7),picked_by 是代录人据交接事实填的。任何 UI 文案都不得
-写成"领用人已确认"。
+Task 1 renamed the real model to app/models/agreement_receipt.py::AgreementReceipt
+and generalised it (receipt_type: counter_slip | delivery | service). This file
+is kept only so app/crud/agreement_slip.py, app/api/v1/agreement_slips.py and
+app/api/v1/invoices.py — which still `from app.models.agreement_slip import
+AgreementPickupSlip` — continue to import successfully. Those layers are
+explicitly out of scope for Task 1; Task 2/3 move them onto AgreementReceipt
+and delete this file.
+
+⚠️ Column names changed on the real model: slip_date -> receipt_date,
+slip_ref -> receipt_ref, picked_by -> received_by, missing_slip_reason ->
+missing_receipt_reason. Code reached through this alias that still uses the
+old attribute names will raise AttributeError/TypeError at call time — that
+is expected until Task 2/3 land, not a regression introduced here.
 """
-import uuid
-from datetime import date, datetime
-from decimal import Decimal
-
-import sqlalchemy as sa
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
-
-
-class AgreementPickupSlip(UUIDPrimaryKey, TimestampMixin, Base):
-    __tablename__ = "agreement_pickup_slips"
-
-    agreement_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("purchase_agreements.id", ondelete="CASCADE"),
-        nullable=False, index=True)
-
-    # slip_date 与 total_amount 是基线匹配仅有的两个依据(设计 §4.1),都不可空。
-    slip_date: Mapped[date] = mapped_column(Date, nullable=False)
-
-    # 凭证上的参考号 —— **什么都行**:小票号、交易号、送货单号。
-    # Princess Auto 的情况下由 OCR 抽出的 TILL + TRANS 拼成 "1-510076",
-    # 但模型不关心它怎么来的,只当它是个不透明字符串。抽不到就是 NULL,
-    # 基线匹配照常工作。
-    slip_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-
-    amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-    tax_amount: Mapped[Decimal] = mapped_column(
-        Numeric(15, 2), nullable=False, server_default="0")
-    total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-
-    # 领用人 = 交单人。见类文档:这不是数字签认。
-    picked_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
-
-    missing_slip_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    ap_reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
-    ap_reviewed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True)
-
-    # pending_ap_review | open | reconciled | voided | rejected
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, server_default="open", index=True)
-
-    # 认领它的发票。一张小票只属于一张发票;反过来一张发票可覆盖多张小票
-    # (invoices.slip_ids 是数组),所以这里**不加唯一索引**。
-    invoice_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True, index=True)
-
-    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
-
-    # ⚠️ Predicate kept byte-for-byte in sync with alembic ag05_slip_ref_uq_active.
-    # The test DB is built by Base.metadata.create_all and never runs the
-    # migrations, so a predicate that lives only in the migration is a
-    # predicate no test can see (this branch already shipped one such
-    # invisible constraint once).
-    #
-    # Retired rows are excluded from uniqueness on purpose (whole-branch
-    # review I3): voiding a mis-keyed slip or having AP reject one used to
-    # burn its slip_ref inside that agreement forever, so re-recording the
-    # same paper slip with the right amount 409'd with no way out. Uniqueness
-    # still holds where it matters — two LIVE slips can't claim one ref.
-    __table_args__ = (
-        sa.Index("uq_agr_slip_ref_per_agreement", "agreement_id", "slip_ref",
-                 unique=True,
-                 postgresql_where=sa.text(
-                     "slip_ref IS NOT NULL AND status NOT IN ('voided', 'rejected')")),
-    )
+from app.models.agreement_receipt import AgreementPickupSlip  # noqa: F401

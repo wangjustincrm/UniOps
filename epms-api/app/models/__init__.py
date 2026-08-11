@@ -2,8 +2,8 @@
 from app.models.agreement import PurchaseAgreement  # noqa: F401
 from app.models.agreement_attachment import AgreementAttachment  # noqa: F401
 from app.models.agreement_schedule import AgreementPaymentSchedule  # noqa: F401
-from app.models.agreement_slip import AgreementPickupSlip  # noqa: F401
-from app.models.agreement_slip_attachment import AgreementSlipAttachment  # noqa: F401
+from app.models.agreement_receipt import AgreementReceipt  # noqa: F401
+from app.models.agreement_receipt_attachment import AgreementReceiptAttachment  # noqa: F401
 from app.models.approval import ApprovalEvent  # noqa: F401
 from app.models.config import CompanyConfig  # noqa: F401
 # NOTE: BudgetAccount / BudgetL1 moved to budget-api (:8007). No mirror in epms-api.

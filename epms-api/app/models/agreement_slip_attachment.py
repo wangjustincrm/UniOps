@@ -1,21 +1,9 @@
-"""ORM model for agreement pickup slip attachments."""
-import uuid
+"""TODO(Task 3): delete this shim.
 
-from sqlalchemy import ForeignKey, Integer, LargeBinary, String
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
-
-
-class AgreementSlipAttachment(UUIDPrimaryKey, TimestampMixin, Base):
-    __tablename__ = "agreement_slip_attachments"
-
-    slip_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("agreement_pickup_slips.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    filename: Mapped[str] = mapped_column(String(255), nullable=False)
-    content_type: Mapped[str] = mapped_column(String(100), nullable=False, default="application/octet-stream")
-    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
-    file_data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    storage_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+Same reasoning as app/models/agreement_slip.py: kept only so
+app/api/v1/agreement_slip_attachments.py — which still
+`from app.models.agreement_slip_attachment import AgreementSlipAttachment` —
+continues to import successfully after the Task 1 rename to
+app/models/agreement_receipt_attachment.py::AgreementReceiptAttachment.
+"""
+from app.models.agreement_receipt_attachment import AgreementSlipAttachment  # noqa: F401
