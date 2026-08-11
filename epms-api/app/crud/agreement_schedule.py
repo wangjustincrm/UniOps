@@ -96,3 +96,55 @@ async def ensure_period_rows(db: AsyncSession, agr: PurchaseAgreement) -> int:
         ))
     await db.flush()
     return len(rows)
+
+
+async def claim_next_period(
+    db: AsyncSession, agr: PurchaseAgreement, invoice
+) -> AgreementPaymentSchedule | None:
+    """FIFO 认领。
+
+    **按 sequence 取,不按发票日期选期次** —— 周期账单的到达日常常落在下一期
+    (8 月的网络费 9/3 才开票),按 invoice_date 落在哪个期窗口去选行会系统性地
+    错配一整期。周期账单本身按顺序来,FIFO 更贴合实际;乱序到达(供应商补开
+    上上个月的票)由人工在 match_review 指定,这是有意留的兜底。
+    """
+    row = (await db.execute(
+        select(AgreementPaymentSchedule)
+        .where(AgreementPaymentSchedule.agreement_id == agr.id,
+               AgreementPaymentSchedule.schedule_type == "period",
+               AgreementPaymentSchedule.status.in_(("pending", "overdue")))
+        .order_by(AgreementPaymentSchedule.sequence)
+        .limit(1)
+    )).scalar_one_or_none()
+    if row is None:
+        return None
+
+    if row.expected_amount is not None:
+        tol = row.tolerance_pct or Decimal("0")
+        span = row.expected_amount * tol / Decimal("100")
+        amount = Decimal(str(invoice.total_amount))
+        if not (row.expected_amount - span <= amount <= row.expected_amount + span):
+            return None
+
+    row.status = "received"
+    row.invoice_id = invoice.id
+    await db.flush()
+    return row
+
+
+async def claim_milestone(
+    db: AsyncSession, agr: PurchaseAgreement, invoice, row_id: uuid.UUID
+) -> AgreementPaymentSchedule:
+    row = (await db.execute(
+        select(AgreementPaymentSchedule).where(AgreementPaymentSchedule.id == row_id)
+    )).scalar_one_or_none()
+    if row is None or row.agreement_id != agr.id or row.schedule_type != "milestone":
+        raise ValueError("That milestone stage does not belong to this agreement")
+    if row.invoice_id is not None:
+        raise ValueError(
+            f"Milestone '{row.milestone_name}' already has an invoice matched to it")
+    # 不做金额校验(设计 §5.2):预期与实际并排显示给人眼判断,超支由协议 NTE 预警覆盖。
+    row.status = "received"
+    row.invoice_id = invoice.id
+    await db.flush()
+    return row

@@ -103,6 +103,8 @@ class InvoiceMatchRequest(BaseModel):
     # 1A only: no pickup slips exist yet, so an agreement match is by definition
     # settled without receipt evidence and must record why.
     legacy_settlement_reason: str | None = None
+    # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。
+    schedule_id: uuid.UUID | None = None
 
 
 class InvoiceExceptionRequest(BaseModel):

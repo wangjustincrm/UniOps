@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.crud import agreement as agreement_crud
+from app.crud import agreement_schedule as agreement_schedule_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
@@ -395,13 +396,35 @@ async def _match_to_agreement(
             f"(status={agr.status}, valid to {agr.valid_to} + {agr.grace_days or 0}d grace); "
             "renew it before matching invoices to it.")
 
-    # 1A: no pickup slips exist, so every agreement match settles without receipt
-    # evidence. Force the operator to say why, and flag the row — this path MUST
-    # be narrowed once 1B ships slip reconciliation.
-    reason = (req.legacy_settlement_reason or "").strip()
-    if not reason:
-        raise AgreementMatchInvalid(
-            "A reason is required to settle an agreement invoice without receipt evidence")
+    # 1A 曾把**所有**协议匹配都当成"无凭证付款":那时协议匹配确实没有任何凭证。
+    # 1B 之后 recurring 有排期行 + 履约确认、milestone 有阶段行,都是真凭证 ——
+    # 再统一标 legacy 会把每一张正常的周期账单算进协议详情页的
+    # "settled without receipt" 计数里,那个健康度指标就废了。
+    claimed_row = None
+    if agr.agreement_type == "house_account":
+        reason = (req.legacy_settlement_reason or "").strip()
+        if not reason:
+            raise AgreementMatchInvalid(
+                "A reason is required to settle an agreement invoice without receipt evidence")
+        invoice.legacy_settlement = True
+        invoice.legacy_settlement_reason = reason
+    else:
+        invoice.legacy_settlement = False
+        invoice.legacy_settlement_reason = None
+        if agr.agreement_type == "recurring":
+            claimed_row = await agreement_schedule_crud.claim_next_period(db, agr, invoice)
+            if claimed_row is None:
+                # 认不到期次(超容差 / 无候选行)就不猜,停在复核队列由人工指定。
+                require_review = True
+        else:   # milestone
+            if req.schedule_id is None:
+                raise AgreementMatchInvalid(
+                    "Pick the milestone stage this invoice pays for")
+            try:
+                claimed_row = await agreement_schedule_crud.claim_milestone(
+                    db, agr, invoice, req.schedule_id)
+            except ValueError as exc:
+                raise AgreementMatchInvalid(str(exc)) from exc
 
     previous_agreement_id = invoice.agreement_id
 
@@ -419,9 +442,8 @@ async def _match_to_agreement(
     invoice.agreement_id = agr.id
     invoice.agreement_number = agr.number
     invoice.match_route = "agreement"
-    invoice.match_route_auto = False        # 1A is manual selection only
-    invoice.legacy_settlement = True
-    invoice.legacy_settlement_reason = reason
+    invoice.schedule_id = claimed_row.id if claimed_row else None
+    invoice.match_route_auto = agr.agreement_type == "recurring" and claimed_row is not None
     invoice.po_total = Decimal("0")
     invoice.gr_value = None
     invoice.variance = Decimal("0")

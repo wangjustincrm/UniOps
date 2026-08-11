@@ -744,3 +744,62 @@ async def test_match_refused_against_active_agreement_past_grace(admin_client, t
     })
     assert r.status_code == 422, r.text
     assert "not open for new spend" in r.text
+
+
+# ── 1B: branch by agreement_type (Task 6) ───────────────────────────────────
+
+async def test_recurring_match_does_not_flag_legacy_settlement(test_engine, admin_client):
+    """1A 把**所有**协议匹配都标成无凭证付款 —— 那时协议匹配确实没有凭证。
+    recurring 有排期行 + 履约确认,再统一标 legacy 会让协议详情页的
+    'settled without receipt' 计数把每一张正常周期账单都算进去,那个健康度
+    指标就废了。"""
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        # 注意:没有传 legacy_settlement_reason —— recurring 不该再要求它。
+        await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                         matched_by=user_id)
+        await db.commit()
+
+    async with factory() as db:
+        done = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        assert done.legacy_settlement is False
+        assert done.legacy_settlement_reason is None
+        assert done.schedule_id is not None
+        assert done.match_route_auto is True
+
+
+async def test_house_account_match_still_requires_a_reason(test_engine, admin_client):
+    """1A 行为不变:house_account 仍是无凭证通道,理由仍必填。"""
+    from app.crud.invoice import AgreementMatchInvalid, match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="250.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        with pytest.raises(AgreementMatchInvalid, match="reason is required"):
+            await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                             matched_by=user_id)
