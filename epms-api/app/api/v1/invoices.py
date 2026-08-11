@@ -685,13 +685,10 @@ async def assign_match(
     # only re-words the case where the link already exists, i.e. the invoice
     # was matched to an agreement and then knocked back to exception, or AP
     # pre-linked it. No lookup, no guess.
-    agr_number = None
     if inv.agreement_id is not None:
         agr_number = (await db.execute(
             select(PurchaseAgreement.number).where(
                 PurchaseAgreement.id == inv.agreement_id))).scalar_one_or_none()
-
-    if inv.agreement_id is not None:
         agr_label = f"agreement {agr_number}" if agr_number else "its agreement"
         title = f"Match invoice {inv.internal_ref} to {agr_label}"
         description = (
