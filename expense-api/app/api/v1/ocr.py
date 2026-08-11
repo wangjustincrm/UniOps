@@ -1,8 +1,10 @@
 """Server-side OCR endpoint — keeps the Anthropic API key off the client.
 
-POST /api/v1/ocr/{mode}  (mode = invoice | receipt), multipart file upload.
+POST /api/v1/ocr/{mode}  (mode = invoice | receipt | slip), multipart file upload.
   invoice — full extraction for PA-DIR (vendor, invoice_no, dates, line_items, totals)
   receipt — simple extraction for EXP/TRV line items (vendor, date, total, tax)
+  slip    — pickup-slip extraction for house_account agreement purchases
+            (slip_ref, date, amount, tax_amount, total_amount, currency)
 
 Replaces the previous client-side extraction in oa/src/lib/invoice-parser.ts,
 which exposed VITE_ANTHROPIC_API_KEY in the browser bundle.
@@ -32,8 +34,8 @@ async def run_ocr(
     file: UploadFile = File(...),
 ):
     """Extract structured data from an uploaded invoice/receipt via Claude vision."""
-    if mode not in ("invoice", "receipt"):
-        raise HTTPException(status_code=400, detail="mode must be 'invoice' or 'receipt'")
+    if mode not in ("invoice", "receipt", "slip"):
+        raise HTTPException(status_code=400, detail="mode must be 'invoice', 'receipt' or 'slip'")
 
     content_type = (file.content_type or "").lower()
     if content_type not in SUPPORTED_MIME:
@@ -51,6 +53,8 @@ async def run_ocr(
     try:
         if mode == "invoice":
             return await ocr_service.extract_invoice(data, content_type)
+        if mode == "slip":
+            return await ocr_service.extract_slip(data, content_type)
         return await ocr_service.extract_receipt(data, content_type)
     except RuntimeError as exc:
         # API unavailable / not configured — degrade gracefully (client allows manual entry)

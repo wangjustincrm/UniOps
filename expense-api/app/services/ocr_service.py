@@ -1,8 +1,10 @@
 """Invoice OCR service using Claude API vision.
 
-Supports two modes:
+Supports three modes:
   invoice  — full extraction for PA-DIR (vendor, invoice_no, dates, line_items, totals)
   receipt  — simple extraction for EXP (vendor, date, total, tax, description)
+  slip     — pickup-slip extraction for house_account agreement purchases
+             (slip_ref, date, amount, tax_amount, total_amount, currency)
 """
 import base64
 import json
@@ -82,6 +84,27 @@ Return ONLY this JSON (no markdown):
   "tax_amount": {"value": number or null, "confidence": 0.0-1.0},
   "currency": {"value": "CAD", "confidence": 0.0-1.0}
 }"""
+
+_SLIP_PROMPT = """\
+Extract pickup-slip information from this image.
+
+Return ONLY this JSON (no markdown):
+{
+  "slip_ref":     {"value": "string or null", "confidence": 0.0-1.0},
+  "date":         {"value": "YYYY-MM-DD or null", "confidence": 0.0-1.0},
+  "amount":       {"value": number or null, "confidence": 0.0-1.0},
+  "tax_amount":   {"value": number or null, "confidence": 0.0-1.0},
+  "total_amount": {"value": number or null, "confidence": 0.0-1.0},
+  "currency":     {"value": "CAD", "confidence": 0.0-1.0}
+}
+
+- "slip_ref": the transaction or receipt reference printed on the slip. If the
+  slip prints it as several separate fields (for example a till number and a
+  transaction number in adjacent columns), join them with a hyphen in the order
+  they appear. If no such reference is printed, return null — this is normal and
+  not an error.
+- "amount" is the PRE-TAX subtotal; "total_amount" is the amount actually
+  charged, tax included."""
 
 
 def _reconcile_line_amounts(
@@ -332,5 +355,68 @@ async def extract_receipt(file_bytes: bytes, mime_type: str) -> dict:
         "description": parsed.get("description", {}).get("value"),
         "total_amount": parsed.get("total_amount", {}).get("value"),
         "tax_amount": parsed.get("tax_amount", {}).get("value"),
+        "currency": parsed.get("currency", {}).get("value", "CAD"),
+    }
+
+
+async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
+    """Pickup-slip OCR for house_account agreement purchases.
+
+    A missing ``slip_ref`` is normal (baseline matching keys off date + amount,
+    not the reference), so it is returned as ``None`` rather than treated as
+    an extraction failure.
+    """
+    if not settings.anthropic_api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is not configured")
+
+    import anthropic
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
+    media_type = _mime_to_media_type(mime_type)
+
+    # PDF slips must be sent as a document block; images as an image block.
+    if media_type == "application/pdf":
+        content_block = {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
+        }
+    else:
+        content_block = {
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": b64},
+        }
+
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": [content_block, {"type": "text", "text": _SLIP_PROMPT}]}],
+        )
+    except anthropic.BadRequestError as exc:
+        # Unreadable / unsupported file (e.g. HEIC, corrupt) — degrade to manual entry
+        # (caller maps ValueError → HTTP 422) rather than a service-outage 503.
+        log.warning("Slip OCR could not process the file: %s", exc)
+        raise ValueError("Could not read this document. Please enter the details manually.")
+    except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
+        raise RuntimeError(f"OCR service error: {exc}")
+
+    raw_text = response.content[0].text.strip()
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("```")[1]
+        if raw_text.startswith("json"):
+            raw_text = raw_text[4:]
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        raise ValueError("OCR returned invalid JSON")
+
+    return {
+        "slip_ref": parsed.get("slip_ref", {}).get("value"),
+        "date": parsed.get("date", {}).get("value"),
+        "amount": parsed.get("amount", {}).get("value"),
+        "tax_amount": parsed.get("tax_amount", {}).get("value"),
+        "total_amount": parsed.get("total_amount", {}).get("value"),
         "currency": parsed.get("currency", {}).get("value", "CAD"),
     }
