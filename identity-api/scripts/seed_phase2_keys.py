@@ -31,6 +31,7 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     "mdm.vendor.write":      ("mdm",     "Edit Vendor Master Data",  131),
     "epms.agreement.read":   ("epms",    "View Agreements",          104),
     "epms.agreement.write":  ("epms",    "Create / Edit Agreements", 105),
+    "epms.agreement.slip.write": ("epms", "Record Pickup Slips",     106),
 }
 
 # key -> roles admitted TODAY (system_admin included everywhere: short-circuit)
@@ -58,6 +59,12 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
                              "ap_clerk", "finance_bp", "finance_manager", "auditor",
                              "dept_manager", "director", "gm", "opm", "requester"),
     "epms.agreement.write": ("system_admin", "procurement_officer", "procurement_manager"),
+    # Byte-for-byte the same role set as identity 0007_slip_write_perm._GRANTS.
+    # Deliberately narrower than epms.agreement.write's grant set — recording
+    # a pickup slip and editing the agreement's own terms are now separate
+    # permissions; see that migration's docstring for why procurement_officer/
+    # procurement_manager are NOT seeded here (no incumbent user to preserve).
+    "epms.agreement.slip.write": ("system_admin", "ap_clerk", "dept_admin"),
 }
 
 

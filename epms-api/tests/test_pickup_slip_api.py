@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.agreement_slip import AgreementPickupSlip
@@ -318,3 +318,58 @@ async def test_patch_reason_on_pending_ap_review_slip_stays_pending_and_does_not
     body2 = r2.json()
     assert body2["status"] == "pending_ap_review"
     assert body2["missing_slip_reason"] is None
+
+
+# ── Task 9b: pickup-slip recording is its own permission key
+# (epms.agreement.slip.write), split out of epms.agreement.write so that
+# someone who can record a slip cannot thereby edit the agreement's own
+# terms. Every test above runs as admin_client (system_admin), which
+# uniops_authz short-circuits past ANY permission check (see
+# packages/authz/uniops_authz/core.py's `if role == "system_admin"`) — none
+# of them can tell a correct key from a wrong (or missing) one. This test
+# is the one that can. ───────────────────────────────────────────────────
+
+async def test_non_admin_without_slip_write_grant_is_403_then_201_once_granted(
+    admin_client, test_engine,
+):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        # ap_clerk holds epms.agreement.read in production (identity
+        # 0006_agreement_perms) — seed the same grant here so this caller is
+        # a realistic "can view the agreement, cannot record a slip" user,
+        # not merely a role with nothing seeded at all. conftest's default
+        # matrix only reproduces the 17 phase-1 keys, so phase-2 grants like
+        # this one must be seeded per-test (same pattern as
+        # test_gr_create_authz.py's _grant_gr_receive).
+        await db.execute(text(
+            "INSERT INTO permission_defs(key,module,label,sort) "
+            "VALUES ('epms.agreement.read','epms','View Agreements',104) "
+            "ON CONFLICT (key) DO NOTHING"))
+        await db.execute(text(
+            "INSERT INTO role_permissions(role_code,permission_key) "
+            "VALUES ('ap_clerk','epms.agreement.read') ON CONFLICT DO NOTHING"))
+        await db.commit()
+
+    from tests.conftest import _authenticated_client
+    async with await _authenticated_client(test_engine, "ap_clerk") as c:
+        r = await c.post(_slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="PRE-GRANT"))
+        assert r.status_code == 403, r.text
+
+        # Grant the NEW key mid-test (mirrors what identity 0007_slip_write_perm
+        # does in production for ap_clerk) — require_permission re-queries
+        # role_permissions on every request (packages/authz/uniops_authz/core.py),
+        # so no re-login / new token is needed for the grant to take effect.
+        async with factory() as db:
+            await db.execute(text(
+                "INSERT INTO permission_defs(key,module,label,sort) "
+                "VALUES ('epms.agreement.slip.write','epms','Record Pickup Slips',106) "
+                "ON CONFLICT (key) DO NOTHING"))
+            await db.execute(text(
+                "INSERT INTO role_permissions(role_code,permission_key) "
+                "VALUES ('ap_clerk','epms.agreement.slip.write') ON CONFLICT DO NOTHING"))
+            await db.commit()
+
+        r2 = await c.post(_slips_url(agr["id"]), json=_slip_payload(user_id, slip_ref="POST-GRANT"))
+        assert r2.status_code == 201, r2.text

@@ -21,7 +21,12 @@ router = APIRouter(
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
 SlipAttReadDep = Annotated[dict, Depends(require_permission("epms.agreement.read"))]
-SlipAttWriteDep = Annotated[dict, Depends(require_permission("epms.agreement.write"))]
+# Same key as agreement_slips.py's SlipRecordDep, not epms.agreement.write:
+# a slip's photo/proof attachments are part of recording the slip itself
+# (SlipEntryForm uploads them as step 2 of a single create-then-attach flow),
+# not part of editing the agreement's own terms. Someone who can record a
+# slip but can't attach its photo would be a dead end.
+SlipAttWriteDep = Annotated[dict, Depends(require_permission("epms.agreement.slip.write"))]
 
 
 class AttachmentMeta(BaseModel):

@@ -24,7 +24,10 @@ from app.schemas.agreement_slip import (
 router = APIRouter(prefix="/agreements/{agreement_id}/slips", tags=["agreement-pickup-slips"])
 
 SlipReadDep = Annotated[dict, Depends(require_permission("epms.agreement.read"))]
-SlipWriteDep = Annotated[dict, Depends(require_permission("epms.agreement.write"))]
+# Deliberately its OWN key, not epms.agreement.write: recording a pickup slip
+# and editing the agreement's own terms (vendor/schedule/status) are separate
+# powers — see identity 0007_slip_write_perm for the rationale and grant set.
+SlipRecordDep = Annotated[dict, Depends(require_permission("epms.agreement.slip.write"))]
 
 
 async def _get_agreement_or_404(db: SessionDep, agreement_id: uuid.UUID) -> PurchaseAgreement:
@@ -90,7 +93,7 @@ async def list_slips(
 
 @router.post("", response_model=SlipResponse, status_code=status.HTTP_201_CREATED)
 async def create_slip(
-    agreement_id: uuid.UUID, body: SlipCreate, db: SessionDep, user: SlipWriteDep,
+    agreement_id: uuid.UUID, body: SlipCreate, db: SessionDep, user: SlipRecordDep,
 ):
     agr = await _get_agreement_or_404(db, agreement_id)
     agr_number = agr.number   # capture before any flush that might fail — see _duplicate_ref_error
@@ -103,7 +106,7 @@ async def create_slip(
 @router.patch("/{slip_id}", response_model=SlipResponse)
 async def update_slip(
     agreement_id: uuid.UUID, slip_id: uuid.UUID, body: SlipUpdate,
-    db: SessionDep, user: SlipWriteDep,
+    db: SessionDep, user: SlipRecordDep,
 ):
     agr = await _get_agreement_or_404(db, agreement_id)
     agr_number = agr.number   # capture before any flush that might fail — see _duplicate_ref_error
@@ -118,7 +121,7 @@ async def update_slip(
 
 @router.delete("/{slip_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def void_slip(
-    agreement_id: uuid.UUID, slip_id: uuid.UUID, db: SessionDep, user: SlipWriteDep,
+    agreement_id: uuid.UUID, slip_id: uuid.UUID, db: SessionDep, user: SlipRecordDep,
 ):
     await _get_agreement_or_404(db, agreement_id)
     slip = await _get_slip_or_404(db, agreement_id, slip_id)

@@ -80,7 +80,10 @@ interface SlipTableProps {
   slips: ApiSlip[]
   users: ApiUserBrief[] | undefined
   currency: string
-  // epms.agreement.write — same permission that gates POST/DELETE /slips server-side.
+  // epms.agreement.slip.write — same permission that gates POST/PATCH/DELETE
+  // /slips server-side (agreement_slips.py SlipRecordDep). Deliberately NOT
+  // epms.agreement.write — recording/voiding a slip is separate from editing
+  // the agreement itself.
   canWrite: boolean
   // epms.invoice.match (ApDep on the backend's ap-review route) — the AP
   // Approve/Reject buttons only render for holders of this permission.
