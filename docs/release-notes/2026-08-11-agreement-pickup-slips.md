@@ -68,7 +68,12 @@ into the no-evidence channel.
 
 `epms.agreement.slip.write` is a **new key**, seeded to `system_admin`,
 `ap_clerk` and `dept_admin`. It appears in Portal Admin → Access Control like
-any other key, so the role list is yours to change without a code release.
+any other key, so the role list is yours to change without a code release —
+labelled **"Record Pickup Slips (needs View Agreements)"**, because the matrix
+has no notion of one key depending on another and this one is inert without
+`epms.agreement.read`: no Agreements nav entry, 403 on the agreement and on
+its slips, and no error message anywhere saying why. **Always tick the two
+together.**
 
 Two consequences worth stating plainly:
 
@@ -101,10 +106,13 @@ someone without it lets them match but not record.
 
 | Service | Revision |
 |---|---|
-| epms-api | `ag04_pickup_slips` |
+| epms-api | `ag04_pickup_slips`, then `ag05_slip_ref_uq_active` |
 | identity-api | `0007_slip_write_perm` |
 
-Both are additive — new table, new nullable columns, new permission rows.
+All additive — new table, new nullable columns, new permission rows.
+`ag05` only replaces `ag04`'s partial unique index with a narrower predicate
+(same index name), so it touches no data and must simply run after `ag04`;
+`alembic upgrade head` does both.
 
 **Images to rebuild:** `epms-api`, `epms-web`, `expense-api`, `identity-api`.
 
@@ -124,7 +132,7 @@ deliberate choice you make there.
 
 | Suite | Result |
 |---|---|
-| expense-api, full, one pass | 150 passed / 0 failed (baseline 146 + 4 new) |
+| expense-api, full, one pass | 155 passed / 0 failed (baseline 146 + 9 new) |
 | epms-api, full, one pass | see below |
 | epms frontend `tsc -p tsconfig.app.json` | 58 errors = baseline, TS 5.9.3 |
 | identity-api `test_phase2_keys.py` | 4 passed / 0 failed |
@@ -139,7 +147,10 @@ real slip photo before anyone should trust the feature in production:
 2. Correct an amount OCR misread, then submit.
 3. Submit with no photo plus a reason → lands in `pending_ap_review` → AP
    approves and rejects.
-4. Void an `open` slip → it leaves the candidate pool.
+4. Void an `open` slip → it leaves the candidate pool, **and its reference is
+   free again**: re-record the same paper slip with the corrected amount and
+   it is accepted (same for a slip AP rejected). Two *live* slips still cannot
+   share one reference.
 5. A slip dated more than 45 days ago shows the ageing badge.
 6. Type the reference printed on an invoice → the matching slip is ticked.
 7. **Open a house-account PA's attachment roll-up as `ap_clerk` *and* as
