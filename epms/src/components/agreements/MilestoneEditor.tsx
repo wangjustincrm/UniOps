@@ -1,4 +1,4 @@
-import { useEffect, useRef, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount } from '@/lib/utils'
@@ -31,64 +31,59 @@ export function MilestoneEditor(props: {
   // "no ceiling set" for the purpose of enabling the percentage column.
   const pctEnabled = nte !== null && nte > 0
 
-  // `rows`/`onChange` as of the LATEST render, readable from inside the
-  // debounced timeout below without making it a dependency (which would
-  // defeat the debounce — see the effect's own comment). A plain
-  // during-render assignment, not an effect: always current by the time the
-  // timeout fires, including edits made to OTHER rows during the debounce
-  // window that a stale closure would otherwise clobber.
-  const rowsRef = useRef(rows)
-  rowsRef.current = rows
-
-  // Review finding 2 (round 1): the server stores whatever pair (%, Amount)
-  // it's given and never re-derives one from the other once both are
-  // populated (_resolve_milestone_amounts: "两个都给了就都存,不去纠正用户").
-  // Chosen fix: recompute, not warn — every row that has a % SET gets its
-  // Amount recomputed against the NEW ceiling whenever NTE changes, keeping
-  // "% of NTE" true by construction instead of asking the user to notice a
-  // discrepancy.
+  // Review finding 2 history — recompute was tried and abandoned, in favor
+  // of a warning, across three rounds:
   //
-  // Review finding 2 (round 2): this only works if "has a % set" reliably
-  // means "the user typed a percentage" — but updateFromAmount used to
-  // backfill amount_pct too, so a stage entered as a flat "$500" became
-  // stored identically to one entered as "5%", and the NEXT NTE change would
-  // silently overwrite that user's dollar figure. Fixed at the source in
-  // updateFromAmount below (it no longer touches amount_pct at all), which
-  // makes this effect's `r.amount_pct` check unambiguous: present now means
-  // exactly "the user entered a percentage", nothing else.
+  // Round 1: the server stores whatever pair (%, Amount) it's given and
+  // never re-derives one from the other once both are populated
+  // (_resolve_milestone_amounts: "两个都给了就都存,不去纠正用户"). Tried
+  // "recompute, not warn" — every row with a % set got its Amount
+  // recomputed against the new ceiling whenever NTE changed.
   //
-  // Debounced (round 2, cosmetic-but-reported-as-broken): notToExceed is a
-  // plain text input one level up, so `nte` changes on every keystroke while
-  // the user is typing a new ceiling — recomputing synchronously on each one
-  // made every eligible row visibly flicker through intermediate values. The
-  // 400ms delay lets a run of keystrokes settle before this fires once,
-  // against the final value only. `prevNteRef` is only reassigned INSIDE the
-  // timeout body, so a value that gets superseded before its timeout fires
-  // never updates it — comparisons always run against the ceiling the user
-  // actually stopped on, not an intermediate one that never really "landed".
-  // Skips the initial mount (prevNteRef seeded from the first render's
-  // value) so this doesn't fire before the user has changed anything, same
-  // skip-on-mount shape as BudgetAccountCascade's prevDepartmentId guard.
+  // Round 2: that only works if "has a % set" reliably means "the user
+  // typed a percentage" — updateFromAmount was backfilling amount_pct too,
+  // so a flat "$500" entry became indistinguishable from a "5%" entry, and
+  // the recompute would silently rewrite the dollar figure. Fixed
+  // updateFromAmount to stop backfilling amount_pct (see below) — which
+  // made the recompute's `r.amount_pct` check unambiguous WITHIN A SINGLE
+  // SESSION, and it was re-verified working for that case.
+  //
+  // Round 3 (why recompute was removed entirely): round 2's own evidence
+  // proved recompute unsound ACROSS a save boundary anyway — the backend
+  // itself backfills the missing half of the pair on save
+  // (_resolve_milestone_amounts, same function), so a dollar-only stage
+  // that gets saved and reloaded comes back from the schedule endpoint with
+  // a real, non-null, SERVER-derived amount_pct. From that point on this
+  // component cannot tell "the user typed a %" apart from "the server
+  // derived one" — both look identical in `rows`. A later NTE change would
+  // then recompute (and silently overwrite) a figure the user had actually
+  // typed as a dollar amount, reintroducing exactly the bug round 2 fixed,
+  // just one edit-session later. Making this sound would need an explicit
+  // source-of-entry field, which the coordinator ruled out as a stored-data
+  // change with no backend counterpart, not worth a schema round for a
+  // warning that costs nothing. So: no more recomputing/rewriting numbers
+  // the user typed — see the warning banner in the JSX below instead, driven
+  // by staleAfterNteChange.
+  const [staleAfterNteChange, setStaleAfterNteChange] = useState(false)
   const prevNteRef = useRef(nte)
   useEffect(() => {
-    const timer = setTimeout(() => {
-      const prevNte = prevNteRef.current
-      prevNteRef.current = nte
-      if (prevNte === nte || nte === null || nte <= 0) return
-      onChange(rowsRef.current.map((r) => {
-        if (!r.amount_pct) return r
-        const pct = Number(r.amount_pct)
-        if (!Number.isFinite(pct)) return r
-        return { ...r, expected_amount: String(Math.round(nte * pct) / 100) }
-      }))
-    }, 400)
-    return () => clearTimeout(timer)
-    // onChange intentionally excluded — same convention as BudgetAccountCascade.
-    // rows/rowsRef intentionally excluded — that's the whole point of the ref.
+    const prevNte = prevNteRef.current
+    prevNteRef.current = nte
+    if (prevNte === nte) return
+    // Only worth flagging if some row actually has a stored % that could now
+    // be stale — a purely dollar-defined stage list has nothing to warn
+    // about. Reads `rows` as of the render where nte changed; does not write
+    // to any row, so no stale-closure risk the way the old recompute had.
+    if (rows.some((r) => r.amount_pct)) setStaleAfterNteChange(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nte])
 
   const update = (index: number, patch: Partial<MilestoneRowIn>) => {
+    // Editing any stage is the user's acknowledgment of the warning (per the
+    // coordinator: visible until the user edits a stage or saves — saving
+    // navigates away, which unmounts this component, so that half needs no
+    // separate handling here).
+    setStaleAfterNteChange(false)
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))
   }
 
@@ -109,13 +104,12 @@ export function MilestoneEditor(props: {
   // NOT a stored amount_pct. Review finding 2 (round 2): this used to
   // backfill amount_pct whenever pctEnabled, which made a row the user typed
   // as a flat dollar amount indistinguishable — in the stored data — from
-  // one they typed as a percentage; the NTE-recompute effect above could
-  // then silently rewrite that dollar figure on the next ceiling change.
-  // Explicitly nulling amount_pct here (not just "not setting" it) also
-  // un-links a row that previously WAS percentage-derived: editing its
-  // Amount directly is the user overriding the percentage relationship, and
-  // the row should stop being treated as percentage-derived from that point
-  // on, not keep a stale % from before this edit.
+  // one they typed as a percentage. Explicitly nulling amount_pct here (not
+  // just "not setting" it) also un-links a row that previously WAS
+  // percentage-derived: editing its Amount directly is the user overriding
+  // the percentage relationship, and the row should stop being treated as
+  // percentage-derived from that point on, not keep a stale % from before
+  // this edit.
   const updateFromAmount = (index: number, amountStr: string) => {
     update(index, { expected_amount: amountStr, amount_pct: null })
   }
@@ -258,6 +252,15 @@ export function MilestoneEditor(props: {
           </div>
         </div>
       </div>
+
+      {staleAfterNteChange && (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3">
+          <p className="text-sm text-warning-700">
+            The not-to-exceed ceiling changed. Stage amounts calculated from a percentage were calculated against the
+            previous ceiling and may no longer match it — re-enter any percentage you want recalculated.
+          </p>
+        </div>
+      )}
 
       {!pctEnabled && (
         <p className="text-xs text-neutral-500">
