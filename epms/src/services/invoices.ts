@@ -144,6 +144,15 @@ export interface MatchInvoiceBody {
   // value is rejected server-side with 422.
   agreement_id?: string
   legacy_settlement_reason?: string
+  // house_account with slip_ids only: which pickup slips this invoice covers —
+  // real evidence, takes priority over legacy_settlement_reason when non-empty
+  // (epms-api/app/schemas/invoice.py InvoiceMatchRequest.slip_ids).
+  slip_ids?: string[]
+  // house_account with slip_ids only: free-text note when the claimed slips'
+  // total doesn't line up with the invoice total. Distinct from
+  // legacy_settlement_reason — this explains a variance on an evidenced
+  // settlement, not the absence of evidence.
+  slip_variance_reason?: string
   // milestone only — which schedule row (stage) this invoice pays for. recurring
   // FIFO-claims its own row server-side and never reads this; house_account has
   // no schedule rows at all. See InvoiceMatchRequest.schedule_id (epms-api).
