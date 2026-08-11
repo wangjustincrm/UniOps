@@ -100,10 +100,13 @@ class InvoiceMatchRequest(BaseModel):
     # is linked to the agreement for traceability and paid in full from the AP
     # header — there is no line reference to measure a variance against.
     agreement_id: uuid.UUID | None = None
-    # 1A only: no pickup slips exist yet, so an agreement match is by definition
-    # settled without receipt evidence and must record why.
+    # house_account only (1B): that route has no schedule row to claim, so it
+    # remains a legacy settlement by definition and must record why. recurring
+    # and milestone claim a real schedule row instead — see schedule_id below —
+    # and never require this field.
     legacy_settlement_reason: str | None = None
-    # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。
+    # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。recurring 由 FIFO 自动认领,
+    # 不读这个字段;house_account 没有排期行,同样不读。
     schedule_id: uuid.UUID | None = None
 
 

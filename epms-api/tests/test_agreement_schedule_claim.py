@@ -114,6 +114,26 @@ async def test_amount_inside_tolerance_claims_the_row(test_engine):
         await db.commit()
 
 
+async def test_amount_at_lower_tolerance_boundary_claims_the_row(test_engine):
+    # expected 1200, tolerance 5% → lower bound 1140.00 is INSIDE (inclusive).
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user, total="1140.00")
+        assert await sched_crud.claim_next_period(db, agr, inv) is not None
+        await db.commit()
+
+
+async def test_amount_at_upper_tolerance_boundary_claims_the_row(test_engine):
+    # expected 1200, tolerance 5% → upper bound 1260.00 is INSIDE (inclusive).
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user, total="1260.00")
+        assert await sched_crud.claim_next_period(db, agr, inv) is not None
+        await db.commit()
+
+
 async def test_amount_outside_tolerance_claims_nothing(test_engine):
     async with _factory(test_engine)() as db:
         agr, vendor, user = await _seed(db)

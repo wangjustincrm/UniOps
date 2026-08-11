@@ -12,6 +12,7 @@ from app.core.security import create_access_token
 from app.crud import user as user_crud
 from app.main import create_app
 from app.models.agreement import PurchaseAgreement
+from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.invoice import Invoice
 from app.models.task import Task
 from app.schemas.auth import RegisterRequest
@@ -803,3 +804,216 @@ async def test_house_account_match_still_requires_a_reason(test_engine, admin_cl
         with pytest.raises(AgreementMatchInvalid, match="reason is required"):
             await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
                              matched_by=user_id)
+
+
+async def test_recurring_match_with_no_claimable_row_goes_to_match_review(test_engine, admin_client):
+    """Out-of-tolerance is the routine case for usage-based billing, not an edge
+    case — this is the path most real invoices take when a bill moves.
+    claim_next_period returning None must not silently fall back to "matched":
+    it has to land the invoice in match_review with no schedule row attached,
+    driven through the real crud.invoice.match() entry point (not the crud
+    helper directly), so the require_review reassignment inside
+    _match_to_agreement is exercised end to end."""
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    # Wildly outside [950, 1050] — every period row stays unclaimable.
+    inv = await _upload_invoice(admin_client, vendor_id, amount="5000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        result = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                                  matched_by=user_id)
+        await db.commit()
+
+    assert result.status == "match_review"
+    assert result.schedule_id is None
+    assert result.match_route_auto is False
+    assert result.legacy_settlement is False
+
+
+# ── 1B: milestone route through the real match() entry point ───────────────
+#
+# All prior milestone coverage stopped at claim_milestone directly
+# (test_agreement_schedule_claim.py). These drive the same scenarios through
+# crud.invoice.match(), which is where the "missing schedule_id" guard and
+# the ValueError → AgreementMatchInvalid translation actually live, and where
+# match_route_auto's "recurring" guard has to hold on a genuine milestone
+# success (the one case where claimed_row is not None but the type isn't
+# recurring — the exact condition that guard exists to exclude).
+
+async def test_milestone_match_requires_schedule_id(test_engine, admin_client):
+    from app.crud.invoice import AgreementMatchInvalid, match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                       agreement_type="milestone")
+    inv = await _upload_invoice(admin_client, vendor_id, amount="500.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        with pytest.raises(AgreementMatchInvalid, match="Pick the milestone stage"):
+            await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                             matched_by=user_id)
+
+
+async def test_milestone_match_surfaces_claim_error_as_agreement_match_invalid(
+        test_engine, admin_client):
+    """claim_milestone raises plain ValueError (unit-tested directly in
+    test_agreement_schedule_claim.py); through match() that must surface as
+    AgreementMatchInvalid, the exception type the HTTP layer maps to 422."""
+    from app.crud.invoice import AgreementMatchInvalid, match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr_a = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                         agreement_type="milestone")
+    agr_b = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                         agreement_type="milestone")
+    inv = await _upload_invoice(admin_client, vendor_id, amount="500.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        foreign = AgreementPaymentSchedule(
+            agreement_id=agr_b.id, schedule_type="milestone", sequence=1,
+            milestone_name="Deposit", status="pending")
+        db.add(foreign)
+        await db.commit()
+        await db.refresh(foreign)
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        with pytest.raises(AgreementMatchInvalid, match="does not belong"):
+            await crud_match(db, db_inv, InvoiceMatchRequest(
+                agreement_id=agr_a.id, schedule_id=foreign.id), matched_by=user_id)
+
+
+async def test_milestone_match_succeeds_with_match_route_auto_false(test_engine, admin_client):
+    """The only case where claimed_row is not None while agreement_type is not
+    "recurring" — the exact condition
+    `agr.agreement_type == "recurring" and claimed_row is not None` exists to
+    exclude. If that guard is ever simplified to `claimed_row is not None`,
+    this is the test that would catch it."""
+    from app.crud.invoice import match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                       agreement_type="milestone")
+    inv = await _upload_invoice(admin_client, vendor_id, amount="500.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = AgreementPaymentSchedule(
+            agreement_id=agr.id, schedule_type="milestone", sequence=1,
+            milestone_name="Deposit on signing", status="pending")
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        result = await crud_match(db, db_inv, InvoiceMatchRequest(
+            agreement_id=agr.id, schedule_id=row.id), matched_by=user_id)
+        await db.commit()
+
+    assert result.status == "matched"
+    assert result.match_route == "agreement"
+    assert result.schedule_id == row.id
+    assert result.match_route_auto is False
+    assert result.legacy_settlement is False
+    assert result.legacy_settlement_reason is None
+
+
+# ── 1B: agreement→PO release must free the claimed schedule row ────────────
+#
+# Code review finding: the PO-route cleanup in match() already released
+# agreement_id/consumed_amount (test_rematch_from_agreement_to_po_releases_
+# consumption above) but left schedule_id and the claimed
+# AgreementPaymentSchedule row untouched — a re-routed invoice would abandon
+# a period permanently marked "received" against an invoice that no longer
+# backs it, and no later invoice could ever claim that period again.
+
+async def test_rematch_from_recurring_to_po_releases_schedule_row(admin_client, test_engine):
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.schemas.invoice import AllocationInput, InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+    inv_line_id = uuid.UUID(inv["line_items"][0]["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                         matched_by=user_id)
+        await db.commit()
+
+    async with factory() as db:
+        claimed = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        assert claimed.schedule_id is not None
+        claimed_schedule_id = claimed.schedule_id
+        claimed_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == claimed_schedule_id))).scalar_one()
+        assert claimed_row.status == "received"
+        assert claimed_row.invoice_id == inv_id
+
+    po = (await admin_client.post("/api/v1/po", json={
+        "title": "Recurring rematch PO", "type": 2, "vendor_id": str(vendor_id),
+        "currency": "CAD", "tax_rate": "0.00",
+        "line_items": [{"description": "Widget", "qty": "1", "unit": "EA",
+                        "unit_price": "1000.00"}],
+    }))
+    assert po.status_code in (200, 201), po.text
+    po = po.json()
+    po_line_id = uuid.UUID(po["line_items"][0]["id"])
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(allocations=[
+            AllocationInput(invoice_line_id=inv_line_id, po_id=uuid.UUID(po["id"]),
+                            po_line_id=po_line_id, allocated_amount=Decimal("1000.00"),
+                            allocated_tax=Decimal("0.00")),
+        ]), matched_by=user_id)
+        await db.commit()
+
+    async with factory() as db:
+        fresh_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        released_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == claimed_schedule_id))).scalar_one()
+
+    assert fresh_inv.schedule_id is None
+    assert fresh_inv.po_id == uuid.UUID(po["id"])
+    assert released_row.status == "pending"
+    assert released_row.invoice_id is None

@@ -11,6 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
 from app.models.agreement import PurchaseAgreement
+from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -505,13 +506,29 @@ async def match(
     # agreement match produces — and PATCH's rematch path only fires when
     # po_id/gr_ids are already set, neither true for an agreement invoice),
     # but crud.match() must hold this invariant regardless of which future
-    # caller reaches it; 1B is expected to open exactly this gate.
+    # caller reaches it.
+    #
+    # 1B addendum (code review finding): schedule_id is the same kind of
+    # stale link — a claimed AgreementPaymentSchedule row must be released
+    # back to "pending"/invoice_id=None, not left permanently marked
+    # "received" against an invoice that no longer backs it. Left alone, the
+    # schedule would silently under-report what is still owed and no later
+    # invoice could ever claim that period/milestone again.
     previous_agreement_id = invoice.agreement_id
     if previous_agreement_id is not None:
         invoice.agreement_id = None
         invoice.agreement_number = None
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
+        if invoice.schedule_id is not None:
+            claimed_row = (await db.execute(
+                select(AgreementPaymentSchedule).where(
+                    AgreementPaymentSchedule.id == invoice.schedule_id)
+            )).scalar_one_or_none()
+            if claimed_row is not None:
+                claimed_row.status = "pending"
+                claimed_row.invoice_id = None
+            invoice.schedule_id = None
     invoice.match_route = "po"
     invoice.match_route_auto = False
 
