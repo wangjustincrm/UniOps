@@ -175,6 +175,13 @@ class InvoiceResponse(BaseModel):
     # /invoices/{id} response. Needed by useChainAttachments' slip lineage
     # branch (epms/src/hooks/useChainAttachments.ts).
     slip_ids: list | None = None
+    # Task 11 fix-round 1 (Important): free-text explanation for why the
+    # claimed slips' total doesn't line up with the invoice total
+    # (MatchPanel.tsx submits it, crud/invoice.py:444 stores it,
+    # models/invoice.py:78 keeps it separate from legacy_settlement_reason
+    # on purpose). Was write-only end to end — nothing in epms/src ever read
+    # it back — the same silent-drop bug as slip_ids above, one field over.
+    slip_variance_reason: str | None = None
     matched_at: datetime | None
     matched_by: uuid.UUID | None
     matched_by_name: str | None

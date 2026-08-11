@@ -45,6 +45,10 @@ export interface ApiInvoice {
   // JSONB array on the backend (Invoice.slip_ids), null before any claim, never
   // an empty array (see crud/invoice.py: cleared to null on unclaim, never []).
   slip_ids?: string[] | null
+  // Free-text explanation for why the claimed slips' total doesn't line up
+  // with the invoice total (submitted by MatchPanel.tsx, stored separately
+  // from legacy_settlement_reason — see models/invoice.py:76-78).
+  slip_variance_reason?: string | null
   match_assignee_id?: string | null
   match_assignee_name?: string | null
   matched_at?: string

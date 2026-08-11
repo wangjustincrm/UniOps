@@ -93,9 +93,17 @@ function mapSlipAtt(
 // Group label per the branch owner's ruling: never a bare UUID. slip_ref when
 // present, else date + amount (amount arrives as a Decimal-string on ApiSlip —
 // Number() before formatting, same convention as agreementSlips.ts callers).
+// No currency symbol: ApiSlip carries no currency field (unlike the
+// agreement), so hardcoding "$" would mislabel non-USD agreements.
+// Fix-round 1 (Minor): slip_ref is free text entered off a paper slip and
+// commonly contains "/" (e.g. "A/1234") — toBundle() in
+// ChainAttachmentsPanel.tsx folds this label straight into a ZIP folder
+// name, and JSZip treats "/" as a path separator, so an unescaped slash
+// would silently nest an extra directory level. Replace path separators
+// with a safe stand-in before the label is ever used.
 function slipLabel(s: ApiSlip): string {
-  if (s.slip_ref) return s.slip_ref
-  return `${s.slip_date} · $${Number(s.total_amount).toFixed(2)}`
+  const raw = s.slip_ref || `${s.slip_date} · ${Number(s.total_amount).toFixed(2)}`
+  return raw.replace(/[/\\]/g, '-')
 }
 
 export function useChainAttachments(paId: string) {

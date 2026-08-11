@@ -37,9 +37,31 @@ intent (the caller asked for dept_admin to be able to record slips, and
 recording requires reaching the page first), just closing the gap between
 "has the write key" and "can actually use it".
 
+Task 11 fix-round 1 (Critical, second occurrence of the SAME pairing bug
+in this branch — invoices.py:549-576 documents the first, Task 10 round 2
+Finding B, and names cfo/erp_pa_officer explicitly): the PA chain
+attachments panel (useChainAttachments.ts) added a pickup-slip evidence
+branch that calls GET /agreements/{id}/slips and .../slips/{id}/attachments
+— both gated on epms.agreement.read — for ANY viewer of a PA's attachment
+summary, not just agreement-page visitors. cfo and erp_pa_officer both hold
+view_pa (seed_authz.py PERMISSIONS) and can open that panel on any
+house_account PA, but neither was in epms.agreement.read's grant set, so
+the slip-detail and slip-attachment queries 403 and the panel falls back to
+"showing what's available" — invoice PDF only, zero slip photos, for the
+one role (cfo, who additionally holds pa_override_receipt) this evidence
+package exists to serve. Same fix shape as the dept_admin case above:
+grant the read key to the two roles that hold the downstream capability
+(view_pa) but not the read key it depends on — not a scope expansion, just
+closing the same "has the button, can't reach the page" gap one layer
+over. No 0008 migration: this branch has not been deployed to any
+environment yet (dev's alembic_version_identity is still 0006), so there
+is no incumbent grant to preserve and no reason to stack a second
+migration on an unshipped one — fold the correction into this file
+directly.
+
 Idempotent (ON CONFLICT DO NOTHING); safe on a DB the seed scripts already
-touched (epms.agreement.read already exists from 0006 — this only adds one
-new role_permissions row for it) and self-sufficient on a fresh one.
+touched (epms.agreement.read already exists from 0006 — this only adds new
+role_permissions rows for it) and self-sufficient on a fresh one.
 
 Revision id is 20 chars — alembic_version_identity.version_num is varchar(32).
 """
@@ -58,9 +80,13 @@ _GRANTS = {
     "epms.agreement.slip.write": ("system_admin", "ap_clerk", "dept_admin"),
     # dept_admin needs to be able to REACH the agreement detail page (and
     # GET .../slips) before "Record Pickup Slips" means anything — see the
-    # fix-round-1 docstring note above. epms.agreement.read's permission_defs
-    # row already exists (0006_agreement_perms); this is only a new grant row.
-    "epms.agreement.read": ("dept_admin",),
+    # fix-round-1 docstring note above. cfo/erp_pa_officer need the same read
+    # key for a different reason (Task 11 fix-round 1, also documented
+    # above): they don't record slips, they view them through a PA's
+    # attachment summary, which hits the same epms.agreement.read-gated
+    # routes. epms.agreement.read's permission_defs row already exists
+    # (0006_agreement_perms); these are only new grant rows.
+    "epms.agreement.read": ("dept_admin", "cfo", "erp_pa_officer"),
 }
 
 
@@ -80,10 +106,12 @@ def downgrade() -> None:
     # Only the grants + defs this migration added. Do NOT touch role_defs —
     # every role referenced here pre-exists. epms.agreement.read's
     # permission_defs row is NOT this migration's to delete (0006 owns it) —
-    # only the dept_admin grant row this migration added to it.
+    # only the dept_admin/cfo/erp_pa_officer grant rows this migration added
+    # to it.
     for key in _KEYS:
         op.execute(f"DELETE FROM role_permissions WHERE permission_key = '{key}'")
         op.execute(f"DELETE FROM permission_defs WHERE key = '{key}'")
     op.execute(
         "DELETE FROM role_permissions "
-        "WHERE role_code = 'dept_admin' AND permission_key = 'epms.agreement.read'")
+        "WHERE role_code IN ('dept_admin', 'cfo', 'erp_pa_officer') "
+        "AND permission_key = 'epms.agreement.read'")
