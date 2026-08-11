@@ -5,7 +5,8 @@ gate (epms.agreement.write, label "Create / Edit Agreements") — anyone who
 could tick that box in the Access Control matrix could also rewrite the
 agreement's vendor/terms/schedule, which the person entering paper slips at
 the counter has no business doing. This migration registers a dedicated key,
-epms.agreement.slip.write ("Record Pickup Slips"), that epms-api's
+epms.agreement.slip.write ("Record Pickup Slips (needs View Agreements)" —
+see the _KEYS note below for why the label says that), that epms-api's
 agreement_slips.py / agreement_slip_attachments.py now gate the create/
 update/void/attachment-write routes on instead.
 
