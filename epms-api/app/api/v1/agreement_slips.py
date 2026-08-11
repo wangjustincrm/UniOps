@@ -11,6 +11,7 @@ from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.crud import agreement as agr_crud
 from app.crud import agreement_slip as slip_crud
+from app.crud.agreement_slip import RETIRED as RETIRED_SLIP_STATUSES
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_slip import AgreementPickupSlip
 from app.schemas.agreement_slip import (
@@ -51,31 +52,81 @@ async def _get_slip_or_404(
     return slip
 
 
-async def _duplicate_ref_error(
-    db: SessionDep, agr_number: str, slip_ref: str | None,
+# Postgres SQLSTATEs we can tell apart. asyncpg exposes them as `.sqlstate`
+# on the wrapped driver exception; psycopg as `.pgcode`.
+_PG_UNIQUE_VIOLATION = "23505"
+
+
+def _sqlstate(exc: IntegrityError) -> str | None:
+    orig = getattr(exc, "orig", None)
+    return getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+
+
+async def _slip_integrity_error(
+    db: SessionDep, exc: IntegrityError, agreement_id: uuid.UUID,
+    agr_number: str, slip_ref: str | None,
 ) -> HTTPException:
-    # The partial unique index (agreement_id, slip_ref) WHERE slip_ref IS NOT
-    # NULL is a real collision path — the same paper slip re-entered by a
-    # second person, or a client retry after a timeout — not an edge case.
-    # It surfaces as IntegrityError, which crud never raises as ValueError,
-    # so it must be caught here rather than falling through to the generic
-    # 500 the get_session dependency would otherwise let through.
-    #
-    # A failed flush leaves the session in "pending rollback", and even a
-    # PLAIN attribute read on an already-loaded ORM object (e.g. agr.number)
-    # tries to transparently re-fetch it — first raising PendingRollbackError
-    # (session unusable), and after an explicit rollback(), MissingGreenlet
-    # (the lazy-load's implicit IO has no async context to run in from a
-    # synchronous f-string expression). That's why the caller passes the
-    # agreement NUMBER as a plain str captured before the failing call,
-    # instead of the ORM object — nothing here touches `agr` at all. The
-    # rollback below is still required so the session is usable again for
-    # anything downstream (e.g. get_session's own teardown).
+    """Turn an IntegrityError from a slip write into a 409 that says what
+    actually went wrong.
+
+    The partial unique index on (agreement_id, slip_ref) is a real collision
+    path — the same paper slip re-entered by a second person, or a client
+    retry after a timeout — not an edge case. It surfaces as IntegrityError,
+    which crud never raises as ValueError, so it must be caught here rather
+    than falling through to the generic 500 the get_session dependency would
+    otherwise let through.
+
+    Whole-branch review (I3, and review Minor 6): this used to be a catch-all
+    that reported EVERY IntegrityError as "slip reference already recorded" —
+    a picked_by pointing at a user that doesn't exist got the same message,
+    sending the recorder off to fix a slip_ref that was never the problem.
+    And even on a genuine duplicate it never said WHICH slip holds the ref or
+    what state that slip is in, which is the one fact that tells the recorder
+    whether they can act on it. Now: identify the live conflicting row and
+    name it; anything else says so honestly instead of borrowing the
+    duplicate-ref story.
+
+    A failed flush leaves the session in "pending rollback", and even a PLAIN
+    attribute read on an already-loaded ORM object (e.g. agr.number) tries to
+    transparently re-fetch it — first raising PendingRollbackError (session
+    unusable), and after an explicit rollback(), MissingGreenlet (the
+    lazy-load's implicit IO has no async context to run in from a synchronous
+    f-string expression). That's why the caller passes the agreement NUMBER as
+    a plain str captured before the failing call, instead of the ORM object —
+    nothing here touches `agr` at all. The rollback below is required anyway
+    so the session is usable again, both for the lookup right after it and for
+    get_session's own teardown.
+    """
     await db.rollback()
+
+    # sqlstate is None only if some driver doesn't expose it; in that case
+    # fall back to the lookup, which is self-verifying either way — it only
+    # produces the duplicate message when a conflicting live row really is
+    # sitting there.
+    if slip_ref is not None and _sqlstate(exc) in (_PG_UNIQUE_VIOLATION, None):
+        conflict = (await db.execute(
+            select(AgreementPickupSlip).where(
+                AgreementPickupSlip.agreement_id == agreement_id,
+                AgreementPickupSlip.slip_ref == slip_ref,
+                AgreementPickupSlip.status.notin_(RETIRED_SLIP_STATUSES),
+            ).order_by(AgreementPickupSlip.created_at)
+        )).scalars().first()
+        if conflict is not None:
+            return HTTPException(
+                status_code=409,
+                detail=f"Slip reference '{slip_ref}' is already recorded for "
+                       f"agreement {agr_number} by slip {conflict.id}, which is "
+                       f"'{conflict.status}'. Void or reject that slip if it was "
+                       f"entered in error, then record this one again.",
+            )
+
+    constraint = getattr(getattr(exc, "orig", None), "constraint_name", None)
     return HTTPException(
         status_code=409,
-        detail=f"Slip reference '{slip_ref}' is already recorded for "
-               f"agreement {agr_number}.",
+        detail="Could not save this pickup slip: the database rejected it"
+               + (f" (constraint {constraint})" if constraint else "")
+               + ". Check that the person it is recorded against still exists "
+                 "as a user, then try again.",
     )
 
 
@@ -96,11 +147,11 @@ async def create_slip(
     agreement_id: uuid.UUID, body: SlipCreate, db: SessionDep, user: SlipRecordDep,
 ):
     agr = await _get_agreement_or_404(db, agreement_id)
-    agr_number = agr.number   # capture before any flush that might fail — see _duplicate_ref_error
+    agr_number = agr.number   # capture before any flush that might fail — see _slip_integrity_error
     try:
         return await slip_crud.create(db, agr, body, created_by=uuid.UUID(user["sub"]))
-    except IntegrityError:
-        raise await _duplicate_ref_error(db, agr_number, body.slip_ref)
+    except IntegrityError as exc:
+        raise await _slip_integrity_error(db, exc, agreement_id, agr_number, body.slip_ref)
 
 
 @router.patch("/{slip_id}", response_model=SlipResponse)
@@ -109,14 +160,14 @@ async def update_slip(
     db: SessionDep, user: SlipRecordDep,
 ):
     agr = await _get_agreement_or_404(db, agreement_id)
-    agr_number = agr.number   # capture before any flush that might fail — see _duplicate_ref_error
+    agr_number = agr.number   # capture before any flush that might fail — see _slip_integrity_error
     slip = await _get_slip_or_404(db, agreement_id, slip_id)
     try:
         return await slip_crud.update(db, slip, body)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
-    except IntegrityError:
-        raise await _duplicate_ref_error(db, agr_number, body.slip_ref)
+    except IntegrityError as exc:
+        raise await _slip_integrity_error(db, exc, agreement_id, agr_number, body.slip_ref)
 
 
 @router.delete("/{slip_id}", status_code=status.HTTP_204_NO_CONTENT)

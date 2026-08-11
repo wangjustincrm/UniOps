@@ -61,7 +61,20 @@ class AgreementPickupSlip(UUIDPrimaryKey, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
 
+    # ⚠️ Predicate kept byte-for-byte in sync with alembic ag05_slip_ref_uq_active.
+    # The test DB is built by Base.metadata.create_all and never runs the
+    # migrations, so a predicate that lives only in the migration is a
+    # predicate no test can see (this branch already shipped one such
+    # invisible constraint once).
+    #
+    # Retired rows are excluded from uniqueness on purpose (whole-branch
+    # review I3): voiding a mis-keyed slip or having AP reject one used to
+    # burn its slip_ref inside that agreement forever, so re-recording the
+    # same paper slip with the right amount 409'd with no way out. Uniqueness
+    # still holds where it matters — two LIVE slips can't claim one ref.
     __table_args__ = (
         sa.Index("uq_agr_slip_ref_per_agreement", "agreement_id", "slip_ref",
-                 unique=True, postgresql_where=sa.text("slip_ref IS NOT NULL")),
+                 unique=True,
+                 postgresql_where=sa.text(
+                     "slip_ref IS NOT NULL AND status NOT IN ('voided', 'rejected')")),
     )

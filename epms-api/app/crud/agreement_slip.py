@@ -42,6 +42,12 @@ async def list_for_agreement(
 EDITABLE = ("open", "pending_ap_review")
 VOIDABLE = EDITABLE
 
+# 已退役的终态 —— 这两个状态的行不再参与 slip_ref 唯一性(whole-branch review
+# I3):录错作废/AP 驳回后必须能用同一个参考号重录那张纸质小票。与
+# models/agreement_slip.py 的部分唯一索引谓词、alembic ag05_slip_ref_uq_active
+# 是同一条规则的三处表述,改一处必须改三处。
+RETIRED = ("voided", "rejected")
+
 
 async def update(db: AsyncSession, slip: AgreementPickupSlip, body: SlipUpdate) -> AgreementPickupSlip:
     if slip.status not in EDITABLE:

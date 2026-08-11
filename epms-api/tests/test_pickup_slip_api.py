@@ -249,6 +249,66 @@ async def test_create_slip_duplicate_slip_ref_is_409(admin_client, test_engine):
         user_id, slip_ref="DUP-REF-1"))
     assert r2.status_code == 409, r2.text
     assert "DUP-REF-1" in r2.text
+    # I3: the 409 must name the row that actually holds the ref and its status —
+    # otherwise the recorder can't tell whether the blocker is something they
+    # can void, and (before this fix) any OTHER IntegrityError wore the same
+    # message.
+    assert r1.json()["id"] in r2.text
+    assert "open" in r2.text
+
+
+# ── Whole-branch review I3: void / AP-reject must RELEASE the slip_ref.
+# Both are documented, ordinary paths (design §3 "open ──录错作废──→ voided";
+# AP reject is the entire point of the pending_ap_review gate), and both used
+# to burn the ref inside that agreement permanently — re-recording the same
+# paper slip with the corrected amount was a dead end with no UI able to free
+# it. These three tests are the behaviour, not the DDL: the test DB is built
+# by Base.metadata.create_all, so they only pass if the MODEL's partial-index
+# predicate changed, not just the migration. ────────────────────────────
+
+async def test_voided_slip_releases_its_ref_for_re_entry(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    wrong = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="1-510076", amount="100.00", tax_amount="13.00",
+        total_amount="113.00"))).json()
+
+    voided = await admin_client.delete(f"{_slips_url(agr['id'])}/{wrong['id']}")
+    assert voided.status_code == 204, voided.text
+
+    # Same paper slip, corrected amount.
+    r = await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="1-510076", amount="200.00", tax_amount="26.00",
+        total_amount="226.00"))
+    assert r.status_code == 201, r.text
+    assert r.json()["id"] != wrong["id"]
+    assert r.json()["status"] == "open"
+
+
+async def test_ap_rejected_slip_releases_its_ref_for_re_entry(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="1-510077", missing_slip_reason="Slip lost in transit"))).json()
+    rejected = await admin_client.post(
+        f"{_slips_url(agr['id'])}/{slip['id']}/ap-review", json={"action": "reject"})
+    assert rejected.status_code == 200 and rejected.json()["status"] == "rejected", rejected.text
+
+    r = await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="1-510077"))
+    assert r.status_code == 201, r.text
+    assert r.json()["id"] != slip["id"]
+
+
+async def test_two_live_slips_still_cannot_share_a_ref(admin_client, test_engine):
+    # The narrowing must NOT weaken the constraint where it earns its keep:
+    # two live rows claiming one paper slip is still the collision the index
+    # was added for.
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    first = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="1-510078"))).json()
+    pending = await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, slip_ref="1-510078", missing_slip_reason="Slip lost"))
+    assert pending.status_code == 409, pending.text
+    assert first["id"] in pending.text
 
 
 async def test_patch_duplicate_slip_ref_is_409(admin_client, test_engine):
