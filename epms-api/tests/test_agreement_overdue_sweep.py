@@ -1,17 +1,24 @@
 """缺票逾期扫描。"""
+import asyncio
+import copy
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+import app.db.session as session_module
 from app.crud import user as user_crud
+from app.crud.config import get_or_create as get_config
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.config import CompanyConfig
 from app.models.vendor import Vendor
 from app.schemas.auth import RegisterRequest
+from app.tasks import agreement_overdue as agreement_overdue_module
 from app.tasks.agreement_overdue import sweep_overdue_periods
 
 pytestmark = pytest.mark.asyncio
@@ -70,7 +77,14 @@ async def test_a_row_past_expected_date_plus_grace_becomes_overdue(test_engine):
         flipped = await sweep_overdue_periods(db)
         await db.commit()
         assert [r.id for r in flipped] == [row.id]
-        assert row.status == "overdue"
+        row_id = row.id
+
+    # _factory uses expire_on_commit=False, so `row.status == "overdue"` would
+    # pass even if the UPDATE never reached the database — re-SELECT through a
+    # fresh session/identity map to prove it actually persisted.
+    async with _factory(test_engine)() as verify_db:
+        persisted = await verify_db.get(AgreementPaymentSchedule, row_id)
+        assert persisted.status == "overdue"
 
 
 async def test_the_boundary_day_itself_is_not_overdue(test_engine):
@@ -89,6 +103,15 @@ async def test_received_rows_are_never_swept(test_engine):
         row = await _row(db, agr, days_ago=90, status="received")
         assert await sweep_overdue_periods(db) == []
         assert row.status == "received"
+        await db.commit()
+
+
+async def test_waived_rows_are_never_swept(test_engine):
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db)
+        row = await _row(db, agr, days_ago=90, status="waived")
+        assert await sweep_overdue_periods(db) == []
+        assert row.status == "waived"
         await db.commit()
 
 
@@ -114,3 +137,191 @@ async def test_sweep_uses_the_default_grace_when_the_row_has_none(test_engine):
         await db.flush()
         assert [r.id for r in await sweep_overdue_periods(db)] == [row.id]
         await db.commit()
+
+
+# ── agreement_overdue_loop() — the driver, not just the payload ────────────────
+#
+# Regression: the original loop re-derived _seconds_until_next_run() AFTER
+# sleeping. On a real clock, that second call sees "now" has reached (or just
+# passed) the target and rolls forward a full day (~86400s) — which is an
+# exact multiple of the 900s recheck cap, so `> 60` stayed true forever and
+# the run that was just waited for never fired. Both tests below drive the
+# loop deterministically (no real sleeping) by monkeypatching _load_schedule,
+# _seconds_until_next_run and asyncio.sleep.
+
+async def test_loop_fires_the_run_when_scheduled_time_arrives(monkeypatch):
+    calls: list[bool] = []
+
+    async def _fake_load_schedule():
+        return (8, 0)
+
+    def _fake_seconds_until_next_run(hour, minute):
+        return 10  # well under the recheck cap -> this iteration sleeps then fires
+
+    async def _fake_sleep(seconds):
+        return None
+
+    async def _fake_run():
+        calls.append(True)
+        raise asyncio.CancelledError  # deterministically end the `while True`
+
+    monkeypatch.setattr(agreement_overdue_module, "_load_schedule", _fake_load_schedule)
+    monkeypatch.setattr(agreement_overdue_module, "_seconds_until_next_run", _fake_seconds_until_next_run)
+    monkeypatch.setattr(agreement_overdue_module.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(agreement_overdue_module, "run_agreement_overdue", _fake_run)
+
+    with pytest.raises(asyncio.CancelledError):
+        await agreement_overdue_module.agreement_overdue_loop()
+
+    assert calls == [True]
+
+
+async def test_loop_does_not_re_derive_wait_after_waking_from_sleep(monkeypatch):
+    calls: list[bool] = []
+    seen: list[bool] = []
+
+    async def _fake_load_schedule():
+        return (8, 0)
+
+    def _fake_seconds_until_next_run(hour, minute):
+        seen.append(True)
+        # First call: a tiny remaining wait -> loop sleeps then should fire
+        # without asking again. A second call simulates the bug's view of the
+        # clock right after waking: the target has rolled over to tomorrow.
+        return 10 if len(seen) == 1 else 86400
+
+    async def _fake_sleep(seconds):
+        return None
+
+    async def _fake_run():
+        calls.append(True)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(agreement_overdue_module, "_load_schedule", _fake_load_schedule)
+    monkeypatch.setattr(agreement_overdue_module, "_seconds_until_next_run", _fake_seconds_until_next_run)
+    monkeypatch.setattr(agreement_overdue_module.asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(agreement_overdue_module, "run_agreement_overdue", _fake_run)
+
+    with pytest.raises(asyncio.CancelledError):
+        await agreement_overdue_module.agreement_overdue_loop()
+
+    assert calls == [True]
+    assert len(seen) == 1  # never recomputed the wait after sleeping
+
+
+# ── run_agreement_overdue() — toggle gates the email, never the sweep ──────────
+#
+# Uses session_module.AsyncSessionLocal() directly (not the _factory helper):
+# run_agreement_overdue() opens its OWN session via that module attribute, so
+# seed data must be committed through the same route to be visible to it —
+# same idiom as tests/test_daily_followup.py.
+
+async def _merge_notif_settings(db, **kv) -> None:
+    cfg = await get_config(db)
+    ns = {**(cfg.notification_settings or {})}
+    for key, value in kv.items():
+        if value is None:
+            ns.pop(key, None)
+        else:
+            ns[key] = value
+    await db.execute(sa_update(CompanyConfig).values(notification_settings=ns))
+    await db.commit()
+
+
+@pytest.fixture(autouse=True)
+async def _restore_notification_settings():
+    async with session_module.AsyncSessionLocal() as db:
+        cfg = await get_config(db)
+        snapshot = copy.deepcopy(cfg.notification_settings)
+        await db.commit()
+    yield
+    async with session_module.AsyncSessionLocal() as db:
+        await db.execute(
+            sa_update(CompanyConfig).values(notification_settings=copy.deepcopy(snapshot))
+        )
+        await db.commit()
+
+
+async def test_toggle_off_flips_status_but_sends_no_email(monkeypatch):
+    sent_emails: list[dict] = []
+    sent_alerts: list[dict] = []
+
+    async def _fake_send_email(to, subject, html, **kwargs):
+        sent_emails.append({"to": to, "subject": subject, "html": html})
+
+    async def _fake_send_admin_alert(subject, body, db=None):
+        sent_alerts.append({"subject": subject, "body": body})
+
+    monkeypatch.setattr(agreement_overdue_module, "send_email", _fake_send_email)
+    monkeypatch.setattr(agreement_overdue_module, "send_admin_alert", _fake_send_admin_alert)
+
+    async with session_module.AsyncSessionLocal() as db:
+        await _merge_notif_settings(db, agreement_overdue_enabled=False)
+        agr, _, user = await _seed(db)
+        agr.owner_id = user.id
+        row = await _row(db, agr, days_ago=8, grace=7)
+        await db.commit()
+        row_id = row.id
+
+    await agreement_overdue_module.run_agreement_overdue()
+
+    assert sent_emails == []
+    assert sent_alerts == []
+
+    async with session_module.AsyncSessionLocal() as verify_db:
+        persisted = await verify_db.get(AgreementPaymentSchedule, row_id)
+        assert persisted.status == "overdue"
+
+
+async def test_toggle_on_emails_the_agreements_owner(monkeypatch):
+    sent_emails: list[dict] = []
+
+    async def _fake_send_email(to, subject, html, **kwargs):
+        sent_emails.append({"to": to, "subject": subject, "html": html})
+
+    monkeypatch.setattr(agreement_overdue_module, "send_email", _fake_send_email)
+
+    async with session_module.AsyncSessionLocal() as db:
+        await _merge_notif_settings(db, agreement_overdue_enabled=True)
+        agr, _, user = await _seed(db)
+        agr.owner_id = user.id
+        row = await _row(db, agr, days_ago=8, grace=7)
+        await db.commit()
+        owner_email = user.email
+        agr_number = agr.number
+        period_label = row.period_label
+        row_id = row.id
+
+    await agreement_overdue_module.run_agreement_overdue()
+
+    mine = [e for e in sent_emails if e["to"] == owner_email]
+    assert len(mine) == 1
+    assert agr_number in mine[0]["html"]
+    assert period_label in mine[0]["html"]
+
+    async with session_module.AsyncSessionLocal() as verify_db:
+        persisted = await verify_db.get(AgreementPaymentSchedule, row_id)
+        assert persisted.status == "overdue"
+
+
+async def test_toggle_on_falls_back_to_admin_alert_when_agreement_has_no_owner(monkeypatch):
+    sent_alerts: list[dict] = []
+
+    async def _fake_send_admin_alert(subject, body, db=None):
+        sent_alerts.append({"subject": subject, "body": body})
+
+    monkeypatch.setattr(agreement_overdue_module, "send_admin_alert", _fake_send_admin_alert)
+
+    async with session_module.AsyncSessionLocal() as db:
+        await _merge_notif_settings(db, agreement_overdue_enabled=True)
+        agr, _, _ = await _seed(db)   # owner_id left unset
+        row = await _row(db, agr, days_ago=8, grace=7)
+        await db.commit()
+        agr_number = agr.number
+        period_label = row.period_label
+
+    await agreement_overdue_module.run_agreement_overdue()
+
+    mine = [a for a in sent_alerts if agr_number in a["body"]]
+    assert len(mine) == 1
+    assert period_label in mine[0]["body"]
