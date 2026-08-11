@@ -120,13 +120,29 @@ async def agreement_action(
             # 再产出无法生成排期的周期参数。但万一它还是炸了:此时审批已经在
             # approval-api 落地(状态已 active、审批任务已关闭),把 500 扔回
             # 前端只会让调用方误以为审批本身失败了,而它没有。所以这里既不
-            # 重新抛出,也不静默吞掉——记一条 error 日志留痕,让运维能定位到
-            # "active 但排期为空"的协议,走 resync 手动补建。
+            # 重新抛出,也不静默吞掉——记一条 error 日志留痕,并且额外发一条
+            # admin alert(照抄 gr.py 里 GR 自动完成成异常态时的同一套模式):
+            # 一份 active 却没有排期行的循环协议,在所有 UI 上都不可见,而且
+            # 永远不会有发票能自动认领到它,光靠日志没人会盯着看。
             logger.error(
                 "ensure_period_rows failed for agreement %s (id=%s) after "
                 "approval was already recorded as active; schedule not "
                 "generated, needs manual resync",
                 agr.number, agr.id, exc_info=True,
+            )
+            from app.services import notification as notification_service
+            notification_service.fire_and_forget_admin_alert(
+                f"[EPMS] Agreement {agr.number} is active with no payment schedule",
+                (
+                    f"Recurring agreement <b>{agr.number}</b> was just approved and is now "
+                    f"<b>active</b>, but its payment schedule could not be generated "
+                    f"(its recurring cycle settings are invalid). No schedule rows exist, "
+                    f"so it will not show a schedule on any screen and no invoice will ever "
+                    f"auto-claim against it.\n\n"
+                    f"Please correct the agreement's cycle settings (recurring type / "
+                    f"expected invoice day / anchor month) and trigger a resync to "
+                    f"regenerate the schedule."
+                ),
             )
     return agr
 
