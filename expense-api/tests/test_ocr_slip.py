@@ -128,3 +128,65 @@ def test_receipt_prompt_is_unchanged():
 
     assert "vendor_name" in _RECEIPT_PROMPT
     assert "slip_ref" not in _RECEIPT_PROMPT
+
+
+# ── Whole-branch review (small item A): counter slips routinely print only a
+# subtotal and a total, and the prompt allows null for every field. The EPMS
+# slip form requires all three amounts, so a null tax left the user stuck on
+# "Amount, tax and total are all required" with no hint that the answer was
+# total − amount. ────────────────────────────────────────────────────────
+
+async def test_null_tax_is_derived_from_amount_and_total(anthropic_stub):
+    anthropic_stub.response = _response(json.dumps(_slip_json(
+        amount=100.00, tax_amount=None, total_amount=113.00)))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["tax_amount"] == 13.00
+    # Must survive the backend's exact-Decimal check on a Numeric(15,2)
+    # column: float subtraction here yields 13.000000000000014.
+    assert round(result["amount"] * 100) + round(result["tax_amount"] * 100) == round(
+        result["total_amount"] * 100)
+
+
+async def test_null_tax_on_a_zero_rated_slip_derives_zero_not_null(anthropic_stub):
+    anthropic_stub.response = _response(json.dumps(_slip_json(
+        amount=42.50, tax_amount=None, total_amount=42.50)))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["tax_amount"] == 0
+
+
+async def test_null_tax_stays_null_when_the_other_two_are_not_both_present(anthropic_stub):
+    anthropic_stub.response = _response(json.dumps(_slip_json(
+        amount=None, tax_amount=None, total_amount=113.00)))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["tax_amount"] is None
+    assert result["amount"] is None
+
+
+async def test_null_tax_stays_null_when_total_is_below_the_subtotal(anthropic_stub):
+    # A negative "tax" means OCR misread one of the two figures — prefilling
+    # it would put a value in the form that cannot be right and that the
+    # backend would reject anyway. Leave it for the recorder to key in.
+    anthropic_stub.response = _response(json.dumps(_slip_json(
+        amount=113.00, tax_amount=None, total_amount=100.00)))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["tax_amount"] is None
+
+
+async def test_an_explicit_zero_tax_is_not_overwritten(anthropic_stub):
+    # 0 is falsy — the derivation must key off `is None`, not truthiness, or a
+    # genuinely zero-rated slip whose OCR DID read the tax line would get
+    # silently recomputed.
+    anthropic_stub.response = _response(json.dumps(_slip_json(
+        amount=100.00, tax_amount=0, total_amount=113.00)))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["tax_amount"] == 0

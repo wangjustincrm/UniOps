@@ -72,8 +72,21 @@ down_revision = "0006_agreement_perms"
 branch_labels = None
 depends_on = None
 
+# ⚠️ The label carries a dependency hint on purpose (whole-branch review I5).
+# Access Control renders one independent checkbox per permission key with no
+# notion of "X needs Y". epms.agreement.slip.write is useless without
+# epms.agreement.read: no read grant means no Agreements nav entry, no
+# GET /agreements/{id} and no GET .../slips — so ticking only "Record Pickup
+# Slips" for, say, Warehouse Staff produces a role that can see nothing and
+# reach nothing, with no error message anywhere to explain it. That is
+# precisely the dept_admin accident documented above, and the default matrix
+# below being closed does not prevent it: the hole opens when an admin grants
+# this key by hand later. The label is the only surface the checkbox actually
+# shows, so the hint goes in the label.
+#
+# Kept byte-for-byte identical in identity-api/scripts/seed_phase2_keys.py.
 _KEYS = {
-    "epms.agreement.slip.write": ("epms", "Record Pickup Slips", 106),
+    "epms.agreement.slip.write": ("epms", "Record Pickup Slips (needs View Agreements)", 106),
 }
 
 _GRANTS = {

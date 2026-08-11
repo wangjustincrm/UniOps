@@ -121,7 +121,7 @@ export function SlipEntryForm({ agreementId }: SlipEntryFormProps) {
     const tax = Number(taxAmount)
     const tot = Number(totalAmount)
     if (amount === '' || taxAmount === '' || totalAmount === '' || Number.isNaN(amt) || Number.isNaN(tax) || Number.isNaN(tot)) {
-      setAmountError('Amount, tax and total are all required')
+      setAmountError('Amount, tax and total are all required — enter 0 for tax if the slip shows none')
       hasError = true
     } else if (!centsEqual(tot, amt, tax)) {
       setAmountError('Total must equal amount + tax')

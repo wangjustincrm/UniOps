@@ -200,7 +200,13 @@ EPMS 协议详情页新增 Pickup Slips 区块 + 录入表单：
 3. 人工补 `picked_by`（交单人），用 `/users/directory` 选人——**不是** `/users`，那个是 system_admin 专属
 4. 无照片时必填 `missing_slip_reason`，提交后进 `pending_ap_review`
 
-**权限**：录入/编辑/作废跟随 `epms.agreement.write`；AP 裁定 `pending_ap_review` 用与发票 match-review 相同的 `ApDep`（`epms-api/app/api/v1/invoices.py:606`），不新建权限键。
+**权限（实现时被用户裁定推翻，此处为最终结论）**：录入/编辑/作废走**独立权限键** `epms.agreement.slip.write`，**不**跟随 `epms.agreement.write`。
+
+初稿写的是"跟随 `epms.agreement.write`，不新建权限键"。推翻的理由：**录小票的人不该能改协议条款**——`epms.agreement.write` 管的是供应商、有效期、NTE、排期这些商务条款，而录小票是后勤/AP 的日常凭证登记。合并成一个键，等于要把改协议金额上限的权力发给每一个需要登记纸小票的人，只为了让他们能录一行凭证；反过来收紧则是能改条款的人反而录不了小票。两件事的授权对象天然不同，用一个键表达必然错一头。
+
+- 键定义与默认授予：identity `0007_slip_write_perm`（`system_admin` / `ap_clerk` / `dept_admin`），并同步进 `identity-api/scripts/seed_phase2_keys.py`
+- 读仍是 `epms.agreement.read`。⚠️ **两个键必须成对授予**：只给 `slip.write` 不给 `agreement.read` 的角色，看不到 Agreements 入口、`GET /agreements/{id}` 403，症状是"什么都没有"且无任何报错。Access Control 矩阵没有键间联动，因此 `slip.write` 的 label 写成 `Record Pickup Slips (needs View Agreements)` 把依赖摆在勾选框上
+- AP 裁定 `pending_ap_review` 仍用与发票 match-review 相同的 `ApDep`（`epms-api/app/api/v1/invoices.py`），这部分未变
 
 ---
 

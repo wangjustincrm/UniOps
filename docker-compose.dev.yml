@@ -455,6 +455,12 @@ services:
       VITE_BUDGET_API_URL: http://localhost:8007
       VITE_MDM_API_URL: http://localhost:8002
       VITE_FINANCE_API_URL: http://localhost:8004
+      # expense-api (OA). epms calls it cross-service for invoice attachments and
+      # for OCR (lib/api.ts EXPENSE_BASE, incl. the pickup-slip OCR endpoint).
+      # Was missing here and only worked by accident, via EXPENSE_BASE's own
+      # localhost:8006 fallback — declared explicitly now, matching
+      # docker-compose.prod.yml's epms-web (VITE_EXPENSE_API_URL: ${OA_API_URL}).
+      VITE_EXPENSE_API_URL: http://localhost:8006
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5173"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5173"]

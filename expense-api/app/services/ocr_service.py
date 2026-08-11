@@ -412,11 +412,38 @@ async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
     except json.JSONDecodeError:
         raise ValueError("OCR returned invalid JSON")
 
+    amount = parsed.get("amount", {}).get("value")
+    tax_amount = parsed.get("tax_amount", {}).get("value")
+    total_amount = parsed.get("total_amount", {}).get("value")
+
+    # Whole-branch review (small item A): counter slips very often print only a
+    # subtotal and a total, no separate tax line — and the prompt explicitly
+    # allows null for every field. The EPMS slip form requires all three
+    # amounts and told the user "Amount, tax and total are all required"
+    # without hinting that 0, or total − amount, is what belongs there. Derive
+    # it: the row's own invariant is amount + tax == total, so with two of the
+    # three known the third is not a guess.
+    #
+    # Integer cents, not float subtraction: the backend validates
+    # amount + tax_amount == total_amount as exact Decimal equality against a
+    # Numeric(15,2) column, and 113.0 - 100.0 in binary float is
+    # 13.000000000000014 — which serialises into the form, fails that equality
+    # and 422s. (Same reasoning as centsEqual in SlipEntryForm.tsx.)
+    if tax_amount is None and amount is not None and total_amount is not None:
+        try:
+            derived_cents = round(float(total_amount) * 100) - round(float(amount) * 100)
+        except (TypeError, ValueError):
+            derived_cents = None
+        # A negative difference means OCR misread one of the two figures;
+        # leave tax null rather than prefilling a value that cannot be right.
+        if derived_cents is not None and derived_cents >= 0:
+            tax_amount = derived_cents / 100
+
     return {
         "slip_ref": parsed.get("slip_ref", {}).get("value"),
         "date": parsed.get("date", {}).get("value"),
-        "amount": parsed.get("amount", {}).get("value"),
-        "tax_amount": parsed.get("tax_amount", {}).get("value"),
-        "total_amount": parsed.get("total_amount", {}).get("value"),
+        "amount": amount,
+        "tax_amount": tax_amount,
+        "total_amount": total_amount,
         "currency": parsed.get("currency", {}).get("value", "CAD"),
     }

@@ -31,7 +31,11 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     "mdm.vendor.write":      ("mdm",     "Edit Vendor Master Data",  131),
     "epms.agreement.read":   ("epms",    "View Agreements",          104),
     "epms.agreement.write":  ("epms",    "Create / Edit Agreements", 105),
-    "epms.agreement.slip.write": ("epms", "Record Pickup Slips",     106),
+    # Label carries a dependency hint — byte-for-byte identical to identity
+    # 0007_slip_write_perm._KEYS; see that migration for why (whole-branch
+    # review I5: Access Control has no key-to-key linkage, so a hand-granted
+    # slip.write without epms.agreement.read is a silently dead role).
+    "epms.agreement.slip.write": ("epms", "Record Pickup Slips (needs View Agreements)", 106),
 }
 
 # key -> roles admitted TODAY (system_admin included everywhere: short-circuit)
