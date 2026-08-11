@@ -17,6 +17,7 @@ from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
 from app.crud import po as po_crud
 from app.crud.current_step import enrich_current_step
+from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.config import CompanyConfig
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -162,6 +163,21 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
                 status_code=422,
                 detail="Invoice(s) not cleared for payment — a matched, reviewed "
                        f"invoice is required: {', '.join(not_ready)}")
+        # recurring 免 GR,履约确认是它唯一的代偿 —— 未确认的期次不许付款。
+        # milestone 本期没有验收闸门(设计 §5.3),house_account 走 slip 路径,
+        # 所以这里按 agreement_type 分支,不能一刀切。
+        if agr.agreement_type == "recurring":
+            unconfirmed = (await db.execute(
+                select(AgreementPaymentSchedule.period_label)
+                .join(Invoice, Invoice.schedule_id == AgreementPaymentSchedule.id)
+                .where(Invoice.id.in_(body.invoice_ids),
+                       AgreementPaymentSchedule.accepted_at.is_(None))
+            )).scalars().all()
+            if unconfirmed:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(f"Service has not been confirmed for {', '.join(unconfirmed)}. "
+                            "The department must confirm delivery before payment can be raised."))
         # 收货闸门不适用:协议路线定义上就没有 GR(1A 无 pickup slip,1B 才有)。
         created = await pa_crud.create(
             db, body,

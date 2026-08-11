@@ -17,6 +17,7 @@ from app.schemas.agreement import (
     AgreementResponse,
     AgreementUpdate,
     ScheduleListResponse,
+    ScheduleRowResponse,
 )
 from app.services.approval_client import delegate_action
 
@@ -153,3 +154,21 @@ async def list_schedule(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDe
     if agr is None:
         raise HTTPException(status_code=404, detail="Agreement not found")
     return {"items": await agr_sched_crud.list_rows(db, agreement_id)}
+
+
+@router.post("/{agreement_id}/schedule/{row_id}/confirm", response_model=ScheduleRowResponse)
+async def confirm_schedule_period(
+    agreement_id: uuid.UUID, row_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload
+):
+    # 由持有确认任务的人执行 —— 与 PR/PO/PA 的任务型动作一致,不另设权限键。
+    agr = await agr_crud.get_by_id(db, agreement_id)
+    if agr is None:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    try:
+        row = await agr_sched_crud.confirm_period(
+            db, agr, row_id, uuid.UUID(user["sub"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    await db.commit()
+    await db.refresh(row)
+    return row

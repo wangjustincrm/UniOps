@@ -1,5 +1,6 @@
 """排期行的落库与查询。周期日期算法在 app/services/agreement_schedule.py。"""
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -7,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.task import Task
+from app.models.user import User
 from app.schemas.agreement import MilestoneRowIn
 from app.services.agreement_schedule import build_period_rows
 
@@ -146,5 +149,82 @@ async def claim_milestone(
     # 不做金额校验(设计 §5.2):预期与实际并排显示给人眼判断,超支由协议 NTE 预警覆盖。
     row.status = "received"
     row.invoice_id = invoice.id
+    await db.flush()
+    return row
+
+
+async def _confirm_assignee(db: AsyncSession, agr: PurchaseAgreement) -> uuid.UUID | None:
+    """协议责任人优先;没设 owner 就落到该部门的在职经理。"""
+    if agr.owner_id:
+        return agr.owner_id
+    if not agr.department_id:
+        return None
+    return (await db.execute(
+        select(User.id).where(User.department_id == agr.department_id,
+                              User.role == "dept_manager",
+                              User.is_active.is_(True)).limit(1)
+    )).scalar_one_or_none()
+
+
+async def create_confirm_task(
+    db: AsyncSession, agr: PurchaseAgreement, row: AgreementPaymentSchedule
+) -> None:
+    """认领成功后派履约确认任务。
+
+    这是普通任务,不是审批流 —— 不进 workflow_defs,不需要新的 action key。
+    期次塞在 document_number 里而不是给 tasks 加列:tasks 被三个服务镜像。
+    """
+    db.add(Task(
+        type="confirm_period",
+        priority="normal",
+        document_type="agr",
+        document_id=agr.id,
+        document_number=f"{agr.number} · {row.period_label}",
+        assigned_role="dept_manager",
+        assigned_user_id=await _confirm_assignee(db, agr),
+        title=f"Confirm service for {row.period_label}: {agr.title}",
+        description=(
+            f"An invoice has been matched to {agr.number} for {row.period_label}. "
+            "Confirm the service was delivered as expected — payment cannot be "
+            "raised until this is confirmed."
+        ),
+        amount=row.expected_amount,
+        vendor=agr.vendor_name,
+    ))
+    await db.flush()
+
+
+async def confirm_period(
+    db: AsyncSession, agr: PurchaseAgreement, row_id: uuid.UUID, user_id: uuid.UUID
+) -> AgreementPaymentSchedule:
+    row = (await db.execute(
+        select(AgreementPaymentSchedule).where(AgreementPaymentSchedule.id == row_id)
+    )).scalar_one_or_none()
+    if row is None or row.agreement_id != agr.id:
+        raise ValueError("That schedule row does not belong to this agreement")
+    if row.schedule_type != "period":
+        raise ValueError(
+            "Milestone stages are accepted in a later phase, not confirmed here")
+    if row.invoice_id is None:
+        raise ValueError(
+            f"No invoice has been matched to {row.period_label} yet — there is "
+            "nothing to confirm")
+    if row.accepted_at is not None:
+        raise ValueError(f"{row.period_label} has already been confirmed")
+
+    row.accepted_by = user_id
+    row.accepted_at = datetime.now(timezone.utc)
+
+    doc_number = f"{agr.number} · {row.period_label}"
+    tasks = (await db.execute(
+        select(Task).where(Task.document_type == "agr", Task.document_id == agr.id,
+                           Task.type == "confirm_period",
+                           Task.document_number == doc_number,
+                           Task.is_completed.is_(False))
+    )).scalars().all()
+    for t in tasks:
+        t.is_completed = True
+        t.completed_at = row.accepted_at
+        t.completed_by = user_id
     await db.flush()
     return row

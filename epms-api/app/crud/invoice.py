@@ -417,6 +417,9 @@ async def _match_to_agreement(
             if claimed_row is None:
                 # 认不到期次(超容差 / 无候选行)就不猜,停在复核队列由人工指定。
                 require_review = True
+            else:
+                # recurring 免 GR —— 履约确认是它唯一的代偿,认领成功就派任务。
+                await agreement_schedule_crud.create_confirm_task(db, agr, claimed_row)
         else:   # milestone
             if req.schedule_id is None:
                 raise AgreementMatchInvalid(

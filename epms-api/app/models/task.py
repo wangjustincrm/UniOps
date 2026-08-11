@@ -19,6 +19,7 @@ class Task(UUIDPrimaryKey, TimestampMixin, Base):
     #   GR : acknowledge_gr | collect_goods | confirm_service_gr | gr_damage_report | create_pa
     #   PA : approve_pa | revise_pa | process_pa | confirm_settlement
     #   INV: review_match | match_invoice
+    #   AGR: confirm_period
     # (settle_prepayment / link_invoice are NOT emitted — legacy names only.)
     type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     priority: Mapped[str] = mapped_column(String(10), nullable=False, default="normal")  # urgent | normal
