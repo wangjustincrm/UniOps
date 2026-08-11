@@ -3,17 +3,24 @@ import { useParams, Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
-import { ArrowLeft, Search, X } from 'lucide-react'
+import { ArrowLeft, Search, Upload, X } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { cn } from '@/lib/utils'
-import { useAgreement, useUpdateAgreement } from '@/hooks/useAgreements'
-import { agreementService, type AgreementType } from '@/services/agreement'
+import { useAgreement, useAgreementSchedule, useUpdateAgreement } from '@/hooks/useAgreements'
+import { agreementService, type AgreementType, type MilestoneRowIn, type UpdateAgreementBody } from '@/services/agreement'
+import { agreementAttachmentService } from '@/services/agreementAttachments'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { userService, type ApiUserBrief } from '@/services/users'
+import { BudgetAccountCascade } from '@/components/agreements/BudgetAccountCascade'
+import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } from '@/components/agreements/RecurringFields'
+import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
+
+// Matches epms-api/app/crud/agreement.py EDITABLE_STATUSES = ("draft", "returned").
+const EDITABLE_STATUSES = ['draft', 'returned']
 
 const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
@@ -63,6 +70,7 @@ export default function AgreementEditPage() {
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
   const taxCodes = useTaxCodes()
+  const { data: scheduleData } = useAgreementSchedule(id ?? '')
 
   const [title, setTitle] = useState('')
   const [contractNo, setContractNo] = useState('')
@@ -75,10 +83,35 @@ export default function AgreementEditPage() {
   const [taxCode, setTaxCode] = useState<string | null>(null)
   const [taxRate, setTaxRate] = useState<number | null>(null)
   const [departmentId, setDepartmentId] = useState('')
+  const [costCenterId, setCostCenterId] = useState<string | undefined>(undefined)
   const [budgetCode, setBudgetCode] = useState('')
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  // Recurring cycle fields — hydrated from the loaded agreement below. Type
+  // is locked post-creation, so no "clear the other type's state" gate is
+  // needed here the way AgreementCreatePage needs one.
+  const [recurringValue, setRecurringValue] = useState<RecurringFieldsValue>(EMPTY_RECURRING_FIELDS)
+
+  // Milestone stages — hydrated from the schedule endpoint, not from
+  // `agreement` itself (stages live in agreement_payment_schedule and are
+  // written immediately on create/update, independent of approval status —
+  // see crud/agreement.py::create/update calling replace_milestone_rows).
+  // The hydration ref guards against a background refetch (react-query
+  // revalidates on window focus) stomping in-progress edits with the
+  // last-saved rows.
+  const [milestoneRows, setMilestoneRows] = useState<MilestoneRowIn[]>([])
+  const milestonesHydratedRef = useRef(false)
+
+  // Attachments — new files queued locally, uploaded after a successful save,
+  // same sequencing as AgreementCreatePage / PrCreatePage.tsx:335.
+  const [attachments, setAttachments] = useState<File[]>([])
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    setAttachments((prev) => [...prev, ...files])
+    e.target.value = ''
+  }
 
   // Owner picker
   const ownerAnchorRef = useRef<HTMLDivElement>(null)
@@ -108,8 +141,17 @@ export default function AgreementEditPage() {
     setTaxCode(agreement.tax_code ?? null)
     setTaxRate(agreement.tax_rate ? Number(agreement.tax_rate) : null)
     setDepartmentId(agreement.department_id ?? '')
+    setCostCenterId(agreement.cost_center_id ?? undefined)
     setBudgetCode(agreement.budget_code ?? '')
     setNotes(agreement.notes ?? '')
+    setRecurringValue({
+      recurringType: agreement.recurring_type ?? '',
+      expectedInvoiceDay: agreement.expected_invoice_day != null ? String(agreement.expected_invoice_day) : '',
+      anchorMonth: agreement.anchor_month != null ? String(agreement.anchor_month) : '',
+      amountPerPeriod: agreement.expected_amount_per_period ?? '',
+      tolerancePct: agreement.tolerance_pct ?? '',
+      overdueAfterDays: agreement.overdue_after_days != null ? String(agreement.overdue_after_days) : '7',
+    })
     // Note: agreement.owner_id (a raw UUID, no name) is intentionally not
     // resolved into the picker — same reasoning as AgreementDetailPage: there
     // is no non-admin-safe endpoint to turn an id into a display name. Leaving
@@ -117,12 +159,51 @@ export default function AgreementEditPage() {
     // body unless the user actively searches and picks someone).
   }, [agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Milestone stages come from the schedule endpoint, not `agreement` itself
+  // (see the comment on milestonesHydratedRef above). Hydrate once per
+  // agreement id, guarded so a background refetch doesn't stomp in-progress
+  // edits with the last-saved rows.
+  useEffect(() => {
+    milestonesHydratedRef.current = false
+  }, [agreement?.id])
+
+  useEffect(() => {
+    if (!agreement || agreement.agreement_type !== 'milestone') return
+    if (!scheduleData || milestonesHydratedRef.current) return
+    milestonesHydratedRef.current = true
+    setMilestoneRows(
+      scheduleData.items
+        .filter((r) => r.schedule_type === 'milestone')
+        .map((r) => ({
+          milestone_name: r.milestone_name ?? '',
+          expected_timing: r.expected_timing,
+          expected_amount: r.expected_amount,
+          amount_pct: r.amount_pct,
+        }))
+    )
+  }, [agreement, scheduleData])
+
   const validate = (): boolean => {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
     if (!validFrom) e.validFrom = 'Valid From date is required'
     if (!validTo) e.validTo = 'Valid To date is required'
     if (validFrom && validTo && validTo < validFrom) e.validTo = 'Valid To must be on or after Valid From'
+    if (agreement?.agreement_type === 'recurring') {
+      if (!recurringValue.recurringType) {
+        e.recurring = 'Cycle is required for a recurring agreement'
+      } else if (!recurringValue.expectedInvoiceDay) {
+        e.recurring = 'Expected invoice day is required'
+      } else if (
+        (recurringValue.recurringType === 'quarterly' || recurringValue.recurringType === 'yearly') &&
+        !recurringValue.anchorMonth
+      ) {
+        e.recurring = 'Anchor month is required for a quarterly/yearly cycle'
+      }
+    }
+    if (agreement?.agreement_type === 'milestone' && milestoneRows.some((r) => !r.milestone_name.trim())) {
+      e.milestones = 'Every stage needs a name'
+    }
     setErrors(e)
     return Object.keys(e).length === 0
   }
@@ -131,31 +212,58 @@ export default function AgreementEditPage() {
     if (!validate()) return
     setIsSubmitting(true)
     try {
-      await updateAgreement.mutateAsync({
-        id: id!,
-        // Cleared fields must go out as explicit `null`, NOT `undefined`.
-        // JSON.stringify drops undefined keys, and the backend uses
-        // model_dump(exclude_unset=True) — so an undefined here means "don't
-        // touch", and clearing Not-to-Exceed / tax code / department / owner
-        // appeared to save while keeping the old value. All these columns are
-        // nullable. PoEditPage sends null for the same reason.
-        body: {
-          title,
-          contract_no: contractNo || null,
-          contact_email: contactEmail || null,
-          vendor_reference: vendorReference || null,
-          valid_from: validFrom,
-          valid_to: validTo,
-          grace_days: graceDays,
-          not_to_exceed: notToExceed ? Number(notToExceed) : null,
-          tax_code: taxCode ?? null,
-          tax_rate: taxRate ?? null,
-          department_id: departmentId || null,
-          budget_code: budgetCode || null,
-          owner_id: selectedOwner?.id || null,
-          notes: notes || null,
-        },
-      })
+      // Cleared fields must go out as explicit `null`, NOT `undefined`.
+      // JSON.stringify drops undefined keys, and the backend uses
+      // model_dump(exclude_unset=True) — so an undefined here means "don't
+      // touch", and clearing Not-to-Exceed / tax code / department / owner
+      // appeared to save while keeping the old value. All these columns are
+      // nullable. PoEditPage sends null for the same reason.
+      const body: UpdateAgreementBody = {
+        title,
+        contract_no: contractNo || null,
+        contact_email: contactEmail || null,
+        vendor_reference: vendorReference || null,
+        valid_from: validFrom,
+        valid_to: validTo,
+        grace_days: graceDays,
+        not_to_exceed: notToExceed ? Number(notToExceed) : null,
+        tax_code: taxCode ?? null,
+        tax_rate: taxRate ?? null,
+        department_id: departmentId || null,
+        budget_code: budgetCode || null,
+        owner_id: selectedOwner?.id || null,
+        notes: notes || null,
+        cost_center_id: costCenterId ?? null,
+      }
+      // agreement_type is locked post-creation (no field on UpdateAgreementBody),
+      // so only the ALREADY-chosen type's fields are ever populated here — no
+      // "switch type, clear the other side" gate is needed the way the create
+      // page needs one.
+      if (agreement?.agreement_type === 'recurring') {
+        body.recurring_type = recurringValue.recurringType || null
+        body.expected_invoice_day = recurringValue.expectedInvoiceDay ? Number(recurringValue.expectedInvoiceDay) : null
+        body.anchor_month = recurringValue.anchorMonth ? Number(recurringValue.anchorMonth) : null
+        body.expected_amount_per_period = recurringValue.amountPerPeriod ? Number(recurringValue.amountPerPeriod) : null
+        body.tolerance_pct = recurringValue.tolerancePct ? Number(recurringValue.tolerancePct) : null
+        body.overdue_after_days = recurringValue.overdueAfterDays ? Number(recurringValue.overdueAfterDays) : null
+      } else if (agreement?.agreement_type === 'milestone') {
+        // Always resent on save — this is the round-trip that lets an empty
+        // `rows` array explicitly clear all stages (AgreementUpdate.milestones:
+        // None = leave alone, [] = clear — see schemas/agreement.py).
+        body.milestones = milestoneRows
+          .filter((r) => r.milestone_name.trim())
+          .map((r) => ({
+            milestone_name: r.milestone_name.trim(),
+            expected_timing: r.expected_timing?.trim() || null,
+            expected_amount: r.expected_amount || null,
+            amount_pct: notToExceed ? (r.amount_pct || null) : null,
+          }))
+      }
+
+      await updateAgreement.mutateAsync({ id: id!, body })
+      if (attachments.length > 0) {
+        await Promise.all(attachments.map((f) => agreementAttachmentService.upload(id!, f)))
+      }
       if (andSubmit) {
         await agreementService.action(id!, { action: 'submit' })
       }
@@ -169,7 +277,7 @@ export default function AgreementEditPage() {
     return <div className="p-8 text-sm text-neutral-400">Loading…</div>
   }
 
-  if (!agreement || !['draft', 'returned'].includes(agreement.status)) {
+  if (!agreement || !EDITABLE_STATUSES.includes(agreement.status)) {
     return (
       <div className="p-8">
         <p className="text-sm text-neutral-500">This agreement cannot be edited in its current status.</p>
@@ -334,12 +442,8 @@ export default function AgreementEditPage() {
                 </select>
               </div>
 
-              <FormField label="Budget Code" htmlFor="budgetCode">
-                <Input id="budgetCode" value={budgetCode} onChange={(e) => setBudgetCode(e.target.value)} />
-              </FormField>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              {/* Department — drives the Budget Account cascade below it, same
+                  as PrCreatePage: pick department first, cascade filters on it. */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-neutral-700">Department</label>
                 <select
@@ -352,6 +456,21 @@ export default function AgreementEditPage() {
                     <option key={d.id} value={d.id}>{d.name}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-neutral-700">Budget Account</label>
+                <BudgetAccountCascade
+                  departmentId={departmentId || undefined}
+                  costCenterId={costCenterId}
+                  budgetCode={budgetCode}
+                  onChange={(next) => { setCostCenterId(next.costCenterId); setBudgetCode(next.budgetCode) }}
+                />
+                {!departmentId && (
+                  <p className="text-xs text-neutral-400">Select a department first to enable the budget account picker.</p>
+                )}
               </div>
 
               {/* Owner */}
@@ -404,6 +523,30 @@ export default function AgreementEditPage() {
             </div>
           </div>
 
+          {/* Recurring cycle — agreement_type is locked post-creation, so this
+              renders only when the loaded agreement already is 'recurring'. */}
+          {agreement.agreement_type === 'recurring' && (
+            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
+              <h2 className="text-base font-semibold text-neutral-900">Recurring Cycle</h2>
+              <RecurringFields value={recurringValue} validFrom={validFrom} onChange={setRecurringValue} />
+              {errors.recurring && <p className="text-xs text-danger-600">{errors.recurring}</p>}
+            </div>
+          )}
+
+          {/* Milestone stages — same lock as above, keyed off the existing type. */}
+          {agreement.agreement_type === 'milestone' && (
+            <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+              <h2 className="text-base font-semibold text-neutral-900">Milestone Stages</h2>
+              <MilestoneEditor
+                rows={milestoneRows}
+                notToExceed={notToExceed}
+                currency={agreement.currency}
+                onChange={setMilestoneRows}
+              />
+              {errors.milestones && <p className="text-xs text-danger-600">{errors.milestones}</p>}
+            </div>
+          )}
+
           {/* Notes */}
           <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-neutral-900">Notes</h2>
@@ -416,6 +559,36 @@ export default function AgreementEditPage() {
                 className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               />
             </FormField>
+          </div>
+
+          {/* Attachments */}
+          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
+            <label
+              htmlFor="agreement-file-upload"
+              className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 p-6 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
+            >
+              <Upload className="h-8 w-8 text-neutral-400" />
+              <div>
+                <p className="text-sm font-medium text-neutral-700">Drag &amp; drop or click to upload</p>
+                <p className="text-xs text-neutral-400 mt-1">Contract copies, signed schedules, etc.</p>
+              </div>
+              <input id="agreement-file-upload" type="file" multiple className="sr-only" onChange={handleFileInput} />
+            </label>
+            {attachments.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
+                <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
+                <span className="text-neutral-400 text-xs">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                <button
+                  type="button"
+                  onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                  className="text-neutral-400 hover:text-danger-600"
+                  aria-label="Remove file"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
           </div>
 
           {/* Footer actions */}
