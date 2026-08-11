@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.core.access_scope import build_scope
 from app.crud import agreement as agreement_crud
+from app.crud import agreement_slip as agreement_slip_crud
 from app.crud import invoice as invoice_crud
 from app.crud import vendor as vendor_crud
 from app.models.po import PurchaseOrder
@@ -16,6 +17,7 @@ from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.agreement import AgreementListResponse
+from app.schemas.agreement_slip import SlipListResponse
 from app.schemas.invoice import (
     AssignMatchRequest,
     DeclineMatchRequest,
@@ -76,6 +78,26 @@ async def _has_open_match_task(db, user_id: uuid.UUID, invoice_id: uuid.UUID) ->
         Task.is_completed.is_(False),
     ))).scalar_one_or_none()
     return row is not None
+
+
+async def _require_invoice_match_access(db, user: dict, inv) -> None:
+    """Authorise by THIS INVOICE's own match permission — AP staff, its
+    uploader, or the holder of an open match_invoice task on it — never a
+    generic scope, or an assignee with no related PR sees zero candidates
+    and deadlocks. Shared by every invoice-scoped candidate endpoint
+    (match-candidates, agreement-candidates, and agreement slips) so all
+    three enforce the identical rule instead of hand-rolled copies that can
+    silently drift apart (review finding, Task 10 round 2 Finding B: the
+    slip endpoint used to gate on the generic epms.agreement.read instead of
+    this, and several roles that can legitimately match an invoice — e.g.
+    warehouse_staff, its own uploader — don't hold that permission, so they
+    403'd on the slip list and fell back to the no-evidence settlement path,
+    silently bypassing the evidence chain Tasks 1-9 built)."""
+    caller_id = uuid.UUID(user["sub"])
+    is_uploader = inv.uploaded_by == caller_id
+    if (user.get("role") not in _AP_ROLES and not is_uploader
+            and not await _has_open_match_task(db, caller_id, inv.id)):
+        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
 
 
 async def _on_invoice_matched(db, invoice) -> None:
@@ -463,10 +485,7 @@ async def list_match_candidates(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    caller_id = uuid.UUID(user["sub"])
-    is_uploader = inv.uploaded_by == caller_id
-    if user.get("role") not in _AP_ROLES and not is_uploader and not await _has_open_match_task(db, caller_id, invoice_id):
-        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
+    await _require_invoice_match_access(db, user, inv)
 
     pos = list((await db.execute(
         select(PurchaseOrder)
@@ -521,13 +540,51 @@ async def list_agreement_candidates(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    caller_id = uuid.UUID(user["sub"])
-    is_uploader = inv.uploaded_by == caller_id
-    if (user.get("role") not in _AP_ROLES and not is_uploader
-            and not await _has_open_match_task(db, caller_id, invoice_id)):
-        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
+    await _require_invoice_match_access(db, user, inv)
 
     items = await agreement_crud.candidates_for_vendor(db, inv.vendor_id)
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/{invoice_id}/agreements/{agreement_id}/slips", response_model=SlipListResponse)
+async def list_invoice_agreement_slips(
+    invoice_id: uuid.UUID,
+    agreement_id: uuid.UUID,
+    db: SessionDep,
+    user: CurrentUserPayload,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+):
+    """Pickup slips for one of THIS INVOICE's candidate agreements — a
+    separate, invoice-scoped route from GET /agreements/{id}/slips (which
+    stays gated on epms.agreement.read for the agreement detail page).
+
+    Review finding (Task 10 round 2, Finding B): the house_account matching
+    UI (MatchPanel) used to call the epms.agreement.read-gated route
+    directly. That permission is not granted to every role that can
+    legitimately match an invoice — warehouse_staff, supervisor, cfo,
+    vendor_manager, erp_pa_officer among them — so those callers 403'd on
+    the slip list the instant they picked a house_account agreement, and
+    fell back to the legacy no-evidence settlement path with no idea real
+    evidence existed. A pickup slip carries strictly less information than
+    the agreement itself, which this same caller can already reach via
+    agreement-candidates, so authorising this route the identical way
+    (_require_invoice_match_access, shared with match-candidates and
+    agreement-candidates — not a parallel copy) is safe: it can only ever
+    widen access to something already visible one layer up, and the
+    candidates_for_vendor membership check below still stops it from
+    becoming "any authenticated user reads any agreement's slips" —
+    agreement_id must be one of the invoice's OWN admissible candidates.
+    """
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    await _require_invoice_match_access(db, user, inv)
+
+    candidates = await agreement_crud.candidates_for_vendor(db, inv.vendor_id)
+    if not any(agr.id == agreement_id for agr in candidates):
+        raise HTTPException(status_code=404, detail="Agreement not found")
+
+    items = await agreement_slip_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
 
 

@@ -6,6 +6,7 @@ import {
   type UpdateInvoiceBody,
   type MatchInvoiceBody,
 } from '@/services/invoices'
+import type { SlipStatus } from '@/services/agreementSlips'
 
 export function useAssignMatch() {
   const qc = useQueryClient()
@@ -25,6 +26,18 @@ export function useMatchCandidates(invoiceId: string, enabled = true) {
     queryFn: () => invoiceService.matchCandidates(invoiceId),
     enabled: Boolean(invoiceId) && enabled,
     staleTime: 30_000,
+  })
+}
+
+// Invoice-scoped pickup slip candidates (Task 10 review round 2, Finding B)
+// — see invoiceService.agreementSlips for why this hits a different route
+// than useAgreementSlips (hooks/useAgreementSlips.ts), which stays on the
+// agreement detail page's epms.agreement.read-gated endpoint.
+export function useInvoiceAgreementSlips(invoiceId: string, agreementId: string, status?: SlipStatus) {
+  return useQuery({
+    queryKey: ['invoices', invoiceId, 'agreements', agreementId, 'slips', status],
+    queryFn: () => invoiceService.agreementSlips(invoiceId, agreementId, status),
+    enabled: Boolean(invoiceId) && Boolean(agreementId),
   })
 }
 

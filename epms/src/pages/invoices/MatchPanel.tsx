@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
-import { useDeclineMatch, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
+import { useDeclineMatch, useInvoiceAgreementSlips, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
 import { useAgreementCandidates, useAgreementSchedule } from '@/hooks/useAgreements'
-import { useAgreementSlips } from '@/hooks/useAgreementSlips'
 import { useAuthStore } from '@/stores/auth.store'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import type { ApiInvoice, AllocationInput, NonPoLineInput } from '@/services/invoices'
@@ -304,7 +303,12 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // eligible: 'reconciled' is already claimed by another invoice,
   // 'pending_ap_review' isn't AP-cleared yet, 'voided'/'rejected' are dead.
   // Gated the same way scheduleQuery is above — enabled only when needed.
-  const slipsQuery = useAgreementSlips(isHouseAccount ? selectedAgreementId : '', 'open')
+  // Hits the invoice-scoped route (useInvoiceAgreementSlips), NOT the
+  // agreement detail page's epms.agreement.read-gated one — review finding
+  // (Task 10 round 2, Finding B): that permission isn't granted to every
+  // role that can legitimately match an invoice, so those callers used to
+  // 403 here and silently fall back to the no-evidence settlement path.
+  const slipsQuery = useInvoiceAgreementSlips(inv.id, isHouseAccount ? selectedAgreementId : '', 'open')
   const openSlips: ApiSlip[] = slipsQuery.data?.items ?? []
   // Review fix (round-1 trailer, guard-timing note): the accelerators used to
   // gate on `slipsQuery.isLoading`, which in TanStack Query v5 is a DERIVED
@@ -345,6 +349,18 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // effect below for why "one-shot" no longer means "one render, ever" but
   // "one determination, deferred while a reference match is in play."
   const slipPreselectAppliedRef = useRef(false)
+  // Mirrors selectedSlipIds for the accelerator effect below to read WITHOUT
+  // putting it in that effect's dependency array — that would re-run the
+  // whole accelerator decision on every manual (de)selection, not just when
+  // the accelerator's own inputs change. React's setState functional
+  // updater already gives the effect a fresh `prev` for WRITES; this ref is
+  // the read-side equivalent, kept in sync by the tiny effect right below
+  // it. By the time the accelerator effect reacts to a DIFFERENT dependency
+  // changing, this ref already reflects the latest committed selection.
+  const selectedSlipIdsRef = useRef<string[]>([])
+  useEffect(() => {
+    selectedSlipIdsRef.current = selectedSlipIds
+  }, [selectedSlipIds])
 
   const toggleSlip = (slipId: string) => {
     if (autoSelectedSlipIdRef.current === slipId) {
@@ -379,6 +395,21 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   // fires at most once (slipPreselectAppliedRef) — but that "once" is now
   // deferred past any render where a reference match is already in play,
   // so clearing the reference field later can still let it run.
+  //
+  // Review fix, round 2 Finding A: this used to claim `desiredId`
+  // unconditionally whenever it differed from the previous auto-pick — with
+  // no check for whether the operator had ALREADY checked that slip by
+  // hand. Concretely: operator manually checks slip A, then types A's own
+  // reference number (a complete no-op on screen — A was already checked),
+  // which silently marks A as "ours"; a LATER, unrelated edit to the
+  // reference field then swaps the "desired" pick away from A and
+  // un-checks it — a slip the operator never clicked, gone, and if it was
+  // the only one selected, the required no-evidence reason box reappears.
+  // Fix: a desired pick that's already checked — for ANY reason — is never
+  // claimed. Only a genuinely UNCHECKED desired pick becomes "ours" to
+  // manage; an already-checked one is left exactly as the operator left it
+  // (this effect still releases its OWN previous pick if the suggestion
+  // moved on from it).
   useEffect(() => {
     if (!isHouseAccount || !slipsSettled) return
 
@@ -401,8 +432,19 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
 
     const desiredId = desired?.id ?? null
     if (desiredId === autoSelectedSlipIdRef.current) return
-
     const previousAutoId = autoSelectedSlipIdRef.current
+
+    if (desiredId !== null && selectedSlipIdsRef.current.includes(desiredId)) {
+      // Already checked, and it isn't our own previous pick (that case
+      // returned above) — the operator put it there. Disown it, release
+      // only OUR previous pick if we had one, and touch nothing else.
+      autoSelectedSlipIdRef.current = null
+      if (previousAutoId) {
+        setSelectedSlipIds((prev) => (prev.includes(previousAutoId) ? prev.filter((id) => id !== previousAutoId) : prev))
+      }
+      return
+    }
+
     autoSelectedSlipIdRef.current = desiredId
     setSelectedSlipIds((prev) => {
       let next = prev
@@ -638,6 +680,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                     setLegacyReason('')
                     slipPreselectAppliedRef.current = false
                     autoSelectedSlipIdRef.current = null
+                    selectedSlipIdsRef.current = []
                   }}
                 />
               ))}

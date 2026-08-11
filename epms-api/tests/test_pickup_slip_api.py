@@ -1,12 +1,20 @@
 """House-account pickup slip endpoints: create, list, void, AP review."""
 import uuid
 from datetime import date
+from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.security import create_access_token
+from app.crud import user as user_crud
+from app.main import create_app
 from app.models.agreement_slip import AgreementPickupSlip
+from app.models.invoice import Invoice
+from app.schemas.auth import RegisterRequest
+from tests.test_agreement_invoice_match import _delegate_client, _make_active_agreement
 from tests.test_agreements import AGR_URL, _agr_payload, seed_vendor_and_user
 
 pytestmark = pytest.mark.asyncio
@@ -441,3 +449,98 @@ async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, t
                 "DELETE FROM role_permissions WHERE role_code = 'dept_admin' "
                 "AND permission_key IN ('epms.agreement.read', 'epms.agreement.slip.write')"))
             await db.commit()
+
+
+# ── Task 10 review round 2, Finding B: the house_account matching UI
+# (MatchPanel) used to call GET /agreements/{id}/slips directly — gated on
+# epms.agreement.read, a permission NOT granted by default to several roles
+# that can legitimately match an invoice (its own uploader among them; also
+# warehouse_staff / supervisor / cfo / vendor_manager / erp_pa_officer in
+# production, per identity's 0006/0007 grant sets). Those callers 403'd on
+# the slip list and silently fell back to the no-evidence settlement path —
+# exactly the deadlock list_agreement_candidates' own docstring warns about,
+# one layer down. The fix is a new invoice-scoped route
+# (GET /invoices/{id}/agreements/{agreement_id}/slips) authorised by the
+# SAME shared helper (_require_invoice_match_access) list_match_candidates
+# and list_agreement_candidates already used — not a parallel copy.
+#
+# Both tests below deliberately use a NON-admin caller: admin_client is
+# system_admin, which uniops_authz short-circuits past every permission
+# check — it cannot tell a correctly-scoped gate from a missing one. ───────
+
+async def test_invoice_scoped_slip_list_reachable_by_uploader_without_agreement_read(
+    admin_client, test_engine,
+):
+    """The invoice's own uploader — a role holding NEITHER
+    epms.agreement.read (nobody has it by default in this test matrix; it's
+    a phase-2 grant, see the block comment above
+    test_non_admin_without_slip_write_grant_is_403_then_201_once_granted)
+    NOR system_admin's authz bypass — must still reach the slip list for one
+    of this invoice's candidate agreements. This is the caller shape that
+    actually exercises the fix: is_uploader, not the _AP_ROLES branch of
+    _require_invoice_match_access.
+    """
+    # _make_active_agreement, NOT the plain-POST _create_agreement helper
+    # above: a freshly-POSTed agreement starts in "draft" (no approval-api
+    # running in this suite to move it to "active"), and
+    # candidates_for_vendor / _admissible_predicate only admit "active" or
+    # "expired"-within-grace — a draft agreement 404s here via the
+    # membership check below exactly like a foreign-vendor one would, which
+    # would test the wrong thing entirely.
+    vendor_id, vendor_name, seed_user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, seed_user_id)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        uploader = await user_crud.create(db, RegisterRequest(
+            email=f"uploader-{uuid.uuid4().hex[:8]}@example.com",
+            password="TestPass1!", full_name="Uploader Tester", role="warehouse_staff"))
+        await db.commit()
+        await db.refresh(uploader)
+
+        inv = Invoice(
+            internal_ref=f"INV-{uuid.uuid4().hex[:8]}",
+            vendor_invoice_number=f"STMT-{uuid.uuid4().hex[:6]}",
+            vendor_id=vendor_id,
+            vendor_name=vendor_name,
+            amount=Decimal("100.00"), tax_amount=Decimal("0.00"), total_amount=Decimal("100.00"),
+            invoice_date=date(2026, 7, 31), due_date=date(2026, 8, 30),
+            uploaded_by=uploader.id, line_items=[],
+        )
+        db.add(inv)
+        await db.commit()
+        await db.refresh(inv)
+
+    token = create_access_token(str(uploader.id), uploader.role)
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()), base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    ) as uploader_client:
+        r = await uploader_client.get(f"/api/v1/invoices/{inv.id}/agreements/{agr.id}/slips")
+        assert r.status_code == 200, r.text
+        assert r.json() == {"items": [], "total": 0}
+
+
+async def test_invoice_scoped_slip_list_403s_for_unrelated_caller(admin_client, test_engine):
+    """Constraint 2 (task instructions): widening this route must NOT become
+    'any authenticated user reads any agreement's slips'. A real,
+    authenticated caller with no relationship to this invoice at all — not
+    AP staff, not its uploader, no open match task — must still be refused.
+    """
+    vendor_id, vendor_name, seed_user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, seed_user_id)
+    inv = (await admin_client.post("/api/v1/invoices", json={
+        "vendor_id": str(vendor_id),
+        "vendor_invoice_number": f"STMT-{uuid.uuid4().hex[:6]}",
+        "amount": "100.00", "tax_amount": "0.00", "currency": "CAD",
+        "invoice_date": "2026-07-31", "due_date": "2026-08-30",
+        "line_items": [{"description": "Monthly statement", "quantity": "1",
+                        "unit_price": "100.00", "line_total": "100.00"}],
+    })).json()
+
+    outsider_client, _outsider_id = await _delegate_client(test_engine)
+    try:
+        r = await outsider_client.get(f"/api/v1/invoices/{inv['id']}/agreements/{agr.id}/slips")
+        assert r.status_code == 403, r.text
+    finally:
+        await outsider_client.aclose()

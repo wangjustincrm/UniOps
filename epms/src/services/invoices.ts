@@ -1,6 +1,7 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiPo } from '@/services/po'
 import type { AgreementListResponse } from '@/services/agreement'
+import type { SlipListResponse, SlipStatus } from '@/services/agreementSlips'
 
 export interface InvoiceLineItem {
   id?:          string
@@ -210,6 +211,19 @@ export const invoiceService = {
   // server's admission window is the rule — do not filter further client-side.
   agreementCandidates: (id: string) =>
     api.get<AgreementListResponse>(`/invoices/${id}/agreement-candidates`),
+
+  // Pickup slips for one of THIS invoice's candidate agreements — invoice-
+  // scoped counterpart to agreementSlipService.list (services/agreementSlips.ts),
+  // which hits GET /agreements/{id}/slips gated on epms.agreement.read. That
+  // permission isn't granted to every role that can legitimately match an
+  // invoice (review finding, Task 10 round 2 Finding B), so MatchPanel calls
+  // THIS route instead — authorised identically to agreementCandidates
+  // above (same backend helper, not a parallel implementation).
+  agreementSlips: (id: string, agreementId: string, status?: SlipStatus) =>
+    api.get<SlipListResponse>(
+      `/invoices/${id}/agreements/${agreementId}/slips`,
+      status ? { status } : undefined,
+    ),
 
   // Assignee bounces the match assignment back to the assigner (note required).
   declineMatch: (id: string, note: string) =>
