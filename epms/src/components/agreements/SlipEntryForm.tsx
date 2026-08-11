@@ -8,7 +8,7 @@ import { cn, todayISODate } from '@/lib/utils'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateSlip } from '@/hooks/useAgreementSlips'
 import { agreementSlipAttachmentService } from '@/services/agreementSlipAttachments'
-import { ocrService } from '@/services/agreementSlips'
+import { agreementSlipService, ocrService } from '@/services/agreementSlips'
 import { slipAttachmentsQueryKey } from './SlipTable'
 
 // The backend (schemas/agreement_slip.py::validate_totals) checks
@@ -157,8 +157,45 @@ export function SlipEntryForm({ agreementId }: SlipEntryFormProps) {
         // (and a fast re-render of SlipTable could re-read cache) before the
         // refetch actually lands.
         await queryClient.invalidateQueries({ queryKey: slipAttachmentsQueryKey(agreementId, slip.id) })
-      } catch (err) {
-        alert(err instanceof Error ? err.message : 'Slip was recorded, but the photo failed to upload.')
+      } catch (uploadErr) {
+        // The slip already exists as `status: "open"` with no evidence on
+        // it — create()'s open/pending_ap_review routing decision was made
+        // from the request body BEFORE this upload ever ran (it can't see
+        // the future), so a failed upload here does not, by itself, put the
+        // slip anywhere near AP review. Left alone, that's a slip that
+        // claims to need no photo, has none, and can still be claimed by an
+        // invoice and paid — silently skipping the entire reason this
+        // feature exists. Compensate: PATCH a reason onto it, which
+        // crud.agreement_slip.update() now routes to pending_ap_review the
+        // same way create() would have if the reason had been there from
+        // the start.
+        const uploadErrMessage = uploadErr instanceof Error ? uploadErr.message : 'unknown error'
+        const slipLabel = slip.slip_ref ? `slip ${slip.slip_ref}` : `slip (ref# ${slip.id})`
+        try {
+          await agreementSlipService.update(agreementId, slip.id, {
+            missing_slip_reason:
+              `Photo upload failed after this slip was recorded (${uploadErrMessage}). ` +
+              'Needs manual follow-up: attach the photo or confirm no photo exists.',
+          })
+          await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'slips'] })
+          alert(
+            `${slipLabel} was recorded, but the photo failed to upload. ` +
+            'It has been sent to AP review so it is not paid without evidence.'
+          )
+        } catch (patchErr) {
+          // Do not swallow this. The compensating PATCH is the only thing
+          // standing between "photo failed to upload" and "unreviewed slip
+          // silently sitting in open" — if IT also fails, the user is the
+          // last line of defense and needs the exact slip identified so
+          // they can go fix it by hand (edit/void it, or retry the upload).
+          const patchErrMessage = patchErr instanceof Error ? patchErr.message : 'unknown error'
+          alert(
+            `${slipLabel} was recorded, but the photo failed to upload AND the automatic ` +
+            `follow-up to send it to AP review also failed (${patchErrMessage}). ` +
+            'This slip needs to be handled manually — find it in the table below and either ' +
+            're-attach the photo, edit in a reason, or void it.'
+          )
+        }
       } finally {
         setIsUploadingAttachment(false)
       }

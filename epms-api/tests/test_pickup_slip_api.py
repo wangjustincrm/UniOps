@@ -253,3 +253,68 @@ async def test_patch_duplicate_slip_ref_is_409(admin_client, test_engine):
         f"{_slips_url(agr['id'])}/{other['id']}", json={"slip_ref": "TAKEN"})
     assert r.status_code == 409, r.text
     assert "TAKEN" in r.text
+
+
+# ── Review round 3: update() must apply the SAME open/pending_ap_review
+# routing rule create() always has — PATCHing a reason onto an open slip
+# was a hole in the evidence chain (a slip claiming "no photo" that was
+# never sent to AP). One-directional: clearing the reason must NOT flip a
+# pending_ap_review slip back to open (that's ap_review()'s call, not an
+# editor's), and re-patching an already-pending_ap_review slip's reason
+# must be a no-op, not an error. ──────────────────────────────────────────
+
+async def test_patch_adding_missing_reason_to_open_slip_routes_to_ap_review(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(user_id))).json()
+    assert slip["status"] == "open"
+
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}",
+        json={"missing_slip_reason": "Photo upload failed after slip was recorded"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "pending_ap_review"
+    assert body["missing_slip_reason"] == "Photo upload failed after slip was recorded"
+
+
+async def test_patch_clearing_reason_on_open_slip_stays_open(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(user_id))).json()
+    assert slip["status"] == "open"
+
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}", json={"missing_slip_reason": None})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # An empty/absent reason must never itself trigger the AP gate — status
+    # was already open and stays open (this is NOT the reverse-transition
+    # case; that's covered below against a slip that starts pending_ap_review).
+    assert body["status"] == "open"
+    assert body["missing_slip_reason"] is None
+
+
+async def test_patch_reason_on_pending_ap_review_slip_stays_pending_and_does_not_error(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    slip = (await admin_client.post(_slips_url(agr["id"]), json=_slip_payload(
+        user_id, missing_slip_reason="Slip lost in transit"))).json()
+    assert slip["status"] == "pending_ap_review"
+
+    # Re-wording the reason (still non-empty) must be idempotent — no crash,
+    # no re-triggering anything, status untouched.
+    r = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}",
+        json={"missing_slip_reason": "Slip lost in transit — confirmed with vendor"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "pending_ap_review"
+    assert body["missing_slip_reason"] == "Slip lost in transit — confirmed with vendor"
+
+    # Clearing the reason on an already-pending slip must NOT silently pull
+    # it back to open — that would let an editor revoke AP's gate by
+    # blanking a text field. Reverting the AP decision is ap_review()'s job.
+    r2 = await admin_client.patch(
+        f"{_slips_url(agr['id'])}/{slip['id']}", json={"missing_slip_reason": None})
+    assert r2.status_code == 200, r2.text
+    body2 = r2.json()
+    assert body2["status"] == "pending_ap_review"
+    assert body2["missing_slip_reason"] is None

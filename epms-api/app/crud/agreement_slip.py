@@ -49,8 +49,36 @@ async def update(db: AsyncSession, slip: AgreementPickupSlip, body: SlipUpdate) 
             f"Slip is {slip.status}; only an open or pending-AP-review slip can be "
             "edited. Editing a reconciled slip would desync it from the invoice "
             "it was matched against without a trace; a rejected or voided slip is final.")
-    for field, value in body.model_dump(exclude_unset=True).items():
+    had_reason = bool(slip.missing_slip_reason)
+    patch = body.model_dump(exclude_unset=True)
+    for field, value in patch.items():
         setattr(slip, field, value)
+    # Route to AP review on the SAME rule create() already enforces — this is
+    # not a favour to any particular caller (in particular, not "the thing
+    # SlipEntryForm's post-upload-failure PATCH needs"), it is update()
+    # catching up to a rule create() has had since day one: declaring "no
+    # photo for this slip" must always cost the AP gate, no matter whether
+    # that declaration happens at creation or is added later via edit.
+    # Without this, PATCHing a reason onto an already-`open` slip produced a
+    # slip that *claims* to have no evidence yet was never sent for review —
+    # a hole in the evidence chain a claimed/paid invoice could ride through.
+    #
+    # Deliberately ONE-DIRECTIONAL. Clearing the reason (or blanking it back
+    # to falsy) never flips a pending_ap_review slip back to open — that
+    # would let an editor silently undo an AP gate that's an AP decision to
+    # make (see ap_review() below), not something a PATCH should be able to
+    # revoke by emptying a text field. And deliberately a no-op, not an
+    # error, when the slip is already pending_ap_review and the PATCH
+    # touches missing_slip_reason again (e.g. rewording it) — `had_reason`
+    # is already True in that case, so the condition below simply doesn't
+    # fire and the existing pending_ap_review status is left alone.
+    if (
+        "missing_slip_reason" in patch
+        and not had_reason
+        and slip.missing_slip_reason
+        and slip.status == "open"
+    ):
+        slip.status = "pending_ap_review"
     # 对合并后的行校验,不是对 patch body 本身 —— 一次只改 amount/tax_amount/
     # total_amount 三者之一的 PATCH,必须按合并后的整行判断是否还自洽
     # (review finding #1):校验 body 自身在这里永远通过,因为大多数 PATCH
