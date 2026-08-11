@@ -16,7 +16,35 @@
 
 以下约束适用于**每一个**任务，不再逐条重复。
 
-- **数据库**：仓库根 `.env` 指向**生产库**。绝不在宿主 shell 直接跑 alembic 或脚本。迁移一律在容器内跑；跑测试必须覆盖 `POSTGRES_*` 指向本地 `uniops_postgres`、库名 `epms_test`，worktree 里还需传 `JWT_SECRET_KEY`。
+- **跑测试的唯一正确姿势（已由控制者实测，别自己发明）**：`uniops_epms_api` **容器里没有 pytest**，`docker exec ... pytest` 一定报 `No module named pytest`。测试在**宿主**跑，工作目录 `epms-api/`：
+
+  ```bash
+  export PGPW=$(docker exec uniops_postgres env | sed -n 's/^POSTGRES_PASSWORD=//p')
+  cd epms-api
+  # 跑任何测试前先断言目标库是本地的 —— conftest 会 drop_all,
+  # 而仓库根 .env 指向**生产库**,打错一次就是生产数据没了。
+  POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=epms \
+    POSTGRES_PASSWORD="$PGPW" POSTGRES_DB=epms JWT_SECRET_KEY=test-secret \
+    python -c "from app.core.config import settings; u=settings.DATABASE_URL; \
+      assert 'localhost' in u or '127.0.0.1' in u, 'REFUSING: not localhost'; print('DB OK')"
+  # 然后才跑:
+  POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=epms \
+    POSTGRES_PASSWORD="$PGPW" POSTGRES_DB=epms JWT_SECRET_KEY=test-secret \
+    python -m pytest tests/<file>.py -q
+  ```
+
+  实测 `tests/test_agreements.py` → `9 passed in 12.6s`。
+
+  **本文档后面写的 `$PYTEST` 就是指上面那一整串带 `POSTGRES_*` 覆盖的 `python -m pytest`**。为省事可以先定义成 shell 函数：
+
+  ```bash
+  PYTEST() { POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=epms \
+    POSTGRES_PASSWORD="$PGPW" POSTGRES_DB=epms JWT_SECRET_KEY=test-secret \
+    python -m pytest "$@"; }
+  ```
+- **测试库同一时刻只能有一个套件在跑**（`conftest` 会 `drop_all`）。开跑前确认没有别的 pytest 进程；控制者会保证不并发派发。
+- **测试库的表来自 `Base.metadata.create_all`，不是 alembic**（`tests/conftest.py:247-252`）。所以**新模型必须在 `app/models/__init__.py` 里注册**，否则 `create_all` 建不出表、测试报 `relation does not exist`——而迁移写得再对也救不了。迁移是给 **dev 库**（人工点验）用的，在容器内跑：`docker exec -w /app uniops_epms_api alembic upgrade head`。
+- **数据库安全**：仓库根 `.env` 指向**生产库**。绝不在宿主 shell 裸跑 alembic 或任何脚本；alembic 一律容器内跑，pytest 一律带上面那套 `POSTGRES_*` 覆盖并先做 localhost 断言。
 - **测试库禁止并发**：同一时刻只允许一个 epms-api 套件在跑。开跑前先确认没有别的会话的 pytest 进程（查进程，不只查 DB 连接）。
 - **回归基线自己量，不许照抄本文档里的数字**：动手前先在**未改动的 HEAD** 上跑一次目标套件与 `npx tsc`，记下失败集合与错误数；改完后比对的是**集合逐条相同**，不是"数字小于等于"。
 - **新迁移前先查 head**：`ag03` 的 `down_revision` 必须是 `"ag02_agreement_links"`。若届时 head 已变（例如合并了 main），挂到真实链尾，**绝不手工 INSERT `alembic_version`**。
@@ -256,9 +284,7 @@ async def test_attachment_roundtrip(test_engine):
 
 Run:
 ```bash
-docker exec -e POSTGRES_HOST=postgres -e POSTGRES_DB=epms_test \
-  -e JWT_SECRET_KEY=test-secret uniops_epms_api \
-  python -m pytest tests/test_agreement_schedule_model.py -v
+$PYTEST tests/test_agreement_schedule_model.py -v
 ```
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.models.agreement_schedule'`
 
@@ -480,9 +506,7 @@ Expected: `current` 显示 `ag03_agreement_schedule (head)`
 
 Run:
 ```bash
-docker exec -e POSTGRES_HOST=postgres -e POSTGRES_DB=epms_test \
-  -e JWT_SECRET_KEY=test-secret uniops_epms_api \
-  python -m pytest tests/test_agreement_schedule_model.py -v
+$PYTEST tests/test_agreement_schedule_model.py -v
 ```
 Expected: 4 passed
 
@@ -664,9 +688,7 @@ def test_unknown_recurring_type_raises():
 
 Run:
 ```bash
-docker exec -e POSTGRES_HOST=postgres -e POSTGRES_DB=epms_test \
-  -e JWT_SECRET_KEY=test-secret uniops_epms_api \
-  python -m pytest tests/test_agreement_period_math.py -v
+$PYTEST tests/test_agreement_period_math.py -v
 ```
 Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.agreement_schedule'`
 
@@ -799,9 +821,7 @@ def build_period_rows(
 
 Run:
 ```bash
-docker exec -e POSTGRES_HOST=postgres -e POSTGRES_DB=epms_test \
-  -e JWT_SECRET_KEY=test-secret uniops_epms_api \
-  python -m pytest tests/test_agreement_period_math.py -v
+$PYTEST tests/test_agreement_period_math.py -v
 ```
 Expected: 13 passed。**若 `test_quarterly_first_period_is_the_one_covering_valid_from` 失败，先查 `_month_starts` 的回退循环**——这是本任务唯一有二义性的地方，不要靠改测试让它变绿。
 
@@ -942,9 +962,7 @@ def test_milestone_with_an_absolute_amount_needs_no_ceiling():
 
 Run:
 ```bash
-docker exec -e POSTGRES_HOST=postgres -e POSTGRES_DB=epms_test \
-  -e JWT_SECRET_KEY=test-secret uniops_epms_api \
-  python -m pytest tests/test_agreement_recurrence_schema.py -v
+$PYTEST tests/test_agreement_recurrence_schema.py -v
 ```
 Expected: FAIL — `ImportError: cannot import name 'MilestoneRowIn'`
 
@@ -1134,9 +1152,7 @@ async def list_rows(
 
 Run:
 ```bash
-docker exec -e POSTGRES_HOST=postgres -e POSTGRES_DB=epms_test \
-  -e JWT_SECRET_KEY=test-secret uniops_epms_api \
-  python -m pytest tests/test_agreement_recurrence_schema.py tests/test_agreements.py -v
+$PYTEST tests/test_agreement_recurrence_schema.py tests/test_agreements.py -v
 ```
 Expected: 新增 10 passed；`test_agreements.py` 既有用例**全部仍过**（新字段全可选，不得破坏既有建档）
 
@@ -1268,7 +1284,7 @@ async def test_null_per_period_amount_leaves_rows_without_an_amount(test_engine)
 
 - [ ] **Step 2: 跑测试确认失败**
 
-Run: `docker exec -e POSTGRES_HOST=postgres -e POSTGRES_DB=epms_test -e JWT_SECRET_KEY=test-secret uniops_epms_api python -m pytest tests/test_agreement_schedule_generation.py -v`
+Run: `$PYTEST tests/test_agreement_schedule_generation.py -v`
 Expected: FAIL — `AttributeError: module 'app.crud.agreement_schedule' has no attribute 'ensure_period_rows'`
 
 - [ ] **Step 3: 实现 `ensure_period_rows`**
