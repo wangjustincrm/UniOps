@@ -18,7 +18,8 @@ import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { downloadPdf } from '@/lib/pdf-utils'
-import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
+import { usePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
 import { useTasks } from '@/hooks/useTasks'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
@@ -497,6 +498,8 @@ export default function PoDetailPage() {
   const { data: po, isLoading } = usePo(id ?? '')
   const { data: events } = usePoEvents(id ?? '')
   const { data: poAttachments = [] } = usePoAttachments(id ?? '')
+  const uploadAttachment = useUploadPoAttachment(id ?? '')
+  const deleteAttachment = useDeletePoAttachment(id ?? '')
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
@@ -912,35 +915,22 @@ export default function PoDetailPage() {
                   </button>
                 )}
               </div>
-              {poAttachments.length > 0 ? (
-                <ul className="flex flex-col gap-2">
-                  {poAttachments.map((att) => (
-                    <li key={att.id}>
-                      <button
-                        type="button"
-                        onClick={() => downloadPoAttachment(att.id, att.filename)}
-                        className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-left text-sm transition-colors hover:border-primary-300 hover:bg-primary-50 group cursor-pointer"
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 group-hover:bg-primary-200 shrink-0">
-                          <FileText className="h-4 w-4 text-primary-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-neutral-900 truncate">{att.filename}</p>
-                          <p className="text-xs text-neutral-400">{(att.file_size / 1024).toFixed(1)} KB</p>
-                        </div>
-                        <span className="text-xs text-primary-600 font-medium shrink-0">Download</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <FileText className="h-8 w-8 text-neutral-300 mb-2" />
+              <AttachmentsEditor
+                inputId="po-detail-file-upload"
+                attachments={poAttachments}
+                isUploading={uploadAttachment.isPending}
+                isDeleting={deleteAttachment.isPending}
+                onUpload={(file) => uploadAttachment.mutateAsync(file)}
+                onDelete={(attId) => deleteAttachment.mutate(attId)}
+                onDownload={(att) => downloadPoAttachment(att.id, att.filename)}
+              />
+              {poAttachments.length === 0 && (
+                <div className="mt-3 flex flex-col items-center justify-center text-center">
                   <p className="text-sm text-neutral-400">
                     {po.status === 'approved' ? 'PDF is being generated…' : 'No attachments yet'}
                   </p>
                   {po.status !== 'approved' && (
-                    <button onClick={handleDownloadPdf} className="mt-3 text-xs text-primary-600 hover:underline">
+                    <button onClick={handleDownloadPdf} className="mt-1 text-xs text-primary-600 hover:underline">
                       Generate preview PDF
                     </button>
                   )}

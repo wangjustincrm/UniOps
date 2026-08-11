@@ -13,6 +13,9 @@ import { useBudgetOverview, useBalance, useFactors } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { useDepartments } from '@/hooks/useDepartments'
 import { usePr, useUpdatePr, usePrAction } from '@/hooks/usePrs'
+import { usePrAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/usePrAttachments'
+import { prAttachmentService } from '@/services/prAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
 import type { ApiVendor } from '@/services/vendors'
@@ -53,6 +56,12 @@ export default function PrEditPage() {
   })
   const updatePr = useUpdatePr()
   const prAction = usePrAction(id ?? '')
+  // Attachments belong to a PR that already exists, so upload/delete hit the
+  // server right away instead of being staged until Save (same semantics as the
+  // Detail page's Attachments tab).
+  const { data: attachments = [] } = usePrAttachments(id ?? '')
+  const uploadAttachment = useUploadAttachment(id ?? '')
+  const deleteAttachment = useDeleteAttachment(id ?? '')
 
   // ── form state ────────────────────────────────────────────────────────────
   const [title, setTitle] = useState('')
@@ -611,6 +620,23 @@ export default function PrEditPage() {
             {Object.keys(lineErrors).length > 0 && (
               <p className="mt-2 text-xs text-danger-600">Please fix the errors in the line items above.</p>
             )}
+          </div>
+
+          {/* Attachments */}
+          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
+              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+            </div>
+            <AttachmentsEditor
+              inputId="pr-edit-file-upload"
+              attachments={attachments}
+              isUploading={uploadAttachment.isPending}
+              isDeleting={deleteAttachment.isPending}
+              onUpload={(file) => uploadAttachment.mutateAsync(file)}
+              onDelete={(attId) => deleteAttachment.mutate(attId)}
+              onDownload={(att) => { void prAttachmentService.download(id!, att.id, att.filename).catch(() => {}) }}
+            />
           </div>
 
           {/* Action bar */}
