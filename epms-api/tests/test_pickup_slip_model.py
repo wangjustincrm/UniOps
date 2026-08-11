@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -76,6 +76,31 @@ async def test_slip_ref_may_be_null_and_nulls_do_not_collide(test_engine):
         rows = (await db.execute(select(AgreementPickupSlip).where(
             AgreementPickupSlip.agreement_id == agr.id))).scalars().all()
         assert len(rows) == 3
+
+
+async def test_slip_ref_unique_index_is_really_partial(test_engine):
+    """`test_slip_ref_may_be_null_and_nulls_do_not_collide` above cannot fail:
+    Postgres already treats NULL as distinct from NULL in a unique index, so
+    three NULL rows insert cleanly even against a TOTAL (non-partial) unique
+    index. That test alone would not notice `postgresql_where=sa.text(...)`
+    quietly disappearing from the model or the migration — and that predicate
+    is exactly what lets a slip with no usable reference number (smudged
+    paper, a vendor that just doesn't print one) work end to end. So read the
+    index's real DDL back out of the LIVE test database (built by
+    `create_all` from the model — the copy a migration-only declaration would
+    leave unprotected) and assert the WHERE predicate naming slip_ref is
+    actually there.
+    """
+    async with test_engine.connect() as conn:
+        result = await conn.execute(text(
+            "SELECT indexdef FROM pg_indexes WHERE indexname = "
+            "'uq_agr_slip_ref_per_agreement' AND tablename = 'agreement_pickup_slips'"))
+        indexdef = result.scalar_one()
+    parts = indexdef.split("WHERE", 1)
+    assert len(parts) == 2, f"index has no WHERE predicate: {indexdef!r}"
+    predicate = parts[1]
+    assert "slip_ref" in predicate
+    assert "IS NOT NULL" in predicate.upper()
 
 
 async def test_duplicate_slip_ref_on_same_agreement_is_rejected(test_engine):
