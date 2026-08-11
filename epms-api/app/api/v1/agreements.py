@@ -4,12 +4,16 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 
+from app.core.access_scope import _effective_role_codes
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import agreement as agr_crud
 from app.crud import agreement_schedule as agr_sched_crud
 from app.crud import vendor as vendor_crud
+from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.task import Task
 from app.schemas.agreement import (
     AgreementActionRequest,
     AgreementCreate,
@@ -160,13 +164,64 @@ async def list_schedule(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDe
 async def confirm_schedule_period(
     agreement_id: uuid.UUID, row_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload
 ):
-    # 由持有确认任务的人执行 —— 与 PR/PO/PA 的任务型动作一致,不另设权限键。
+    # Owner ruling (Task 7 fix round #2): every other task-driven action in
+    # this codebase (POST /tasks/{id}/complete, POST /gr/{id}/action, ...)
+    # trusts that holding the task IS the authorization and doesn't re-check
+    # the actor. This endpoint deliberately does NOT follow that convention:
+    # recurring agreements skip goods receipt entirely, so this confirmation
+    # is the ONLY human checkpoint before an invoice pays itself. If anyone
+    # authenticated could click it, the control would be decorative — and it
+    # would make create_confirm_task's "no resolvable assignee" system_admin
+    # fallback unauditable, since an admin would have no way to tell whether
+    # the circuit actually worked. Do not "harmonise" this back to match the
+    # sibling endpoints; it is intentionally stricter.
     agr = await agr_crud.get_by_id(db, agreement_id)
     if agr is None:
         raise HTTPException(status_code=404, detail="Agreement not found")
+    row = (await db.execute(
+        select(AgreementPaymentSchedule).where(AgreementPaymentSchedule.id == row_id)
+    )).scalar_one_or_none()
+    if row is None or row.agreement_id != agr.id:
+        raise HTTPException(status_code=404, detail="Schedule row not found")
+
+    caller_id = uuid.UUID(user["sub"])
+    caller_role = user.get("role", "")
+    if caller_role != "system_admin":
+        # The row exists — 403, not 404: the caller just isn't the one who
+        # may confirm it. Matched on document_id + document_number the same
+        # way confirm_period() completes the task, so a caller holding some
+        # OTHER period's task for this same agreement is refused too.
+        task = (await db.execute(
+            select(Task).where(
+                Task.document_type == "agr", Task.document_id == agr.id,
+                Task.type == "confirm_period",
+                Task.document_number == f"{agr.number} · {row.period_label}",
+                Task.is_completed.is_(False),
+            )
+        )).scalar_one_or_none()
+        if task is None:
+            raise HTTPException(
+                status_code=403,
+                detail=f"There is no open confirmation task for {row.period_label} "
+                       "to act on.")
+        # Reuses the same base-role ∪ user_roles-grant union _confirm_assignee
+        # resolves dept_manager through — "holds the task" must mean the same
+        # thing on both sides (who gets assigned vs who may act), or a
+        # grant-only dept_manager could be assigned the task and then be
+        # unable to complete it.
+        effective_roles = await _effective_role_codes(db, caller_role, caller_id)
+        holds_it = (
+            task.assigned_user_id == caller_id
+            or task.assigned_role in effective_roles
+        )
+        if not holds_it:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Only the person assigned to confirm {row.period_label} "
+                       f"(role: {task.assigned_role}) may confirm it.")
+
     try:
-        row = await agr_sched_crud.confirm_period(
-            db, agr, row_id, uuid.UUID(user["sub"]))
+        row = await agr_sched_crud.confirm_period(db, agr, row_id, caller_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()

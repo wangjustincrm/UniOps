@@ -4,11 +4,14 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.security import create_access_token
 from app.crud import agreement_schedule as sched_crud
 from app.crud import user as user_crud
+from app.main import create_app
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.department import Department
@@ -270,3 +273,169 @@ async def test_unresolvable_assignee_is_not_a_silent_broadcast(test_engine, monk
         assert task.assigned_role != "dept_manager"
         assert len(alerts) == 1
         assert agr.number in alerts[0][1]
+
+
+# ── Fix round 2 (owner ruling): gate POST .../confirm on the task holder ────
+# Every other task-driven action endpoint in this codebase (POST
+# /tasks/{id}/complete, POST /gr/{id}/action, ...) trusts that holding the
+# task IS the authorization and never re-checks the actor. This endpoint is
+# deliberately stricter: recurring agreements skip goods receipt entirely,
+# so this confirmation is the ONLY human checkpoint before an invoice pays
+# itself — if anyone authenticated could click it, the control is
+# decorative, and the system_admin fallback in create_confirm_task becomes
+# unauditable (an admin would have no way to know whether the circuit
+# actually worked).
+
+def _client_for(user_id, role) -> AsyncClient:
+    token = create_access_token(str(user_id), role)
+    return AsyncClient(
+        transport=ASGITransport(app=create_app()), base_url="http://test",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def _confirm_url(agreement_id, row_id) -> str:
+    return f"/api/v1/agreements/{agreement_id}/schedule/{row_id}/confirm"
+
+
+async def test_confirm_endpoint_allows_the_assignee(test_engine):
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        agr.owner_id = user.id
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        await sched_crud.create_confirm_task(db, agr, row)
+        await db.commit()
+        agr_id, row_id, assignee_id, assignee_role = agr.id, row.id, user.id, user.role
+
+    client = _client_for(assignee_id, assignee_role)
+    try:
+        r = await client.post(_confirm_url(agr_id, row_id))
+        assert r.status_code == 200, r.text
+        assert r.json()["accepted_by"] == str(assignee_id)
+    finally:
+        await client.aclose()
+
+
+async def test_confirm_endpoint_refuses_an_unrelated_user(test_engine):
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        agr.owner_id = user.id
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        await sched_crud.create_confirm_task(db, agr, row)
+        outsider = await user_crud.create(db, RegisterRequest(
+            email=f"outsider-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+            full_name="Outsider", role="requester"))
+        await db.commit()
+        agr_id, row_id, outsider_id = agr.id, row.id, outsider.id
+
+    client = _client_for(outsider_id, "requester")
+    try:
+        r = await client.post(_confirm_url(agr_id, row_id))
+        assert r.status_code == 403, r.text
+        assert "may confirm it" in r.text
+    finally:
+        await client.aclose()
+
+
+async def test_confirm_endpoint_allows_a_user_who_holds_the_assigned_role_via_grant(
+        test_engine):
+    """Simulates a role-broadcast confirm_period task (assigned_role=
+    'dept_manager', assigned_user_id=None) and a caller whose ONLY claim to
+    dept_manager is a user_roles grant, not their base role — 'holds the
+    task' has to mean the same thing here as it does in _confirm_assignee's
+    own resolution, reused via access_scope._effective_role_codes."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        agr.owner_id = None
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        db.add(Task(
+            type="confirm_period", priority="normal", document_type="agr",
+            document_id=agr.id, document_number=f"{agr.number} · {row.period_label}",
+            assigned_role="dept_manager", assigned_user_id=None,
+            title="Confirm service", description="test"))
+        grantee = await user_crud.create(db, RegisterRequest(
+            email=f"grantee-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+            full_name="Grantee", role="requester"))
+        await db.flush()
+        await db.execute(text(
+            "INSERT INTO user_roles(user_id, role_code) VALUES (:u, 'dept_manager')"),
+            {"u": str(grantee.id)})
+        await db.commit()
+        agr_id, row_id, grantee_id = agr.id, row.id, grantee.id
+
+    client = _client_for(grantee_id, "requester")
+    try:
+        r = await client.post(_confirm_url(agr_id, row_id))
+        assert r.status_code == 200, r.text
+        assert r.json()["accepted_by"] == str(grantee_id)
+    finally:
+        await client.aclose()
+
+
+async def test_confirm_endpoint_always_allows_system_admin(test_engine):
+    """system_admin is the assignee in create_confirm_task's unresolvable-
+    assignee fallback — blocking system_admin here would deadlock that
+    path, since nobody else could ever complete such a task."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        agr.owner_id = user.id
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        await sched_crud.create_confirm_task(db, agr, row)
+        admin = await user_crud.create(db, RegisterRequest(
+            email=f"admin-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+            full_name="Admin", role="system_admin"))
+        await db.commit()
+        agr_id, row_id, admin_id = agr.id, row.id, admin.id
+
+    client = _client_for(admin_id, "system_admin")
+    try:
+        r = await client.post(_confirm_url(agr_id, row_id))
+        assert r.status_code == 200, r.text
+    finally:
+        await client.aclose()
+
+
+async def test_confirm_endpoint_refuses_a_different_period_than_the_holders_task(
+        test_engine):
+    """Holding an open confirm_period task for THIS agreement is not enough —
+    it must be the task for THIS period. userA holds the task for period 1
+    but tries to confirm period 2, whose task belongs to someone else
+    entirely (different assigned_user_id, and a role userA does not hold)."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, userA = await _seed(db)
+        agr.owner_id = userA.id
+        await sched_crud.ensure_period_rows(db, agr)
+
+        inv1 = await _invoice(db, agr, vendor, userA)
+        row1 = await sched_crud.claim_next_period(db, agr, inv1)
+        await sched_crud.create_confirm_task(db, agr, row1)   # assigned to userA
+
+        inv2 = await _invoice(db, agr, vendor, userA)
+        row2 = await sched_crud.claim_next_period(db, agr, inv2)
+        other_user = await user_crud.create(db, RegisterRequest(
+            email=f"other-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+            full_name="Other Owner", role="finance_bp"))
+        await db.flush()
+        db.add(Task(
+            type="confirm_period", priority="normal", document_type="agr",
+            document_id=agr.id, document_number=f"{agr.number} · {row2.period_label}",
+            assigned_role="finance_bp", assigned_user_id=other_user.id,
+            title="Confirm service", description="test"))
+        await db.commit()
+        agr_id, row2_id, userA_id, userA_role = agr.id, row2.id, userA.id, userA.role
+
+    client = _client_for(userA_id, userA_role)
+    try:
+        r = await client.post(_confirm_url(agr_id, row2_id))
+        assert r.status_code == 403, r.text
+        assert "may confirm it" in r.text
+    finally:
+        await client.aclose()
