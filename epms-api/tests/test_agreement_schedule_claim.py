@@ -29,7 +29,7 @@ async def _seed(db, **over):
         full_name="T", role="procurement_officer"))
     await db.flush()
     kw = dict(
-        number=f"AGR-202608-{uuid.uuid4().hex[:4]}", title="Bell", agreement_type="recurring",
+        number=f"AGR-202608-T{uuid.uuid4().hex[:11]}", title="Bell", agreement_type="recurring",
         vendor_id=vendor.id, vendor_name=vendor.name,
         valid_from=date(2026, 1, 1), valid_to=date(2026, 3, 31),
         recurring_type="monthly", expected_invoice_day=5,

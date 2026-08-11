@@ -37,7 +37,7 @@ async def _seed(db, **over):
         full_name="T", role="procurement_officer"))
     await db.flush()
     kw = dict(
-        number=f"AGR-202608-{uuid.uuid4().hex[:4]}", title="Bell", agreement_type="recurring",
+        number=f"AGR-202608-T{uuid.uuid4().hex[:11]}", title="Bell", agreement_type="recurring",
         vendor_id=vendor.id, vendor_name=vendor.name,
         valid_from=date(2026, 1, 1), valid_to=date(2026, 3, 31),
         recurring_type="monthly", expected_invoice_day=5,
@@ -136,6 +136,43 @@ async def test_sweep_uses_the_default_grace_when_the_row_has_none(test_engine):
         row.overdue_after_days = None       # 回落默认 7 天
         await db.flush()
         assert [r.id for r in await sweep_overdue_periods(db)] == [row.id]
+        await db.commit()
+
+
+# ── Whole-branch review Item 6: a cancelled/closed agreement's rows must ───
+# never flip — the old query filtered ONLY on the schedule row, with no join
+# back to the agreement, so a cancelled agreement's still-"pending" rows kept
+# flipping to "overdue" and (toggle defaults ON) emailing its owner every
+# sweep for the rest of its validity window.
+
+async def test_a_cancelled_agreements_row_is_never_swept(test_engine):
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, status="cancelled")
+        row = await _row(db, agr, days_ago=90, grace=7)
+        assert await sweep_overdue_periods(db) == []
+        assert row.status == "pending"
+        await db.commit()
+
+
+async def test_a_closed_agreements_row_is_never_swept(test_engine):
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, status="closed")
+        row = await _row(db, agr, days_ago=90, grace=7)
+        assert await sweep_overdue_periods(db) == []
+        assert row.status == "pending"
+        await db.commit()
+
+
+async def test_an_expired_agreements_row_is_still_swept(test_engine):
+    """"expired" is deliberately KEPT admissible — the final bill legitimately
+    still arrives after valid_to, so its trailing periods must still be
+    tracked. This is the boundary case that proves the fix targets
+    cancelled/closed specifically, not "any non-active status"."""
+    async with _factory(test_engine)() as db:
+        agr, _, _ = await _seed(db, status="expired")
+        row = await _row(db, agr, days_ago=90, grace=7)
+        flipped = await sweep_overdue_periods(db)
+        assert [r.id for r in flipped] == [row.id]
         await db.commit()
 
 

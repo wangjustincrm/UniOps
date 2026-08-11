@@ -31,7 +31,7 @@ async def _seed_agreement(db, agreement_type="recurring"):
     ))
     await db.flush()
     agr = PurchaseAgreement(
-        number=f"AGR-202608-{uuid.uuid4().hex[:4]}",
+        number=f"AGR-202608-T{uuid.uuid4().hex[:11]}",
         title="Bell monthly circuit",
         agreement_type=agreement_type,
         vendor_id=vendor.id, vendor_name=vendor.name,

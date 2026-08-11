@@ -81,6 +81,22 @@ def upgrade() -> None:
     # payment_applications.agreement_id,那次镜像声明了该列)。
     op.add_column("invoices", sa.Column("schedule_id", postgresql.UUID(as_uuid=True), nullable=True))
 
+    # Whole-branch review finding: server_default="7" on overdue_after_days
+    # above lands on EVERY pre-existing row at the moment this migration
+    # runs, including every 1A house_account — not just the recurring
+    # agreements the column is meant for. crud.agreement.update() 409s any
+    # PATCH that carries a non-NULL overdue_after_days on a non-recurring
+    # agreement ("only apply to a recurring agreement", validate_recurrence),
+    # so without this backfill every pre-existing house_account becomes
+    # permanently un-editable. create() already nulls it out for new
+    # non-recurring agreements going forward (see its comment) — this is the
+    # matching one-time cleanup for rows that already existed when this
+    # migration ran.
+    op.execute(
+        "UPDATE purchase_agreements SET overdue_after_days = NULL "
+        "WHERE agreement_type <> 'recurring'"
+    )
+
 
 def downgrade() -> None:
     op.drop_column("invoices", "schedule_id")

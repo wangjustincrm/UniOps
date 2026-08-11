@@ -134,6 +134,11 @@ export default function AgreementEditPage() {
   const ownerRect = useAnchorRect(ownerOpen, ownerAnchorRef)
   const [ownerQuery, setOwnerQuery] = useState('')
   const [selectedOwner, setSelectedOwner] = useState<ApiUserBrief | null>(null)
+  // True only once the user has actively interacted with the picker (picked
+  // someone, or hit the clear button) — see the pre-fill effect and
+  // handleSave below for why this is tracked separately from selectedOwner
+  // being non-null.
+  const [ownerTouched, setOwnerTouched] = useState(false)
   const { data: ownersData } = useQuery({
     queryKey: ['users', 'directory', ownerQuery],
     queryFn: () => userService.directory({ search: ownerQuery || undefined }),
@@ -141,6 +146,16 @@ export default function AgreementEditPage() {
     staleTime: 30_000,
   })
   const owners = ownersData?.items ?? []
+
+  // Resolve the EXISTING owner_id into a display name via GET
+  // /users/directory/{id} — open to any authenticated user, unlike GET
+  // /users/{id} (system_admin-only). See the pre-fill effect below for how
+  // this populates selectedOwner without marking the field "touched".
+  const { data: resolvedOwner } = useQuery({
+    queryKey: ['users', 'directory', agreement?.owner_id],
+    queryFn: () => userService.directoryGet(agreement!.owner_id!),
+    enabled: !!agreement?.owner_id,
+  })
 
   // Pre-fill from the existing agreement
   useEffect(() => {
@@ -167,12 +182,28 @@ export default function AgreementEditPage() {
       tolerancePct: agreement.tolerance_pct ?? '',
       overdueAfterDays: agreement.overdue_after_days != null ? String(agreement.overdue_after_days) : '7',
     })
-    // Note: agreement.owner_id (a raw UUID, no name) is intentionally not
-    // resolved into the picker — same reasoning as AgreementDetailPage: there
-    // is no non-admin-safe endpoint to turn an id into a display name. Leaving
-    // owner blank here means "no change" (owner_id is omitted from the PATCH
-    // body unless the user actively searches and picks someone).
+    // owner_id itself is resolved into the picker by the effect below, via
+    // GET /users/directory/{id} — that endpoint IS the non-admin-safe
+    // id-to-name lookup (AgreementDetailPage's Confirmed column uses the same
+    // /users/directory family already). Reset here so a stale owner from a
+    // PREVIOUS agreement doesn't linger while the resolution query is still
+    // in flight for this one.
+    setSelectedOwner(null)
+    setOwnerTouched(false)
   }, [agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Populate the picker with the CURRENT owner's name once resolved.
+  // Deliberately does NOT set ownerTouched — handleSave only sends owner_id
+  // when the user has actively interacted with the picker (searched and
+  // picked someone, or hit clear). Before this effect existed, selectedOwner
+  // stayed null on load and handleSave's `owner_id: selectedOwner?.id ||
+  // null` sent an explicit `null` on EVERY save regardless — since PATCH
+  // uses model_dump(exclude_unset=True), an explicit null in the request
+  // body counts as "set", so every edit-and-save silently wiped a
+  // previously-set owner unless the user happened to re-pick them.
+  useEffect(() => {
+    if (resolvedOwner) setSelectedOwner(resolvedOwner)
+  }, [resolvedOwner])
 
   // Milestone stages come from the schedule endpoint, not `agreement` itself
   // (see the comment on milestonesHydrated above). Hydrate once per agreement
@@ -262,9 +293,10 @@ export default function AgreementEditPage() {
       // Cleared fields must go out as explicit `null`, NOT `undefined`.
       // JSON.stringify drops undefined keys, and the backend uses
       // model_dump(exclude_unset=True) — so an undefined here means "don't
-      // touch", and clearing Not-to-Exceed / tax code / department / owner
-      // appeared to save while keeping the old value. All these columns are
-      // nullable. PoEditPage sends null for the same reason.
+      // touch", and clearing Not-to-Exceed / tax code / department appeared
+      // to save while keeping the old value. All these columns are nullable.
+      // PoEditPage sends null for the same reason. owner_id is the one
+      // exception to "always explicit null" — see its own comment below.
       const body: UpdateAgreementBody = {
         title,
         contract_no: contractNo || null,
@@ -278,7 +310,13 @@ export default function AgreementEditPage() {
         tax_rate: taxRate ?? null,
         department_id: departmentId || null,
         budget_code: budgetCode || null,
-        owner_id: selectedOwner?.id || null,
+        // Only sent when the user actually interacted with the picker
+        // (ownerTouched) — see the effect that resolves the existing owner
+        // into selectedOwner above. `undefined` here is dropped by
+        // JSON.stringify, so an untouched picker leaves owner_id out of the
+        // body entirely — true "no change" via exclude_unset, matching the
+        // pattern documented for the other nullable columns just above.
+        owner_id: ownerTouched ? (selectedOwner?.id || null) : undefined,
         notes: notes || null,
         cost_center_id: costCenterId ?? null,
       }
@@ -554,7 +592,7 @@ export default function AgreementEditPage() {
                   {selectedOwner && (
                     <button
                       type="button"
-                      onClick={() => { setSelectedOwner(null); setOwnerQuery('') }}
+                      onClick={() => { setSelectedOwner(null); setOwnerTouched(true); setOwnerQuery('') }}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
                     >
                       <X className="h-3.5 w-3.5" />
@@ -568,7 +606,7 @@ export default function AgreementEditPage() {
                         key={u.id}
                         type="button"
                         className="flex w-full items-center justify-between px-3 py-2 text-sm hover:bg-primary-50 text-left"
-                        onClick={() => { setSelectedOwner(u); setOwnerOpen(false); setOwnerQuery('') }}
+                        onClick={() => { setSelectedOwner(u); setOwnerTouched(true); setOwnerOpen(false); setOwnerQuery('') }}
                       >
                         <span>{u.full_name}</span>
                         {u.department_name && <span className="text-xs text-neutral-400">{u.department_name}</span>}

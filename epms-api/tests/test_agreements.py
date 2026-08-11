@@ -38,7 +38,22 @@ async def test_agreement_model_roundtrip(test_engine):
         await db.flush()
 
         agr = PurchaseAgreement(
-            number=f"AGR-202608-{uuid.uuid4().hex[:4]}",
+            # Whole-branch review finding: a 4-hex suffix (65,536 values, no
+            # retry against the number unique index) already produced one
+            # false "new failure" from a collision across the suite's many
+            # AGR-202608-* seeds. Widened to 11 hex chars (44 bits) makes a
+            # collision vanishingly unlikely — but a bare hex suffix isn't
+            # enough on its own: crud._numbering.next_number() (the REAL
+            # allocator, exercised by every admin_client.post(AGR_URL, ...)
+            # test in this file) treats any all-DECIMAL-digit tail sharing
+            # this same "AGR-202608-" prefix as an existing sequence number
+            # and takes MAX(tail)+1 — an 11-hex string that happens to land
+            # on only 0-9 (~2% per use) would silently poison the real
+            # counter for every other test in the session. The leading "T" is
+            # not just padding: it guarantees `.isdigit()` is always False,
+            # so this literal can NEVER be mistaken for a real allocated
+            # number regardless of what the hex digits are.
+            number=f"AGR-202608-T{uuid.uuid4().hex[:11]}",
             title="Princess Auto house account",
             agreement_type="house_account",
             contract_no="CN-2026-001",
@@ -200,3 +215,76 @@ async def test_agreement_action_endpoint_delegates(admin_client, test_engine, mo
 async def test_agreement_action_unknown_id_404(admin_client):
     r = await admin_client.post(f"{AGR_URL}/{uuid.uuid4()}/action", json={"action": "submit"})
     assert r.status_code == 404
+
+
+# ── Whole-branch review Item 5: a milestone agreement with zero stages ─────
+# would be unusable forever once approved — no stage can be added after
+# active (EDITABLE_STATUSES), and claim_milestone always requires a
+# schedule_id, so no invoice could ever match it. validate_milestones never
+# checked emptiness (recurring is protected the same way by
+# validate_recurrence's own coherence rule) — this must be caught at submit,
+# the last point it can still be fixed (add a stage, then submit again).
+
+async def test_milestone_agreement_submit_with_zero_stages_is_refused(
+        admin_client, test_engine, monkeypatch):
+    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(
+        vendor_id, agreement_type="milestone"))).json()
+    assert created["agreement_type"] == "milestone"
+
+    calls = []
+
+    async def _fake_delegate(doc_type, doc_id, action, comment, token):
+        calls.append((doc_type, doc_id, action))
+        return {"status": "in_review", "step_idx": 1}
+
+    monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
+
+    r = await admin_client.post(f"{AGR_URL}/{created['id']}/action",
+                                json={"action": "submit", "comment": None})
+    assert r.status_code == 422, r.text
+    assert "milestone stage" in r.text
+    # The approval engine must never even be asked — this has to fail before
+    # any state change, not roll one back after the fact.
+    assert calls == []
+
+
+async def test_milestone_agreement_submit_with_a_stage_delegates_normally(
+        admin_client, test_engine, monkeypatch):
+    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(
+        vendor_id, agreement_type="milestone", milestones=[
+            {"milestone_name": "Deposit on signing", "expected_amount": "1000.00"},
+        ]))).json()
+
+    calls = []
+
+    async def _fake_delegate(doc_type, doc_id, action, comment, token):
+        calls.append((doc_type, doc_id, action))
+        return {"status": "in_review", "step_idx": 1}
+
+    monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
+
+    r = await admin_client.post(f"{AGR_URL}/{created['id']}/action",
+                                json={"action": "submit", "comment": None})
+    assert r.status_code == 200, r.text
+    assert calls == [("agr", created["id"], "submit")]
+
+
+async def test_non_submit_action_on_a_zero_stage_milestone_agreement_is_unaffected(
+        admin_client, test_engine, monkeypatch):
+    """The gate is specific to action=='submit' — an approve/return/cancel
+    dispatched on the same agreement (e.g. by an out-of-band admin action)
+    must not be blocked by it."""
+    vendor_id, _, _ = await seed_vendor_and_user(test_engine)
+    created = (await admin_client.post(AGR_URL, json=_agr_payload(
+        vendor_id, agreement_type="milestone"))).json()
+
+    async def _fake_delegate(doc_type, doc_id, action, comment, token):
+        return {"status": "draft", "step_idx": 0}
+
+    monkeypatch.setattr("app.api.v1.agreements.delegate_action", _fake_delegate)
+
+    r = await admin_client.post(f"{AGR_URL}/{created['id']}/action",
+                                json={"action": "cancel", "comment": None})
+    assert r.status_code == 200, r.text

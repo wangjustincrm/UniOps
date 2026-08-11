@@ -33,12 +33,24 @@ async def sweep_overdue_periods(db) -> list[AgreementPaymentSchedule]:
     Phase 1C 若给阶段加了可选日期,靠 NULL 隐式过滤就会静默失效。expected_date
     的 NULL 检查是多余的(period 行永远有值),特意不写,避免它悄悄变回那个
     隐式过滤器。
+
+    Whole-branch review finding: this used to filter ONLY on the schedule row
+    itself, with no join back to the agreement — a cancelled (or closed)
+    agreement's still-"pending" rows kept flipping to "overdue" and emailing
+    the owner every single sweep, for the rest of its validity window (a
+    3-year weekly agreement cancelled on day one would nag its owner weekly
+    for three years, since the toggle defaults ON). "expired" is deliberately
+    KEPT admissible here — its final bill legitimately still arrives after
+    valid_to, so that agreement's trailing periods must still be tracked.
     """
     today = date.today()
     rows = (await db.execute(
-        select(AgreementPaymentSchedule).where(
+        select(AgreementPaymentSchedule)
+        .join(PurchaseAgreement, PurchaseAgreement.id == AgreementPaymentSchedule.agreement_id)
+        .where(
             AgreementPaymentSchedule.schedule_type == "period",
             AgreementPaymentSchedule.status == "pending",
+            PurchaseAgreement.status.notin_(("cancelled", "closed")),
         )
     )).scalars().all()
     flipped = []
@@ -112,9 +124,16 @@ async def run_agreement_overdue() -> None:
             flipped = await sweep_overdue_periods(db)
             cfg = await get_config(db)
             notify = (cfg.notification_settings or {}).get("agreement_overdue_enabled", True)
+            # Whole-branch review finding: the status flips are data
+            # correctness and must not sit in the same open transaction as N
+            # SMTP round-trips below — a slow mail server held row locks on
+            # agreement_payment_schedule for the whole sweep, and (session is
+            # expire_on_commit=False, so `flipped`/`cfg` stay usable past
+            # this point) nothing downstream needs the flips to still be
+            # uncommitted. Commit them first, THEN notify.
+            await db.commit()
             if flipped and notify:
                 await _notify_owners(db, cfg, flipped)
-            await db.commit()
         logger.info("Agreement overdue: %d row(s) flipped", len(flipped))
     except Exception as exc:  # noqa: BLE001 — 一次失败不能杀掉循环
         logger.error("Agreement overdue: sweep failed: %s", exc)

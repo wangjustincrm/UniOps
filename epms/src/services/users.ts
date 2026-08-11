@@ -116,6 +116,13 @@ export const userService = {
   ): Promise<UserBriefListResponse> =>
     fetchAllPages((page, page_size) => userService.directory({ ...opts, page, page_size }), 100),
 
+  // Single brief lookup by id (GET /users/directory/{id}) — open to any
+  // authenticated user, unlike GET /users/{id} which is system_admin-only.
+  // Used to resolve a bare owner_id/accepted_by UUID into a display name for
+  // a non-admin viewer without pulling the whole directory.
+  directoryGet: (id: string) =>
+    api.get<ApiUserBrief>(`/users/directory/${id}`),
+
   get: (id: string) =>
     api.get<ApiUser>(`/users/${id}`),
 
