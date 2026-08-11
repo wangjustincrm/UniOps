@@ -1,4 +1,4 @@
-import type { JSX } from 'react'
+import { useEffect, useRef, type JSX } from 'react'
 import { Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount } from '@/lib/utils'
@@ -30,6 +30,38 @@ export function MilestoneEditor(props: {
   // ceiling makes "% of NTE" a division by zero — treat it the same as
   // "no ceiling set" for the purpose of enabling the percentage column.
   const pctEnabled = nte !== null && nte > 0
+
+  // Review finding 2: the server stores whatever pair (%, Amount) it's given
+  // and never re-derives one from the other once both are populated
+  // (_resolve_milestone_amounts: "两个都给了就都存,不去纠正用户") — and every
+  // row in this editor gets BOTH fields written the moment either is touched
+  // (see updateFromPct/updateFromAmount below). So a stage entered as "30% of
+  // NTE" silently drifts out of sync with its own definition the instant NTE
+  // changes, unless something re-anchors it. Chosen fix: recompute, not warn
+  // — every row that has a % set gets its Amount recomputed against the NEW
+  // ceiling whenever NTE changes, keeping "% of NTE" true by construction
+  // instead of asking the user to notice a discrepancy. Rows with no % set
+  // (pure absolute-amount stages) are untouched — there is nothing to
+  // recompute FROM. Skips the initial mount (prevNteRef seeded from the
+  // first render's value) so this doesn't fire before the user has changed
+  // anything, same skip-on-mount shape as BudgetAccountCascade's
+  // prevDepartmentId guard.
+  const prevNteRef = useRef(nte)
+  useEffect(() => {
+    const prevNte = prevNteRef.current
+    prevNteRef.current = nte
+    if (prevNte === nte || nte === null || nte <= 0) return
+    onChange(rows.map((r) => {
+      if (!r.amount_pct) return r
+      const pct = Number(r.amount_pct)
+      if (!Number.isFinite(pct)) return r
+      return { ...r, expected_amount: String(Math.round(nte * pct) / 100) }
+    }))
+    // rows/onChange intentionally excluded — this effect only reacts to NTE
+    // changing, and always wants the latest rows/onChange from the render in
+    // which that happens (same convention as BudgetAccountCascade).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nte])
 
   const update = (index: number, patch: Partial<MilestoneRowIn>) => {
     onChange(rows.map((r, i) => (i === index ? { ...r, ...patch } : r)))

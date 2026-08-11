@@ -227,7 +227,19 @@ export default function AgreementCreatePage() {
 
       const newAgreement = await createAgreement.mutateAsync(body)
       if (attachments.length > 0) {
-        await Promise.all(attachments.map((f) => agreementAttachmentService.upload(newAgreement.id, f)))
+        // The agreement already exists at this point — an upload failure
+        // here must not read as "nothing happened". Catch it, tell the user
+        // explicitly which half succeeded, and keep going (submit action +
+        // navigate) rather than leaving them on a form for a document that
+        // was, in fact, already created.
+        try {
+          await Promise.all(attachments.map((f) => agreementAttachmentService.upload(newAgreement.id, f)))
+        } catch {
+          alert(
+            `${newAgreement.number} was created, but one or more attachments failed to upload. ` +
+            'You can add them again from the agreement page.'
+          )
+        }
       }
       if (submitForApproval) {
         await agreementService.action(newAgreement.id, { action: 'submit' })

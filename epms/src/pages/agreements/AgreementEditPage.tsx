@@ -98,11 +98,22 @@ export default function AgreementEditPage() {
   // `agreement` itself (stages live in agreement_payment_schedule and are
   // written immediately on create/update, independent of approval status —
   // see crud/agreement.py::create/update calling replace_milestone_rows).
-  // The hydration ref guards against a background refetch (react-query
-  // revalidates on window focus) stomping in-progress edits with the
-  // last-saved rows.
+  //
+  // `milestonesHydrated` is state, not a ref, for two reasons that both
+  // matter (review finding 1 — this used to be a ref, which silently deleted
+  // every stage): it has to (a) re-render so the Save buttons + the stages
+  // card can visibly gate on it, since `agreement.agreement_type ===
+  // 'milestone'` goes true from the FIRST query (useAgreement) while
+  // `milestoneRows` is still `[]` from the SECOND, independent query
+  // (useAgreementSchedule) — the ordinary path into this page (Detail page's
+  // Edit link) warms neither query in advance, so that gap is real, not
+  // theoretical; and (b) be readable by handleSave to decide whether
+  // `milestones` belongs in the PATCH body at all — omitted means "leave
+  // stages alone" (safe default before we know what they are), `[]` means
+  // "the user emptied every row" (must only be sent once rows are known to
+  // be the real ones, not the not-yet-loaded placeholder).
   const [milestoneRows, setMilestoneRows] = useState<MilestoneRowIn[]>([])
-  const milestonesHydratedRef = useRef(false)
+  const [milestonesHydrated, setMilestonesHydrated] = useState(false)
 
   // Attachments — new files queued locally, uploaded after a successful save,
   // same sequencing as AgreementCreatePage / PrCreatePage.tsx:335.
@@ -160,17 +171,17 @@ export default function AgreementEditPage() {
   }, [agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Milestone stages come from the schedule endpoint, not `agreement` itself
-  // (see the comment on milestonesHydratedRef above). Hydrate once per
-  // agreement id, guarded so a background refetch doesn't stomp in-progress
-  // edits with the last-saved rows.
+  // (see the comment on milestonesHydrated above). Hydrate once per agreement
+  // id, guarded so a background refetch doesn't stomp in-progress edits with
+  // the last-saved rows.
   useEffect(() => {
-    milestonesHydratedRef.current = false
+    setMilestonesHydrated(false)
   }, [agreement?.id])
 
   useEffect(() => {
     if (!agreement || agreement.agreement_type !== 'milestone') return
-    if (!scheduleData || milestonesHydratedRef.current) return
-    milestonesHydratedRef.current = true
+    if (!scheduleData || milestonesHydrated) return
+    setMilestonesHydrated(true)
     setMilestoneRows(
       scheduleData.items
         .filter((r) => r.schedule_type === 'milestone')
@@ -181,7 +192,14 @@ export default function AgreementEditPage() {
           amount_pct: r.amount_pct,
         }))
     )
-  }, [agreement, scheduleData])
+  }, [agreement, scheduleData, milestonesHydrated])
+
+  // True while a milestone agreement's stage rows have not yet arrived from
+  // the schedule endpoint — Save must be blocked for the whole window, not
+  // just have its payload silently altered, so the user sees WHY nothing
+  // happens rather than being able to click and get an unexplained delay.
+  const milestonesPending =
+    !!agreement && agreement.agreement_type === 'milestone' && !milestonesHydrated
 
   const validate = (): boolean => {
     const e: Record<string, string> = {}
@@ -209,6 +227,12 @@ export default function AgreementEditPage() {
   }
 
   const handleSave = async (andSubmit: boolean) => {
+    // Defense in depth alongside the button's `disabled={milestonesPending}`
+    // below: even if this is reached some other way, refuse to build a
+    // `milestones` payload from rows that are still the pre-hydration `[]`
+    // placeholder — that would read as "the user deleted every stage" and
+    // `replace_milestone_rows` would honor it (review finding 1).
+    if (milestonesPending) return
     if (!validate()) return
     setIsSubmitting(true)
     try {
@@ -249,7 +273,11 @@ export default function AgreementEditPage() {
       } else if (agreement?.agreement_type === 'milestone') {
         // Always resent on save — this is the round-trip that lets an empty
         // `rows` array explicitly clear all stages (AgreementUpdate.milestones:
-        // None = leave alone, [] = clear — see schemas/agreement.py).
+        // None = leave alone, [] = clear — see schemas/agreement.py). Safe to
+        // do unconditionally here ONLY because the `milestonesPending` guard
+        // above already returned if `milestoneRows` might still be the
+        // pre-hydration `[]` placeholder rather than the real (possibly
+        // genuinely empty) stage list.
         body.milestones = milestoneRows
           .filter((r) => r.milestone_name.trim())
           .map((r) => ({
@@ -262,7 +290,19 @@ export default function AgreementEditPage() {
 
       await updateAgreement.mutateAsync({ id: id!, body })
       if (attachments.length > 0) {
-        await Promise.all(attachments.map((f) => agreementAttachmentService.upload(id!, f)))
+        // The save already succeeded at this point — an upload failure here
+        // must not read as "nothing happened". Catch it, tell the user
+        // explicitly which half succeeded, and keep going (submit action +
+        // navigate) rather than leaving them on a form for changes that were,
+        // in fact, already saved.
+        try {
+          await Promise.all(attachments.map((f) => agreementAttachmentService.upload(id!, f)))
+        } catch {
+          alert(
+            `${agreement?.number ?? 'The agreement'} was saved, but one or more attachments failed to upload. ` +
+            'You can add them again from the agreement page.'
+          )
+        }
       }
       if (andSubmit) {
         await agreementService.action(id!, { action: 'submit' })
@@ -537,12 +577,23 @@ export default function AgreementEditPage() {
           {agreement.agreement_type === 'milestone' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
               <h2 className="text-base font-semibold text-neutral-900">Milestone Stages</h2>
-              <MilestoneEditor
-                rows={milestoneRows}
-                notToExceed={notToExceed}
-                currency={agreement.currency}
-                onChange={setMilestoneRows}
-              />
+              {milestonesPending ? (
+                // Not "no stages" — the schedule query hasn't resolved yet.
+                // Rendering MilestoneEditor with rows=[] here would look
+                // identical to a genuinely empty stage list, which is exactly
+                // the ambiguity that let Save silently wipe stages before
+                // this query settled (review finding 1). Show a distinct
+                // loading state instead, and Save stays disabled below until
+                // this clears.
+                <p className="text-sm text-neutral-400">Loading stages…</p>
+              ) : (
+                <MilestoneEditor
+                  rows={milestoneRows}
+                  notToExceed={notToExceed}
+                  currency={agreement.currency}
+                  onChange={setMilestoneRows}
+                />
+              )}
               {errors.milestones && <p className="text-xs text-danger-600">{errors.milestones}</p>}
             </div>
           )}
@@ -597,10 +648,17 @@ export default function AgreementEditPage() {
               <Button variant="ghost">Cancel</Button>
             </Link>
             <div className="flex items-center gap-3">
-              <Button variant="secondary" onClick={() => handleSave(false)} disabled={isSubmitting}>
+              {milestonesPending && (
+                <p className="text-xs text-neutral-400">Loading stages before Save can be used…</p>
+              )}
+              <Button
+                variant="secondary"
+                onClick={() => handleSave(false)}
+                disabled={isSubmitting || milestonesPending}
+              >
                 Save Draft
               </Button>
-              <Button onClick={() => handleSave(true)} disabled={isSubmitting}>
+              <Button onClick={() => handleSave(true)} disabled={isSubmitting || milestonesPending}>
                 {isSubmitting ? 'Submitting…' : 'Save & Submit'}
               </Button>
             </div>
