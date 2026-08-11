@@ -138,6 +138,34 @@ async def claim_next_period(
     return row
 
 
+async def claim_specific_period(
+    db: AsyncSession, agr: PurchaseAgreement, invoice, row_id: uuid.UUID
+) -> AgreementPaymentSchedule:
+    """人工指定期次(spec §4.3 step 5 的手动指派逃生舱,whole-branch review 补齐)。
+
+    claim_next_period 认不到期次(超容差 / 排期已耗尽)就停在 match_review,
+    schedule_id 留空 —— 协议 active 后容差字段不可编辑(EDITABLE_STATUSES),
+    拒了重投也是同一行同一容差,永远认不到,PA 那道"未链接期次"闸门就再也
+    过不去。这里让人工显式指定是哪一行,并且跳过金额容差校验 —— 人在主动
+    覆盖它,校验的意义已经不在了,跟 claim_milestone 完全不做金额校验是
+    同一个道理(设计 §5.2:预期与实际并排显示给人眼判断,不是让机器拦)。
+    仍然要挡住跨协议 / 非 period 类型 / 已被认领的行,拒绝方式照抄
+    claim_milestone。
+    """
+    row = (await db.execute(
+        select(AgreementPaymentSchedule).where(AgreementPaymentSchedule.id == row_id)
+    )).scalar_one_or_none()
+    if row is None or row.agreement_id != agr.id or row.schedule_type != "period":
+        raise ValueError("That billing period does not belong to this agreement")
+    if row.invoice_id is not None:
+        raise ValueError(
+            f"{row.period_label} already has an invoice matched to it")
+    row.status = "received"
+    row.invoice_id = invoice.id
+    await db.flush()
+    return row
+
+
 async def claim_milestone(
     db: AsyncSession, agr: PurchaseAgreement, invoice, row_id: uuid.UUID
 ) -> AgreementPaymentSchedule:

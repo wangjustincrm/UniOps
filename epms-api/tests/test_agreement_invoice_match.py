@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import create_access_token
@@ -61,7 +61,7 @@ async def _make_active_agreement(test_engine, vendor_id, created_by, **over):
     vendor_uuid = vendor_id if isinstance(vendor_id, uuid.UUID) else uuid.UUID(str(vendor_id))
     creator_uuid = created_by if isinstance(created_by, uuid.UUID) else uuid.UUID(str(created_by))
     fields = dict(
-        number=f"AGR-202608-{uuid.uuid4().hex[:4]}",
+        number=f"AGR-202608-T{uuid.uuid4().hex[:11]}",
         title="Test house account",
         agreement_type="house_account",
         vendor_id=vendor_uuid,
@@ -1078,5 +1078,296 @@ async def test_agreement_match_review_reject_releases_recurring_schedule_row(
     async with factory() as db:
         released_row = (await db.execute(select(AgreementPaymentSchedule).where(
             AgreementPaymentSchedule.id == claimed_schedule_id))).scalar_one()
+    assert released_row.status == "pending"
+    assert released_row.invoice_id is None
+
+
+# ── Whole-branch review Blocker 2: the manual-assignment escape hatch ──────
+#
+# Spec §4.3 step 5: an invoice claim_next_period can't place (out of
+# tolerance / no candidate row) is meant to be resolvable by a human
+# explicitly picking the period — "由人工指定期次". Before this fix that
+# escape hatch did not exist: req.schedule_id was read on the milestone
+# branch only, never honoured on recurring, so an out-of-tolerance invoice
+# landed in match_review with schedule_id NULL and had NO way forward —
+# approving there never sets schedule_id (see
+# test_recurring_pa_refused_when_invoice_never_claimed_a_period in
+# test_agreement_pa.py), and rejecting-then-rematching without an explicit
+# override just reruns the same FIFO row against the same tolerance forever.
+
+async def test_recurring_match_honours_explicit_schedule_id_out_of_tolerance(
+        test_engine, admin_client):
+    """A human overriding FIFO/tolerance on purpose: an explicit schedule_id
+    claims that exact row, skips the amount check entirely, and — unlike a
+    genuine FIFO auto-claim — is reported as NOT automatic."""
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Manual Assign Vendor")
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    # $1,180 vs $1,000 ±5% ([950, 1050]) — wildly out of tolerance.
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1180.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        target_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.agreement_id == agr.id,
+            AgreementPaymentSchedule.schedule_type == "period",
+        ).order_by(AgreementPaymentSchedule.sequence).limit(1))).scalar_one()
+        await db.commit()
+    target_row_id = target_row.id
+
+    # First, confirm the "stuck forever" failure mode: FIFO alone can never
+    # place this invoice.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        stuck = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                                 matched_by=user_id)
+        await db.commit()
+    assert stuck.status == "match_review"
+    assert stuck.schedule_id is None
+
+    # AP rejects (back to "unmatched" — a no-op release since schedule_id was
+    # already NULL), then re-matches with an EXPLICIT schedule_id: the
+    # manual-assignment override.
+    r_reject = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={
+        "action": "reject", "note": "manually assigning the period instead"})
+    assert r_reject.status_code == 200, r_reject.text
+    assert r_reject.json()["status"] == "unmatched"
+
+    r_match = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
+        "agreement_id": str(agr.id), "schedule_id": str(target_row_id)})
+    assert r_match.status_code == 200, r_match.text
+    body = r_match.json()
+    assert body["status"] == "matched"          # admin_client is AP → require_review=False
+    assert body["match_route_auto"] is False    # a human overrode FIFO — not "automatic"
+
+    # InvoiceResponse does not expose schedule_id — check the row directly.
+    async with factory() as db:
+        db_inv_after = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        assert db_inv_after.schedule_id == target_row_id
+        claimed_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == target_row_id))).scalar_one()
+    assert claimed_row.status == "received"
+    assert claimed_row.invoice_id == inv_id
+
+
+async def test_recurring_match_rejects_an_explicit_schedule_id_from_another_agreement(
+        test_engine, admin_client):
+    """The override is not a blank check — claim_specific_period must still
+    refuse a row that does not belong to THIS agreement, the same way
+    claim_milestone already refuses a foreign milestone row."""
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import AgreementMatchInvalid, match as crud_match
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Manual Assign Cross Vendor")
+    agr_a = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    agr_b = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1180.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_b = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr_b.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_b)
+        foreign_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.agreement_id == agr_b.id,
+        ).limit(1))).scalar_one()
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        with pytest.raises(AgreementMatchInvalid, match="does not belong"):
+            await crud_match(db, db_inv, InvoiceMatchRequest(
+                agreement_id=agr_a.id, schedule_id=foreign_row.id), matched_by=user_id)
+
+
+# ── Whole-branch review Blocker 4 (4a/4b): release must also clear the ─────
+# confirmation stamp and complete the open task ─────────────────────────────
+#
+# _release_schedule_row used to reset only status/invoice_id. 4a: a
+# delegate's match claims a period and gets it confirmed; AP then rejects the
+# match — the row released back to "pending" but STILL stamped confirmed, so
+# a later invoice re-claiming that period sails past the PA gate
+# (accepted_at IS NULL) with nobody having confirmed ITS cycle. 4b: release
+# never completed the open confirm_period task, so the re-claim's
+# create_confirm_task added a SECOND task with the same document_number —
+# agreements.py's confirm endpoint used .scalar_one_or_none() there, which
+# raises MultipleResultsFound (a 500) the instant that happens.
+
+async def test_release_then_reclaim_clears_confirmation_and_leaves_one_open_task(
+        admin_client, test_engine):
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.crud.invoice import review_match as crud_review_match
+    from app.models.task import Task
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Release Reclaim Vendor")
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        fresh_agr.owner_id = user_id
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    inv_x = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_x_id = uuid.UUID(inv_x["id"])
+
+    # Delegate-shaped match (require_review=True, mirrors
+    # test_agreement_match_review_reject_releases_recurring_schedule_row's
+    # setup) claims period 1 and creates a confirm task.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_x_id))).scalar_one()
+        matched_x = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                                     matched_by=user_id, require_review=True)
+        await db.commit()
+    assert matched_x.status == "match_review"
+    schedule_id = matched_x.schedule_id
+    assert schedule_id is not None
+
+    # The owner confirms it — a REAL confirmation, not an unclaimed row.
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        confirmed_row = await sched_crud.confirm_period(db, fresh_agr, schedule_id, user_id)
+        await db.commit()
+    assert confirmed_row.accepted_at is not None
+
+    # AP rejects the match — the whole point of this test: releasing a REAL,
+    # ALREADY-CONFIRMED period, not an unconfirmed one.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_x_id))).scalar_one()
+        rejected = await crud_review_match(db, db_inv, "reject", "wrong statement", user_id)
+        await db.commit()
+    assert rejected.schedule_id is None
+
+    async with factory() as db:
+        released_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == schedule_id))).scalar_one()
+        open_tasks = (await db.execute(select(Task).where(
+            Task.document_type == "agr", Task.document_id == agr.id,
+            Task.type == "confirm_period",
+            Task.document_number == f"{agr.number} · {released_row.period_label}",
+            Task.is_completed.is_(False),
+        ))).scalars().all()
+    # 4a: the confirmation stamp must NOT survive the release.
+    assert released_row.status == "pending"
+    assert released_row.invoice_id is None
+    assert released_row.accepted_by is None
+    assert released_row.accepted_at is None
+    # 4b: the original confirm_period task must be completed, not left open.
+    assert open_tasks == []
+
+    # Invoice Y re-claims the SAME period (FIFO picks the lowest pending
+    # sequence, which is period 1 again now that it's back to "pending").
+    inv_y = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_y_id = uuid.UUID(inv_y["id"])
+    async with factory() as db:
+        db_inv_y = (await db.execute(select(Invoice).where(Invoice.id == inv_y_id))).scalar_one()
+        matched_y = await crud_match(db, db_inv_y, InvoiceMatchRequest(agreement_id=agr.id),
+                                     matched_by=user_id)
+        await db.commit()
+    assert matched_y.schedule_id == schedule_id   # the very same row
+
+    async with factory() as db:
+        reclaimed_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == schedule_id))).scalar_one()
+        open_tasks_after = (await db.execute(select(Task).where(
+            Task.document_type == "agr", Task.document_id == agr.id,
+            Task.type == "confirm_period",
+            Task.document_number == f"{agr.number} · {reclaimed_row.period_label}",
+            Task.is_completed.is_(False),
+        ))).scalars().all()
+    # Nobody has confirmed service for invoice Y's cycle — without 4a this
+    # would still read as confirmed, carried over from invoice X.
+    assert reclaimed_row.accepted_at is None
+    # Exactly one open task — without 4b this would be two (the never-closed
+    # original plus the new one from this re-claim's create_confirm_task).
+    assert len(open_tasks_after) == 1
+
+    # The actual HTTP path Blocker 4b's 500 (MultipleResultsFound) was
+    # reachable through must not blow up.
+    r_confirm = await admin_client.post(
+        f"/api/v1/agreements/{agr.id}/schedule/{schedule_id}/confirm")
+    assert r_confirm.status_code == 200, r_confirm.text
+
+
+# ── Whole-branch review Item 9: Data-Maintenance invoice delete must ───────
+# release a claimed schedule row too — agreement_payment_schedule.invoice_id
+# has no FK back to invoices (a shared table), so hard-deleting the invoice
+# straight out from under a claimed row used to strand it "received" and
+# pointing at a ghost: never re-claimable (status never returns to
+# "pending"/"overdue") and never swept (the overdue sweep only touches
+# "pending" rows).
+
+async def test_data_maintenance_invoice_delete_releases_the_schedule_row(
+        admin_client, test_engine):
+    from app.admin import service as admin_service
+    from app.crud import agreement_schedule as sched_crud
+    from app.crud.invoice import match as crud_match
+    from app.models.invoice import Invoice
+    from app.schemas.invoice import InvoiceMatchRequest
+
+    vendor_id, _name, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="DM Delete Vendor")
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        matched = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                                   matched_by=user_id)
+        await db.commit()
+    schedule_id = matched.schedule_id
+    assert schedule_id is not None
+
+    async with factory() as db:
+        await admin_service.delete_record(
+            db, "invoice", inv_id, actor_id=user_id, actor_email="admin@example.com")
+        await db.commit()
+
+    async with factory() as db:
+        cnt = (await db.execute(select(func.count()).select_from(Invoice).where(
+            Invoice.id == inv_id))).scalar_one()
+        assert cnt == 0
+        released_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.id == schedule_id))).scalar_one()
     assert released_row.status == "pending"
     assert released_row.invoice_id is None

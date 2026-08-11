@@ -41,6 +41,94 @@ PaWriteDep = Annotated[dict, Depends(require_permission("epms.pa.write"))]
 _PAYABLE_INVOICE_STATUSES = ("matched", "approved")
 
 
+async def _validate_agreement_pa_invoices(
+    db: SessionDep, agr, invoice_ids: list[uuid.UUID],
+) -> None:
+    """The invoice-side gate for an agreement-backed PA: every listed invoice
+    must be matched to THIS agreement, cleared for payment, and — for a
+    recurring agreement — linked to a CONFIRMED billing period.
+
+    Extracted from create_pa (whole-branch review finding, Phase 1B): PATCH
+    /pa/{id} reassigns invoice_ids without ever re-running this. Create a PA
+    with a confirmed invoice, then PATCH the invoice list to an unconfirmed
+    one (or one with schedule_id NULL, or one matched to a different
+    agreement) and every gate below was silently bypassed — update_pa now
+    calls this too whenever pa.agreement_id is set and body.invoice_ids is
+    given.
+    """
+    if not invoice_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one invoice matched to this agreement is required "
+                   "— there is no goods-receipt override on this route.",
+        )
+    rows = (await db.execute(
+        select(Invoice.id, Invoice.internal_ref, Invoice.agreement_id, Invoice.status,
+               Invoice.schedule_id)
+        .where(Invoice.id.in_(invoice_ids))
+    )).all()
+    if len(rows) != len(set(invoice_ids)):
+        raise HTTPException(status_code=422, detail="One or more invoices not found")
+    stray = [str(r.id) for r in rows if r.agreement_id != agr.id]
+    if stray:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invoice(s) not matched to agreement {agr.number}: {', '.join(stray)}")
+    # …and each must have CLEARED matching. The link alone is not enough: an
+    # invoice matched by a delegate sits at "match_review" with its
+    # agreement_id already set, so without this check the AP review gate
+    # (commit ebeb3f5) is bypassable simply by raising/editing the PA before
+    # the review is answered. On the PO route the GR is independent evidence;
+    # here the invoice IS the only evidence, so its review state is the
+    # control. "exception"/"unmatched" are excluded for the same reason.
+    not_ready = [
+        f"{r.internal_ref} ({r.status})"
+        for r in rows if r.status not in _PAYABLE_INVOICE_STATUSES
+    ]
+    if not_ready:
+        raise HTTPException(
+            status_code=422,
+            detail="Invoice(s) not cleared for payment — a matched, reviewed "
+                   f"invoice is required: {', '.join(not_ready)}")
+    # recurring 免 GR,履约确认是它唯一的代偿 —— 未确认的期次不许付款。
+    # milestone 本期没有验收闸门(设计 §5.3),house_account 走 slip 路径,
+    # 所以这里按 agreement_type 分支,不能一刀切。
+    if agr.agreement_type == "recurring":
+        # Code review finding (Task 7 fix round): an INNER JOIN on
+        # Invoice.schedule_id == AgreementPaymentSchedule.id silently drops
+        # any invoice with schedule_id IS NULL from the result set instead of
+        # flagging it — and that state is reachable, not theoretical:
+        # claim_next_period returns None when nothing is claimable (out of
+        # tolerance, or the schedule is exhausted), routing the invoice to
+        # match_review with schedule_id left NULL; an AP reviewer's plain
+        # approve() there sets status="matched" unconditionally without ever
+        # touching schedule_id. That invoice would then sail through every
+        # check above (payable status, "matched to this agreement") with the
+        # confirmation control never having applied to it at all. So the
+        # unlinked case must be rejected on its own, checked directly against
+        # `rows` rather than through a join that can only see invoices
+        # already linked.
+        unlinked = [r.internal_ref for r in rows if r.schedule_id is None]
+        if unlinked:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"Invoice(s) not linked to a billing period: {', '.join(unlinked)}. "
+                        "They were never claimed against a scheduled period (out of "
+                        "tolerance or no candidate row when matched) — this needs to be "
+                        "resolved before a payment can be raised against them."))
+        schedule_ids = [r.schedule_id for r in rows]
+        unconfirmed = (await db.execute(
+            select(AgreementPaymentSchedule.period_label)
+            .where(AgreementPaymentSchedule.id.in_(schedule_ids),
+                   AgreementPaymentSchedule.accepted_at.is_(None))
+        )).scalars().all()
+        if unconfirmed:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"Service has not been confirmed for {', '.join(unconfirmed)}. "
+                        "The department must confirm delivery before payment can be raised."))
+
+
 @router.get("", response_model=PaListResponse)
 async def list_pas(
     db: SessionDep,
@@ -128,79 +216,11 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # There is no receipt gate on this route (never any GR) — the linked
         # invoice(s) are the ONLY evidence this PA pays real, already-billed
         # spend rather than an arbitrary amount against an approved ceiling.
-        if not body.invoice_ids:
-            raise HTTPException(
-                status_code=422,
-                detail="At least one invoice matched to this agreement is required "
-                       "— there is no goods-receipt override on this route.",
-            )
-        # Every listed invoice must actually be matched to THIS agreement —
-        # otherwise a PA could pay an unrelated invoice off an approved ceiling.
-        rows = (await db.execute(
-            select(Invoice.id, Invoice.internal_ref, Invoice.agreement_id, Invoice.status,
-                   Invoice.schedule_id)
-            .where(Invoice.id.in_(body.invoice_ids))
-        )).all()
-        if len(rows) != len(set(body.invoice_ids)):
-            raise HTTPException(status_code=422, detail="One or more invoices not found")
-        stray = [str(r.id) for r in rows if r.agreement_id != body.agreement_id]
-        if stray:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Invoice(s) not matched to agreement {agr.number}: {', '.join(stray)}")
-        # …and each must have CLEARED matching. The link alone is not enough:
-        # an invoice matched by a delegate sits at "match_review" with its
-        # agreement_id already set, so without this check the AP review gate
-        # (commit ebeb3f5) is bypassable simply by raising the PA before the
-        # review is answered. On the PO route the GR is independent evidence;
-        # here the invoice IS the only evidence, so its review state is the
-        # control. "exception"/"unmatched" are excluded for the same reason.
-        not_ready = [
-            f"{r.internal_ref} ({r.status})"
-            for r in rows if r.status not in _PAYABLE_INVOICE_STATUSES
-        ]
-        if not_ready:
-            raise HTTPException(
-                status_code=422,
-                detail="Invoice(s) not cleared for payment — a matched, reviewed "
-                       f"invoice is required: {', '.join(not_ready)}")
-        # recurring 免 GR,履约确认是它唯一的代偿 —— 未确认的期次不许付款。
-        # milestone 本期没有验收闸门(设计 §5.3),house_account 走 slip 路径,
-        # 所以这里按 agreement_type 分支,不能一刀切。
-        if agr.agreement_type == "recurring":
-            # Code review finding (Task 7 fix round): an INNER JOIN on
-            # Invoice.schedule_id == AgreementPaymentSchedule.id silently
-            # drops any invoice with schedule_id IS NULL from the result set
-            # instead of flagging it — and that state is reachable, not
-            # theoretical: claim_next_period returns None when nothing is
-            # claimable (out of tolerance, or the schedule is exhausted),
-            # routing the invoice to match_review with schedule_id left NULL;
-            # an AP reviewer's plain approve() there sets status="matched"
-            # unconditionally without ever touching schedule_id. That invoice
-            # would then sail through every check above (payable status,
-            # "matched to this agreement") with the confirmation control
-            # never having applied to it at all. So the unlinked case must be
-            # rejected on its own, checked directly against `rows` rather
-            # than through a join that can only see invoices already linked.
-            unlinked = [r.internal_ref for r in rows if r.schedule_id is None]
-            if unlinked:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(f"Invoice(s) not linked to a billing period: {', '.join(unlinked)}. "
-                            "They were never claimed against a scheduled period (out of "
-                            "tolerance or no candidate row when matched) — this needs to be "
-                            "resolved before a payment can be raised against them."))
-            schedule_ids = [r.schedule_id for r in rows]
-            unconfirmed = (await db.execute(
-                select(AgreementPaymentSchedule.period_label)
-                .where(AgreementPaymentSchedule.id.in_(schedule_ids),
-                       AgreementPaymentSchedule.accepted_at.is_(None))
-            )).scalars().all()
-            if unconfirmed:
-                raise HTTPException(
-                    status_code=422,
-                    detail=(f"Service has not been confirmed for {', '.join(unconfirmed)}. "
-                            "The department must confirm delivery before payment can be raised."))
+        # Every listed invoice must actually be matched to THIS agreement,
+        # cleared for payment, and (recurring) linked to a confirmed period —
+        # see _validate_agreement_pa_invoices, shared with update_pa's PATCH
+        # path so the same rules apply there too.
+        await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
         # 收货闸门不适用:协议路线定义上就没有 GR(1A 无 pickup slip,1B 才有)。
         created = await pa_crud.create(
             db, body,
@@ -451,6 +471,17 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWr
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
+    # Whole-branch review finding: pa_crud.update() assigns invoice_ids
+    # unconditionally, with none of create_pa's agreement gates re-run — a
+    # PATCH could swap in an invoice that is unconfirmed, unlinked to a
+    # billing period, or matched to a different agreement entirely, and every
+    # check below would be bypassed. agreement_id itself is immutable here
+    # (PaUpdate has no such field), so only invoice_ids needs re-validating.
+    if pa.agreement_id is not None and body.invoice_ids is not None:
+        agr = await agr_crud.get_by_id(db, pa.agreement_id)
+        if agr is None:
+            raise HTTPException(status_code=404, detail="Agreement not found")
+        await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
     return await pa_crud.update(db, pa, body)
 
 

@@ -105,8 +105,11 @@ class InvoiceMatchRequest(BaseModel):
     # and milestone claim a real schedule row instead — see schedule_id below —
     # and never require this field.
     legacy_settlement_reason: str | None = None
-    # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。recurring 由 FIFO 自动认领,
-    # 不读这个字段;house_account 没有排期行,同样不读。
+    # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。recurring 默认由 FIFO
+    # 自动认领,不读这个字段;但显式传入时是人工指定期次的逃生舱(whole-branch
+    # review 补齐 spec §4.3 step 5):FIFO 认不到期次(超容差 / 无候选行)会永久
+    # 卡在 match_review 无解,这里让人工越过容差直接指定哪一行。house_account
+    # 没有排期行,同样不读。
     schedule_id: uuid.UUID | None = None
 
 

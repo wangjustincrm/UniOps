@@ -1,5 +1,6 @@
 """PA created from an agreement-matched invoice (no PO, no GR)."""
 import uuid
+from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -586,3 +587,180 @@ async def test_milestone_pa_not_gated_by_confirmation(admin_client, test_engine)
                         "unit_price": "500.00", "line_total": "500.00"}],
     })
     assert pa.status_code == 201, pa.text
+
+
+# ── Whole-branch review Blocker 2, end to end: manual assignment unblocks ──
+# payment for an invoice that FIFO alone can never place (see
+# test_recurring_pa_refused_when_invoice_never_claimed_a_period above for the
+# "stuck forever" failure this replaces).
+
+async def test_recurring_pa_payable_after_manual_period_assignment(admin_client, test_engine):
+    from decimal import Decimal
+
+    from app.crud import agreement_schedule as sched_crud
+    from app.models.agreement_schedule import AgreementPaymentSchedule
+
+    vendor_id, _vn, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Manual Assign Payable Vendor")
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"))
+    # $1,180 vs $1,000 ±5% — wildly outside tolerance, unclaimable by FIFO.
+    inv = await _upload_invoice(admin_client, vendor_id, amount="1180.00")
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        target_row = (await db.execute(select(AgreementPaymentSchedule).where(
+            AgreementPaymentSchedule.agreement_id == agr.id,
+            AgreementPaymentSchedule.schedule_type == "period",
+        ).order_by(AgreementPaymentSchedule.sequence).limit(1))).scalar_one()
+        await db.commit()
+    target_row_id = target_row.id
+
+    # Manual assignment: explicit schedule_id claims the row directly.
+    r_match = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
+        "agreement_id": str(agr.id), "schedule_id": str(target_row_id)})
+    assert r_match.status_code == 200, r_match.text
+    assert r_match.json()["status"] == "matched"
+
+    # Still gated on confirmation — a PA cannot be raised yet.
+    still_blocked = await admin_client.post(PA_URL, json={
+        "title": "Not yet confirmed", "agreement_id": str(agr.id), "invoice_ids": [inv["id"]],
+        "subtotal": "1180.00", "tax_amount": "0.00", "payment_amount": "1180.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "1180.00", "line_total": "1180.00"}],
+    })
+    assert still_blocked.status_code == 422, still_blocked.text
+    assert "has not been confirmed" in still_blocked.text
+
+    # admin_client is system_admin — the confirm endpoint's ownership check
+    # bypasses entirely for that role.
+    r_confirm = await admin_client.post(
+        f"/api/v1/agreements/{agr.id}/schedule/{target_row_id}/confirm")
+    assert r_confirm.status_code == 200, r_confirm.text
+
+    pa = await admin_client.post(PA_URL, json={
+        "title": "Manually assigned period", "agreement_id": str(agr.id),
+        "invoice_ids": [inv["id"]],
+        "subtotal": "1180.00", "tax_amount": "0.00", "payment_amount": "1180.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "1180.00", "line_total": "1180.00"}],
+    })
+    assert pa.status_code == 201, pa.text
+
+
+# ── Whole-branch review Blocker 3: PATCH must re-run the agreement gates ───
+#
+# create_pa's agreement validation (matched-to-this-agreement, cleared for
+# payment, and — recurring — linked to a CONFIRMED period) used to live only
+# in create_pa. crud.pa.update() assigns invoice_ids unconditionally, so a
+# PATCH could swap in an invoice that never cleared any of those gates.
+
+async def test_patch_pa_rejects_swapping_in_an_unconfirmed_invoice(admin_client, test_engine):
+    from decimal import Decimal
+
+    from app.crud import agreement_schedule as sched_crud
+    from app.models.agreement_schedule import AgreementPaymentSchedule
+
+    vendor_id, _vn, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Patch Bypass Vendor")
+    agr = await _make_active_agreement(
+        test_engine, vendor_id, user_id, agreement_type="recurring",
+        recurring_type="monthly", expected_invoice_day=5,
+        expected_amount_per_period=Decimal("1000.00"), tolerance_pct=Decimal("5.00"),
+        valid_from=date.today() - timedelta(days=200),
+        valid_to=date.today() + timedelta(days=200),
+    )
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh_agr = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+        await sched_crud.ensure_period_rows(db, fresh_agr)
+        await db.commit()
+
+    # Invoice A claims period 1 and IS confirmed — this is what the PA is
+    # legitimately created against. InvoiceResponse does not expose
+    # schedule_id, so resolve it via the DB directly.
+    from app.models.invoice import Invoice as _Invoice
+
+    inv_a = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    r_a = await admin_client.post(f"/api/v1/invoices/{inv_a['id']}/match", json={
+        "agreement_id": str(agr.id)})
+    assert r_a.status_code == 200, r_a.text
+    async with factory() as db:
+        schedule_id_a = (await db.execute(select(_Invoice.schedule_id).where(
+            _Invoice.id == uuid.UUID(inv_a["id"])))).scalar_one()
+    assert schedule_id_a is not None
+    r_confirm = await admin_client.post(
+        f"/api/v1/agreements/{agr.id}/schedule/{schedule_id_a}/confirm")
+    assert r_confirm.status_code == 200, r_confirm.text
+
+    # Invoice B claims period 2 (FIFO moves on) but is deliberately left
+    # UNCONFIRMED.
+    inv_b = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
+    r_b = await admin_client.post(f"/api/v1/invoices/{inv_b['id']}/match", json={
+        "agreement_id": str(agr.id)})
+    assert r_b.status_code == 200, r_b.text
+    async with factory() as db:
+        schedule_id_b = (await db.execute(select(_Invoice.schedule_id).where(
+            _Invoice.id == uuid.UUID(inv_b["id"])))).scalar_one()
+    assert schedule_id_b != schedule_id_a
+
+    pa = await admin_client.post(PA_URL, json={
+        "title": "Confirmed period A", "agreement_id": str(agr.id),
+        "invoice_ids": [inv_a["id"]],
+        "subtotal": "1000.00", "tax_amount": "0.00", "payment_amount": "1000.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "1000.00", "line_total": "1000.00"}],
+    })
+    assert pa.status_code == 201, pa.text
+    pa_id = pa.json()["id"]
+
+    # The swap: PATCH the invoice list to invoice B, still unconfirmed.
+    patched = await admin_client.patch(f"{PA_URL}/{pa_id}", json={
+        "invoice_ids": [inv_b["id"]]})
+    assert patched.status_code == 422, patched.text
+    assert "has not been confirmed" in patched.text
+
+    # And the PA's invoice_ids must be untouched by the rejected PATCH.
+    still = await admin_client.get(f"{PA_URL}/{pa_id}")
+    assert still.json()["invoice_ids"] == [inv_a["id"]]
+
+
+async def test_patch_pa_rejects_swapping_in_an_invoice_from_another_agreement(
+        admin_client, test_engine):
+    """The stray-invoice check must also re-run on PATCH, not just on create."""
+    vendor_id, _vn, user_id = await seed_vendor_and_user(
+        test_engine, vendor_name="Patch Cross Agreement Vendor")
+    agr_a = await _make_active_agreement(test_engine, vendor_id, user_id)
+    agr_b = await _make_active_agreement(test_engine, vendor_id, user_id)
+
+    inv_a = await _upload_invoice(admin_client, vendor_id, amount="500.00")
+    r_a = await admin_client.post(f"/api/v1/invoices/{inv_a['id']}/match", json={
+        "agreement_id": str(agr_a.id), "legacy_settlement_reason": "backlog"})
+    assert r_a.status_code == 200, r_a.text
+
+    inv_b = await _upload_invoice(admin_client, vendor_id, amount="500.00")
+    r_b = await admin_client.post(f"/api/v1/invoices/{inv_b['id']}/match", json={
+        "agreement_id": str(agr_b.id), "legacy_settlement_reason": "backlog"})
+    assert r_b.status_code == 200, r_b.text
+
+    pa = await admin_client.post(PA_URL, json={
+        "title": "Agreement A statement", "agreement_id": str(agr_a.id),
+        "invoice_ids": [inv_a["id"]],
+        "subtotal": "500.00", "tax_amount": "0.00", "payment_amount": "500.00",
+        "line_items": [{"description": "x", "qty": "1", "unit": "EA",
+                        "unit_price": "500.00", "line_total": "500.00"}],
+    })
+    assert pa.status_code == 201, pa.text
+    pa_id = pa.json()["id"]
+
+    patched = await admin_client.patch(f"{PA_URL}/{pa_id}", json={
+        "invoice_ids": [inv_b["id"]]})
+    assert patched.status_code == 422, patched.text
+    assert "not matched to agreement" in patched.text

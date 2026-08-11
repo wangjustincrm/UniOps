@@ -102,6 +102,28 @@ async def agreement_action(
     agr = await agr_crud.get_by_id(db, agreement_id)
     if agr is None:
         raise HTTPException(status_code=404, detail="Agreement not found")
+    # Whole-branch review finding: validate_milestones never checks emptiness
+    # (recurring is protected the same way by validate_recurrence's own
+    # coherence rule), so a milestone agreement could be submitted and
+    # approved with zero stages. Once active, EDITABLE_STATUSES locks out any
+    # further stage edits, and claim_milestone always requires a schedule_id
+    # — so a milestone agreement with no rows can never be matched by any
+    # invoice, forever. Block it here, at the one place that can still be
+    # fixed (add a stage, then submit again).
+    if body.action == "submit" and agr.agreement_type == "milestone":
+        has_stage = (await db.execute(
+            select(AgreementPaymentSchedule.id).where(
+                AgreementPaymentSchedule.agreement_id == agr.id,
+                AgreementPaymentSchedule.schedule_type == "milestone",
+            ).limit(1)
+        )).first()
+        if has_stage is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Add at least one milestone stage before submitting this "
+                       "agreement for approval — once approved and active, no stage "
+                       "can be added, and no invoice will ever be matchable to it.",
+            )
     try:
         await delegate_action("agr", str(agreement_id), body.action, body.comment, token)
     except LookupError as exc:
@@ -191,14 +213,22 @@ async def confirm_schedule_period(
         # may confirm it. Matched on document_id + document_number the same
         # way confirm_period() completes the task, so a caller holding some
         # OTHER period's task for this same agreement is refused too.
-        task = (await db.execute(
+        # .scalars().all() + take the first — NOT .scalar_one_or_none(), which
+        # 500s (MultipleResultsFound) the instant a duplicate open task exists
+        # for the same agreement+period (code review finding, Task 4b: a
+        # release-then-reclaim cycle used to leave the ORIGINAL task open,
+        # so a later re-claim's create_confirm_task adds a second one with
+        # the same document_number). crud.confirm_period already tolerates
+        # duplicates this way; the two layers must agree.
+        open_tasks = (await db.execute(
             select(Task).where(
                 Task.document_type == "agr", Task.document_id == agr.id,
                 Task.type == "confirm_period",
                 Task.document_number == f"{agr.number} · {row.period_label}",
                 Task.is_completed.is_(False),
             )
-        )).scalar_one_or_none()
+        )).scalars().all()
+        task = open_tasks[0] if open_tasks else None
         if task is None:
             raise HTTPException(
                 status_code=403,
@@ -209,10 +239,22 @@ async def confirm_schedule_period(
         # thing on both sides (who gets assigned vs who may act), or a
         # grant-only dept_manager could be assigned the task and then be
         # unable to complete it.
+        #
+        # Whole-branch review finding (Phase 1B): the OR used to admit ANYONE
+        # sharing the assignee's role, even for a task assigned to a SPECIFIC
+        # person. _confirm_assignee stores the owner's own base role as
+        # assigned_role when owner_id resolves (test_owner_assignee_...), so a
+        # person-assigned task carries assigned_user_id=<owner> AND
+        # assigned_role=<owner's base role> — and the old OR let every other
+        # holder of that base role in the company confirm it. The role arm is
+        # only meaningful for a genuine role-broadcast task (assigned_user_id
+        # IS NULL, assigned_role='dept_manager' — see
+        # test_confirm_endpoint_allows_a_user_who_holds_the_assigned_role_via_grant);
+        # a task with a specific assignee must be gated on that assignee alone.
         effective_roles = await _effective_role_codes(db, caller_role, caller_id)
         holds_it = (
-            task.assigned_user_id == caller_id
-            or task.assigned_role in effective_roles
+            task.assigned_user_id == caller_id if task.assigned_user_id is not None
+            else task.assigned_role in effective_roles
         )
         if not holds_it:
             raise HTTPException(

@@ -34,7 +34,7 @@ async def _seed(db, **over):
         full_name="T", role="procurement_officer"))
     await db.flush()
     kw = dict(
-        number=f"AGR-202608-{uuid.uuid4().hex[:4]}", title="Bell", agreement_type="recurring",
+        number=f"AGR-202608-T{uuid.uuid4().hex[:11]}", title="Bell", agreement_type="recurring",
         vendor_id=vendor.id, vendor_name=vendor.name,
         valid_from=date(2026, 1, 1), valid_to=date(2026, 3, 31),
         recurring_type="monthly", expected_invoice_day=5,
@@ -319,6 +319,15 @@ async def test_confirm_endpoint_allows_the_assignee(test_engine):
 
 
 async def test_confirm_endpoint_refuses_an_unrelated_user(test_engine):
+    # Whole-branch review finding: this used to pass "by luck" — the outsider
+    # happened to hold a DIFFERENT role than the task's assignee, so even the
+    # old buggy `assigned_user_id == caller_id OR assigned_role in
+    # effective_roles` check refused them for an unrelated reason. The real
+    # bug the OR let through was an outsider who shares the SAME role as the
+    # person-assigned task's owner — _confirm_assignee stores the owner's own
+    # base role as assigned_role, so any other holder of that role used to be
+    # admitted. The outsider here is deliberately given the SAME role as
+    # _seed's user (procurement_officer) to exercise that exact case.
     async with _factory(test_engine)() as db:
         agr, vendor, user = await _seed(db)
         agr.owner_id = user.id
@@ -328,11 +337,11 @@ async def test_confirm_endpoint_refuses_an_unrelated_user(test_engine):
         await sched_crud.create_confirm_task(db, agr, row)
         outsider = await user_crud.create(db, RegisterRequest(
             email=f"outsider-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
-            full_name="Outsider", role="requester"))
+            full_name="Outsider", role="procurement_officer"))
         await db.commit()
         agr_id, row_id, outsider_id = agr.id, row.id, outsider.id
 
-    client = _client_for(outsider_id, "requester")
+    client = _client_for(outsider_id, "procurement_officer")
     try:
         r = await client.post(_confirm_url(agr_id, row_id))
         assert r.status_code == 403, r.text

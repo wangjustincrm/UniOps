@@ -1,4 +1,5 @@
 """CRUD for Invoice with 3-way match logic."""
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -17,6 +18,7 @@ from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.invoice_tax_line import InvoiceTaxLine
 from app.models.po import PoLineItem, PurchaseOrder
+from app.models.task import Task
 from app.models.user import User
 from app.models.vendor import Vendor
 from app.schemas.invoice import (
@@ -26,6 +28,8 @@ from app.schemas.invoice import (
     InvoiceMatchRequest,
     InvoiceUpdate,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ── Number generation ──────────────────────────────────────────────────────────
@@ -413,13 +417,31 @@ async def _match_to_agreement(
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
         if agr.agreement_type == "recurring":
-            claimed_row = await agreement_schedule_crud.claim_next_period(db, agr, invoice)
-            if claimed_row is None:
-                # 认不到期次(超容差 / 无候选行)就不猜,停在复核队列由人工指定。
-                require_review = True
-            else:
-                # recurring 免 GR —— 履约确认是它唯一的代偿,认领成功就派任务。
+            # Whole-branch review finding: spec §4.3 step 5's manual-assignment
+            # escape hatch was never built — an invoice that FIFO can't claim
+            # (out of tolerance / schedule exhausted) used to be permanently
+            # stuck: it lands in match_review with schedule_id NULL, approving
+            # it there never sets schedule_id (PA then 422s "not linked to a
+            # billing period" with no way to resolve), and rejecting it just
+            # re-runs the SAME FIFO row against the SAME tolerance. An explicit
+            # req.schedule_id here is a human overriding that FIFO/tolerance
+            # decision on purpose, so it claims the row directly and skips the
+            # amount check entirely.
+            if req.schedule_id is not None:
+                try:
+                    claimed_row = await agreement_schedule_crud.claim_specific_period(
+                        db, agr, invoice, req.schedule_id)
+                except ValueError as exc:
+                    raise AgreementMatchInvalid(str(exc)) from exc
                 await agreement_schedule_crud.create_confirm_task(db, agr, claimed_row)
+            else:
+                claimed_row = await agreement_schedule_crud.claim_next_period(db, agr, invoice)
+                if claimed_row is None:
+                    # 认不到期次(超容差 / 无候选行)就不猜,停在复核队列由人工指定。
+                    require_review = True
+                else:
+                    # recurring 免 GR —— 履约确认是它唯一的代偿,认领成功就派任务。
+                    await agreement_schedule_crud.create_confirm_task(db, agr, claimed_row)
         else:   # milestone
             if req.schedule_id is None:
                 raise AgreementMatchInvalid(
@@ -447,7 +469,15 @@ async def _match_to_agreement(
     invoice.agreement_number = agr.number
     invoice.match_route = "agreement"
     invoice.schedule_id = claimed_row.id if claimed_row else None
-    invoice.match_route_auto = agr.agreement_type == "recurring" and claimed_row is not None
+    # An explicit req.schedule_id (the manual-assignment escape hatch above)
+    # is a human overriding FIFO/tolerance on purpose — it must not read as
+    # "automatic" just because a row got claimed. Milestone is never "auto"
+    # either (schedule_id is always caller-picked there), which this
+    # expression already captured via the agreement_type=="recurring" guard.
+    invoice.match_route_auto = (
+        agr.agreement_type == "recurring" and claimed_row is not None
+        and req.schedule_id is None
+    )
     invoice.po_total = Decimal("0")
     invoice.gr_value = None
     invoice.variance = Decimal("0")
@@ -497,6 +527,24 @@ async def _release_schedule_row(db: AsyncSession, invoice: Invoice) -> None:
     permanently marked "received" against an invoice that no longer backs
     it, so it can never be claimed by a later invoice and silently
     under-reports what's still owed. Both call sites now share this.
+
+    Whole-branch review finding (4a/4b), two more gaps in the same release:
+
+    4a — a release used to leave accepted_by/accepted_at standing on the row.
+    A delegate's match claims a period and a manager confirms it; AP then
+    rejects the match → the row released back to "pending" but STILL stamped
+    confirmed. A later invoice re-claims that same period and sails straight
+    past the PA gate (`accepted_at IS NULL`) — paid with nobody having
+    confirmed service for ITS billing cycle. The stamp describes the invoice
+    being detached, not the period in the abstract, so it must go with it.
+
+    4b — release never completed the open confirm_period task either, so a
+    later re-claim's create_confirm_task adds a SECOND task with the same
+    document_number. agreements.py's confirm endpoint used to look that task
+    up with `.scalar_one_or_none()`, which raises MultipleResultsFound (a 500)
+    the instant that happens — and the period becomes permanently
+    unconfirmable. (crud.confirm_period already tolerates duplicates via
+    `.scalars().all()`; the two layers now agree.)
     """
     if invoice.schedule_id is None:
         return
@@ -505,8 +553,44 @@ async def _release_schedule_row(db: AsyncSession, invoice: Invoice) -> None:
             AgreementPaymentSchedule.id == invoice.schedule_id)
     )).scalar_one_or_none()
     if claimed_row is not None:
-        claimed_row.status = "pending"
-        claimed_row.invoice_id = None
+        # Deferred minor from Task 6, folded in here: only release a row this
+        # SAME invoice actually holds. invoice.schedule_id should always point
+        # back at a row whose invoice_id mirrors it (both are only ever set
+        # together, by claim_next_period / claim_specific_period /
+        # claim_milestone) — but if that invariant were ever broken by a bug
+        # elsewhere, blindly releasing here would silently steal a period a
+        # DIFFERENT invoice is legitimately holding.
+        if claimed_row.invoice_id != invoice.id:
+            logger.error(
+                "_release_schedule_row: schedule row %s is claimed by invoice "
+                "%s, not %s (invoice.schedule_id pointed at it anyway) — "
+                "leaving the row untouched, only clearing invoice.schedule_id",
+                claimed_row.id, claimed_row.invoice_id, invoice.id,
+            )
+        else:
+            claimed_row.status = "pending"
+            claimed_row.invoice_id = None
+            claimed_row.accepted_by = None
+            claimed_row.accepted_at = None
+            if claimed_row.period_label is not None:
+                agr_number = (await db.execute(
+                    select(PurchaseAgreement.number).where(
+                        PurchaseAgreement.id == claimed_row.agreement_id)
+                )).scalar_one_or_none()
+                if agr_number is not None:
+                    open_tasks = (await db.execute(
+                        select(Task).where(
+                            Task.document_type == "agr",
+                            Task.document_id == claimed_row.agreement_id,
+                            Task.type == "confirm_period",
+                            Task.document_number == f"{agr_number} · {claimed_row.period_label}",
+                            Task.is_completed.is_(False),
+                        )
+                    )).scalars().all()
+                    now = datetime.now(timezone.utc)
+                    for t in open_tasks:
+                        t.is_completed = True
+                        t.completed_at = now
     invoice.schedule_id = None
 
 
