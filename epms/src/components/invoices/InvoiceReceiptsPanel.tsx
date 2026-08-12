@@ -80,7 +80,15 @@ function InvoiceReceiptsPanelBody({
   // client-side filter below. Filtering server-side would need two round
   // trips or a filter the endpoint doesn't have.
   const receiptsQuery = useInvoiceAgreementReceipts(invoice.id, agreementId)
-  const allReceipts: ApiReceipt[] = receiptsQuery.data?.items ?? []
+  // Fix-round 2 (N2, nit): memoized too — while `receiptsQuery.data` is
+  // undefined (loading/error), the un-memoized `?? []` fallback allocated a
+  // fresh empty array every render, which fed the SAME staleness into
+  // `heldIds`/`relevantReceipts`/`openReceipts` below that C1 fixed for the
+  // settled case. Currently harmless (the accelerator effect's first line
+  // bails out via `!receiptsSettled` before any of them are read in that
+  // state) — memoizing anyway so a future change to that early-return can't
+  // silently reopen C1's failure mode through this exact seam.
+  const allReceipts: ApiReceipt[] = useMemo(() => receiptsQuery.data?.items ?? [], [receiptsQuery.data])
   // Fix-round 1 (Critical): `heldIds`/`relevantReceipts`/`openReceipts` used
   // to be plain `.filter()` calls re-evaluated (and re-ALLOCATED) on every
   // render. `openReceipts` sits in the accelerator effect's dependency array
@@ -219,17 +227,40 @@ function InvoiceReceiptsPanelBody({
   const settleMutation = useSettleWithoutReceipt()
   const pending = setReceiptsMutation.isPending || settleMutation.isPending
 
+  // Fix-round 2 (N1): a successful save/settle must forget the accelerator's
+  // ownership of whatever it had picked, SYNCHRONOUSLY with the mutation
+  // succeeding — not by waiting for the next accelerator effect run to work
+  // it out from heldIds/openReceipts. Why that matters: this mutation's
+  // onSuccess (useSetInvoiceReceipts) invalidates BOTH `['invoices', id]`
+  // (which is what updates `invoice.receipt_ids`/heldIds) and the receipts
+  // list query (which is what drops the just-claimed receipt out of
+  // `openReceipts`) — two independent queries, refetched and committed to
+  // React state independently. There is no guarantee both land in the same
+  // render: if `openReceipts` updates (receipt no longer 'open') before
+  // `heldIds` catches up (still doesn't list it as held yet), the
+  // accelerator effect runs with a stale `heldIds` and un-checks a receipt
+  // the backend just confirmed — the exact bug this whole fix round exists
+  // to close, just reached through a timing gap instead of C1's unconditional
+  // one. Clearing the ref the instant `mutate()` resolves sidesteps the race
+  // entirely: on the next effect run, `desiredId` (null — no ref text, the
+  // one-shot amount+date guess already spent) trivially equals
+  // `autoSelectedReceiptIdRef.current` (also null), so the effect returns on
+  // its very first line and never touches `selectedReceiptIds` at all.
   const handleSaveReceipts = () => {
     setReceiptsMutation.mutate({
       id: invoice.id,
       receipt_ids: selectedReceiptIds,
       variance_reason: varianceIsZero ? null : varianceReason.trim(),
+    }, {
+      onSuccess: () => { autoSelectedReceiptIdRef.current = null },
     })
   }
 
   const handleSettleWithoutReceipt = () => {
     if (!legacyReason.trim()) return
-    settleMutation.mutate({ id: invoice.id, reason: legacyReason.trim() })
+    settleMutation.mutate({ id: invoice.id, reason: legacyReason.trim() }, {
+      onSuccess: () => { autoSelectedReceiptIdRef.current = null },
+    })
   }
 
   const activeError = setReceiptsMutation.error ?? settleMutation.error

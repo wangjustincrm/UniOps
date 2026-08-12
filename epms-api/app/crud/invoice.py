@@ -377,6 +377,33 @@ async def _recompute_consumed(db: AsyncSession, agreement_id: uuid.UUID) -> None
     agr.consumed_amount = total
 
 
+def _set_agreement_link(invoice: Invoice, agr: PurchaseAgreement | None) -> None:
+    """The ONE place that writes agreement_id/agreement_number/agreement_type —
+    three denormalized fields on Invoice that must always move together
+    (fix-round 2, guardrail 1). Before this, three call sites each set (or
+    cleared) all three by hand; nothing in the schema enforces that they stay
+    in sync, and this codebase has already been burned once by exactly this
+    failure shape — invoices.receipt_ids drifting out of sync with
+    agreement_receipts.invoice_id because a release path forgot to touch one
+    side (see the docstring history on _release_agreement_evidence). Routing
+    every write through one function makes "set two of the three" a
+    compile-time impossibility rather than a code-review hope.
+
+    `agr=None` clears all three (route switch to PO, or a rejected match
+    detaching the agreement link entirely) — the two ARE the only shapes any
+    caller needs; nothing ever wants to change one field of the triple in
+    isolation.
+    """
+    if agr is None:
+        invoice.agreement_id = None
+        invoice.agreement_number = None
+        invoice.agreement_type = None
+    else:
+        invoice.agreement_id = agr.id
+        invoice.agreement_number = agr.number
+        invoice.agreement_type = agr.agreement_type
+
+
 async def _match_to_agreement(
     db: AsyncSession, invoice: Invoice, req: InvoiceMatchRequest, matched_by: uuid.UUID,
     require_review: bool = False,
@@ -490,9 +517,7 @@ async def _match_to_agreement(
     invoice.gr_id = None
     invoice.gr_number = None
 
-    invoice.agreement_id = agr.id
-    invoice.agreement_number = agr.number
-    invoice.agreement_type = agr.agreement_type
+    _set_agreement_link(invoice, agr)
     invoice.match_route = "agreement"
     invoice.schedule_id = claimed_row.id if claimed_row else None
     # An explicit req.schedule_id (the manual-assignment escape hatch above)
@@ -855,9 +880,7 @@ async def match(
     # invoice could ever claim that period/milestone again.
     previous_agreement_id = invoice.agreement_id
     if previous_agreement_id is not None:
-        invoice.agreement_id = None
-        invoice.agreement_number = None
-        invoice.agreement_type = None
+        _set_agreement_link(invoice, None)
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
         await _release_agreement_evidence(db, invoice)
@@ -1140,9 +1163,7 @@ async def review_match(
         # counts" contract simple and honest.
         released_agreement_id = invoice.agreement_id
         if released_agreement_id is not None:
-            invoice.agreement_id = None
-            invoice.agreement_number = None
-            invoice.agreement_type = None
+            _set_agreement_link(invoice, None)
             invoice.match_route = None
             invoice.legacy_settlement = False
             invoice.legacy_settlement_reason = None

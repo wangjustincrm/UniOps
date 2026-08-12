@@ -203,6 +203,12 @@ async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_eng
     assert body["status"] == "matched"
     assert body["agreement_id"] == str(agr.id)
     assert body["agreement_number"] == agr.number
+    # Fix-round 2 (guardrail 2): agreement_type is a denormalized snapshot
+    # written by _set_agreement_link (crud/invoice.py) alongside
+    # agreement_id/agreement_number at match time — the field the frontend
+    # now reads directly to decide whether to render the Receipt Evidence
+    # panel, instead of a second, more narrowly permissioned request.
+    assert body["agreement_type"] == agr.agreement_type == "house_account"
     assert body["match_route"] == "agreement"
     assert body["match_route_auto"] is False
     assert body["po_id"] is None
@@ -377,6 +383,10 @@ async def test_rematch_from_agreement_to_po_releases_consumption(admin_client, t
 
     assert fresh_inv.agreement_id is None
     assert fresh_inv.agreement_number is None
+    # Fix-round 2 (guardrail 2): _set_agreement_link(invoice, None) clears
+    # agreement_type in lockstep with the other two — this is the route-
+    # switch-to-PO half of the "must always move together" invariant.
+    assert fresh_inv.agreement_type is None
     assert fresh_inv.match_route == "po"
     assert fresh_inv.legacy_settlement is False
     assert fresh_inv.legacy_settlement_reason is None
@@ -709,6 +719,10 @@ async def test_agreement_match_review_reject_releases_consumed_amount(admin_clie
     assert body["status"] == "unmatched"
     assert body["agreement_id"] is None
     assert body["agreement_number"] is None
+    # Fix-round 2 (guardrail 2): _set_agreement_link(invoice, None) clears
+    # agreement_type in lockstep with the other two — this is the
+    # review_match-reject half of the "must always move together" invariant.
+    assert body["agreement_type"] is None
     assert body["match_route"] is None
     assert body["legacy_settlement"] is False
 
