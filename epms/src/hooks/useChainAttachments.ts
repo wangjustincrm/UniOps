@@ -33,7 +33,7 @@ import { paAttachmentService } from '@/services/paAttachments'
 import { invoiceService } from '@/services/invoices'
 import { grService } from '@/services/gr'
 import { agreementReceiptService, type ApiReceipt } from '@/services/agreementReceipts'
-import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAttachments'
+import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 
@@ -213,7 +213,15 @@ export function useChainAttachments(paId: string) {
   })
   const receiptAtt = useQueries({
     queries: receipts.map((s) => ({
-      queryKey: ['receipt-att', s.id],
+      // receiptAttachmentsQueryKey, not a third hand-rolled key (fix round 1,
+      // Minor): the upload/delete mutations in hooks/useAgreementReceipts.ts
+      // invalidate that shared key, and a private ['receipt-att', id] here
+      // would sit outside it — this panel would keep listing a deleted photo
+      // for its whole 30s staleTime, and clicking Download on it now surfaces
+      // a "Download failed: 404" (the service reports failures instead of
+      // silently doing nothing as of Task 12). Same single-source rule as the
+      // other readers of this list.
+      queryKey: receiptAttachmentsQueryKey(s.agreement_id, s.id),
       queryFn: () => agreementReceiptAttachmentService.list(s.agreement_id, s.id),
       staleTime: 30_000,
     })),

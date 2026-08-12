@@ -156,6 +156,18 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         // (and a fast re-render of ReceiptTable could re-read cache) before the
         // refetch actually lands.
         await queryClient.invalidateQueries({ queryKey: receiptAttachmentsQueryKey(agreementId, receipt.id) })
+        // AND the receipt views (fix round 1, Important). `attachment_count`
+        // is a field on the RECEIPT payload — a correlated subquery in
+        // crud/agreement_receipt.py, not part of the attachment list — so the
+        // key above does not carry it. useCreateReceipt's onSuccess already
+        // invalidated the receipt views, but that ran BEFORE this upload, when
+        // the count really was 0. Without this second pass, an
+        // already-mounted Agreement Receipts tab (SPA tab switching fires no
+        // window focus, so nothing refetches on its own) keeps showing the
+        // amber "⚠ No photo" warning on a receipt whose photo did upload —
+        // and AP chases evidence that is already there. The catch branch below
+        // has always done this; the success branch was the one missing it.
+        await invalidateReceiptViews(queryClient, agreementId)
       } catch (uploadErr) {
         // The receipt already exists as `status: "open"` with no evidence on
         // it — create()'s open/pending_ap_review routing decision was made
