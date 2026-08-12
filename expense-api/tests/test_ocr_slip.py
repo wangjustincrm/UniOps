@@ -51,6 +51,7 @@ def _field(v):
 
 
 def _slip_json(
+    vendor_name="PRINCESS AUTO #12",
     slip_ref="TILL-04-8821",
     date="2026-08-05",
     amount=100.00,
@@ -59,6 +60,7 @@ def _slip_json(
     currency="CAD",
 ) -> dict:
     return {
+        "vendor_name": _field(vendor_name),
         "slip_ref": _field(slip_ref),
         "date": _field(date),
         "amount": _field(amount),
@@ -69,12 +71,13 @@ def _slip_json(
 
 
 async def test_extract_slip_returns_expected_fields(anthropic_stub):
-    """返回 slip_ref / date / amount / tax_amount / total_amount / currency。"""
+    """返回 vendor_name / slip_ref / date / amount / tax_amount / total_amount / currency。"""
     anthropic_stub.response = _response(json.dumps(_slip_json()))
 
     result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
 
     assert result == {
+        "vendor_name": "PRINCESS AUTO #12",
         "slip_ref": "TILL-04-8821",
         "date": "2026-08-05",
         "amount": 100.00,
@@ -94,6 +97,47 @@ async def test_slip_ref_absent_returns_none_not_an_error(anthropic_stub):
     # the rest of the extraction still succeeds
     assert result["amount"] == 100.00
     assert result["total_amount"] == 113.00
+
+
+# ── Task 13: the merchant printed on the slip ─────────────────────────────
+# epms stores it and compares it against the AGREEMENT's vendor, because a
+# slip from shop A recorded against shop B's house account is the classic
+# house-account mis-posting and the agreement's own vendor_name can never
+# reveal it.
+
+async def test_extract_slip_returns_the_vendor_printed_on_the_slip(anthropic_stub):
+    anthropic_stub.response = _response(json.dumps(_slip_json(
+        vendor_name="Canadian Tire #241")))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["vendor_name"] == "Canadian Tire #241"
+
+
+async def test_vendor_absent_returns_none_not_an_error(anthropic_stub):
+    """抽不到商家名是正常情况(小票抬头模糊/被裁掉),录入人可以补。
+    返回 None,其余字段照常抽出。"""
+    anthropic_stub.response = _response(json.dumps(_slip_json(vendor_name=None)))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["vendor_name"] is None
+    # the rest of the extraction still succeeds
+    assert result["slip_ref"] == "TILL-04-8821"
+    assert result["total_amount"] == 113.00
+
+
+async def test_vendor_key_missing_entirely_is_none_not_a_keyerror(anthropic_stub):
+    """老模型/裁剪过的响应里可能根本没有这个键 —— 必须是 None,不是 KeyError,
+    否则整次识别失败、录入人退回全手工。"""
+    payload = _slip_json()
+    del payload["vendor_name"]
+    anthropic_stub.response = _response(json.dumps(payload))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["vendor_name"] is None
+    assert result["amount"] == 100.00
 
 
 async def test_unreadable_file_raises_value_error_not_runtime_error(monkeypatch):
@@ -121,6 +165,16 @@ async def test_unreadable_file_raises_value_error_not_runtime_error(monkeypatch)
         await ocr_service.extract_slip(b"corrupt-bytes", "image/heic")
 
 
+def test_invoice_prompt_is_unchanged():
+    """发票 OCR 在生产用 invoice 模式(PA-DIR)。Task 13 只加 _SLIP_PROMPT 的
+    vendor_name,这段一个字都不许动 —— 同样用显式断言钉死。"""
+    from app.services.ocr_service import _INVOICE_PROMPT
+
+    assert "line_items" in _INVOICE_PROMPT
+    assert "slip_ref" not in _INVOICE_PROMPT
+    assert "printed at the top of the slip" not in _INVOICE_PROMPT
+
+
 def test_receipt_prompt_is_unchanged():
     """OA 报销在生产使用 receipt 模式。提示词不是加法 —— 改一句可能扰动既有
     字段的抽取。用一个显式断言把它钉死,防止后来的人"顺手统一"两段提示词。"""
@@ -128,6 +182,9 @@ def test_receipt_prompt_is_unchanged():
 
     assert "vendor_name" in _RECEIPT_PROMPT
     assert "slip_ref" not in _RECEIPT_PROMPT
+    # Task 13 added a vendor_name bullet to _SLIP_PROMPT only; this pins that
+    # its wording never got "helpfully unified" into the receipt prompt.
+    assert "printed at the top of the slip" not in _RECEIPT_PROMPT
 
 
 # ── Whole-branch review (small item A): counter slips routinely print only a

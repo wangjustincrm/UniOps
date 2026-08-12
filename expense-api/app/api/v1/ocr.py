@@ -4,7 +4,8 @@ POST /api/v1/ocr/{mode}  (mode = invoice | receipt | slip), multipart file uploa
   invoice — full extraction for PA-DIR (vendor, invoice_no, dates, line_items, totals)
   receipt — simple extraction for EXP/TRV line items (vendor, date, total, tax)
   slip    — pickup-slip extraction for house_account agreement purchases
-            (slip_ref, date, amount, tax_amount, total_amount, currency)
+            (vendor_name, slip_ref, date, amount, tax_amount, total_amount,
+             currency)
 
 Replaces the previous client-side extraction in oa/src/lib/invoice-parser.ts,
 which exposed VITE_ANTHROPIC_API_KEY in the browser bundle.

@@ -90,6 +90,7 @@ Extract pickup-slip information from this image.
 
 Return ONLY this JSON (no markdown):
 {
+  "vendor_name":  {"value": "string or null", "confidence": 0.0-1.0},
   "slip_ref":     {"value": "string or null", "confidence": 0.0-1.0},
   "date":         {"value": "YYYY-MM-DD or null", "confidence": 0.0-1.0},
   "amount":       {"value": number or null, "confidence": 0.0-1.0},
@@ -98,6 +99,10 @@ Return ONLY this JSON (no markdown):
   "currency":     {"value": "CAD", "confidence": 0.0-1.0}
 }
 
+- "vendor_name": the merchant name printed at the top of the slip — the store
+  or company that issued it, as printed (e.g. "PRINCESS AUTO #12"). Do NOT
+  translate, expand or tidy it. If no merchant name is legible, return null —
+  this is normal and not an error; a person can fill it in afterwards.
 - "slip_ref": the transaction or receipt reference printed on the slip. If the
   slip prints it as several separate fields (for example a till number and a
   transaction number in adjacent columns), join them with a hyphen in the order
@@ -440,6 +445,12 @@ async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
             tax_amount = derived_cents / 100
 
     return {
+        # The merchant printed on the slip — NOT the agreement's vendor. epms
+        # stores it and flags the two disagreeing (a slip from shop A recorded
+        # against shop B's house account is the classic house-account
+        # mis-posting), so a null here must stay null rather than being
+        # back-filled with a guess.
+        "vendor_name": parsed.get("vendor_name", {}).get("value"),
         "slip_ref": parsed.get("slip_ref", {}).get("value"),
         "date": parsed.get("date", {}).get("value"),
         "amount": amount,
