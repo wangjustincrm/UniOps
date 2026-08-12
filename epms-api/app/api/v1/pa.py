@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
-from app.core.access_scope import build_scope, _effective_role_codes
+from app.core.access_scope import build_scope, is_agreement_visible, _effective_role_codes
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services import finance_client
@@ -206,6 +206,15 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     if body.agreement_id is not None:
         agr = await agr_crud.get_by_id(db, body.agreement_id)
         if agr is None:
+            raise HTTPException(status_code=404, detail="Agreement not found")
+        # Holding epms.pa.write says you raise payments; it does not say you
+        # raise them against THIS agreement. `requester` holds that key in the
+        # default matrix, so without this an employee with no connection to a
+        # house account — not its creator, not its owner, not in its department
+        # — could raise a payment application against it. The agreement is the
+        # authorisation for its own payments, so the same row scope that decides
+        # whether you can see it decides whether you can spend it.
+        if not await is_agreement_visible(db, agr.id, await build_scope(db, user)):
             raise HTTPException(status_code=404, detail="Agreement not found")
         # No PO on this route means none of the PO-scoped prepayment/settlement/
         # balance guards below (vendor cap, ownership-of-prepayment-PA, applied ≤

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
-from app.core.access_scope import build_scope
+from app.core.access_scope import build_scope, is_agreement_visible
 from uniops_authz import has_permission
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
@@ -242,11 +242,16 @@ async def list_invoices(
     #
     # The widening is confined to the agreement_id filter: the general invoice
     # list, and every po_id-scoped call, keep the PO-chain scope untouched.
-    # has_permission (not scope["perms"]) because only it carries the
-    # system_admin short-circuit — see its docstring.
+    #
+    # Both halves are required. has_permission is WHETHER this caller works
+    # with agreements (and it, not scope["perms"], because only it carries the
+    # system_admin short-circuit — see its docstring); is_agreement_visible is
+    # WHICH ones. The first version of this shipped with only the permission
+    # half, which handed every agreement's invoices to any requester — the
+    # default matrix grants them epms.agreement.read.
     if agreement_id is not None and await has_permission(
         db, scope["user_id"], scope["role"], "epms.agreement.read"
-    ):
+    ) and await is_agreement_visible(db, agreement_id, scope):
         po_subq = own_uploads = task_uid = None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, agreement_id=agreement_id, search=search,
@@ -298,7 +303,7 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
         # 404s, which trades an empty list for a dead link.
         if inv.agreement_id is not None and await has_permission(
             db, scope["user_id"], scope["role"], "epms.agreement.read"
-        ):
+        ) and await is_agreement_visible(db, inv.agreement_id, scope):
             await _attach_match_assignees(db, [inv])
             return inv
         if not await invoice_crud.is_visible(db, inv, scope):

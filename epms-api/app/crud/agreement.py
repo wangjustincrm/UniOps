@@ -38,10 +38,14 @@ async def get_all(
     vendor_id: uuid.UUID | None = None,
     agreement_type: str | None = None,
     search: str | None = None,
+    ids_subq=None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[PurchaseAgreement], int]:
     q = select(PurchaseAgreement)
+    # Row scope (access_scope.visible_agreement_subquery). None = unrestricted.
+    if ids_subq is not None:
+        q = q.where(PurchaseAgreement.id.in_(ids_subq))
     if status:
         q = q.where(PurchaseAgreement.status == status)
     if vendor_id:
@@ -234,3 +238,32 @@ async def candidates_for_vendor(
         _admissible_predicate(today),
     ).order_by(PurchaseAgreement.number)
     return list((await db.execute(q)).scalars().all())
+
+
+async def get_approval_events(db: AsyncSession, agreement_id: uuid.UUID):
+    """The agreement's approval trail with actor names resolved.
+
+    Same shape and same outer join as pr.get_approval_events — the timeline
+    component is shared, so the payload must be too. document_type is "agr",
+    which is what approval-api's engine writes for this document (verified
+    against the events an approved agreement actually carries: submit at
+    step 0, then one approve per step).
+    """
+    from app.models.approval import ApprovalEvent
+    from app.models.user import User
+    from app.schemas.pr import ApprovalEventResponse
+
+    result = await db.execute(
+        select(ApprovalEvent, User.full_name)
+        .outerjoin(User, User.id == ApprovalEvent.actor_id)
+        .where(ApprovalEvent.document_type == "agr",
+               ApprovalEvent.document_id == agreement_id)
+        .order_by(ApprovalEvent.created_at)
+    )
+    return [
+        ApprovalEventResponse(
+            **{c: getattr(ev, c) for c in ApprovalEventResponse.model_fields if c != "actor_name"},
+            actor_name=full_name,
+        )
+        for ev, full_name in result.all()
+    ]

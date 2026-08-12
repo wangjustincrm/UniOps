@@ -6,12 +6,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
-from app.core.access_scope import _effective_role_codes
+from app.core.access_scope import _effective_role_codes, build_scope, is_agreement_visible
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import agreement as agr_crud
 from app.crud import agreement_schedule as agr_sched_crud
 from app.crud import vendor as vendor_crud
+from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.task import Task
 from app.schemas.agreement import (
@@ -23,6 +24,7 @@ from app.schemas.agreement import (
     ScheduleListResponse,
     ScheduleRowResponse,
 )
+from app.schemas.pr import ApprovalEventResponse
 from app.services.approval_client import delegate_action
 
 logger = logging.getLogger(__name__)
@@ -44,9 +46,11 @@ async def list_agreements(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
 ):
+    scope = await build_scope(db, user)
     items, total = await agr_crud.get_all(
         db, status=status_filter, vendor_id=vendor_id,
         agreement_type=agreement_type, search=search,
+        ids_subq=scope["agr_subq"],
         page=page, page_size=page_size,
     )
     return {"items": items, "total": total}
@@ -62,21 +66,53 @@ async def create_agreement(body: AgreementCreate, db: SessionDep, user: AgrWrite
     )
 
 
-@router.get("/{agreement_id}", response_model=AgreementResponse)
-async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
+async def _visible_agreement_or_404(
+    db, user: dict, agreement_id: uuid.UUID
+) -> PurchaseAgreement:
+    """Fetch an agreement the caller is actually entitled to, or 404.
+
+    404 rather than 403, matching how every other document in this service
+    answers an out-of-scope id (get_invoice, get_pa): the existence of an
+    agreement is itself information.
+
+    The permission gate (epms.agreement.read) says WHETHER this caller works
+    with agreements at all; this says WHICH ones. Before this existed there was
+    only the first half, and `requester` holds both epms.agreement.read and
+    epms.agreement.write in the default matrix — so any requester could open,
+    edit, and raise payments against every agreement in the company, related to
+    them or not.
+    """
     agr = await agr_crud.get_by_id(db, agreement_id)
     if agr is None:
         raise HTTPException(status_code=404, detail="Agreement not found")
+    scope = await build_scope(db, user)
+    if not await is_agreement_visible(db, agreement_id, scope):
+        raise HTTPException(status_code=404, detail="Agreement not found")
     return agr
+
+
+@router.get("/{agreement_id}", response_model=AgreementResponse)
+async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
+    return await _visible_agreement_or_404(db, user, agreement_id)
+
+
+@router.get("/{agreement_id}/events", response_model=list[ApprovalEventResponse])
+async def agreement_approval_events(
+    agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep
+):
+    """The approval trail, actor names resolved — same contract as
+    GET /pr/{id}/events. The detail page's timeline rendered role labels with
+    no names because this endpoint did not exist, so the page had nothing to
+    render them from."""
+    await _visible_agreement_or_404(db, user, agreement_id)
+    return await agr_crud.get_approval_events(db, agreement_id)
 
 
 @router.patch("/{agreement_id}", response_model=AgreementResponse)
 async def update_agreement(
     agreement_id: uuid.UUID, body: AgreementUpdate, db: SessionDep, user: AgrWriteDep
 ):
-    agr = await agr_crud.get_by_id(db, agreement_id)
-    if agr is None:
-        raise HTTPException(status_code=404, detail="Agreement not found")
+    agr = await _visible_agreement_or_404(db, user, agreement_id)
     if agr.status not in agr_crud.EDITABLE_STATUSES:
         raise HTTPException(
             status_code=409,
@@ -99,9 +135,7 @@ async def agreement_action(
 ):
     # Gated by the open approval task, not by epms.agreement.write — approval
     # authority comes from the approval engine, mirroring po.py::po_action.
-    agr = await agr_crud.get_by_id(db, agreement_id)
-    if agr is None:
-        raise HTTPException(status_code=404, detail="Agreement not found")
+    agr = await _visible_agreement_or_404(db, user, agreement_id)
     # Whole-branch review finding: validate_milestones never checks emptiness
     # (recurring is protected the same way by validate_recurrence's own
     # coherence rule), so a milestone agreement could be submitted and
@@ -176,9 +210,7 @@ async def agreement_action(
 
 @router.get("/{agreement_id}/schedule", response_model=ScheduleListResponse)
 async def list_schedule(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
-    agr = await agr_crud.get_by_id(db, agreement_id)
-    if agr is None:
-        raise HTTPException(status_code=404, detail="Agreement not found")
+    agr = await _visible_agreement_or_404(db, user, agreement_id)
     return {"items": await agr_sched_crud.list_rows(db, agreement_id)}
 
 
@@ -197,6 +229,13 @@ async def confirm_schedule_period(
     # fallback unauditable, since an admin would have no way to tell whether
     # the circuit actually worked. Do not "harmonise" this back to match the
     # sibling endpoints; it is intentionally stricter.
+    # NOT routed through _visible_agreement_or_404: holding the task IS the
+    # authorization here, and a confirm_period task is routinely broadcast to a
+    # role whose holder sits outside the agreement's own department. The actor
+    # check below is stricter than the row scope, not weaker — see the note
+    # above. (The row scope does grant that holder read access to the
+    # agreement, via the open-task branch in visible_agreement_subquery, so
+    # they can open the page the task points at.)
     agr = await agr_crud.get_by_id(db, agreement_id)
     if agr is None:
         raise HTTPException(status_code=404, detail="Agreement not found")

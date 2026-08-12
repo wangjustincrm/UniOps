@@ -17,7 +17,7 @@ import uuid
 from typing import Optional
 
 import sqlalchemy as sa
-from sqlalchemy import or_, select, text
+from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
@@ -466,6 +466,26 @@ async def visible_agreement_subquery(
     # the caller holds — mirrors visible_pr_subquery's task_pr / the PO side's
     # task_po baked into visible_po_subquery.
     conds = [PurchaseAgreement.id.in_(task_agr)]
+    # …and an open task on the AGREEMENT ITSELF (approve_agr from the approval
+    # engine, confirm_period from the recurring schedule). Without it, a
+    # restricted approver routed an agreement outside their own department —
+    # or whoever must confirm a period on one — holds a task for a document
+    # their scope hides. Task assignment and visibility must not disagree.
+    #
+    # Deliberately NOT _open_task_doc_ids: that helper matches
+    # assigned_user_id only, and agreement tasks are frequently ROLE
+    # broadcasts (create_confirm_task falls back to assigned_role with
+    # assigned_user_id NULL when no single owner resolves). Matching the
+    # caller's effective role codes — the same `codes` this function already
+    # resolved, primary role union user_roles grants — is what makes "holds
+    # the task" mean here exactly what it means in _confirm_assignee.
+    own_agr_tasks = select(Task.document_id).where(
+        Task.document_type == "agr",
+        Task.is_completed.is_(False),
+        or_(Task.assigned_user_id == user_id,
+            and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(codes))),
+    )
+    conds.append(PurchaseAgreement.id.in_(own_agr_tasks))
     if "requester" in codes:
         conds.append(PurchaseAgreement.created_by == user_id)
         conds.append(PurchaseAgreement.owner_id == user_id)
@@ -488,6 +508,36 @@ async def visible_agreement_subquery(
         conds.append(PurchaseAgreement.created_by.in_(reports))
 
     return select(PurchaseAgreement.id).where(or_(*conds))
+
+
+async def is_agreement_visible(db: AsyncSession, agreement_id: uuid.UUID, scope: dict) -> bool:
+    """True if this agreement falls inside the caller's agr_subq (or the caller
+    is unrestricted).
+
+    The agreement module used to apply NO row scope at all: `visible_agreement_
+    subquery` was written with a full department/owner/task model and then only
+    ever consumed by the PA list. Every agreement endpoint answered on the
+    permission key alone, so any holder of epms.agreement.read — the default
+    matrix gives it to `requester` — could list, open, and (with
+    epms.agreement.write, also a requester default) edit every agreement in the
+    company, and raise a payment application against any of them.
+
+    Read visibility and the ability to act on a document are the same question
+    here: the agreement IS the authorisation for its payments.
+    """
+    # No view_* matrix key is consulted: agreements are gated on the dotted
+    # permission epms.agreement.read at the endpoint's Depends(), not through
+    # the Access Control Matrix's view_<doc> family. This function answers the
+    # row question only.
+    agr_subq = scope["agr_subq"]
+    if agr_subq is None:
+        return True  # unrestricted role
+    row = (await db.execute(
+        select(PurchaseAgreement.id)
+        .where(PurchaseAgreement.id == agreement_id)
+        .where(PurchaseAgreement.id.in_(agr_subq))
+    )).scalar_one_or_none()
+    return row is not None
 
 
 async def is_pr_visible(db: AsyncSession, pr_id: uuid.UUID, scope: dict) -> bool:

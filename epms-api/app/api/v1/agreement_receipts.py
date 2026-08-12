@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.v1.invoices import ApDep
+from app.core.access_scope import build_scope, is_agreement_visible
 from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.crud import agreement as agr_crud
@@ -46,9 +47,19 @@ ReceiptReadDep = Annotated[dict, Depends(require_permission("epms.agreement.read
 ReceiptRecordDep = Annotated[dict, Depends(require_permission("epms.agreement.receipt.write"))]
 
 
-async def _get_agreement_or_404(db: SessionDep, agreement_id: uuid.UUID) -> PurchaseAgreement:
+async def _get_agreement_or_404(
+    db: SessionDep, user: dict, agreement_id: uuid.UUID
+) -> PurchaseAgreement:
+    """The agreement, if this caller is entitled to it — otherwise 404.
+
+    A receipt belongs to its agreement's record and is visible on exactly the
+    same terms. Holding epms.agreement.read says you work with agreements;
+    the row scope says which ones (access_scope.is_agreement_visible).
+    """
     agr = await agr_crud.get_by_id(db, agreement_id)
     if agr is None:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    if not await is_agreement_visible(db, agreement_id, await build_scope(db, user)):
         raise HTTPException(status_code=404, detail="Agreement not found")
     return agr
 
@@ -164,7 +175,7 @@ async def list_receipts(
     user: ReceiptReadDep,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
 ):
-    await _get_agreement_or_404(db, agreement_id)
+    await _get_agreement_or_404(db, user, agreement_id)
     items = await receipt_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
 
@@ -224,7 +235,7 @@ async def _bind_vendor_master_data(
 async def create_receipt(
     agreement_id: uuid.UUID, body: ReceiptCreate, db: SessionDep, user: ReceiptRecordDep,
 ):
-    agr = await _get_agreement_or_404(db, agreement_id)
+    agr = await _get_agreement_or_404(db, user, agreement_id)
     agr_number = agr.number   # capture before any flush that might fail — see _receipt_integrity_error
     body = await _bind_vendor_master_data(db, body)
     try:
@@ -238,7 +249,7 @@ async def update_receipt(
     agreement_id: uuid.UUID, receipt_id: uuid.UUID, body: ReceiptUpdate,
     db: SessionDep, user: ReceiptRecordDep,
 ):
-    agr = await _get_agreement_or_404(db, agreement_id)
+    agr = await _get_agreement_or_404(db, user, agreement_id)
     agr_number = agr.number   # capture before any flush that might fail — see _receipt_integrity_error
     receipt = await _get_receipt_or_404(db, agreement_id, receipt_id)
     body = await _bind_vendor_master_data(db, body)
@@ -254,7 +265,7 @@ async def update_receipt(
 async def void_receipt(
     agreement_id: uuid.UUID, receipt_id: uuid.UUID, db: SessionDep, user: ReceiptRecordDep,
 ):
-    await _get_agreement_or_404(db, agreement_id)
+    await _get_agreement_or_404(db, user, agreement_id)
     receipt = await _get_receipt_or_404(db, agreement_id, receipt_id)
     try:
         await receipt_crud.void(db, receipt)
@@ -267,7 +278,7 @@ async def ap_review_receipt(
     agreement_id: uuid.UUID, receipt_id: uuid.UUID, body: ReceiptApReview,
     db: SessionDep, user: ApDep,
 ):
-    await _get_agreement_or_404(db, agreement_id)
+    await _get_agreement_or_404(db, user, agreement_id)
     receipt = await _get_receipt_or_404(db, agreement_id, receipt_id)
     try:
         return await receipt_crud.ap_review(db, receipt, body.action, uuid.UUID(user["sub"]))
@@ -325,9 +336,11 @@ async def list_all_receipts(
     # clean 422 on a malformed request.
     page_size: int = Query(default=20, ge=1, le=200),
 ):
+    scope = await build_scope(db, user)
     rows, total = await receipt_crud.list_all(
         db, agreement_id=agreement_id, receipt_type=receipt_type, status=status_filter,
-        search=search, page=page, page_size=page_size,
+        search=search, agreement_ids_subq=scope["agr_subq"],
+        page=page, page_size=page_size,
     )
     return {"items": [_with_agreement(row) for row in rows], "total": total}
 
@@ -356,5 +369,9 @@ async def get_receipt(receipt_id: uuid.UUID, db: SessionDep, user: ReceiptReadDe
         # Names the RECEIPT specifically: with no agreement_id in this URL,
         # a bare "Not found" leaves the reader unsure whether the receipt, the
         # agreement, or the route itself is the thing that's missing.
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    # Same row scope the listing applies — otherwise the id-addressed route is
+    # the way around it, and every receipt in the company stays one URL away.
+    if not await is_agreement_visible(db, row[0].agreement_id, await build_scope(db, user)):
         raise HTTPException(status_code=404, detail="Receipt not found")
     return _with_agreement(row)

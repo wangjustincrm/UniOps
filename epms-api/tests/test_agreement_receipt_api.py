@@ -539,6 +539,29 @@ async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, t
     try:
         from tests.conftest import _authenticated_client
         async with await _authenticated_client(test_engine, "dept_admin") as c:
+            # Reachability now needs BOTH halves: the permission grants above
+            # say dept_admin works with agreements, and the row scope
+            # (access_scope.visible_agreement_subquery) says which — for
+            # dept_admin, their own department's. Put the caller and the
+            # agreement in one department so this test keeps pinning what it
+            # is about (the grant) instead of failing on the other half.
+            async with factory() as db:
+                caller_id = (await db.execute(text(
+                    "SELECT user_id FROM (SELECT id AS user_id FROM users "
+                    "WHERE role='dept_admin' ORDER BY created_at DESC LIMIT 1) t"
+                ))).scalar_one()
+                dept_id = (await db.execute(text(
+                    "INSERT INTO departments (id, code, name, is_active) "
+                    "VALUES (gen_random_uuid(), :c, :n, true) RETURNING id"),
+                    {"c": f"DA{uuid.uuid4().hex[:6].upper()}", "n": "Receipt Dept"}
+                )).scalar_one()
+                await db.execute(text("UPDATE users SET department_id=:d WHERE id=:u"),
+                                 {"d": str(dept_id), "u": str(caller_id)})
+                await db.execute(text(
+                    "UPDATE purchase_agreements SET department_id=:d WHERE id=:a"),
+                    {"d": str(dept_id), "a": agr["id"]})
+                await db.commit()
+
             r_get = await c.get(f"{AGR_URL}/{agr['id']}")
             assert r_get.status_code == 200, r_get.text
 

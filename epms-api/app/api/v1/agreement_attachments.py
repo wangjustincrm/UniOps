@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.core.access_scope import build_scope, is_agreement_visible
 from app.core.authz import require_permission
 from app.core.config import settings
 from app.core.deps import BearerToken, SessionDep
@@ -43,7 +44,9 @@ def _meta(att: AgreementAttachment) -> AttachmentMeta:
 
 
 @router.get("", response_model=list[AttachmentMeta])
-async def list_attachments(agreement_id: uuid.UUID, db: SessionDep, _: AgrAttReadDep):
+async def list_attachments(agreement_id: uuid.UUID, db: SessionDep, user: AgrAttReadDep):
+    if not await is_agreement_visible(db, agreement_id, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Agreement not found")
     result = await db.execute(
         select(AgreementAttachment)
         .where(AgreementAttachment.agreement_id == agreement_id)
@@ -59,6 +62,8 @@ async def upload_attachment(
 ):
     agr = await get_agreement(db, agreement_id)
     if agr is None:
+        raise HTTPException(status_code=404, detail="Agreement not found")
+    if not await is_agreement_visible(db, agreement_id, await build_scope(db, user)):
         raise HTTPException(status_code=404, detail="Agreement not found")
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
@@ -85,8 +90,10 @@ async def upload_attachment(
 @router.get("/{att_id}/download")
 async def download_attachment(
     agreement_id: uuid.UUID, att_id: uuid.UUID,
-    db: SessionDep, _: AgrAttReadDep, token: BearerToken,
+    db: SessionDep, user: AgrAttReadDep, token: BearerToken,
 ):
+    if not await is_agreement_visible(db, agreement_id, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Agreement not found")
     result = await db.execute(
         select(AgreementAttachment).where(
             AgreementAttachment.id == att_id, AgreementAttachment.agreement_id == agreement_id
@@ -108,8 +115,10 @@ async def download_attachment(
 @router.delete("/{att_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_attachment(
     agreement_id: uuid.UUID, att_id: uuid.UUID,
-    db: SessionDep, _: AgrAttWriteDep, token: BearerToken,
+    db: SessionDep, user: AgrAttWriteDep, token: BearerToken,
 ):
+    if not await is_agreement_visible(db, agreement_id, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Agreement not found")
     result = await db.execute(
         select(AgreementAttachment).where(
             AgreementAttachment.id == att_id, AgreementAttachment.agreement_id == agreement_id

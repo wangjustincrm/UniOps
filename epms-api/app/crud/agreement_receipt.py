@@ -126,6 +126,7 @@ async def list_all(
     receipt_type: str | None = None,
     status: str | None = None,
     search: str | None = None,
+    agreement_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[ReceiptRow], int]:
@@ -161,6 +162,12 @@ async def list_all(
     photos.
     """
     q = _with_agreement_select()
+    # Row scope of the PARENT agreements (access_scope.visible_agreement_subquery).
+    # None = unrestricted. A receipt is part of its agreement's record, so it is
+    # visible on exactly the terms the agreement is: this page must not become
+    # the way to read every house account's spending without opening one.
+    if agreement_ids_subq is not None:
+        q = q.where(AgreementReceipt.agreement_id.in_(agreement_ids_subq))
     if agreement_id:
         q = q.where(AgreementReceipt.agreement_id == agreement_id)
     if receipt_type:

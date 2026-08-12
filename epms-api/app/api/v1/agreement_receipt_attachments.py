@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.core.access_scope import build_scope, is_agreement_visible
 from app.core.authz import require_permission
 from app.core.config import settings
 from app.core.deps import BearerToken, SessionDep
@@ -50,8 +51,13 @@ def _meta(att: AgreementReceiptAttachment) -> AttachmentMeta:
 
 
 async def _get_receipt_or_404(
-    db: SessionDep, agreement_id: uuid.UUID, receipt_id: uuid.UUID,
+    db: SessionDep, user: dict, agreement_id: uuid.UUID, receipt_id: uuid.UUID,
 ) -> AgreementReceipt:
+    # The photo is the evidence behind a payment; it is readable on exactly the
+    # terms its agreement is (access_scope.is_agreement_visible). Checked here,
+    # the single choke point all four routes on this router already share.
+    if not await is_agreement_visible(db, agreement_id, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Receipt not found")
     receipt = (await db.execute(
         select(AgreementReceipt).where(
             AgreementReceipt.id == receipt_id,
@@ -65,9 +71,9 @@ async def _get_receipt_or_404(
 
 @router.get("", response_model=list[AttachmentMeta])
 async def list_attachments(
-    agreement_id: uuid.UUID, receipt_id: uuid.UUID, db: SessionDep, _: ReceiptAttReadDep,
+    agreement_id: uuid.UUID, receipt_id: uuid.UUID, db: SessionDep, user: ReceiptAttReadDep,
 ):
-    await _get_receipt_or_404(db, agreement_id, receipt_id)
+    await _get_receipt_or_404(db, user, agreement_id, receipt_id)
     result = await db.execute(
         select(AgreementReceiptAttachment)
         .where(AgreementReceiptAttachment.receipt_id == receipt_id)
@@ -81,7 +87,7 @@ async def upload_attachment(
     agreement_id: uuid.UUID, receipt_id: uuid.UUID, file: UploadFile,
     db: SessionDep, user: ReceiptAttWriteDep, token: BearerToken,
 ):
-    await _get_receipt_or_404(db, agreement_id, receipt_id)
+    await _get_receipt_or_404(db, user, agreement_id, receipt_id)
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File exceeds 25 MB limit")
@@ -107,9 +113,9 @@ async def upload_attachment(
 @router.get("/{att_id}/download")
 async def download_attachment(
     agreement_id: uuid.UUID, receipt_id: uuid.UUID, att_id: uuid.UUID,
-    db: SessionDep, _: ReceiptAttReadDep, token: BearerToken,
+    db: SessionDep, user: ReceiptAttReadDep, token: BearerToken,
 ):
-    await _get_receipt_or_404(db, agreement_id, receipt_id)
+    await _get_receipt_or_404(db, user, agreement_id, receipt_id)
     result = await db.execute(
         select(AgreementReceiptAttachment).where(
             AgreementReceiptAttachment.id == att_id, AgreementReceiptAttachment.receipt_id == receipt_id
@@ -131,9 +137,9 @@ async def download_attachment(
 @router.delete("/{att_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_attachment(
     agreement_id: uuid.UUID, receipt_id: uuid.UUID, att_id: uuid.UUID,
-    db: SessionDep, _: ReceiptAttWriteDep, token: BearerToken,
+    db: SessionDep, user: ReceiptAttWriteDep, token: BearerToken,
 ):
-    await _get_receipt_or_404(db, agreement_id, receipt_id)
+    await _get_receipt_or_404(db, user, agreement_id, receipt_id)
     result = await db.execute(
         select(AgreementReceiptAttachment).where(
             AgreementReceiptAttachment.id == att_id, AgreementReceiptAttachment.receipt_id == receipt_id
