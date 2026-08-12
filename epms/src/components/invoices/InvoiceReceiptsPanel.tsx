@@ -475,7 +475,7 @@ function InvoiceReceiptsPanelBody({
         </div>
       )}
 
-      {selectedReceiptIds.length === 0 && receiptsSettled && (
+      {selectedReceiptIds.length === 0 && receiptsSettled && invoice.agreement_type === 'house_account' && (
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-neutral-700">
             No receipts selected — reason for settling without receipt evidence <span className="text-danger-600">*</span>
@@ -544,7 +544,15 @@ function InvoiceReceiptsPanelBody({
 // no separate permission gate, and no "determination pending/failed" state
 // to fall back from at all.
 export function InvoiceReceiptsPanel({ invoice }: { invoice: ApiInvoice }) {
-  if (!invoice.agreement_id || invoice.agreement_type !== 'house_account') return null
+  // Any agreement route, not just house_account. Receipts can be recorded
+  // against every agreement type (/receipts/new offers all of them), and a
+  // receipt no invoice can ever claim is evidence that reconciles nothing.
+  // What stays house_account-only is the "settle without receipt evidence"
+  // declaration below — legacy_settlement is read by exactly one gate
+  // (pa.py's house_account branch); on the recurring route the corresponding
+  // control is the period confirmation, so stamping it there would record a
+  // fact nothing consumes.
+  if (!invoice.agreement_id) return null
 
   return <InvoiceReceiptsPanelBody invoice={invoice} agreementId={invoice.agreement_id} />
 }

@@ -26,7 +26,15 @@ export default function ReceiptCreatePage() {
   // result set itself (server default-truncates to 20 rows otherwise; see
   // hooks/useAgreements.ts), so this picker isn't silently missing agreements
   // past the first page.
-  const { data: agreementsData, isLoading: agreementsLoading } = useAgreements({ agreement_type: 'house_account' })
+  // EVERY agreement type, not just house_account. A receipt is a signed piece
+  // of evidence — a counter slip, a delivery note, a service sign-off — and
+  // nothing about the other two routes says such a document cannot exist for
+  // them: a recurring cleaning contract still has monthly sign-offs, a
+  // milestone build still has delivery notes. house_account is the type that
+  // REQUIRES one at the payment gate (pa.py), which is not the same as being
+  // the only type allowed to have one. The backend never had this restriction
+  // — create_receipt checks the agreement's status, never its type.
+  const { data: agreementsData, isLoading: agreementsLoading } = useAgreements()
   const admissibleAgreements = (agreementsData?.items ?? []).filter(isAgreementAdmissible)
 
   const preselectedAgreementId = searchParams.get('agreement_id') ?? ''

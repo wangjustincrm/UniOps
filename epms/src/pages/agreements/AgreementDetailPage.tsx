@@ -367,13 +367,13 @@ export default function AgreementDetailPage() {
     : usersData ? 'Assigned to a deactivated account'
     : '…'
 
-  // house_account is the only agreement_type with pickup receipts at all —
-  // recurring/milestone settle against the payment schedule instead. Skip
-  // the fetch entirely for the other two types, same convention as the
-  // schedule query above.
-  const { data: receiptsData } = useAgreementReceipts(
-    agreement && agreement.agreement_type === 'house_account' ? agreement.id : ''
-  )
+  // Fetched for EVERY agreement type. house_account is the type whose payment
+  // gate requires a receipt (pa.py), which is not the same as being the only
+  // type allowed to have one — a recurring service contract still has monthly
+  // sign-offs, and /receipts/new offers every agreement. Scoping this to
+  // house_account meant a receipt recorded against any other agreement was
+  // invisible on the only page that shows an agreement's own record.
+  const { data: receiptsData } = useAgreementReceipts(agreement ? agreement.id : '')
   const receipts = receiptsData?.items ?? []
 
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
@@ -585,13 +585,17 @@ export default function AgreementDetailPage() {
             </div>
           )}
 
-          {/* Agreement receipts — house_account only. recurring/milestone settle
-              against the payment schedule above instead; house_account has
-              no schedule rows at all (see the comment on scheduleData).
+          {/* Agreement receipts — every type. house_account is the type that
+              REQUIRES one before payment; the others may still carry delivery
+              notes or service sign-offs, and /receipts/new lets anyone record
+              one against them, so this table has to be able to show it.
+              Hidden only when there is nothing to show and nothing the viewer
+              could add, so a recurring agreement nobody records receipts
+              against does not grow an empty section.
               Task 10: display-only here, mirroring how a PO shows its GRs but
               creating one is a separate page — recording now happens on the
               standalone /receipts/new page (linked below), not inline. */}
-          {agreement.agreement_type === 'house_account' && (
+          {(receipts.length > 0 || (canRecordReceipt && isAgreementAdmissible(agreement))) && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
