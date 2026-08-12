@@ -862,3 +862,128 @@ async def test_invoice_scoped_receipt_list_403s_for_unrelated_caller(admin_clien
         assert r.status_code == 403, r.text
     finally:
         await outsider_client.aclose()
+
+
+# ── Task 12: single-receipt read (GET /agreement-receipts/{receipt_id}) ────
+# ReceiptDetailPage's URL is /receipts/{receipt_id} — no agreement in it — so
+# it cannot use the agreement-scoped read. Same router, same permission
+# (epms.agreement.read), same response shape as a listing row so the page and
+# the list speak one language.
+
+def _one_receipt_url(receipt_id):
+    return f"{ALL_RECEIPTS_URL}/{receipt_id}"
+
+
+async def test_get_one_receipt_carries_agreement_currency_and_attachment_count(
+    admin_client, test_engine,
+):
+    """① Detail read returns the SAME enriched shape as a listing row.
+
+    Currency comes from the parent agreement (USD here, deliberately not the
+    CAD default) because the page renders amounts with it — a hardcoded CAD
+    was a Critical on this branch once already. attachment_count is what the
+    page's "no photo" warning turns on, so it is asserted against a receipt
+    that really has one attachment on it, not against 0 (which a query that
+    forgot the subquery could also produce).
+    """
+    agr, user_id = await _create_agreement(admin_client, test_engine, currency="USD")
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="DETAIL-1"))).json()
+    # Attachment row written directly rather than through
+    # POST .../attachments: that route calls out to the file-api sidecar,
+    # which test_agreement_receipt_attachments.py fakes with a module-autouse
+    # fixture this file doesn't have (and the real sidecar 401s on this
+    # suite's JWT_SECRET_KEY — see that file's _FakeFileServer docstring).
+    # What is under test here is the COUNT the detail read reports, which
+    # comes from the attachments table, not from how the row got there.
+    from app.models.agreement_receipt_attachment import AgreementReceiptAttachment
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db.add(AgreementReceiptAttachment(
+            receipt_id=uuid.UUID(receipt["id"]), filename="slip.jpg",
+            content_type="image/jpeg", file_size=11, storage_key=uuid.uuid4()))
+        await db.commit()
+
+    r = await admin_client.get(_one_receipt_url(receipt["id"]))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["id"] == receipt["id"]
+    assert body["agreement_id"] == agr["id"]
+    assert body["agreement_number"] == agr["number"]
+    assert body["currency"] == "USD"
+    assert body["attachment_count"] == 1
+    assert body["invoice_ref"] is None
+    # The editable fields the detail page's form round-trips must all be here.
+    for field in ("receipt_type", "receipt_date", "receipt_ref", "amount", "tax_amount",
+                  "total_amount", "received_by", "missing_receipt_reason", "notes", "status"):
+        assert field in body, field
+
+
+async def test_get_one_receipt_unknown_id_is_404(admin_client):
+    """② A receipt id that doesn't exist is a 404 that names the RECEIPT —
+    with no agreement in this URL, a bare "Not found" can't say which of the
+    two the caller got wrong."""
+    r = await admin_client.get(_one_receipt_url(uuid.uuid4()))
+    assert r.status_code == 404, r.text
+    assert "receipt" in r.json()["detail"].lower()
+
+
+async def test_get_one_receipt_requires_agreement_read(requester_client):
+    """③ ★ Deliberately requester_client, NOT admin_client: admin_client is
+    system_admin and uniops_authz short-circuits it past EVERY permission
+    check, so a test written against it would pass even if this route carried
+    no gate at all. epms.agreement.read is granted to no role in conftest's
+    default matrix (see the block comment above
+    test_non_admin_without_receipt_write_grant_is_403_then_201_once_granted),
+    so this is a real 403 rather than an artefact of test setup.
+    """
+    r = await requester_client.get(_one_receipt_url(uuid.uuid4()))
+    assert r.status_code == 403, r.text
+    # 403 BEFORE 404: the permission gate must not be reachable-around by
+    # probing ids (an unauthorised caller learning which receipt ids exist).
+
+
+async def test_list_all_is_not_shadowed_by_the_detail_route(admin_client, test_engine):
+    """④ `/agreement-receipts` (list) and `/agreement-receipts/{receipt_id}`
+    (detail) live on the same router and same prefix, and FastAPI matches in
+    declaration order. This pins that adding the parametrised route did not
+    swallow the list — the failure mode would be a 422 ("receipt_id is not a
+    valid UUID") or a 404 on a URL that used to return a page of rows.
+    """
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    created = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="SHADOW-1"))).json()
+
+    listed = await admin_client.get(ALL_RECEIPTS_URL, params={"agreement_id": agr["id"]})
+    assert listed.status_code == 200, listed.text
+    assert [item["id"] for item in listed.json()["items"]] == [created["id"]]
+    # And with query params stripped entirely — the exact URL the frontend's
+    # unfiltered first load requests.
+    bare = await admin_client.get(ALL_RECEIPTS_URL)
+    assert bare.status_code == 200, bare.text
+    assert isinstance(bare.json()["items"], list)
+
+
+async def test_patched_receipt_is_visible_through_the_detail_read(admin_client, test_engine):
+    """The detail page edits via PATCH /agreements/{a}/receipts/{r} and then
+    re-reads through THIS endpoint. Both must speak about the same row —
+    pinned here because the two live on different routers with different
+    scoping rules, which is exactly the kind of split that drifts.
+    """
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="DETAIL-PATCH-1"))).json()
+
+    patched = await admin_client.patch(
+        f"{_receipts_url(agr['id'])}/{receipt['id']}",
+        json={"receipt_type": "delivery", "amount": "200.00",
+              "tax_amount": "26.00", "total_amount": "226.00", "notes": "edited"},
+    )
+    assert patched.status_code == 200, patched.text
+
+    r = await admin_client.get(_one_receipt_url(receipt["id"]))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["receipt_type"] == "delivery"
+    assert Decimal(body["total_amount"]) == Decimal("226.00")
+    assert body["notes"] == "edited"

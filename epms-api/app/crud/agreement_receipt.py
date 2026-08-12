@@ -38,6 +38,59 @@ async def list_for_agreement(
     return list(rows)
 
 
+def _with_agreement_select():
+    """The one SELECT shape behind every "receipt + its agreement" read.
+
+    Shared by list_all() (the cross-agreement listing) and
+    get_one_with_agreement() (the detail page's single-row fetch, Task 12) so
+    the two can never drift into returning differently-shaped rows — the
+    frontend reads the SAME ReceiptWithAgreementResponse from both, and a
+    detail page that quietly lost `attachment_count` or `currency` because a
+    second hand-written query forgot the subquery would mislabel amounts or
+    hide the "no photo" warning.
+
+    Columns, in order: the receipt row, agreement number, agreement currency,
+    linked invoice's human ref (LEFT joined — NULL until `reconciled`),
+    attachment count.
+    """
+    attachment_count = (
+        select(func.count(AgreementReceiptAttachment.id))
+        .where(AgreementReceiptAttachment.receipt_id == AgreementReceipt.id)
+        .correlate(AgreementReceipt)
+        .scalar_subquery()
+        .label("attachment_count")
+    )
+    return (
+        select(AgreementReceipt, PurchaseAgreement.number, PurchaseAgreement.currency,
+               Invoice.internal_ref, attachment_count)
+        .join(PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
+        .outerjoin(Invoice, AgreementReceipt.invoice_id == Invoice.id)
+    )
+
+
+async def get_one_with_agreement(
+    db: AsyncSession, receipt_id: uuid.UUID,
+) -> tuple[AgreementReceipt, str, str, str | None, int] | None:
+    """Single receipt, same row shape as list_all (Task 12).
+
+    ReceiptDetailPage's URL is /receipts/{receipt_id} — no agreement_id in it —
+    so it cannot use the agreement-scoped read (GET /agreements/{a}/receipts).
+    Returning the identical tuple the listing returns is what lets the detail
+    page render agreement_number / currency / invoice_ref / attachment_count
+    without a second round of lookups or a second response shape.
+
+    None (not an exception) when there is no such receipt — the caller turns
+    that into a 404 whose wording names the RECEIPT, since with no agreement
+    in the URL "not found" is otherwise ambiguous.
+    """
+    row = (await db.execute(
+        _with_agreement_select().where(AgreementReceipt.id == receipt_id)
+    )).first()
+    if row is None:
+        return None
+    return row[0], row[1], row[2], row[3], row[4]
+
+
 async def list_all(
     db: AsyncSession,
     *,
@@ -79,19 +132,7 @@ async def list_all(
     attachments table — cannot multiply rows when a receipt has several
     photos.
     """
-    attachment_count = (
-        select(func.count(AgreementReceiptAttachment.id))
-        .where(AgreementReceiptAttachment.receipt_id == AgreementReceipt.id)
-        .correlate(AgreementReceipt)
-        .scalar_subquery()
-        .label("attachment_count")
-    )
-    q = (
-        select(AgreementReceipt, PurchaseAgreement.number, PurchaseAgreement.currency,
-               Invoice.internal_ref, attachment_count)
-        .join(PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
-        .outerjoin(Invoice, AgreementReceipt.invoice_id == Invoice.id)
-    )
+    q = _with_agreement_select()
     if agreement_id:
         q = q.where(AgreementReceipt.agreement_id == agreement_id)
     if receipt_type:

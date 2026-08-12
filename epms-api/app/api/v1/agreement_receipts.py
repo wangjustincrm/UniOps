@@ -219,6 +219,23 @@ async def ap_review_receipt(
         raise HTTPException(status_code=409, detail=str(exc))
 
 
+def _with_agreement(
+    row: tuple[AgreementReceipt, str, str, str | None, int],
+) -> ReceiptWithAgreementResponse:
+    """One row of crud.list_all/get_one_with_agreement → its response model.
+
+    Shared by the listing and the single-receipt read (Task 12) so a row can
+    never be assembled two slightly different ways — the detail page and the
+    list row are literally the same JSON object to the frontend.
+    """
+    receipt, agr_number, agr_currency, invoice_ref, attachment_count = row
+    return ReceiptWithAgreementResponse(
+        **ReceiptResponse.model_validate(receipt, from_attributes=True).model_dump(),
+        agreement_number=agr_number, currency=agr_currency, invoice_ref=invoice_ref,
+        attachment_count=attachment_count,
+    )
+
+
 @all_router.get("", response_model=ReceiptListAllResponse)
 async def list_all_receipts(
     db: SessionDep,
@@ -238,12 +255,32 @@ async def list_all_receipts(
         db, agreement_id=agreement_id, receipt_type=receipt_type, status=status_filter,
         search=search, page=page, page_size=page_size,
     )
-    items = [
-        ReceiptWithAgreementResponse(
-            **ReceiptResponse.model_validate(receipt, from_attributes=True).model_dump(),
-            agreement_number=agr_number, currency=agr_currency, invoice_ref=invoice_ref,
-            attachment_count=attachment_count,
-        )
-        for receipt, agr_number, agr_currency, invoice_ref, attachment_count in rows
-    ]
-    return {"items": items, "total": total}
+    return {"items": [_with_agreement(row) for row in rows], "total": total}
+
+
+# Declared AFTER the list route above on purpose. FastAPI matches in
+# declaration order, and although these two never actually collide (the list
+# is `/agreement-receipts` exactly, this one needs a non-empty extra segment
+# because Starlette's default path converter is `[^/]+`), keeping the static
+# route first is the rule that stays true if a literal sub-path is ever added
+# here — see test_list_all_is_not_shadowed_by_the_detail_route, which pins it.
+@all_router.get("/{receipt_id}", response_model=ReceiptWithAgreementResponse)
+async def get_receipt(receipt_id: uuid.UUID, db: SessionDep, user: ReceiptReadDep):
+    """Single receipt by id, no agreement in the URL (Task 12).
+
+    ReceiptDetailPage is reached from the cross-agreement list, whose rows
+    carry only the receipt id, so it cannot use the agreement-scoped read.
+    Same permission as the list on this router (epms.agreement.read): someone
+    who can see every receipt in the listing can see one of them on its own.
+
+    Response is the SAME shape as a listing row (ReceiptWithAgreementResponse),
+    so the page renders agreement_number / currency / invoice_ref /
+    attachment_count without a second fetch or a second frontend type.
+    """
+    row = await receipt_crud.get_one_with_agreement(db, receipt_id)
+    if row is None:
+        # Names the RECEIPT specifically: with no agreement_id in this URL,
+        # a bare "Not found" leaves the reader unsure whether the receipt, the
+        # agreement, or the route itself is the thing that's missing.
+        raise HTTPException(status_code=404, detail="Receipt not found")
+    return _with_agreement(row)
