@@ -51,7 +51,15 @@ def _with_agreement_select():
 
     Columns, in order: the receipt row, agreement number, agreement currency,
     linked invoice's human ref (LEFT joined — NULL until `reconciled`),
-    attachment count.
+    attachment count, agreement vendor name.
+
+    The agreement's vendor is APPENDED (Task 13) rather than slotted in
+    next to its number on purpose: every consumer unpacks this tuple
+    positionally, so a new column in the middle would silently renumber
+    `currency` and `attachment_count` at every call site. It is the
+    AGREEMENT's vendor — the receipt's own `vendor_name` (what the slip
+    printed) travels on the receipt row itself, and the whole point of
+    selecting both is that the API layer can compare them.
     """
     attachment_count = (
         select(func.count(AgreementReceiptAttachment.id))
@@ -62,7 +70,8 @@ def _with_agreement_select():
     )
     return (
         select(AgreementReceipt, PurchaseAgreement.number, PurchaseAgreement.currency,
-               Invoice.internal_ref, attachment_count)
+               Invoice.internal_ref, attachment_count,
+               PurchaseAgreement.vendor_name.label("agreement_vendor_name"))
         .join(PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
         .outerjoin(Invoice, AgreementReceipt.invoice_id == Invoice.id)
     )
@@ -70,7 +79,7 @@ def _with_agreement_select():
 
 async def get_one_with_agreement(
     db: AsyncSession, receipt_id: uuid.UUID,
-) -> tuple[AgreementReceipt, str, str, str | None, int] | None:
+) -> tuple[AgreementReceipt, str, str, str | None, int, str] | None:
     """Single receipt, same row shape as list_all (Task 12).
 
     ReceiptDetailPage's URL is /receipts/{receipt_id} — no agreement_id in it —
@@ -88,7 +97,7 @@ async def get_one_with_agreement(
     )).first()
     if row is None:
         return None
-    return row[0], row[1], row[2], row[3], row[4]
+    return row[0], row[1], row[2], row[3], row[4], row[5]
 
 
 async def list_all(
@@ -100,7 +109,7 @@ async def list_all(
     search: str | None = None,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[tuple[AgreementReceipt, str, str, str | None, int]], int]:
+) -> tuple[list[tuple[AgreementReceipt, str, str, str | None, int, str]], int]:
     """Cross-agreement listing (GET /agreement-receipts, Task 9) — the reason
     this page exists is that AP/warehouse staff shouldn't have to open an
     agreement first to record or find a receipt (see the task brief's "where
@@ -168,7 +177,7 @@ async def list_all(
             AgreementReceipt.id.desc(),
         ).offset(offset).limit(page_size)
     )).all()
-    return [(row[0], row[1], row[2], row[3], row[4]) for row in rows], total
+    return [(row[0], row[1], row[2], row[3], row[4], row[5]) for row in rows], total
 
 
 # 唯二可离开的活跃态 —— reconciled 已被发票认领(编辑/作废会让发票挂着一份

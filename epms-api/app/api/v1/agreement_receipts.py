@@ -22,6 +22,7 @@ from app.schemas.agreement_receipt import (
     ReceiptResponse,
     ReceiptUpdate,
     ReceiptWithAgreementResponse,
+    is_vendor_mismatch,
 )
 
 router = APIRouter(prefix="/agreements/{agreement_id}/receipts", tags=["agreement-receipts"])
@@ -220,19 +221,27 @@ async def ap_review_receipt(
 
 
 def _with_agreement(
-    row: tuple[AgreementReceipt, str, str, str | None, int],
+    row: tuple[AgreementReceipt, str, str, str | None, int, str],
 ) -> ReceiptWithAgreementResponse:
     """One row of crud.list_all/get_one_with_agreement → its response model.
 
     Shared by the listing and the single-receipt read (Task 12) so a row can
     never be assembled two slightly different ways — the detail page and the
     list row are literally the same JSON object to the frontend.
+
+    `vendor_mismatch` is decided HERE (Task 13), once, for every reader:
+    "the merchant on the slip isn't the vendor this house account is with" is
+    a deliberately fuzzy comparison (see is_vendor_mismatch's docstring), and
+    a fuzzy rule re-implemented per frontend page is a rule that means
+    something slightly different on each of them.
     """
-    receipt, agr_number, agr_currency, invoice_ref, attachment_count = row
+    receipt, agr_number, agr_currency, invoice_ref, attachment_count, agr_vendor = row
     return ReceiptWithAgreementResponse(
         **ReceiptResponse.model_validate(receipt, from_attributes=True).model_dump(),
         agreement_number=agr_number, currency=agr_currency, invoice_ref=invoice_ref,
         attachment_count=attachment_count,
+        agreement_vendor_name=agr_vendor,
+        vendor_mismatch=is_vendor_mismatch(receipt.vendor_name, agr_vendor),
     )
 
 

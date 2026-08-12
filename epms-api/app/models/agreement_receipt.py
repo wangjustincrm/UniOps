@@ -44,6 +44,17 @@ class AgreementReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     # 基线匹配照常工作。
     receipt_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
+    # 小票抬头上印的商家名 —— **不是**协议的供应商(那个在 purchase_agreements
+    # 上,一直都有)。存它的唯一理由是拿它跟协议的供应商比对:拿 A 家的小票报到
+    # B 家的挂账户上是挂账户最常见的错归属,而只看协议的 vendor 永远看不出来。
+    # 可空:OCR 抽不到(抬头模糊/被裁掉)是正常情况,手工录入也允许留空 ——
+    # 没填不等于填错,派生的不一致判定对空值一律判"不冲突"
+    # (见 schemas/agreement_receipt.py::is_vendor_mismatch)。
+    # ⚠️ 测试库的表来自 Base.metadata.create_all 而不走 alembic,所以这一列
+    # 必须与 ag06_receipt_vendor 逐字保持一致(与本文件下方 __table_args__ 的
+    # 同步警告同一个理由)。
+    vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     tax_amount: Mapped[Decimal] = mapped_column(
         Numeric(15, 2), nullable=False, server_default="0")

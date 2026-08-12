@@ -987,3 +987,103 @@ async def test_patched_receipt_is_visible_through_the_detail_read(admin_client, 
     assert body["receipt_type"] == "delivery"
     assert Decimal(body["total_amount"]) == Decimal("226.00")
     assert body["notes"] == "edited"
+
+
+# ── Task 13: the merchant printed on the receipt, and the mismatch reminder ──
+# The agreement already carries the vendor it is WITH; what it cannot show is
+# the merchant the paper slip was issued BY. Storing that and comparing the
+# two is what surfaces the classic house-account mis-posting: shop A's slip
+# recorded against shop B's account. The verdict is derived server-side so the
+# list page and the detail page can never disagree about it.
+#
+# 判定函数本身的单元覆盖在 tests/test_receipt_vendor_match.py —— 它是同步的
+# 纯函数测试,而本文件顶部的 `pytestmark = pytest.mark.asyncio` 会作用到模块里
+# 每一个函数;同步函数被这个 mark 命中后,pytest-asyncio 会另起一个事件循环,
+# 而 session 作用域的 test_engine 还绑在原来那个上,结果是它后面的每一条
+# 异步用例都炸 "attached to a different loop"(实测 7 条)。
+
+async def test_create_and_read_back_the_vendor_on_the_receipt(admin_client, test_engine):
+    """① 录入时存下的商家名要能原样读回 —— 包括 store number 这类原文细节。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-1", vendor_name="PRINCESS AUTO #12"))
+    assert r.status_code == 201, r.text
+    assert r.json()["vendor_name"] == "PRINCESS AUTO #12"
+
+    detail = await admin_client.get(_one_receipt_url(r.json()["id"]))
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["vendor_name"] == "PRINCESS AUTO #12"
+
+
+async def test_vendor_is_optional_on_create(admin_client, test_engine):
+    """② 不传就是 NULL,且**不算**不一致 —— 抽不到抬头不该被当成错。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-NONE-1"))
+    assert r.status_code == 201, r.text
+    assert r.json()["vendor_name"] is None
+
+    detail = (await admin_client.get(_one_receipt_url(r.json()["id"]))).json()
+    assert detail["vendor_mismatch"] is False
+
+
+async def test_detail_read_reports_a_mismatch_and_names_both_sides(admin_client, test_engine):
+    """③ 判定在后端。前端要能写出"小票上印的是 X,协议的供应商是 Y",
+    所以协议的供应商必须跟着这一行回来 —— 只给一个布尔,警告无法落地。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-MISMATCH-1", vendor_name="Canadian Tire #241"))).json()
+
+    body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
+    assert body["vendor_mismatch"] is True
+    assert body["vendor_name"] == "Canadian Tire #241"
+    # seed_vendor_and_user 默认建的供应商就叫 Princess Auto。
+    assert body["agreement_vendor_name"] == "Princess Auto"
+
+
+async def test_a_store_number_variant_is_not_reported_as_a_mismatch(admin_client, test_engine):
+    """④ 端到端地钉住宽容口径 —— 单元测试证明函数宽容,这条证明**端点用的是它**。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-TOLERANT-1", vendor_name="PRINCESS AUTO #12"))).json()
+
+    body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
+    assert body["vendor_mismatch"] is False
+
+
+async def test_list_all_carries_the_same_verdict_as_the_detail_read(admin_client, test_engine):
+    """⑤ 列表页和详情页读同一份 JSON —— 两处判定必须逐字一致,
+    否则用户在一处看到警告、在另一处看不到。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    bad = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-LIST-BAD", vendor_name="Canadian Tire"))).json()
+    ok = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-LIST-OK", vendor_name="Princess Auto Ltd"))).json()
+
+    listed = await admin_client.get(
+        ALL_RECEIPTS_URL, params={"agreement_id": agr["id"], "page_size": 200})
+    assert listed.status_code == 200, listed.text
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert by_id[bad["id"]]["vendor_mismatch"] is True
+    assert by_id[bad["id"]]["agreement_vendor_name"] == "Princess Auto"
+    assert by_id[ok["id"]]["vendor_mismatch"] is False
+    for receipt_id in (bad["id"], ok["id"]):
+        detail = (await admin_client.get(_one_receipt_url(receipt_id))).json()
+        assert detail["vendor_mismatch"] == by_id[receipt_id]["vendor_mismatch"]
+
+
+async def test_patching_the_vendor_clears_the_mismatch(admin_client, test_engine):
+    """⑥ 商家名可改(与其它 OCR 字段一致),改对之后提醒必须跟着消失 ——
+    否则这个警告就成了洗不掉的污点,下次没人再理它。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-PATCH-1", vendor_name="Canadain Tire"))).json()
+    assert (await admin_client.get(_one_receipt_url(receipt["id"]))).json()["vendor_mismatch"] is True
+
+    patched = await admin_client.patch(
+        f"{_receipts_url(agr['id'])}/{receipt['id']}", json={"vendor_name": "Princess Auto #12"})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["vendor_name"] == "Princess Auto #12"
+
+    body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
+    assert body["vendor_mismatch"] is False
