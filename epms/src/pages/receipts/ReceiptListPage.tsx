@@ -22,7 +22,7 @@ const STATUS_FILTERS: { value: ReceiptStatus | 'all'; label: string }[] = [
   { value: 'open',                label: 'Open' },
   { value: 'reconciled',          label: 'Reconciled' },
   { value: 'rejected',            label: 'Rejected' },
-  { value: 'voided',              label: 'Voided' },
+  { value: 'voided',              label: 'Removed' },
 ]
 
 const TYPE_FILTERS: { value: ReceiptType | 'all'; label: string }[] = [
@@ -81,7 +81,7 @@ export default function ReceiptListPage() {
   const [pendingReviewKey, setPendingReviewKey] = useState<string | null>(null)
 
   const handleVoid = (agreementId: string, receiptId: string, receiptRef: string | null) => {
-    if (!confirm(`Void receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
+    if (!confirm(`Remove receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
     setPendingVoidId(receiptId)
     voidReceipt.mutate({ agreementId, receiptId }, { onSettled: () => setPendingVoidId(null) })
   }
@@ -94,7 +94,7 @@ export default function ReceiptListPage() {
     // 8px apart in the same row (fix round 2, Important): a mis-click here is
     // not "undo available", it's "re-key the whole receipt from scratch".
     if (action === 'reject' && !confirm(
-      'Reject this receipt? This is final — a rejected receipt can never be approved, voided, or edited afterward. ' +
+      'Reject this receipt? This is final — a rejected receipt can never be approved, removed, or edited afterward. ' +
       'The only way to record this spend again is to enter a brand-new receipt.'
     )) return
     setPendingReviewKey(`${receiptId}:${action}`)
@@ -418,7 +418,7 @@ function ReceiptRow({
               className={cn('text-danger-600 hover:text-danger-700')}
             >
               <Ban className="h-3.5 w-3.5" />
-              {voidPending ? 'Working…' : 'Void'}
+              {voidPending ? 'Working…' : 'Remove'}
             </Button>
           )}
           {/* Always present: a reader with neither write permission still needs

@@ -138,7 +138,7 @@ async def _receipt_integrity_error(
                           f"detach that invoice first — the receipt returns to 'open' "
                           f"and its reference is free again.")
             else:
-                remedy = ("Void or reject that receipt if it was entered in error, "
+                remedy = ("Remove or reject that receipt if it was entered in error, "
                           "then record this one again.")
             return HTTPException(
                 status_code=409,

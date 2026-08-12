@@ -218,7 +218,7 @@ async def update(db: AsyncSession, receipt: AgreementReceipt, body: ReceiptUpdat
         raise ValueError(
             f"Receipt is {receipt.status}; only an open or pending-AP-review receipt can be "
             "edited. Editing a reconciled receipt would desync it from the invoice "
-            "it was matched against without a trace; a rejected or voided receipt is final.")
+            "it was matched against without a trace; a rejected or removed receipt is final.")
     had_reason = bool(receipt.missing_receipt_reason)
     patch = body.model_dump(exclude_unset=True)
     for field, value in patch.items():
@@ -263,7 +263,7 @@ async def update(db: AsyncSession, receipt: AgreementReceipt, body: ReceiptUpdat
 async def void(db: AsyncSession, receipt: AgreementReceipt) -> None:
     if receipt.status not in VOIDABLE:
         raise ValueError(
-            f"A {receipt.status} receipt cannot be voided; detach its invoice first")
+            f"A {receipt.status} receipt cannot be removed; detach its invoice first")
     receipt.status = "voided"
     await db.flush()
 

@@ -126,7 +126,7 @@ export function useVoidReceipt(agreementId: string) {
     onSuccess: async () => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to void receipt'),
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to remove receipt'),
   })
 }
 
@@ -165,7 +165,7 @@ export function useVoidReceiptAny() {
     onSuccess: async (_data, { agreementId }) => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to void receipt'),
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to remove receipt'),
   })
 }
 

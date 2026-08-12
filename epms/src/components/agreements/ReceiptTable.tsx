@@ -109,7 +109,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
     // VOIDABLE set, so there is no undo. Same confirm() convention as the
     // other destructive actions in this app (PrDetailPage withdraw/recall,
     // BudgetCatalogPage delete, etc.).
-    if (!confirm(`Void receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
+    if (!confirm(`Remove receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
     setPendingVoidId(receiptId)
     voidReceipt.mutate(receiptId, { onSettled: () => setPendingVoidId(null) })
   }
@@ -231,7 +231,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                               className={cn('text-danger-600 hover:text-danger-700')}
                             >
                               <Ban className="h-3.5 w-3.5" />
-                              {rowVoidPending ? 'Working…' : 'Void'}
+                              {rowVoidPending ? 'Working…' : 'Remove'}
                             </Button>
                           )}
                           {!canReview && !canVoid && <span className="text-neutral-300">—</span>}

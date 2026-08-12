@@ -39,7 +39,14 @@ const STATUS_CONFIG: Record<
   pending_ap_review: { label: 'Pending AP Review', variant: 'warning', dot: 'bg-warning-500' },
   open: { label: 'Open', variant: 'info', dot: 'bg-primary-500' },
   reconciled: { label: 'Reconciled', variant: 'success', dot: 'bg-success-600' },
-  voided: { label: 'Voided', variant: 'dark', dot: 'bg-neutral-400' },
+  // Label != value ON PURPOSE, which is the whole reason this table exists.
+  // The DB status stays 'voided' — it is written into the ag04 migration, the
+  // model, crud's RETIRED tuple, and the partial unique index predicate
+  // `status NOT IN ('voided', 'rejected')` — but the people recording receipts
+  // told us "Void" told them nothing, so the word they READ is "Removed".
+  // Note it is still a soft-cancel, not a row delete (see
+  // services/agreementReceipts.ts's `void:` comment).
+  voided: { label: 'Removed', variant: 'dark', dot: 'bg-neutral-400' },
 }
 
 // The wording in STATUS_CONFIG above is the ONLY place a status is spelled out

@@ -263,7 +263,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
             'The receipt is now sitting as "open" with no photo and no reason on it — which means it ' +
             'can be claimed by an invoice and paid as if it had evidence. Open the Agreement Receipts ' +
             'list (/receipts), click this receipt to open it, and either attach the photo or write in ' +
-            'why there is none. If it was a mistake, Void it there instead.'
+            'why there is none. If it was a mistake, Remove it there instead.'
           )
         }
       } finally {

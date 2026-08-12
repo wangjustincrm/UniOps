@@ -54,10 +54,10 @@ function lockReason(receipt: ApiReceiptWithAgreement): string {
     case 'rejected':
       return (
         'AP rejected this receipt. A rejected receipt is final — it cannot be edited, approved, ' +
-        'or voided. Record a new receipt if this spend still needs to be paid.'
+        'or removed. Record a new receipt if this spend still needs to be paid.'
       )
     case 'voided':
-      return 'This receipt was voided. A voided receipt is final — record a new receipt instead.'
+      return 'This receipt was removed. A removed receipt is final — record a new receipt instead.'
     default:
       return 'This receipt cannot be edited in its current state.'
   }
@@ -250,7 +250,7 @@ function ReceiptDetail({
 
   const handleVoid = () => {
     if (!confirm(
-      'Void this receipt? This cannot be undone — a voided receipt is final and can never be ' +
+      'Remove this receipt? This cannot be undone — a removed receipt is final and can never be ' +
       'edited, approved, or claimed by an invoice. Record a new receipt if the spend still needs paying.'
     )) return
     voidReceipt.mutate({ agreementId, receiptId: receipt.id })
@@ -263,7 +263,7 @@ function ReceiptDetail({
     // anywhere. Approve is deliberately NOT confirmed: it is the high-frequency
     // action and it lands on `open`, which is still editable and voidable.
     if (action === 'reject' && !confirm(
-      'Reject this receipt? This is final — a rejected receipt can never be approved, voided, or ' +
+      'Reject this receipt? This is final — a rejected receipt can never be approved, removed, or ' +
       'edited afterward. The only way to record this spend again is to enter a brand-new receipt.'
     )) return
     setPendingReview(action)
@@ -328,7 +328,7 @@ function ReceiptDetail({
               disabled={anyPending}
             >
               <Ban className="h-4 w-4" />
-              {voidReceipt.isPending ? 'Working…' : 'Void'}
+              {voidReceipt.isPending ? 'Working…' : 'Remove'}
             </Button>
           )}
         </div>
