@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
@@ -34,6 +34,49 @@ async def list_for_agreement(
         q = q.where(AgreementReceipt.status == status)
     rows = (await db.execute(q.order_by(AgreementReceipt.created_at.desc()))).scalars().all()
     return list(rows)
+
+
+async def list_all(
+    db: AsyncSession,
+    *,
+    agreement_id: uuid.UUID | None = None,
+    receipt_type: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[tuple[AgreementReceipt, str]], int]:
+    """Cross-agreement listing (GET /agreement-receipts, Task 9) — the reason
+    this page exists is that AP/warehouse staff shouldn't have to open an
+    agreement first to record or find a receipt (see the task brief's "where
+    this fits"). Joined to PurchaseAgreement so the caller gets the parent
+    agreement's human `number` back alongside each row — the frontend must
+    never be handed a bare agreement_id UUID to render (brief item 5).
+    """
+    q = select(AgreementReceipt, PurchaseAgreement.number).join(
+        PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
+    if agreement_id:
+        q = q.where(AgreementReceipt.agreement_id == agreement_id)
+    if receipt_type:
+        q = q.where(AgreementReceipt.receipt_type == receipt_type)
+    if status:
+        q = q.where(AgreementReceipt.status == status)
+    if search:
+        term = f"%{search}%"
+        # Matches what the receipt table shows: the paper reference # and the
+        # agreement number — the two things a person doing this lookup
+        # actually has in hand (a slip in one hand, a house-account name in
+        # the other), same rationale as GoodsReceipt.get_all's search.
+        q = q.where(
+            AgreementReceipt.receipt_ref.ilike(term)
+            | PurchaseAgreement.number.ilike(term)
+        )
+    total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    offset = (page - 1) * page_size
+    rows = (await db.execute(
+        q.order_by(AgreementReceipt.receipt_date.desc()).offset(offset).limit(page_size)
+    )).all()
+    return [(row[0], row[1]) for row in rows], total
 
 
 # 唯二可离开的活跃态 —— reconciled 已被发票认领(编辑/作废会让发票挂着一份

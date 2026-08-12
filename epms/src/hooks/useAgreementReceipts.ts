@@ -3,6 +3,7 @@ import {
   agreementReceiptService,
   type CreateReceiptBody,
   type ReceiptApReviewAction,
+  type ReceiptListAllFilters,
   type ReceiptStatus,
 } from '@/services/agreementReceipts'
 
@@ -11,6 +12,19 @@ export function useAgreementReceipts(agreementId: string, status?: ReceiptStatus
     queryKey: ['agreements', agreementId, 'receipts', status],
     queryFn: () => agreementReceiptService.list(agreementId, status ? { status } : undefined),
     enabled: Boolean(agreementId),
+  })
+}
+
+// Cross-agreement listing (Task 9) — backs ReceiptListPage, its own menu
+// entry. A DELIBERATELY SEPARATE top-level query-key namespace, NOT
+// ['agreements', ...] — see receiptAttachmentsQueryKey's comment in
+// components/agreements/ReceiptTable.tsx for why sharing that branch would
+// make this page's fetches collateral damage of every single-agreement
+// receipt mutation's invalidateQueries prefix-match.
+export function useAllReceipts(filters?: ReceiptListAllFilters) {
+  return useQuery({
+    queryKey: ['agreement-receipts', filters],
+    queryFn: () => agreementReceiptService.listAll(filters),
   })
 }
 

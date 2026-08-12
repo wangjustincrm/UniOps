@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.agreement_attachments import router as agreement_attachments_router
 from app.api.v1.agreement_receipt_attachments import router as agreement_receipt_attachments_router
+from app.api.v1.agreement_receipts import all_router as agreement_receipts_all_router
 from app.api.v1.agreement_receipts import router as agreement_receipts_router
 from app.api.v1.agreements import router as agreements_router
 from app.api.v1.auth import router as auth_router
@@ -53,6 +54,7 @@ api_router.include_router(pa_attachments_router)
 api_router.include_router(agreements_router)
 api_router.include_router(agreement_attachments_router)
 api_router.include_router(agreement_receipts_router)
+api_router.include_router(agreement_receipts_all_router)
 api_router.include_router(agreement_receipt_attachments_router)
 api_router.include_router(tasks_router)
 api_router.include_router(config_router)

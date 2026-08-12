@@ -626,6 +626,88 @@ async def test_invoice_scoped_receipt_list_reachable_by_uploader_without_agreeme
         assert r.json() == {"items": [], "total": 0}
 
 
+# ── Task 9: cross-agreement receipt list (GET /agreement-receipts) ─────────
+# Backs its own menu entry so AP/warehouse staff can find or record a receipt
+# without opening an agreement first (see task-9 brief's "where this fits").
+# Separate endpoint from GET /agreements/{id}/receipts above — same read
+# permission (epms.agreement.read), but no agreement_id in the URL, so every
+# item must carry the parent agreement's NUMBER (never a bare UUID — brief
+# item 5).
+
+ALL_RECEIPTS_URL = "/api/v1/agreement-receipts"
+
+
+async def test_list_all_receipts_across_agreements(admin_client, test_engine):
+    """Two different agreements, one receipt each → with no filters, both
+    show up, and each carries its OWN parent agreement's number."""
+    agr1, user_id = await _create_agreement(admin_client, test_engine)
+    agr2, _ = await _create_agreement(admin_client, test_engine)
+    r1 = (await admin_client.post(_receipts_url(agr1["id"]), json=_receipt_payload(
+        user_id, receipt_ref="CROSS-1"))).json()
+    r2 = (await admin_client.post(_receipts_url(agr2["id"]), json=_receipt_payload(
+        user_id, receipt_ref="CROSS-2"))).json()
+
+    # page_size=200 (the documented cap) explicitly — this test file runs many
+    # earlier tests against the SAME session-scoped test_engine with no
+    # per-test rollback, all seeding receipts with the same 2026-08-01
+    # receipt_date as _receipt_payload's default. The server default
+    # page_size=20 would silently truncate before these two rows and make
+    # this assertion flaky on suite order, not on the endpoint's behaviour.
+    listed = await admin_client.get(ALL_RECEIPTS_URL, params={"page_size": 200})
+    assert listed.status_code == 200, listed.text
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert {r1["id"], r2["id"]} <= by_id.keys()
+    assert by_id[r1["id"]]["agreement_number"] == agr1["number"]
+    assert by_id[r2["id"]]["agreement_number"] == agr2["number"]
+
+
+async def test_list_all_filters_by_receipt_type(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    counter = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="TYPE-FILTER-1"))).json()
+    service = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="TYPE-FILTER-2", receipt_type="service"))).json()
+
+    # Scoped to THIS test's own fresh agreement (via agreement_id) as well as
+    # receipt_type — with only two rows ever posted under it, this can never
+    # be truncated by the server's default page_size regardless of how many
+    # OTHER receipts earlier tests in this session-scoped suite have created.
+    r = await admin_client.get(
+        ALL_RECEIPTS_URL, params={"receipt_type": "service", "agreement_id": agr["id"]})
+    assert r.status_code == 200, r.text
+    ids = {item["id"] for item in r.json()["items"]}
+    assert service["id"] in ids
+    assert counter["id"] not in ids
+
+
+async def test_list_all_filters_by_agreement(admin_client, test_engine):
+    agr1, user_id = await _create_agreement(admin_client, test_engine)
+    agr2, _ = await _create_agreement(admin_client, test_engine)
+    r1 = (await admin_client.post(_receipts_url(agr1["id"]), json=_receipt_payload(
+        user_id, receipt_ref="AGR-FILTER-1"))).json()
+    await admin_client.post(_receipts_url(agr2["id"]), json=_receipt_payload(
+        user_id, receipt_ref="AGR-FILTER-2"))
+
+    r = await admin_client.get(ALL_RECEIPTS_URL, params={"agreement_id": agr1["id"]})
+    assert r.status_code == 200, r.text
+    ids = {item["id"] for item in r.json()["items"]}
+    assert ids == {r1["id"]}
+
+
+async def test_list_all_requires_agreement_read(requester_client):
+    """★ Deliberately requester_client, NOT admin_client. admin_client is
+    system_admin, and uniops_authz short-circuits system_admin past every
+    permission check — a test written against it would pass even if this
+    route required the wrong key, or no key at all. epms.agreement.read is a
+    phase-2 permission that conftest's default matrix grants to NO role
+    (see the block comment above test_non_admin_without_receipt_write_grant_
+    is_403_then_201_once_granted), so a plain requester without any extra
+    grant is a real 403 case, not a coincidence of test setup.
+    """
+    r = await requester_client.get(ALL_RECEIPTS_URL)
+    assert r.status_code == 403, r.text
+
+
 async def test_invoice_scoped_receipt_list_403s_for_unrelated_caller(admin_client, test_engine):
     """Constraint 2 (task instructions): widening this route must NOT become
     'any authenticated user reads any agreement's receipts'. A real,

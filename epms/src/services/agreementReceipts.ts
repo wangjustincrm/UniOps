@@ -39,13 +39,35 @@ export interface ApiReceipt {
   created_at: string
 }
 
+// Cross-agreement listing only (GET /agreement-receipts) — carries the parent
+// agreement's human number alongside the receipt, since this list has no
+// agreement_id in its URL to lean on the way the per-agreement page does.
+// Never render agreement_id itself; render agreement_number.
+export interface ApiReceiptWithAgreement extends ApiReceipt {
+  agreement_number: string
+}
+
 export interface ReceiptListResponse {
   items: ApiReceipt[]
   total: number
 }
 
+export interface ReceiptListAllResponse {
+  items: ApiReceiptWithAgreement[]
+  total: number
+}
+
 export interface ReceiptListFilters {
   status?: ReceiptStatus
+}
+
+export interface ReceiptListAllFilters {
+  agreement_id?: string
+  receipt_type?: ReceiptType
+  status?: ReceiptStatus
+  search?: string
+  page?: number
+  page_size?: number
 }
 
 // Request bodies: the server (Pydantic) accepts plain JSON numbers for
@@ -83,6 +105,16 @@ export const agreementReceiptService = {
     api.get<ReceiptListResponse>(
       `/agreements/${agreementId}/receipts`,
       opts as Record<string, string | number | boolean | null | undefined>,
+    ),
+
+  // GET /agreement-receipts — cross-agreement listing (Task 9), backs its own
+  // menu entry/page. Deliberately a SEPARATE method, not a param-less overload
+  // of list() above: list() stays URL-scoped to one agreement (ReceiptTable's
+  // use), this one has no agreement in its path at all.
+  listAll: (filters?: ReceiptListAllFilters) =>
+    api.get<ReceiptListAllResponse>(
+      '/agreement-receipts',
+      filters as Record<string, string | number | boolean | null | undefined>,
     ),
 
   create: (agreementId: string, body: CreateReceiptBody) =>

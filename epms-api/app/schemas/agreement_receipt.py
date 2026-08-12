@@ -118,5 +118,23 @@ class ReceiptListResponse(BaseModel):
     total: int
 
 
+class ReceiptWithAgreementResponse(ReceiptResponse):
+    """Same shape as ReceiptResponse plus the parent agreement's human number.
+
+    Only used by the cross-agreement listing (GET /agreement-receipts) —
+    the per-agreement listing (GET /agreements/{id}/receipts) already has the
+    agreement in the URL, so plain ReceiptResponse is enough there. This
+    listing has no such context, and the frontend must never render a bare
+    agreement_id UUID (task-9 brief, item 5) — the number is what a human
+    recognises.
+    """
+    agreement_number: str
+
+
+class ReceiptListAllResponse(BaseModel):
+    items: list[ReceiptWithAgreementResponse]
+    total: int
+
+
 class ReceiptApReview(BaseModel):
     action: str   # approve | reject

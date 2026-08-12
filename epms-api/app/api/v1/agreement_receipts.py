@@ -17,12 +17,23 @@ from app.models.agreement_receipt import AgreementReceipt
 from app.schemas.agreement_receipt import (
     ReceiptApReview,
     ReceiptCreate,
+    ReceiptListAllResponse,
     ReceiptListResponse,
     ReceiptResponse,
     ReceiptUpdate,
+    ReceiptWithAgreementResponse,
 )
 
 router = APIRouter(prefix="/agreements/{agreement_id}/receipts", tags=["agreement-receipts"])
+
+# Separate router, separate prefix (Task 9) — `/agreement-receipts` co-exists
+# with `/agreements/{agreement_id}/receipts` above rather than replacing it.
+# The per-agreement route stays the one AgreementDetailPage/ReceiptTable use;
+# this one backs its own menu entry so AP/warehouse staff can record or find
+# a receipt without opening an agreement first (see task brief's "where this
+# fits"). Same read permission as the per-agreement list — someone who can
+# see an agreement can see its receipts either way this feature is sliced.
+all_router = APIRouter(prefix="/agreement-receipts", tags=["agreement-receipts"])
 
 ReceiptReadDep = Annotated[dict, Depends(require_permission("epms.agreement.read"))]
 # Deliberately its OWN key, not epms.agreement.write: recording an agreement
@@ -206,3 +217,28 @@ async def ap_review_receipt(
         return await receipt_crud.ap_review(db, receipt, body.action, uuid.UUID(user["sub"]))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@all_router.get("", response_model=ReceiptListAllResponse)
+async def list_all_receipts(
+    db: SessionDep,
+    user: ReceiptReadDep,
+    agreement_id: Annotated[uuid.UUID | None, Query()] = None,
+    receipt_type: Annotated[str | None, Query()] = None,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
+    search: Annotated[str | None, Query()] = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, le=200),
+):
+    rows, total = await receipt_crud.list_all(
+        db, agreement_id=agreement_id, receipt_type=receipt_type, status=status_filter,
+        search=search, page=page, page_size=page_size,
+    )
+    items = [
+        ReceiptWithAgreementResponse(
+            **ReceiptResponse.model_validate(receipt, from_attributes=True).model_dump(),
+            agreement_number=agr_number,
+        )
+        for receipt, agr_number in rows
+    ]
+    return {"items": items, "total": total}
