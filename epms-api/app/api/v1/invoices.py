@@ -26,9 +26,11 @@ from app.schemas.invoice import (
     InvoiceExceptionRequest,
     InvoiceListResponse,
     InvoiceMatchRequest,
+    InvoiceReceiptsRequest,
     InvoiceResponse,
     InvoiceUpdate,
     MatchReviewRequest,
+    SettleWithoutReceiptRequest,
 )
 from app.schemas.po import PoListResponse, PoResponse
 from app.services.notification import dispatch_task_notification, fire_and_forget_notify
@@ -611,6 +613,50 @@ async def list_invoice_agreement_receipts(
 
     items = await agreement_receipt_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
+
+
+@router.put("/{invoice_id}/receipts", response_model=InvoiceResponse)
+async def set_invoice_receipts(
+    invoice_id: uuid.UUID,
+    body: InvoiceReceiptsRequest,
+    db: SessionDep,
+    user: CurrentUserPayload,
+):
+    """挂凭证是发票详情页上独立于 /match 的一个动作(Task 7 —— 见 Task 6 对
+    InvoiceMatchRequest 的拆分)。全量覆盖语义:body.receipt_ids 就是这张
+    发票挂载后应持有的完整集合,没列出的会被释放回 open。授权与
+    match-candidates / agreement-candidates / 发票范围内的凭证列表同源
+    (_require_invoice_match_access),不另抄一份判定。"""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    await _require_invoice_match_access(db, user, inv)
+
+    try:
+        return await invoice_crud.set_receipts(
+            db, inv, body.receipt_ids, body.variance_reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/{invoice_id}/settle-without-receipt", response_model=InvoiceResponse)
+async def settle_invoice_without_receipt(
+    invoice_id: uuid.UUID,
+    body: SettleWithoutReceiptRequest,
+    db: SessionDep,
+    user: CurrentUserPayload,
+):
+    """显式声明这张发票没有任何签收凭证(Task 7)。释放它可能还持有的凭证 ——
+    一张自称无凭证的发票不该继续锁着几份真凭证。授权同 set_invoice_receipts。"""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    await _require_invoice_match_access(db, user, inv)
+
+    try:
+        return await invoice_crud.settle_without_receipt(db, inv, body.reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.post("/{invoice_id}/decline-match", response_model=InvoiceResponse)

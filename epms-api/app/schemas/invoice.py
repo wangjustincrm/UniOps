@@ -116,6 +116,16 @@ class InvoiceMatchRequest(BaseModel):
     schedule_id: uuid.UUID | None = None
 
 
+class InvoiceReceiptsRequest(BaseModel):
+    # 全量覆盖语义:这个列表就是这张发票最终持有的凭证集合。没列出的会被释放。
+    receipt_ids: list[uuid.UUID]
+    variance_reason: str | None = None
+
+
+class SettleWithoutReceiptRequest(BaseModel):
+    reason: str = Field(min_length=1)
+
+
 class InvoiceExceptionRequest(BaseModel):
     resolution: str = Field(min_length=1, max_length=30)  # accepted | credit_note_requested
     note: str | None = None

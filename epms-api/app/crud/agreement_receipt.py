@@ -133,22 +133,31 @@ async def claim(
     flush timing.
 
     This function makes no assumption about what its caller does with the
-    session afterward — commit, roll back, both, or neither — because as of
-    Task 6 it has no caller at all (the house_account match branch that used
-    to call this is a bare `pass`; Task 7 is expected to add a real one, a
-    receipt-mounting endpoint separate from matching). (Reviewed round 3: an
-    earlier version of this docstring named `_match_to_agreement` as "the
-    caller" and claimed it "does not roll back" — both false. That call site
-    was removed by Task 6, and even before it was, the real request-scoped
-    session in api/v1's dependency chain rolls back on any raised exception,
-    not the opposite.)
+    session afterward — commit, roll back, both, or neither. As of Task 7 it
+    has a real caller: `crud/invoice.py`'s `set_receipts`, reached from
+    `PUT /invoices/{id}/receipts` (api/v1/invoices.py). That endpoint's
+    session is a request-scoped one from api/v1's dependency chain
+    (app/db/session.py's get_session), which commits on a clean return and
+    rolls back on any raised exception — but this function still makes no
+    assumption about that, because `set_receipts` is not the only thing that
+    can call it (test_receipt_match.py's guard tests call it directly, with
+    sessions that behave differently — see their docstrings). (Reviewed
+    round 3: an earlier version of this docstring named `_match_to_agreement`
+    as "the caller" and claimed it "does not roll back" — both false. That
+    call site was removed by Task 6, and even before it was, the real
+    request-scoped session in api/v1's dependency chain rolls back on any
+    raised exception, not the opposite.)
 
-    Only "open" is accepted today — a receipt already claimed by another
-    invoice ("reconciled") or awaiting/failed AP review cannot be claimed a
-    second time. (Task 7 is expected to widen this to also accept a
-    "reconciled" receipt already claimed by THIS SAME invoice, so re-matching
-    an invoice to the same agreement isn't rejected as a duplicate claim —
-    deliberately out of scope here.)
+    Accepts a receipt whose status is "open", OR "reconciled" AND already
+    claimed by THIS SAME invoice (receipt.invoice_id == invoice.id) — added
+    Task 7 so re-matching an invoice to the same set of receipts isn't
+    rejected as a duplicate claim. A receipt "reconciled" by a DIFFERENT
+    invoice, or sitting in pending_ap_review/rejected/voided, is still
+    refused. In practice `set_receipts` always calls `_release_agreement_evidence`
+    first, which flips every receipt this invoice currently holds back to
+    "open" before this function ever sees them — so the "reconciled AND
+    THIS invoice" branch mostly protects direct callers of `claim()` that
+    skip that release step, not `set_receipts` itself.
     """
     seen_ids = list(dict.fromkeys(receipt_ids))
     rows: list[AgreementReceipt] = []
@@ -159,7 +168,10 @@ async def claim(
         if receipt is None or receipt.agreement_id != agr.id:
             raise ValueError(
                 f"Receipt {receipt_id} does not belong to agreement {agr.number}")
-        if receipt.status != "open":
+        already_held_by_this_invoice = (
+            receipt.status == "reconciled" and receipt.invoice_id == invoice.id
+        )
+        if receipt.status != "open" and not already_held_by_this_invoice:
             raise ValueError(
                 f"Receipt {receipt_id} is {receipt.status}; only an open receipt can be claimed")
         rows.append(receipt)

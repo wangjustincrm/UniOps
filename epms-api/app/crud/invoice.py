@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.crud import agreement as agreement_crud
+from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
@@ -646,6 +647,57 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
     invoice.receipt_ids = None
     invoice.receipt_variance_reason = None
     await db.flush()
+
+
+async def set_receipts(
+    db: AsyncSession, invoice: Invoice, receipt_ids: list[uuid.UUID],
+    variance_reason: str | None,
+) -> Invoice:
+    """全量覆盖一张发票持有的凭证集合(Task 7:挂凭证是发票详情页上独立于
+    /match 的一个动作 —— 见 InvoiceMatchRequest 上那段关于 Task 6 拆分的注释)。
+
+    先无条件释放当前持有的全部凭证,再认领入参里的 —— 而不是做增量 diff。
+    理由:diff 要同时维护"新增"和"移除"两条路径,而本项目在释放这件事上
+    已经被咬过多次(每次都是某一条路径漏了释放,参见 _release_agreement_evidence
+    的开发历史)。释放-再认领只有一条路径,多余的写入换来一个不可能漏的
+    不变式:调用后 invoice.receipt_ids 永远等于且只等于 receipt_ids 里能通过
+    claim() 校验的那些 id(空列表 → 什么都不认领,等价于清空)。
+    """
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError("Invoice is not matched to an agreement")
+
+    await _release_agreement_evidence(db, invoice)
+
+    if receipt_ids:
+        claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, invoice)
+        invoice.receipt_ids = [str(r.id) for r in claimed]
+        invoice.receipt_variance_reason = (variance_reason or "").strip() or None
+        # 挂上了凭证就不再是无凭证结算 —— 这两个状态互斥,协议详情页那个
+        # 健康度计数依赖它们互斥才有意义。
+        invoice.legacy_settlement = False
+        invoice.legacy_settlement_reason = None
+    await db.flush()
+    return invoice
+
+
+async def settle_without_receipt(
+    db: AsyncSession, invoice: Invoice, reason: str,
+) -> Invoice:
+    """显式声明这张发票没有任何签收凭证(Task 7:PA 闸门在起付款时要求要么
+    有凭证、要么有这个声明——见 api/v1/pa.py)。
+
+    先释放它可能还持有的凭证:一张自称无凭证的发票不该继续锁着几份真凭证,
+    那些凭证会永久卡在 reconciled 且没有任何界面能放它们回来(update()/void()
+    都拒绝该状态)。
+    """
+    await _release_agreement_evidence(db, invoice)
+    invoice.legacy_settlement = True
+    invoice.legacy_settlement_reason = reason.strip()
+    await db.flush()
+    return invoice
 
 
 async def match(
