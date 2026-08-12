@@ -190,12 +190,29 @@ async def _bind_vendor_master_data(
     `"vendor_id": null` still reaches crud.update through `exclude_unset` and
     unbinds the row; it just doesn't rewrite the name.
 
+    THE MIRROR CASE, and the one worth spelling out: a PATCH that rewrites
+    `vendor_name` WITHOUT saying anything about `vendor_id` also unbinds. Both
+    halves of the invariant are enforced here, because the alternative is a row
+    bound to vendor A whose name reads "Canadian Tire" — and that row is not
+    merely untidy, it is SILENT: the verdict would be computed from the ids
+    (no mismatch) while every list on screen shows a merchant that plainly
+    isn't the account's, i.e. the warning this whole feature exists to raise
+    would be suppressed by the display disagreeing with the comparison.
+    Unbinding degrades to the text comparison, which is weaker but still
+    right, and visibly says "Text only" while it does. Neither frontend can
+    reach this path (the picker unbinds the moment anyone types over a bound
+    vendor, and both forms send the pair together) — it is here for every
+    other client.
+
     404, not a bare FK IntegrityError: `agreement_receipts.vendor_id` is
     RESTRICT-constrained, so an unknown id would otherwise surface through
     _receipt_integrity_error as "the database rejected it", sending the
     recorder off to check the receipt reference that was never the problem.
     """
     if body.vendor_id is None:
+        given = body.model_fields_set
+        if "vendor_name" in given and "vendor_id" not in given:
+            return body.model_copy(update={"vendor_id": None})
         return body
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:

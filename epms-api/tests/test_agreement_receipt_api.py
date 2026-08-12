@@ -1142,23 +1142,44 @@ async def test_an_unknown_vendor_id_is_a_404_not_a_database_error(admin_client, 
     assert "Vendor" in r.json()["detail"]
 
 
-async def test_a_bound_receipt_is_judged_by_id_not_by_the_name_on_it(admin_client, test_engine):
-    """★ id 优先,端到端:凭证绑的就是协议那家供应商,但名字被改成了文本口径
-    必判冲突的 "Canadian Tire" —— 仍然不冲突。这条一旦变红,就说明端点又退回
-    去比文本了。(单改 vendor_name 的 PATCH 是真实可达路径:任何只补一个字段
-    的客户端都走得到这里。)"""
+async def test_renaming_a_bound_vendor_unbinds_it_instead_of_diverging(admin_client, test_engine):
+    """快照不变量的另一半:只改 vendor_name、不提 vendor_id 的 PATCH **会解绑**。
+
+    留着绑定才是危险的那条路:那样这一行会绑在 A 家、名字却写着 "Canadian Tire",
+    判定按 id 走(不冲突)、屏幕上却明晃晃是另一家 —— 警告被"显示与比对各说各话"
+    悄悄吞掉,正是这个特性存在的理由本身失效。解绑后回落文本比对,结论更弱但仍然
+    正确,而且界面会如实标成 "Text only"。两个前端都到不了这条路(选择器一被打字
+    就解绑,两个表单都成对提交),它是给别的客户端兜底的。"""
     agr, user_id = await _create_agreement(admin_client, test_engine)
     receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
         user_id, receipt_ref="VENDOR-ID-PRIORITY", vendor_id=agr["vendor_id"]))).json()
+    assert receipt["vendor_id"] == agr["vendor_id"]
 
     patch_url = _receipts_url(agr["id"]) + "/" + receipt["id"]
     patched = await admin_client.patch(patch_url, json={"vendor_name": "Canadian Tire"})
     assert patched.status_code == 200, patched.text
+    assert patched.json()["vendor_id"] is None
+
     body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
     assert body["vendor_name"] == "Canadian Tire"
     assert body["agreement_vendor_name"] == "Princess Auto"
-    assert body["vendor_matched"] is True
-    assert body["vendor_mismatch"] is False
+    assert body["vendor_matched"] is False
+    assert body["vendor_mismatch"] is True
+
+
+async def test_renaming_a_bound_vendor_to_the_same_row_keeps_it_bound(admin_client, test_engine):
+    """解绑只针对"没提 vendor_id"的 PATCH。同时给了 id 的 PATCH 照常绑定,
+    并且名字仍以主数据为准 —— 免得上面那条规则被读成"改名一律解绑"。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-REBIND", vendor_id=agr["vendor_id"]))).json()
+
+    patch_url = _receipts_url(agr["id"]) + "/" + receipt["id"]
+    patched = await admin_client.patch(
+        patch_url, json={"vendor_id": agr["vendor_id"], "vendor_name": "Canadian Tire"})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["vendor_id"] == agr["vendor_id"]
+    assert patched.json()["vendor_name"] == "Princess Auto"   # 主数据说了算
 
 
 async def test_a_different_vendor_id_is_a_mismatch_even_with_an_identical_name(
