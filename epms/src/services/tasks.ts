@@ -55,7 +55,7 @@ export interface TaskListResponse {
 export const taskService = {
   list: (filters?: TaskFilters) =>
     api.get<TaskListResponse>('/tasks', filters),
-
-  complete: (id: string) =>
-    api.post<ApiTask>(`/tasks/${id}/complete`),
+  // No `complete()` wrapper on purpose: tasks are closed by the engine when the
+  // underlying action is performed, never dismissed from the inbox. See the
+  // note in TaskInboxPage's FullTaskCard.
 }

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Clock, ArrowRight, Check, Inbox } from 'lucide-react'
 import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { useTasks, useCompleteTask } from '@/hooks/useTasks'
+import { useTasks } from '@/hooks/useTasks'
 import { TASK_TYPE_LABELS, taskHref } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
@@ -45,10 +45,9 @@ const EMPTY_MESSAGES: Record<TabValue, { heading: string; sub: string }> = {
 
 interface FullTaskCardProps {
   task: ApiTask
-  onComplete: () => void
 }
 
-function FullTaskCard({ task, onComplete }: FullTaskCardProps) {
+function FullTaskCard({ task }: FullTaskCardProps) {
   const navigate = useNavigate()
   const isUrgent = task.priority === 'urgent'
   const isDone = task.is_completed
@@ -134,20 +133,14 @@ function FullTaskCard({ task, onComplete }: FullTaskCardProps) {
           )}
         </div>
 
-        {/* Right actions */}
+        {/* Right actions — a task is closed by DOING it (approve / place order /
+            match / …) on the document page, never by dismissing it here. The old
+            "Mark Done" button flipped tasks.is_completed straight through
+            POST /tasks/{id}/complete, bypassing the approval engine: an approve_*
+            task closed that way left the document in_review with no open task, so
+            the Approve button disappeared for everyone (incl. system_admin) and the
+            document was stranded. Removed — only the deep-link remains. */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {!isDone && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onComplete}
-              aria-label="Mark task as done"
-              className="text-neutral-500 hover:text-success-600 hover:bg-success-50"
-            >
-              <Check className="h-4 w-4" />
-              Mark Done
-            </Button>
-          )}
           <Button
             variant="ghost"
             size="icon-sm"
@@ -178,8 +171,6 @@ function EmptyState({ tab }: { tab: TabValue }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TaskInboxPage() {
-  const completeTask = useCompleteTask()
-
   const [activeTab, setActiveTab] = useState<TabValue>('all')
 
   // Today's date prefix (YYYY-MM-DD)
@@ -213,10 +204,6 @@ export default function TaskInboxPage() {
     (k) => TASK_TYPE_LABELS[k] ?? k,
     GROUP_ORDER,
   )
-
-  const handleComplete = (id: string) => {
-    completeTask.mutate(id)
-  }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
@@ -308,11 +295,7 @@ export default function TaskInboxPage() {
               </div>
               <div className="flex flex-col gap-3">
                 {group.items.map((task) => (
-                  <FullTaskCard
-                    key={task.id}
-                    task={task}
-                    onComplete={() => handleComplete(task.id)}
-                  />
+                  <FullTaskCard key={task.id} task={task} />
                 ))}
               </div>
             </section>

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { taskService, type TaskFilters } from '@/services/tasks'
 
 // epms-api `/tasks` is shared across modules (Portal aggregates all of them,
@@ -19,18 +19,6 @@ export function useTasks(filters?: TaskFilters) {
         items: resp.items.filter((t) => !NON_EPMS_DOC_TYPES.has(t.document_type)),
         total: resp.items.filter((t) => !NON_EPMS_DOC_TYPES.has(t.document_type)).length,
       }
-    },
-  })
-}
-
-export function useCompleteTask() {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (id: string) => taskService.complete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
