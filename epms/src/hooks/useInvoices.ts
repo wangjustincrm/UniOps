@@ -153,7 +153,7 @@ export function useSetInvoiceReceipts() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: string } & SetReceiptsBody) =>
       invoiceService.setReceipts(id, body),
-    onSuccess: async (_data, { id }) => {
+    onSuccess: async (data, { id }) => {
       await Promise.all([
         // Fix-round 1 (Minor 2): ['invoices', id] and ['invoices', id, 'agreements']
         // don't prefix-match the list view's key (['invoices', filters]) — its
@@ -166,6 +166,25 @@ export function useSetInvoiceReceipts() {
         queryClient.invalidateQueries({ queryKey: ['invoices'] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id, 'agreements'] }),
+        // Whole-branch review (M1): this mutation flips agreement_receipts
+        // rows between `open` and `reconciled` server-side
+        // (crud/invoice.py set_receipts → agreement_receipt.claim/release),
+        // so the two receipt-side caches are stale the moment it returns.
+        // The reverse direction (useVoidReceiptAny / useApReviewReceiptAny in
+        // hooks/useAgreementReceipts.ts) already invalidates both; only this
+        // direction was one-way. Under the multi-tab shell, /receipts open
+        // beside an invoice showed a just-claimed receipt as `open` with its
+        // Void button live — clicking it 409s.
+        //
+        // agreement_id comes off the mutation RESULT, not the variables:
+        // the request body carries only receipt ids, and the response is the
+        // updated invoice (services/invoices.ts ApiInvoice.agreement_id). No
+        // bare ['agreements'] invalidate — that prefix-matches every
+        // agreement's data app-wide (see useCreateReceipt's comment).
+        queryClient.invalidateQueries({ queryKey: ['agreement-receipts'] }),
+        ...(data.agreement_id
+          ? [queryClient.invalidateQueries({ queryKey: ['agreements', data.agreement_id, 'receipts'] })]
+          : []),
       ])
     },
   })
@@ -179,7 +198,7 @@ export function useSettleWithoutReceipt() {
   return useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       invoiceService.settleWithoutReceipt(id, reason),
-    onSuccess: async (_data, { id }) => {
+    onSuccess: async (data, { id }) => {
       await Promise.all([
         // Fix-round 1 (Minor 2): ['invoices', id] and ['invoices', id, 'agreements']
         // don't prefix-match the list view's key (['invoices', filters]) — its
@@ -192,6 +211,26 @@ export function useSettleWithoutReceipt() {
         queryClient.invalidateQueries({ queryKey: ['invoices'] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id, 'agreements'] }),
+        // Whole-branch review (M1): declaring "no receipt evidence" RELEASES
+        // every receipt this invoice currently holds back to `open`
+        // (crud/invoice.py settle_without_receipt →
+        // _release_agreement_evidence), so the two receipt-side caches are
+        // stale the moment it returns.
+        // The reverse direction (useVoidReceiptAny / useApReviewReceiptAny in
+        // hooks/useAgreementReceipts.ts) already invalidates both; only this
+        // direction was one-way. Under the multi-tab shell, /receipts open
+        // beside an invoice showed a just-claimed receipt as `open` with its
+        // Void button live — clicking it 409s.
+        //
+        // agreement_id comes off the mutation RESULT, not the variables:
+        // the request body carries only receipt ids, and the response is the
+        // updated invoice (services/invoices.ts ApiInvoice.agreement_id). No
+        // bare ['agreements'] invalidate — that prefix-matches every
+        // agreement's data app-wide (see useCreateReceipt's comment).
+        queryClient.invalidateQueries({ queryKey: ['agreement-receipts'] }),
+        ...(data.agreement_id
+          ? [queryClient.invalidateQueries({ queryKey: ['agreements', data.agreement_id, 'receipts'] })]
+          : []),
       ])
     },
   })
