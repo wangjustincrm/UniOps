@@ -523,3 +523,93 @@ async def test_deleting_an_invoice_releases_the_receipts_it_claimed(admin_client
         )).scalar_one()
     assert released.status == "open", "receipt stranded as reconciled by a deleted invoice"
     assert released.invoice_id is None
+
+
+# ── Task 7 fix-round 1, Important #3: the widened guard's own two branches ──
+# ("already reconciled by THIS invoice" accepted, "reconciled by a DIFFERENT
+# invoice" still rejected) had zero direct coverage. The existing
+# test_claim_rejects_a_receipt_that_is_already_reconciled (via
+# _assert_claim_rejects_non_open_receipt) only sets status="reconciled" while
+# leaving invoice_id NULL, which pins the "not this invoice" branch but can't
+# tell a correct implementation apart from the review's counter-example
+# (`receipt.invoice_id is not None`, which would let ANY invoice steal a
+# receipt another invoice already holds) — that buggy variant passes every
+# existing test in this file. These two close that gap by exercising claim()
+# directly, bypassing set_receipts' own release-first call so the "reconciled
+# AND this invoice" branch is what's actually being tested, not release().
+
+async def test_claim_accepts_a_receipt_already_reconciled_by_the_same_invoice(
+    admin_client, test_engine,
+):
+    """The accept side of the widened guard. claim() is idempotent for a
+    receipt the SAME invoice already holds — this is the exact recovery path
+    the widened guard exists for (see claim()'s docstring): claim it once,
+    then claim it again for the same invoice WITHOUT going through
+    set_receipts' release-first call, and it must succeed rather than being
+    rejected as "already reconciled"."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        first = await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv)
+        await db.commit()
+    assert [r.id for r in first] == [receipt.id]
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        # Same invoice, same receipt, no release in between — must not raise.
+        second = await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv)
+        await db.commit()
+    assert [r.id for r in second] == [receipt.id]
+
+    async with factory() as db:
+        fresh = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
+        )).scalar_one()
+    assert fresh.status == "reconciled"
+    assert fresh.invoice_id == inv_id
+
+
+async def test_claim_rejects_a_receipt_reconciled_by_a_different_invoice(
+    admin_client, test_engine,
+):
+    """The reject side of the widened guard. Invoice A holds `receipt`;
+    invoice B must NOT be able to claim it — the review's counter-example
+    (`receipt.invoice_id is not None`, i.e. any non-NULL holder is treated as
+    "mine") would let this through. Re-reads the receipt through a FRESH
+    session afterward: it must still show A as the holder, unchanged by B's
+    rejected attempt."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv_a = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_a_id = uuid.UUID(inv_a["id"])
+    inv_b = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_b_id = uuid.UUID(inv_b["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
+
+    async with factory() as db:
+        db_inv_a = (await db.execute(select(Invoice).where(Invoice.id == inv_a_id))).scalar_one()
+        await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv_a)
+        await db.commit()
+
+    async with factory() as db:
+        db_inv_b = (await db.execute(select(Invoice).where(Invoice.id == inv_b_id))).scalar_one()
+        with pytest.raises(ValueError, match="reconciled"):
+            await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv_b)
+
+    async with factory() as db:
+        fresh = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
+        )).scalar_one()
+    assert fresh.status == "reconciled"
+    assert fresh.invoice_id == inv_a_id, "invoice B's rejected claim must not steal A's receipt"

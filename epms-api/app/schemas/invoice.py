@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class InvoiceLineItem(BaseModel):
@@ -124,6 +124,23 @@ class InvoiceReceiptsRequest(BaseModel):
 
 class SettleWithoutReceiptRequest(BaseModel):
     reason: str = Field(min_length=1)
+
+    # Fix-round 1 (Important #2): `Field(min_length=1)` alone lets "   " (all
+    # whitespace) through — crud/invoice.py's settle_without_receipt then
+    # .strip()s it down to "", leaving legacy_settlement=True permanently
+    # stamped on the invoice with an empty, invisible reason
+    # (InvoiceDetailPage.tsx renders it with `{reason && ...}`, so a blank
+    # string shows nothing — an irreversible audit flag with no explanation
+    # anyone can see). Strip THEN check non-empty, at the schema boundary,
+    # so this can't be re-introduced by a caller who never learns about the
+    # crud-layer .strip().
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("A reason is required")
+        return v
 
 
 class InvoiceExceptionRequest(BaseModel):

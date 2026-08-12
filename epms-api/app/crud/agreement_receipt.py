@@ -150,14 +150,32 @@ async def claim(
 
     Accepts a receipt whose status is "open", OR "reconciled" AND already
     claimed by THIS SAME invoice (receipt.invoice_id == invoice.id) — added
-    Task 7 so re-matching an invoice to the same set of receipts isn't
-    rejected as a duplicate claim. A receipt "reconciled" by a DIFFERENT
-    invoice, or sitting in pending_ap_review/rejected/voided, is still
-    refused. In practice `set_receipts` always calls `_release_agreement_evidence`
-    first, which flips every receipt this invoice currently holds back to
-    "open" before this function ever sees them — so the "reconciled AND
-    THIS invoice" branch mostly protects direct callers of `claim()` that
-    skip that release step, not `set_receipts` itself.
+    Task 7. A receipt "reconciled" by a DIFFERENT invoice, or sitting in
+    pending_ap_review/rejected/voided, is still refused.
+
+    Positive contract this gives claim(): it is IDEMPOTENT for a receipt the
+    calling invoice already holds. That matters beyond the obvious "re-PUT
+    the same list" case. `set_receipts` (crud/invoice.py) always calls
+    `_release_agreement_evidence` before this function runs, and that
+    release only walks `invoice.receipt_ids` — the JSONB array on the
+    invoice row, NOT a query of "every AgreementReceipt row whose
+    invoice_id currently points at this invoice". Those two are supposed to
+    agree, but nothing enforces it: `agreement_receipts.invoice_id` and
+    `invoices.receipt_ids` have no FK to each other (shared table, three
+    other services besides this one write to `invoices`), and Data
+    Maintenance can reset `invoice.status` back to "unmatched" via a bare
+    `setattr` with no release hook at all (see the comment on `delete()`'s
+    own release call, and `match()`'s "if invoice.receipt_ids or
+    invoice.schedule_id" guard above `_release_agreement_evidence`'s
+    definition) — which is documented as a legitimate way to force a
+    re-match. Whenever that drift happens, a receipt can sit at
+    `reconciled` with `invoice_id` correctly pointing at this invoice while
+    `invoice.receipt_ids` no longer lists it — release() cannot find it, and
+    without the widened guard here, claim() could never accept it back
+    either (`update()`/`void()` both refuse `reconciled` too), so the row
+    would be permanently stuck. Widening this guard makes the very next PUT
+    /invoices/{id}/receipts that names that id the row's ONLY way back to a
+    consistent state, instead of a second dead end on top of the first.
     """
     seen_ids = list(dict.fromkeys(receipt_ids))
     rows: list[AgreementReceipt] = []

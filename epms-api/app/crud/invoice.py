@@ -19,6 +19,7 @@ from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.invoice_tax_line import InvoiceTaxLine
+from app.models.pa import PaymentApplication
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.task import Task
 from app.models.user import User
@@ -649,6 +650,44 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
     await db.flush()
 
 
+async def _invoice_referenced_by_active_pa(db: AsyncSession, invoice_id: uuid.UUID) -> bool:
+    """True when a non-cancelled Payment Application already lists this
+    invoice in its invoice_ids JSONB array.
+
+    Fix-round 1 review finding (Important #1): set_receipts /
+    settle_without_receipt had NO status gate at all — an invoice's uploader
+    (always passes _require_invoice_match_access, see is_uploader there)
+    could PUT an empty receipt list onto an invoice a PA has already been
+    raised — even PAID — against. That would release its claimed receipts
+    back to `open` for a DIFFERENT invoice to claim (the same paper receipt
+    backing two payments) or plant an irreversible legacy_settlement=True
+    flag on an invoice that already cleared payment. Nothing else in the
+    request path catches this: an invoice's own `status` stays "matched"
+    forever after a PA pays it (_mark_invoices_paid in crud/pa.py flips it to
+    "paid" only through `_mark_invoices_paid`'s own success path, and even
+    that doesn't stop THIS function from being called afterward), and the
+    house_account evidence gate in api/v1/pa.py's
+    `_validate_agreement_pa_invoices` only runs when a PA is CREATED or its
+    invoice_ids are PATCHed — never continuously, so it cannot itself catch
+    evidence being pulled out from under a PA that already exists.
+
+    "Referenced" is checked via JSONB containment (`invoice_ids @>
+    [str(invoice_id)]`) rather than joining through Invoice, because
+    PaymentApplication.invoice_ids has no FK back to invoices (shared table,
+    OA/finance also write it) — the JSONB array is the only link there is.
+    `status != "cancelled"` matches this codebase's convention for "PA is
+    still live" (a cancelled PA no longer holds a real claim on the invoice's
+    evidence).
+    """
+    row = (await db.execute(
+        select(PaymentApplication.id)
+        .where(PaymentApplication.invoice_ids.contains([str(invoice_id)]),
+               PaymentApplication.status != "cancelled")
+        .limit(1)
+    )).first()
+    return row is not None
+
+
 async def set_receipts(
     db: AsyncSession, invoice: Invoice, receipt_ids: list[uuid.UUID],
     variance_reason: str | None,
@@ -662,7 +701,32 @@ async def set_receipts(
     的开发历史)。释放-再认领只有一条路径,多余的写入换来一个不可能漏的
     不变式:调用后 invoice.receipt_ids 永远等于且只等于 receipt_ids 里能通过
     claim() 校验的那些 id(空列表 → 什么都不认领,等价于清空)。
+
+    Fix-round 1 (Important #1): refuses to touch an invoice a non-cancelled
+    PA already references — see _invoice_referenced_by_active_pa. Checked
+    BEFORE the release call runs, so a rejected request leaves every
+    currently-claimed receipt untouched.
+
+    Fix-round 1 (Minor #6): unlike `claim()` (crud/agreement_receipt.py),
+    which is deliberately written to make NO assumption about its caller's
+    session behavior, THIS function's atomicity is not self-contained — it
+    releases first and claims second, two separate flushes with no
+    savepoint between them, so "the release happened but the reclaim
+    failed" is a real intermediate state this function can pass through.
+    Whether that intermediate state ever reaches the database (vs. being
+    rolled back as if it never happened) depends entirely on the CALLER's
+    session. The only caller today is `PUT /invoices/{id}/receipts`
+    (api/v1/invoices.py), whose session is a request-scoped one from
+    app/db/session.py's get_session dependency — it rolls back on any raised
+    exception, which is what makes a rejected PUT observably a no-op end to
+    end. A caller with a session that does NOT roll back on ValueError would
+    not get that guarantee for free from this function alone.
     """
+    if await _invoice_referenced_by_active_pa(db, invoice.id):
+        raise ValueError(
+            "This invoice is already referenced by a payment application; "
+            "its receipt evidence can no longer be changed here.")
+
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
     )).scalar_one_or_none()
@@ -692,7 +756,31 @@ async def settle_without_receipt(
     先释放它可能还持有的凭证:一张自称无凭证的发票不该继续锁着几份真凭证,
     那些凭证会永久卡在 reconciled 且没有任何界面能放它们回来(update()/void()
     都拒绝该状态)。
+
+    Fix-round 1 (Important #1): refuses an invoice a non-cancelled PA already
+    references, same as set_receipts — otherwise this could plant an
+    irreversible "settled without receipt" flag on an invoice that has
+    already cleared payment.
+
+    Fix-round 1 (Minor #5): mirrors set_receipts' agreement_id check
+    (Important #1's sibling gap) — without it, a plain PO-matched invoice
+    (agreement_id NULL, already 3-way matched with a real GR) could be
+    stamped legacy_settlement=True too. That flag doesn't bypass anything
+    (api/v1/pa.py only reads it inside the house_account branch), but
+    InvoiceDetailPage.tsx renders "settled without receipt evidence" on it
+    regardless of route — a false, confusing claim on an invoice that has
+    perfectly good GR evidence.
     """
+    if await _invoice_referenced_by_active_pa(db, invoice.id):
+        raise ValueError(
+            "This invoice is already referenced by a payment application; "
+            "its settlement status can no longer be changed here.")
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError("Invoice is not matched to an agreement")
+
     await _release_agreement_evidence(db, invoice)
     invoice.legacy_settlement = True
     invoice.legacy_settlement_reason = reason.strip()
