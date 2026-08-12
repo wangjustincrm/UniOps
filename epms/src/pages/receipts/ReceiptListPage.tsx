@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Receipt, Plus, CheckCircle2, XCircle, Ban, Paperclip, AlertTriangle } from 'lucide-react'
+import { Search, Receipt, Plus, CheckCircle2, XCircle, Trash2, Paperclip, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -430,7 +430,7 @@ function ReceiptRow({
               disabled={anyVoidPending || anyReviewPending}
               className={cn('text-danger-600 hover:text-danger-700')}
             >
-              <Ban className="h-3.5 w-3.5" />
+              <Trash2 className="h-3.5 w-3.5" />
               {voidPending ? 'Working…' : 'Remove'}
             </Button>
           )}

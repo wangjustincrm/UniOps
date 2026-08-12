@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
-  ArrowLeft, Ban, CheckCircle2, XCircle, Paperclip, Upload, X,
+  ArrowLeft, Trash2, CheckCircle2, XCircle, Paperclip, Upload, X,
   AlertTriangle, Lock, ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -327,7 +327,7 @@ function ReceiptDetail({
               onClick={handleVoid}
               disabled={anyPending}
             >
-              <Ban className="h-4 w-4" />
+              <Trash2 className="h-4 w-4" />
               {voidReceipt.isPending ? 'Working…' : 'Remove'}
             </Button>
           )}

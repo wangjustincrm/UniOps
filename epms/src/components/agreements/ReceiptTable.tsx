@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, XCircle, Ban, Paperclip } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, XCircle, Trash2, Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
@@ -230,7 +230,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                               disabled={voidReceipt.isPending}
                               className={cn('text-danger-600 hover:text-danger-700')}
                             >
-                              <Ban className="h-3.5 w-3.5" />
+                              <Trash2 className="h-3.5 w-3.5" />
                               {rowVoidPending ? 'Working…' : 'Remove'}
                             </Button>
                           )}
