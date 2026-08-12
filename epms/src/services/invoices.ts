@@ -74,6 +74,16 @@ export interface ApiInvoice {
   // Agreement route (house-account / no-PO matching) — Phase 1A only.
   agreement_id?: string | null
   agreement_number?: string | null
+  // house_account | recurring | milestone — snapshot of the linked
+  // agreement's type, written at match time (Task 8 fix round 1). Readable
+  // by anyone who can read this invoice at all — deliberately NOT sourced
+  // from GET /agreements/{id} or /invoices/{id}/agreement-candidates, both
+  // gated more narrowly than plain invoice read access (see
+  // InvoiceReceiptsPanel.tsx's module docstring for the review finding this
+  // fixed: those routes 403 for warehouse_staff/supervisor/cfo/vendor_manager/
+  // erp_pa_officer, silently falling back to the wrong copy for house_account
+  // invoices with no evidence recorded yet).
+  agreement_type?: 'house_account' | 'recurring' | 'milestone' | null
   // Which route this invoice was matched through. Only ever written as "po" or
   // "agreement" by the backend (epms-api/app/crud/invoice.py) — null before
   // any match. Not the same as `status`; a PO-route invoice keeps match_route

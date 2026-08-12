@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
-import { useAgreementCandidates } from '@/hooks/useAgreements'
 import { useInvoiceAgreementReceipts, useSetInvoiceReceipts, useSettleWithoutReceipt } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
 import { RECEIPT_TYPE_LABELS, type ApiReceipt } from '@/services/agreementReceipts'
@@ -58,9 +57,21 @@ function ReceiptCandidateRow({
 // below) has confirmed the agreement is house_account. Split out so that
 // determination can early-return null without running any of this hook logic
 // against an agreementId that doesn't actually have receipts.
+//
+// Fix-round 1 (Minor 1): every amount here — the candidate rows, the
+// selected/invoice/difference trio — formats with invoice.currency, not a
+// separately-fetched agreement.currency. Two reasons: (1) ApiInvoice.currency
+// exists and can genuinely differ from the agreement's, and the invoice-total
+// cell was wrong to use the agreement's; (2) receipts don't carry their own
+// currency field at all (services/agreementReceipts.ts ApiReceipt has no
+// `currency`) — labelling them with the SAME invoice they're being reconciled
+// against, rather than fetching the agreement a second time just for its
+// currency code, keeps one consistent label across the whole comparison and
+// costs no extra request.
 function InvoiceReceiptsPanelBody({
-  invoice, agreementId, currency,
-}: { invoice: ApiInvoice; agreementId: string; currency: string }) {
+  invoice, agreementId,
+}: { invoice: ApiInvoice; agreementId: string }) {
+  const currency = invoice.currency
   // Task 5's invoice-scoped route — same authorization as match-candidates /
   // agreement-candidates (NOT the agreement detail page's epms.agreement.read
   // gate), so every role that can legitimately match/reconcile this invoice
@@ -70,16 +81,34 @@ function InvoiceReceiptsPanelBody({
   // trips or a filter the endpoint doesn't have.
   const receiptsQuery = useInvoiceAgreementReceipts(invoice.id, agreementId)
   const allReceipts: ApiReceipt[] = receiptsQuery.data?.items ?? []
-  const heldIds = new Set(invoice.receipt_ids ?? [])
+  // Fix-round 1 (Critical): `heldIds`/`relevantReceipts`/`openReceipts` used
+  // to be plain `.filter()` calls re-evaluated (and re-ALLOCATED) on every
+  // render. `openReceipts` sits in the accelerator effect's dependency array
+  // below — a fresh array reference every render made that effect re-run on
+  // every render too, not just when the receipt data actually changed. The
+  // first run correctly checked a unique amount+date match; the very next
+  // (state-update-triggered) render re-ran the effect with the one-shot ref
+  // already latched, computed `desired = null`, and immediately unchecked the
+  // receipt it had just picked — the checkbox visibly ticked and then
+  // un-ticked itself, and the accelerator was permanently defeated. `useMemo`
+  // gives `openReceipts` (and its siblings, same category of bug even though
+  // only `openReceipts` sat in a dependency array) a reference that's stable
+  // across renders unless `allReceipts`/`heldIds` themselves actually change
+  // — mirrors the original MatchPanel's `receiptsQuery.data?.items ?? []`,
+  // which was stable because TanStack Query caches that array by reference.
+  const heldIds = useMemo(() => new Set(invoice.receipt_ids ?? []), [invoice.receipt_ids])
   // Candidate pool for this panel: still-open receipts, PLUS whatever this
   // invoice already holds (those are 'reconciled', not 'open' — excluded by
   // an 'open'-only filter, but must still be shown/toggleable here or the
   // operator has no way to see, let alone un-claim, what's already attached).
-  const relevantReceipts = allReceipts.filter((r) => r.status === 'open' || heldIds.has(r.id))
+  const relevantReceipts = useMemo(
+    () => allReceipts.filter((r) => r.status === 'open' || heldIds.has(r.id)),
+    [allReceipts, heldIds],
+  )
   // The genuinely-unclaimed pool — what the two accelerators below are
   // allowed to auto-pick from. A receipt this invoice already holds doesn't
   // need "finding"; it's already checked.
-  const openReceipts = allReceipts.filter((r) => r.status === 'open')
+  const openReceipts = useMemo(() => allReceipts.filter((r) => r.status === 'open'), [allReceipts])
 
   const receiptsSettled = receiptsQuery.isSuccess || receiptsQuery.isError
   // Design decision 3 (task brief): a fetch failure must render as a DISTINCT
@@ -89,8 +118,9 @@ function InvoiceReceiptsPanelBody({
   // evidence chain Tasks 1-7 built.
   const receiptsErrored = receiptsQuery.isError
   const hasReceiptList = relevantReceipts.length > 0
-  const sortedReceipts = [...relevantReceipts].sort(
-    (a, b) => new Date(b.receipt_date).getTime() - new Date(a.receipt_date).getTime()
+  const sortedReceipts = useMemo(
+    () => [...relevantReceipts].sort((a, b) => new Date(b.receipt_date).getTime() - new Date(a.receipt_date).getTime()),
+    [relevantReceipts],
   )
 
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>(invoice.receipt_ids ?? [])
@@ -323,6 +353,26 @@ function InvoiceReceiptsPanelBody({
         </div>
       )}
 
+      {/* Fix-round 1 (Important 2): unchecking every receipt used to leave
+          "Settle without receipt evidence" as the ONLY way forward — an
+          operator who just unclaimed a wrongly-attached receipt (meant for a
+          different invoice) had no way back to a clean, undeclared state
+          without either re-checking something wrong or permanently stamping
+          legacy_settlement=true. PUT /receipts with an empty receipt_ids
+          array is a legal, ordinary call (crud/invoice.py set_receipts) that
+          releases everything and touches legacy_settlement not at all — this
+          reuses the exact same handler as "Save Receipt Evidence" above,
+          just with an empty selection. Only offered when there's actually
+          something held to detach; a never-attached invoice has nothing to
+          detach and goes straight to the settle-without-evidence path below. */}
+      {selectedReceiptIds.length === 0 && receiptsSettled && (invoice.receipt_ids?.length ?? 0) > 0 && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="secondary" onClick={handleSaveReceipts} disabled={pending}>
+            {setReceiptsMutation.isPending ? 'Saving…' : 'Detach All Receipts'}
+          </Button>
+        </div>
+      )}
+
       {selectedReceiptIds.length === 0 && receiptsSettled && (
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-neutral-700">
@@ -375,37 +425,24 @@ function InvoiceReceiptsPanelBody({
 // agreement — recurring/milestone settle from schedule rows and have no
 // receipts at all.
 //
-// Determines agreement_type via useAgreementCandidates (the invoice-scoped,
-// match-access-gated route), NOT useAgreement/GET /agreements/{id} (gated on
-// epms.agreement.read) — see Task 7's docstring on
-// list_invoice_agreement_receipts for why: that permission isn't granted to
-// every role that can legitimately reconcile this invoice (warehouse_staff,
-// supervisor, cfo, vendor_manager, erp_pa_officer among them), so those
-// callers would 403 here and the whole panel would silently vanish.
+// Fix-round 1 (Important 1): this used to determine agreement_type by
+// fetching /invoices/{id}/agreement-candidates, gated on
+// _require_invoice_match_access (AP roles ∪ uploader ∪ the holder of an open
+// match_invoice task). Every OTHER role — warehouse_staff, supervisor, cfo,
+// vendor_manager, erp_pa_officer among them — got `agreement === undefined`
+// there, which this component happened to handle safely (render nothing),
+// but the SAME undefined value fed InvoiceDetailPage.tsx's evidence-summary
+// copy, which had no such guard: it fell back to claiming a zero-evidence
+// house_account invoice was "settled against the agreement itself" — the
+// exact Phase-1A lie this feature exists to retire — for every one of those
+// roles. Reading `invoice.agreement_type` (a denormalized snapshot written
+// at match time, see ag05_invoice_agreement_type / InvoiceResponse) fixes
+// both call sites from one additive field: it's on the SAME response every
+// caller who can read this invoice already receives, no separate request,
+// no separate permission gate, and no "determination pending/failed" state
+// to fall back from at all.
 export function InvoiceReceiptsPanel({ invoice }: { invoice: ApiInvoice }) {
-  const enabled = Boolean(invoice.agreement_id)
-  const agrCandQuery = useAgreementCandidates(invoice.id, enabled)
+  if (!invoice.agreement_id || invoice.agreement_type !== 'house_account') return null
 
-  if (!enabled) return null
-
-  if (agrCandQuery.isError) {
-    return (
-      <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
-        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        <div className="flex flex-1 items-center justify-between gap-2">
-          <p>Couldn't determine whether this agreement carries receipt evidence.</p>
-          <Button size="sm" variant="secondary" onClick={() => agrCandQuery.refetch()} disabled={agrCandQuery.isFetching}>
-            {agrCandQuery.isFetching ? 'Retrying…' : 'Retry'}
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  if (agrCandQuery.isLoading) return null
-
-  const agreement = agrCandQuery.data?.items.find((a) => a.id === invoice.agreement_id)
-  if (!agreement || agreement.agreement_type !== 'house_account') return null
-
-  return <InvoiceReceiptsPanelBody invoice={invoice} agreementId={agreement.id} currency={agreement.currency} />
+  return <InvoiceReceiptsPanelBody invoice={invoice} agreementId={invoice.agreement_id} />
 }

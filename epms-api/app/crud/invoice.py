@@ -492,6 +492,7 @@ async def _match_to_agreement(
 
     invoice.agreement_id = agr.id
     invoice.agreement_number = agr.number
+    invoice.agreement_type = agr.agreement_type
     invoice.match_route = "agreement"
     invoice.schedule_id = claimed_row.id if claimed_row else None
     # An explicit req.schedule_id (the manual-assignment escape hatch above)
@@ -856,6 +857,7 @@ async def match(
     if previous_agreement_id is not None:
         invoice.agreement_id = None
         invoice.agreement_number = None
+        invoice.agreement_type = None
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
         await _release_agreement_evidence(db, invoice)
@@ -1140,6 +1142,7 @@ async def review_match(
         if released_agreement_id is not None:
             invoice.agreement_id = None
             invoice.agreement_number = None
+            invoice.agreement_type = None
             invoice.match_route = None
             invoice.legacy_settlement = False
             invoice.legacy_settlement_reason = None

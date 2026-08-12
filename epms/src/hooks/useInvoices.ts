@@ -155,6 +155,15 @@ export function useSetInvoiceReceipts() {
       invoiceService.setReceipts(id, body),
     onSuccess: async (_data, { id }) => {
       await Promise.all([
+        // Fix-round 1 (Minor 2): ['invoices', id] and ['invoices', id, 'agreements']
+        // don't prefix-match the list view's key (['invoices', filters]) — its
+        // second element is a filters object, not this invoice's id, so without
+        // this broader invalidation the Unmatched Queue / invoice list kept
+        // showing the pre-mutation receipt_ids/legacy_settlement after a save.
+        // A single ['invoices'] entry prefix-matches everything under it,
+        // including the two more specific keys below, but they're left in
+        // place for clarity about exactly what this mutation is known to affect.
+        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id, 'agreements'] }),
       ])
@@ -172,6 +181,15 @@ export function useSettleWithoutReceipt() {
       invoiceService.settleWithoutReceipt(id, reason),
     onSuccess: async (_data, { id }) => {
       await Promise.all([
+        // Fix-round 1 (Minor 2): ['invoices', id] and ['invoices', id, 'agreements']
+        // don't prefix-match the list view's key (['invoices', filters]) — its
+        // second element is a filters object, not this invoice's id, so without
+        // this broader invalidation the Unmatched Queue / invoice list kept
+        // showing the pre-mutation receipt_ids/legacy_settlement after a save.
+        // A single ['invoices'] entry prefix-matches everything under it,
+        // including the two more specific keys below, but they're left in
+        // place for clarity about exactly what this mutation is known to affect.
+        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
         queryClient.invalidateQueries({ queryKey: ['invoices', id, 'agreements'] }),
       ])

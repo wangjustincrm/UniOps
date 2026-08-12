@@ -221,6 +221,14 @@ class InvoiceResponse(BaseModel):
     match_assignee_name: str | None = None
     agreement_id: uuid.UUID | None = None
     agreement_number: str | None = None
+    # house_account | recurring | milestone — snapshot written alongside
+    # agreement_number at match time (Task 8 fix round 1, Important 1). Lets
+    # the frontend gate the Receipt Evidence panel / its copy on the ACTUAL
+    # agreement type for every caller who can read this invoice, without a
+    # second request to a more narrowly (epms.agreement.read) gated route
+    # that 403s for roles who can legitimately match/reconcile an invoice but
+    # can't read the agreement detail page.
+    agreement_type: str | None = None
     match_route: str | None = None
     match_route_auto: bool = False
     legacy_settlement: bool = False

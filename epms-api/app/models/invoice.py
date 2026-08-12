@@ -67,6 +67,13 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=True, index=True
     )
     agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # house_account | recurring | milestone — snapshot of the linked
+    # agreement's type, written alongside agreement_number/agreement_id at
+    # match time (Task 8 fix round 1, Important 1). Lets ANY caller who can
+    # read this invoice at all learn whether it's on the house_account route
+    # (the only one with receipt evidence) without a second, more narrowly
+    # gated request to the agreement itself — see ag05_invoice_agreement_type.
+    agreement_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # 认领到的排期行(recurring 自动 FIFO / milestone 人工选)。
     schedule_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     # 本次对账覆盖的协议凭证集合 —— 对应 gr_ids 的角色。**数组**:逐笔发票下长度

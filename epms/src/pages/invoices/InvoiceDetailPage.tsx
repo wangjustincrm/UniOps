@@ -12,7 +12,6 @@ import { EXPENSE_BASE } from '@/lib/api'
 import { computeSla } from '@/stores/invoice.store'
 import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
 import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
-import { useAgreementCandidates } from '@/hooks/useAgreements'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
@@ -103,18 +102,6 @@ export default function InvoiceDetailPage() {
   const { data: inv, isLoading } = useInvoice(id ?? '')
   const { data: gr } = useGr(inv?.gr_id ?? '')
   const updateInvoice = useUpdateInvoice()
-
-  // Which agreement_type the linked agreement is — only needed to keep the
-  // "settled against the agreement" copy honest for house_account (Task 8:
-  // matching is now pure linkage, so a house_account invoice can sit linked
-  // with NO evidence recorded yet, a state that used to be impossible before
-  // Task 6/7). Same invoice-scoped, match-access-gated route
-  // InvoiceReceiptsPanel uses below (NOT epms.agreement.read) — see that
-  // component's docstring. React Query dedupes this against the identical
-  // call InvoiceReceiptsPanel makes, so this costs no extra request.
-  const agrCandForCopy = useAgreementCandidates(inv?.id ?? '', !!inv?.agreement_id)
-  const linkedAgreementType = agrCandForCopy.data?.items.find((a) => a.id === inv?.agreement_id)?.agreement_type
-  const isHouseAccountRoute = linkedAgreementType === 'house_account'
 
   // Tax lines are the source of truth for the header tax when present: the
   // backend recomputes tax_amount from them. Detect existence so the edit form
@@ -270,6 +257,13 @@ export default function InvoiceDetailPage() {
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
   const isAgreementRoute = inv.match_route === 'agreement'
+  // Fix-round 1 (Important 1): read straight off the invoice response
+  // (agreement_type is a denormalized snapshot written at match time — see
+  // ag05_invoice_agreement_type) instead of a separate, more narrowly gated
+  // fetch. Every caller who can read this invoice at all gets the right
+  // answer; there is no "couldn't determine" state to fall back from into
+  // the wrong copy anymore.
+  const isHouseAccountRoute = inv.agreement_type === 'house_account'
 
   // Whole-branch review (I1): every place that DESCRIBES an agreement-route
   // match used to assert "settled without receipt evidence" from
@@ -288,6 +282,11 @@ export default function InvoiceDetailPage() {
   // receipts). Deliberately no version numbers in user-facing copy.
   const claimedReceiptCount = inv.receipt_ids?.length ?? 0
   const receiptNoun = claimedReceiptCount === 1 ? 'pickup receipt' : 'pickup receipts'
+  // house_account, linked, but neither backed by receipts nor declared
+  // settled-without-evidence — the reachable "pending" state Task 6 opened up
+  // (see the comment block below). Drives the 3-Way Match banner's color
+  // (fix-round 1, Minor 3) so a still-open action item never reads as done.
+  const evidencePending = isHouseAccountRoute && claimedReceiptCount === 0 && !inv.legacy_settlement
   // Task 8: matching to house_account is now pure linkage (Task 6) — a
   // freshly-matched invoice can sit with claimedReceiptCount === 0 AND
   // legacy_settlement === false, a state that used to be unreachable (Phase
@@ -984,11 +983,20 @@ export default function InvoiceDetailPage() {
                   <Link to="/invoices"><Button variant="secondary" size="sm">Go to Unmatched Queue</Button></Link>
                 </div>
               ) : isAgreementRoute ? (
-                <div className="rounded-xl border border-success-200 bg-success-50 p-5 flex flex-col gap-3">
+                // Fix-round 1 (Minor 3): the outer card used to be
+                // unconditionally green + a success checkmark, even while the
+                // headline inside said "no receipt evidence recorded yet" —
+                // a house_account invoice linked but not yet reconciled is a
+                // pending state, not a success one, and a green success box
+                // saying so read as self-contradictory on first glance.
+                <div className={cn('rounded-xl border p-5 flex flex-col gap-3',
+                  evidencePending ? 'border-warning-200 bg-warning-50' : 'border-success-200 bg-success-50')}>
                   <div className="flex items-center gap-4">
-                    <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
+                    {evidencePending
+                      ? <AlertTriangle className="h-8 w-8 text-warning-600 flex-shrink-0" />
+                      : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />}
                     <div>
-                      <p className="text-sm font-semibold text-success-700">
+                      <p className={cn('text-sm font-semibold', evidencePending ? 'text-warning-700' : 'text-success-700')}>
                         Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)} — {agreementEvidenceSummary}
                       </p>
                       {inv.matched_at && (
