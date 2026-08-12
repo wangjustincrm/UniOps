@@ -19,8 +19,8 @@
  * they resolve to a completely different anchor):
  *   [Agreement card — ancestor link or current-highlighted]
  *        └─ Invoice row(s)  ← GET /invoices?agreement_id=
- *             ├─ Pickup Receipt row(s)  ← invoice.receipt_ids (house_account only;
- *             │                            recurring/milestone invoices never carry any)
+ *             ├─ Receipt row(s)  ← invoice.receipt_ids (house_account only;
+ *             │                     recurring/milestone invoices never carry any)
  *             └─ PA row(s)              ← same invoice-nesting convention as the PO axis
  */
 import { useState } from 'react'
@@ -40,6 +40,8 @@ import { useInvoices } from '@/hooks/useInvoices'
 import { usePas } from '@/hooks/usePas'
 import { useAgreement } from '@/hooks/useAgreements'
 import { useAgreementReceipts } from '@/hooks/useAgreementReceipts'
+import { useRolePermissions } from '@/hooks/useConfig'
+import { useAuthStore } from '@/stores/auth.store'
 import type { GrStatus } from '@/services/gr'
 import type { InvoiceStatus } from '@/services/invoices'
 import type { ApiPa, PaStatus } from '@/services/pa'
@@ -116,11 +118,11 @@ function receiptStatusToDoc(s: ReceiptStatus): DocumentStatus {
   return ({ pending_ap_review: 'pending_ap_review', open: 'open', reconciled: 'reconciled', voided: 'voided', rejected: 'rejected' } as Record<ReceiptStatus, DocumentStatus>)[s]
 }
 
-// Pickup-receipt row label — never a bare UUID (branch owner's ruling). Same
+// Receipt row label — never a bare UUID (branch owner's ruling). Same
 // fallback ApiReceipt has no currency of its own, so the meta text this feeds
 // is formatted with the AGREEMENT's currency at the call site, never a
 // hardcoded one.
-function pickupReceiptLabel(r: ApiReceipt): string {
+function receiptRowLabel(r: ApiReceipt): string {
   return r.receipt_ref || `${r.receipt_date} · ${Number(r.total_amount).toFixed(2)}`
 }
 
@@ -362,6 +364,32 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   // api/v1/invoices.py:206 / crud/invoice.py get_all).
   const { data: agrInvoicesData } = useInvoices({ agreement_id: agreementId }, isAgrAxis && !!agreementId)
   const agrInvoices = agrInvoicesData?.items ?? []
+
+  // Whole-branch review (I1): GET /invoices returns 200 with an EMPTY list —
+  // not 403 — when the caller's Access Control Matrix row has view_invoice
+  // off (api/v1/invoices.py list_invoices). The default matrix gives
+  // `director` view_pa and (via identity 0006) epms.agreement.read, but NOT
+  // view_invoice. So a Director opening a house_account agreement — or the
+  // agreement PA they are about to approve — got a chain that positively
+  // asserted "No invoices matched to this agreement yet" with 20 invoices
+  // underneath it, and no receipt layer either (receipts hang off invoices),
+  // and no error to hint at it because the request succeeded. An approver
+  // reading "the evidence chain is empty" and approving payment on that
+  // basis is the failure this closes.
+  //
+  // Frontend-only on purpose: making list_invoices 403 instead would change
+  // the contract for every other caller of that endpoint. Read the same
+  // matrix key the endpoint gates on, and — only once the permission query
+  // has actually resolved — say the layer is hidden rather than claiming it
+  // is empty. system_admin override mirrors Sidebar.tsx's isItemVisible.
+  const { user } = useAuthStore()
+  const permsQuery = useRolePermissions()
+  const canViewInvoices =
+    user?.role === 'system_admin' || !!permsQuery.data?.permissions?.['view_invoice']
+  // Never render the "hidden" note off an unresolved query — during the
+  // in-flight frame `permissions` is undefined for everyone, including the
+  // people who can see invoices fine.
+  const invoiceLayerHidden = isAgrAxis && permsQuery.isSuccess && !canViewInvoices
 
   // GET /pa has no agreement_id filter (only status/po_id/vendor_id/department_id/
   // search — epms-api/app/api/v1/pa.py:147-158), unlike /invoices. `search`
@@ -628,7 +656,7 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
 
       {/* ── Agreement-axis children ──────────────────────────────────────────
           [Invoice(s)] ← GET /invoices?agreement_id=
-               ├─ Pickup Receipt row(s) ← invoice.receipt_ids, resolved off
+               ├─ Receipt row(s)        ← invoice.receipt_ids, resolved off
                │                          this agreement's receipt list
                └─ PA row(s)             ← nested under the invoice they were
                                            raised from, same convention as the
@@ -647,13 +675,33 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
         const rows: React.ReactNode[] = []
         let t = 0
 
+        // Fix round 2 (I1): see invoiceLayerHidden's definition — an empty
+        // invoice list from a caller without view_invoice means "hidden",
+        // never "none exist".
+        if (invoiceLayerHidden) {
+          rows.push(
+            <div key="agr-invoices-perm-note" className="mb-2 pl-1 flex items-center gap-1.5 text-[11px] text-neutral-400 italic">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              Invoices on this agreement aren't visible with your permissions — this chain, and any receipt evidence hanging off those invoices, is incomplete.
+            </div>,
+          )
+        }
+
         // Fix round 1 (Important b): don't fail silently — an explanatory row
-        // instead of a Pickup Receipt layer that's just never there.
+        // instead of a receipt layer that's just never there.
         if (agrReceiptsError) {
           rows.push(
-            <div key="agr-receipts-perm-note" className="mb-2 pl-1 flex items-center gap-1.5 text-[11px] text-neutral-400 italic">
+            // Whole-branch review (T11-★): the trigger is react-query's bare
+            // `isError`, which does not distinguish 403 from a transient 5xx,
+            // a timeout, or a dropped connection. The old copy asserted "you
+            // don't have permission", which is simply false on every one of
+            // those other paths — and "the UI states something it cannot
+            // know" is the defect class this branch keeps re-introducing.
+            // Say only what is actually established: the layer did not load,
+            // so what's shown may be incomplete.
+            <div key="agr-receipts-load-note" className="mb-2 pl-1 flex items-center gap-1.5 text-[11px] text-neutral-400 italic">
               <AlertTriangle className="h-3 w-3 shrink-0" />
-              You don't have permission to view this agreement's pickup receipt evidence.
+              This agreement's receipt evidence couldn't be loaded (you may not have access to it) — the chain below may be incomplete.
             </div>,
           )
         }
@@ -686,13 +734,20 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
               <TreeRow
                 key={`${inv.id}-receipt-${r.id}`}
                 icon={<Ticket className="h-3 w-3" />}
-                label="Pickup Receipt"
-                number={pickupReceiptLabel(r)}
+                // Whole-branch review (M8): the label is the receipt's OWN
+                // type, never the hardcoded "Pickup Receipt" this used to
+                // print over a `delivery` note or a `service` sign-off. The
+                // type moved out of `meta` (where it used to be duplicated)
+                // and into the label slot, so the row now reads
+                // "Delivery note · REF · $x" instead of
+                // "Pickup Receipt · REF · Delivery note · $x".
+                label={RECEIPT_TYPE_LABELS[r.receipt_type] ?? 'Receipt'}
+                number={receiptRowLabel(r)}
                 // Currency is the AGREEMENT's — ApiReceipt carries no currency
                 // field of its own (see services/agreementReceipts.ts), and
                 // this branch already only renders once `agreement` (and thus
                 // agreement.currency) is loaded.
-                meta={`${RECEIPT_TYPE_LABELS[r.receipt_type] ?? r.receipt_type} · ${formatAmount(Number(r.total_amount), agreement?.currency ?? '')}`}
+                meta={formatAmount(Number(r.total_amount), agreement?.currency ?? '')}
                 statusDoc={receiptStatusToDoc(r.status)}
                 href={`/agreements/${agreementId}`}
                 isLast={j === childReceipts.length - 1 && childPas.length === 0}
@@ -724,7 +779,10 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
           <p className="text-[11px] text-neutral-400 italic">No linked PO, GRs, invoices, or payments yet</p>
         </div>
       )}
-      {!paEntryStillLoading && isAgrAxis && agrInvoices.length === 0 && (
+      {/* Fix round 2 (I1): this sentence is an ASSERTION about the data, so it
+          must not be printed by a caller who was never allowed to see the
+          data — the note rendered above says what's actually true for them. */}
+      {!paEntryStillLoading && isAgrAxis && !invoiceLayerHidden && agrInvoices.length === 0 && (
         <div className="mt-2 pl-6">
           <p className="text-[11px] text-neutral-400 italic">No invoices matched to this agreement yet</p>
         </div>
