@@ -161,14 +161,14 @@ async def claim(
     invoice row, NOT a query of "every AgreementReceipt row whose
     invoice_id currently points at this invoice". Those two are supposed to
     agree, but nothing enforces it: `agreement_receipts.invoice_id` and
-    `invoices.receipt_ids` have no FK to each other (shared table, three
-    other services besides this one write to `invoices`), and Data
-    Maintenance can reset `invoice.status` back to "unmatched" via a bare
-    `setattr` with no release hook at all (see the comment on `delete()`'s
-    own release call, and `match()`'s "if invoice.receipt_ids or
-    invoice.schedule_id" guard above `_release_agreement_evidence`'s
-    definition) — which is documented as a legitimate way to force a
-    re-match. Whenever that drift happens, a receipt can sit at
+    `invoices.receipt_ids` have no FK to each other — nothing in the schema
+    keeps them in sync — and Data Maintenance can reset `invoice.status`
+    back to "unmatched" via a bare `setattr` with no release hook at all
+    (see the comment on `delete()`'s own release call, and
+    `_match_to_agreement`'s "if invoice.receipt_ids or invoice.schedule_id"
+    guard above `_release_agreement_evidence`'s definition) — which is
+    documented as a legitimate way to force a re-match. Whenever that drift
+    happens, a receipt can sit at
     `reconciled` with `invoice_id` correctly pointing at this invoice while
     `invoice.receipt_ids` no longer lists it — release() cannot find it, and
     without the widened guard here, claim() could never accept it back

@@ -662,11 +662,24 @@ async def _invoice_referenced_by_active_pa(db: AsyncSession, invoice_id: uuid.UU
     back to `open` for a DIFFERENT invoice to claim (the same paper receipt
     backing two payments) or plant an irreversible legacy_settlement=True
     flag on an invoice that already cleared payment. Nothing else in the
-    request path catches this: an invoice's own `status` stays "matched"
-    forever after a PA pays it (_mark_invoices_paid in crud/pa.py flips it to
-    "paid" only through `_mark_invoices_paid`'s own success path, and even
-    that doesn't stop THIS function from being called afterward), and the
-    house_account evidence gate in api/v1/pa.py's
+    request path catches this: an invoice's own `status` is not a reliable
+    substitute for checking the PA reference directly, because it only ever
+    flips away from "matched"/"approved" once a payment actually EXECUTES —
+    via finance-api's payment executor for a normal, real-money PA
+    (finance-api/app/crud/payment_execute.py, which writes `inv.status =
+    "paid"`/`"partially_paid"` straight into this same shared `invoices`
+    table through its own mirrored model — see finance-api/app/models/
+    mirrors.py's "status-write mirror" of Invoice), or via
+    `_mark_invoices_paid` (crud/pa.py:378) for the zero-cash settlement path
+    only (called from exactly one place, `finalize_settlement_reconciliation`,
+    crud/pa.py:355, where the prepayment already covers the invoice so no
+    payment executor runs at all). Either way, that flip happens LATE — only
+    once money has actually moved. For the entire stretch a PA sits in
+    draft/submitted/in_review/approved with this invoice already in its
+    `invoice_ids`, the invoice's status looks IDENTICAL to one no PA has
+    ever touched. A status check would miss that whole window; checking
+    `invoice_ids` directly does not. And the house_account evidence gate in
+    api/v1/pa.py's
     `_validate_agreement_pa_invoices` only runs when a PA is CREATED or its
     invoice_ids are PATCHed — never continuously, so it cannot itself catch
     evidence being pulled out from under a PA that already exists.
@@ -725,7 +738,8 @@ async def set_receipts(
     if await _invoice_referenced_by_active_pa(db, invoice.id):
         raise ValueError(
             "This invoice is already referenced by a payment application; "
-            "its receipt evidence can no longer be changed here.")
+            "its receipt evidence can no longer be changed here. Cancel that "
+            "payment application first, then retry.")
 
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
@@ -774,7 +788,8 @@ async def settle_without_receipt(
     if await _invoice_referenced_by_active_pa(db, invoice.id):
         raise ValueError(
             "This invoice is already referenced by a payment application; "
-            "its settlement status can no longer be changed here.")
+            "its settlement status can no longer be changed here. Cancel that "
+            "payment application first, then retry.")
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
     )).scalar_one_or_none()
