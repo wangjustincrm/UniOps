@@ -139,12 +139,65 @@ def is_vendor_mismatch(receipt_vendor: str | None, agreement_vendor: str | None)
     return a not in b and b not in a
 
 
+def receipt_vendor_mismatch(
+    *,
+    receipt_vendor_id: uuid.UUID | None,
+    receipt_vendor_name: str | None,
+    agreement_vendor_id: uuid.UUID | None,
+    agreement_vendor_name: str | None,
+) -> bool:
+    """Is this receipt's merchant a different party from the agreement's vendor?
+
+    THREE TIERS, and the order is the whole point of Task 14:
+
+    1. Both sides carry a master-data `vendor_id` -> compare the IDS. Equal is
+       a match, different is a mismatch, and **the names are not consulted at
+       all**. Two ids are the same party or they are not; there is no spelling
+       involved and therefore nothing to be tolerant or intolerant about.
+    2. The receipt has no `vendor_id` (nobody could match it to master data —
+       the routine case for a one-off counter merchant) -> fall back to
+       `is_vendor_mismatch`, the fuzzy text comparison that was the only tool
+       available before this task.
+    3. Neither an id nor a name on the receipt -> not a mismatch. Unchanged
+       rule: not filled in is not filled in wrong.
+
+    Why ids WIN rather than merely being consulted first: every awkward case
+    this branch fought through — "Princess Auto #12" vs "Princess Auto Ltd"
+    (false positive), "7-11" normalising to nothing (false negative),
+    "7-11" vs "7-Eleven" (still a false positive) — is a limit of comparing
+    SPELLINGS, not a limit of the question being asked. Once both sides name
+    the same row of master data, a text rule can only add errors: it can call
+    two spellings of one vendor a mismatch, and it can call two genuinely
+    different vendors that happen to share a trading name a match. So when the
+    ids are present they are the answer, and — deliberately — a receipt bound
+    to vendor A on an agreement with vendor B IS flagged even if the two rows
+    are spelled identically, because two rows in the vendor master ARE two
+    different parties no matter what they are called.
+
+    Note that this function does not touch `is_vendor_mismatch` itself: that
+    function had a review round of its own (including the all-digit fallback
+    that made a 7-11 slip visible) and its behaviour is unchanged. What
+    changed is WHEN it is consulted — only when there is no id to compare.
+
+    Like `is_vendor_mismatch`, this stays a REMINDER: nothing here blocks a
+    write, and the frontend renders a badge, never an error.
+    """
+    if receipt_vendor_id is not None and agreement_vendor_id is not None:
+        return receipt_vendor_id != agreement_vendor_id
+    return is_vendor_mismatch(receipt_vendor_name, agreement_vendor_name)
+
+
 class ReceiptCreate(BaseModel):
     # counter_slip | delivery | service。默认 counter_slip —— 绝大多数 house
     # account 仍是柜台领用,让最常见的情形免于每次都选。
     receipt_type: str = "counter_slip"
     receipt_date: date
     receipt_ref: str | None = None
+    # 绑到供应商主数据的那一条(Task 14)。**可空是核心裁定**:柜台小票常来自
+    # 一次性商家,匹配不到时只存文本、照样提交。给了它,API 层会把
+    # vendor_name 覆写成主数据的规范名(见 api/v1/agreement_receipts.py
+    # ::_resolve_vendor_name)—— vendor_name 是快照,不是第二处真相。
+    vendor_id: uuid.UUID | None = None
     # 小票抬头上印的商家名(OCR 预填、可改)。允许为空:抽不到是正常情况,
     # 不该卡住录入。它与协议的供应商不一致时只是**提醒**,不拦写入 ——
     # 见 is_vendor_mismatch 的 docstring。
@@ -172,6 +225,9 @@ class ReceiptUpdate(BaseModel):
     receipt_type: str | None = None
     receipt_date: date | None = None
     receipt_ref: str | None = None
+    # 显式传 null = 解绑主数据、退回自由文本(小票其实是别家开的);字段整个
+    # 不传 = 不动。传了非空 id 时 API 层同样会把 vendor_name 覆写成规范名。
+    vendor_id: uuid.UUID | None = None
     vendor_name: str | None = None
     amount: Decimal | None = None
     tax_amount: Decimal | None = None
@@ -203,6 +259,7 @@ class ReceiptResponse(BaseModel):
     receipt_type: str
     receipt_date: date
     receipt_ref: str | None
+    vendor_id: uuid.UUID | None
     vendor_name: str | None
     amount: Decimal
     tax_amount: Decimal
@@ -272,6 +329,16 @@ class ReceiptWithAgreementResponse(ReceiptResponse):
     # each re-implementing the comparison — the rule is deliberately fuzzy,
     # and a fuzzy rule copied three times is three different rules.
     vendor_mismatch: bool = False
+    # Is this receipt's vendor a row in the vendor master, or just a string
+    # somebody (or OCR) typed? Both are legitimate — a one-off counter
+    # merchant has no master-data record and does not need one — but they are
+    # not the same fact, and the reader has to be able to tell them apart:
+    # a bound receipt's verdict above came from comparing IDS, an unbound
+    # one's came from comparing spellings. Sent as its own flag rather than
+    # left to the frontend to infer from `vendor_id != null`, so the two
+    # pages that render it cannot disagree about what "matched" means.
+    # NOT an error state: never rendered in a danger colour.
+    vendor_matched: bool = False
 
 
 class ReceiptListAllResponse(BaseModel):

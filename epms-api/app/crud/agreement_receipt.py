@@ -12,6 +12,17 @@ from app.models.invoice import Invoice
 from app.schemas.agreement_receipt import ReceiptCreate, ReceiptUpdate, validate_totals
 
 
+# The "receipt + its agreement" row, written down once. Every consumer unpacks
+# this tuple POSITIONALLY, so spelling the shape out at three call sites (this
+# module twice, api/v1/agreement_receipts.py once) was three chances to
+# renumber a column by hand and not notice — Task 14 appended a seventh
+# element and this alias is what made that a one-line change.
+# Order: the receipt row, agreement number, agreement currency, linked
+# invoice's human ref (NULL until reconciled), attachment count, agreement
+# vendor NAME, agreement vendor ID.
+ReceiptRow = tuple[AgreementReceipt, str, str, str | None, int, str, uuid.UUID]
+
+
 async def create(
     db: AsyncSession, agr: PurchaseAgreement, body: ReceiptCreate, created_by: uuid.UUID,
 ) -> AgreementReceipt:
@@ -60,6 +71,13 @@ def _with_agreement_select():
     AGREEMENT's vendor — the receipt's own `vendor_name` (what the slip
     printed) travels on the receipt row itself, and the whole point of
     selecting both is that the API layer can compare them.
+
+    The agreement's vendor **ID** is appended too (Task 14), for the same
+    reason and by the same rule: the receipt now carries its own `vendor_id`,
+    and when both sides have one the comparison is an `==` on ids instead of a
+    guess about spellings (schemas/agreement_receipt.py::
+    receipt_vendor_mismatch). Appended, not slotted in beside the name, for
+    the positional reason spelled out above.
     """
     attachment_count = (
         select(func.count(AgreementReceiptAttachment.id))
@@ -71,7 +89,8 @@ def _with_agreement_select():
     return (
         select(AgreementReceipt, PurchaseAgreement.number, PurchaseAgreement.currency,
                Invoice.internal_ref, attachment_count,
-               PurchaseAgreement.vendor_name.label("agreement_vendor_name"))
+               PurchaseAgreement.vendor_name.label("agreement_vendor_name"),
+               PurchaseAgreement.vendor_id.label("agreement_vendor_id"))
         .join(PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
         .outerjoin(Invoice, AgreementReceipt.invoice_id == Invoice.id)
     )
@@ -79,7 +98,7 @@ def _with_agreement_select():
 
 async def get_one_with_agreement(
     db: AsyncSession, receipt_id: uuid.UUID,
-) -> tuple[AgreementReceipt, str, str, str | None, int, str] | None:
+) -> ReceiptRow | None:
     """Single receipt, same row shape as list_all (Task 12).
 
     ReceiptDetailPage's URL is /receipts/{receipt_id} — no agreement_id in it —
@@ -97,7 +116,7 @@ async def get_one_with_agreement(
     )).first()
     if row is None:
         return None
-    return row[0], row[1], row[2], row[3], row[4], row[5]
+    return row[0], row[1], row[2], row[3], row[4], row[5], row[6]
 
 
 async def list_all(
@@ -109,7 +128,7 @@ async def list_all(
     search: str | None = None,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[tuple[AgreementReceipt, str, str, str | None, int, str]], int]:
+) -> tuple[list[ReceiptRow], int]:
     """Cross-agreement listing (GET /agreement-receipts, Task 9) — the reason
     this page exists is that AP/warehouse staff shouldn't have to open an
     agreement first to record or find a receipt (see the task brief's "where
@@ -177,7 +196,7 @@ async def list_all(
             AgreementReceipt.id.desc(),
         ).offset(offset).limit(page_size)
     )).all()
-    return [(row[0], row[1], row[2], row[3], row[4], row[5]) for row in rows], total
+    return [(row[0], row[1], row[2], row[3], row[4], row[5], row[6]) for row in rows], total
 
 
 # 唯二可离开的活跃态 —— reconciled 已被发票认领(编辑/作废会让发票挂着一份

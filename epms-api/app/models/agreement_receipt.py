@@ -44,6 +44,21 @@ class AgreementReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     # 基线匹配照常工作。
     receipt_ref: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
+    # 绑到供应商主数据的那一条 —— 有它,"这张小票记错挂账户了吗"就是两个 id
+    # 的等号,不再是拼写的猜测(ag06/Task 13 只有自由文本时的那些 Princess Auto
+    # #12 / 7-11 / 7-Eleven 麻烦,全部是文本比对的固有边界)。
+    # **可空,而且这是本任务的核心裁定,不是疏漏**:柜台小票常来自一次性商家,
+    # 强制先建主数据会把后勤卡死在录入现场。没绑上的凭证保留自由文本
+    # vendor_name,照样是一份合法、可提交的凭证 —— 判定回落到文本比对
+    # (见 schemas/agreement_receipt.py::receipt_vendor_mismatch 的三层规则)。
+    # RESTRICT 与 invoices.vendor_id 逐字一致(models/invoice.py):供应商不该
+    # 被从凭证脚下删掉,而 SET NULL 会让"曾经绑过主数据"和"从来没绑过"在所有
+    # 读者眼里长得一模一样。
+    # ⚠️ 与 ag07_receipt_vendor_id 逐字保持一致 —— 理由同下方 vendor_name。
+    vendor_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("business_partners.id", ondelete="RESTRICT"),
+        nullable=True, index=True)
+
     # 小票抬头上印的商家名 —— **不是**协议的供应商(那个在 purchase_agreements
     # 上,一直都有)。存它的唯一理由是拿它跟协议的供应商比对:拿 A 家的小票报到
     # B 家的挂账户上是挂账户最常见的错归属,而只看协议的 vendor 永远看不出来。
@@ -53,6 +68,9 @@ class AgreementReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     # ⚠️ 测试库的表来自 Base.metadata.create_all 而不走 alembic,所以这一列
     # 必须与 ag06_receipt_vendor 逐字保持一致(与本文件下方 __table_args__ 的
     # 同步警告同一个理由)。
+    # Task 14 定死了它的语义:这是一份**反规范化快照**,与本代码库其它单据
+    # (invoices.vendor_name 等)一致 —— 绑上主数据时存主数据的规范名,
+    # 绑不上时存 OCR/手工录入的原文。
     vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)

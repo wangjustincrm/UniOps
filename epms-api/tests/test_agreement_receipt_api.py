@@ -1087,3 +1087,153 @@ async def test_patching_the_vendor_clears_the_mismatch(admin_client, test_engine
 
     body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
     assert body["vendor_mismatch"] is False
+
+
+# ── Task 14: the receipt's vendor, bound to master data ─────────────────────
+# Task 13 could only store what the till printed and guess from spelling.
+# Binding a real vendor_id turns the "is this on the right house account?"
+# question into an `==` on two ids, and demotes the fuzzy text rule to what it
+# should always have been: the fallback for a receipt nobody could match —
+# which stays legal and submittable (一次性商家不该逼人先建主数据).
+#
+# 三层判定本身的单元覆盖在 tests/test_receipt_vendor_match.py(同步纯函数,
+# 不能放进本文件 —— 见上一节的事件循环说明)。下面这批钉的是**端点真的用了它**,
+# 以及主数据快照的写入规则。
+
+async def test_binding_a_receipt_to_master_data_stamps_the_canonical_name(admin_client, test_engine):
+    """给了 vendor_id,vendor_name 就落主数据的规范名 —— 不是客户端顺手带的
+    那串 OCR 原文。两列讲两个故事的行,在任何列表里都会以 NAME 的样子骗人。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-1",
+        vendor_id=agr["vendor_id"], vendor_name="PRINCESS AUTO #12"))
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["vendor_id"] == agr["vendor_id"]
+    assert body["vendor_name"] == "Princess Auto"      # 主数据规范名,不是 "PRINCESS AUTO #12"
+
+    detail = (await admin_client.get(_one_receipt_url(body["id"]))).json()
+    assert detail["vendor_matched"] is True
+    assert detail["vendor_mismatch"] is False
+
+
+async def test_a_receipt_with_only_text_is_accepted_and_reports_unmatched(admin_client, test_engine):
+    """匹配不到只存文本 —— 这是用户裁定的核心:柜台小票常来自临时商家,
+    强制先建主数据会把后勤卡死在录入现场。它必须能提交,并且能被看出没绑。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-TEXT", vendor_name="Some Corner Store"))
+    assert r.status_code == 201, r.text
+    assert r.json()["vendor_id"] is None
+    assert r.json()["vendor_name"] == "Some Corner Store"   # 原文照存,不动它
+
+    detail = (await admin_client.get(_one_receipt_url(r.json()["id"]))).json()
+    assert detail["vendor_matched"] is False
+
+
+async def test_an_unknown_vendor_id_is_a_404_not_a_database_error(admin_client, test_engine):
+    """vendor_id 是 RESTRICT 外键。没有这道显式检查,一个不存在的 id 会以
+    IntegrityError 的样子撞进 _receipt_integrity_error,被报成"数据库拒绝了
+    这张凭证,检查一下收货人",把录入员支去查一个根本没问题的字段。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-404", vendor_id=str(uuid.uuid4())))
+    assert r.status_code == 404, r.text
+    assert "Vendor" in r.json()["detail"]
+
+
+async def test_a_bound_receipt_is_judged_by_id_not_by_the_name_on_it(admin_client, test_engine):
+    """★ id 优先,端到端:凭证绑的就是协议那家供应商,但名字被改成了文本口径
+    必判冲突的 "Canadian Tire" —— 仍然不冲突。这条一旦变红,就说明端点又退回
+    去比文本了。(单改 vendor_name 的 PATCH 是真实可达路径:任何只补一个字段
+    的客户端都走得到这里。)"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-PRIORITY", vendor_id=agr["vendor_id"]))).json()
+
+    patch_url = _receipts_url(agr["id"]) + "/" + receipt["id"]
+    patched = await admin_client.patch(patch_url, json={"vendor_name": "Canadian Tire"})
+    assert patched.status_code == 200, patched.text
+    body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
+    assert body["vendor_name"] == "Canadian Tire"
+    assert body["agreement_vendor_name"] == "Princess Auto"
+    assert body["vendor_matched"] is True
+    assert body["vendor_mismatch"] is False
+
+
+async def test_a_different_vendor_id_is_a_mismatch_even_with_an_identical_name(
+        admin_client, test_engine):
+    """★ id 优先的另一半:另建一家**同名**供应商(主数据里两行 = 两个交易对手,
+    集团双法人/录重了都真实存在),绑上去 → 照样冲突。文本口径对这一对必判
+    False,所以这条同样只在比 id 时才成立。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    other_vendor_id, other_name, _ = await seed_vendor_and_user(
+        test_engine, vendor_name="Princess Auto")
+    assert other_name == "Princess Auto" and str(other_vendor_id) != agr["vendor_id"]
+
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-TWIN", vendor_id=str(other_vendor_id)))).json()
+
+    body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
+    assert body["vendor_name"] == body["agreement_vendor_name"] == "Princess Auto"
+    assert body["vendor_matched"] is True
+    assert body["vendor_mismatch"] is True
+
+
+async def test_unbinding_falls_back_to_the_text_comparison(admin_client, test_engine):
+    """显式传 null 解绑 → 回落文本判定。解绑必须真的能做到:小票后来发现其实
+    是别家开的,而那家不在主数据里,凭证得能退回自由文本而不是被锁死。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-UNBIND", vendor_id=agr["vendor_id"]))).json()
+    assert receipt["vendor_id"] == agr["vendor_id"]
+
+    patch_url = _receipts_url(agr["id"]) + "/" + receipt["id"]
+    patched = await admin_client.patch(
+        patch_url, json={"vendor_id": None, "vendor_name": "Canadian Tire"})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["vendor_id"] is None
+
+    body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
+    assert body["vendor_matched"] is False
+    assert body["vendor_mismatch"] is True          # 回落文本,两家真的不同
+
+
+async def test_patching_a_vendor_id_binds_an_existing_text_only_receipt(admin_client, test_engine):
+    """反过来:只有文本的凭证事后能补绑主数据,补绑后名字换成规范名、
+    判定改走 id。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-LATEBIND", vendor_name="PRINCESS AUTO #12"))).json()
+    assert receipt["vendor_id"] is None
+
+    patch_url = _receipts_url(agr["id"]) + "/" + receipt["id"]
+    patched = await admin_client.patch(patch_url, json={"vendor_id": agr["vendor_id"]})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["vendor_id"] == agr["vendor_id"]
+    assert patched.json()["vendor_name"] == "Princess Auto"
+
+    body = (await admin_client.get(_one_receipt_url(receipt["id"]))).json()
+    assert body["vendor_matched"] is True
+    assert body["vendor_mismatch"] is False
+
+
+async def test_list_all_carries_vendor_matched_alongside_the_verdict(admin_client, test_engine):
+    """列表页与详情页读同一份 JSON —— vendor_matched 也必须两处一致,
+    否则同一张凭证在一页显示"已绑主数据"、在另一页显示"只是一段文本"。"""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    bound = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-LIST-BOUND", vendor_id=agr["vendor_id"]))).json()
+    loose = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-ID-LIST-LOOSE", vendor_name="Some Corner Store"))).json()
+
+    listed = await admin_client.get(
+        ALL_RECEIPTS_URL, params={"agreement_id": agr["id"], "page_size": 200})
+    assert listed.status_code == 200, listed.text
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert by_id[bound["id"]]["vendor_matched"] is True
+    assert by_id[loose["id"]]["vendor_matched"] is False
+    for receipt_id in (bound["id"], loose["id"]):
+        detail = (await admin_client.get(_one_receipt_url(receipt_id))).json()
+        assert detail["vendor_matched"] == by_id[receipt_id]["vendor_matched"]
+        assert detail["vendor_mismatch"] == by_id[receipt_id]["vendor_mismatch"]

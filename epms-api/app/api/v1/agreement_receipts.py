@@ -11,7 +11,9 @@ from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.crud import agreement as agr_crud
 from app.crud import agreement_receipt as receipt_crud
+from app.crud import vendor as vendor_crud
 from app.crud.agreement_receipt import RETIRED as RETIRED_RECEIPT_STATUSES
+from app.crud.agreement_receipt import ReceiptRow
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
 from app.schemas.agreement_receipt import (
@@ -22,7 +24,7 @@ from app.schemas.agreement_receipt import (
     ReceiptResponse,
     ReceiptUpdate,
     ReceiptWithAgreementResponse,
-    is_vendor_mismatch,
+    receipt_vendor_mismatch,
 )
 
 router = APIRouter(prefix="/agreements/{agreement_id}/receipts", tags=["agreement-receipts"])
@@ -167,12 +169,47 @@ async def list_receipts(
     return {"items": items, "total": len(items)}
 
 
+async def _bind_vendor_master_data(
+    db: SessionDep, body: ReceiptCreate | ReceiptUpdate,
+) -> ReceiptCreate | ReceiptUpdate:
+    """Resolve a submitted `vendor_id` and stamp the CANONICAL name onto the body.
+
+    `vendor_name` on a receipt is a denormalised snapshot, exactly like
+    `invoices.vendor_name` — and this is the same thing upload_invoice does
+    with `vendor_crud.get_by_id(...).name` (api/v1/invoices.py). Taking the
+    name from master data rather than from whatever the client sent alongside
+    the id is what keeps the two columns from telling different stories: a
+    client that sent id=<Princess Auto> with name="whatever the OCR read"
+    would otherwise persist a row that is bound to one vendor and reads as
+    another, and every list in the app renders the NAME.
+
+    Returns the body untouched when `vendor_id` is absent or explicitly null —
+    that is the routine unbound case (a one-off counter merchant), and the
+    free-text `vendor_name` the recorder typed is then the whole truth and
+    must be preserved verbatim. On ReceiptUpdate, an explicit
+    `"vendor_id": null` still reaches crud.update through `exclude_unset` and
+    unbinds the row; it just doesn't rewrite the name.
+
+    404, not a bare FK IntegrityError: `agreement_receipts.vendor_id` is
+    RESTRICT-constrained, so an unknown id would otherwise surface through
+    _receipt_integrity_error as "the database rejected it", sending the
+    recorder off to check the receipt reference that was never the problem.
+    """
+    if body.vendor_id is None:
+        return body
+    vendor = await vendor_crud.get_by_id(db, body.vendor_id)
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    return body.model_copy(update={"vendor_name": vendor.name})
+
+
 @router.post("", response_model=ReceiptResponse, status_code=status.HTTP_201_CREATED)
 async def create_receipt(
     agreement_id: uuid.UUID, body: ReceiptCreate, db: SessionDep, user: ReceiptRecordDep,
 ):
     agr = await _get_agreement_or_404(db, agreement_id)
     agr_number = agr.number   # capture before any flush that might fail — see _receipt_integrity_error
+    body = await _bind_vendor_master_data(db, body)
     try:
         return await receipt_crud.create(db, agr, body, created_by=uuid.UUID(user["sub"]))
     except IntegrityError as exc:
@@ -187,6 +224,7 @@ async def update_receipt(
     agr = await _get_agreement_or_404(db, agreement_id)
     agr_number = agr.number   # capture before any flush that might fail — see _receipt_integrity_error
     receipt = await _get_receipt_or_404(db, agreement_id, receipt_id)
+    body = await _bind_vendor_master_data(db, body)
     try:
         return await receipt_crud.update(db, receipt, body)
     except ValueError as exc:
@@ -220,9 +258,7 @@ async def ap_review_receipt(
         raise HTTPException(status_code=409, detail=str(exc))
 
 
-def _with_agreement(
-    row: tuple[AgreementReceipt, str, str, str | None, int, str],
-) -> ReceiptWithAgreementResponse:
+def _with_agreement(row: ReceiptRow) -> ReceiptWithAgreementResponse:
     """One row of crud.list_all/get_one_with_agreement → its response model.
 
     Shared by the listing and the single-receipt read (Task 12) so a row can
@@ -231,17 +267,29 @@ def _with_agreement(
 
     `vendor_mismatch` is decided HERE (Task 13), once, for every reader:
     "the merchant on the slip isn't the vendor this house account is with" is
-    a deliberately fuzzy comparison (see is_vendor_mismatch's docstring), and
-    a fuzzy rule re-implemented per frontend page is a rule that means
-    something slightly different on each of them.
+    a comparison with real judgement in it (see receipt_vendor_mismatch's
+    docstring for the three tiers), and a rule re-implemented per frontend
+    page is a rule that means something slightly different on each of them.
+    As of Task 14 it prefers an exact id comparison and only falls back to the
+    fuzzy text one when the receipt was never bound to master data.
     """
-    receipt, agr_number, agr_currency, invoice_ref, attachment_count, agr_vendor = row
+    (receipt, agr_number, agr_currency, invoice_ref, attachment_count,
+     agr_vendor, agr_vendor_id) = row
     return ReceiptWithAgreementResponse(
         **ReceiptResponse.model_validate(receipt, from_attributes=True).model_dump(),
         agreement_number=agr_number, currency=agr_currency, invoice_ref=invoice_ref,
         attachment_count=attachment_count,
         agreement_vendor_name=agr_vendor,
-        vendor_mismatch=is_vendor_mismatch(receipt.vendor_name, agr_vendor),
+        vendor_mismatch=receipt_vendor_mismatch(
+            receipt_vendor_id=receipt.vendor_id,
+            receipt_vendor_name=receipt.vendor_name,
+            agreement_vendor_id=agr_vendor_id,
+            agreement_vendor_name=agr_vendor,
+        ),
+        # Bound to master data, or just a string? Read straight off the column
+        # rather than re-derived from anything: "matched" means exactly "this
+        # receipt names a row in the vendor master", and that is one boolean.
+        vendor_matched=receipt.vendor_id is not None,
     )
 
 
