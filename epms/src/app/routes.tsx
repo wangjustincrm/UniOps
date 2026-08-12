@@ -21,6 +21,7 @@ import AgreementCreatePage from '@/pages/agreements/AgreementCreatePage'
 import AgreementEditPage from '@/pages/agreements/AgreementEditPage'
 import AgreementDetailPage from '@/pages/agreements/AgreementDetailPage'
 import ReceiptListPage from '@/pages/receipts/ReceiptListPage'
+import ReceiptCreatePage from '@/pages/receipts/ReceiptCreatePage'
 import PaListPage from '@/pages/pa/PaListPage'
 import PaCreatePage from '@/pages/pa/PaCreatePage'
 import PaDetailPage from '@/pages/pa/PaDetailPage'
@@ -68,6 +69,7 @@ export const epmsRoutes: RouteDef[] = [
   { path: '/agreements/:id', element: <AgreementDetailPage />, tab: { title: (p) => `Agreement ${short(p.id)}`, icon: 'FileSignature', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/receipts', element: <ReceiptListPage />, tab: { title: 'Agreement Receipts', icon: 'Receipt', keyStrategy: 'static' } },
+  { path: '/receipts/new', element: <ReceiptCreatePage />, tab: { title: 'New Receipt', icon: 'Plus', keyStrategy: 'static' } },
 
   { path: '/pa', element: <PaListPage />, tab: { title: 'Payment Applications', icon: 'CreditCard', keyStrategy: 'static' } },
   { path: '/pa/new', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static' } },

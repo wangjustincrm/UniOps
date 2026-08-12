@@ -3,13 +3,12 @@ import { useParams, Link } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil,
-  CreditCard, Upload, Paperclip, Info,
+  CreditCard, Upload, Paperclip, Info, Plus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { ScheduleTable } from '@/components/agreements/ScheduleTable'
-import { ReceiptEntryForm } from '@/components/agreements/ReceiptEntryForm'
 import { ReceiptTable } from '@/components/agreements/ReceiptTable'
 import { formatAmount, formatDate, formatBytes, cn } from '@/lib/utils'
 import type { ApprovalStep, DocumentStatus } from '@/types'
@@ -551,14 +550,32 @@ export default function AgreementDetailPage() {
             </div>
           )}
 
-          {/* Pickup receipts — house_account only. recurring/milestone settle
+          {/* Agreement receipts — house_account only. recurring/milestone settle
               against the payment schedule above instead; house_account has
-              no schedule rows at all (see the comment on scheduleData). */}
+              no schedule rows at all (see the comment on scheduleData).
+              Task 10: display-only here, mirroring how a PO shows its GRs but
+              creating one is a separate page — recording now happens on the
+              standalone /receipts/new page (linked below), not inline. */}
           {agreement.agreement_type === 'house_account' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                Pickup Receipts <span className="normal-case font-normal text-neutral-400">({receipts.length})</span>
-              </h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  Agreement Receipts <span className="normal-case font-normal text-neutral-400">({receipts.length})</span>
+                </h2>
+                {/* Same admissibility gate the old inline form used (isAgreementAdmissible,
+                    defined above) — status alone (agreement_type check above) isn't enough:
+                    the backend's create_receipt route accepts a POST against a draft/cancelled/
+                    past-grace agreement with no status check of its own, so without this the
+                    button would offer recording a receipt that could never be reconciled. */}
+                {canRecordReceipt && isAgreementAdmissible(agreement) && (
+                  <Link to={`/receipts/new?agreement_id=${agreement.id}`}>
+                    <Button size="sm" variant="secondary" className="gap-1.5">
+                      <Plus className="h-3.5 w-3.5" />
+                      New Receipt
+                    </Button>
+                  </Link>
+                )}
+              </div>
               <ReceiptTable
                 agreementId={agreement.id}
                 receipts={receipts}
@@ -566,18 +583,8 @@ export default function AgreementDetailPage() {
                 currency={agreement.currency}
                 canWrite={canRecordReceipt}
                 canApReview={canApReviewReceipt}
+                readOnly
               />
-              {/* Same admissibility gate as the Create PA button (isAgreementAdmissible,
-                  defined above) — status alone (agreement_type check above) isn't enough:
-                  the backend's create_receipt route accepts a POST against a draft/cancelled/
-                  past-grace agreement with no status check of its own, so without this a
-                  receipt could be recorded against an agreement that was never approved. */}
-              {canRecordReceipt && isAgreementAdmissible(agreement) && (
-                <div className="border-t border-neutral-100 pt-5">
-                  <h3 className="text-sm font-semibold text-neutral-700 mb-3">Record a Pickup Receipt</h3>
-                  <ReceiptEntryForm agreementId={agreement.id} />
-                </div>
-              )}
             </div>
           )}
 

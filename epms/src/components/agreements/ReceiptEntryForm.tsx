@@ -8,7 +8,7 @@ import { cn, todayISODate } from '@/lib/utils'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateReceipt } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAttachments'
-import { agreementReceiptService, ocrService } from '@/services/agreementReceipts'
+import { agreementReceiptService, ocrService, type ReceiptType } from '@/services/agreementReceipts'
 import { receiptAttachmentsQueryKey } from './ReceiptTable'
 
 // The backend (schemas/agreement_receipt.py::validate_totals) checks
@@ -26,6 +26,10 @@ function centsEqual(total: number, amount: number, tax: number): boolean {
 
 interface ReceiptEntryFormProps {
   agreementId: string
+  // Chosen by the caller — ReceiptCreatePage's type selector (Task 10). Defaults
+  // to 'counter_slip' to match the backend's own default (schemas/agreement_receipt.py
+  // ReceiptCreate.receipt_type) for the sake of any future embedding that omits it.
+  receiptType?: ReceiptType
 }
 
 // Entry flow: pick a photo → auto OCR → prefill (still fully editable) →
@@ -33,7 +37,7 @@ interface ReceiptEntryFormProps {
 // against the receipt id just returned. Two separate API calls, same pattern as
 // PrCreatePage (create doc, then upload attachments against the new id) —
 // there is no single create-with-attachment endpoint.
-export function ReceiptEntryForm({ agreementId }: ReceiptEntryFormProps) {
+export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip' }: ReceiptEntryFormProps) {
   const { data: usersData } = useUserDirectory()
   const users = usersData?.items ?? []
   const createReceipt = useCreateReceipt(agreementId)
@@ -133,6 +137,7 @@ export function ReceiptEntryForm({ agreementId }: ReceiptEntryFormProps) {
     if (hasError) return
 
     const receipt = await createReceipt.mutateAsync({
+      receipt_type: receiptType,
       receipt_date: receiptDate,
       receipt_ref: receiptRef.trim() || undefined,
       amount: amt,

@@ -89,9 +89,15 @@ interface ReceiptTableProps {
   // epms.invoice.match (ApDep on the backend's ap-review route) — the AP
   // Approve/Reject buttons only render for holders of this permission.
   canApReview: boolean
+  // Task 10: AgreementDetailPage's receipts section is now display-only —
+  // recording lives on the standalone /receipts/new page, and Void/AP-review
+  // are reserved for a future dedicated surface. When true this hides the
+  // Actions column entirely (not just the buttons inside it), regardless of
+  // what canWrite/canApReview would otherwise allow.
+  readOnly?: boolean
 }
 
-export function ReceiptTable({ agreementId, receipts, users, currency, canWrite, canApReview }: ReceiptTableProps) {
+export function ReceiptTable({ agreementId, receipts, users, currency, canWrite, canApReview, readOnly = false }: ReceiptTableProps) {
   const voidReceipt = useVoidReceipt(agreementId)
   const apReview = useApReviewReceipt(agreementId)
   // Mirrors ScheduleTable's pendingRowId convention: the hooks below are
@@ -110,7 +116,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
     // VOIDABLE set, so there is no undo. Same confirm() convention as the
     // other destructive actions in this app (PrDetailPage withdraw/recall,
     // BudgetCatalogPage delete, etc.).
-    if (!confirm(`Void pickup receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
+    if (!confirm(`Void receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
     setPendingVoidId(receiptId)
     voidReceipt.mutate(receiptId, { onSettled: () => setPendingVoidId(null) })
   }
@@ -123,7 +129,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
   if (receipts.length === 0) {
     return (
       <div className="py-8 text-center text-sm text-neutral-400">
-        No pickup receipts recorded yet.
+        No receipts recorded yet.
       </div>
     )
   }
@@ -151,15 +157,15 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Picked up by</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Status</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Attachments</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Actions</th>
+                {!readOnly && <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Actions</th>}
               </tr>
             </thead>
             <tbody>
               {receipts.map((receipt) => {
                 const receivedByName = resolveUserName(users, receipt.received_by)
                 const aged = isAged(receipt)
-                const canVoid = canWrite && VOIDABLE_STATUSES.has(receipt.status)
-                const canReview = canApReview && receipt.status === 'pending_ap_review'
+                const canVoid = !readOnly && canWrite && VOIDABLE_STATUSES.has(receipt.status)
+                const canReview = !readOnly && canApReview && receipt.status === 'pending_ap_review'
                 const rowVoidPending = voidReceipt.isPending && pendingVoidId === receipt.id
                 const rowApprovePending = apReview.isPending && pendingReviewKey === `${receipt.id}:approve`
                 const rowRejectPending = apReview.isPending && pendingReviewKey === `${receipt.id}:reject`
@@ -198,45 +204,47 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                     <td className="px-4 py-2.5">
                       <ReceiptAttachmentsCell agreementId={agreementId} receiptId={receipt.id} />
                     </td>
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        {canReview && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="success-outline"
-                              onClick={() => handleReview(receipt.id, 'approve')}
-                              disabled={apReview.isPending}
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              {rowApprovePending ? 'Working…' : 'Approve'}
-                            </Button>
+                    {!readOnly && (
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          {canReview && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="success-outline"
+                                onClick={() => handleReview(receipt.id, 'approve')}
+                                disabled={apReview.isPending}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                {rowApprovePending ? 'Working…' : 'Approve'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => handleReview(receipt.id, 'reject')}
+                                disabled={apReview.isPending}
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                {rowRejectPending ? 'Working…' : 'Reject'}
+                              </Button>
+                            </>
+                          )}
+                          {canVoid && (
                             <Button
                               size="sm"
                               variant="secondary"
-                              onClick={() => handleReview(receipt.id, 'reject')}
-                              disabled={apReview.isPending}
+                              onClick={() => handleVoid(receipt.id, receipt.receipt_ref)}
+                              disabled={voidReceipt.isPending}
+                              className={cn('text-danger-600 hover:text-danger-700')}
                             >
-                              <XCircle className="h-3.5 w-3.5" />
-                              {rowRejectPending ? 'Working…' : 'Reject'}
+                              <Ban className="h-3.5 w-3.5" />
+                              {rowVoidPending ? 'Working…' : 'Void'}
                             </Button>
-                          </>
-                        )}
-                        {canVoid && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() => handleVoid(receipt.id, receipt.receipt_ref)}
-                            disabled={voidReceipt.isPending}
-                            className={cn('text-danger-600 hover:text-danger-700')}
-                          >
-                            <Ban className="h-3.5 w-3.5" />
-                            {rowVoidPending ? 'Working…' : 'Void'}
-                          </Button>
-                        )}
-                        {!canReview && !canVoid && <span className="text-neutral-300">—</span>}
-                      </div>
-                    </td>
+                          )}
+                          {!canReview && !canVoid && <span className="text-neutral-300">—</span>}
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 )
               })}
