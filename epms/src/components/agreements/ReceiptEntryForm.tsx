@@ -9,6 +9,11 @@ import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateReceipt, invalidateReceiptViews } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
 import { agreementReceiptService, ocrService, receiptTotalsMatch, type ReceiptType } from '@/services/agreementReceipts'
+import {
+  ReceiptVendorPicker,
+  type ReceiptVendorSuggestion,
+  type ReceiptVendorValue,
+} from '@/components/agreements/ReceiptVendorPicker'
 
 interface ReceiptEntryFormProps {
   agreementId: string
@@ -42,11 +47,24 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
 
   const [receiptDate, setReceiptDate] = useState(todayISODate())
   const [receiptRef, setReceiptRef] = useState('')
-  // The merchant printed on the slip. OCR prefills it; fully editable like
-  // every other OCR field. Not compared against the agreement's vendor here —
-  // the backend decides that (is_vendor_mismatch) and the receipt list/detail
-  // views surface it, so there is exactly one verdict in the system.
-  const [vendorName, setVendorName] = useState('')
+  // The merchant on the slip, as the pair it really is: the vendor-master row
+  // it matched (when it matched one) and the text stored either way. OCR
+  // prefills it and the picker tries to bind it; both halves stay editable.
+  // Nothing is compared against the agreement's vendor here — the backend
+  // decides that (receipt_vendor_mismatch) and the receipt list/detail views
+  // surface it, so there is exactly one verdict in the system.
+  const [vendor, setVendor] = useState<ReceiptVendorValue>({ vendorId: null, vendorName: '' })
+  // Handed to the picker when OCR reads a merchant name off the photo. A new
+  // object each time, so re-reading a photo of the SAME shop re-runs the match.
+  const [vendorSuggestion, setVendorSuggestion] = useState<ReceiptVendorSuggestion | null>(null)
+  // Bumped by resetForm to REMOUNT the vendor picker (same idiom
+  // ReceiptDetailPage uses to reset itself on a different receipt id). The
+  // picker holds state this form cannot see — the search term it last sent,
+  // and which value came from OCR — and clearing only the value it exposes
+  // would leave the next receipt's blank field showing the previous
+  // receipt's "AI extracted: …" line and searching for the previous
+  // receipt's merchant.
+  const [vendorPickerNonce, setVendorPickerNonce] = useState(0)
   const [amount, setAmount] = useState('')
   const [taxAmount, setTaxAmount] = useState('')
   const [totalAmount, setTotalAmount] = useState('')
@@ -64,7 +82,9 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     setOcrState('idle')
     setReceiptDate(todayISODate())
     setReceiptRef('')
-    setVendorName('')
+    setVendor({ vendorId: null, vendorName: '' })
+    setVendorSuggestion(null)
+    setVendorPickerNonce((n) => n + 1)
     setAmount('')
     setTaxAmount('')
     setTotalAmount('')
@@ -89,7 +109,10 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       // old name here never existed on the wire, so it read as `undefined` and
       // silently prefilled nothing (fixed in Task 13; see OcrReceiptFields).
       if (fields.slip_ref) setReceiptRef(fields.slip_ref)
-      if (fields.vendor_name) setVendorName(fields.vendor_name)
+      // The picker takes it from here: it searches the vendor list for this
+      // name and binds it when exactly one vendor is unmistakably that
+      // merchant, otherwise leaves the text in place with the candidates open.
+      if (fields.vendor_name) setVendorSuggestion({ text: fields.vendor_name })
       if (fields.date) setReceiptDate(fields.date)
       if (fields.amount !== null) setAmount(String(fields.amount))
       if (fields.tax_amount !== null) setTaxAmount(String(fields.tax_amount))
@@ -144,7 +167,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       receipt_type: receiptType,
       receipt_date: receiptDate,
       receipt_ref: receiptRef.trim() || undefined,
-      vendor_name: vendorName.trim() || undefined,
+      vendor_id: vendor.vendorId ?? undefined,
+      vendor_name: vendor.vendorName.trim() || undefined,
       amount: amt,
       tax_amount: tax,
       total_amount: tot,
@@ -307,16 +331,18 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         <FormField
           label="Vendor on receipt"
           htmlFor="receipt-vendor"
-          hint="The merchant printed on the slip. Leave it blank if it isn't legible."
+          hint="The merchant printed on the slip. Pick it from the vendor list if it's there — otherwise just type what the slip says, or leave it blank if it isn't legible."
         >
-          {/* DB column is String(255) — maxLength keeps an overflowing paste
-              from reaching the request as a bare 500 (same rationale as
-              Reference # above). Optional on purpose: a blank vendor is never
-              reported as a mismatch, an unreadable header is normal. */}
-          <Input
-            id="receipt-vendor" value={vendorName} maxLength={255}
-            placeholder="e.g. Princess Auto #12"
-            onChange={(e) => setVendorName(e.target.value)}
+          {/* Deliberately NOT required and never a blocker: an unmatched
+              merchant leaves vendor_id null and saves the text, and a blank
+              vendor is never reported as a mismatch at all. */}
+          <ReceiptVendorPicker
+            key={vendorPickerNonce}
+            inputId="receipt-vendor"
+            value={vendor}
+            onChange={setVendor}
+            suggestion={vendorSuggestion}
+            disabled={isPending}
           />
         </FormField>
         <FormField label="Amount (before tax)" required htmlFor="receipt-amount">

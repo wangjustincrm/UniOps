@@ -51,10 +51,21 @@ export interface ApiReceipt {
   receipt_type: ReceiptType
   receipt_date: string
   receipt_ref: string | null
+  // The vendor-master row this receipt's merchant IS, when it could be
+  // matched to one (Task 14). Null is a routine outcome, not a failure: a
+  // counter slip often comes from a one-off merchant that is not in the
+  // vendor list, and the receipt is still perfectly valid — it just keeps
+  // free text below instead. Never rendered: it is a bare UUID.
+  vendor_id: string | null
   // The merchant printed ON the slip — NOT the agreement's vendor (that one
   // lives on the agreement and is `agreement_vendor_name` below). Null is
   // normal: OCR returns none when the header is illegible, and manual entry
   // may leave it blank.
+  //
+  // A DENORMALISED SNAPSHOT, same as invoices.vendor_name: when `vendor_id`
+  // is set the server stamps the master data's canonical name here, so these
+  // two can never name two different merchants. When it isn't, this is the
+  // raw text OCR read or the recorder typed, kept verbatim.
   vendor_name: string | null
   amount: string
   tax_amount: string
@@ -115,6 +126,14 @@ export interface ApiReceiptWithAgreement extends ApiReceipt {
   // of the same group is perfectly legal. Render a badge on the vendor cell;
   // never red-flag the whole row and never block a write on it.
   vendor_mismatch: boolean
+  // Is this receipt's merchant a row in the vendor master, or just a string?
+  // Both are legitimate, and the difference is worth showing: a `true` here
+  // means the verdict above came from comparing IDS, a `false` means it came
+  // from comparing spellings. Render the distinction WITHOUT an error colour —
+  // unmatched is the normal case for a one-off counter merchant, and dressing
+  // it as a fault would train people to ignore the one warning on this row
+  // that does mean something.
+  vendor_matched: boolean
 }
 
 export interface ReceiptListResponse {
@@ -149,6 +168,11 @@ export interface CreateReceiptBody {
   receipt_type?: ReceiptType
   receipt_date: string
   receipt_ref?: string | null
+  // Omit (or null) when the merchant isn't in the vendor list — the receipt is
+  // still accepted and keeps `vendor_name` as free text. When it IS sent, the
+  // server overwrites vendor_name with the master data's canonical name, so
+  // there is no way to save a row whose id and name disagree.
+  vendor_id?: string | null
   vendor_name?: string | null
   amount: number
   tax_amount: number
@@ -166,6 +190,10 @@ export interface UpdateReceiptBody {
   receipt_type?: ReceiptType
   receipt_date?: string
   receipt_ref?: string | null
+  // Explicit null unbinds a receipt from master data (the slip turned out to
+  // be from a merchant that isn't in the list); omitting the key leaves the
+  // binding alone.
+  vendor_id?: string | null
   vendor_name?: string | null
   amount?: number
   tax_amount?: number

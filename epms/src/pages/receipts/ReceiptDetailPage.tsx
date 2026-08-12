@@ -22,6 +22,10 @@ import {
   useApReviewReceiptAny,
 } from '@/hooks/useAgreementReceipts'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
+import {
+  ReceiptVendorPicker,
+  type ReceiptVendorValue,
+} from '@/components/agreements/ReceiptVendorPicker'
 import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAttachments'
 import {
   EDITABLE_STATUSES,
@@ -142,11 +146,15 @@ function ReceiptDetail({
   const [receiptType, setReceiptType] = useState<ReceiptType>(receipt.receipt_type)
   const [receiptDate, setReceiptDate] = useState(receipt.receipt_date)
   const [receiptRef, setReceiptRef] = useState(receipt.receipt_ref ?? '')
-  // The merchant printed on the slip (Task 13). Editable alongside the other
-  // recorded facts — a vendor keyed wrong, or left blank because OCR couldn't
-  // read the header, is exactly the case the mismatch note below asks the
-  // reader to check.
-  const [vendorName, setVendorName] = useState(receipt.vendor_name ?? '')
+  // The merchant on the slip, as the pair it really is (Task 14): the
+  // vendor-master row it is bound to, and the text stored either way. Editable
+  // alongside the other recorded facts — a vendor keyed wrong, bound to the
+  // wrong row, or left blank because OCR couldn't read the header is exactly
+  // the case the mismatch note below asks the reader to check. Binding it here
+  // is also how a receipt recorded before this existed gets its id.
+  const [vendor, setVendor] = useState<ReceiptVendorValue>({
+    vendorId: receipt.vendor_id, vendorName: receipt.vendor_name ?? '',
+  })
   const [amount, setAmount] = useState(receipt.amount)
   const [taxAmount, setTaxAmount] = useState(receipt.tax_amount)
   const [totalAmount, setTotalAmount] = useState(receipt.total_amount)
@@ -167,7 +175,7 @@ function ReceiptDetail({
     setReceiptType(receipt.receipt_type)
     setReceiptDate(receipt.receipt_date)
     setReceiptRef(receipt.receipt_ref ?? '')
-    setVendorName(receipt.vendor_name ?? '')
+    setVendor({ vendorId: receipt.vendor_id, vendorName: receipt.vendor_name ?? '' })
     setAmount(receipt.amount)
     setTaxAmount(receipt.tax_amount)
     setTotalAmount(receipt.total_amount)
@@ -219,7 +227,12 @@ function ReceiptDetail({
         receipt_type: receiptType,
         receipt_date: receiptDate,
         receipt_ref: receiptRef.trim() || null,
-        vendor_name: vendorName.trim() || null,
+        // Both halves, always. vendor_name is a snapshot of the bound row, so
+        // sending one without the other is how an id and a name end up naming
+        // two different merchants. null unbinds (the server leaves the text
+        // alone in that case).
+        vendor_id: vendor.vendorId,
+        vendor_name: vendor.vendorName.trim() || null,
         amount: amt,
         tax_amount: tax,
         total_amount: tot,
@@ -436,14 +449,15 @@ function ReceiptDetail({
                   </FormField>
                   <FormField
                     label="Vendor on receipt" htmlFor="receipt-vendor"
-                    hint="The merchant printed on the slip. Leave it blank if it isn't legible."
+                    hint="The merchant printed on the slip. Pick it from the vendor list if it's there — otherwise just type what the slip says, or leave it blank if it isn't legible."
                   >
-                    {/* DB column is String(255) — same overflow rationale as
-                        Reference # above. */}
-                    <Input
-                      id="receipt-vendor" value={vendorName} maxLength={255}
-                      placeholder="e.g. Princess Auto #12"
-                      onChange={(e) => touch(setVendorName)(e.target.value)}
+                    {/* Optional, exactly as on the entry form: an unmatched
+                        merchant saves as text and blocks nothing. */}
+                    <ReceiptVendorPicker
+                      inputId="receipt-vendor"
+                      value={vendor}
+                      onChange={touch(setVendor)}
+                      disabled={anyPending}
                     />
                   </FormField>
                   <FormField label={`Amount before tax (${receipt.currency})`} required htmlFor="receipt-amount">
@@ -525,7 +539,22 @@ function ReceiptDetail({
                 <MetaRow label="Receipt type" value={RECEIPT_TYPE_LABELS[receipt.receipt_type]} />
                 <MetaRow label="Receipt date" value={formatDate(receipt.receipt_date)} />
                 <MetaRow label="Reference #" value={receipt.receipt_ref ?? '—'} mono />
-                <MetaRow label="Vendor on receipt" value={receipt.vendor_name ?? '—'} />
+                {/* Not a plain MetaRow: "Princess Auto, from the vendor list"
+                    and "Princess Auto, as typed off a slip" are different
+                    facts, and this read-only view is the one a reconciled
+                    (locked) receipt shows. Muted, never an error colour —
+                    unmatched is normal. */}
+                <div className="flex gap-2 text-sm">
+                  <span className="text-neutral-400 min-w-36 flex-shrink-0">Vendor on receipt</span>
+                  <span className="text-neutral-800 font-medium break-words">
+                    {receipt.vendor_name ?? '—'}
+                    {receipt.vendor_name && !receipt.vendor_matched && (
+                      <span className="ml-2 rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500">
+                        not in vendor list
+                      </span>
+                    )}
+                  </span>
+                </div>
                 <MetaRow label="Received by" value={userNames.get(receipt.received_by) ?? '—'} />
                 <MetaRow label="Amount before tax" value={formatAmount(Number(receipt.amount), receipt.currency)} mono />
                 <MetaRow label="Tax" value={formatAmount(Number(receipt.tax_amount), receipt.currency)} mono />

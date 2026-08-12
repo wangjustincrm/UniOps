@@ -304,6 +304,21 @@ function ReceiptRow({
         {receipt.vendor_name ? (
           <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700">
             <span className="max-w-[10rem] truncate" title={receipt.vendor_name}>{receipt.vendor_name}</span>
+            {/* Bound to the vendor master, or just the text off the slip? The
+                verdict beside it means different things in the two cases (an
+                id comparison vs a spelling comparison), so the reader has to
+                be able to tell which one they are looking at. Muted grey and
+                NOT an error colour: a one-off counter merchant with no
+                master-data row is the normal case, and dressing it as a fault
+                would train people to ignore the amber badge that isn't. */}
+            {!receipt.vendor_matched && (
+              <span
+                className="rounded-full bg-neutral-100 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500"
+                title={`"${receipt.vendor_name}" is the text recorded from the receipt — it isn't linked to a vendor in the vendor list, so the check against agreement ${receipt.agreement_number} compares names, not records.`}
+              >
+                Text only
+              </span>
+            )}
             {/* A REMINDER, not an error — hence a badge on this one cell and
                 deliberately NOT a red row: a slip from another trading name of
                 the same group is a perfectly legal receipt. The title names
