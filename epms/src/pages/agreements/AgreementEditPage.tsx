@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { createPortal } from 'react-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Search, Upload, X } from 'lucide-react'
@@ -8,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
+import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { cn } from '@/lib/utils'
 import { useAgreement, useAgreementSchedule, useUpdateAgreement } from '@/hooks/useAgreements'
 import { agreementService, type AgreementType, type MilestoneRowIn, type UpdateAgreementBody } from '@/services/agreement'
@@ -26,40 +26,6 @@ const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
   recurring: 'Recurring',
   milestone: 'Milestone',
-}
-
-// ─── Anchored search dropdown (Owner only — Vendor/Type/Currency are locked
-// post-creation, see AgreementUpdate on the backend) ────────────────────────
-
-function useAnchorRect<T extends HTMLElement>(open: boolean, anchorRef: React.RefObject<T | null>) {
-  const [rect, setRect] = useState<DOMRect | null>(null)
-  useEffect(() => {
-    if (!open) { setRect(null); return }
-    const update = () => setRect(anchorRef.current?.getBoundingClientRect() ?? null)
-    update()
-    window.addEventListener('scroll', update, true)
-    window.addEventListener('resize', update)
-    return () => {
-      window.removeEventListener('scroll', update, true)
-      window.removeEventListener('resize', update)
-    }
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
-  return rect
-}
-
-function DropdownPortal({ anchorRect, onClose, children }: { anchorRect: DOMRect; onClose: () => void; children: React.ReactNode }) {
-  return createPortal(
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        style={{ position: 'fixed', top: anchorRect.bottom + 4, left: anchorRect.left, width: anchorRect.width }}
-        className="z-50 max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
-      >
-        {children}
-      </div>
-    </>,
-    document.body
-  )
 }
 
 export default function AgreementEditPage() {

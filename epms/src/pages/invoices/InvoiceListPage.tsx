@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
+import { AiBadge } from '@/components/ui/AiBadge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
 import { useInvoices, useCreateInvoice, useMatchInvoice, useResolveException, useDeleteInvoice } from '@/hooks/useInvoices'
@@ -75,16 +76,6 @@ function SlaBadge({ uploadedAt }: { uploadedAt: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700">
       <CheckCircle2 className="h-3 w-3" /> On time
-    </span>
-  )
-}
-
-// ─── AI badge ─────────────────────────────────────────────────────────────────
-
-function AiBadge() {
-  return (
-    <span className="inline-flex items-center rounded-full bg-primary-50 border border-primary-200 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 ml-1.5">
-      AI
     </span>
   )
 }

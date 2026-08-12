@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { createPortal } from 'react-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Search, Upload, X } from 'lucide-react'
@@ -8,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
+import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useConfig } from '@/hooks/useConfig'
 import { cn } from '@/lib/utils'
 import { CURRENCIES } from '@/types'
@@ -33,42 +33,6 @@ const TYPE_OPTIONS: { value: AgreementType; label: string; hint: string }[] = [
   { value: 'recurring', label: 'Recurring', hint: 'A repeating service or subscription-style spend' },
   { value: 'milestone', label: 'Milestone', hint: 'Spend released against agreed project milestones' },
 ]
-
-// ─── Reusable anchored search dropdown ──────────────────────────────────────
-// Any dropdown/popover must createPortal into document.body with position:
-// fixed, or it gets clipped by this form's overflow container — see the
-// vendor + owner pickers below.
-
-function useAnchorRect<T extends HTMLElement>(open: boolean, anchorRef: React.RefObject<T | null>) {
-  const [rect, setRect] = useState<DOMRect | null>(null)
-  useEffect(() => {
-    if (!open) { setRect(null); return }
-    const update = () => setRect(anchorRef.current?.getBoundingClientRect() ?? null)
-    update()
-    window.addEventListener('scroll', update, true)
-    window.addEventListener('resize', update)
-    return () => {
-      window.removeEventListener('scroll', update, true)
-      window.removeEventListener('resize', update)
-    }
-  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
-  return rect
-}
-
-function DropdownPortal({ anchorRect, onClose, children }: { anchorRect: DOMRect; onClose: () => void; children: React.ReactNode }) {
-  return createPortal(
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        style={{ position: 'fixed', top: anchorRect.bottom + 4, left: anchorRect.left, width: anchorRect.width }}
-        className="z-50 max-h-64 overflow-y-auto rounded-lg border border-neutral-200 bg-white py-1 shadow-lg"
-      >
-        {children}
-      </div>
-    </>,
-    document.body
-  )
-}
 
 export default function AgreementCreatePage() {
   const replaceTab = useReplaceTab(epmsRoutes)
