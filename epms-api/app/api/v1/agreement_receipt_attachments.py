@@ -25,9 +25,8 @@ ReceiptAttReadDep = Annotated[dict, Depends(require_permission("epms.agreement.r
 # a receipt's photo/proof attachments are part of recording the receipt itself
 # (ReceiptEntryForm uploads them as step 2 of a single create-then-attach flow),
 # not part of editing the agreement's own terms. Someone who can record a
-# receipt but can't attach its photo would be a dead end. The permission key
-# itself is untouched here (Task 4 renames it).
-ReceiptAttWriteDep = Annotated[dict, Depends(require_permission("epms.agreement.slip.write"))]
+# receipt but can't attach its photo would be a dead end.
+ReceiptAttWriteDep = Annotated[dict, Depends(require_permission("epms.agreement.receipt.write"))]
 
 
 class AttachmentMeta(BaseModel):

@@ -27,9 +27,9 @@ router = APIRouter(prefix="/agreements/{agreement_id}/receipts", tags=["agreemen
 ReceiptReadDep = Annotated[dict, Depends(require_permission("epms.agreement.read"))]
 # Deliberately its OWN key, not epms.agreement.write: recording an agreement
 # receipt and editing the agreement's own terms (vendor/schedule/status) are
-# separate powers — see identity 0007_slip_write_perm for the rationale and
-# grant set. The permission key itself is untouched here (Task 4 renames it).
-ReceiptRecordDep = Annotated[dict, Depends(require_permission("epms.agreement.slip.write"))]
+# separate powers — see identity 0007_receipt_write_perm for the rationale
+# and grant set.
+ReceiptRecordDep = Annotated[dict, Depends(require_permission("epms.agreement.receipt.write"))]
 
 
 async def _get_agreement_or_404(db: SessionDep, agreement_id: uuid.UUID) -> PurchaseAgreement:

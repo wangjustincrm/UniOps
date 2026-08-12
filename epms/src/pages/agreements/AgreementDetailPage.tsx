@@ -287,15 +287,15 @@ export default function AgreementDetailPage() {
   // (epms-api/app/api/v1/agreement_slips.py), the same permission that gates
   // invoice match review elsewhere (InvoiceDetailPage/InvoiceListPage).
   const canApReviewSlip = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
-  // Recording a slip is a SEPARATE permission from editing the agreement
-  // itself (identity 0007_slip_write_perm) — mirrors the backend's
-  // SlipRecordDep = require_permission("epms.agreement.slip.write") on the
-  // create/update/void slip routes and the slip-attachment write routes
-  // (agreement_slips.py / agreement_slip_attachments.py). Deliberately NOT
-  // folded into `canWrite`: someone who can tick "Record Pickup Slips" in
-  // the Access Control matrix should not thereby gain the ability to edit
-  // the agreement's vendor/terms/schedule.
-  const canRecordSlip = user?.role === 'system_admin' || !!perms?.['epms.agreement.slip.write']
+  // Recording a receipt is a SEPARATE permission from editing the agreement
+  // itself (identity 0007_receipt_write_perm) — mirrors the backend's
+  // ReceiptRecordDep = require_permission("epms.agreement.receipt.write") on
+  // the create/update/void receipt routes and the receipt-attachment write
+  // routes (agreement_receipts.py / agreement_receipt_attachments.py).
+  // Deliberately NOT folded into `canWrite`: someone who can tick "Record
+  // Agreement Receipts" in the Access Control matrix should not thereby gain
+  // the ability to edit the agreement's vendor/terms/schedule.
+  const canRecordReceipt = user?.role === 'system_admin' || !!perms?.['epms.agreement.receipt.write']
   // Matches epms-api/app/crud/agreement.py:13 EDITABLE_STATUSES = ("draft", "returned") —
   // both are submit-able AND edit-able. 'returned' must have both, or the
   // Return action is a permanent dead end: the creator can neither fix nor
@@ -564,7 +564,7 @@ export default function AgreementDetailPage() {
                 slips={slips}
                 users={usersData?.items}
                 currency={agreement.currency}
-                canWrite={canRecordSlip}
+                canWrite={canRecordReceipt}
                 canApReview={canApReviewSlip}
               />
               {/* Same admissibility gate as the Create PA button (isAgreementAdmissible,
@@ -572,7 +572,7 @@ export default function AgreementDetailPage() {
                   the backend's create_slip route accepts a POST against a draft/cancelled/
                   past-grace agreement with no status check of its own, so without this a
                   slip could be recorded against an agreement that was never approved. */}
-              {canRecordSlip && isAgreementAdmissible(agreement) && (
+              {canRecordReceipt && isAgreementAdmissible(agreement) && (
                 <div className="border-t border-neutral-100 pt-5">
                   <h3 className="text-sm font-semibold text-neutral-700 mb-3">Record a Pickup Slip</h3>
                   <SlipEntryForm agreementId={agreement.id} />

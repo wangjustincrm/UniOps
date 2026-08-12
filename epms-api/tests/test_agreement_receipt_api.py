@@ -3,8 +3,8 @@
 These tests exercise app/api/v1/agreement_receipts.py, which Task 3 renamed
 fully onto AgreementReceipt / ReceiptCreate / ReceiptResponse — router prefix,
 tags, dependency names, and URL segment (`/receipts`) all speak in "receipt"
-terms now, with a single deliberate exception: the write permission key
-itself stays `epms.agreement.slip.write` (Task 4 renames that).
+terms now. Task 4 finished the job: the write permission key is
+`epms.agreement.receipt.write` (identity 0007_receipt_write_perm).
 """
 import uuid
 
@@ -434,7 +434,7 @@ async def test_patch_reason_on_pending_ap_review_receipt_stays_pending_and_does_
 
 
 # ── Task 9b: receipt recording is its own permission key
-# (epms.agreement.slip.write), split out of epms.agreement.write so that
+# (epms.agreement.receipt.write), split out of epms.agreement.write so that
 # someone who can record a receipt cannot thereby edit the agreement's own
 # terms. Every test above runs as admin_client (system_admin), which
 # uniops_authz short-circuits past ANY permission check (see
@@ -480,18 +480,18 @@ async def test_non_admin_without_receipt_write_grant_is_403_then_201_once_grante
             r = await c.post(_receipts_url(agr["id"]), json=_receipt_payload(user_id, receipt_ref="PRE-GRANT"))
             assert r.status_code == 403, r.text
 
-            # Grant the NEW key mid-test (mirrors what identity 0007_slip_write_perm
+            # Grant the NEW key mid-test (mirrors what identity 0007_receipt_write_perm
             # does in production for ap_clerk) — require_permission re-queries
             # role_permissions on every request (packages/authz/uniops_authz/core.py),
             # so no re-login / new token is needed for the grant to take effect.
             async with factory() as db:
                 await db.execute(text(
                     "INSERT INTO permission_defs(key,module,label,sort) "
-                    "VALUES ('epms.agreement.slip.write','epms','Record Agreement Receipts',106) "
+                    "VALUES ('epms.agreement.receipt.write','epms','Record Agreement Receipts',106) "
                     "ON CONFLICT (key) DO NOTHING"))
                 await db.execute(text(
                     "INSERT INTO role_permissions(role_code,permission_key) "
-                    "VALUES ('ap_clerk','epms.agreement.slip.write') ON CONFLICT DO NOTHING"))
+                    "VALUES ('ap_clerk','epms.agreement.receipt.write') ON CONFLICT DO NOTHING"))
                 await db.commit()
 
             r2 = await c.post(_receipts_url(agr["id"]), json=_receipt_payload(user_id, receipt_ref="POST-GRANT"))
@@ -500,17 +500,17 @@ async def test_non_admin_without_receipt_write_grant_is_403_then_201_once_grante
         async with factory() as db:
             await db.execute(text(
                 "DELETE FROM role_permissions WHERE role_code = 'ap_clerk' "
-                "AND permission_key IN ('epms.agreement.read', 'epms.agreement.slip.write')"))
+                "AND permission_key IN ('epms.agreement.read', 'epms.agreement.receipt.write')"))
             await db.commit()
 
 
 async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, test_engine):
-    """Fix-round 1 (Critical): the first cut of identity 0007_slip_write_perm
-    granted dept_admin ONLY epms.agreement.slip.write. dept_admin was never in
-    0006's epms.agreement.read grant set, so that alone left dept_admin unable
-    to reach the page at all — no Agreements nav entry (Sidebar.tsx gates it
-    on epms.agreement.read), GET /agreements/{id} 403s (AgrReadDep), GET
-    .../receipts 403s too. The fix adds an epms.agreement.read grant for
+    """Fix-round 1 (Critical): the first cut of identity 0007_receipt_write_perm
+    granted dept_admin ONLY epms.agreement.receipt.write. dept_admin was never
+    in 0006's epms.agreement.read grant set, so that alone left dept_admin
+    unable to reach the page at all — no Agreements nav entry (Sidebar.tsx
+    gates it on epms.agreement.read), GET /agreements/{id} 403s (AgrReadDep),
+    GET .../receipts 403s too. The fix adds an epms.agreement.read grant for
     dept_admin alongside the receipt-write one. This test pins BOTH halves —
     read reachability AND the actual record action — so a future edit that
     drops either one fails loudly instead of shipping a permission that
@@ -526,14 +526,14 @@ async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, t
             "ON CONFLICT (key) DO NOTHING"))
         await db.execute(text(
             "INSERT INTO permission_defs(key,module,label,sort) "
-            "VALUES ('epms.agreement.slip.write','epms','Record Agreement Receipts',106) "
+            "VALUES ('epms.agreement.receipt.write','epms','Record Agreement Receipts',106) "
             "ON CONFLICT (key) DO NOTHING"))
         await db.execute(text(
             "INSERT INTO role_permissions(role_code,permission_key) "
             "VALUES ('dept_admin','epms.agreement.read') ON CONFLICT DO NOTHING"))
         await db.execute(text(
             "INSERT INTO role_permissions(role_code,permission_key) "
-            "VALUES ('dept_admin','epms.agreement.slip.write') ON CONFLICT DO NOTHING"))
+            "VALUES ('dept_admin','epms.agreement.receipt.write') ON CONFLICT DO NOTHING"))
         await db.commit()
 
     try:
@@ -552,7 +552,7 @@ async def test_dept_admin_can_reach_and_record_after_fix_round_1(admin_client, t
         async with factory() as db:
             await db.execute(text(
                 "DELETE FROM role_permissions WHERE role_code = 'dept_admin' "
-                "AND permission_key IN ('epms.agreement.read', 'epms.agreement.slip.write')"))
+                "AND permission_key IN ('epms.agreement.read', 'epms.agreement.receipt.write')"))
             await db.commit()
 
 
