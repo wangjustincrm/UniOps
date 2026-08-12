@@ -228,7 +228,11 @@ async def list_all_receipts(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     search: Annotated[str | None, Query()] = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, le=200),
+    # ge=1 (fix round 1, Minor 2): without it page_size=-1 sailed through
+    # validation, then `(page - 1) * page_size` in crud.list_all produced a
+    # negative OFFSET, which Postgres rejects — an unhandled 500 instead of a
+    # clean 422 on a malformed request.
+    page_size: int = Query(default=20, ge=1, le=200),
 ):
     rows, total = await receipt_crud.list_all(
         db, agreement_id=agreement_id, receipt_type=receipt_type, status=status_filter,
@@ -237,8 +241,8 @@ async def list_all_receipts(
     items = [
         ReceiptWithAgreementResponse(
             **ReceiptResponse.model_validate(receipt, from_attributes=True).model_dump(),
-            agreement_number=agr_number,
+            agreement_number=agr_number, currency=agr_currency, invoice_ref=invoice_ref,
         )
-        for receipt, agr_number in rows
+        for receipt, agr_number, agr_currency, invoice_ref in rows
     ]
     return {"items": items, "total": total}

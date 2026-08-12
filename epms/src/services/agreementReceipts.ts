@@ -40,11 +40,27 @@ export interface ApiReceipt {
 }
 
 // Cross-agreement listing only (GET /agreement-receipts) — carries the parent
-// agreement's human number alongside the receipt, since this list has no
-// agreement_id in its URL to lean on the way the per-agreement page does.
-// Never render agreement_id itself; render agreement_number.
+// agreement's human number + currency alongside the receipt, since this list
+// has no agreement_id in its URL to lean on the way the per-agreement page
+// does. Never render agreement_id itself; render agreement_number.
+//
+// currency (fix round 1, Critical): this list spans MULTIPLE agreements,
+// which can each carry a different currency (see AgreementCreatePage's
+// currency dropdown — CAD/USD/EUR/RMB are real, user-chosen options, not a
+// constant). amount/tax_amount/total_amount are bare numbers with no
+// currency of their own — every render site must pair them with THIS row's
+// currency, never a hardcoded one.
+//
+// invoice_ref (fix round 1, Important 2): the linked invoice's human
+// reference, resolved server-side (LEFT joined — most rows have none until
+// `reconciled`). Same "never render a bare id" rule as agreement_number:
+// fall back to `invoice_id.slice(0, 8)` only when this is null, matching the
+// `x_number ?? x_id.slice(0, 8)` convention used throughout
+// InvoiceDetailPage.tsx for PO/agreement references.
 export interface ApiReceiptWithAgreement extends ApiReceipt {
   agreement_number: string
+  currency: string
+  invoice_ref: string | null
 }
 
 export interface ReceiptListResponse {

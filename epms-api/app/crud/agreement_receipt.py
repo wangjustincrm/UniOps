@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
+from app.models.invoice import Invoice
 from app.schemas.agreement_receipt import ReceiptCreate, ReceiptUpdate, validate_totals
 
 
@@ -45,16 +46,32 @@ async def list_all(
     search: str | None = None,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[tuple[AgreementReceipt, str]], int]:
+) -> tuple[list[tuple[AgreementReceipt, str, str, str | None]], int]:
     """Cross-agreement listing (GET /agreement-receipts, Task 9) — the reason
     this page exists is that AP/warehouse staff shouldn't have to open an
     agreement first to record or find a receipt (see the task brief's "where
     this fits"). Joined to PurchaseAgreement so the caller gets the parent
-    agreement's human `number` back alongside each row — the frontend must
-    never be handed a bare agreement_id UUID to render (brief item 5).
+    agreement's human `number` AND its `currency` back alongside each row —
+    the frontend must never be handed a bare agreement_id UUID to render
+    (brief item 5), and — fix round 1, Critical — must never assume every
+    row on this CROSS-agreement listing shares one currency either. Every
+    sibling view of this same data (ReceiptTable, GrListPage,
+    AgreementListPage) renders amount+currency as a pair; this is the one
+    place that used to hardcode CAD.
+
+    Also LEFT-outer-joined to Invoice for `internal_ref` — a receipt's
+    invoice_id (set once it's `reconciled`) is usually NULL, and even when
+    set it has no FK to `invoices` (see the model's own comment on why), so
+    this must be a LEFT join, not an inner one, or every unreconciled row
+    would silently vanish from the listing. Fix round 1, Important 2: the
+    frontend must never render a bare invoice_id UUID either.
     """
-    q = select(AgreementReceipt, PurchaseAgreement.number).join(
-        PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
+    q = (
+        select(AgreementReceipt, PurchaseAgreement.number, PurchaseAgreement.currency,
+               Invoice.internal_ref)
+        .join(PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
+        .outerjoin(Invoice, AgreementReceipt.invoice_id == Invoice.id)
+    )
     if agreement_id:
         q = q.where(AgreementReceipt.agreement_id == agreement_id)
     if receipt_type:
@@ -73,10 +90,24 @@ async def list_all(
         )
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
+    # Fix round 1, Important 1: receipt_date alone is not a unique sort key —
+    # a busy house account can post dozens of receipts on one calendar date,
+    # and Postgres does not guarantee stable ordering among tied rows across
+    # two separate queries (this page's COUNT above and this SELECT are two
+    # queries). Without a full tiebreaker chain down to a unique column,
+    # paging (offset/limit) over tied rows can both duplicate a row onto two
+    # pages and skip another entirely — AP reading page 2 would see a slip
+    # that was already on page 1, and never see one that fell in the gap.
+    # created_at narrows the tie a lot (insertion order); id (the primary
+    # key, always unique) guarantees the chain terminates.
     rows = (await db.execute(
-        q.order_by(AgreementReceipt.receipt_date.desc()).offset(offset).limit(page_size)
+        q.order_by(
+            AgreementReceipt.receipt_date.desc(),
+            AgreementReceipt.created_at.desc(),
+            AgreementReceipt.id.desc(),
+        ).offset(offset).limit(page_size)
     )).all()
-    return [(row[0], row[1]) for row in rows], total
+    return [(row[0], row[1], row[2], row[3]) for row in rows], total
 
 
 # 唯二可离开的活跃态 —— reconciled 已被发票认领(编辑/作废会让发票挂着一份

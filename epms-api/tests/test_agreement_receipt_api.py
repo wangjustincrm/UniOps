@@ -42,10 +42,10 @@ def _receipt_payload(received_by, **over):
     return body
 
 
-async def _create_agreement(admin_client, test_engine):
+async def _create_agreement(admin_client, test_engine, **over):
     vendor_id, _, user_id = await seed_vendor_and_user(test_engine)
-    created = (await admin_client.post(
-        AGR_URL, json=_agr_payload(vendor_id, agreement_type="house_account"))).json()
+    payload = _agr_payload(vendor_id, agreement_type="house_account", **over)
+    created = (await admin_client.post(AGR_URL, json=payload)).json()
     return created, user_id
 
 
@@ -661,6 +661,105 @@ async def test_list_all_receipts_across_agreements(admin_client, test_engine):
     assert by_id[r2["id"]]["agreement_number"] == agr2["number"]
 
 
+# ── Fix round 1, Critical: this listing spans MULTIPLE agreements, which can
+# each be a different currency (AgreementCreatePage's currency dropdown is a
+# real user choice, not decorative). A row must carry its OWN parent
+# agreement's currency, not a hardcoded one — pins the exact bug the review
+# caught: a USD house account's receipt rendering as CA$ on this page while
+# the same row shows US$ on the agreement detail page. ──────────────────────
+
+async def test_list_all_reports_each_row_own_agreement_currency(admin_client, test_engine):
+    agr_cad, user_id = await _create_agreement(admin_client, test_engine, currency="CAD")
+    agr_usd, _ = await _create_agreement(admin_client, test_engine, currency="USD")
+    r_cad = (await admin_client.post(_receipts_url(agr_cad["id"]), json=_receipt_payload(
+        user_id, receipt_ref="CUR-CAD-1"))).json()
+    r_usd = (await admin_client.post(_receipts_url(agr_usd["id"]), json=_receipt_payload(
+        user_id, receipt_ref="CUR-USD-1"))).json()
+
+    listed = await admin_client.get(ALL_RECEIPTS_URL, params={"page_size": 200})
+    assert listed.status_code == 200, listed.text
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert by_id[r_cad["id"]]["currency"] == "CAD"
+    assert by_id[r_usd["id"]]["currency"] == "USD"
+
+
+# ── Fix round 1, Important 2: the linked-invoice column must never render a
+# bare invoice_id UUID — it must carry the invoice's human internal_ref,
+# resolved server-side via a LEFT join (most rows have no invoice at all). ──
+
+async def test_list_all_reports_linked_invoice_ref(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    vendor_id = uuid.UUID(agr["vendor_id"])
+    receipt = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="INV-REF-1"))).json()
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        inv = Invoice(
+            internal_ref=f"INV-{uuid.uuid4().hex[:8]}",
+            vendor_invoice_number=f"STMT-{uuid.uuid4().hex[:6]}",
+            vendor_id=vendor_id, vendor_name=agr["vendor_name"],
+            amount=Decimal("100.00"), tax_amount=Decimal("13.00"), total_amount=Decimal("113.00"),
+            invoice_date=date(2026, 7, 31), due_date=date(2026, 8, 30),
+            uploaded_by=user_id, line_items=[],
+        )
+        db.add(inv)
+        await db.flush()
+        row = (await db.execute(select(AgreementReceipt).where(
+            AgreementReceipt.id == uuid.UUID(receipt["id"])))).scalar_one()
+        row.status = "reconciled"
+        row.invoice_id = inv.id
+        await db.commit()
+        inv_id, inv_ref = inv.id, inv.internal_ref
+
+    listed = await admin_client.get(
+        ALL_RECEIPTS_URL, params={"agreement_id": agr["id"], "page_size": 200})
+    assert listed.status_code == 200, listed.text
+    row = [item for item in listed.json()["items"] if item["id"] == receipt["id"]][0]
+    assert row["invoice_id"] == str(inv_id)
+    assert row["invoice_ref"] == inv_ref
+
+    # A receipt with no invoice at all — the common case — must report
+    # invoice_ref as null, not error or fabricate a value (LEFT join, not INNER).
+    other = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="INV-REF-NONE"))).json()
+    listed2 = await admin_client.get(
+        ALL_RECEIPTS_URL, params={"agreement_id": agr["id"], "page_size": 200})
+    row2 = [item for item in listed2.json()["items"] if item["id"] == other["id"]][0]
+    assert row2["invoice_id"] is None
+    assert row2["invoice_ref"] is None
+
+
+# ── Fix round 1, Important 1: receipt_date alone is not a unique sort key —
+# a busy house account posts many receipts on one calendar date, and Postgres
+# gives no ordering guarantee among tied rows across two separate queries
+# (this endpoint's COUNT and its SELECT are two queries). Paging over ties
+# with no full tiebreaker chain can duplicate a row onto two pages and skip
+# another — this test catches that directly by paging page_size=1 through
+# same-day rows and checking the union is exactly the created set with no
+# repeats. ────────────────────────────────────────────────────────────────
+
+async def test_list_all_pagination_has_no_duplicates_or_gaps_on_tied_dates(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    created_ids = set()
+    for i in range(5):
+        r = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+            user_id, receipt_ref=f"TIEBREAK-{i}"))).json()
+        created_ids.add(r["id"])
+
+    seen_ids: list[str] = []
+    for page in range(1, 6):
+        r = await admin_client.get(ALL_RECEIPTS_URL, params={
+            "agreement_id": agr["id"], "page": page, "page_size": 1})
+        assert r.status_code == 200, r.text
+        items = r.json()["items"]
+        assert len(items) == 1, r.text
+        seen_ids.append(items[0]["id"])
+
+    assert len(seen_ids) == len(set(seen_ids)), "a row was returned on more than one page"
+    assert set(seen_ids) == created_ids, "paging skipped or fabricated a row"
+
+
 async def test_list_all_filters_by_receipt_type(admin_client, test_engine):
     agr, user_id = await _create_agreement(admin_client, test_engine)
     counter = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
@@ -706,6 +805,38 @@ async def test_list_all_requires_agreement_read(requester_client):
     """
     r = await requester_client.get(ALL_RECEIPTS_URL)
     assert r.status_code == 403, r.text
+
+
+async def test_list_all_reachable_once_agreement_read_is_granted(admin_client, test_engine):
+    """Fix round 1, Minor 1: the 403 test above only proves a gate exists —
+    conftest's default matrix rejects EVERY role for EVERY unrecognised key,
+    so it can't tell a correctly-keyed gate (epms.agreement.read) from one
+    guarding a typo'd key that nothing will ever hold. Granting the REAL key
+    to a real non-admin role and asserting 200 is the half that can actually
+    fail if the key were wrong.
+    """
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await db.execute(text(
+            "INSERT INTO permission_defs(key,module,label,sort) "
+            "VALUES ('epms.agreement.read','epms','View Agreements',104) "
+            "ON CONFLICT (key) DO NOTHING"))
+        await db.execute(text(
+            "INSERT INTO role_permissions(role_code,permission_key) "
+            "VALUES ('ap_clerk','epms.agreement.read') ON CONFLICT DO NOTHING"))
+        await db.commit()
+
+    try:
+        from tests.conftest import _authenticated_client
+        async with await _authenticated_client(test_engine, "ap_clerk") as c:
+            r = await c.get(ALL_RECEIPTS_URL)
+            assert r.status_code == 200, r.text
+    finally:
+        async with factory() as db:
+            await db.execute(text(
+                "DELETE FROM role_permissions WHERE role_code = 'ap_clerk' "
+                "AND permission_key = 'epms.agreement.read'"))
+            await db.commit()
 
 
 async def test_invoice_scoped_receipt_list_403s_for_unrelated_caller(admin_client, test_engine):

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { Search, Receipt } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
-import { cn, formatCAD, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useAllReceipts } from '@/hooks/useAgreementReceipts'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { RECEIPT_TYPE_LABELS } from '@/services/agreementReceipts'
@@ -185,7 +185,10 @@ function ReceiptRow({
         </Link>
       </td>
       <td className="px-4 py-3 font-mono text-xs text-neutral-700 text-right">
-        {formatCAD(Number(receipt.total_amount))}
+        {/* This list spans multiple agreements, which can each be a
+            different currency (fix round 1, Critical) — must use THIS row's
+            own currency, never a hardcoded one. */}
+        {formatAmount(Number(receipt.total_amount), receipt.currency)}
       </td>
       <td className="px-4 py-3 text-neutral-600">{receivedByName ?? '—'}</td>
       <td className="px-4 py-3">
@@ -194,7 +197,11 @@ function ReceiptRow({
       <td className="px-4 py-3">
         {receipt.invoice_id ? (
           <Link to={`/invoices/${receipt.invoice_id}`} className="text-primary-600 hover:underline font-mono text-xs">
-            {receipt.invoice_id.slice(0, 8)}
+            {/* Never a bare UUID (fix round 1, Important 2) — fall back to a
+                short id slice only when the server has no invoice_ref yet,
+                same x_number ?? x_id.slice(0, 8) convention as
+                InvoiceDetailPage.tsx's PO/agreement references. */}
+            {receipt.invoice_ref ?? receipt.invoice_id.slice(0, 8)}
           </Link>
         ) : (
           <span className="text-neutral-300">—</span>

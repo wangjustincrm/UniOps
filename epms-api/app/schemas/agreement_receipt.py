@@ -119,16 +119,31 @@ class ReceiptListResponse(BaseModel):
 
 
 class ReceiptWithAgreementResponse(ReceiptResponse):
-    """Same shape as ReceiptResponse plus the parent agreement's human number.
+    """Same shape as ReceiptResponse plus the parent agreement's human number
+    (and currency), plus the linked invoice's human reference if any.
 
     Only used by the cross-agreement listing (GET /agreement-receipts) —
     the per-agreement listing (GET /agreements/{id}/receipts) already has the
     agreement in the URL, so plain ReceiptResponse is enough there. This
     listing has no such context, and the frontend must never render a bare
-    agreement_id UUID (task-9 brief, item 5) — the number is what a human
-    recognises.
+    agreement_id or invoice_id UUID (task-9 brief, item 5) — the number/ref
+    is what a human recognises.
+
+    `currency` (fix round 1, Critical): this endpoint spans MULTIPLE
+    agreements, which can each be denominated in a different currency
+    (AgreementCreatePage's currency dropdown is user-facing, not decorative —
+    CAD/USD/EUR/RMB are all live options). amount/tax_amount/total_amount on
+    ReceiptResponse are bare numbers with no currency of their own; rendering
+    them without per-row currency would silently mislabel every non-CAD row.
+
+    `invoice_ref` (fix round 1, Important 2): None until the receipt is
+    `reconciled` — a receipt's `invoice_id` has no FK to `invoices` (see
+    models/agreement_receipt.py's comment on that column), so this is always
+    optional even for a reconciled row in principle.
     """
     agreement_number: str
+    currency: str
+    invoice_ref: str | None = None
 
 
 class ReceiptListAllResponse(BaseModel):
