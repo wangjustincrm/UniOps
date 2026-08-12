@@ -650,9 +650,23 @@ async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> Non
     await db.flush()
 
 
-async def _invoice_referenced_by_active_pa(db: AsyncSession, invoice_id: uuid.UUID) -> bool:
-    """True when a non-cancelled Payment Application already lists this
-    invoice in its invoice_ids JSONB array.
+async def _invoice_referenced_by_active_pa(
+    db: AsyncSession, invoice_id: uuid.UUID,
+) -> PaymentApplication | None:
+    """The non-cancelled Payment Application that already lists this invoice
+    in its invoice_ids JSONB array, or None if there isn't one.
+
+    Fix-round 3 review finding (N4): used to return a plain bool. Callers
+    need more than yes/no to write a useful 422 — a blanket "cancel that
+    payment application first" is actionable only when the blocking PA is
+    still in draft/returned (approval-api's valid_cancel for pa/pa_dir is
+    exactly `("draft", "returned")`, crud/engine.py:114-129); telling a
+    caller to cancel a submitted/in_review/approved/processed PA is an
+    instruction the approval engine will simply refuse. Returning the PA
+    itself lets the 422 name it (pa_number + status) and leave the "can I
+    cancel this" judgment to whoever reads that — this function still only
+    ever asserts WHETHER a blocking PA exists; the WHERE clause below,
+    and therefore what counts as "referenced", is unchanged from fix-round 1.
 
     Fix-round 1 review finding (Important #1): set_receipts /
     settle_without_receipt had NO status gate at all — an invoice's uploader
@@ -692,13 +706,12 @@ async def _invoice_referenced_by_active_pa(db: AsyncSession, invoice_id: uuid.UU
     still live" (a cancelled PA no longer holds a real claim on the invoice's
     evidence).
     """
-    row = (await db.execute(
-        select(PaymentApplication.id)
+    return (await db.execute(
+        select(PaymentApplication)
         .where(PaymentApplication.invoice_ids.contains([str(invoice_id)]),
                PaymentApplication.status != "cancelled")
         .limit(1)
-    )).first()
-    return row is not None
+    )).scalars().first()
 
 
 async def set_receipts(
@@ -735,11 +748,13 @@ async def set_receipts(
     end. A caller with a session that does NOT roll back on ValueError would
     not get that guarantee for free from this function alone.
     """
-    if await _invoice_referenced_by_active_pa(db, invoice.id):
+    blocking_pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if blocking_pa is not None:
         raise ValueError(
-            "This invoice is already referenced by a payment application; "
-            "its receipt evidence can no longer be changed here. Cancel that "
-            "payment application first, then retry.")
+            f"This invoice is still referenced by payment application "
+            f"{blocking_pa.pa_number} ({blocking_pa.status}); resolve that "
+            f"payment application before this invoice's receipt evidence "
+            f"can be changed.")
 
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
@@ -785,11 +800,13 @@ async def settle_without_receipt(
     regardless of route — a false, confusing claim on an invoice that has
     perfectly good GR evidence.
     """
-    if await _invoice_referenced_by_active_pa(db, invoice.id):
+    blocking_pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if blocking_pa is not None:
         raise ValueError(
-            "This invoice is already referenced by a payment application; "
-            "its settlement status can no longer be changed here. Cancel that "
-            "payment application first, then retry.")
+            f"This invoice is still referenced by payment application "
+            f"{blocking_pa.pa_number} ({blocking_pa.status}); resolve that "
+            f"payment application before this invoice's settlement status "
+            f"can be changed.")
     agr = (await db.execute(
         select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
     )).scalar_one_or_none()
