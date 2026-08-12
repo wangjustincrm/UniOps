@@ -22,7 +22,13 @@ export function BudgetAccountCascade(props: {
 }): JSX.Element {
   const { departmentId, costCenterId, budgetCode, onChange, disabled } = props
 
-  const { data: budgetData } = useBudgetOverview()
+  // isError matters as much as data here: budget-api is a separate service on
+  // its own base URL (:8007), and when it is unreachable this query rejects
+  // while the component happily renders an L1 dropdown containing nothing but
+  // its placeholder. "Select L1 Category…" with no options is indistinguishable
+  // from "this cost center has no categories", so the operator concludes the
+  // data is missing and goes looking in the wrong place. Say which it is.
+  const { data: budgetData, isError: budgetError } = useBudgetOverview()
   const { data: costCentersData } = useCostCenters({
     department_id: departmentId,
     active_only: true,
@@ -120,6 +126,12 @@ export function BudgetAccountCascade(props: {
           <option key={l1.id} value={l1.code}>{l1.name}</option>
         ))}
       </select>
+      {budgetError && (
+        <p className="text-xs text-danger-600">
+          Couldn't load the budget categories — the budget service is unreachable. This is not
+          an empty catalog; try again shortly.
+        </p>
+      )}
       {/* Step 3: L2 Account */}
       <select
         value={budgetCode}
