@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { useAgreement, useAgreementAction, useAgreementSchedule } from '@/hooks/useAgreements'
 import { useAgreementReceipts } from '@/hooks/useAgreementReceipts'
+import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTasks } from '@/hooks/useTasks'
 import { useInvoices } from '@/hooks/useInvoices'
@@ -708,6 +709,9 @@ export default function AgreementDetailPage() {
           <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-5 sticky top-6">
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Approval Timeline</h2>
             <ApprovalTimeline steps={approvalSteps} />
+
+            {/* Document Chain */}
+            <DocumentChainTree currentType="agr" id={agreement.id} />
           </div>
         </div>
       </div>

@@ -1,7 +1,8 @@
 /**
- * DocumentChainTree — unified document-chain sidebar used on PR / PO / PA detail pages.
+ * DocumentChainTree — unified document-chain sidebar used on PR / PO / PA /
+ * Agreement detail pages.
  *
- * Visual format (always the same):
+ * PO axis (PR / PO / PA-from-PO), visual format:
  *   [PR card  — ancestor link or current-highlighted]
  *        ↓
  *   [PO card  — ancestor link or current-highlighted]
@@ -11,11 +12,21 @@
  *                              so it's obvious which invoices already have a PA.
  *        └─ PA row(s)        ← PAs with no invoice on this PO (e.g. prepayment)
  *                              stay as a direct PO child. Current PA gets a ring.
+ *
+ * Agreement axis (Agreement / PA-from-agreement), Task 11 — a parallel pivot,
+ * NOT a fallback of the PO axis above (PO-sourced PAs have po_id set;
+ * agreement-sourced PAs have po_id NULL and agreement_id set instead, so
+ * they resolve to a completely different anchor):
+ *   [Agreement card — ancestor link or current-highlighted]
+ *        └─ Invoice row(s)  ← GET /invoices?agreement_id=
+ *             ├─ Pickup Receipt row(s)  ← invoice.receipt_ids (house_account only;
+ *             │                            recurring/milestone invoices never carry any)
+ *             └─ PA row(s)              ← same invoice-nesting convention as the PO axis
  */
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  FileText, Package, Warehouse, CreditCard, Receipt,
+  FileText, FileSignature, Package, Warehouse, CreditCard, Receipt, Ticket,
   ArrowRight, ChevronRight, Paperclip,
 } from 'lucide-react'
 import { cn, formatAmount } from '@/lib/utils'
@@ -27,9 +38,12 @@ import { usePa } from '@/hooks/usePas'
 import { useGrs } from '@/hooks/useGrs'
 import { useInvoices } from '@/hooks/useInvoices'
 import { usePas } from '@/hooks/usePas'
+import { useAgreement } from '@/hooks/useAgreements'
+import { useAgreementReceipts } from '@/hooks/useAgreementReceipts'
 import type { GrStatus } from '@/services/gr'
-import type { InvoiceStatus } from '@/services/invoices'
-import type { PaStatus } from '@/services/pa'
+import type { InvoiceStatus, ApiInvoice } from '@/services/invoices'
+import type { ApiPa, PaStatus } from '@/services/pa'
+import { RECEIPT_TYPE_LABELS, type ApiReceipt } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 
 // ─── Status maps ──────────────────────────────────────────────────────────────
@@ -92,6 +106,14 @@ function invStatusToDoc(s: InvoiceStatus): DocumentStatus {
 
 function paStatusToDoc(s: PaStatus): DocumentStatus {
   return ({ draft: 'draft', submitted: 'submitted', in_review: 'in_review', approved: 'approved', processed: 'paid', returned: 'returned', rejected: 'cancelled', cancelled: 'cancelled' } as Record<PaStatus, DocumentStatus>)[s]
+}
+
+// Pickup-receipt row label — never a bare UUID (branch owner's ruling). Same
+// fallback ApiReceipt has no currency of its own, so the meta text this feeds
+// is formatted with the AGREEMENT's currency at the call site, never a
+// hardcoded one.
+function pickupReceiptLabel(r: ApiReceipt): string {
+  return r.receipt_ref || `${r.receipt_date} · ${Number(r.total_amount).toFixed(2)}`
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -243,7 +265,7 @@ function TreeRow({
 
 export interface DocumentChainTreeProps {
   /** Which document type this detail page is showing. */
-  currentType: 'pr' | 'po' | 'pa'
+  currentType: 'pr' | 'po' | 'pa' | 'agr'
   /** The ID of the current document. */
   id: string
 }
@@ -253,6 +275,7 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   const { data: currentPr } = usePr(currentType === 'pr' ? id : '')
   const { data: currentPo } = usePo(currentType === 'po' ? id : '')
   const { data: currentPa } = usePa(currentType === 'pa' ? id : '')
+  const { data: currentAgreement } = useAgreement(currentType === 'agr' ? id : '')
 
   // ── Resolve the PO id (pivot for all child fetches) ────────────────────────
   const poId: string =
@@ -269,6 +292,19 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
     (po?.pr_id ?? '')
   const { data: ancestorPr } = usePr(currentType !== 'pr' && prId ? prId : '')
   const pr = currentType === 'pr' ? currentPr : ancestorPr
+
+  // ── Resolve the agreement id (pivot for the agreement axis) ────────────────
+  // PO-pivot fix: house_account / recurring / milestone PAs raised off an
+  // agreement (Phase 1A/1B) always have po_id NULL. The formula above already
+  // resolves poId to '' for them (currentPa?.po_id ?? '' → ''), which used to
+  // disable every single child query on this page — opening any agreement PA's
+  // detail page rendered a totally empty Document Chain. This mirrors poId's
+  // shape one level up: resolve back to the agreement via pa.agreement_id.
+  const agreementId: string =
+    currentType === 'agr' ? id :
+    (currentPa?.agreement_id ?? '')
+  const { data: ancestorAgreement } = useAgreement(currentType !== 'agr' && agreementId ? agreementId : '')
+  const agreement = currentType === 'agr' ? currentAgreement : ancestorAgreement
 
   // ── Fetch PO children ──────────────────────────────────────────────────────
   const { data: grsData }      = useGrs({ po_id: poId }, !!poId)
@@ -301,14 +337,91 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   }
   const totalChildren = poGrs.length + poInvoices.length + poPas.length
 
+  // ── Fetch the agreement axis's children ─────────────────────────────────────
+  // Which entity anchors the tree (the highlighted ring card)? PR for a PR
+  // page; PO for a PO page OR a PO-sourced PA page (po_id set); the Agreement
+  // itself for an Agreement page OR an agreement-sourced PA page (po_id null,
+  // agreement_id set) — that last case is the fix described above.
+  const anchorKind: 'pr' | 'po' | 'agr' =
+    currentType === 'pr' ? 'pr' :
+    currentType === 'po' ? 'po' :
+    currentType === 'agr' ? 'agr' :
+    currentPa?.po_id ? 'po' : 'agr'
+  const isAgrAxis = anchorKind === 'agr'
+
+  // GET /invoices?agreement_id= — backed by the same query param AgreementDetailPage
+  // already uses (services/invoices.ts InvoiceFilters.agreement_id, epms-api's
+  // api/v1/invoices.py:206 / crud/invoice.py get_all).
+  const { data: agrInvoicesData } = useInvoices({ agreement_id: agreementId }, isAgrAxis && !!agreementId)
+  const agrInvoices = agrInvoicesData?.items ?? []
+
+  // GET /pa has no agreement_id filter (only status/po_id/vendor_id/department_id/
+  // search — epms-api/app/api/v1/pa.py:147-158), unlike /invoices. `search`
+  // already matches PaymentApplication.agreement_number (crud/pa.py:123, a
+  // snapshot column set at PA-create time) so it narrows the fetch at the DB —
+  // but the EXACT filter that actually guarantees correctness is the
+  // client-side pa.agreement_id === agreementId check below (ApiPa carries its
+  // own agreement_id — services/pa.ts:74). If `search` ever stops matching
+  // agreement_number this just degrades to fetching more rows, never to a
+  // wrong result.
+  const { data: agrPasData } = usePas(
+    { search: agreement?.number },
+    isAgrAxis && !!agreementId && !!agreement?.number,
+  )
+  const agrPas = (agrPasData?.items ?? []).filter((p) => p.agreement_id === agreementId)
+
+  // Pickup-receipt evidence exists only for house_account agreements (recurring/
+  // milestone settle against the payment schedule instead — same convention
+  // AgreementDetailPage follows before fetching receipts at all).
+  const { data: agrReceiptsData } = useAgreementReceipts(
+    isAgrAxis && agreement?.agreement_type === 'house_account' ? agreementId : ''
+  )
+  const agrReceiptsById = new Map<string, ApiReceipt>((agrReceiptsData?.items ?? []).map((r) => [r.id, r]))
+
+  // Nest PAs under the invoice(s) they were raised from — same convention as
+  // pasByInvoice above. No orphan bucket needed here: every agreement-route PA
+  // is required to carry at least one invoice_id matched to THIS agreement
+  // (epms-api/app/api/v1/pa.py _validate_agreement_pa_invoices — there is no
+  // prepayment-off-the-agreement equivalent of the PO route's orphan case).
+  const agrInvoiceIdSet = new Set(agrInvoices.map((i) => i.id))
+  const agrPasByInvoice = new Map<string, typeof agrPas>()
+  for (const pa of agrPas) {
+    for (const iid of pa.invoice_ids ?? []) {
+      if (!agrInvoiceIdSet.has(iid)) continue
+      const arr = agrPasByInvoice.get(iid) ?? []
+      arr.push(pa)
+      agrPasByInvoice.set(iid, arr)
+    }
+  }
+
   // ── Build render ───────────────────────────────────────────────────────────
 
   // What's shown as the anchor (highlighted ring card)?
-  // PR detail → PR is anchor; PO/PA detail → PO is anchor
-  const anchorIsPr = currentType === 'pr'
+  // PR detail → PR is anchor; PO/PA(PO-sourced) detail → PO is anchor;
+  // Agreement/PA(agreement-sourced) detail → Agreement is anchor.
+  const anchorIsPr = anchorKind === 'pr'
 
   const [showAttachments, setShowAttachments] = useState(false)
   const isPa = currentType === 'pa'
+
+  // Shared PA row renderer — used by both the PO axis (below) and the
+  // agreement axis (further down). Lifted out of the PO axis's render closure
+  // so it can be reused verbatim; behaviour for PO-sourced PAs is unchanged.
+  const paRow = (pa: ApiPa, key: string, isLast: boolean, nested: boolean, parentContinues: boolean) => (
+    <TreeRow
+      key={key}
+      icon={<CreditCard className="h-3 w-3" />}
+      label="Payment Application"
+      number={pa.pa_number}
+      meta={`${formatAmount(Number(pa.payment_amount), pa.currency)}${pa.pa_type === 'prepayment' ? ' · Prepayment' : ''}`}
+      statusDoc={paStatusToDoc(pa.status)}
+      statusLabel={PA_STATUS_LABELS[pa.status]}
+      href={`/pa/${pa.id}`}
+      isLast={isLast}
+      isCurrent={currentType === 'pa' && pa.id === id}
+      ancestorLines={nested ? [parentContinues] : []}
+    />
+  )
 
   return (
     <div className="mt-5 border-t border-neutral-100 pt-4">
@@ -337,7 +450,9 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
 
       {/* ── Ancestors above the anchor ─────────────────────────────────────── */}
 
-      {/* PR ancestor (shown when PO or PA is the current page) */}
+      {/* PR ancestor (shown when PO or PA is the current page) — the agreement
+          axis has no PR/PO ancestor at all, so `pr` stays unresolved there
+          and this simply never renders for it. */}
       {!anchorIsPr && pr && (
         <AncestorCard
           icon={<FileText className="h-3 w-3" />}
@@ -350,7 +465,7 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
 
       {/* ── Anchor node (highlighted ring) ────────────────────────────────── */}
 
-      {anchorIsPr && currentPr ? (
+      {anchorKind === 'pr' && currentPr ? (
         <AnchorCard
           icon={<FileText className="h-3 w-3" />}
           iconColor="border-primary-200 bg-primary-50 text-primary-600"
@@ -358,13 +473,21 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
           meta={currentPr.title}
           status={currentPr.status as DocumentStatus}
         />
-      ) : !anchorIsPr && po ? (
+      ) : anchorKind === 'po' && po ? (
         <AnchorCard
           icon={<Package className="h-3 w-3" />}
           iconColor="border-success-300 bg-success-50 text-success-700"
           number={po.number}
           meta={po.vendor_name}
           status={po.status as DocumentStatus}
+        />
+      ) : anchorKind === 'agr' && agreement ? (
+        <AnchorCard
+          icon={<FileSignature className="h-3 w-3" />}
+          iconColor="border-warning-300 bg-warning-50 text-warning-700"
+          number={agreement.number}
+          meta={agreement.vendor_name}
+          status={agreement.status as DocumentStatus}
         />
       ) : null}
 
@@ -378,22 +501,6 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
         const last = topCount - 1
         const rows: React.ReactNode[] = []
         let t = 0
-
-        const paRow = (pa: (typeof poPas)[number], key: string, isLast: boolean, nested: boolean, parentContinues: boolean) => (
-          <TreeRow
-            key={key}
-            icon={<CreditCard className="h-3 w-3" />}
-            label="Payment Application"
-            number={pa.pa_number}
-            meta={`${formatAmount(Number(pa.payment_amount), pa.currency)}${pa.pa_type === 'prepayment' ? ' · Prepayment' : ''}`}
-            statusDoc={paStatusToDoc(pa.status)}
-            statusLabel={PA_STATUS_LABELS[pa.status]}
-            href={`/pa/${pa.id}`}
-            isLast={isLast}
-            isCurrent={currentType === 'pa' && pa.id === id}
-            ancestorLines={nested ? [parentContinues] : []}
-          />
-        )
 
         if (showPoRow) {
           const idx = t++
@@ -460,7 +567,71 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
         return rows
       })()}
 
-      {totalChildren === 0 && !anchorIsPr && (
+      {/* ── Agreement-axis children ──────────────────────────────────────────
+          [Invoice(s)] ← GET /invoices?agreement_id=
+               ├─ Pickup Receipt row(s) ← invoice.receipt_ids, resolved off
+               │                          this agreement's receipt list
+               └─ PA row(s)             ← nested under the invoice they were
+                                           raised from, same convention as the
+                                           PO axis above. recurring/milestone
+                                           agreements simply have no receipts
+                                           to nest — the invoice/PA levels
+                                           still render normally. */}
+      {isAgrAxis && (() => {
+        const last = agrInvoices.length - 1
+        const rows: React.ReactNode[] = []
+
+        agrInvoices.forEach((inv: ApiInvoice, idx) => {
+          const childReceipts = (inv.receipt_ids ?? [])
+            .map((rid) => agrReceiptsById.get(rid))
+            .filter((r): r is ApiReceipt => !!r)
+          const childPas = agrPasByInvoice.get(inv.id) ?? []
+          const childCount = childReceipts.length + childPas.length
+          const parentContinues = idx < last // more invoices after this one
+
+          rows.push(
+            <TreeRow
+              key={inv.id}
+              icon={<Receipt className="h-3 w-3" />}
+              label="Invoice"
+              number={inv.internal_ref}
+              meta={`${formatAmount(Number(inv.total_amount), inv.currency)} · ${inv.vendor_invoice_number}`}
+              statusDoc={invStatusToDoc(inv.status)}
+              statusLabel={INV_STATUS_LABELS[inv.status]}
+              href={`/invoices/${inv.id}`}
+              isLast={idx === last && childCount === 0}
+            />,
+          )
+
+          childReceipts.forEach((r, j) => {
+            rows.push(
+              <TreeRow
+                key={`${inv.id}-receipt-${r.id}`}
+                icon={<Ticket className="h-3 w-3" />}
+                label="Pickup Receipt"
+                number={pickupReceiptLabel(r)}
+                // Currency is the AGREEMENT's — ApiReceipt carries no currency
+                // field of its own (see services/agreementReceipts.ts), and
+                // this branch already only renders once `agreement` (and thus
+                // agreement.currency) is loaded.
+                meta={`${RECEIPT_TYPE_LABELS[r.receipt_type]} · ${formatAmount(Number(r.total_amount), agreement?.currency ?? '')}`}
+                statusDoc={r.status as DocumentStatus}
+                href={`/agreements/${agreementId}`}
+                isLast={j === childReceipts.length - 1 && childPas.length === 0}
+                ancestorLines={[parentContinues]}
+              />,
+            )
+          })
+
+          childPas.forEach((pa, j) =>
+            rows.push(paRow(pa, `${inv.id}-${pa.id}`, j === childPas.length - 1, true, parentContinues)),
+          )
+        })
+
+        return rows
+      })()}
+
+      {totalChildren === 0 && anchorKind === 'po' && (
         <div className="mt-2 pl-6">
           <p className="text-[11px] text-neutral-400 italic">No linked GRs, invoices, or payments yet</p>
         </div>
@@ -468,6 +639,11 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
       {totalChildren === 0 && anchorIsPr && !po && !currentPr?.po_id && (
         <div className="mt-2 pl-6">
           <p className="text-[11px] text-neutral-400 italic">No linked PO, GRs, invoices, or payments yet</p>
+        </div>
+      )}
+      {isAgrAxis && agrInvoices.length === 0 && (
+        <div className="mt-2 pl-6">
+          <p className="text-[11px] text-neutral-400 italic">No invoices matched to this agreement yet</p>
         </div>
       )}
     </div>
