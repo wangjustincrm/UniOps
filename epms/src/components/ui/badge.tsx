@@ -42,6 +42,19 @@ const STATUS_CONFIG: Record<
   voided: { label: 'Voided', variant: 'dark', dot: 'bg-neutral-400' },
 }
 
+// The wording in STATUS_CONFIG above is the ONLY place a status is spelled out
+// for a human in this app. Callers that need the words WITHOUT the badge — e.g.
+// InvoiceReceiptsPanel's empty state, which has to say "2 Removed" inside a
+// sentence — must come through here rather than keeping their own status→text
+// map, or the two copies drift and the same status ends up with two names on
+// two screens. Takes a plain string (not DocumentStatus) so callers holding a
+// narrower union — ReceiptStatus, schedule-row status — can pass it without a
+// cast, and falls back to the raw value for anything not in the table, exactly
+// as StatusBadge does.
+export function statusLabel(status: string): string {
+  return STATUS_CONFIG[status as DocumentStatus]?.label ?? String(status)
+}
+
 export function StatusBadge({ status, label }: { status: DocumentStatus; label?: string }) {
   const config = STATUS_CONFIG[status] ?? { label: String(status), variant: 'neutral' as BadgeVariant, dot: 'bg-neutral-400' }
   return (

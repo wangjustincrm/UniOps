@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { Badge, statusLabel } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useInvoiceAgreementReceipts, useSetInvoiceReceipts, useSettleWithoutReceipt } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
-import { RECEIPT_TYPE_LABELS, type ApiReceipt } from '@/services/agreementReceipts'
+import { RECEIPT_TYPE_LABELS, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
 
 // Cent-rounded equality — plain float subtraction of two Number()-coerced
 // decimal strings can land a hair off zero (e.g. summing several selected
@@ -130,6 +130,44 @@ function InvoiceReceiptsPanelBody({
     () => [...relevantReceipts].sort((a, b) => new Date(b.receipt_date).getTime() - new Date(a.receipt_date).getTime()),
     [relevantReceipts],
   )
+
+  // Say what is actually THERE, not just what is missing. This panel only offers
+  // `open` receipts (plus any this invoice already holds), so an agreement whose
+  // receipts are every one of them voided / rejected / claimed by some other
+  // invoice renders the exact same empty box as an agreement that has none at
+  // all — and the copy this replaces named ONE exclusion ("receipts still
+  // awaiting AP review aren't listed here") while staying silent about whichever
+  // one actually applied. An operator who had just cancelled both receipts on an
+  // agreement read "No open receipts on this agreement" and concluded the
+  // feature was broken; the sentence had listed the one reason that did NOT
+  // apply and omitted the one that did.
+  //
+  // Costs no extra request: `allReceipts` above is already the UNFILTERED list —
+  // the query deliberately sends no status param so this invoice's own claimed
+  // (`reconciled`) receipts stay visible and de-selectable — so the breakdown is
+  // a count over data already in hand.
+  //
+  // Statuses are named with statusLabel(), the same table StatusBadge renders
+  // from, so the words in this sentence are character-for-character the words on
+  // the badges the operator sees on the agreement's own receipt list. Title case
+  // is deliberate for that reason: "2 Removed" is meant to point at two badges.
+  const emptyReason = useMemo(() => {
+    const total = allReceipts.length
+    if (total === 0) return 'No receipts have been recorded on this agreement yet.'
+    const counts = new Map<ReceiptStatus, number>()
+    for (const r of allReceipts) counts.set(r.status, (counts.get(r.status) ?? 0) + 1)
+    // Sorted by status VALUE, not by count — a stable order across renders and
+    // across agreements, so the same breakdown always reads the same way.
+    const breakdown = [...counts.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([status, n]) => `${n} ${statusLabel(status)}`)
+      .join(', ')
+    return (
+      `This agreement has ${total} receipt${total === 1 ? '' : 's'} (${breakdown}), ` +
+      'but none of them can be attached to this invoice. ' +
+      'Only an Open receipt — or one already attached to this invoice — can be selected.'
+    )
+  }, [allReceipts])
 
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>(invoice.receipt_ids ?? [])
   const [varianceReason, setVarianceReason] = useState(invoice.receipt_variance_reason ?? '')
@@ -325,7 +363,7 @@ function InvoiceReceiptsPanelBody({
             </p>
           ) : sortedReceipts.length === 0 ? (
             <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-neutral-400">
-              No open receipts on this agreement. (Receipts still awaiting AP review aren't listed here.)
+              {emptyReason}
             </p>
           ) : (
             <div className="flex flex-col gap-2">
