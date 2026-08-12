@@ -22,6 +22,7 @@ import AgreementEditPage from '@/pages/agreements/AgreementEditPage'
 import AgreementDetailPage from '@/pages/agreements/AgreementDetailPage'
 import ReceiptListPage from '@/pages/receipts/ReceiptListPage'
 import ReceiptCreatePage from '@/pages/receipts/ReceiptCreatePage'
+import ReceiptDetailPage from '@/pages/receipts/ReceiptDetailPage'
 import PaListPage from '@/pages/pa/PaListPage'
 import PaCreatePage from '@/pages/pa/PaCreatePage'
 import PaDetailPage from '@/pages/pa/PaDetailPage'
@@ -70,6 +71,9 @@ export const epmsRoutes: RouteDef[] = [
 
   { path: '/receipts', element: <ReceiptListPage />, tab: { title: 'Agreement Receipts', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/receipts/new', element: <ReceiptCreatePage />, tab: { title: 'New Receipt', icon: 'Plus', keyStrategy: 'static' } },
+  // After /receipts/new, matching how /gr/:id and /agreements/:id sit below
+  // their own literal sub-paths in this table.
+  { path: '/receipts/:id', element: <ReceiptDetailPage />, tab: { title: (p) => `Receipt ${short(p.id)}`, icon: 'Receipt', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/pa', element: <PaListPage />, tab: { title: 'Payment Applications', icon: 'CreditCard', keyStrategy: 'static' } },
   { path: '/pa/new', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static' } },

@@ -5,7 +5,12 @@ import {
   type ReceiptApReviewAction,
   type ReceiptListAllFilters,
   type ReceiptStatus,
+  type UpdateReceiptBody,
 } from '@/services/agreementReceipts'
+import {
+  agreementReceiptAttachmentService,
+  receiptAttachmentsQueryKey,
+} from '@/services/agreementReceiptAttachments'
 
 export function useAgreementReceipts(agreementId: string, status?: ReceiptStatus) {
   return useQuery({
@@ -25,6 +30,37 @@ export function useAllReceipts(filters?: ReceiptListAllFilters) {
   return useQuery({
     queryKey: ['agreement-receipts', filters],
     queryFn: () => agreementReceiptService.listAll(filters),
+  })
+}
+
+// Single receipt (Task 12) — backs ReceiptDetailPage, whose URL (/receipts/:id)
+// carries no agreement_id, so it reads GET /agreement-receipts/{id} rather than
+// the agreement-scoped route.
+//
+// The key sits UNDER ['agreement-receipts'] on purpose: that is exactly the
+// prefix invalidateReceiptViews already invalidates, so the detail view is
+// refreshed by every receipt mutation for free and cannot become a third view
+// somebody forgets to refresh. 'detail' distinguishes it from
+// useAllReceipts' ['agreement-receipts', filters] — an object never collides
+// with that string.
+export function useReceipt(receiptId: string) {
+  return useQuery({
+    queryKey: ['agreement-receipts', 'detail', receiptId],
+    queryFn: () => agreementReceiptService.get(receiptId),
+    enabled: Boolean(receiptId),
+  })
+}
+
+// Attachment metadata for one receipt. Same key ReceiptTable's per-row cell
+// uses (receiptAttachmentsQueryKey, now in services/agreementReceiptAttachments.ts)
+// so a photo uploaded from the detail page shows up in the agreement's table
+// too. No staleTime here, unlike that cell: this page can add and remove
+// photos, so its list genuinely changes while it is open.
+export function useReceiptAttachments(agreementId: string, receiptId: string) {
+  return useQuery({
+    queryKey: receiptAttachmentsQueryKey(agreementId, receiptId),
+    queryFn: () => agreementReceiptAttachmentService.list(agreementId, receiptId),
+    enabled: Boolean(agreementId && receiptId),
   })
 }
 
@@ -54,7 +90,7 @@ export function useAllReceipts(filters?: ReceiptListAllFilters) {
 // await is load-bearing throughout: invalidateQueries only *schedules* a
 // refetch, so without awaiting, isPending flips false and the form re-arms (or
 // a row's buttons re-enable) while the lists still show pre-mutation data.
-async function invalidateReceiptViews(
+export async function invalidateReceiptViews(
   queryClient: ReturnType<typeof useQueryClient>,
   agreementId: string,
 ) {
@@ -143,5 +179,60 @@ export function useApReviewReceiptAny() {
       await invalidateReceiptViews(queryClient, agreementId)
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
+  })
+}
+
+// ─── Task 12: edit + attachments, from the detail page ────────────────────
+//
+// PATCH and the attachment routes existed since Task 3 with NOTHING calling
+// them (whole-branch review I3). Their absence had a concrete cost: when
+// ReceiptEntryForm's photo upload AND its compensating PATCH both fail, the
+// receipt sits `open`, with no photo and no reason — a payable document with
+// no evidence — and voiding + re-keying it was the only way out.
+
+export function useUpdateReceiptAny() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ agreementId, receiptId, body }: { agreementId: string; receiptId: string; body: UpdateReceiptBody }) =>
+      agreementReceiptService.update(agreementId, receiptId, body),
+    onSuccess: async (_data, { agreementId }) => {
+      await invalidateReceiptViews(queryClient, agreementId)
+    },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to save receipt'),
+  })
+}
+
+// Both attachment mutations refresh TWO things: the attachment list itself,
+// and the receipt views — `attachment_count` is a field ON the receipt payload
+// (crud/agreement_receipt.py's correlated subquery), so the list page's
+// "No photo" warning and this page's own header would otherwise keep showing
+// the pre-upload count. Same load-bearing await as everywhere else in this
+// file: without it the buttons re-arm before the refetch lands.
+export function useUploadReceiptAttachment() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ agreementId, receiptId, file }: { agreementId: string; receiptId: string; file: File }) =>
+      agreementReceiptAttachmentService.upload(agreementId, receiptId, file),
+    onSuccess: async (_data, { agreementId, receiptId }) => {
+      await queryClient.invalidateQueries({ queryKey: receiptAttachmentsQueryKey(agreementId, receiptId) })
+      await invalidateReceiptViews(queryClient, agreementId)
+    },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to upload photo'),
+  })
+}
+
+export function useDeleteReceiptAttachment() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ agreementId, receiptId, attachmentId }: { agreementId: string; receiptId: string; attachmentId: string }) =>
+      agreementReceiptAttachmentService.delete(agreementId, receiptId, attachmentId),
+    onSuccess: async (_data, { agreementId, receiptId }) => {
+      await queryClient.invalidateQueries({ queryKey: receiptAttachmentsQueryKey(agreementId, receiptId) })
+      await invalidateReceiptViews(queryClient, agreementId)
+    },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to delete photo'),
   })
 }

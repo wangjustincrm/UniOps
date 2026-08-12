@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
 import { useVoidReceipt, useApReviewReceipt } from '@/hooks/useAgreementReceipts'
-import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAttachments'
+import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
 import type { ApiReceipt } from '@/services/agreementReceipts'
 import type { ApiUserBrief } from '@/services/users'
 import type { DocumentStatus } from '@/types'
@@ -32,29 +32,17 @@ function isAged(receipt: ApiReceipt): boolean {
   return days > RECEIPT_AGING_DAYS
 }
 
-// A DELIBERATELY SEPARATE top-level query-key namespace, NOT
-// ['agreements', agreementId, 'receipts', ...] — react-query's invalidateQueries
-// prefix-matches, so if this lived under the 'agreements' branch, narrowing
-// the receipt mutations' invalidation to ['agreements', agreementId, 'receipts']
-// (see useAgreementReceipts.ts) would still sweep every row's attachment query
-// on every Void/Approve/Reject click, N requests at a time. Attachment
-// metadata for a receipt doesn't change when the receipt's status changes, so
-// there's nothing for those mutations to invalidate here anyway.
-// Exported so ReceiptEntryForm can invalidate the exact same key after its
-// post-create attachment upload — see the comment at that call site for why
-// this must be kept in sync rather than each side hand-rolling its own copy.
-export function receiptAttachmentsQueryKey(agreementId: string, receiptId: string) {
-  return ['agreement-receipt-attachments', agreementId, receiptId] as const
-}
-
 function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: string; receiptId: string }) {
   const { data } = useQuery({
     queryKey: receiptAttachmentsQueryKey(agreementId, receiptId),
     queryFn: () => agreementReceiptAttachmentService.list(agreementId, receiptId),
-    // Attachments are set once at receipt-creation time and essentially never
-    // change afterward (no edit/delete UI exists yet) — a long staleTime
-    // stops every re-mount/window-refocus from re-firing all N per-row
-    // requests and re-flooding the browser's 6-connection-per-host queue.
+    // A long staleTime stops every re-mount/window-refocus from re-firing all
+    // N per-row requests and re-flooding the browser's 6-connection-per-host
+    // queue. Task 12 added an upload/delete UI on ReceiptDetailPage, which
+    // does NOT make this stale data: those mutations invalidate this exact key
+    // (receiptAttachmentsQueryKey — see hooks/useAgreementReceipts.ts), and an
+    // invalidate overrides staleTime. staleTime only suppresses the automatic
+    // refetches, which are still the thing worth suppressing here.
     staleTime: 5 * 60_000,
   })
   const attachments = data ?? []
@@ -65,7 +53,10 @@ function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: strin
         <button
           key={att.id}
           type="button"
-          onClick={() => agreementReceiptAttachmentService.download(agreementId, receiptId, att.id, att.filename)}
+          onClick={() => agreementReceiptAttachmentService.download(agreementId, receiptId, att.id, att.filename)
+            // download() rejects on a failed fetch (it used to swallow it silently);
+            // an unreported failure here reads as "the Download link does nothing".
+            .catch((err: unknown) => alert(err instanceof Error ? err.message : 'Download failed'))}
           className="inline-flex max-w-[9rem] items-center gap-1 truncate text-xs text-primary-600 hover:underline"
           title={att.filename}
         >

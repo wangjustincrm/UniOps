@@ -274,7 +274,24 @@ function ReceiptRow({
     )}>
       <td className="px-4 py-3 text-neutral-600">{formatDate(receipt.receipt_date)}</td>
       <td className="px-4 py-3 text-neutral-700">{RECEIPT_TYPE_LABELS[receipt.receipt_type]}</td>
-      <td className="px-4 py-3 font-mono text-xs text-neutral-700">{receipt.receipt_ref ?? '—'}</td>
+      <td className="px-4 py-3">
+        {/* The way into the receipt itself (Task 12) — until this existed the
+            only link on a row was the parent AGREEMENT's, so a recorder who
+            needed to fix a receipt, add its photo, or just read its notes had
+            nowhere to click. receipt_ref is optional, so the link text falls
+            back to a label rather than disappearing: a row with no reference #
+            must still be reachable, and it is exactly the kind of row (no
+            paper slip) most likely to need editing. */}
+        <Link
+          to={`/receipts/${receipt.id}`}
+          className={cn(
+            'text-primary-600 hover:underline font-mono text-xs',
+            !receipt.receipt_ref && 'italic text-neutral-500',
+          )}
+        >
+          {receipt.receipt_ref ?? 'No reference #'}
+        </Link>
+      </td>
       <td className="px-4 py-3">
         {/* Never a bare agreement_id UUID — the parent agreement's human number,
             linking through to its detail page. */}
@@ -355,7 +372,11 @@ function ReceiptRow({
               {voidPending ? 'Working…' : 'Void'}
             </Button>
           )}
-          {!canReview && !canVoid && <span className="text-neutral-300">—</span>}
+          {/* Always present: a reader with neither write permission still needs
+              a way in, and this cell is where every other row action lives. */}
+          <Link to={`/receipts/${receipt.id}`} className="text-xs text-primary-600 hover:underline">
+            Open
+          </Link>
         </div>
       </td>
     </tr>

@@ -6,23 +6,9 @@ import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { cn, todayISODate } from '@/lib/utils'
 import { useUserDirectory } from '@/hooks/useUsers'
-import { useCreateReceipt } from '@/hooks/useAgreementReceipts'
-import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAttachments'
-import { agreementReceiptService, ocrService, type ReceiptType } from '@/services/agreementReceipts'
-import { receiptAttachmentsQueryKey } from './ReceiptTable'
-
-// The backend (schemas/agreement_receipt.py::validate_totals) checks
-// amount + tax_amount == total_amount as exact Decimal equality against a
-// Numeric(15,2) column — i.e. equality to the cent. A plain float `===`
-// (or a 0.01 tolerance, which is NOT tight enough: 10.00 + 1.30 vs 11.31
-// differs by 0.009999999999999787, which receipts under a 0.01 threshold and
-// then 422s server-side) fails to match that. Comparing rounded-to-cent
-// integers kills float noise (0.1 + 0.2 !== 0.3) while staying exactly as
-// strict as the backend, so a value the frontend accepts never bounces off
-// the API.
-function centsEqual(total: number, amount: number, tax: number): boolean {
-  return Math.round(total * 100) === Math.round(amount * 100) + Math.round(tax * 100)
-}
+import { useCreateReceipt, invalidateReceiptViews } from '@/hooks/useAgreementReceipts'
+import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
+import { agreementReceiptService, ocrService, receiptTotalsMatch, type ReceiptType } from '@/services/agreementReceipts'
 
 interface ReceiptEntryFormProps {
   agreementId: string
@@ -135,7 +121,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     if (amount === '' || taxAmount === '' || totalAmount === '' || Number.isNaN(amt) || Number.isNaN(tax) || Number.isNaN(tot)) {
       setAmountError('Amount, tax and total are all required — enter 0 for tax if the receipt shows none')
       hasError = true
-    } else if (!centsEqual(tot, amt, tax)) {
+    } else if (!receiptTotalsMatch(tot, amt, tax)) {
       setAmountError('Total must equal amount + tax')
       hasError = true
     } else {
@@ -197,7 +183,13 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
               `Photo upload failed after this receipt was recorded (${uploadErrMessage}). ` +
               'Needs manual follow-up: attach the photo or confirm no photo exists.',
           })
-          await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] })
+          // invalidateReceiptViews, not a hand-rolled invalidate of one key:
+          // this PATCH moves the receipt to pending_ap_review, and AP reads
+          // that queue on ReceiptListPage (['agreement-receipts']), which a
+          // lone ['agreements', id, 'receipts'] invalidate leaves stale — the
+          // very asymmetry that helper was created to make impossible. It also
+          // covers ReceiptDetailPage's own key (Task 12).
+          await invalidateReceiptViews(queryClient, agreementId)
           alert(
             `${receiptLabel} was recorded, but the photo failed to upload. ` +
             'It has been sent to AP review so it is not paid without evidence.'
@@ -212,24 +204,19 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           alert(
             `${receiptLabel} was recorded, but the photo failed to upload AND the automatic ` +
             `follow-up to send it to AP review also failed (${patchErrMessage}). ` +
-            // Whole-branch review (I3): this used to tell the user to
-            // "re-attach the photo, edit in a reason, or void it". Only the
-            // third of those exists. The app has no UI that can PATCH a
-            // receipt or add an attachment to one after it is created — the
-            // endpoints exist, nothing calls them — so naming those two
-            // actions sent the user hunting for buttons that aren't there
-            // while a payable, photo-less receipt sat in `open`. Name Void,
-            // the one action that is real, and state the consequence of
-            // doing nothing.
-            //
-            // NOT "the table below" — this form is also used standalone on
-            // ReceiptCreatePage (Task 10), which has no table on the page at
-            // all. The Agreement Receipts list (/receipts) is the one place
-            // that's always reachable regardless of which page recorded this.
+            // Whole-branch review (I3) told the user to Void and re-key,
+            // because at the time that was the ONLY action the app could
+            // actually perform on a saved receipt — no UI called PATCH or the
+            // attachment routes. Task 12's detail page calls both, so the
+            // honest instruction is now the cheap one: open the receipt and
+            // attach the photo. Kept exact about WHERE, since this form is
+            // also used standalone on ReceiptCreatePage (Task 10), which has
+            // no receipt table on it at all — the Agreement Receipts list is
+            // reachable regardless of which page recorded this.
             'The receipt is now sitting as "open" with no photo and no reason on it — which means it ' +
-            'can be claimed by an invoice and paid as if it had evidence. It cannot be edited or have a ' +
-            'photo added afterwards. Open the Agreement Receipts list (/receipts), Void this receipt, ' +
-            'and record it again with the photo.'
+            'can be claimed by an invoice and paid as if it had evidence. Open the Agreement Receipts ' +
+            'list (/receipts), click this receipt to open it, and either attach the photo or write in ' +
+            'why there is none. If it was a mistake, Void it there instead.'
           )
         }
       } finally {

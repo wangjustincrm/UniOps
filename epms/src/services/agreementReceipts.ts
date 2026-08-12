@@ -19,6 +19,32 @@ export const RECEIPT_TYPE_LABELS: Record<ReceiptType, string> = {
   service:      'Service sign-off',
 }
 
+// Statuses the backend still accepts an edit on — mirrors
+// crud/agreement_receipt.py's EDITABLE tuple, which is the same pair as its
+// VOIDABLE (see VOIDABLE_STATUSES in components/agreements/ReceiptTable.tsx:
+// "既然 void 只放行这两个状态,编辑没道理更宽松"). A `reconciled` receipt is
+// desynced from the invoice that matched it if edited; `rejected`/`voided`
+// are terminal. ReceiptDetailPage swaps its form for a read-only view — with
+// the reason spelled out — outside this set, rather than firing a PATCH the
+// backend answers with 409.
+export const EDITABLE_STATUSES = new Set<ReceiptStatus>(['open', 'pending_ap_review'])
+
+// The backend (schemas/agreement_receipt.py::validate_totals) checks
+// amount + tax_amount == total_amount as EXACT Decimal equality against a
+// Numeric(15,2) column — equality to the cent. A plain float `===` (or a 0.01
+// tolerance, which is NOT tight enough: 10.00 + 1.30 vs 11.31 differs by
+// 0.009999999999999787, which slips under a 0.01 threshold and then 422s
+// server-side) fails to match that. Comparing rounded-to-cent integers kills
+// float noise (0.1 + 0.2 !== 0.3) while staying exactly as strict as the
+// backend, so a value the frontend accepts never bounces off the API.
+//
+// Lives here rather than in one of the two forms that need it (ReceiptEntryForm
+// for create, ReceiptDetailPage for edit): both post to the same validator, so
+// two copies could only ever drift apart.
+export function receiptTotalsMatch(total: number, amount: number, tax: number): boolean {
+  return Math.round(total * 100) === Math.round(amount * 100) + Math.round(tax * 100)
+}
+
 export interface ApiReceipt {
   id: string
   agreement_id: string
@@ -112,6 +138,11 @@ export interface CreateReceiptBody {
 }
 
 export interface UpdateReceiptBody {
+  // Was missing until Task 12 even though the backend's ReceiptUpdate has
+  // always accepted it — ReceiptDetailPage's edit form lets the recorder fix a
+  // receipt filed under the wrong type (a delivery note keyed as a counter
+  // slip), which was previously only settable at creation time.
+  receipt_type?: ReceiptType
   receipt_date?: string
   receipt_ref?: string | null
   amount?: number
@@ -140,6 +171,16 @@ export const agreementReceiptService = {
       '/agreement-receipts',
       filters as Record<string, string | number | boolean | null | undefined>,
     ),
+
+  // GET /agreement-receipts/{receipt_id} — single receipt, no agreement in the
+  // URL (Task 12). ReceiptDetailPage is reached from the cross-agreement list,
+  // whose rows carry only the receipt id, so it cannot use the agreement-scoped
+  // read. Returns the SAME enriched shape as a listing row
+  // (ApiReceiptWithAgreement) — agreement_number / currency / invoice_ref /
+  // attachment_count included — so the page needs no second fetch and no
+  // second type.
+  get: (receiptId: string) =>
+    api.get<ApiReceiptWithAgreement>(`/agreement-receipts/${receiptId}`),
 
   create: (agreementId: string, body: CreateReceiptBody) =>
     api.post<ApiReceipt>(`/agreements/${agreementId}/receipts`, body),
