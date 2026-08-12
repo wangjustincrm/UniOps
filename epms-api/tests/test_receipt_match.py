@@ -64,6 +64,19 @@ Task 7" on first pass, both restored below:
      - test_claim_accepts_multiple_receipts
      - test_claim_dedupes_duplicate_receipt_ids
 
+Review fix round 2 — round 1's restoration of the four guards above still
+left the FIFTH one (two-pass validate-before-mutate) covered only by single-
+id calls, so the atomicity claim() exists to make ("an invalid id anywhere in
+the batch must not leave earlier, valid ids partially mutated") had no test
+that could ever fail on it. This gap pre-dates Task 6 — claim() has looked
+like this since Task 5 — but Task 7 is about to edit this exact function
+(the docstring already plans widening the status guard), so an unguarded
+two-pass loop right before that edit is the wrong time to leave it dark.
+Added test_claim_leaves_earlier_receipts_untouched_when_a_later_id_is_invalid
+below: one open (valid) + one voided (invalid) id in the same call, asserts
+the valid receipt is unchanged in the DATABASE (re-read through a fresh
+session, not the in-memory object the failed call touched).
+
 test_deleting_an_invoice_releases_the_receipts_it_claimed stays: it exercises
 crud.invoice.delete(), a code path this task does not touch, and is the only
 test of that release. Its setup no longer claims the receipt via /match
@@ -352,6 +365,77 @@ async def test_claim_dedupes_duplicate_receipt_ids(admin_client, test_engine):
         await db.commit()
 
     assert [r.id for r in claimed] == [receipt.id]
+
+
+async def test_claim_leaves_earlier_receipts_untouched_when_a_later_id_is_invalid(
+    admin_client, test_engine,
+):
+    """两遍校验的意义:第一遍全部校验通过才进第二遍改状态。一次调用里混入一个
+    非法 id 时,前面那些合法的凭证必须**原样不动** —— 否则一次失败的挂载会留下
+    一批被半改过的凭证,而它们卡在 reconciled 之后 update()/void() 都拒绝,
+    没有任何界面能救。
+
+    Pre-dates Task 6 (claim() itself, not something this task introduced), but
+    left uncovered until now: Task 7 is about to touch this exact function
+    (docstring already plans to widen the status guard to also accept a
+    receipt "reconciled" by THIS SAME invoice) — a two-pass loop with no
+    atomicity coverage would let that change silently regress with no signal.
+
+    claim()'s own docstring names the exact failure mode this guards: "the
+    caller (_match_to_agreement) converts our ValueError to a 422 and does
+    not roll back, so those partial writes would ride along on the next
+    successful flush." Reproduced faithfully here — after catching the
+    ValueError, this test COMMITS the same session instead of rolling it
+    back (exactly what the docstring says the real caller does), so a
+    single-pass "validate-and-mutate-as-we-go" implementation would durably
+    persist the earlier receipt's mutation via SQLAlchemy's autoflush (the
+    second iteration's SELECT flushes the first iteration's pending UPDATE
+    before it can even see the invalid id). A test that instead closed the
+    session without committing would pass unconditionally regardless of
+    single-pass vs. two-pass — the uncommitted UPDATE would simply be rolled
+    back on close either way, proving nothing.
+
+    Reads the "untouched" receipt back through a FRESH session (not the one
+    claim() ran in) — asserting against the in-memory object from the failed
+    call would only prove the ORM identity map didn't mutate it, not that the
+    database row itself was left alone.
+    """
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        open_receipt = await _create_receipt(db, agr, user_id, amount="100.00", receipt_ref="OPEN-OK")
+        voided_receipt = await _create_receipt(db, agr, user_id, amount="50.00", receipt_ref="VOIDED-BAD")
+
+    async with factory() as db:
+        row = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == voided_receipt.id)
+        )).scalar_one()
+        row.status = "voided"
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        with pytest.raises(ValueError, match="voided"):
+            await agreement_receipt_crud.claim(
+                db, agr, [open_receipt.id, voided_receipt.id], db_inv)
+        # Reproduce the real caller's behavior on purpose (see docstring
+        # above) — commit instead of letting the session close/roll back, so
+        # a single-pass implementation's partial write has a chance to ride
+        # along, exactly like it would through _match_to_agreement's actual
+        # commit a few lines after its own call into claim().
+        await db.commit()
+
+    # Fresh session, fresh row — not the one the failed claim() call ran in.
+    async with factory() as db:
+        fresh_open = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == open_receipt.id)
+        )).scalar_one()
+    assert fresh_open.status == "open", "an earlier, valid receipt was mutated by a call that failed on a later id"
+    assert fresh_open.invoice_id is None
 
 
 async def test_deleting_an_invoice_releases_the_receipts_it_claimed(admin_client, test_engine):
