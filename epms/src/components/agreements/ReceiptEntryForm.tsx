@@ -207,17 +207,29 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           // standing between "photo failed to upload" and "unreviewed receipt
           // silently sitting in open" — if IT also fails, the user is the
           // last line of defense and needs the exact receipt identified so
-          // they can go fix it by hand (edit/void it, or retry the upload).
+          // they can go fix it by hand.
           const patchErrMessage = patchErr instanceof Error ? patchErr.message : 'unknown error'
           alert(
             `${receiptLabel} was recorded, but the photo failed to upload AND the automatic ` +
             `follow-up to send it to AP review also failed (${patchErrMessage}). ` +
+            // Whole-branch review (I3): this used to tell the user to
+            // "re-attach the photo, edit in a reason, or void it". Only the
+            // third of those exists. The app has no UI that can PATCH a
+            // receipt or add an attachment to one after it is created — the
+            // endpoints exist, nothing calls them — so naming those two
+            // actions sent the user hunting for buttons that aren't there
+            // while a payable, photo-less receipt sat in `open`. Name Void,
+            // the one action that is real, and state the consequence of
+            // doing nothing.
+            //
             // NOT "the table below" — this form is also used standalone on
             // ReceiptCreatePage (Task 10), which has no table on the page at
             // all. The Agreement Receipts list (/receipts) is the one place
             // that's always reachable regardless of which page recorded this.
-            'This receipt needs to be handled manually — find it on the Agreement Receipts list ' +
-            '(/receipts) and either re-attach the photo, edit in a reason, or void it.'
+            'The receipt is now sitting as "open" with no photo and no reason on it — which means it ' +
+            'can be claimed by an invoice and paid as if it had evidence. It cannot be edited or have a ' +
+            'photo added afterwards. Open the Agreement Receipts list (/receipts), Void this receipt, ' +
+            'and record it again with the photo.'
           )
         }
       } finally {
