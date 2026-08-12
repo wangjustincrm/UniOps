@@ -12,24 +12,57 @@ an invoice to a receipt is a different thing, and 1A/Task 5 conflated them.
 Task 6 tears that back apart. /match is agreement linkage only now, exactly
 like recurring and milestone — select an agreement, submit, done. Mounting
 receipts and declaring a no-evidence settlement move to the invoice detail
-page (Task 7/8); every test in this file that exercised them THROUGH /match
-moved with them:
+page (Task 7/8); every test below that exercised them THROUGH /match's
+request body moved with them:
   - test_house_account_match_with_receipts_does_not_flag_legacy
-  - test_match_rejects_a_receipt_from_another_agreement
-  - test_match_rejects_a_receipt_that_is_{pending_ap_review,reconciled,voided,rejected}
   - test_variance_reason_is_stored_separately_from_legacy_reason
-  - test_match_accepts_multiple_receipts
-  - test_duplicate_receipt_ids_are_claimed_once_not_rejected
   - test_empty_receipt_ids_list_is_treated_as_no_receipts_selected
-  - test_rematch_without_receipts_releases_previously_claimed_receipt
-    (its "claim → rematch → released back to open" mechanics are already
-    covered independently of /match by test_receipt_release.py, which drives
-    _release_agreement_evidence() directly against a receipt claimed by
-    manipulating the model — the release invariant this task's brief requires
-    _match_to_agreement to keep calling is NOT losing coverage.)
+(all three asserted something about /match's request-body handling of
+receipt_ids / receipt_variance_reason — fields that no longer exist on
+InvoiceMatchRequest).
+
 test_house_account_match_without_receipts_still_requires_a_reason is REPLACED
 (not moved) by test_house_account_match_needs_no_evidence_and_no_reason below
 — same scenario, opposite assertion.
+
+Review fix round 1 — two things that were WRONGLY dropped as "belongs to
+Task 7" on first pass, both restored below:
+
+1. test_rematch_without_receipts_releases_previously_claimed_receipt used to
+   cover the release invariant this task's brief explicitly requires
+   _match_to_agreement to keep (crud/invoice.py:423-424 — "if
+   invoice.receipt_ids or invoice.schedule_id: await
+   _release_agreement_evidence(...)"). Deleting it left that exact call site
+   uncovered: test_receipt_release.py's four tests all drive
+   _release_agreement_evidence() DIRECTLY, never through
+   _match_to_agreement; test_route_switch_to_po_releases_claimed_receipts and
+   test_match_review_reject_releases_claimed_receipts (both in
+   test_agreement_invoice_match.py) cover match()'s PO branch and
+   review_match()'s reject branch respectively — neither one is
+   _match_to_agreement's own release call. Deleting crud/invoice.py:423-424
+   entirely left every one of those five tests green. Replaced with
+   test_rematch_to_another_agreement_releases_previously_claimed_receipt
+   below, which seeds the "invoice holds a claimed receipt" state directly
+   via agreement_receipt_crud.claim() (the same primitive
+   test_deleting_an_invoice_releases_the_receipts_it_claimed already uses)
+   instead of through the removed request field, then rematches through
+   crud.invoice.match() — the real entry point — to a DIFFERENT agreement.
+
+2. agreement_receipt_crud.claim()'s four guards (dedup, cross-agreement
+   rejection, non-open-status rejection, two-pass validate-before-mutate) are
+   still live code — test_deleting_an_invoice_releases_the_receipts_it_claimed
+   and test_receipt_pa_gate.py's happy-path test still call claim() directly,
+   and Task 7's mounting endpoint will too — but the six tests that exercised
+   those guards were deleted outright on the reasoning that they only reached
+   claim() THROUGH /match's now-removed receipt_ids field. That reasoning
+   covers the request-body semantics (moved above), not the guards
+   themselves. Restored below as direct calls to
+   agreement_receipt_crud.claim(), the same shape
+   test_deleting_an_invoice_releases_the_receipts_it_claimed already uses:
+     - test_claim_rejects_a_receipt_from_another_agreement
+     - test_claim_rejects_a_receipt_that_is_{pending_ap_review,reconciled,voided,rejected}
+     - test_claim_accepts_multiple_receipts
+     - test_claim_dedupes_duplicate_receipt_ids
 
 test_deleting_an_invoice_releases_the_receipts_it_claimed stays: it exercises
 crud.invoice.delete(), a code path this task does not touch, and is the only
@@ -130,6 +163,195 @@ async def test_house_account_rematch_to_another_agreement_keeps_a_prior_no_evide
     assert result.agreement_id == agr_b.id
     assert result.legacy_settlement is True
     assert result.legacy_settlement_reason == "Backlog statement, no receipt on file"
+
+
+async def test_rematch_to_another_agreement_releases_previously_claimed_receipt(
+    admin_client, test_engine,
+):
+    """Review fix round 1, Important #1: the release invariant the brief
+    explicitly requires _match_to_agreement to keep
+    (crud/invoice.py:423-424 — release BEFORE the house_account branch's
+    now-`pass` body runs) must stay covered by a test that drives
+    _match_to_agreement itself, not just _release_agreement_evidence() in
+    isolation (test_receipt_release.py) or a DIFFERENT function's release
+    call (match()'s PO branch / review_match()'s reject branch, both in
+    test_agreement_invoice_match.py). Deleting crud/invoice.py:423-424
+    entirely must turn THIS test red even though those others stay green.
+
+    Setup claims the receipt directly via agreement_receipt_crud.claim() —
+    the same primitive test_deleting_an_invoice_releases_the_receipts_it_
+    claimed uses — since /match can no longer do that itself (Task 7's
+    mounting endpoint will)."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr_a = await _make_active_agreement(test_engine, vendor_id, user_id)
+    agr_b = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr_a, user_id, amount="100.00")
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr_a.id),
+                         matched_by=user_id)
+
+    # Claim the receipt directly — the shape Task 7's mounting endpoint will
+    # produce, not reachable through /match anymore.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        claimed = await agreement_receipt_crud.claim(db, agr_a, [receipt.id], db_inv)
+        db_inv.receipt_ids = [str(r.id) for r in claimed]
+        await db.commit()
+
+    async with factory() as db:
+        held = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
+        )).scalar_one()
+    assert held.status == "reconciled"
+    assert held.invoice_id == inv_id
+
+    # Rematch the SAME invoice to a DIFFERENT agreement — the release call
+    # at the top of _match_to_agreement must fire and free the receipt.
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        result = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr_b.id),
+                                  matched_by=user_id)
+    assert result.agreement_id == agr_b.id
+    assert result.receipt_ids is None
+
+    async with factory() as db:
+        released = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
+        )).scalar_one()
+    assert released.status == "open", "receipt stranded as reconciled by a route switch"
+    assert released.invoice_id is None
+
+
+# ── Review fix round 1, Important #2: agreement_receipt_crud.claim()'s own ──
+# guards are live code (called directly by the tests above and by Task 7's
+# future mounting endpoint) and need their own coverage — not reachable
+# through /match anymore, so these call claim() directly instead of routing
+# through crud.invoice.match(). ─────────────────────────────────────────────
+
+async def test_claim_rejects_a_receipt_from_another_agreement(admin_client, test_engine):
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr_a = await _make_active_agreement(test_engine, vendor_id, user_id)
+    agr_b = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        foreign_receipt = await _create_receipt(db, agr_b, user_id, amount="100.00")
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        with pytest.raises(ValueError, match="does not belong"):
+            await agreement_receipt_crud.claim(db, agr_a, [foreign_receipt.id], db_inv)
+
+    # The rejected receipt must not have been mutated by the failed attempt.
+    async with factory() as db:
+        fresh = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == foreign_receipt.id)
+        )).scalar_one()
+    assert fresh.status == "open"
+    assert fresh.invoice_id is None
+
+
+async def _assert_claim_rejects_non_open_receipt(admin_client, test_engine, status: str) -> None:
+    """pending_ap_review / rejected / reconciled / voided 都不可认领 ——
+    agreement_receipt_crud.claim() 本身,不经过 /match。Shared body for the
+    four status-specific tests below, same reasoning as the pre-Task-6
+    version for keeping them as separate `async def` tests rather than
+    @pytest.mark.parametrize (session-scoped test_engine fixture interaction)."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
+
+    async with factory() as db:
+        row = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id == receipt.id)
+        )).scalar_one()
+        row.status = status
+        await db.commit()
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        with pytest.raises(ValueError, match=status):
+            await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv)
+
+
+async def test_claim_rejects_a_receipt_that_is_pending_ap_review(admin_client, test_engine):
+    await _assert_claim_rejects_non_open_receipt(admin_client, test_engine, "pending_ap_review")
+
+
+async def test_claim_rejects_a_receipt_that_is_already_reconciled(admin_client, test_engine):
+    await _assert_claim_rejects_non_open_receipt(admin_client, test_engine, "reconciled")
+
+
+async def test_claim_rejects_a_receipt_that_is_voided(admin_client, test_engine):
+    await _assert_claim_rejects_non_open_receipt(admin_client, test_engine, "voided")
+
+
+async def test_claim_rejects_a_receipt_that_is_rejected(admin_client, test_engine):
+    await _assert_claim_rejects_non_open_receipt(admin_client, test_engine, "rejected")
+
+
+async def test_claim_accepts_multiple_receipts(admin_client, test_engine):
+    """N:1 —— claim() 一次接收 3 张凭证的 id,三张全部转 reconciled。"""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="300.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipts = [
+            await _create_receipt(db, agr, user_id, amount="100.00", receipt_ref=f"MS-{i}")
+            for i in range(3)
+        ]
+    receipt_ids = [s.id for s in receipts]
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, db_inv)
+        await db.commit()
+
+    assert {r.id for r in claimed} == set(receipt_ids)
+
+    async with factory() as db:
+        fresh_rows = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id.in_(receipt_ids))
+        )).scalars().all()
+    assert len(fresh_rows) == 3
+    assert all(r.status == "reconciled" for r in fresh_rows)
+    assert all(r.invoice_id == inv_id for r in fresh_rows)
+
+
+async def test_claim_dedupes_duplicate_receipt_ids(admin_client, test_engine):
+    """重复 id 去重按一张处理,不因为同一个 id 出现两次而报错。"""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
+    inv_id = uuid.UUID(inv["id"])
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
+
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
+        claimed = await agreement_receipt_crud.claim(db, agr, [receipt.id, receipt.id], db_inv)
+        await db.commit()
+
+    assert [r.id for r in claimed] == [receipt.id]
 
 
 async def test_deleting_an_invoice_releases_the_receipts_it_claimed(admin_client, test_engine):

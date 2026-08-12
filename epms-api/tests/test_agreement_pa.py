@@ -457,7 +457,7 @@ async def test_agreement_pa_refused_for_invoice_still_in_match_review(admin_clie
         await admin_client.post(f"/api/v1/invoices/{inv['id']}/assign-match",
                                 json={"user_id": str(delegate_id)})
         r = await delegate_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
-            "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+            "agreement_id": str(agr.id)})
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "match_review"
     finally:
@@ -768,12 +768,12 @@ async def test_patch_pa_rejects_swapping_in_an_invoice_from_another_agreement(
 
     inv_a = await _upload_invoice(admin_client, vendor_id, amount="500.00")
     r_a = await admin_client.post(f"/api/v1/invoices/{inv_a['id']}/match", json={
-        "agreement_id": str(agr_a.id), "legacy_settlement_reason": "backlog"})
+        "agreement_id": str(agr_a.id)})
     assert r_a.status_code == 200, r_a.text
 
     inv_b = await _upload_invoice(admin_client, vendor_id, amount="500.00")
     r_b = await admin_client.post(f"/api/v1/invoices/{inv_b['id']}/match", json={
-        "agreement_id": str(agr_b.id), "legacy_settlement_reason": "backlog"})
+        "agreement_id": str(agr_b.id)})
     assert r_b.status_code == 200, r_b.text
 
     # Task 6: /match no longer sets legacy_settlement — declare it directly so

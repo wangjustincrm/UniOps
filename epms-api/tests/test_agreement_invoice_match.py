@@ -301,12 +301,12 @@ async def test_rematch_to_same_agreement_is_idempotent(admin_client, test_engine
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, legacy_settlement_reason="first pass"), matched_by=user_id)
+            agreement_id=agr.id), matched_by=user_id)
     # Re-match to the SAME agreement — consumption must not double-count.
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, legacy_settlement_reason="corrected"), matched_by=user_id)
+            agreement_id=agr.id), matched_by=user_id)
 
     async with factory() as db:
         fresh = (await db.execute(select(PurchaseAgreement).where(
@@ -353,7 +353,7 @@ async def test_rematch_from_agreement_to_po_releases_consumption(admin_client, t
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, legacy_settlement_reason="first pass"), matched_by=user_id)
+            agreement_id=agr.id), matched_by=user_id)
 
     async with factory() as db:
         agr_after_first_match = (await db.execute(select(PurchaseAgreement).where(
@@ -400,11 +400,11 @@ async def test_rematch_moves_consumption_between_agreements(admin_client, test_e
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr_a.id, legacy_settlement_reason="first pass"), matched_by=user_id)
+            agreement_id=agr_a.id), matched_by=user_id)
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr_b.id, legacy_settlement_reason="moved to B"), matched_by=user_id)
+            agreement_id=agr_b.id), matched_by=user_id)
 
     async with factory() as db:
         fresh_a = (await db.execute(select(PurchaseAgreement).where(
@@ -1504,7 +1504,7 @@ async def test_route_switch_to_po_releases_claimed_receipts(admin_client, test_e
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, legacy_settlement_reason="statement"), matched_by=user_id)
+            agreement_id=agr.id), matched_by=user_id)
 
     # Seed three receipts claimed by this invoice — the shape Task 5/6's match
     # will produce, written directly since that path doesn't exist yet.
@@ -1578,7 +1578,7 @@ async def test_match_review_reject_releases_claimed_receipts(admin_client, test_
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
         matched = await crud_match(db, db_inv, InvoiceMatchRequest(
-            agreement_id=agr.id, legacy_settlement_reason="statement"),
+            agreement_id=agr.id),
             matched_by=user_id, require_review=True)
         await db.commit()
     assert matched.status == "match_review"
