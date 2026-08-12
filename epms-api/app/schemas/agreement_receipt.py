@@ -196,7 +196,7 @@ class ReceiptCreate(BaseModel):
     # 绑到供应商主数据的那一条(Task 14)。**可空是核心裁定**:柜台小票常来自
     # 一次性商家,匹配不到时只存文本、照样提交。给了它,API 层会把
     # vendor_name 覆写成主数据的规范名(见 api/v1/agreement_receipts.py
-    # ::_resolve_vendor_name)—— vendor_name 是快照,不是第二处真相。
+    # ::_bind_vendor_master_data)—— vendor_name 是快照,不是第二处真相。
     vendor_id: uuid.UUID | None = None
     # 小票抬头上印的商家名(OCR 预填、可改)。允许为空:抽不到是正常情况,
     # 不该卡住录入。它与协议的供应商不一致时只是**提醒**,不拦写入 ——

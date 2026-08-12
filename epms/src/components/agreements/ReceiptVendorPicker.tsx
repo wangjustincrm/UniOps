@@ -46,11 +46,31 @@ function vendorWords(name: string): string[] {
 
 // What to ask the API for. The `search` filter is a plain ILIKE, so handing it
 // the raw till header ("PRINCESS AUTO #12") finds nothing — the store number
-// is in the middle of the pattern. Dropping all-digit words leaves the part
+// sits in the middle of the pattern. Dropping the digit runs leaves the part
 // that is actually the merchant's name.
+//
+// Everything else is left VERBATIM, punctuation included, because the pattern
+// is matched against the stored name as it is: rebuilding the string out of
+// space-joined words would turn "Auto-Parts" into "auto parts" and stop it
+// matching "Auto-Parts Inc" — trading one dead end for another.
+//
+//   "PRINCESS AUTO #12" -> "PRINCESS AUTO"
+//   "7-Eleven"          -> "Eleven"
+//   "Auto-Parts"        -> "Auto-Parts"   (untouched)
+//
+// Used on BOTH paths — OCR and hand typing. Fix round 1 (Minor 2): it used to
+// run only on the OCR path, so a recorder copying "Princess Auto #12" off the
+// slip by hand got "No vendor found" for a string that auto-bound when the
+// camera supplied it. One box must not have two recall rates.
 function vendorSearchStem(name: string): string {
-  const words = vendorWords(name).filter((w) => !/^\d+$/.test(w))
-  return words.length > 0 ? words.join(' ') : name.trim()
+  const stripped = name
+    .replace(/\b\d+\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '')
+  // Nothing but digits (a merchant keyed as "7-11") — then the digits ARE the
+  // name, so ask for them rather than for nothing.
+  return stripped || name.trim()
 }
 
 function normalizeVendorName(name: string): string {
@@ -63,7 +83,28 @@ function normalizeVendorName(name: string): string {
 // than none, because the recorder has nothing on screen prompting them to look.
 const MIN_CONFIDENT_OVERLAP = 4
 
-function uniqueVendorMatch(options: ApiVendor[], text: string): ApiVendor | null {
+// One page of candidates. The dropdown shows them; uniqueVendorMatch refuses
+// to decide anything when the server says there are more.
+const VENDOR_PAGE_SIZE = 50
+
+function uniqueVendorMatch(
+  options: ApiVendor[], text: string, truncated: boolean,
+): ApiVendor | null {
+  // Fix round 1 (Important 1). `options` is page 1 of 50 rows ordered by code,
+  // and the backend's `search` matches name OR code OR erp_id
+  // (crud/vendor.py) — so most of those 50 can be code/erp_id hits while the
+  // ONE row whose NAME passes the test below sits on page 1 by luck. Calling
+  // that row "the only candidate" is then simply false: the second, genuinely
+  // ambiguous candidate is on page 2 and never took part in the decision, and
+  // the receipt gets silently bound to a vendor nobody chose — after which the
+  // mismatch check compares that wrong id and reports "no mismatch" forever.
+  // With 2578 vendors in production, a stem like "mart" or "tire" overflows 50
+  // easily. So: if the server says there are more rows than we were handed, we
+  // do not know whether the match is unique, and "don't know" degrades to "let
+  // the person choose" — the same failure direction as the other two gates.
+  // A parameter rather than a check at the call site, so a second call site
+  // cannot forget it.
+  if (truncated) return null
   const target = normalizeVendorName(text)
   if (target.length < MIN_CONFIDENT_OVERLAP) return null
   const hits = options.filter((v) => {
@@ -105,19 +146,28 @@ export function ReceiptVendorPicker({
   const [open, setOpen] = useState(false)
   const anchorRect = useAnchorRect(open, anchorRef)
 
-  // What we ASK the API for, which is not always what is in the box: after
-  // OCR the box holds the till header verbatim (that string is what gets
-  // saved if no vendor matches) while the search runs on its searchable stem.
-  const [query, setQuery] = useState('')
+  // What we ASK the API for, which is not always what is in the box: the box
+  // holds the till header verbatim (that string is what gets saved if no
+  // vendor matches) while the search runs on its searchable stem.
+  //
+  // Seeded from the current value (fix round 1, Minor 4): on the detail page
+  // of an already-bound receipt, an empty seed meant the first click on the
+  // field listed the whole vendor master from the top — page 1 by code — with
+  // the receipt's own vendor nowhere in sight.
+  const [query, setQuery] = useState(() => vendorSearchStem(value.vendorName))
   // The OCR text still waiting for its candidate list to arrive.
   const [pending, setPending] = useState<string | null>(null)
   const [aiText, setAiText] = useState<string | null>(null)
   const [aiBound, setAiBound] = useState(false)
 
   const { data, isFetching } = useVendors({
-    search: query || undefined, active_only: true, page_size: 50,
+    search: query || undefined, active_only: true, page_size: VENDOR_PAGE_SIZE,
   })
   const options = data?.items ?? []
+  // Did the server have more matches than it handed us? `total` is the count
+  // for the whole filter, not for this page — see uniqueVendorMatch for why
+  // auto-binding on a truncated page is unsafe.
+  const truncated = (data?.total ?? 0) > options.length
 
   // A new suggestion: park the raw text in the field (it is what gets stored
   // if nothing matches), and start a match attempt.
@@ -137,7 +187,7 @@ export function ReceiptVendorPicker({
   // would auto-bind, or fail to, based on a race.
   useEffect(() => {
     if (pending === null || isFetching || data === undefined) return
-    const hit = uniqueVendorMatch(options, pending)
+    const hit = uniqueVendorMatch(options, pending, truncated)
     if (hit) {
       onChange({ vendorId: hit.id, vendorName: hit.name })
       setQuery(hit.name)
@@ -148,16 +198,20 @@ export function ReceiptVendorPicker({
       setOpen(true)
     }
     setPending(null)
-  }, [pending, isFetching, data]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pending, isFetching, data, truncated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const typed = (text: string) => {
     // Typing over a bound vendor unbinds it: the text and the id must never
     // describe two different merchants, since vendor_name is a snapshot of the
     // bound row, not an independent field.
     onChange({ vendorId: null, vendorName: text })
-    setQuery(text)
+    setQuery(vendorSearchStem(text))
     setAiText(null)
     setAiBound(false)
+    // Fix round 1 (Minor 1): typing before an in-flight OCR match has landed
+    // abandons that match. Without this, the resolving effect would go on to
+    // judge the OCR text against the candidate list for what the USER typed.
+    setPending(null)
     setOpen(true)
   }
 
@@ -234,8 +288,18 @@ export function ReceiptVendorPicker({
       {/* Bound to master data, or just a string? Different words, deliberately
           neither of them an error colour. */}
       {value.vendorId ? (
+        // Fix round 1 (Important 2): when the binding was made automatically,
+        // name the text it was made FROM. The canonical name overwrites the
+        // till header in the database (that is the snapshot rule) — but if it
+        // also vanishes from the screen, a slip printed "PRINCESS AUTO
+        // RENTALS" auto-bound to "Princess Auto" leaves nothing anywhere for
+        // the recorder to catch it by. That is exactly the promise the AI
+        // badge makes: a machine filled this in, check it before relying on it.
         <p className="flex items-center text-xs text-success-600">
-          Matched to the vendor list{aiBound && <AiBadge />}
+          {aiBound && aiText
+            ? `Matched from "${aiText}"`
+            : 'Matched to the vendor list'}
+          {aiBound && <AiBadge />}
         </p>
       ) : value.vendorName.trim() ? (
         <p className="flex items-center text-xs text-neutral-500">
