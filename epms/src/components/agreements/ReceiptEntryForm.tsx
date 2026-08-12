@@ -30,6 +30,14 @@ interface ReceiptEntryFormProps {
   // to 'counter_slip' to match the backend's own default (schemas/agreement_receipt.py
   // ReceiptCreate.receipt_type) for the sake of any future embedding that omits it.
   receiptType?: ReceiptType
+  // Fires once the receipt row itself exists — i.e. at the same point
+  // resetForm() already ran unconditionally, regardless of whether the photo
+  // attachment leg (below) succeeded, failed-but-compensated, or failed
+  // entirely. Task 10 fix round 1: without this, ReceiptCreatePage's only
+  // feedback after a successful submit was the form quietly clearing itself —
+  // visually identical to a failed submit. Optional so this component still
+  // works standalone with no caller-visible behavior change.
+  onSuccess?: () => void
 }
 
 // Entry flow: pick a photo → auto OCR → prefill (still fully editable) →
@@ -37,7 +45,7 @@ interface ReceiptEntryFormProps {
 // against the receipt id just returned. Two separate API calls, same pattern as
 // PrCreatePage (create doc, then upload attachments against the new id) —
 // there is no single create-with-attachment endpoint.
-export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip' }: ReceiptEntryFormProps) {
+export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess }: ReceiptEntryFormProps) {
   const { data: usersData } = useUserDirectory()
   const users = usersData?.items ?? []
   const createReceipt = useCreateReceipt(agreementId)
@@ -204,8 +212,12 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip' }: 
           alert(
             `${receiptLabel} was recorded, but the photo failed to upload AND the automatic ` +
             `follow-up to send it to AP review also failed (${patchErrMessage}). ` +
-            'This receipt needs to be handled manually — find it in the table below and either ' +
-            're-attach the photo, edit in a reason, or void it.'
+            // NOT "the table below" — this form is also used standalone on
+            // ReceiptCreatePage (Task 10), which has no table on the page at
+            // all. The Agreement Receipts list (/receipts) is the one place
+            // that's always reachable regardless of which page recorded this.
+            'This receipt needs to be handled manually — find it on the Agreement Receipts list ' +
+            '(/receipts) and either re-attach the photo, edit in a reason, or void it.'
           )
         }
       } finally {
@@ -214,6 +226,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip' }: 
     }
 
     resetForm()
+    onSuccess?.()
   }
 
   return (

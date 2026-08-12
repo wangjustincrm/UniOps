@@ -83,3 +83,53 @@ export function useApReviewReceipt(agreementId: string) {
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
   })
 }
+
+// ─── Cross-agreement variants (Task 10 fix round 1) ────────────────────────
+//
+// ReceiptListPage (GET /agreement-receipts) spans every agreement at once, so
+// unlike useVoidReceipt/useApReviewReceipt above — which close over a single
+// agreementId at hook-construction time because they were built for the
+// per-agreement ReceiptTable — these take agreementId per call, read off each
+// row's own receipt.agreement_id. Introduced because Void/AP-review lost their
+// only UI surface when AgreementDetailPage's ReceiptTable went readOnly: a
+// receipt stuck at pending_ap_review had no route out anywhere in the app.
+//
+// Invalidates BOTH the cross-agreement list key (so this page reflects the
+// change) AND the single-agreement key (so that agreement's detail page,
+// if open in another tab, doesn't show stale status next time it refetches).
+
+export function useVoidReceiptAny() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ agreementId, receiptId }: { agreementId: string; receiptId: string }) =>
+      agreementReceiptService.void(agreementId, receiptId),
+    // await is load-bearing, same rationale as every other mutation in this
+    // file — invalidateQueries only *schedules* a refetch; without awaiting,
+    // isPending flips false and the row's buttons re-arm while the list still
+    // shows the pre-void status.
+    onSuccess: async (_data, { agreementId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['agreement-receipts'] }),
+        queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] }),
+      ])
+    },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to void receipt'),
+  })
+}
+
+export function useApReviewReceiptAny() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ agreementId, receiptId, action }: { agreementId: string; receiptId: string; action: ReceiptApReviewAction }) =>
+      agreementReceiptService.apReview(agreementId, receiptId, action),
+    onSuccess: async (_data, { agreementId }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['agreement-receipts'] }),
+        queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] }),
+      ])
+    },
+    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
+  })
+}

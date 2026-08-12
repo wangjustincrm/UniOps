@@ -17,7 +17,9 @@ export const RECEIPT_AGING_DAYS = 45
 
 // Statuses that can still be voided — the backend accepts DELETE from either
 // (see agreement_receipt.py void()); 'reconciled'/'voided'/'rejected' are terminal.
-const VOIDABLE_STATUSES = new Set<ApiReceipt['status']>(['open', 'pending_ap_review'])
+// Exported so ReceiptListPage's row actions (Task 10 fix round 1) use the same
+// set rather than re-typing it — this is a business rule, not a UI constant.
+export const VOIDABLE_STATUSES = new Set<ApiReceipt['status']>(['open', 'pending_ap_review'])
 
 function resolveUserName(users: ApiUserBrief[] | undefined, id: string | null): string | undefined {
   if (!id || !users) return undefined

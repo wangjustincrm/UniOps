@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Receipt } from 'lucide-react'
+import { Search, Receipt, Plus, CheckCircle2, XCircle, Ban } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
-import { useAllReceipts } from '@/hooks/useAgreementReceipts'
+import { useAuthStore } from '@/stores/auth.store'
+import { useRolePermissions } from '@/hooks/useConfig'
+import { useAllReceipts, useVoidReceiptAny, useApReviewReceiptAny } from '@/hooks/useAgreementReceipts'
 import { useUserDirectory } from '@/hooks/useUsers'
+import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
 import { RECEIPT_TYPE_LABELS } from '@/services/agreementReceipts'
 import type { ApiReceiptWithAgreement, ReceiptStatus, ReceiptType } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
@@ -58,14 +62,53 @@ export default function ReceiptListPage() {
     return map
   }, [directory])
 
+  // Same two permission keys AgreementDetailPage used to gate the (now-removed)
+  // inline entry form and the ReceiptTable's write props — Task 10 fix round 1
+  // moves the actual Void/AP-review UI here, since ReceiptTable's only call
+  // site is readOnly now and this cross-agreement list is otherwise the only
+  // page that can reach every receipt regardless of which agreement it's on.
+  const { user } = useAuthStore()
+  const perms = useRolePermissions().data?.permissions
+  const canRecordReceipt = user?.role === 'system_admin' || !!perms?.['epms.agreement.receipt.write']
+  const canApReview = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
+
+  const voidReceipt = useVoidReceiptAny()
+  const apReview = useApReviewReceiptAny()
+  // Mirrors ReceiptTable's pendingRowId convention — see that file's comment:
+  // both mutations are single shared objects, so isPending alone can't say
+  // WHICH row (or which of Approve/Reject) is mid-flight without this.
+  const [pendingVoidId, setPendingVoidId] = useState<string | null>(null)
+  const [pendingReviewKey, setPendingReviewKey] = useState<string | null>(null)
+
+  const handleVoid = (agreementId: string, receiptId: string, receiptRef: string | null) => {
+    if (!confirm(`Void receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
+    setPendingVoidId(receiptId)
+    voidReceipt.mutate({ agreementId, receiptId }, { onSettled: () => setPendingVoidId(null) })
+  }
+
+  const handleReview = (agreementId: string, receiptId: string, action: 'approve' | 'reject') => {
+    setPendingReviewKey(`${receiptId}:${action}`)
+    apReview.mutate({ agreementId, receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-bold text-neutral-900">Agreement Receipts</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Counter slips, delivery notes, and service sign-offs recorded against house-account agreements
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900">Agreement Receipts</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Counter slips, delivery notes, and service sign-offs recorded against house-account agreements
+          </p>
+        </div>
+        {canRecordReceipt && (
+          <Link to="/receipts/new">
+            <Button className="gap-2">
+              <Plus className="h-4 w-4" />
+              New Receipt
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Filters */}
@@ -129,16 +172,31 @@ export default function ReceiptListPage() {
                 <Th>Received By</Th>
                 <Th>Status</Th>
                 <Th>Linked Invoice</Th>
+                <Th>Actions</Th>
               </tr>
             </thead>
             <tbody>
-              {receipts.map((receipt) => (
-                <ReceiptRow
-                  key={receipt.id}
-                  receipt={receipt}
-                  receivedByName={userNames.get(receipt.received_by)}
-                />
-              ))}
+              {receipts.map((receipt) => {
+                const canVoid = canRecordReceipt && VOIDABLE_STATUSES.has(receipt.status)
+                const canReview = canApReview && receipt.status === 'pending_ap_review'
+                return (
+                  <ReceiptRow
+                    key={receipt.id}
+                    receipt={receipt}
+                    receivedByName={userNames.get(receipt.received_by)}
+                    canVoid={canVoid}
+                    canReview={canReview}
+                    voidPending={voidReceipt.isPending && pendingVoidId === receipt.id}
+                    approvePending={apReview.isPending && pendingReviewKey === `${receipt.id}:approve`}
+                    rejectPending={apReview.isPending && pendingReviewKey === `${receipt.id}:reject`}
+                    anyVoidPending={voidReceipt.isPending}
+                    anyReviewPending={apReview.isPending}
+                    onVoid={() => handleVoid(receipt.agreement_id, receipt.id, receipt.receipt_ref)}
+                    onApprove={() => handleReview(receipt.agreement_id, receipt.id, 'approve')}
+                    onReject={() => handleReview(receipt.agreement_id, receipt.id, 'reject')}
+                  />
+                )
+              })}
             </tbody>
           </table>
         )}
@@ -167,10 +225,22 @@ function Th({ children, align = 'left' }: { children: React.ReactNode; align?: '
 }
 
 function ReceiptRow({
-  receipt, receivedByName,
+  receipt, receivedByName, canVoid, canReview,
+  voidPending, approvePending, rejectPending, anyVoidPending, anyReviewPending,
+  onVoid, onApprove, onReject,
 }: {
   receipt: ApiReceiptWithAgreement
   receivedByName?: string
+  canVoid: boolean
+  canReview: boolean
+  voidPending: boolean
+  approvePending: boolean
+  rejectPending: boolean
+  anyVoidPending: boolean
+  anyReviewPending: boolean
+  onVoid: () => void
+  onApprove: () => void
+  onReject: () => void
 }) {
   return (
     <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
@@ -206,6 +276,35 @@ function ReceiptRow({
         ) : (
           <span className="text-neutral-300">—</span>
         )}
+      </td>
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          {canReview && (
+            <>
+              <Button size="sm" variant="success-outline" onClick={onApprove} disabled={anyReviewPending}>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {approvePending ? 'Working…' : 'Approve'}
+              </Button>
+              <Button size="sm" variant="secondary" onClick={onReject} disabled={anyReviewPending}>
+                <XCircle className="h-3.5 w-3.5" />
+                {rejectPending ? 'Working…' : 'Reject'}
+              </Button>
+            </>
+          )}
+          {canVoid && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={onVoid}
+              disabled={anyVoidPending}
+              className={cn('text-danger-600 hover:text-danger-700')}
+            >
+              <Ban className="h-3.5 w-3.5" />
+              {voidPending ? 'Working…' : 'Void'}
+            </Button>
+          )}
+          {!canReview && !canVoid && <span className="text-neutral-300">—</span>}
+        </div>
       </td>
     </tr>
   )

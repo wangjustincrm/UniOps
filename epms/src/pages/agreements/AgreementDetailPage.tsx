@@ -24,8 +24,9 @@ import {
   useAgreementAttachments, useUploadAgreementAttachment, useDeleteAgreementAttachment,
 } from '@/hooks/useAgreementAttachments'
 import { agreementAttachmentService } from '@/services/agreementAttachments'
-import type { AgreementStatus, AgreementType, ApiAgreement } from '@/services/agreement'
+import type { AgreementStatus, AgreementType } from '@/services/agreement'
 import type { InvoiceStatus } from '@/services/invoices'
+import { isAgreementAdmissible } from '@/lib/agreements'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
@@ -58,31 +59,6 @@ const INVOICE_STATUS_CFG: Record<InvoiceStatus, { label: string; variant: 'neutr
   match_review: { label: 'Pending Review', variant: 'info' },
   approved: { label: 'Approved', variant: 'success' },
   paid: { label: 'Paid', variant: 'neutral' },
-}
-
-// DELIBERATELY LOOSER than the backend rule, and only safe because of that.
-//
-// The authority is epms-api/app/crud/agreement.py::_admissible_predicate, which
-// requires status in (active, expired) AND today <= valid_to + grace_days. This
-// copy skips the date test for 'active' — it cannot be made to agree, because
-// its inputs differ: the backend compares Postgres-server dates, this compares
-// the browser's local clock against a UTC-parsed valid_to. Any attempt at parity
-// would drift by a day per timezone and start HIDING the button on agreements
-// the backend would happily accept.
-//
-// So this is a permissive-only display gate for the Create PA button: it may
-// show the button when the backend will refuse (the user gets a 422 explaining
-// why), and must never hide it when the backend would allow. POST /pa re-checks
-// independently via agr_crud.is_admissible, which is the enforcing copy. Do not
-// "fix" the divergence by tightening this — tighten it and you silently strand
-// legitimate spend at a timezone boundary.
-function isAgreementAdmissible(agreement: ApiAgreement): boolean {
-  if (agreement.status === 'active') return true
-  if (agreement.status !== 'expired') return false
-  const daysSinceExpiry = Math.floor(
-    (Date.now() - new Date(agreement.valid_to).getTime()) / 86_400_000
-  )
-  return daysSinceExpiry <= agreement.grace_days
 }
 
 // Approval-step timeline, adapted from PoDetailPage::buildWorkflowSteps. There

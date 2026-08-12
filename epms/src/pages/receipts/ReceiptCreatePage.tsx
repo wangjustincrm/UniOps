@@ -1,34 +1,15 @@
 import { useState } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
+import { useReplaceTab } from '@uniops/shell'
+import { ArrowLeft, Loader2 } from 'lucide-react'
+import { epmsRoutes } from '@/app/routes'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useAgreements } from '@/hooks/useAgreements'
+import { isAgreementAdmissible } from '@/lib/agreements'
 import { ReceiptEntryForm } from '@/components/agreements/ReceiptEntryForm'
 import { RECEIPT_TYPE_LABELS, type ReceiptType } from '@/services/agreementReceipts'
 import type { ApiAgreement } from '@/services/agreement'
-
-// Mirrors AgreementDetailPage's isAgreementAdmissible (same file has the full
-// rationale). Deliberately duplicated rather than imported — that copy lives
-// alongside the Create-PA gate it was written for and isn't exported; keeping
-// a second, identically-reasoned copy here is simpler and less coupling than
-// exporting a helper across two unrelated pages for one boolean.
-//
-// Backend's create_receipt route (epms-api/app/api/v1/agreement_receipts.py)
-// does NOT check agreement status at all — it will happily accept a POST
-// against a draft/cancelled/past-grace agreement. A receipt recorded there
-// can never be matched to an invoice (nothing routes an invoice to a
-// non-admissible agreement) yet still counts toward the 45-day aging warning
-// (ReceiptTable.RECEIPT_AGING_DAYS) forever. Filtering the picker to
-// admissible agreements only is what keeps that from happening.
-function isAgreementAdmissible(agreement: ApiAgreement): boolean {
-  if (agreement.status === 'active') return true
-  if (agreement.status !== 'expired') return false
-  const daysSinceExpiry = Math.floor(
-    (Date.now() - new Date(agreement.valid_to).getTime()) / 86_400_000
-  )
-  return daysSinceExpiry <= agreement.grace_days
-}
 
 const TYPE_OPTIONS: ReceiptType[] = ['counter_slip', 'delivery', 'service']
 
@@ -39,12 +20,13 @@ const TYPE_OPTIONS: ReceiptType[] = ['counter_slip', 'delivery', 'service']
 // page the same way GR does, instead of being entered from inside the
 // agreement's detail page.
 export default function ReceiptCreatePage() {
+  const replaceTab = useReplaceTab(epmsRoutes)
   const [searchParams] = useSearchParams()
   // No page/page_size in the filter → useAgreements pages through the full
   // result set itself (server default-truncates to 20 rows otherwise; see
   // hooks/useAgreements.ts), so this picker isn't silently missing agreements
   // past the first page.
-  const { data: agreementsData } = useAgreements({ agreement_type: 'house_account' })
+  const { data: agreementsData, isLoading: agreementsLoading } = useAgreements({ agreement_type: 'house_account' })
   const admissibleAgreements = (agreementsData?.items ?? []).filter(isAgreementAdmissible)
 
   const preselectedAgreementId = searchParams.get('agreement_id') ?? ''
@@ -59,6 +41,18 @@ export default function ReceiptCreatePage() {
   // Came here from an agreement's detail page ("New Receipt" button) →
   // Cancel should return there rather than to the cross-agreement list.
   const cancelHref = preselectedAgreementId ? `/agreements/${preselectedAgreementId}` : '/receipts'
+
+  // True only while the agreement that arrived via ?agreement_id= genuinely
+  // never resolves — NOT while the fetch is still in flight (agreementsLoading
+  // covers that separately) and NOT once the user has touched the picker
+  // (selectedAgreementId no longer equals the preselected value once they
+  // clear/change it). Without this, someone arriving from the agreement
+  // detail page's "New Receipt" button whose agreement turns out to be
+  // ineligible (wrong type, or went non-admissible between the two page
+  // loads) landed on a blank search box with zero explanation — indistinguishable
+  // from the normal loading flash.
+  const preselectFailed =
+    !agreementsLoading && preselectedAgreementId !== '' && selectedAgreementId === preselectedAgreementId && !selectedAgreement
 
   const filteredAgreements = admissibleAgreements.filter((a) => {
     if (!agreementSearch) return true
@@ -93,64 +87,77 @@ export default function ReceiptCreatePage() {
           <label className="text-sm font-medium text-neutral-700">
             Select Agreement <span className="text-danger-600">*</span>
           </label>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search by agreement number, vendor, or title..."
-              value={
-                selectedAgreement
-                  ? `${selectedAgreement.number} — ${selectedAgreement.vendor_name} — ${selectedAgreement.title}`
-                  : agreementSearch
-              }
-              onFocus={() => { if (!selectedAgreement) setShowAgreementDropdown(true) }}
-              onChange={(e) => {
-                setAgreementSearch(e.target.value)
-                setSelectedAgreementId('')
-                setShowAgreementDropdown(true)
-              }}
-              className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-            />
-            {selectedAgreement && (
-              <button
-                type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
-                onClick={() => { setSelectedAgreementId(''); setAgreementSearch(''); setShowAgreementDropdown(true) }}
-              >
-                ×
-              </button>
-            )}
-            {showAgreementDropdown && !selectedAgreement && (
-              <div className="absolute z-10 mt-1 w-full rounded-lg border border-neutral-200 bg-white shadow-lg max-h-64 overflow-y-auto">
-                {filteredAgreements.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-neutral-400">
-                    No eligible house-account agreements found (must be active, or expired within its grace period)
-                  </div>
-                ) : (
-                  filteredAgreements.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-neutral-100 last:border-0"
-                      onClick={() => {
-                        setSelectedAgreementId(a.id)
-                        setShowAgreementDropdown(false)
-                        setAgreementSearch('')
-                      }}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-sm text-neutral-900 font-mono">{a.number}</span>
-                        <span className="text-xs text-neutral-500">{a.currency}</span>
-                      </div>
-                      <div className="text-xs text-neutral-500 mt-0.5">{a.vendor_name} · {a.title}</div>
-                      <div className="text-xs text-neutral-400 mt-0.5">
-                        Valid {formatDate(a.valid_from)} – {formatDate(a.valid_to)}
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
+          {agreementsLoading ? (
+            <div className="flex items-center gap-2 h-10 px-3 rounded-lg border border-neutral-200 bg-neutral-50 text-sm text-neutral-400">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading agreements…
+            </div>
+          ) : (
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search by agreement number, vendor, or title..."
+                value={
+                  selectedAgreement
+                    ? `${selectedAgreement.number} — ${selectedAgreement.vendor_name} — ${selectedAgreement.title}`
+                    : agreementSearch
+                }
+                onFocus={() => { if (!selectedAgreement) setShowAgreementDropdown(true) }}
+                onChange={(e) => {
+                  setAgreementSearch(e.target.value)
+                  setSelectedAgreementId('')
+                  setShowAgreementDropdown(true)
+                }}
+                className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              />
+              {selectedAgreement && (
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
+                  onClick={() => { setSelectedAgreementId(''); setAgreementSearch(''); setShowAgreementDropdown(true) }}
+                >
+                  ×
+                </button>
+              )}
+              {showAgreementDropdown && !selectedAgreement && (
+                <div className="absolute z-10 mt-1 w-full rounded-lg border border-neutral-200 bg-white shadow-lg max-h-64 overflow-y-auto">
+                  {filteredAgreements.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-neutral-400">
+                      No eligible house-account agreements found (must be active, or expired within its grace period)
+                    </div>
+                  ) : (
+                    filteredAgreements.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        className="w-full text-left px-4 py-3 hover:bg-primary-50 border-b border-neutral-100 last:border-0"
+                        onClick={() => {
+                          setSelectedAgreementId(a.id)
+                          setShowAgreementDropdown(false)
+                          setAgreementSearch('')
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm text-neutral-900 font-mono">{a.number}</span>
+                          <span className="text-xs text-neutral-500">{a.currency}</span>
+                        </div>
+                        <div className="text-xs text-neutral-500 mt-0.5">{a.vendor_name} · {a.title}</div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          Valid {formatDate(a.valid_from)} – {formatDate(a.valid_to)}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {preselectFailed && (
+            <p className="text-xs text-danger-600">
+              This agreement isn't available for receipts — it may not be a house-account agreement, or it's
+              draft/cancelled/past its grace period. Search for a different one above.
+            </p>
+          )}
         </div>
 
         {/* Agreement summary card */}
@@ -199,7 +206,17 @@ export default function ReceiptCreatePage() {
               against are now supplied by this page instead of being fixed to
               whatever agreement the form used to be embedded in. */}
           <div className="rounded-xl border border-neutral-200 bg-white p-6">
-            <ReceiptEntryForm agreementId={selectedAgreement.id} receiptType={receiptType} />
+            {/* replaceTab(cancelHref), not resetForm() alone — Task 10 fix
+                round 1: a form that silently clears itself is indistinguishable
+                from one that silently failed. Navigating to wherever Cancel
+                would have gone (the source agreement, or the receipts list)
+                is unambiguous confirmation AND lands somewhere the new receipt
+                is actually visible. */}
+            <ReceiptEntryForm
+              agreementId={selectedAgreement.id}
+              receiptType={receiptType}
+              onSuccess={() => replaceTab(cancelHref)}
+            />
           </div>
         </>
       )}
