@@ -3,14 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
-import { useDeclineMatch, useInvoiceAgreementReceipts, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
+import { useDeclineMatch, useMatchCandidates, useMatchInvoice } from '@/hooks/useInvoices'
 import { useAgreementCandidates, useAgreementSchedule } from '@/hooks/useAgreements'
 import { useAuthStore } from '@/stores/auth.store'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import type { ApiInvoice, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import type { ApiAgreement, ApiScheduleRow } from '@/services/agreement'
-import type { ApiReceipt } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 import { InvoiceAllocationPanel } from './InvoiceAllocationPanel'
 
@@ -67,16 +66,6 @@ function AgreementCandidateRow({
 function withinPeriodTolerance(amount: number, expected: number, tolerancePct: number): boolean {
   const span = (expected * tolerancePct) / 100
   return amount >= expected - span && amount <= expected + span
-}
-
-// Cent-rounded equality — plain float subtraction of two Number()-coerced
-// decimal strings can land a hair off zero (e.g. summing several selected
-// receipts' totals), which would otherwise make a genuinely-even match look
-// like it has a variance and wrongly nag for a receipt_variance_reason, or
-// (worse) silently attach a spurious receipt_variance_reason to a payload that
-// should have omitted it entirely.
-function centsEqual(a: number, b: number): boolean {
-  return Math.round(a * 100) === Math.round(b * 100)
 }
 
 // recurring — preview of the period the server will FIFO-claim on submit (no
@@ -209,41 +198,6 @@ function MilestoneStageRow({
   )
 }
 
-// house_account — multi-select pickup receipt row (Task 10). Only `open` receipts
-// are ever passed in (see the receiptsQuery below) — a 'reconciled' receipt is
-// already claimed by some other invoice, 'pending_ap_review' isn't
-// AP-cleared yet, 'voided'/'rejected' are dead.
-function ReceiptCandidateRow({
-  receipt, selected, onToggle, currency,
-}: { receipt: ApiReceipt; selected: boolean; onToggle: () => void; currency: string }) {
-  return (
-    <label
-      className={cn(
-        'flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors',
-        selected ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:bg-neutral-50',
-      )}
-    >
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={onToggle}
-        className="mt-1 h-4 w-4 rounded text-primary-600 focus:ring-primary-500"
-      />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-neutral-900">
-            {receipt.receipt_ref ?? 'No reference #'}
-          </span>
-          <span className="shrink-0 text-xs font-medium text-neutral-700">
-            {formatAmount(Number(receipt.total_amount), currency)}
-          </span>
-        </div>
-        <p className="text-[11px] text-neutral-400">Picked up {formatDate(receipt.receipt_date)}</p>
-      </div>
-    </label>
-  )
-}
-
 // Inline 3-way match panel — used by the Unmatched queue rows AND the invoice
 // detail page (Task Inbox / email deep links land there).
 export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => void }) {
@@ -279,180 +233,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
   }, [candLoading, agrCandLoading, rawPoCandidates.length, agreementCandidates.length])
 
   const [selectedAgreementId, setSelectedAgreementId] = useState('')
-  const [legacyReason, setLegacyReason] = useState('')
   const [selectedScheduleId, setSelectedScheduleId] = useState('')
-  // house_account receipt selection (Task 10) — see the receiptsQuery block below.
-  const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>([])
-  const [receiptVarianceReason, setReceiptVarianceReason] = useState('')
-  // receiptRefInput is the raw, live input value (controlled). receiptRefCommitted
-  // only updates on blur/Enter — review fix (Important 2): matching on every
-  // keystroke let a short reference number's IN-PROGRESS value (e.g. typing
-  // "10010" passes through "1001") match a DIFFERENT, wrong receipt along the
-  // way, and that wrong match never got un-picked. Only the committed value
-  // drives matching now.
-  const [receiptRefInput, setReceiptRefInput] = useState('')
-  const [receiptRefCommitted, setReceiptRefCommitted] = useState('')
 
   const selectedAgreement = agreementCandidates.find((a) => a.id === selectedAgreementId)
-  const isHouseAccount = selectedAgreement?.agreement_type === 'house_account'
   const isRecurring = selectedAgreement?.agreement_type === 'recurring'
   const isMilestone = selectedAgreement?.agreement_type === 'milestone'
-
-  // house_account — candidate pickup receipts this invoice might be settling
-  // (Task 10; real evidence built in Tasks 1-9). Only 'open' receipts are
-  // eligible: 'reconciled' is already claimed by another invoice,
-  // 'pending_ap_review' isn't AP-cleared yet, 'voided'/'rejected' are dead.
-  // Gated the same way scheduleQuery is above — enabled only when needed.
-  // Hits the invoice-scoped route (useInvoiceAgreementReceipts), NOT the
-  // agreement detail page's epms.agreement.read-gated one — review finding
-  // (Task 10 round 2, Finding B): that permission isn't granted to every
-  // role that can legitimately match an invoice, so those callers used to
-  // 403 here and silently fall back to the no-evidence settlement path.
-  const receiptsQuery = useInvoiceAgreementReceipts(inv.id, isHouseAccount ? selectedAgreementId : '', 'open')
-  const openReceipts: ApiReceipt[] = receiptsQuery.data?.items ?? []
-  // Review fix (round-1 trailer, guard-timing note): the accelerators used to
-  // gate on `receiptsQuery.isLoading`, which in TanStack Query v5 is a DERIVED
-  // flag (`isPending && isFetching`) whose value during the exact render a
-  // disabled query flips to enabled isn't part of any documented contract.
-  // `isSuccess`/`isError` are the query's actual terminal status flags —
-  // querying them directly can't strand the one-shot guard on an
-  // unconfirmed timing assumption. Also used below to gate the "Loading…"
-  // copy and the no-evidence reason box (Important 7) — same reasoning
-  // applies to both, so there's no separate `isLoading`-based flag to drift
-  // out of sync with it.
-  const receiptsSettled = receiptsQuery.isSuccess || receiptsQuery.isError
-  // Design decision 3 (task brief): a fetch failure must render as a DISTINCT
-  // error state, never silently as "this agreement has no receipts" — that
-  // would make the operator think the agreement is genuinely clean and send
-  // them to the legacy no-evidence reason box, quietly bypassing the
-  // evidence chain Tasks 1-9 built. See the error branch rendered below.
-  const receiptsErrored = receiptsQuery.isError
-  // Distinguishes "never loaded anything" from "have cached data, this
-  // fetch just failed" — see the render logic below (review fix, Minor 8).
-  const hasReceiptList = openReceipts.length > 0
-  const sortedOpenReceipts = [...openReceipts].sort(
-    (a, b) => new Date(b.receipt_date).getTime() - new Date(a.receipt_date).getTime()
-  )
-  const selectedReceipts = openReceipts.filter((s) => selectedReceiptIds.includes(s.id))
-  const invoiceTotalAmount = Number(inv.total_amount)
-  const selectedReceiptTotal = selectedReceipts.reduce((sum, s) => sum + Number(s.total_amount), 0)
-  const receiptVarianceAmount = selectedReceiptTotal - invoiceTotalAmount
-  const receiptVarianceIsZero = centsEqual(selectedReceiptTotal, invoiceTotalAmount)
-
-  // Tracks which receipt (at most one) is CURRENTLY checked because an
-  // accelerator put it there, as opposed to a manual click — lets the
-  // effect below swap its own pick without ever touching one the operator
-  // chose by hand (design decision 1). Reset alongside the rest of the
-  // per-agreement state in AgreementCandidateRow's onSelect below.
-  const autoSelectedReceiptIdRef = useRef<string | null>(null)
-  // One-shot latch for the amount+date guess specifically — see the combined
-  // effect below for why "one-shot" no longer means "one render, ever" but
-  // "one determination, deferred while a reference match is in play."
-  const receiptPreselectAppliedRef = useRef(false)
-  // Mirrors selectedReceiptIds for the accelerator effect below to read WITHOUT
-  // putting it in that effect's dependency array — that would re-run the
-  // whole accelerator decision on every manual (de)selection, not just when
-  // the accelerator's own inputs change. React's setState functional
-  // updater already gives the effect a fresh `prev` for WRITES; this ref is
-  // the read-side equivalent, kept in sync by the tiny effect right below
-  // it. By the time the accelerator effect reacts to a DIFFERENT dependency
-  // changing, this ref already reflects the latest committed selection.
-  const selectedReceiptIdsRef = useRef<string[]>([])
-  useEffect(() => {
-    selectedReceiptIdsRef.current = selectedReceiptIds
-  }, [selectedReceiptIds])
-
-  const toggleReceipt = (receiptId: string) => {
-    if (autoSelectedReceiptIdRef.current === receiptId) {
-      // The operator is taking manual control of a receipt an accelerator
-      // picked — stop treating it as "ours" so a later accelerator swap
-      // can't fight a manual (re-)check/uncheck (design decision 1).
-      autoSelectedReceiptIdRef.current = null
-    }
-    setSelectedReceiptIds((prev) => (prev.includes(receiptId) ? prev.filter((id) => id !== receiptId) : [...prev, receiptId]))
-  }
-
-  // Combined accelerator decision (review fix, Important 1 + 2). The two
-  // paths used to be independent effects that only ever ADDED to the
-  // selection — the real failure mode: path 2's amount+date guess fires
-  // automatically the instant receipts finish loading (no operator action
-  // needed), and later, typing a matching reference number in path 1 added
-  // a SECOND receipt on top of it. Two real receipts get claimed, the total looks
-  // roughly 2x the invoice, the (non-blocking, "recommended" not required)
-  // variance box makes it trivially easy to wave through, and the backend's
-  // claim() does no amount check at all — the surplus receipt gets silently
-  // `reconciled` against the WRONG invoice with no UI path back to `open`.
-  // Exactly the "predicting wrong beats not predicting" failure the task's
-  // design decision 1 was written to prevent, just arrived at by stacking
-  // two individually-correct predictions instead of one wrong one.
-  //
-  // Fix: at most ONE accelerator-picked receipt is ever checked at a time,
-  // tracked via autoSelectedReceiptIdRef. Priority mirrors the brief's own
-  // ordering — an explicit reference match (path 1) always wins over the
-  // automatic amount+date guess (path 2); when a NEW desired pick differs
-  // from the previous one, the previous pick is unchecked before the new
-  // one is checked, never both at once. The amount+date guess itself still
-  // fires at most once (receiptPreselectAppliedRef) — but that "once" is now
-  // deferred past any render where a reference match is already in play,
-  // so clearing the reference field later can still let it run.
-  //
-  // Review fix, round 2 Finding A: this used to claim `desiredId`
-  // unconditionally whenever it differed from the previous auto-pick — with
-  // no check for whether the operator had ALREADY checked that receipt by
-  // hand. Concretely: operator manually checks receipt A, then types A's own
-  // reference number (a complete no-op on screen — A was already checked),
-  // which silently marks A as "ours"; a LATER, unrelated edit to the
-  // reference field then swaps the "desired" pick away from A and
-  // un-checks it — a receipt the operator never clicked, gone, and if it was
-  // the only one selected, the required no-evidence reason box reappears.
-  // Fix: a desired pick that's already checked — for ANY reason — is never
-  // claimed. Only a genuinely UNCHECKED desired pick becomes "ours" to
-  // manage; an already-checked one is left exactly as the operator left it
-  // (this effect still releases its OWN previous pick if the suggestion
-  // moved on from it).
-  useEffect(() => {
-    if (!isHouseAccount || !receiptsSettled) return
-
-    const committedRef = receiptRefCommitted.trim()
-    const refMatch = committedRef
-      ? openReceipts.find((s) => s.receipt_ref != null && s.receipt_ref.trim() === committedRef) ?? null
-      : null
-
-    let desired: ApiReceipt | null = refMatch
-    if (!desired && !receiptPreselectAppliedRef.current) {
-      const invoiceDateMs = new Date(inv.invoice_date).getTime()
-      const uniqueMatches = openReceipts.filter((s) => {
-        if (!centsEqual(Number(s.total_amount), invoiceTotalAmount)) return false
-        const daysBefore = (invoiceDateMs - new Date(s.receipt_date).getTime()) / 86_400_000
-        return daysBefore >= 0 && daysBefore <= 14
-      })
-      desired = uniqueMatches.length === 1 ? uniqueMatches[0] : null
-      receiptPreselectAppliedRef.current = true
-    }
-
-    const desiredId = desired?.id ?? null
-    if (desiredId === autoSelectedReceiptIdRef.current) return
-    const previousAutoId = autoSelectedReceiptIdRef.current
-
-    if (desiredId !== null && selectedReceiptIdsRef.current.includes(desiredId)) {
-      // Already checked, and it isn't our own previous pick (that case
-      // returned above) — the operator put it there. Disown it, release
-      // only OUR previous pick if we had one, and touch nothing else.
-      autoSelectedReceiptIdRef.current = null
-      if (previousAutoId) {
-        setSelectedReceiptIds((prev) => (prev.includes(previousAutoId) ? prev.filter((id) => id !== previousAutoId) : prev))
-      }
-      return
-    }
-
-    autoSelectedReceiptIdRef.current = desiredId
-    setSelectedReceiptIds((prev) => {
-      let next = prev
-      if (previousAutoId && next.includes(previousAutoId)) next = next.filter((id) => id !== previousAutoId)
-      if (desiredId && !next.includes(desiredId)) next = [...next, desiredId]
-      return next
-    })
-  }, [isHouseAccount, receiptsSettled, openReceipts, receiptRefCommitted, invoiceTotalAmount, inv.invoice_date])
 
   // Task 6's backend branches on agreement_type: recurring FIFO-claims a period
   // by default (schedule_id optional — see the manual-assignment override
@@ -494,13 +279,6 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
     : []
 
   const canSubmitAgreement = !!selectedAgreementId && (
-    // house_account (Task 10): real evidence takes priority — any receipt(s)
-    // selected is sufficient to submit regardless of variance (design
-    // decision 2: a non-zero variance asks for an explanation but never
-    // blocks submit). Only when NOTHING is selected does the legacy
-    // no-evidence reason become the (still mandatory) gate — same rule the
-    // backend enforces in _match_to_agreement.
-    isHouseAccount ? (selectedReceiptIds.length > 0 || legacyReason.trim().length > 0) :
     // A schedule-fetch error must never disable submit (whole-branch review
     // Item 8) — a delegate who can match but can't read the schedule would
     // otherwise be stuck with no path forward. Falling through to the
@@ -508,7 +286,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
     // permanently-disabled button with a misleading "no unclaimed stages".
     isMilestone ? (!scheduleLoading && (!!selectedScheduleId || scheduleErrored)) :
     isRecurring ? !scheduleLoading :
-    false
+    // house_account (Task 6): matching is pure linkage now — mounting a
+    // receipt or declaring a no-evidence settlement moved off /match
+    // entirely (invoice detail page, Task 7/8). Selecting the agreement is
+    // the whole requirement, same as every other route.
+    true
   )
 
   const me = useAuthStore.getState().user
@@ -535,34 +317,23 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
 
   const handleMatchAgreement = () => {
     if (!canSubmitAgreement) return
-    // house_account (Task 10): real evidence (receipt_ids) takes priority over
-    // the no-evidence fallback, mirroring _match_to_agreement's own branch
-    // (epms-api/app/crud/invoice.py) field-for-field — receipt_ids given =>
-    // legacy_settlement_reason is never sent (the backend would ignore it
-    // anyway once receipt_ids is non-empty, but omitting it keeps the payload
-    // honest about which path was taken). receipt_variance_reason rides along
-    // only when the claimed receipts don't net to the invoice total (design
-    // decision 2 — it explains a variance, it never blocks submission).
-    // recurring: schedule_id is OPTIONAL — omitted, the server FIFO-claims
-    // the next pending/overdue period itself; set, it's the
-    // manual-assignment override (whole-branch review Blocker 2) and skips
-    // the tolerance check entirely. milestone: schedule_id required, no
-    // reason (Task 6 branch — see MatchPanel brief). Sent only when truthy
-    // in both branches — an empty string would parse as an invalid UUID
-    // server-side and surface pydantic's raw 422 instead of the friendlier
-    // "Pick the milestone stage" AgreementMatchInvalid message (reachable
-    // now that isMilestone's canSubmit can pass with nothing picked, on a
-    // schedule-fetch error).
+    // Task 6: matching an invoice to an agreement is pure linkage — select
+    // the agreement, submit, done, for every agreement_type including
+    // house_account. Mounting a receipt or declaring a no-evidence
+    // settlement are separate acts that live on the invoice detail page
+    // (Task 7/8), not on this request. recurring: schedule_id is OPTIONAL —
+    // omitted, the server FIFO-claims the next pending/overdue period
+    // itself; set, it's the manual-assignment override (whole-branch review
+    // Blocker 2) and skips the tolerance check entirely. milestone:
+    // schedule_id required. Sent only when truthy — an empty string would
+    // parse as an invalid UUID server-side and surface pydantic's raw 422
+    // instead of the friendlier "Pick the milestone stage"
+    // AgreementMatchInvalid message (reachable now that isMilestone's
+    // canSubmit can pass with nothing picked, on a schedule-fetch error).
     matchInvoiceMutation.mutate(
       {
         id: inv.id,
         agreement_id: selectedAgreementId,
-        ...(isHouseAccount
-          ? (selectedReceiptIds.length > 0
-              ? { receipt_ids: selectedReceiptIds,
-                  ...(!receiptVarianceIsZero ? { receipt_variance_reason: receiptVarianceReason.trim() } : {}) }
-              : { legacy_settlement_reason: legacyReason.trim() })
-          : {}),
         ...((isMilestone || isRecurring) && selectedScheduleId ? { schedule_id: selectedScheduleId } : {}),
       },
       {
@@ -666,200 +437,21 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                   agreement={agr}
                   selected={selectedAgreementId === agr.id}
                   onSelect={() => {
-                    // A previously-picked stage/receipt selection belongs to the
+                    // A previously-picked stage selection belongs to the
                     // PREVIOUS agreement — stale if left set across a
-                    // selection change. Also re-arms the accelerator
-                    // decision (receiptPreselectAppliedRef + autoSelectedReceiptIdRef)
-                    // so it runs fresh against the NEW agreement's receipts.
+                    // selection change.
                     setSelectedAgreementId(agr.id)
                     setSelectedScheduleId('')
-                    setSelectedReceiptIds([])
-                    setReceiptVarianceReason('')
-                    setReceiptRefInput('')
-                    setReceiptRefCommitted('')
-                    setLegacyReason('')
-                    receiptPreselectAppliedRef.current = false
-                    autoSelectedReceiptIdRef.current = null
-                    selectedReceiptIdsRef.current = []
                   }}
                 />
               ))}
             </div>
           )}
 
-          {/* house_account — pick the pickup receipt(s) this invoice covers
-              (Task 10; real evidence built in Tasks 1-9). Falls back to the
-              1A no-evidence reason box ONLY when nothing is selected — see
-              design note above canSubmitAgreement. */}
-          {isHouseAccount && (
-            <div className="flex flex-col gap-3">
-              {/* Reference-number accelerator (design decision 1, path 1):
-                  matching is exact against receipt_ref — no fuzzy search.
-                  Matches on blur/Enter, not every keystroke (review fix,
-                  Important 2) — matching mid-keystroke let an in-progress
-                  short reference number pass through a DIFFERENT real
-                  receipt's number on the way to the one actually being typed.
-                  The combined accelerator effect above cleanly swaps its
-                  own pick when the committed value changes; the operator's
-                  own manual (de)selections are never touched. */}
-              <div className="flex flex-col gap-1">
-                <label className="text-xs font-medium text-neutral-700">
-                  Reference on the invoice (optional)
-                </label>
-                <input
-                  type="text"
-                  value={receiptRefInput}
-                  onChange={(e) => setReceiptRefInput(e.target.value)}
-                  onBlur={() => setReceiptRefCommitted(receiptRefInput)}
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter') return
-                    e.preventDefault()
-                    setReceiptRefCommitted(receiptRefInput)
-                  }}
-                  placeholder="e.g. the counter receipt # printed on the invoice"
-                  className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
-                />
-              </div>
-
-              {/* Design decision 3 + review fix (Minor 8): a fetch failure
-                  is NEVER rendered as an empty receipt list — that would read
-                  as "this agreement genuinely has no receipts" and send the
-                  operator straight to the no-evidence reason box, silently
-                  bypassing the evidence chain. But a BACKGROUND refetch
-                  failure (react-query's default refetchOnWindowFocus) must
-                  not blow away a list the operator already has receipts
-                  checked in either — hasReceiptList tells the two failure
-                  shapes apart: no cached data at all gets the full-width
-                  error (nothing else to show), cached-but-stale gets a
-                  compact banner ABOVE the still-interactive list so
-                  existing selections stay visible and un-checkable. */}
-              {receiptsErrored && !hasReceiptList && (
-                <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                  <div className="flex flex-1 items-center justify-between gap-2">
-                    <p>Couldn't load pickup receipts — you may not have permission to view them. You can still submit by explaining why below.</p>
-                    <Button size="sm" variant="secondary" onClick={() => receiptsQuery.refetch()} disabled={receiptsQuery.isFetching}>
-                      {receiptsQuery.isFetching ? 'Retrying…' : 'Retry'}
-                    </Button>
-                  </div>
-                </div>
-              )}
-              {(!receiptsErrored || hasReceiptList) && (
-                <>
-                  {receiptsErrored && hasReceiptList && (
-                    <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
-                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                      <div className="flex flex-1 items-center justify-between gap-2">
-                        <p>Couldn't refresh the pickup receipt list — showing the last one loaded.</p>
-                        <Button size="sm" variant="secondary" onClick={() => receiptsQuery.refetch()} disabled={receiptsQuery.isFetching}>
-                          {receiptsQuery.isFetching ? 'Retrying…' : 'Retry'}
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                  {!receiptsSettled ? (
-                    <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
-                      Loading pickup receipts…
-                    </p>
-                  ) : sortedOpenReceipts.length === 0 ? (
-                    <p className="rounded-lg border border-neutral-200 bg-white px-3 py-4 text-center text-xs text-neutral-400">
-                      No open pickup receipts on this agreement. (Receipts still awaiting AP review aren't listed here.)
-                    </p>
-                  ) : (
-                    <div className="flex flex-col gap-2">
-                      <label className="text-xs font-medium text-neutral-700">
-                        Which pickup receipt(s) does this invoice cover?
-                      </label>
-                      <div className="flex flex-col gap-2">
-                        {sortedOpenReceipts.map((receipt) => (
-                          <ReceiptCandidateRow
-                            key={receipt.id}
-                            receipt={receipt}
-                            selected={selectedReceiptIds.includes(receipt.id)}
-                            onToggle={() => toggleReceipt(receipt.id)}
-                            currency={selectedAgreement?.currency ?? inv.currency}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {selectedReceiptIds.length > 0 && (
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-xs">
-                    <span className="text-neutral-500">
-                      Selected {formatAmount(selectedReceiptTotal, selectedAgreement?.currency ?? inv.currency)}
-                      {' · '}Invoice {formatAmount(invoiceTotalAmount, selectedAgreement?.currency ?? inv.currency)}
-                    </span>
-                    <span className={cn('font-medium', receiptVarianceIsZero ? 'text-success-700' : 'text-warning-700')}>
-                      Difference {formatAmount(receiptVarianceAmount, selectedAgreement?.currency ?? inv.currency)}
-                    </span>
-                  </div>
-                  {/* Design decision 2: a non-zero difference asks for an
-                      explanation but NEVER blocks submit — counter purchases
-                      routinely differ from the receipt total by freight,
-                      discounts, or tax. Blocking here would just push the
-                      operator to the no-evidence channel instead, which is
-                      worse. */}
-                  {!receiptVarianceIsZero && (
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-medium text-neutral-700">
-                        Explain the difference <span className="text-warning-700">(recommended)</span>
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={receiptVarianceReason}
-                        onChange={(e) => setReceiptVarianceReason(e.target.value)}
-                        placeholder="e.g. Invoice includes freight not itemized on the counter receipt."
-                        className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Review fix (Important 7): while the receipt list is still
-                  loading, selectedReceiptIds is necessarily empty — without the
-                  receiptsSettled guard this required, red-asterisked box used
-                  to flash open on every panel mount (before the list has had
-                  a chance to say otherwise), and its whole purpose is to be
-                  the thing this feature makes rare. Only render it once we
-                  actually know there's nothing selected (settled — loaded
-                  with none picked, OR the fetch failed and there was never
-                  anything to pick from). */}
-              {selectedReceiptIds.length === 0 && receiptsSettled && (
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-medium text-neutral-700">
-                    No pickup receipts selected — reason for settling without receipt evidence <span className="text-danger-600">*</span>
-                  </label>
-                  <p className="text-[11px] text-neutral-500">
-                    This invoice will be paid against the agreement with no pickup receipt to reconcile against.
-                    Explain why — this is recorded for audit.
-                  </p>
-                  {/* Review fix (Important 6): when this box is showing
-                      BECAUSE the receipt list failed to load (not because the
-                      agreement genuinely has none), submitting here still
-                      records a permanent legacy_settlement=True — say so
-                      explicitly, so it's an informed choice rather than a
-                      silent evidence-chain bypass. */}
-                  {receiptsErrored && (
-                    <p className="text-[11px] font-medium text-warning-700">
-                      The pickup receipt list failed to load — settling now will record this invoice as having no receipt evidence, even if receipts actually exist. Consider retrying above first.
-                    </p>
-                  )}
-                  <textarea
-                    rows={3}
-                    value={legacyReason}
-                    onChange={(e) => setLegacyReason(e.target.value)}
-                    placeholder="e.g. Monthly house-account statement for vendor counter pickups; pickup receipts not yet digitized."
-                    className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
-                  />
-                </div>
-              )}
-            </div>
-          )}
+          {/* house_account (Task 6): no extra fields — matching is pure
+              linkage, exactly like recurring/milestone below. Mounting a
+              receipt or declaring a no-evidence settlement live on the
+              invoice detail page (Task 7/8), not here. */}
 
           {/* recurring — no reason field: the server FIFO-claims the next
               pending/overdue period itself (see claim_next_period). Preview
@@ -962,11 +554,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
 
           <div className="flex justify-end">
             <Button onClick={handleMatchAgreement} disabled={!canSubmitAgreement || matchInvoiceMutation.isPending}>
-              {matchInvoiceMutation.isPending
-                ? 'Matching...'
-                : isHouseAccount && selectedReceiptIds.length === 0
-                ? 'Confirm legacy settlement & match'
-                : 'Match to agreement'}
+              {matchInvoiceMutation.isPending ? 'Matching...' : 'Match to agreement'}
             </Button>
           </div>
         </div>

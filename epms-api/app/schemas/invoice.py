@@ -100,26 +100,14 @@ class InvoiceMatchRequest(BaseModel):
     # is linked to the agreement for traceability and paid in full from the AP
     # header — there is no line reference to measure a variance against.
     agreement_id: uuid.UUID | None = None
-    # house_account only. Two mutually-exclusive sub-paths (Task 5):
-    #   - receipt_ids given → real evidence, claimed agreement receipts back
-    #     this invoice; legacy_settlement_reason is ignored and
-    #     legacy_settlement lands False. receipt_variance_reason optionally
-    #     explains a mismatch between the receipts' total and the invoice
-    #     total (no amount check is enforced here — see
-    #     receipt_variance_reason below).
-    #   - receipt_ids omitted/empty → the 1A no-evidence fallback: this
-    #     remains a legacy settlement and legacy_settlement_reason is required.
-    # recurring and milestone claim a real schedule row instead — see
-    # schedule_id below — and never read either of these two fields.
-    legacy_settlement_reason: str | None = None
-    # house_account with receipt_ids only: which agreement receipts this
-    # invoice covers.
-    receipt_ids: list[uuid.UUID] | None = None
-    # house_account with receipt_ids only: free-text note when the claimed
-    # receipts' total doesn't line up with the invoice total. Stored
-    # separately from legacy_settlement_reason — it explains a variance on a
-    # genuinely evidenced settlement, not the absence of evidence.
-    receipt_variance_reason: str | None = None
+    # Task 6: matching to a house_account agreement is now pure linkage — no
+    # evidence field belongs on this request. Mounting receipts to an invoice
+    # and declaring "no evidence, here's why" are separate acts that live on
+    # the invoice detail page (Task 7/8), not bundled into /match. The only
+    # place that still enforces "evidence or an explicit reason" is the PA
+    # gate (api/v1/pa.py) at payment time — this schema used to carry
+    # receipt_ids / receipt_variance_reason / legacy_settlement_reason for
+    # that purpose; all three are gone.
     # milestone 协议必填 —— 人工指定这张票付的是哪个阶段。recurring 默认由 FIFO
     # 自动认领,不读这个字段;但显式传入时是人工指定期次的逃生舱(whole-branch
     # review 补齐 spec §4.3 step 5):FIFO 认不到期次(超容差 / 无候选行)会永久

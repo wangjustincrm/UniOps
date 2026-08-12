@@ -1,4 +1,5 @@
-"""Task 6: the PA-side gate for house_account agreements — a payment
+"""Task 6/7 (this gate itself is untouched — app/api/v1/pa.py is not in Task
+6's file list): the PA-side gate for house_account agreements — a payment
 application cannot be raised against an invoice that has neither agreement-
 receipt evidence nor an explicit legacy-settlement flag.
 
@@ -11,6 +12,16 @@ gets gated on that: _validate_agreement_pa_invoices (app/api/v1/pa.py) must
 refuse any house_account invoice caught in neither state, while continuing to
 let recurring/milestone PAs through untouched — they were never in scope for
 receipt evidence at all.
+
+Task 6 pulled BOTH of those states out of /match (matching a house_account
+invoice to an agreement is now pure linkage — see test_receipt_match.py). Mounting
+a receipt and declaring a legacy settlement move to the invoice detail page
+(Task 7/8), which doesn't exist yet, so the two tests below that need the
+invoice to actually HOLD one of those states now seed it directly on the row —
+the same "write the target shape directly, the request field doesn't exist
+yet" pattern test_agreement_invoice_match.py's
+test_route_switch_to_po_releases_claimed_receipts already used before this
+task. What's under test here is the GATE (pa.py), unaffected by Task 6.
 """
 import uuid
 from datetime import date
@@ -52,25 +63,19 @@ async def _create_receipt(db: AsyncSession, agr, user_id: uuid.UUID, *, amount: 
 async def test_house_account_pa_refused_when_invoice_has_neither_receipts_nor_legacy(
         admin_client, test_engine):
     """Neither real evidence nor an explicit legacy admission — the 422 must
-    name the offending invoice so the caller knows what to fix. This state is
-    not reachable through the normal /invoices/{id}/match endpoint (crud_match
-    always sets one of the two), so it is forced directly in the DB here — the
-    gate must still refuse it, whatever wrote the row."""
+    name the offending invoice so the caller knows what to fix. Task 6: this
+    is now the OUTPUT of any bare house_account /match — matching no longer
+    sets legacy_settlement or receipt_ids at all, it is pure linkage — so no
+    forcing is even needed to reach this state; the invoice lands here by
+    default. The gate must still refuse it."""
     vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
-    inv_id = uuid.UUID(inv["id"])
 
     r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
-        "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+        "agreement_id": str(agr.id)})
     assert r.status_code == 200, r.text
-
-    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    async with factory() as db:
-        db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        db_inv.legacy_settlement = False
-        db_inv.receipt_ids = None
-        await db.commit()
+    assert r.json()["legacy_settlement"] is False
 
     pa = await admin_client.post(PA_URL, json={
         "title": "No evidence at all", "agreement_id": str(agr.id), "invoice_ids": [inv["id"]],
@@ -84,18 +89,29 @@ async def test_house_account_pa_refused_when_invoice_has_neither_receipts_nor_le
 
 
 async def test_house_account_pa_allowed_with_receipts(admin_client, test_engine):
+    """Task 6: /match can no longer claim a receipt (receipt_ids is not a field
+    on InvoiceMatchRequest — the mounting endpoint that will do this lands in
+    Task 7 and doesn't exist yet). Seed the claim directly on the invoice row,
+    the same shape agreement_receipt_crud.claim() plus Task 7's endpoint will
+    produce, so this test keeps exercising the GATE (pa.py) and not a request
+    field that no longer exists."""
     vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
 
+    r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
+        "agreement_id": str(agr.id)})
+    assert r.status_code == 200, r.text
+    assert r.json()["legacy_settlement"] is False
+
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         receipt = await _create_receipt(db, agr, user_id, amount="100.00")
-
-    r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
-        "agreement_id": str(agr.id), "receipt_ids": [str(receipt.id)]})
-    assert r.status_code == 200, r.text
-    assert r.json()["legacy_settlement"] is False
+        db_inv = (await db.execute(select(Invoice).where(
+            Invoice.id == uuid.UUID(inv["id"])))).scalar_one()
+        claimed = await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv)
+        db_inv.receipt_ids = [str(row.id) for row in claimed]
+        await db.commit()
 
     # InvoiceResponse does not expose receipt_ids — resolve it via the DB, as
     # the existing suite does for schedule_id.
@@ -117,17 +133,30 @@ async def test_house_account_pa_allowed_with_receipts(admin_client, test_engine)
 async def test_house_account_pa_allowed_for_a_legacy_settled_invoice(admin_client, test_engine):
     """Every 1A invoice in the backlog is legacy_settlement=True with no receipts
     at all — this is the case that must NOT start failing, or this change
-    would retroactively block payment on the entire pre-1B backlog."""
+    would retroactively block payment on the entire pre-1B backlog.
+
+    Task 6: /match no longer sets legacy_settlement — declaring "no evidence,
+    here's why" moves to the invoice detail page (Task 8), which doesn't exist
+    yet. Seed the declaration directly on the row, the same shape that page
+    will write, so this test keeps exercising the GATE and not a request field
+    that no longer does this."""
     vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
 
     r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
-        "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog statement, no receipt"})
+        "agreement_id": str(agr.id)})
     assert r.status_code == 200, r.text
-    assert r.json()["legacy_settlement"] is True
+    assert r.json()["legacy_settlement"] is False
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(select(Invoice).where(
+            Invoice.id == uuid.UUID(inv["id"])))).scalar_one()
+        db_inv.legacy_settlement = True
+        db_inv.legacy_settlement_reason = "backlog statement, no receipt"
+        await db.commit()
+
     async with factory() as db:
         stored_receipt_ids = (await db.execute(select(Invoice.receipt_ids).where(
             Invoice.id == uuid.UUID(inv["id"])))).scalar_one()

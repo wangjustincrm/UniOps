@@ -186,6 +186,10 @@ async def test_expired_agreement_past_grace_is_not_a_candidate(admin_client, tes
 # ── match() agreement branch ────────────────────────────────────────────────
 
 async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_engine):
+    """Task 6: matching to a house_account agreement is pure linkage now, so
+    legacy_settlement stays False here (it used to land True — every agreement
+    match was a no-evidence legacy settlement in 1A/Task 5; see
+    test_receipt_match.py for the current no-evidence-declaration behavior)."""
     vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id,
                                        not_to_exceed=Decimal("50000.00"))
@@ -193,7 +197,6 @@ async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_eng
 
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={
         "agreement_id": str(agr.id),
-        "legacy_settlement_reason": "Backlog statement, paper receipts held by Finance",
     })
     assert r.status_code == 200, r.text
     body = r.json()
@@ -204,7 +207,7 @@ async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_eng
     assert body["match_route_auto"] is False
     assert body["po_id"] is None
     assert Decimal(body["variance"]) == Decimal("0")
-    assert body["legacy_settlement"] is True
+    assert body["legacy_settlement"] is False
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
@@ -213,18 +216,21 @@ async def test_match_to_agreement_sets_route_and_consumes(admin_client, test_eng
     assert fresh.consumed_amount == Decimal("1000.00")
 
 
-async def test_match_to_agreement_requires_a_reason_in_1a(admin_client, test_engine):
-    """1A has no agreement receipts, so every agreement match is a legacy
-    settlement and must carry a reason. 1B replaces this with real receipt
-    reconciliation."""
+async def test_match_to_agreement_needs_no_reason(admin_client, test_engine):
+    """1A had no agreement receipts, so every agreement match was forced into
+    a legacy settlement and had to carry a reason; Task 5 narrowed that to
+    "no receipts selected"; Task 6 removes it from /match entirely — matching
+    is pure linkage, full stop (was test_match_to_agreement_requires_a_reason_
+    in_1a, asserting the opposite — see test_receipt_match.py for the fuller
+    coverage of this behavior)."""
     vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id)
 
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/match",
                                 json={"agreement_id": str(agr.id)})
-    assert r.status_code == 422
-    assert "reason" in r.text.lower()
+    assert r.status_code == 200, r.text
+    assert r.json()["legacy_settlement"] is False
 
 
 async def test_match_to_agreement_rejects_vendor_mismatch(admin_client, test_engine):
@@ -534,7 +540,14 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
     The agreement route has no PO line to independently verify against (that
     is the entire point of legacy_settlement), so unlike the PO route there is
     no "zero variance, objectively confirmed" case to exempt: require_review
-    alone decides."""
+    alone decides.
+
+    Task 6: a bare house_account match no longer sets legacy_settlement at
+    all (matching is pure linkage now — see test_receipt_match.py), so this
+    is the state that reaches match_review by default, not the "legacy
+    settlement, reason quoted" wording from before Task 6. The review
+    description branch for exactly this case lives in api/v1/invoices.py's
+    match_invoice endpoint (Task 6 addendum, distinguishing by agreement type)."""
     vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
@@ -546,12 +559,12 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
         assert r_assign.status_code == 200, r_assign.text
 
         r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
-            "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+            "agreement_id": str(agr.id)})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["status"] == "match_review"
         assert body["match_route"] == "agreement"
-        assert body["legacy_settlement"] is True
+        assert body["legacy_settlement"] is False
         assert Decimal(body["variance"]) == Decimal("0")
     finally:
         await delegate_client.aclose()
@@ -569,11 +582,7 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
             PurchaseAgreement.id == agr.id))).scalar_one()
     assert review_task is not None
     assert review_task.assigned_role == "ap_clerk"
-    # No-evidence settlement: the review description must say so and quote
-    # the reason (Task 5 round-1 review fix, Important #2 — this branch is
-    # unchanged from before Task 5; the NEW branches are covered by
-    # test_agreement_match_by_delegate_with_receipts_review_description below).
-    assert "as a legacy settlement (no receipt evidence): backlog" in review_task.description
+    assert "No receipt evidence or no-evidence declaration" in review_task.description
     # A pending-review invoice still reserves against the ceiling — the same
     # "every linked invoice counts, no status filter" contract _recompute_
     # consumed already implements; it isn't a real spend yet, but it also isn't
@@ -581,48 +590,13 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
     assert agr_fresh.consumed_amount == Decimal("1000.00")
 
 
-async def test_agreement_match_by_delegate_with_receipts_review_description(admin_client, test_engine):
-    """Task 5 round-1 review fix (Important #2): a delegate matching a
-    house_account invoice WITH claimed receipts must not get the "as a
-    legacy settlement (no receipt evidence): None" description — that invoice
-    has real evidence, and the old unconditional wording asserted the exact
-    opposite of what happened. The review description must say receipts were
-    claimed, and must not claim "no receipt evidence" or print "None"."""
-    from tests.test_receipt_match import _create_receipt
-
-    vendor_id, _vendor_name, user_id = await seed_vendor_and_user(
-        test_engine, vendor_name="Receipt Review Text Vendor")
-    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
-    inv = await _upload_invoice(admin_client, vendor_id, amount="100.00")
-
-    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
-    async with factory() as db:
-        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
-
-    delegate_client, delegate_id = await _delegate_client(test_engine)
-    try:
-        r_assign = await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
-                                           json={"user_id": str(delegate_id)})
-        assert r_assign.status_code == 200, r_assign.text
-
-        r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
-            "agreement_id": str(agr.id), "receipt_ids": [str(receipt.id)]})
-        assert r.status_code == 200, r.text
-        body = r.json()
-        assert body["status"] == "match_review"
-        assert body["legacy_settlement"] is False
-    finally:
-        await delegate_client.aclose()
-
-    async with factory() as db:
-        review_task = (await db.execute(select(Task).where(
-            Task.type == "review_match", Task.document_type == "invoice",
-            Task.document_id == uuid.UUID(inv["id"]), Task.is_completed.is_(False),
-        ))).scalar_one_or_none()
-    assert review_task is not None
-    assert "no receipt evidence" not in review_task.description
-    assert "None" not in review_task.description
-    assert "1 claimed receipt(s)" in review_task.description
+# test_agreement_match_by_delegate_with_receipts_review_description removed
+# (Task 6): it drove receipt claiming through POST /match's now-removed
+# receipt_ids field to reach the "elif result.receipt_ids:" review-description
+# branch in api/v1/invoices.py. /match can no longer claim a receipt at all
+# (mounting is a separate act — Task 7's endpoint, not built yet), so that
+# branch is unreachable through any current caller; a test for it belongs
+# with Task 7's endpoint once that exists, not here.
 
 
 async def test_recurring_no_claimable_row_review_description_does_not_lie(admin_client, test_engine):
@@ -753,7 +727,14 @@ async def test_agreement_match_review_approve_keeps_link_and_consumed(admin_clie
     an over-eager "clean up whenever the review ends" refactor would sail
     through: the invoice would come out matched but with no agreement link, its
     spend silently released from the NTE ceiling and its PA route gone. This
-    test is that guard."""
+    test is that guard.
+
+    Task 6: legacy_settlement/legacy_settlement_reason are no longer set by a
+    bare house_account match (matching is pure linkage now), so they can't be
+    used here to distinguish "kept" from "cleared" the way they used to
+    (approve and reject now both leave them False/None) — agreement_id/
+    agreement_number/match_route below are what actually guard against the
+    "approve silently wipes the link" regression this test exists for."""
     vendor_id, _vendor_name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
@@ -763,7 +744,7 @@ async def test_agreement_match_review_approve_keeps_link_and_consumed(admin_clie
         await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match",
                                 json={"user_id": str(delegate_id)})
         r = await delegate_client.post(f"{INV_URL}/{inv['id']}/match", json={
-            "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+            "agreement_id": str(agr.id)})
         assert r.status_code == 200, r.text
         assert r.json()["status"] == "match_review"
     finally:
@@ -777,8 +758,8 @@ async def test_agreement_match_review_approve_keeps_link_and_consumed(admin_clie
     assert body["agreement_id"] == str(agr.id)
     assert body["agreement_number"] == agr.number
     assert body["match_route"] == "agreement"
-    assert body["legacy_settlement"] is True
-    assert body["legacy_settlement_reason"] == "backlog"
+    assert body["legacy_settlement"] is False
+    assert body["legacy_settlement_reason"] is None
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
@@ -895,12 +876,16 @@ async def test_recurring_match_does_not_flag_legacy_settlement(test_engine, admi
         assert done.match_route_auto is True
 
 
-async def test_house_account_match_still_requires_a_reason(test_engine, admin_client):
-    """Task 5 narrows this, doesn't remove it: with no receipts selected,
-    house_account is still the no-evidence settlement channel from 1A and a
-    reason is still required. (The "receipts selected" case is covered by
-    test_receipt_match.py — that's where legacy_settlement stops being forced.)"""
-    from app.crud.invoice import AgreementMatchInvalid, match as crud_match
+async def test_house_account_match_needs_no_evidence_and_no_reason(test_engine, admin_client):
+    """Task 6 supersedes this test (was test_house_account_match_still_requires_
+    a_reason, asserting the opposite): matching to a house_account agreement is
+    now pure linkage, exactly like recurring above — no receipts, no reason,
+    just agreement_id. Mounting a receipt or declaring "no evidence, here's
+    why" moved to the invoice detail page (Task 7/8) and is no longer part of
+    /match at all. See test_receipt_match.py for the fuller test of this
+    behavior at the crud layer; this one keeps the sibling recurring/house_account
+    comparison in one file."""
+    from app.crud.invoice import match as crud_match
     from app.schemas.invoice import InvoiceMatchRequest
 
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
@@ -911,9 +896,11 @@ async def test_house_account_match_still_requires_a_reason(test_engine, admin_cl
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        with pytest.raises(AgreementMatchInvalid, match="give a reason"):
-            await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
-                             matched_by=user_id)
+        result = await crud_match(db, db_inv, InvoiceMatchRequest(agreement_id=agr.id),
+                                  matched_by=user_id)
+
+    assert result.legacy_settlement is False
+    assert result.legacy_settlement_reason is None
 
 
 async def test_recurring_match_with_no_claimable_row_goes_to_match_review(test_engine, admin_client):

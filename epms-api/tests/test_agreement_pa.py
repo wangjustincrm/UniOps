@@ -12,6 +12,7 @@ from app.crud import user as user_crud
 from app.main import create_app
 from app.models.agreement import PurchaseAgreement
 from app.models.department import Department
+from app.models.invoice import Invoice
 from app.schemas.auth import RegisterRequest
 from httpx import ASGITransport, AsyncClient
 from tests.test_agreement_invoice_match import _make_active_agreement, _upload_invoice
@@ -77,15 +78,33 @@ async def _client_with_user(test_engine, role: str, department_id: uuid.UUID | N
     return client, user.id
 
 
-async def _match_and_pay(admin_client, vendor_id, agr, amount: str) -> dict:
+async def _declare_legacy_settlement(test_engine, inv_id: str, reason: str = "backlog") -> None:
+    """Task 6 shim: matching a house_account invoice to an agreement no longer
+    sets legacy_settlement — that declaration moved off /match entirely (see
+    test_receipt_match.py) to the invoice detail page (Task 8), which doesn't
+    exist yet. This file is about PA creation/scoping/visibility once an
+    invoice is agreement-linked and payable, not about how it got that way —
+    so callers that need a payable house_account invoice seed the declaration
+    directly on the row, the same shape that page will eventually write."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db_inv = (await db.execute(
+            select(Invoice).where(Invoice.id == uuid.UUID(inv_id)))).scalar_one()
+        db_inv.legacy_settlement = True
+        db_inv.legacy_settlement_reason = reason
+        await db.commit()
+
+
+async def _match_and_pay(admin_client, test_engine, vendor_id, agr, amount: str) -> dict:
     """Match a fresh invoice to `agr` and raise a regular agreement PA for it,
     via admin_client (system_admin) — keeps PaymentApplication.created_by
     distinct from any scoped test user, so scoping tests exercise the
     agreement-ownership branch and not the PA.created_by shortcut."""
     inv = await _upload_invoice(admin_client, vendor_id, amount=amount)
     m = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
-        "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+        "agreement_id": str(agr.id)})
     assert m.status_code == 200, m.text
+    await _declare_legacy_settlement(test_engine, inv["id"])
     r = await admin_client.post(PA_URL, json={
         "title": f"Statement {agr.number}", "agreement_id": str(agr.id), "invoice_ids": [inv["id"]],
         "subtotal": amount, "tax_amount": "0.00", "payment_amount": amount,
@@ -102,8 +121,9 @@ async def agreement_matched_invoice(admin_client, test_engine):
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _upload_invoice(admin_client, vendor_id, amount="1000.00")
     r = await admin_client.post(f"/api/v1/invoices/{inv['id']}/match", json={
-        "agreement_id": str(agr.id), "legacy_settlement_reason": "backlog"})
+        "agreement_id": str(agr.id)})
     assert r.status_code == 200, r.text
+    await _declare_legacy_settlement(test_engine, inv["id"])
     return inv, agr
 
 
@@ -304,8 +324,8 @@ async def test_agreement_pa_department_scope_excludes_other_departments(admin_cl
     agr_a = await _make_active_agreement(test_engine, vendor_id, user_id, department_id=dept_a)
     agr_b = await _make_active_agreement(test_engine, vendor_id, user_id, department_id=dept_b)
 
-    pa_a = await _match_and_pay(admin_client, vendor_id, agr_a, "100.00")
-    pa_b = await _match_and_pay(admin_client, vendor_id, agr_b, "200.00")
+    pa_a = await _match_and_pay(admin_client, test_engine, vendor_id, agr_a, "100.00")
+    pa_b = await _match_and_pay(admin_client, test_engine, vendor_id, agr_b, "200.00")
 
     client_a, _uid = await _client_with_user(test_engine, "dept_manager", department_id=dept_a)
     try:
@@ -333,7 +353,7 @@ async def test_agreement_pa_requester_sees_only_agreements_they_own(admin_client
     other_client, _other_id = await _client_with_user(test_engine, "requester")
     try:
         agr = await _make_active_agreement(test_engine, vendor_id, owner_id)
-        pa = await _match_and_pay(admin_client, vendor_id, agr, "50.00")
+        pa = await _match_and_pay(admin_client, test_engine, vendor_id, agr, "50.00")
 
         owner_listed = await owner_client.get(PA_URL)
         other_listed = await other_client.get(PA_URL)
@@ -353,7 +373,7 @@ async def test_pa_department_filter_matches_agreement_department(admin_client, t
     other_dept = await _make_department(test_engine, "Other Filter Dept")
     vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine, vendor_name="Dept Filter Vendor")
     agr = await _make_active_agreement(test_engine, vendor_id, user_id, department_id=dept)
-    pa = await _match_and_pay(admin_client, vendor_id, agr, "75.00")
+    pa = await _match_and_pay(admin_client, test_engine, vendor_id, agr, "75.00")
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
@@ -366,7 +386,7 @@ async def test_pa_department_filter_matches_agreement_department(admin_client, t
 async def test_pa_search_matches_agreement_number(admin_client, test_engine):
     vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine, vendor_name="Search Vendor")
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
-    pa = await _match_and_pay(admin_client, vendor_id, agr, "60.00")
+    pa = await _match_and_pay(admin_client, test_engine, vendor_id, agr, "60.00")
 
     r = await admin_client.get(PA_URL, params={"search": agr.number})
     assert r.status_code == 200, r.text
@@ -392,7 +412,7 @@ async def test_agreement_pa_task_chain_visibility_across_departments(admin_clien
     approver_dept = await _make_department(test_engine, "Approver's Own Dept")
     vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine, vendor_name="Task Chain Vendor")
     agr = await _make_active_agreement(test_engine, vendor_id, user_id, department_id=agreement_dept)
-    pa = await _match_and_pay(admin_client, vendor_id, agr, "90.00")
+    pa = await _match_and_pay(admin_client, test_engine, vendor_id, agr, "90.00")
 
     approver_client, approver_id = await _client_with_user(
         test_engine, "dept_manager", department_id=approver_dept)
@@ -459,6 +479,12 @@ async def test_agreement_pa_refused_for_invoice_still_in_match_review(admin_clie
                                  json={"action": "approve", "note": "ok"})
     assert r2.status_code == 200, r2.text
     assert r2.json()["status"] == "matched"
+
+    # Task 6: /match no longer sets legacy_settlement, so it must be declared
+    # separately (Task 8's job in production) before the PA gate will allow
+    # this house_account invoice through — this test is about the review-state
+    # gate, not the evidence gate.
+    await _declare_legacy_settlement(test_engine, inv["id"])
 
     r3 = await admin_client.post(PA_URL, json={
         "title": "Paying a reviewed statement", "agreement_id": str(agr.id),
@@ -749,6 +775,12 @@ async def test_patch_pa_rejects_swapping_in_an_invoice_from_another_agreement(
     r_b = await admin_client.post(f"/api/v1/invoices/{inv_b['id']}/match", json={
         "agreement_id": str(agr_b.id), "legacy_settlement_reason": "backlog"})
     assert r_b.status_code == 200, r_b.text
+
+    # Task 6: /match no longer sets legacy_settlement — declare it directly so
+    # the initial PA creation below (against inv_a) clears the house_account
+    # evidence gate. What's under test here is the PATCH cross-agreement
+    # check, which runs before that gate and rejects inv_b regardless.
+    await _declare_legacy_settlement(test_engine, inv_a["id"])
 
     pa = await admin_client.post(PA_URL, json={
         "title": "Agreement A statement", "agreement_id": str(agr_a.id),

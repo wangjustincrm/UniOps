@@ -147,21 +147,14 @@ export interface MatchInvoiceBody {
   gr_ids?:       string[]
   po_line_ids?:  string[]
   reference_po_id?: string
-  // Agreement route (Phase 1A) — takes priority over every PO field on the
-  // backend when set (epms-api/app/schemas/invoice.py InvoiceMatchRequest).
-  // legacy_settlement_reason is mandatory in practice: a blank/whitespace-only
-  // value is rejected server-side with 422.
+  // Agreement route — takes priority over every PO field on the backend when
+  // set (epms-api/app/schemas/invoice.py InvoiceMatchRequest). Task 6: this
+  // is pure linkage for every agreement_type, including house_account —
+  // mounting a receipt or declaring a no-evidence settlement moved off this
+  // request entirely (invoice detail page, Task 7/8); InvoiceMatchRequest no
+  // longer has receipt_ids / receipt_variance_reason / legacy_settlement_reason
+  // fields to mirror here.
   agreement_id?: string
-  legacy_settlement_reason?: string
-  // house_account with receipt_ids only: which pickup receipts this invoice covers —
-  // real evidence, takes priority over legacy_settlement_reason when non-empty
-  // (epms-api/app/schemas/invoice.py InvoiceMatchRequest.receipt_ids).
-  receipt_ids?: string[]
-  // house_account with receipt_ids only: free-text note when the claimed receipts'
-  // total doesn't line up with the invoice total. Distinct from
-  // legacy_settlement_reason — this explains a variance on an evidenced
-  // settlement, not the absence of evidence.
-  receipt_variance_reason?: string
   // milestone only — which schedule row (stage) this invoice pays for. recurring
   // FIFO-claims its own row server-side and never reads this; house_account has
   // no schedule rows at all. See InvoiceMatchRequest.schedule_id (epms-api).

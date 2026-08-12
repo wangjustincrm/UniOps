@@ -409,8 +409,8 @@ async def match_invoice(
                     # Review fix (Important #2 follow-up, Task 5 round 2):
                     # recurring's FIFO auto-claim can legitimately come up
                     # empty (no pending/overdue row, or the amount is out of
-                    # tolerance) — that's the ONLY way this branch is reached
-                    # with schedule_id still None, and it's exactly why
+                    # tolerance) — that's the ONLY way this branch used to be
+                    # reached with schedule_id still None, and it's exactly why
                     # require_review got set. Nothing was claimed, so "against
                     # a billing schedule row" would be the same shape of lie
                     # Important #2 just fixed, just without the literal
@@ -418,13 +418,37 @@ async def match_invoice(
                     # approve/reject — it's to manually assign which billing
                     # period this invoice covers (the req.schedule_id escape
                     # hatch), so the description has to say that instead.
-                    review_description = (
-                        f"Invoice {inv.internal_ref} was matched to agreement "
-                        f"{result.agreement_number}, but no billing period could be "
-                        "auto-claimed (none pending, or the amount is outside "
-                        "tolerance). Please review and manually assign the billing "
-                        "period this invoice covers."
-                    )
+                    #
+                    # Task 6 addendum: matching a house_account invoice to an
+                    # agreement no longer sets legacy_settlement or
+                    # receipt_ids at all — that used to be impossible (every
+                    # house_account match set one or the other), so this
+                    # branch was recurring-only. A delegate's plain
+                    # house_account match now lands here too, and the
+                    # recurring wording above ("no billing period could be
+                    # auto-claimed... manually assign the billing period")
+                    # would be nonsense for a house_account invoice, which has
+                    # no billing periods at all. Distinguish by the
+                    # agreement's type, not by what got claimed.
+                    agr_type = (await db.execute(
+                        select(PurchaseAgreement.agreement_type).where(
+                            PurchaseAgreement.id == inv.agreement_id)
+                    )).scalar_one_or_none()
+                    if agr_type == "house_account":
+                        review_description = (
+                            f"Invoice {inv.internal_ref} was matched to agreement "
+                            f"{result.agreement_number}. No receipt evidence or "
+                            "no-evidence declaration has been recorded for it yet. "
+                            "Please review and approve or reject."
+                        )
+                    else:
+                        review_description = (
+                            f"Invoice {inv.internal_ref} was matched to agreement "
+                            f"{result.agreement_number}, but no billing period could be "
+                            "auto-claimed (none pending, or the amount is outside "
+                            "tolerance). Please review and manually assign the billing "
+                            "period this invoice covers."
+                        )
             else:
                 review_description = (
                     f"Invoice {inv.internal_ref} was matched with a non-zero variance "

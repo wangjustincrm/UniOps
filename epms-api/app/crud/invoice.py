@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.crud import agreement as agreement_crud
-from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
@@ -430,34 +429,13 @@ async def _match_to_agreement(
     # "settled without receipt" 计数里,那个健康度指标就废了。
     claimed_row = None
     if agr.agreement_type == "house_account":
-        # Task 5: house_account now has real evidence available — agreement
-        # receipts (built in Tasks 1-4) play the role a GR plays on the PO
-        # route. Only when NONE are selected does this fall back to 1A's
-        # no-evidence settlement, so the reason is required for exactly the
-        # invoices that actually have no receipt behind them.
-        receipt_ids = req.receipt_ids or []
-        if receipt_ids:
-            try:
-                claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, invoice)
-            except ValueError as exc:
-                raise AgreementMatchInvalid(str(exc)) from exc
-            invoice.receipt_ids = [str(s.id) for s in claimed]
-            invoice.receipt_variance_reason = (req.receipt_variance_reason or "").strip() or None
-            invoice.legacy_settlement = False
-            invoice.legacy_settlement_reason = None
-        else:
-            # 一张凭证都没选 —— 这才是真正的无凭证付款,1A 的通道保留给它。
-            # 收窄的意义就在这里:有凭证时不该被问"为什么没有凭证",
-            # 否则协议详情那个健康度计数恒等于 100%,什么也暴露不了。
-            reason = (req.legacy_settlement_reason or "").strip()
-            if not reason:
-                raise AgreementMatchInvalid(
-                    "Select the receipts this invoice covers, or give a reason "
-                    "for settling it without any receipt evidence")
-            invoice.legacy_settlement = True
-            invoice.legacy_settlement_reason = reason
-            invoice.receipt_ids = None
-            invoice.receipt_variance_reason = None
+        # Task 6: 匹配 = 只做关联。凭证挂载是发票详情页上的另一件事,无凭证结算的
+        # 声明也在那里(Task 7/8) —— 两者都不该卡住"这张票属于这份协议"这个独立
+        # 事实。唯一的硬约束在 PA 闸门(api/v1/pa.py):起付款时才要求要么有凭证、
+        # 要么有显式声明。这里既不设 legacy_settlement 也不清它 —— 一张已经声明
+        # 过无凭证的发票改挂到另一份协议时,那个声明依然成立,与挂在哪份协议
+        # 无关(receipt_ids/schedule_id 已在函数开头的释放调用里清空,不在这重复)。
+        pass
     else:
         invoice.legacy_settlement = False
         invoice.legacy_settlement_reason = None
