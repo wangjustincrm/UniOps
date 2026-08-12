@@ -128,3 +128,15 @@ export function useAgreementAction(id: string) {
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Agreement action failed'),
   })
 }
+
+// The approval trail behind the detail page's timeline. Split from
+// useAgreement so a caller that only needs the header doesn't pay for it, and
+// keyed under the agreement so an approval action's invalidation of
+// ['agreements', id] refreshes the names alongside the status.
+export function useAgreementEvents(id: string) {
+  return useQuery({
+    queryKey: ['agreements', id, 'events'],
+    queryFn: () => agreementService.events(id),
+    enabled: Boolean(id),
+  })
+}

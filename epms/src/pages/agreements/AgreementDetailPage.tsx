@@ -14,7 +14,7 @@ import { formatAmount, formatDate, formatBytes, cn } from '@/lib/utils'
 import type { ApprovalStep, DocumentStatus } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
-import { useAgreement, useAgreementAction, useAgreementSchedule } from '@/hooks/useAgreements'
+import { useAgreement, useAgreementAction, useAgreementEvents, useAgreementSchedule } from '@/hooks/useAgreements'
 import { useAgreementReceipts } from '@/hooks/useAgreementReceipts'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { useDepartments } from '@/hooks/useDepartments'
@@ -26,6 +26,7 @@ import {
 } from '@/hooks/useAgreementAttachments'
 import { agreementAttachmentService } from '@/services/agreementAttachments'
 import type { AgreementStatus, AgreementType } from '@/services/agreement'
+import type { ApiEvent } from '@/services/pr'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
 
@@ -69,10 +70,29 @@ function buildWorkflowSteps(
   nodes: { id: string; label: string }[],
   status: AgreementStatus,
   stepIdx: number,
+  events: ApiEvent[] = [],
+  createdByName?: string | null,
 ): ApprovalStep[] {
+  // Who actually acted at each step. Same indexing as PrDetailPage's copy of
+  // this function — first approve event per step_idx wins — because the
+  // timeline they both feed is one component and must read the same either
+  // way. Without this the agreement's timeline rendered four role labels and
+  // four green ticks with not one name against them: it showed that the
+  // document was approved, never by whom.
+  const approveEventByStep = events
+    .filter((e) => e.action === 'approve')
+    .reduce<Record<number, ApiEvent>>((acc, e) => {
+      if (!(e.step_idx in acc)) acc[e.step_idx] = e
+      return acc
+    }, {})
+  const submitEvent = events.find((e) => e.action === 'submit')
+
   const created: ApprovalStep = {
     id: 'created',
     role: 'Creator',
+    // The document's own creator, falling back to whoever submitted it — an
+    // agreement imported or seeded straight to `active` has no submit event.
+    actorName: createdByName ?? submitEvent?.actor_name ?? undefined,
     status: 'completed',
     action: 'Created',
     channel: 'Web',
@@ -89,7 +109,15 @@ function buildWorkflowSteps(
       // in_review, returned
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
     }
-    return { id: node.id, role: node.label, status: s }
+    // Auto-skipped steps carry an approve event with a machine actor; naming
+    // it would credit a person for a decision nobody made. Same rule as PR.
+    const evt = approveEventByStep[i]
+    const autoSkipped = evt?.comment?.includes('Auto-skipped') ?? false
+    if (autoSkipped) s = 'skipped'
+    return {
+      id: node.id, role: node.label, status: s,
+      actorName: autoSkipped ? undefined : evt?.actor_name ?? undefined,
+    }
   })
   return [created, ...approvalNodes]
 }
@@ -315,6 +343,7 @@ export default function AgreementDetailPage() {
   // name for the dept_manager who actually holds the confirm task, not just
   // for a system_admin viewer.
   const { data: usersData } = useUserDirectory()
+  const { data: events } = useAgreementEvents(id ?? '')
 
   // The agreement's responsible person. Recorded on the create/edit form and
   // acted on by the backend — the NTE and expiry alerts are addressed to them
@@ -375,7 +404,13 @@ export default function AgreementDetailPage() {
   }
 
   const workflowNodes = config?.workflow_defs?.agr ?? DEFAULT_AGR_WORKFLOW
-  const approvalSteps = buildWorkflowSteps(workflowNodes, agreement.status, agreement.approval_step_idx ?? 0)
+  const approvalSteps = buildWorkflowSteps(
+    workflowNodes, agreement.status, agreement.approval_step_idx ?? 0,
+    events ?? [],
+    // Resolved off the same directory the Owner row uses — the agreement
+    // response carries created_by as a bare uuid, no name.
+    usersData?.items?.find((u) => u.id === agreement.created_by)?.full_name,
+  )
   const department = departments.find((d) => d.id === agreement.department_id)
 
   return (

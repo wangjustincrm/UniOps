@@ -1,3 +1,4 @@
+import type { ApiEvent } from '@/services/pr'
 import { api, fetchAllPages } from '@/lib/api'
 
 export type AgreementStatus =
@@ -187,4 +188,10 @@ export const agreementService = {
 
   confirmPeriod: (agreementId: string, rowId: string) =>
     api.post<ApiScheduleRow>(`/agreements/${agreementId}/schedule/${rowId}/confirm`),
+
+  // The approval trail, actor names resolved server-side (GET
+  // /agreements/{id}/events). Same payload as GET /pr/{id}/events, because the
+  // detail pages share one ApprovalTimeline component.
+  events: (id: string) =>
+    api.get<ApiEvent[]>(`/agreements/${id}/events`),
 }
