@@ -5,6 +5,7 @@ import {
   type CreateInvoiceBody,
   type UpdateInvoiceBody,
   type MatchInvoiceBody,
+  type SetReceiptsBody,
 } from '@/services/invoices'
 import type { ReceiptStatus } from '@/services/agreementReceipts'
 
@@ -137,6 +138,43 @@ export function useDeleteInvoice() {
       queryClient.removeQueries({ queryKey: ['invoices', id] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+}
+
+// Task 7/8: full-override receipt mounting. onSuccess awaits both
+// invalidations — TanStack Query v5's invalidateQueries only SCHEDULES a
+// background refetch; without awaiting, the caller's own onSuccess (which
+// closes an edit affordance / reads freshly-invalidated data) can run before
+// the refetch lands, rendering one frame of stale receipt_ids.
+export function useSetInvoiceReceipts() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, ...body }: { id: string } & SetReceiptsBody) =>
+      invoiceService.setReceipts(id, body),
+    onSuccess: async (_data, { id }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
+        queryClient.invalidateQueries({ queryKey: ['invoices', id, 'agreements'] }),
+      ])
+    },
+  })
+}
+
+// Task 7/8: explicit "no receipt evidence" declaration. Same await-before-
+// onSuccess reasoning as useSetInvoiceReceipts above.
+export function useSettleWithoutReceipt() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      invoiceService.settleWithoutReceipt(id, reason),
+    onSuccess: async (_data, { id }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
+        queryClient.invalidateQueries({ queryKey: ['invoices', id, 'agreements'] }),
+      ])
     },
   })
 }

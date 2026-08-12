@@ -161,6 +161,15 @@ export interface MatchInvoiceBody {
   schedule_id?: string
 }
 
+// Task 8: full-override body for PUT /invoices/{id}/receipts — receipt_ids is
+// the COMPLETE set of receipts this invoice should hold after the call;
+// anything currently held but not listed here is released back to `open` by
+// the backend (crud/invoice.py set_receipts — release-then-reclaim, no diff).
+export interface SetReceiptsBody {
+  receipt_ids: string[]
+  variance_reason?: string | null
+}
+
 export interface ResolveExceptionBody {
   resolution: 'accepted' | 'credit_note_requested'
   note?: string
@@ -241,4 +250,15 @@ export const invoiceService = {
 
   reviewMatch: (id: string, action: 'approve' | 'reject', note?: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/match-review`, { action, note }),
+
+  // Task 7/8: mounting receipt evidence is its own action on the invoice
+  // detail page, separate from /match (Task 6 pulled it out of
+  // InvoiceMatchRequest). Full-override semantics — see SetReceiptsBody.
+  setReceipts: (id: string, body: SetReceiptsBody) =>
+    api.put<ApiInvoice>(`/invoices/${id}/receipts`, body),
+
+  // Explicit "no receipt evidence exists" declaration — releases any receipts
+  // this invoice currently holds (crud/invoice.py settle_without_receipt).
+  settleWithoutReceipt: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/settle-without-receipt`, { reason }),
 }

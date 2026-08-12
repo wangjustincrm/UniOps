@@ -12,7 +12,9 @@ import { EXPENSE_BASE } from '@/lib/api'
 import { computeSla } from '@/stores/invoice.store'
 import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
 import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
+import { useAgreementCandidates } from '@/hooks/useAgreements'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
+import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
@@ -101,6 +103,18 @@ export default function InvoiceDetailPage() {
   const { data: inv, isLoading } = useInvoice(id ?? '')
   const { data: gr } = useGr(inv?.gr_id ?? '')
   const updateInvoice = useUpdateInvoice()
+
+  // Which agreement_type the linked agreement is — only needed to keep the
+  // "settled against the agreement" copy honest for house_account (Task 8:
+  // matching is now pure linkage, so a house_account invoice can sit linked
+  // with NO evidence recorded yet, a state that used to be impossible before
+  // Task 6/7). Same invoice-scoped, match-access-gated route
+  // InvoiceReceiptsPanel uses below (NOT epms.agreement.read) — see that
+  // component's docstring. React Query dedupes this against the identical
+  // call InvoiceReceiptsPanel makes, so this costs no extra request.
+  const agrCandForCopy = useAgreementCandidates(inv?.id ?? '', !!inv?.agreement_id)
+  const linkedAgreementType = agrCandForCopy.data?.items.find((a) => a.id === inv?.agreement_id)?.agreement_type
+  const isHouseAccountRoute = linkedAgreementType === 'house_account'
 
   // Tax lines are the source of truth for the header tax when present: the
   // backend recomputes tax_amount from them. Detect existence so the edit form
@@ -274,16 +288,27 @@ export default function InvoiceDetailPage() {
   // receipts). Deliberately no version numbers in user-facing copy.
   const claimedReceiptCount = inv.receipt_ids?.length ?? 0
   const receiptNoun = claimedReceiptCount === 1 ? 'pickup receipt' : 'pickup receipts'
+  // Task 8: matching to house_account is now pure linkage (Task 6) — a
+  // freshly-matched invoice can sit with claimedReceiptCount === 0 AND
+  // legacy_settlement === false, a state that used to be unreachable (Phase
+  // 1A stamped legacy_settlement=True unconditionally at match time). That
+  // state means "pending", not "settled" — the fallback branch below must
+  // not claim otherwise for house_account, while still saying exactly that
+  // for recurring/milestone (which genuinely have no receipts, ever).
   const agreementEvidenceSummary = inv.legacy_settlement
     ? 'settled without receipt evidence'
     : claimedReceiptCount > 0
       ? `backed by ${claimedReceiptCount} ${receiptNoun}`
-      : 'settled against the agreement'
+      : isHouseAccountRoute
+        ? 'no receipt evidence recorded yet'
+        : 'settled against the agreement'
   const agreementEvidenceDetail = inv.legacy_settlement
     ? 'There is no PO or goods receipt on the agreement route, and no pickup receipt was claimed for this invoice, so there is nothing to reconcile against. It was settled on the agreement alone, against the recorded reason below.'
     : claimedReceiptCount > 0
       ? `There is no PO or goods receipt on the agreement route. Instead, ${claimedReceiptCount} ${receiptNoun} recorded against the agreement ${claimedReceiptCount === 1 ? 'is' : 'are'} claimed as the receipt evidence for this invoice; the receipt photos are attached to the agreement and carried through to the payment application.`
-      : 'There is no PO or goods receipt on the agreement route. This invoice is settled against the agreement itself — recurring and milestone agreements bill from their schedule rows, so there is no 3-way match here.'
+      : isHouseAccountRoute
+        ? 'There is no PO or goods receipt on the agreement route. No pickup receipt has been attached to this invoice yet, and it has not been declared settled without evidence either — attach the receipt(s) it covers, or explicitly settle without receipt evidence, below.'
+        : 'There is no PO or goods receipt on the agreement route. This invoice is settled against the agreement itself — recurring and milestone agreements bill from their schedule rows, so there is no 3-way match here.'
 
   const tabs = [
     { key: 'details' as const, label: 'Invoice Details' },
@@ -537,6 +562,13 @@ export default function InvoiceDetailPage() {
                                   Amount variance: {inv.receipt_variance_reason}
                                 </p>
                               )}
+                            </div>
+                          ) : isHouseAccountRoute ? (
+                            // Task 8: pure linkage means this is now a reachable,
+                            // ordinary pending state — not nothing to show. See
+                            // the Receipt Evidence panel on the 3-Way Match tab.
+                            <div className="flex flex-col gap-1 pt-1">
+                              <Badge variant="warning" className="self-start">No receipt evidence yet</Badge>
                             </div>
                           ) : null}
                         </div>
@@ -989,6 +1021,13 @@ export default function InvoiceDetailPage() {
                         </p>
                       )}
                     </div>
+                  ) : isHouseAccountRoute ? (
+                    // Task 8: see the comment on the Linked Documents block above —
+                    // this is now a reachable pending state, not "nothing to show".
+                    <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 flex flex-col gap-1">
+                      <Badge variant="warning" className="self-start">No receipt evidence yet</Badge>
+                      <p className="text-xs text-warning-800">Attach the receipt(s) this invoice covers below, or explicitly settle without receipt evidence.</p>
+                    </div>
                   ) : null}
                   {inv.agreement_id && (
                     <Link to={`/agreements/${inv.agreement_id}`}>
@@ -997,6 +1036,12 @@ export default function InvoiceDetailPage() {
                       </Button>
                     </Link>
                   )}
+                  {/* Task 8: reconcile receipt evidence — separate action from
+                      matching (Task 6 made /match pure linkage). Only ever
+                      renders for house_account (component-internal gate); the
+                      surrounding isAgreementRoute branch also covers
+                      recurring/milestone, which have no receipts at all. */}
+                  <InvoiceReceiptsPanel invoice={inv} />
                 </div>
               ) : (
                 <>
