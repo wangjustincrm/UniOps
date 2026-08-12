@@ -1,7 +1,7 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiPo } from '@/services/po'
 import type { AgreementListResponse } from '@/services/agreement'
-import type { SlipListResponse, SlipStatus } from '@/services/agreementSlips'
+import type { ReceiptListResponse, ReceiptStatus } from '@/services/agreementReceipts'
 
 export interface InvoiceLineItem {
   id?:          string
@@ -41,14 +41,14 @@ export interface ApiInvoice {
   gr_id?: string
   gr_number?: string
   gr_ids?: string[]
-  // house_account with slip_ids only: which pickup slips this invoice claims —
-  // JSONB array on the backend (Invoice.slip_ids), null before any claim, never
+  // house_account with receipt_ids only: which pickup receipts this invoice claims —
+  // JSONB array on the backend (Invoice.receipt_ids), null before any claim, never
   // an empty array (see crud/invoice.py: cleared to null on unclaim, never []).
-  slip_ids?: string[] | null
-  // Free-text explanation for why the claimed slips' total doesn't line up
+  receipt_ids?: string[] | null
+  // Free-text explanation for why the claimed receipts' total doesn't line up
   // with the invoice total (submitted by MatchPanel.tsx, stored separately
   // from legacy_settlement_reason — see models/invoice.py:76-78).
-  slip_variance_reason?: string | null
+  receipt_variance_reason?: string | null
   match_assignee_id?: string | null
   match_assignee_name?: string | null
   matched_at?: string
@@ -153,15 +153,15 @@ export interface MatchInvoiceBody {
   // value is rejected server-side with 422.
   agreement_id?: string
   legacy_settlement_reason?: string
-  // house_account with slip_ids only: which pickup slips this invoice covers —
+  // house_account with receipt_ids only: which pickup receipts this invoice covers —
   // real evidence, takes priority over legacy_settlement_reason when non-empty
-  // (epms-api/app/schemas/invoice.py InvoiceMatchRequest.slip_ids).
-  slip_ids?: string[]
-  // house_account with slip_ids only: free-text note when the claimed slips'
+  // (epms-api/app/schemas/invoice.py InvoiceMatchRequest.receipt_ids).
+  receipt_ids?: string[]
+  // house_account with receipt_ids only: free-text note when the claimed receipts'
   // total doesn't line up with the invoice total. Distinct from
   // legacy_settlement_reason — this explains a variance on an evidenced
   // settlement, not the absence of evidence.
-  slip_variance_reason?: string
+  receipt_variance_reason?: string
   // milestone only — which schedule row (stage) this invoice pays for. recurring
   // FIFO-claims its own row server-side and never reads this; house_account has
   // no schedule rows at all. See InvoiceMatchRequest.schedule_id (epms-api).
@@ -220,16 +220,16 @@ export const invoiceService = {
   agreementCandidates: (id: string) =>
     api.get<AgreementListResponse>(`/invoices/${id}/agreement-candidates`),
 
-  // Pickup slips for one of THIS invoice's candidate agreements — invoice-
-  // scoped counterpart to agreementSlipService.list (services/agreementSlips.ts),
-  // which hits GET /agreements/{id}/slips gated on epms.agreement.read. That
+  // Pickup receipts for one of THIS invoice's candidate agreements — invoice-
+  // scoped counterpart to agreementReceiptService.list (services/agreementReceipts.ts),
+  // which hits GET /agreements/{id}/receipts gated on epms.agreement.read. That
   // permission isn't granted to every role that can legitimately match an
   // invoice (review finding, Task 10 round 2 Finding B), so MatchPanel calls
   // THIS route instead — authorised identically to agreementCandidates
   // above (same backend helper, not a parallel implementation).
-  agreementSlips: (id: string, agreementId: string, status?: SlipStatus) =>
-    api.get<SlipListResponse>(
-      `/invoices/${id}/agreements/${agreementId}/slips`,
+  agreementReceipts: (id: string, agreementId: string, status?: ReceiptStatus) =>
+    api.get<ReceiptListResponse>(
+      `/invoices/${id}/agreements/${agreementId}/receipts`,
       status ? { status } : undefined,
     ),
 

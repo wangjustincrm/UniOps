@@ -262,27 +262,27 @@ export default function InvoiceDetailPage() {
   // `isAgreementRoute` alone — the 3-Way Match banner, its body copy, and the
   // permanent History entry — while the "Settled without receipt" badge two
   // blocks below was already conditional on `legacy_settlement`. So a
-  // slip-backed match rendered a page that contradicted itself AND
+  // receipt-backed match rendered a page that contradicted itself AND
   // contradicted the agreement detail page's legacySettlementCount, which
   // this whole feature exists to make honest again. Derive the wording once,
   // from the same field the badge uses, so all three read from one source.
   //
   // Three shapes, mirroring the backend's review_match copy
   // (epms-api/app/api/v1/invoices.py): legacy settlement (truly no evidence),
-  // house_account backed by claimed pickup slips, and everything else
+  // house_account backed by claimed pickup receipts, and everything else
   // (recurring / milestone, which bill from a schedule row rather than from
   // receipts). Deliberately no version numbers in user-facing copy.
-  const claimedSlipCount = inv.slip_ids?.length ?? 0
-  const slipNoun = claimedSlipCount === 1 ? 'pickup slip' : 'pickup slips'
+  const claimedReceiptCount = inv.receipt_ids?.length ?? 0
+  const receiptNoun = claimedReceiptCount === 1 ? 'pickup receipt' : 'pickup receipts'
   const agreementEvidenceSummary = inv.legacy_settlement
     ? 'settled without receipt evidence'
-    : claimedSlipCount > 0
-      ? `backed by ${claimedSlipCount} ${slipNoun}`
+    : claimedReceiptCount > 0
+      ? `backed by ${claimedReceiptCount} ${receiptNoun}`
       : 'settled against the agreement'
   const agreementEvidenceDetail = inv.legacy_settlement
-    ? 'There is no PO or goods receipt on the agreement route, and no pickup slip was claimed for this invoice, so there is nothing to reconcile against. It was settled on the agreement alone, against the recorded reason below.'
-    : claimedSlipCount > 0
-      ? `There is no PO or goods receipt on the agreement route. Instead, ${claimedSlipCount} ${slipNoun} recorded against the agreement ${claimedSlipCount === 1 ? 'is' : 'are'} claimed as the receipt evidence for this invoice; the slip photos are attached to the agreement and carried through to the payment application.`
+    ? 'There is no PO or goods receipt on the agreement route, and no pickup receipt was claimed for this invoice, so there is nothing to reconcile against. It was settled on the agreement alone, against the recorded reason below.'
+    : claimedReceiptCount > 0
+      ? `There is no PO or goods receipt on the agreement route. Instead, ${claimedReceiptCount} ${receiptNoun} recorded against the agreement ${claimedReceiptCount === 1 ? 'is' : 'are'} claimed as the receipt evidence for this invoice; the receipt photos are attached to the agreement and carried through to the payment application.`
       : 'There is no PO or goods receipt on the agreement route. This invoice is settled against the agreement itself — recurring and milestone agreements bill from their schedule rows, so there is no 3-way match here.'
 
   const tabs = [
@@ -519,22 +519,22 @@ export default function InvoiceDetailPage() {
                                 <p className="text-xs text-neutral-500">{inv.legacy_settlement_reason}</p>
                               )}
                             </div>
-                          ) : claimedSlipCount > 0 ? (
-                            /* Whole-branch review (I2): slip_variance_reason was write-only
+                          ) : claimedReceiptCount > 0 ? (
+                            /* Whole-branch review (I2): receipt_variance_reason was write-only
                                end to end — MatchPanel collected it, the API returned it, and
                                nothing ever rendered it. It is the mirror image of
                                legacy_settlement_reason (why this invoice was settled with no
                                evidence at all) and the two are mutually exclusive by
                                construction: crud/invoice.py only records a variance reason on
-                               a slip-backed match, and only a legacy reason on a slip-less
+                               a receipt-backed match, and only a legacy reason on a receipt-less
                                one. Render them in the same slot, on the same branch. */
                             <div className="flex flex-col gap-1 pt-1">
                               <Badge variant="success" className="self-start">
-                                {claimedSlipCount} {slipNoun} claimed
+                                {claimedReceiptCount} {receiptNoun} claimed
                               </Badge>
-                              {inv.slip_variance_reason && (
+                              {inv.receipt_variance_reason && (
                                 <p className="text-xs text-neutral-500">
-                                  Amount variance: {inv.slip_variance_reason}
+                                  Amount variance: {inv.receipt_variance_reason}
                                 </p>
                               )}
                             </div>
@@ -974,18 +974,18 @@ export default function InvoiceDetailPage() {
                         <p className="text-xs text-warning-800">{inv.legacy_settlement_reason}</p>
                       )}
                     </div>
-                  ) : claimedSlipCount > 0 ? (
+                  ) : claimedReceiptCount > 0 ? (
                     /* I2, second of the two agreement blocks on this page — see the
                        Linked Documents block above for why the variance reason and the
                        legacy reason share one slot. Both blocks have to agree; a fix
                        applied to only one of them recreates the split I1 came from. */
                     <div className="rounded-lg border border-success-200 bg-white px-3 py-2.5 flex flex-col gap-1">
                       <Badge variant="success" className="self-start">
-                        {claimedSlipCount} {slipNoun} claimed
+                        {claimedReceiptCount} {receiptNoun} claimed
                       </Badge>
-                      {inv.slip_variance_reason && (
+                      {inv.receipt_variance_reason && (
                         <p className="text-xs text-neutral-600">
-                          Amount variance: {inv.slip_variance_reason}
+                          Amount variance: {inv.receipt_variance_reason}
                         </p>
                       )}
                     </div>

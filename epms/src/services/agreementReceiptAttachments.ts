@@ -12,19 +12,19 @@ export interface AttachmentMeta {
 const base = () => (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 const token = () => useAuthStore.getState().token
 
-// Pickup-slip attachments are scoped by BOTH agreement_id and slip_id on the
-// backend (epms-api/app/api/v1/agreement_slip_attachments.py) — every route
-// re-validates the slip belongs to the agreement before touching an
+// Pickup-receipt attachments are scoped by BOTH agreement_id and receipt_id on the
+// backend (epms-api/app/api/v1/agreement_receipt_attachments.py) — every route
+// re-validates the receipt belongs to the agreement before touching an
 // attachment. Task 3 fixed an IDOR here once already; both ids must always be
-// passed, never just slip_id.
-export const agreementSlipAttachmentService = {
-  list: (agreementId: string, slipId: string) =>
-    api.get<AttachmentMeta[]>(`/agreements/${agreementId}/slips/${slipId}/attachments`),
+// passed, never just receipt_id.
+export const agreementReceiptAttachmentService = {
+  list: (agreementId: string, receiptId: string) =>
+    api.get<AttachmentMeta[]>(`/agreements/${agreementId}/receipts/${receiptId}/attachments`),
 
-  upload: async (agreementId: string, slipId: string, file: File): Promise<AttachmentMeta> => {
+  upload: async (agreementId: string, receiptId: string, file: File): Promise<AttachmentMeta> => {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch(`${base()}/agreements/${agreementId}/slips/${slipId}/attachments`, {
+    const res = await fetch(`${base()}/agreements/${agreementId}/receipts/${receiptId}/attachments`, {
       method: 'POST',
       headers: token() ? { Authorization: `Bearer ${token()}` } : {},
       body: form,
@@ -38,8 +38,8 @@ export const agreementSlipAttachmentService = {
   // gets 401'd and nginx's SPA fallback silently redirects it to the app
   // shell, which reads to the user as "clicking download bounces to the
   // homepage". Mirrors services/prAttachments.ts.
-  download: (agreementId: string, slipId: string, attId: string, filename: string) => {
-    fetch(`${base()}/agreements/${agreementId}/slips/${slipId}/attachments/${attId}/download`, {
+  download: (agreementId: string, receiptId: string, attId: string, filename: string) => {
+    fetch(`${base()}/agreements/${agreementId}/receipts/${receiptId}/attachments/${attId}/download`, {
       headers: token() ? { Authorization: `Bearer ${token()}` } : {},
     }).then(async (res) => {
       if (!res.ok) return
@@ -55,8 +55,8 @@ export const agreementSlipAttachmentService = {
     })
   },
 
-  delete: async (agreementId: string, slipId: string, attId: string): Promise<void> => {
-    const res = await fetch(`${base()}/agreements/${agreementId}/slips/${slipId}/attachments/${attId}`, {
+  delete: async (agreementId: string, receiptId: string, attId: string): Promise<void> => {
+    const res = await fetch(`${base()}/agreements/${agreementId}/receipts/${receiptId}/attachments/${attId}`, {
       method: 'DELETE',
       headers: token() ? { Authorization: `Bearer ${token()}` } : {},
     })

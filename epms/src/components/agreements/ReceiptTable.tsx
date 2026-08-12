@@ -4,52 +4,52 @@ import { AlertTriangle, CheckCircle2, XCircle, Ban, Paperclip } from 'lucide-rea
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
-import { useVoidSlip, useApReviewSlip } from '@/hooks/useAgreementSlips'
-import { agreementSlipAttachmentService } from '@/services/agreementSlipAttachments'
-import type { ApiSlip } from '@/services/agreementSlips'
+import { useVoidReceipt, useApReviewReceipt } from '@/hooks/useAgreementReceipts'
+import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAttachments'
+import type { ApiReceipt } from '@/services/agreementReceipts'
 import type { ApiUserBrief } from '@/services/users'
 import type { DocumentStatus } from '@/types'
 
 // Named per Task 9 brief (E1 aging tolerance) rather than a magic 45 —
-// an `open` slip past this many days without being matched to an invoice
+// an `open` receipt past this many days without being matched to an invoice
 // gets a warning badge, and the table header rolls up how many are stale.
-export const SLIP_AGING_DAYS = 45
+export const RECEIPT_AGING_DAYS = 45
 
 // Statuses that can still be voided — the backend accepts DELETE from either
-// (see agreement_slip.py void()); 'reconciled'/'voided'/'rejected' are terminal.
-const VOIDABLE_STATUSES = new Set<ApiSlip['status']>(['open', 'pending_ap_review'])
+// (see agreement_receipt.py void()); 'reconciled'/'voided'/'rejected' are terminal.
+const VOIDABLE_STATUSES = new Set<ApiReceipt['status']>(['open', 'pending_ap_review'])
 
 function resolveUserName(users: ApiUserBrief[] | undefined, id: string | null): string | undefined {
   if (!id || !users) return undefined
   return users.find((u) => u.id === id)?.full_name
 }
 
-function isAged(slip: ApiSlip): boolean {
-  if (slip.status !== 'open') return false
-  const days = (Date.now() - new Date(slip.slip_date).getTime()) / 86_400_000
-  return days > SLIP_AGING_DAYS
+function isAged(receipt: ApiReceipt): boolean {
+  if (receipt.status !== 'open') return false
+  const days = (Date.now() - new Date(receipt.receipt_date).getTime()) / 86_400_000
+  return days > RECEIPT_AGING_DAYS
 }
 
 // A DELIBERATELY SEPARATE top-level query-key namespace, NOT
-// ['agreements', agreementId, 'slips', ...] — react-query's invalidateQueries
+// ['agreements', agreementId, 'receipts', ...] — react-query's invalidateQueries
 // prefix-matches, so if this lived under the 'agreements' branch, narrowing
-// the slip mutations' invalidation to ['agreements', agreementId, 'slips']
-// (see useAgreementSlips.ts) would still sweep every row's attachment query
+// the receipt mutations' invalidation to ['agreements', agreementId, 'receipts']
+// (see useAgreementReceipts.ts) would still sweep every row's attachment query
 // on every Void/Approve/Reject click, N requests at a time. Attachment
-// metadata for a slip doesn't change when the slip's status changes, so
+// metadata for a receipt doesn't change when the receipt's status changes, so
 // there's nothing for those mutations to invalidate here anyway.
-// Exported so SlipEntryForm can invalidate the exact same key after its
+// Exported so ReceiptEntryForm can invalidate the exact same key after its
 // post-create attachment upload — see the comment at that call site for why
 // this must be kept in sync rather than each side hand-rolling its own copy.
-export function slipAttachmentsQueryKey(agreementId: string, slipId: string) {
-  return ['agreement-slip-attachments', agreementId, slipId] as const
+export function receiptAttachmentsQueryKey(agreementId: string, receiptId: string) {
+  return ['agreement-receipt-attachments', agreementId, receiptId] as const
 }
 
-function SlipAttachmentsCell({ agreementId, slipId }: { agreementId: string; slipId: string }) {
+function ReceiptAttachmentsCell({ agreementId, receiptId }: { agreementId: string; receiptId: string }) {
   const { data } = useQuery({
-    queryKey: slipAttachmentsQueryKey(agreementId, slipId),
-    queryFn: () => agreementSlipAttachmentService.list(agreementId, slipId),
-    // Attachments are set once at slip-creation time and essentially never
+    queryKey: receiptAttachmentsQueryKey(agreementId, receiptId),
+    queryFn: () => agreementReceiptAttachmentService.list(agreementId, receiptId),
+    // Attachments are set once at receipt-creation time and essentially never
     // change afterward (no edit/delete UI exists yet) — a long staleTime
     // stops every re-mount/window-refocus from re-firing all N per-row
     // requests and re-flooding the browser's 6-connection-per-host queue.
@@ -63,7 +63,7 @@ function SlipAttachmentsCell({ agreementId, slipId }: { agreementId: string; sli
         <button
           key={att.id}
           type="button"
-          onClick={() => agreementSlipAttachmentService.download(agreementId, slipId, att.id, att.filename)}
+          onClick={() => agreementReceiptAttachmentService.download(agreementId, receiptId, att.id, att.filename)}
           className="inline-flex max-w-[9rem] items-center gap-1 truncate text-xs text-primary-600 hover:underline"
           title={att.filename}
         >
@@ -75,55 +75,55 @@ function SlipAttachmentsCell({ agreementId, slipId }: { agreementId: string; sli
   )
 }
 
-interface SlipTableProps {
+interface ReceiptTableProps {
   agreementId: string
-  slips: ApiSlip[]
+  receipts: ApiReceipt[]
   users: ApiUserBrief[] | undefined
   currency: string
-  // epms.agreement.receipt.write (the old slip-write permission key was
-  // renamed to this by Task 4) — same permission that gates
+  // epms.agreement.receipt.write (the old epms.agreement.slip.write
+  // permission key was renamed to this by Task 4) — same permission that gates
   // POST/PATCH/DELETE /receipts server-side (agreement_receipts.py
   // ReceiptRecordDep). Deliberately NOT epms.agreement.write —
-  // recording/voiding a slip is separate from editing the agreement itself.
+  // recording/voiding a receipt is separate from editing the agreement itself.
   canWrite: boolean
   // epms.invoice.match (ApDep on the backend's ap-review route) — the AP
   // Approve/Reject buttons only render for holders of this permission.
   canApReview: boolean
 }
 
-export function SlipTable({ agreementId, slips, users, currency, canWrite, canApReview }: SlipTableProps) {
-  const voidSlip = useVoidSlip(agreementId)
-  const apReview = useApReviewSlip(agreementId)
+export function ReceiptTable({ agreementId, receipts, users, currency, canWrite, canApReview }: ReceiptTableProps) {
+  const voidReceipt = useVoidReceipt(agreementId)
+  const apReview = useApReviewReceipt(agreementId)
   // Mirrors ScheduleTable's pendingRowId convention: the hooks below are
   // single mutation objects shared by every row's button, so isPending alone
   // can't tell you WHICH row is mid-flight without this. pendingReviewKey
-  // additionally encodes the ACTION (`${slipId}:approve` vs `${slipId}:reject`)
+  // additionally encodes the ACTION (`${receiptId}:approve` vs `${receiptId}:reject`)
   // — a bare pendingReviewId flipped both buttons on the same row to
   // "Working…" together, so clicking Reject visibly lit up Approve instead.
   const [pendingVoidId, setPendingVoidId] = useState<string | null>(null)
   const [pendingReviewKey, setPendingReviewKey] = useState<string | null>(null)
 
-  const agedCount = slips.filter(isAged).length
+  const agedCount = receipts.filter(isAged).length
 
-  const handleVoid = (slipId: string, slipRef: string | null) => {
-    // Voiding is terminal — 'voided' isn't in crud/agreement_slip.py's
+  const handleVoid = (receiptId: string, receiptRef: string | null) => {
+    // Voiding is terminal — 'voided' isn't in crud/agreement_receipt.py's
     // VOIDABLE set, so there is no undo. Same confirm() convention as the
     // other destructive actions in this app (PrDetailPage withdraw/recall,
     // BudgetCatalogPage delete, etc.).
-    if (!confirm(`Void pickup slip ${slipRef ?? '(no reference #)'}? This cannot be undone.`)) return
-    setPendingVoidId(slipId)
-    voidSlip.mutate(slipId, { onSettled: () => setPendingVoidId(null) })
+    if (!confirm(`Void pickup receipt ${receiptRef ?? '(no reference #)'}? This cannot be undone.`)) return
+    setPendingVoidId(receiptId)
+    voidReceipt.mutate(receiptId, { onSettled: () => setPendingVoidId(null) })
   }
 
-  const handleReview = (slipId: string, action: 'approve' | 'reject') => {
-    setPendingReviewKey(`${slipId}:${action}`)
-    apReview.mutate({ slipId, action }, { onSettled: () => setPendingReviewKey(null) })
+  const handleReview = (receiptId: string, action: 'approve' | 'reject') => {
+    setPendingReviewKey(`${receiptId}:${action}`)
+    apReview.mutate({ receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
   }
 
-  if (slips.length === 0) {
+  if (receipts.length === 0) {
     return (
       <div className="py-8 text-center text-sm text-neutral-400">
-        No pickup slips recorded yet.
+        No pickup receipts recorded yet.
       </div>
     )
   }
@@ -133,7 +133,7 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
       {agedCount > 0 && (
         <div className="flex items-center gap-1.5 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs font-semibold text-warning-700">
           <AlertTriangle className="h-3.5 w-3.5" />
-          {agedCount} slip{agedCount === 1 ? '' : 's'} over {SLIP_AGING_DAYS} days unreconciled
+          {agedCount} receipt{agedCount === 1 ? '' : 's'} over {RECEIPT_AGING_DAYS} days unreconciled
         </div>
       )}
       <div className="rounded-lg border border-neutral-200 overflow-hidden">
@@ -143,7 +143,7 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
               <tr className="border-b border-neutral-200 bg-neutral-50">
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Date</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Reference #</th>
-                {/* Renders total_amount (tax-inclusive) — SlipEntryForm labels the
+                {/* Renders total_amount (tax-inclusive) — ReceiptEntryForm labels the
                     tax-exclusive field "Amount (before tax)", so this column must say
                     "Total", not "Amount", or the same word means two different things
                     on the two halves of this feature. */}
@@ -155,48 +155,48 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
               </tr>
             </thead>
             <tbody>
-              {slips.map((slip) => {
-                const pickedByName = resolveUserName(users, slip.picked_by)
-                const aged = isAged(slip)
-                const canVoid = canWrite && VOIDABLE_STATUSES.has(slip.status)
-                const canReview = canApReview && slip.status === 'pending_ap_review'
-                const rowVoidPending = voidSlip.isPending && pendingVoidId === slip.id
-                const rowApprovePending = apReview.isPending && pendingReviewKey === `${slip.id}:approve`
-                const rowRejectPending = apReview.isPending && pendingReviewKey === `${slip.id}:reject`
+              {receipts.map((receipt) => {
+                const receivedByName = resolveUserName(users, receipt.received_by)
+                const aged = isAged(receipt)
+                const canVoid = canWrite && VOIDABLE_STATUSES.has(receipt.status)
+                const canReview = canApReview && receipt.status === 'pending_ap_review'
+                const rowVoidPending = voidReceipt.isPending && pendingVoidId === receipt.id
+                const rowApprovePending = apReview.isPending && pendingReviewKey === `${receipt.id}:approve`
+                const rowRejectPending = apReview.isPending && pendingReviewKey === `${receipt.id}:reject`
                 return (
-                  <tr key={slip.id} className="border-b border-neutral-100 last:border-0 bg-white">
+                  <tr key={receipt.id} className="border-b border-neutral-100 last:border-0 bg-white">
                     <td className="px-4 py-2.5 text-xs text-neutral-500">
                       <div className="flex items-center gap-1.5">
-                        {formatDate(slip.slip_date)}
+                        {formatDate(receipt.receipt_date)}
                         {aged && (
-                          <span title={`Open ${SLIP_AGING_DAYS}+ days without reconciliation`}>
+                          <span title={`Open ${RECEIPT_AGING_DAYS}+ days without reconciliation`}>
                             <AlertTriangle className="h-3.5 w-3.5 text-warning-600" />
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 text-neutral-700">{slip.slip_ref ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-neutral-700">{receipt.receipt_ref ?? '—'}</td>
                     <td className="px-4 py-2.5 text-right amount font-medium text-neutral-900">
-                      {formatAmount(Number(slip.total_amount), currency)}
+                      {formatAmount(Number(receipt.total_amount), currency)}
                     </td>
-                    <td className="px-4 py-2.5 text-neutral-900">{pickedByName ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-neutral-900">{receivedByName ?? '—'}</td>
                     <td className="px-4 py-2.5">
-                      <StatusBadge status={slip.status as DocumentStatus} />
+                      <StatusBadge status={receipt.status as DocumentStatus} />
                       {/* The entire point of the AP-review step is to weigh this reason —
                           without it AP is just clicking Approve/Reject blind. Truncated
                           inline, full text on hover/title since there's no room for a
                           multi-line reason in a table cell. */}
-                      {slip.status === 'pending_ap_review' && slip.missing_slip_reason && (
+                      {receipt.status === 'pending_ap_review' && receipt.missing_receipt_reason && (
                         <p
                           className="mt-1 max-w-[14rem] truncate text-xs text-neutral-500"
-                          title={slip.missing_slip_reason}
+                          title={receipt.missing_receipt_reason}
                         >
-                          {slip.missing_slip_reason}
+                          {receipt.missing_receipt_reason}
                         </p>
                       )}
                     </td>
                     <td className="px-4 py-2.5">
-                      <SlipAttachmentsCell agreementId={agreementId} slipId={slip.id} />
+                      <ReceiptAttachmentsCell agreementId={agreementId} receiptId={receipt.id} />
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
@@ -205,7 +205,7 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                             <Button
                               size="sm"
                               variant="success-outline"
-                              onClick={() => handleReview(slip.id, 'approve')}
+                              onClick={() => handleReview(receipt.id, 'approve')}
                               disabled={apReview.isPending}
                             >
                               <CheckCircle2 className="h-3.5 w-3.5" />
@@ -214,7 +214,7 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                             <Button
                               size="sm"
                               variant="secondary"
-                              onClick={() => handleReview(slip.id, 'reject')}
+                              onClick={() => handleReview(receipt.id, 'reject')}
                               disabled={apReview.isPending}
                             >
                               <XCircle className="h-3.5 w-3.5" />
@@ -226,8 +226,8 @@ export function SlipTable({ agreementId, slips, users, currency, canWrite, canAp
                           <Button
                             size="sm"
                             variant="secondary"
-                            onClick={() => handleVoid(slip.id, slip.slip_ref)}
-                            disabled={voidSlip.isPending}
+                            onClick={() => handleVoid(receipt.id, receipt.receipt_ref)}
+                            disabled={voidReceipt.isPending}
                             className={cn('text-danger-600 hover:text-danger-700')}
                           >
                             <Ban className="h-3.5 w-3.5" />

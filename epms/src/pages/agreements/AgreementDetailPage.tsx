@@ -9,14 +9,14 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { ScheduleTable } from '@/components/agreements/ScheduleTable'
-import { SlipEntryForm } from '@/components/agreements/SlipEntryForm'
-import { SlipTable } from '@/components/agreements/SlipTable'
+import { ReceiptEntryForm } from '@/components/agreements/ReceiptEntryForm'
+import { ReceiptTable } from '@/components/agreements/ReceiptTable'
 import { formatAmount, formatDate, formatBytes, cn } from '@/lib/utils'
 import type { ApprovalStep, DocumentStatus } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { useAgreement, useAgreementAction, useAgreementSchedule } from '@/hooks/useAgreements'
-import { useAgreementSlips } from '@/hooks/useAgreementSlips'
+import { useAgreementReceipts } from '@/hooks/useAgreementReceipts'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useTasks } from '@/hooks/useTasks'
 import { useInvoices } from '@/hooks/useInvoices'
@@ -282,11 +282,11 @@ export default function AgreementDetailPage() {
   const canCreatePaPerm = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
   const canCreatePa =
     canCreatePaPerm && !!agreement && isAgreementAdmissible(agreement) && payableInvoiceCount > 0
-  // Gates the pickup-slip AP Approve/Reject buttons — mirrors the backend's
+  // Gates the pickup-receipt AP Approve/Reject buttons — mirrors the backend's
   // ApDep = require_permission("epms.invoice.match") on POST .../ap-review
-  // (epms-api/app/api/v1/agreement_slips.py), the same permission that gates
+  // (epms-api/app/api/v1/agreement_receipts.py), the same permission that gates
   // invoice match review elsewhere (InvoiceDetailPage/InvoiceListPage).
-  const canApReviewSlip = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
+  const canApReviewReceipt = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
   // Recording a receipt is a SEPARATE permission from editing the agreement
   // itself (identity 0007_receipt_write_perm) — mirrors the backend's
   // ReceiptRecordDep = require_permission("epms.agreement.receipt.write") on
@@ -340,14 +340,14 @@ export default function AgreementDetailPage() {
   // for a system_admin viewer.
   const { data: usersData } = useUserDirectory()
 
-  // house_account is the only agreement_type with pickup slips at all —
+  // house_account is the only agreement_type with pickup receipts at all —
   // recurring/milestone settle against the payment schedule instead. Skip
   // the fetch entirely for the other two types, same convention as the
   // schedule query above.
-  const { data: slipsData } = useAgreementSlips(
+  const { data: receiptsData } = useAgreementReceipts(
     agreement && agreement.agreement_type === 'house_account' ? agreement.id : ''
   )
-  const slips = slipsData?.items ?? []
+  const receipts = receiptsData?.items ?? []
 
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
   const attachments = attachmentsData ?? []
@@ -399,7 +399,7 @@ export default function AgreementDetailPage() {
               <StatusBadge status={agreement.status as DocumentStatus} />
               <Badge variant="neutral">{TYPE_LABELS[agreement.agreement_type]}</Badge>
               {legacySettlementCount > 0 && (
-                <span title="Invoices settled against this agreement with no receipt evidence — the escape hatch this phase deliberately allows, to be narrowed once pickup slips ship.">
+                <span title="Invoices settled against this agreement with no receipt evidence — the escape hatch this phase deliberately allows, to be narrowed once pickup receipts ship.">
                   <Badge variant="warning">{legacySettlementCount} settled without receipt</Badge>
                 </span>
               )}
@@ -551,31 +551,31 @@ export default function AgreementDetailPage() {
             </div>
           )}
 
-          {/* Pickup slips — house_account only. recurring/milestone settle
+          {/* Pickup receipts — house_account only. recurring/milestone settle
               against the payment schedule above instead; house_account has
               no schedule rows at all (see the comment on scheduleData). */}
           {agreement.agreement_type === 'house_account' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                Pickup Slips <span className="normal-case font-normal text-neutral-400">({slips.length})</span>
+                Pickup Receipts <span className="normal-case font-normal text-neutral-400">({receipts.length})</span>
               </h2>
-              <SlipTable
+              <ReceiptTable
                 agreementId={agreement.id}
-                slips={slips}
+                receipts={receipts}
                 users={usersData?.items}
                 currency={agreement.currency}
                 canWrite={canRecordReceipt}
-                canApReview={canApReviewSlip}
+                canApReview={canApReviewReceipt}
               />
               {/* Same admissibility gate as the Create PA button (isAgreementAdmissible,
                   defined above) — status alone (agreement_type check above) isn't enough:
-                  the backend's create_slip route accepts a POST against a draft/cancelled/
+                  the backend's create_receipt route accepts a POST against a draft/cancelled/
                   past-grace agreement with no status check of its own, so without this a
-                  slip could be recorded against an agreement that was never approved. */}
+                  receipt could be recorded against an agreement that was never approved. */}
               {canRecordReceipt && isAgreementAdmissible(agreement) && (
                 <div className="border-t border-neutral-100 pt-5">
-                  <h3 className="text-sm font-semibold text-neutral-700 mb-3">Record a Pickup Slip</h3>
-                  <SlipEntryForm agreementId={agreement.id} />
+                  <h3 className="text-sm font-semibold text-neutral-700 mb-3">Record a Pickup Receipt</h3>
+                  <ReceiptEntryForm agreementId={agreement.id} />
                 </div>
               )}
             </div>

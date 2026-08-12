@@ -17,7 +17,7 @@ const DOC_ICON: Record<ChainDocGroup['docType'], React.ReactNode> = {
   PR: <FileText className="h-3.5 w-3.5" />,
   PO: <Package className="h-3.5 w-3.5" />,
   GR: <Warehouse className="h-3.5 w-3.5" />,
-  SLIP: <ImageIcon className="h-3.5 w-3.5" />,
+  RECEIPT: <ImageIcon className="h-3.5 w-3.5" />,
   INV: <Receipt className="h-3.5 w-3.5" />,
   PA: <CreditCard className="h-3.5 w-3.5" />,
 }

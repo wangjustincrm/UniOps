@@ -98,7 +98,7 @@ export default function PaCreatePage() {
   // Deep-linked from the agreement detail page or an agreement-matched invoice:
   // ?agreement_id=<agreement>. No PO, no GR, no receipt gate/override on this
   // route — the agreement is the authorization and the linked invoice(s) are
-  // the only evidence of real spend (Phase 1A has no pickup slips).
+  // the only evidence of real spend (Phase 1A has no pickup receipts).
   const agreementIdFromUrl = searchParams.get('agreement_id') ?? ''
   const isAgreementMode = Boolean(agreementIdFromUrl)
   const { data: agreement, isError: agreementLoadError } = useAgreement(agreementIdFromUrl)
@@ -194,7 +194,7 @@ export default function PaCreatePage() {
   // Receipt gate — a non-prepayment PA normally requires a matched invoice backed
   // by a goods receipt. Finance-authorized users can override with a reason.
   // The agreement route has no goods receipt, ever (Phase 1A has no pickup
-  // slips) — the matched invoice(s) required below are the only evidence, so
+  // receipts) — the matched invoice(s) required below are the only evidence, so
   // this gate and its override never apply there.
   const hasThreeWay = docInvoices.some(
     (inv) => inv.status === 'matched' && (!!inv.gr_id || (inv.gr_ids?.length ?? 0) > 0),

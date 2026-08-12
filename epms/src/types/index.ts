@@ -44,8 +44,8 @@ export type DocumentStatus =
   | 'received'
   | 'overdue'
   | 'waived'
-  // House-account pickup slip statuses (agreement_pickup_slips.status) —
-  // 'rejected' above is shared (AP review can reject a slip the same way a
+  // House-account pickup receipt statuses (agreement_receipts.status) —
+  // 'rejected' above is shared (AP review can reject a receipt the same way a
   // PR/PO can be rejected). 'open' = posted, awaiting invoice match.
   // 'reconciled' = matched to an invoice. 'voided' = soft-cancelled.
   | 'pending_ap_review'
