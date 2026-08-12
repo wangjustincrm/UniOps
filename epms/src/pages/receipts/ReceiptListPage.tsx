@@ -87,6 +87,16 @@ export default function ReceiptListPage() {
   }
 
   const handleReview = (agreementId: string, receiptId: string, action: 'approve' | 'reject') => {
+    // Reject has no way back: crud/agreement_receipt.py writes status =
+    // "rejected", which is in RETIRED (not EDITABLE, not VOIDABLE), and
+    // ap_review only accepts FROM pending_ap_review — there is no endpoint
+    // that can move a rejected receipt anywhere else. Approve and Reject sit
+    // 8px apart in the same row (fix round 2, Important): a mis-click here is
+    // not "undo available", it's "re-key the whole receipt from scratch".
+    if (action === 'reject' && !confirm(
+      'Reject this receipt? This is final — a rejected receipt can never be approved, voided, or edited afterward. ' +
+      'The only way to record this spend again is to enter a brand-new receipt.'
+    )) return
     setPendingReviewKey(`${receiptId}:${action}`)
     apReview.mutate({ agreementId, receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
   }
@@ -279,13 +289,21 @@ function ReceiptRow({
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
+          {/* Void and Approve/Reject are two independent mutations sharing no
+              lock — Task 10 fix round 2 (Minor): without this, mid-flight
+              Void and mid-flight Approve/Reject could both be clicked on the
+              same row. Neither ordering corrupts anything (a losing request
+              just 409s or lands on a state its own button still permits), but
+              disabling every button in this cell while EITHER mutation is in
+              flight removes the race entirely rather than relying on that
+              analysis holding up under future changes. */}
           {canReview && (
             <>
-              <Button size="sm" variant="success-outline" onClick={onApprove} disabled={anyReviewPending}>
+              <Button size="sm" variant="success-outline" onClick={onApprove} disabled={anyReviewPending || anyVoidPending}>
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 {approvePending ? 'Working…' : 'Approve'}
               </Button>
-              <Button size="sm" variant="secondary" onClick={onReject} disabled={anyReviewPending}>
+              <Button size="sm" variant="secondary" onClick={onReject} disabled={anyReviewPending || anyVoidPending}>
                 <XCircle className="h-3.5 w-3.5" />
                 {rejectPending ? 'Working…' : 'Reject'}
               </Button>
@@ -296,7 +314,7 @@ function ReceiptRow({
               size="sm"
               variant="secondary"
               onClick={onVoid}
-              disabled={anyVoidPending}
+              disabled={anyVoidPending || anyReviewPending}
               className={cn('text-danger-600 hover:text-danger-700')}
             >
               <Ban className="h-3.5 w-3.5" />
