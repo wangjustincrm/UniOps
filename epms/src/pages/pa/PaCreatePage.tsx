@@ -23,6 +23,35 @@ import type { DocumentStatus } from '@/types'
 // and the agreement route (matched-but-unpaid invoices only). A row already
 // claimed by another open PA (`lockedIds`) renders disabled with a tag, same
 // convention on both routes.
+// Which agreement invoices are safe to tick FOR the operator. A house-account
+// invoice is payable only once it carries evidence — the receipts it covers, or
+// an explicit no-evidence settlement (epms-api pa.py::_assert_agreement_invoices
+// rejects anything else with a 422). Only the receipt-backed ones are
+// pre-ticked: settling without evidence is the exception channel and stays a
+// deliberate act, and an invoice with neither would have been submitted straight
+// into that 422. recurring / milestone invoices have no receipt concept at all,
+// so nothing changes for them.
+function isPreselectableAgreementInvoice(inv: ApiInvoice): boolean {
+  if (inv.agreement_type !== 'house_account') return true
+  return (inv.receipt_ids?.length ?? 0) > 0
+}
+
+// Says why a row is (or isn't) pre-ticked. Without it the new default reads as
+// an arbitrary subset — the operator sees some boxes ticked and no reason for
+// the others, which is how "the system missed one" starts.
+function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
+  if (invoice.agreement_type !== 'house_account') return null
+  const n = invoice.receipt_ids?.length ?? 0
+  const cls = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium'
+  if (n > 0) {
+    return <span className={cn(cls, 'bg-success-50 text-success-700')}>{n} receipt{n === 1 ? '' : 's'}</span>
+  }
+  if (invoice.legacy_settlement) {
+    return <span className={cn(cls, 'bg-warning-50 text-warning-700')}>Settled without receipts</span>
+  }
+  return <span className={cn(cls, 'bg-danger-50 text-danger-700')}>No receipt evidence</span>
+}
+
 function InvoiceSelectList({
   invoices, selectedIds, lockedIds, onToggle,
 }: {
@@ -62,6 +91,7 @@ function InvoiceSelectList({
                       Already in PA
                     </span>
                   )}
+                  <ReceiptEvidenceBadge invoice={inv} />
                 </div>
                 <span className="font-mono text-xs font-semibold text-neutral-900">{formatAmount(inv.total_amount, inv.currency)}</span>
               </div>
@@ -345,14 +375,22 @@ export default function PaCreatePage() {
 
   // Agreement mode's equivalent: pre-select the agreement's matched-but-unpaid
   // invoices (status 'matched', not already claimed by another open PA on this
-  // agreement). No GR side-effect — there is never a GR on this route.
+  // agreement) THAT ARE ACTUALLY READY TO PAY. No GR side-effect — there is
+  // never a GR on this route.
+  //
+  // The readiness half is isPreselectableAgreementInvoice: this used to tick
+  // every matched invoice on the agreement, including house-account ones with
+  // no receipt attached — which the backend then refuses (422), and which is
+  // exactly the wrong default anyway. Ticking an invoice here proposes paying
+  // it; proposing payment for something with no evidence behind it is a
+  // decision, not a default.
   useEffect(() => {
     if (!isAgreementMode || !agreementIdFromUrl) return
     if (autoSelectedForAgreementRef.current === agreementIdFromUrl) return
     if (invoicesData === undefined || agreementActivePas === undefined) return
 
     const matchedInvoices = docInvoices.filter(
-      (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id)
+      (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id) && isPreselectableAgreementInvoice(inv)
     )
     autoSelectedForAgreementRef.current = agreementIdFromUrl
     if (matchedInvoices.length > 0) setSelectedInvoiceIds(new Set(matchedInvoices.map((i) => i.id)))
@@ -970,9 +1008,19 @@ export default function PaCreatePage() {
                   <span className="text-neutral-400 font-normal">(select all that apply)</span>
                 </p>
                 <p className="text-[11px] text-neutral-400">
-                  No purchase order and no goods receipt on this route — every matched invoice
-                  here was recorded as a legacy settlement with a reason at match time. There is
-                  no PO-line or goods-receipt selection to make.
+                  {agreement?.agreement_type === 'house_account' ? (
+                    <>
+                      No purchase order and no goods receipt on this route — the receipts attached
+                      to an invoice are its evidence. Only unpaid invoices that already carry
+                      receipts are ticked for you; an invoice settled without receipt evidence can
+                      still be paid, but tick it deliberately. There is no PO-line selection to make.
+                    </>
+                  ) : (
+                    <>
+                      No purchase order and no goods receipt on this route — the matched invoice(s)
+                      are the evidence. There is no PO-line or goods-receipt selection to make.
+                    </>
+                  )}
                 </p>
                 {agreementInvoiceCandidates.length === 0 ? (
                   <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
