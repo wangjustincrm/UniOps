@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge, statusLabel } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
@@ -265,6 +265,28 @@ function InvoiceReceiptsPanelBody({
   const settleMutation = useSettleWithoutReceipt()
   const pending = setReceiptsMutation.isPending || settleMutation.isPending
 
+  // Is there anything left to submit? Without this the Save button stayed
+  // armed forever and a successful save changed NOTHING on screen — the
+  // checkboxes were already ticked before the click, the header above already
+  // read "backed by 1 receipt" (it renders from the persisted receipt_ids),
+  // and the button came back looking exactly as it did. An operator has no way
+  // to tell a save that landed from one that silently didn't, so they click
+  // again. And again.
+  //
+  // `nextVariance` is compared as the mutation would SEND it, not as the
+  // textarea holds it: handleSaveReceipts sends null whenever the difference
+  // is zero, so a stale reason still sitting in local state (the textarea is
+  // unmounted at zero variance, it does not clear itself) is not a change —
+  // while a persisted reason that a zero difference would now null out IS one.
+  // null and '' are the same value on this comparison, matching the backend:
+  // crud/invoice.py stores the reason as NULL, never ''.
+  const persistedReceiptIds = invoice.receipt_ids ?? []
+  const nextVariance = varianceIsZero ? '' : varianceReason.trim()
+  const receiptsDirty =
+    persistedReceiptIds.length !== selectedReceiptIds.length ||
+    !selectedReceiptIds.every((id) => heldIds.has(id)) ||
+    nextVariance !== (invoice.receipt_variance_reason ?? '')
+
   // Fix-round 2 (N1): a successful save/settle must forget the accelerator's
   // ownership of whatever it had picked, SYNCHRONOUSLY with the mutation
   // succeeding — not by waiting for the next accelerator effect run to work
@@ -414,8 +436,19 @@ function InvoiceReceiptsPanelBody({
               />
             </div>
           )}
-          <div className="flex justify-end">
-            <Button size="sm" onClick={handleSaveReceipts} disabled={pending}>
+          {/* The save state is stated in words, not left to be inferred from a
+              button that looks identical either way. `isSuccess` distinguishes
+              "you just saved this" from "this was already the stored state when
+              the page opened" — both are clean, but only one of them answers
+              the click that was just made. */}
+          <div className="flex items-center justify-end gap-3">
+            {!receiptsDirty && !pending && (
+              <span className="flex items-center gap-1.5 text-xs text-success-700">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                {setReceiptsMutation.isSuccess ? 'Receipt evidence saved' : 'Saved — no changes to submit'}
+              </span>
+            )}
+            <Button size="sm" onClick={handleSaveReceipts} disabled={pending || !receiptsDirty}>
               {setReceiptsMutation.isPending ? 'Saving…' : 'Save Receipt Evidence'}
             </Button>
           </div>
@@ -436,7 +469,7 @@ function InvoiceReceiptsPanelBody({
           detach and goes straight to the settle-without-evidence path below. */}
       {selectedReceiptIds.length === 0 && receiptsSettled && (invoice.receipt_ids?.length ?? 0) > 0 && (
         <div className="flex justify-end">
-          <Button size="sm" variant="secondary" onClick={handleSaveReceipts} disabled={pending}>
+          <Button size="sm" variant="secondary" onClick={handleSaveReceipts} disabled={pending || !receiptsDirty}>
             {setReceiptsMutation.isPending ? 'Saving…' : 'Detach All Receipts'}
           </Button>
         </div>
