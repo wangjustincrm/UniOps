@@ -316,6 +316,28 @@ export default function AgreementDetailPage() {
   // for a system_admin viewer.
   const { data: usersData } = useUserDirectory()
 
+  // The agreement's responsible person. Recorded on the create/edit form and
+  // acted on by the backend — the NTE and expiry alerts are addressed to them
+  // (tasks/agreement_overdue.py), and on a recurring agreement they are the
+  // assignee of every period-confirmation task (crud/agreement_schedule.py
+  // _confirm_assignee) — but the detail page never showed it, so the one
+  // person carrying the agreement could not see they carried it.
+  //
+  // Resolved off the directory already fetched above rather than a second
+  // request. That directory lists ACTIVE users only, so an owner_id that
+  // resolves to nothing is a deactivated (or deleted) account — a materially
+  // different fact from "nobody owns this", and one worth saying out loud:
+  // the alerts and confirmation tasks are still being addressed to that
+  // account.
+  const owner = agreement?.owner_id
+    ? usersData?.items?.find((u) => u.id === agreement.owner_id)
+    : undefined
+  const ownerLabel =
+    !agreement?.owner_id ? 'Not assigned'
+    : owner ? owner.full_name
+    : usersData ? 'Assigned to a deactivated account'
+    : '…'
+
   // house_account is the only agreement_type with pickup receipts at all —
   // recurring/milestone settle against the payment schedule instead. Skip
   // the fetch entirely for the other two types, same convention as the
@@ -444,6 +466,7 @@ export default function AgreementDetailPage() {
                   ['Currency', agreement.currency],
                   ['Tax', agreement.tax_code ? `${agreement.tax_code} (${(Number(agreement.tax_rate ?? 0) * 100).toFixed(2)}%)` : '—'],
                   ['Department', department?.name ?? '—'],
+                  ['Owner', ownerLabel],
                   ['Budget Code', agreement.budget_code || '—'],
                   ['Created', formatDate(agreement.created_at)],
                 ] as [string, string][]).map(([label, value]) => (
