@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Receipt, Plus, CheckCircle2, XCircle, Ban, Paperclip, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/ui/badge'
+import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
@@ -16,13 +16,26 @@ import type { DocumentStatus } from '@/types'
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
 
+// The VALUES here are the `status` query param this page sends to
+// GET /agreement-receipts (crud/agreement_receipt.py list_all filters on it
+// verbatim) and are also what `VOIDABLE_STATUSES` / StatusBadge below key off
+// — never touch them. Only the WORDS are derived, via badge.tsx's
+// statusLabel(), which reads the same STATUS_CONFIG the rows' own StatusBadge
+// renders from. This list used to spell the labels out by hand, so the same
+// status could be called one thing in this dropdown and another on the row two
+// lines below it — which is exactly what nearly happened when 'Voided' became
+// 'Removed'. Same shape TYPE_FILTERS below already uses for RECEIPT_TYPE_LABELS.
+//
+// 'all' is deliberately NOT in this array and keeps its own literal: it is a
+// sentinel meaning "send no status param", not a status, and statusLabel('all')
+// would fall through to its raw-value fallback and render "all".
+const STATUS_FILTER_VALUES: ReceiptStatus[] = [
+  'pending_ap_review', 'open', 'reconciled', 'rejected', 'voided',
+]
+
 const STATUS_FILTERS: { value: ReceiptStatus | 'all'; label: string }[] = [
-  { value: 'all',                label: 'All' },
-  { value: 'pending_ap_review',  label: 'Pending AP Review' },
-  { value: 'open',                label: 'Open' },
-  { value: 'reconciled',          label: 'Reconciled' },
-  { value: 'rejected',            label: 'Rejected' },
-  { value: 'voided',              label: 'Removed' },
+  { value: 'all', label: 'All' },
+  ...STATUS_FILTER_VALUES.map((value) => ({ value, label: statusLabel(value) })),
 ]
 
 const TYPE_FILTERS: { value: ReceiptType | 'all'; label: string }[] = [
