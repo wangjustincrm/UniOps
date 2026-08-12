@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
+from app.models.agreement_receipt_attachment import AgreementReceiptAttachment
 from app.models.invoice import Invoice
 from app.schemas.agreement_receipt import ReceiptCreate, ReceiptUpdate, validate_totals
 
@@ -46,7 +47,7 @@ async def list_all(
     search: str | None = None,
     page: int = 1,
     page_size: int = 20,
-) -> tuple[list[tuple[AgreementReceipt, str, str, str | None]], int]:
+) -> tuple[list[tuple[AgreementReceipt, str, str, str | None, int]], int]:
     """Cross-agreement listing (GET /agreement-receipts, Task 9) — the reason
     this page exists is that AP/warehouse staff shouldn't have to open an
     agreement first to record or find a receipt (see the task brief's "where
@@ -65,10 +66,29 @@ async def list_all(
     this must be a LEFT join, not an inner one, or every unreconciled row
     would silently vanish from the listing. Fix round 1, Important 2: the
     frontend must never render a bare invoice_id UUID either.
+
+    `attachment_count` (whole-branch review I2): this listing is the ONLY
+    place an AP clerk can approve or reject a receipt sitting in
+    pending_ap_review, and "is there actually a photo on it?" is half of what
+    that decision rests on (the other half, missing_receipt_reason, is
+    already on ReceiptResponse). Without it AP was approving blind, or the
+    frontend would have had to fire one
+    GET /agreements/{a}/receipts/{r}/attachments per visible row. A
+    correlated scalar subquery keeps this at exactly the two queries it
+    already ran (COUNT + page SELECT), and — unlike a JOIN onto the
+    attachments table — cannot multiply rows when a receipt has several
+    photos.
     """
+    attachment_count = (
+        select(func.count(AgreementReceiptAttachment.id))
+        .where(AgreementReceiptAttachment.receipt_id == AgreementReceipt.id)
+        .correlate(AgreementReceipt)
+        .scalar_subquery()
+        .label("attachment_count")
+    )
     q = (
         select(AgreementReceipt, PurchaseAgreement.number, PurchaseAgreement.currency,
-               Invoice.internal_ref)
+               Invoice.internal_ref, attachment_count)
         .join(PurchaseAgreement, AgreementReceipt.agreement_id == PurchaseAgreement.id)
         .outerjoin(Invoice, AgreementReceipt.invoice_id == Invoice.id)
     )
@@ -107,7 +127,7 @@ async def list_all(
             AgreementReceipt.id.desc(),
         ).offset(offset).limit(page_size)
     )).all()
-    return [(row[0], row[1], row[2], row[3]) for row in rows], total
+    return [(row[0], row[1], row[2], row[3], row[4]) for row in rows], total
 
 
 # 唯二可离开的活跃态 —— reconciled 已被发票认领(编辑/作废会让发票挂着一份

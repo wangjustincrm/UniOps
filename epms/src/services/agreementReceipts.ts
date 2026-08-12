@@ -57,10 +57,18 @@ export interface ApiReceipt {
 // fall back to `invoice_id.slice(0, 8)` only when this is null, matching the
 // `x_number ?? x_id.slice(0, 8)` convention used throughout
 // InvoiceDetailPage.tsx for PO/agreement references.
+//
+// attachment_count (whole-branch review I2): how many photos/proof files are
+// on this receipt, counted server-side in the same query as the row (see
+// crud/agreement_receipt.py list_all). ReceiptListPage is the only surface
+// that can approve or reject a receipt sitting in pending_ap_review, and
+// "does it have a photo at all" is the fact that decision turns on — without
+// this the page would have to fire one attachments GET per visible row.
 export interface ApiReceiptWithAgreement extends ApiReceipt {
   agreement_number: string
   currency: string
   invoice_ref: string | null
+  attachment_count: number
 }
 
 export interface ReceiptListResponse {

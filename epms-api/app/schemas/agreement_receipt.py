@@ -140,10 +140,19 @@ class ReceiptWithAgreementResponse(ReceiptResponse):
     `reconciled` — a receipt's `invoice_id` has no FK to `invoices` (see
     models/agreement_receipt.py's comment on that column), so this is always
     optional even for a reconciled row in principle.
+
+    `attachment_count` (whole-branch review I2): how many photos/proof files
+    are on this receipt. This listing is the only surface that can approve or
+    reject a pending_ap_review receipt, and "does it have a photo at all" is
+    the fact that decision turns on — see crud.agreement_receipt.list_all for
+    why it is counted in the same query rather than fetched per row. NOT on
+    the per-agreement ReceiptResponse: that list is rendered by ReceiptTable,
+    which already fetches each row's attachment list to render download links.
     """
     agreement_number: str
     currency: str
     invoice_ref: str | None = None
+    attachment_count: int = 0
 
 
 class ReceiptListAllResponse(BaseModel):

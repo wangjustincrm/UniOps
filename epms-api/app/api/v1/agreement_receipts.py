@@ -242,7 +242,8 @@ async def list_all_receipts(
         ReceiptWithAgreementResponse(
             **ReceiptResponse.model_validate(receipt, from_attributes=True).model_dump(),
             agreement_number=agr_number, currency=agr_currency, invoice_ref=invoice_ref,
+            attachment_count=attachment_count,
         )
-        for receipt, agr_number, agr_currency, invoice_ref in rows
+        for receipt, agr_number, agr_currency, invoice_ref, attachment_count in rows
     ]
     return {"items": items, "total": total}

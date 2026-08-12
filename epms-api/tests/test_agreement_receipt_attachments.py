@@ -198,3 +198,34 @@ async def test_delete_through_wrong_agreement_is_404_and_does_not_delete(
     assert fake_file_server.deleted == []
     listed = await admin_client.get(f"{_receipts_url(agreement_id)}/{rid}/attachments")
     assert [a["id"] for a in listed.json()] == [att_id]
+
+
+# ── Whole-branch review (I2): the cross-agreement listing must say whether a
+# receipt actually has a photo on it. /receipts (ReceiptListPage) is the only
+# surface that can approve or reject a pending_ap_review receipt, and "is
+# there a photo?" is half of what that decision rests on — the AP clerk was
+# otherwise deciding from date and amount alone. ─────────────────────────────
+
+async def test_list_all_reports_attachment_count(admin_client, receipt_id):
+    from tests.test_agreement_receipt_api import ALL_RECEIPTS_URL
+
+    agreement_id, rid = receipt_id
+
+    listed = await admin_client.get(ALL_RECEIPTS_URL, params={"page_size": 200})
+    assert listed.status_code == 200, listed.text
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    assert by_id[rid]["attachment_count"] == 0
+
+    for name in ("a.jpg", "b.jpg"):
+        up = await admin_client.post(
+            f"{_receipts_url(agreement_id)}/{rid}/attachments",
+            files={"file": (name, b"\xff\xd8\xff", "image/jpeg")},
+        )
+        assert up.status_code == 201, up.text
+
+    listed = await admin_client.get(ALL_RECEIPTS_URL, params={"page_size": 200})
+    by_id = {item["id"]: item for item in listed.json()["items"]}
+    # Two photos on ONE receipt must still be one row (the count is a
+    # correlated subquery, not a join that would fan the row out).
+    assert [item["id"] for item in listed.json()["items"]].count(rid) == 1
+    assert by_id[rid]["attachment_count"] == 2

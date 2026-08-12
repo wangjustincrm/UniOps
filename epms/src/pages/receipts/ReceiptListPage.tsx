@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Receipt, Plus, CheckCircle2, XCircle, Ban } from 'lucide-react'
+import { Search, Receipt, Plus, CheckCircle2, XCircle, Ban, Paperclip, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -181,6 +181,13 @@ export default function ReceiptListPage() {
                 <Th align="right">Amount</Th>
                 <Th>Received By</Th>
                 <Th>Status</Th>
+                {/* Whole-branch review (I2): AP approves/rejects from THIS
+                    page and nowhere else, so the two facts that decision
+                    rests on have to be on it — whether a photo was ever
+                    attached (this column) and, for a pending_ap_review row,
+                    the reason it was routed here (the sub-row below). Before
+                    this, the only per-row information was date and amount. */}
+                <Th>Evidence</Th>
                 <Th>Linked Invoice</Th>
                 <Th>Actions</Th>
               </tr>
@@ -252,8 +259,19 @@ function ReceiptRow({
   onApprove: () => void
   onReject: () => void
 }) {
+  // Whole-branch review (I2): a pending_ap_review row gets a second, full-width
+  // sub-row carrying missing_receipt_reason. Deliberately always-visible rather
+  // than a collapsible/expandable table — the reviewer must not have to
+  // discover that there is something to click to learn why this row is in
+  // their queue, and no other row type has anything to show there.
+  const showReason = receipt.status === 'pending_ap_review'
+  const hasPhoto = receipt.attachment_count > 0
   return (
-    <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
+    <>
+    <tr className={cn(
+      'bg-white hover:bg-primary-50/60 transition-colors',
+      showReason ? 'border-b-0' : 'border-b border-neutral-100',
+    )}>
       <td className="px-4 py-3 text-neutral-600">{formatDate(receipt.receipt_date)}</td>
       <td className="px-4 py-3 text-neutral-700">{RECEIPT_TYPE_LABELS[receipt.receipt_type]}</td>
       <td className="px-4 py-3 font-mono text-xs text-neutral-700">{receipt.receipt_ref ?? '—'}</td>
@@ -273,6 +291,22 @@ function ReceiptRow({
       <td className="px-4 py-3 text-neutral-600">{receivedByName ?? '—'}</td>
       <td className="px-4 py-3">
         <StatusBadge status={receipt.status as DocumentStatus} />
+      </td>
+      <td className="px-4 py-3">
+        {hasPhoto ? (
+          <span className="inline-flex items-center gap-1 text-xs text-neutral-600" title={`${receipt.attachment_count} file(s) attached`}>
+            <Paperclip className="h-3.5 w-3.5" />
+            {receipt.attachment_count}
+          </span>
+        ) : (
+          // Not a neutral dash: "no photo" is the condition that sends a
+          // receipt to AP review in the first place, and on an already-open
+          // or reconciled row it is what a reviewer needs to notice.
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-warning-700" title="No photo or proof file attached to this receipt">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            No photo
+          </span>
+        )}
       </td>
       <td className="px-4 py-3">
         {receipt.invoice_id ? (
@@ -325,5 +359,24 @@ function ReceiptRow({
         </div>
       </td>
     </tr>
+    {showReason && (
+      <tr className="border-b border-neutral-100 bg-warning-50/40">
+        {/* colSpan must match the header's column count: Date, Type,
+            Reference #, Agreement, Amount, Received By, Status, Evidence,
+            Linked Invoice, Actions = 10. */}
+        <td colSpan={10} className="px-4 pb-3 pt-0 text-xs text-warning-800">
+          <span className="font-medium">Why this needs AP review: </span>
+          {/* The reason is what create()/update() route a receipt to
+              pending_ap_review on — a receipt can only get here by carrying
+              one, so an empty reason means the row was moved by hand
+              (Data Maintenance) and the reviewer must be told that rather
+              than shown a blank. */}
+          {receipt.missing_receipt_reason?.trim()
+            ? receipt.missing_receipt_reason
+            : <span className="italic">no reason was recorded on this receipt.</span>}
+        </td>
+      </tr>
+    )}
+    </>
   )
 }
