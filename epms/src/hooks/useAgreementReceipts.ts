@@ -28,6 +28,42 @@ export function useAllReceipts(filters?: ReceiptListAllFilters) {
   })
 }
 
+// ─── Invalidation, in exactly one place ───────────────────────────────────
+//
+// A receipt is visible through TWO query-key namespaces that share no prefix:
+// ['agreements', id, 'receipts'] (the agreement detail page's read-only table)
+// and ['agreement-receipts'] (ReceiptListPage, its own menu entry). Every
+// mutation below has to refresh both, and every mutation below used to decide
+// that for itself — which is how useCreateReceipt shipped invalidating only
+// the first: a receipt saved from the create page was in the database and on
+// the agreement page, but ReceiptListPage kept serving its cached list until a
+// hard reload. The whole-branch review caught the same asymmetry on the
+// invoice-side hooks and nobody looked back at the create path.
+//
+// Routing every mutation through this helper makes "refresh only one side"
+// syntactically impossible, the same way crud/invoice.py's _set_agreement_link
+// makes writing one of the three agreement columns without the others
+// impossible.
+//
+// Deliberately NOT invalidating bare ['agreements']: that prefix-matches every
+// other agreement's data app-wide plus every per-row attachment query, and
+// there is nothing on the agreement row itself for these mutations to refresh
+// — consumed_amount/NTE is derived from matched INVOICES (crud/invoice.py's
+// _recompute_consumed), never from receipts.
+//
+// await is load-bearing throughout: invalidateQueries only *schedules* a
+// refetch, so without awaiting, isPending flips false and the form re-arms (or
+// a row's buttons re-enable) while the lists still show pre-mutation data.
+async function invalidateReceiptViews(
+  queryClient: ReturnType<typeof useQueryClient>,
+  agreementId: string,
+) {
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['agreement-receipts'] }),
+    queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] }),
+  ])
+}
+
 export function useCreateReceipt(agreementId: string) {
   const queryClient = useQueryClient()
 
@@ -39,19 +75,8 @@ export function useCreateReceipt(agreementId: string) {
     // flips false and the entry form re-arms while the receipt list still shows
     // stale (pre-create) data.
     //
-    // Scoped to THIS agreement's receipt list only — no ['agreements'] (bare)
-    // invalidate. That broad key used to prefix-match every agreement's data
-    // app-wide (every OTHER open agreement's receipts/attachments too, plus the
-    // agreement list/header queries), and, within this agreement, every
-    // per-row attachment query as collateral damage on every single mutation.
-    // It was also redundant with the narrow invalidate right below it.
-    // consumed_amount/NTE on the agreement header is derived from matched
-    // INVOICES (crud/invoice.py, e.g. _recompute_consumed), never from
-    // pickup receipts directly — create/void/ap-review touch nothing on the
-    // agreement row itself, so there is nothing on ['agreements'] for these
-    // three mutations to invalidate in the first place.
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] })
+      await invalidateReceiptViews(queryClient, agreementId)
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create receipt'),
   })
@@ -62,9 +87,8 @@ export function useVoidReceipt(agreementId: string) {
 
   return useMutation({
     mutationFn: (receiptId: string) => agreementReceiptService.void(agreementId, receiptId),
-    // See useCreateReceipt above for why this doesn't also invalidate ['agreements'].
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] })
+      await invalidateReceiptViews(queryClient, agreementId)
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to void receipt'),
   })
@@ -76,9 +100,8 @@ export function useApReviewReceipt(agreementId: string) {
   return useMutation({
     mutationFn: ({ receiptId, action }: { receiptId: string; action: ReceiptApReviewAction }) =>
       agreementReceiptService.apReview(agreementId, receiptId, action),
-    // See useCreateReceipt above for why this doesn't also invalidate ['agreements'].
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] })
+      await invalidateReceiptViews(queryClient, agreementId)
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
   })
@@ -94,9 +117,8 @@ export function useApReviewReceipt(agreementId: string) {
 // only UI surface when AgreementDetailPage's ReceiptTable went readOnly: a
 // receipt stuck at pending_ap_review had no route out anywhere in the app.
 //
-// Invalidates BOTH the cross-agreement list key (so this page reflects the
-// change) AND the single-agreement key (so that agreement's detail page,
-// if open in another tab, doesn't show stale status next time it refetches).
+// Refreshing both views is handled by invalidateReceiptViews, same as every
+// other mutation in this file.
 
 export function useVoidReceiptAny() {
   const queryClient = useQueryClient()
@@ -104,15 +126,8 @@ export function useVoidReceiptAny() {
   return useMutation({
     mutationFn: ({ agreementId, receiptId }: { agreementId: string; receiptId: string }) =>
       agreementReceiptService.void(agreementId, receiptId),
-    // await is load-bearing, same rationale as every other mutation in this
-    // file — invalidateQueries only *schedules* a refetch; without awaiting,
-    // isPending flips false and the row's buttons re-arm while the list still
-    // shows the pre-void status.
     onSuccess: async (_data, { agreementId }) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['agreement-receipts'] }),
-        queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] }),
-      ])
+      await invalidateReceiptViews(queryClient, agreementId)
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to void receipt'),
   })
@@ -125,10 +140,7 @@ export function useApReviewReceiptAny() {
     mutationFn: ({ agreementId, receiptId, action }: { agreementId: string; receiptId: string; action: ReceiptApReviewAction }) =>
       agreementReceiptService.apReview(agreementId, receiptId, action),
     onSuccess: async (_data, { agreementId }) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['agreement-receipts'] }),
-        queryClient.invalidateQueries({ queryKey: ['agreements', agreementId, 'receipts'] }),
-      ])
+      await invalidateReceiptViews(queryClient, agreementId)
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to record AP review'),
   })
