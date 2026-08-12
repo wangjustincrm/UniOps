@@ -602,11 +602,15 @@ async def test_agreement_match_by_delegate_requires_review(admin_client, test_en
 
 # test_agreement_match_by_delegate_with_receipts_review_description removed
 # (Task 6): it drove receipt claiming through POST /match's now-removed
-# receipt_ids field to reach the "elif result.receipt_ids:" review-description
-# branch in api/v1/invoices.py. /match can no longer claim a receipt at all
-# (mounting is a separate act — Task 7's endpoint, not built yet), so that
-# branch is unreachable through any current caller; a test for it belongs
-# with Task 7's endpoint once that exists, not here.
+# receipt_ids field to reach a "backed by N claimed receipt(s)"
+# review-description branch in api/v1/invoices.py. /match can no longer claim
+# a receipt at all — mounting is a separate act (Task 7's
+# PUT /invoices/{id}/receipts, covered by tests/test_invoice_receipts.py),
+# and that endpoint creates no review task — so the branch was unreachable
+# through every caller. Whole-branch review (M2) deleted the branch itself;
+# test_agreement_match_by_delegate_requires_review above already pins what
+# a house_account match ACTUALLY writes instead: the "No receipt evidence or
+# no-evidence declaration" wording.
 
 
 async def test_recurring_no_claimable_row_review_description_does_not_lie(admin_client, test_engine):

@@ -375,13 +375,24 @@ async def match_invoice(
             # Review fix (Important #2, Task 5 round 1): branch on
             # legacy_settlement rather than assuming every "agreement" route
             # match is a no-evidence legacy settlement. Task 5 made that no
-            # longer true for house_account: a match with claimed receipts
-            # has legacy_settlement=False and legacy_settlement_reason
-            # =None, so the old unconditional wording told AP reviewers
-            # "...as a legacy settlement (no receipt evidence): None" about
-            # an invoice that DOES have receipt evidence — the exact opposite
-            # of what happened. The whole point of narrowing legacy_settlement
-            # was to make this review panel trustworthy.
+            # longer true for house_account: a match with legacy_settlement
+            # =False and legacy_settlement_reason=None told AP reviewers
+            # "...as a legacy settlement (no receipt evidence): None" about an
+            # invoice that was nothing of the sort — the exact opposite of what
+            # happened. The whole point of narrowing legacy_settlement was to
+            # make this review panel trustworthy.
+            #
+            # Whole-branch review (M2): there is deliberately NO
+            # "backed by N claimed receipt(s)" branch here. Task 6 made
+            # matching pure linkage — _match_to_agreement (crud/invoice.py)
+            # releases any held evidence and leaves invoice.receipt_ids NULL
+            # for every agreement type, and the house_account branch is a bare
+            # `pass` that claims nothing — so `result.receipt_ids` is always
+            # falsy by the time this runs. Mounting receipts is a separate act
+            # on the invoice detail page (PUT /invoices/{id}/receipts), which
+            # never creates a review task. A branch on receipt_ids here would
+            # be dead code that reads as if this endpoint could still claim
+            # evidence; if mounting ever moves back into /match, add it then.
             if result.match_route == "agreement":
                 if result.legacy_settlement:
                     review_description = (
@@ -389,13 +400,6 @@ async def match_invoice(
                         f"{result.agreement_number} as a legacy settlement (no receipt "
                         f"evidence): {result.legacy_settlement_reason}. Please review and "
                         "approve or reject."
-                    )
-                elif result.receipt_ids:
-                    review_description = (
-                        f"Invoice {inv.internal_ref} was matched to agreement "
-                        f"{result.agreement_number} against {len(result.receipt_ids)} claimed "
-                        "receipt(s) as receipt evidence. Please review and approve or "
-                        "reject."
                     )
                 elif result.schedule_id is not None:
                     # recurring (auto-claimed or an explicit req.schedule_id)
