@@ -116,9 +116,32 @@ async def claim(
     Two passes on purpose: validate every id BEFORE mutating any row. A
     single-pass "validate-then-mutate-as-we-go" loop would leave earlier
     receipts already flipped to reconciled/invoice_id-set in the session's
-    identity map when a later id fails — the caller (`_match_to_agreement`)
-    converts our ValueError to a 422 and does not roll back, so those partial
-    writes would ride along on the next successful flush.
+    identity map when a later id fails partway through the batch — and that
+    identity map is not a safe boundary to lean on: whether a pending change
+    actually reaches the database before the failure surfaces depends on the
+    CALLER's session (autoflush setting, any query issued in between, when it
+    eventually calls flush()/commit()) — not on anything this function
+    controls. Production's session factory (app/db/session.py's
+    AsyncSessionLocal) sets autoflush=False, so a pending UPDATE there would
+    likely stay unflushed until this function's own trailing `db.flush()` —
+    which a single-pass bug would skip entirely on the failing path anyway.
+    A test session built with plain defaults (autoflush=True, e.g.
+    tests/test_receipt_match.py's) can flush it earlier, via the very next
+    SELECT in the same loop. Either way, this function must not depend on
+    which of those two the caller happens to be running — the two-pass
+    structure makes the guarantee unconditional instead of a race against
+    flush timing.
+
+    This function makes no assumption about what its caller does with the
+    session afterward — commit, roll back, both, or neither — because as of
+    Task 6 it has no caller at all (the house_account match branch that used
+    to call this is a bare `pass`; Task 7 is expected to add a real one, a
+    receipt-mounting endpoint separate from matching). (Reviewed round 3: an
+    earlier version of this docstring named `_match_to_agreement` as "the
+    caller" and claimed it "does not roll back" — both false. That call site
+    was removed by Task 6, and even before it was, the real request-scoped
+    session in api/v1's dependency chain rolls back on any raised exception,
+    not the opposite.)
 
     Only "open" is accepted today — a receipt already claimed by another
     invoice ("reconciled") or awaiting/failed AP review cannot be claimed a

@@ -381,19 +381,31 @@ async def test_claim_leaves_earlier_receipts_untouched_when_a_later_id_is_invali
     receipt "reconciled" by THIS SAME invoice) — a two-pass loop with no
     atomicity coverage would let that change silently regress with no signal.
 
-    claim()'s own docstring names the exact failure mode this guards: "the
-    caller (_match_to_agreement) converts our ValueError to a 422 and does
-    not roll back, so those partial writes would ride along on the next
-    successful flush." Reproduced faithfully here — after catching the
-    ValueError, this test COMMITS the same session instead of rolling it
-    back (exactly what the docstring says the real caller does), so a
-    single-pass "validate-and-mutate-as-we-go" implementation would durably
-    persist the earlier receipt's mutation via SQLAlchemy's autoflush (the
-    second iteration's SELECT flushes the first iteration's pending UPDATE
-    before it can even see the invalid id). A test that instead closed the
-    session without committing would pass unconditionally regardless of
-    single-pass vs. two-pass — the uncommitted UPDATE would simply be rolled
-    back on close either way, proving nothing.
+    This is a CRUD-layer contract test, not a simulation of any particular
+    caller — as of Task 6, claim() has ZERO production callers at all (the
+    house_account branch it used to be invoked from is now a bare `pass`;
+    Task 7 is what will give it one). claim()'s atomicity has to hold
+    regardless of what that future caller does with its session — commit,
+    roll back, or neither — so this test doesn't assume any of those.
+
+    Review fix round 3: an earlier version of this docstring claimed the
+    explicit `await db.commit()` below "faithfully reproduces" a real
+    caller's behavior. That was wrong on both counts — no such caller
+    exists, and even a hypothetical one wouldn't behave that way: /match's
+    actual request-scoped session (app/db/session.py's get_session
+    dependency) ROLLS BACK on any exception, ValueError included (FastAPI
+    throws it into the generator, which hits `except Exception: await
+    session.rollback(); raise`) — the opposite of what this test does.
+
+    The commit here exists for a narrower, purely mechanical reason: this
+    test DB does not wrap each test in a transaction that gets rolled back
+    at teardown (see conftest.py:305-311), so an uncommitted session's
+    pending changes are simply discarded when it closes — a single-pass
+    (buggy) and a two-pass (correct) implementation would look IDENTICAL
+    to a test that never commits, because neither one's partial write would
+    ever become observable. Committing is what makes the difference between
+    them visible to the fresh-session read below at all; it is not a claim
+    about how any real caller is expected to behave.
 
     Reads the "untouched" receipt back through a FRESH session (not the one
     claim() ran in) — asserting against the in-memory object from the failed
@@ -422,11 +434,12 @@ async def test_claim_leaves_earlier_receipts_untouched_when_a_later_id_is_invali
         with pytest.raises(ValueError, match="voided"):
             await agreement_receipt_crud.claim(
                 db, agr, [open_receipt.id, voided_receipt.id], db_inv)
-        # Reproduce the real caller's behavior on purpose (see docstring
-        # above) — commit instead of letting the session close/roll back, so
-        # a single-pass implementation's partial write has a chance to ride
-        # along, exactly like it would through _match_to_agreement's actual
-        # commit a few lines after its own call into claim().
+        # Committed on purpose (see docstring above) — NOT a claim about how
+        # a real caller behaves (none exists yet, and /match's own session
+        # would roll back here anyway). This is purely so a single-pass
+        # implementation's partial write becomes observable to the
+        # fresh-session read below instead of being discarded for free when
+        # this uncommitted, non-transactional-test-DB session closes.
         await db.commit()
 
     # Fresh session, fresh row — not the one the failed claim() call ran in.
