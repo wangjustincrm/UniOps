@@ -51,6 +51,11 @@ export interface ApiReceipt {
   receipt_type: ReceiptType
   receipt_date: string
   receipt_ref: string | null
+  // The merchant printed ON the slip — NOT the agreement's vendor (that one
+  // lives on the agreement and is `agreement_vendor_name` below). Null is
+  // normal: OCR returns none when the header is illegible, and manual entry
+  // may leave it blank.
+  vendor_name: string | null
   amount: string
   tax_amount: string
   total_amount: string
@@ -95,6 +100,21 @@ export interface ApiReceiptWithAgreement extends ApiReceipt {
   currency: string
   invoice_ref: string | null
   attachment_count: number
+  // The AGREEMENT's vendor (master data). Needed alongside vendor_mismatch so
+  // the warning can name both merchants it is comparing — "the slip says X,
+  // this account is with Y" — instead of an unactionable bare flag.
+  agreement_vendor_name: string
+  // Derived SERVER-side (epms-api schemas/agreement_receipt.py::
+  // is_vendor_mismatch). Never recompute it here: the comparison is
+  // deliberately fuzzy (casefold, drop store numbers, either side may contain
+  // the other), and a fuzzy rule re-implemented per page is a rule that means
+  // something slightly different on each page. Both the list and the detail
+  // view read this same field off the same endpoint shape.
+  //
+  // It is a REMINDER, not an error — a receipt from a different trading name
+  // of the same group is perfectly legal. Render a badge on the vendor cell;
+  // never red-flag the whole row and never block a write on it.
+  vendor_mismatch: boolean
 }
 
 export interface ReceiptListResponse {
@@ -129,6 +149,7 @@ export interface CreateReceiptBody {
   receipt_type?: ReceiptType
   receipt_date: string
   receipt_ref?: string | null
+  vendor_name?: string | null
   amount: number
   tax_amount: number
   total_amount: number
@@ -145,6 +166,7 @@ export interface UpdateReceiptBody {
   receipt_type?: ReceiptType
   receipt_date?: string
   receipt_ref?: string | null
+  vendor_name?: string | null
   amount?: number
   tax_amount?: number
   total_amount?: number
@@ -209,7 +231,17 @@ export const agreementReceiptService = {
 // touches the ORM), so they are plain `number | null` here, unlike ApiReceipt's
 // string amounts.
 export interface OcrReceiptFields {
-  receipt_ref: string | null
+  // Field names are expense-api's extract_slip() keys VERBATIM — this response
+  // is passed through with no server-side renaming, so a name invented here
+  // silently reads as `undefined` and the field just never prefills. That is
+  // exactly what happened to the reference number: this interface called it
+  // `receipt_ref` while the API has always returned `slip_ref`, so every
+  // OCR-extracted slip number was dropped on the floor with no error anywhere
+  // (found while adding vendor_name in Task 13).
+  slip_ref: string | null
+  // The merchant printed on the slip; null whenever the header is illegible or
+  // cropped — a normal outcome, not a failure (see _SLIP_PROMPT).
+  vendor_name: string | null
   date: string | null
   amount: number | null
   tax_amount: number | null

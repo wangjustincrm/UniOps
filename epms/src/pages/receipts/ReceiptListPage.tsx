@@ -177,6 +177,14 @@ export default function ReceiptListPage() {
                 <Th>Date</Th>
                 <Th>Type</Th>
                 <Th>Reference #</Th>
+                {/* Task 13: the merchant printed ON the slip, which is NOT
+                    necessarily the vendor the house account is with. Showing
+                    the agreement's own vendor here would have been free and
+                    useless — it can never differ from the account it belongs
+                    to, so it could never expose the mis-posting this column
+                    exists to expose (shop A's slip charged to shop B's
+                    account). */}
+                <Th>Vendor on Receipt</Th>
                 <Th>Agreement</Th>
                 <Th align="right">Amount</Th>
                 <Th>Received By</Th>
@@ -293,6 +301,32 @@ function ReceiptRow({
         </Link>
       </td>
       <td className="px-4 py-3">
+        {receipt.vendor_name ? (
+          <span className="inline-flex items-center gap-1.5 text-xs text-neutral-700">
+            <span className="max-w-[10rem] truncate" title={receipt.vendor_name}>{receipt.vendor_name}</span>
+            {/* A REMINDER, not an error — hence a badge on this one cell and
+                deliberately NOT a red row: a slip from another trading name of
+                the same group is a perfectly legal receipt. The title names
+                both merchants, because "mismatch" on its own tells the reader
+                nothing they can act on. The verdict itself is the server's
+                (vendor_mismatch) — never recomputed here. */}
+            {receipt.vendor_mismatch && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-warning-50 px-1.5 py-0.5 text-[11px] font-medium text-warning-700"
+                title={`This receipt is from "${receipt.vendor_name}", but agreement ${receipt.agreement_number} is with "${receipt.agreement_vendor_name}". Check it was charged to the right house account.`}
+              >
+                <AlertTriangle className="h-3 w-3" />
+                Different vendor
+              </span>
+            )}
+          </span>
+        ) : (
+          // Blank is not a problem to flag: OCR returns nothing when the slip
+          // header is illegible, and a blank vendor is never a mismatch.
+          <span className="text-neutral-300">—</span>
+        )}
+      </td>
+      <td className="px-4 py-3">
         {/* Never a bare agreement_id UUID — the parent agreement's human number,
             linking through to its detail page. */}
         <Link to={`/agreements/${receipt.agreement_id}`} className="text-primary-600 hover:underline font-mono text-xs">
@@ -383,9 +417,9 @@ function ReceiptRow({
     {showReason && (
       <tr className="border-b border-neutral-100 bg-warning-50/40">
         {/* colSpan must match the header's column count: Date, Type,
-            Reference #, Agreement, Amount, Received By, Status, Evidence,
-            Linked Invoice, Actions = 10. */}
-        <td colSpan={10} className="px-4 pb-3 pt-0 text-xs text-warning-800">
+            Reference #, Vendor on Receipt, Agreement, Amount, Received By,
+            Status, Evidence, Linked Invoice, Actions = 11. */}
+        <td colSpan={11} className="px-4 pb-3 pt-0 text-xs text-warning-800">
           <span className="font-medium">Why this needs AP review: </span>
           {/* The reason is what create()/update() route a receipt to
               pending_ap_review on — a receipt can only get here by carrying

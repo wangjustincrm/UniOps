@@ -42,6 +42,11 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
 
   const [receiptDate, setReceiptDate] = useState(todayISODate())
   const [receiptRef, setReceiptRef] = useState('')
+  // The merchant printed on the slip. OCR prefills it; fully editable like
+  // every other OCR field. Not compared against the agreement's vendor here —
+  // the backend decides that (is_vendor_mismatch) and the receipt list/detail
+  // views surface it, so there is exactly one verdict in the system.
+  const [vendorName, setVendorName] = useState('')
   const [amount, setAmount] = useState('')
   const [taxAmount, setTaxAmount] = useState('')
   const [totalAmount, setTotalAmount] = useState('')
@@ -59,6 +64,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     setOcrState('idle')
     setReceiptDate(todayISODate())
     setReceiptRef('')
+    setVendorName('')
     setAmount('')
     setTaxAmount('')
     setTotalAmount('')
@@ -79,7 +85,11 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     try {
       const fields = await ocrService.receipt(picked)
       setOcrState('success')
-      if (fields.receipt_ref) setReceiptRef(fields.receipt_ref)
+      // `slip_ref`, not `receipt_ref` — expense-api's extract_slip() key. The
+      // old name here never existed on the wire, so it read as `undefined` and
+      // silently prefilled nothing (fixed in Task 13; see OcrReceiptFields).
+      if (fields.slip_ref) setReceiptRef(fields.slip_ref)
+      if (fields.vendor_name) setVendorName(fields.vendor_name)
       if (fields.date) setReceiptDate(fields.date)
       if (fields.amount !== null) setAmount(String(fields.amount))
       if (fields.tax_amount !== null) setTaxAmount(String(fields.tax_amount))
@@ -134,6 +144,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       receipt_type: receiptType,
       receipt_date: receiptDate,
       receipt_ref: receiptRef.trim() || undefined,
+      vendor_name: vendorName.trim() || undefined,
       amount: amt,
       tax_amount: tax,
       total_amount: tot,
@@ -252,7 +263,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           >
             <Upload className="h-6 w-6 text-neutral-400" />
             <p className="text-sm font-medium text-neutral-700">Take or upload a photo of the receipt</p>
-            <p className="text-xs text-neutral-400">Amounts and date will be auto-filled — optional, but recommended</p>
+            <p className="text-xs text-neutral-400">Vendor, amounts and date will be auto-filled — optional, but recommended</p>
             <input id="receipt-photo-upload" type="file" accept="image/*,.pdf" className="sr-only" onChange={handleFileChange} />
           </label>
         ) : (
@@ -292,6 +303,21 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
               friendly 409 doesn't catch it and it falls through to a bare 500.
               maxLength stops the overflow from ever reaching the request. */}
           <Input id="receipt-ref" value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} placeholder="Receipt number" maxLength={64} />
+        </FormField>
+        <FormField
+          label="Vendor on receipt"
+          htmlFor="receipt-vendor"
+          hint="The merchant printed on the slip. Leave it blank if it isn't legible."
+        >
+          {/* DB column is String(255) — maxLength keeps an overflowing paste
+              from reaching the request as a bare 500 (same rationale as
+              Reference # above). Optional on purpose: a blank vendor is never
+              reported as a mismatch, an unreadable header is normal. */}
+          <Input
+            id="receipt-vendor" value={vendorName} maxLength={255}
+            placeholder="e.g. Princess Auto #12"
+            onChange={(e) => setVendorName(e.target.value)}
+          />
         </FormField>
         <FormField label="Amount (before tax)" required htmlFor="receipt-amount">
           <Input id="receipt-amount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />

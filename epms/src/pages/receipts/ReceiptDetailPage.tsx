@@ -142,6 +142,11 @@ function ReceiptDetail({
   const [receiptType, setReceiptType] = useState<ReceiptType>(receipt.receipt_type)
   const [receiptDate, setReceiptDate] = useState(receipt.receipt_date)
   const [receiptRef, setReceiptRef] = useState(receipt.receipt_ref ?? '')
+  // The merchant printed on the slip (Task 13). Editable alongside the other
+  // recorded facts — a vendor keyed wrong, or left blank because OCR couldn't
+  // read the header, is exactly the case the mismatch note below asks the
+  // reader to check.
+  const [vendorName, setVendorName] = useState(receipt.vendor_name ?? '')
   const [amount, setAmount] = useState(receipt.amount)
   const [taxAmount, setTaxAmount] = useState(receipt.tax_amount)
   const [totalAmount, setTotalAmount] = useState(receipt.total_amount)
@@ -162,6 +167,7 @@ function ReceiptDetail({
     setReceiptType(receipt.receipt_type)
     setReceiptDate(receipt.receipt_date)
     setReceiptRef(receipt.receipt_ref ?? '')
+    setVendorName(receipt.vendor_name ?? '')
     setAmount(receipt.amount)
     setTaxAmount(receipt.tax_amount)
     setTotalAmount(receipt.total_amount)
@@ -213,6 +219,7 @@ function ReceiptDetail({
         receipt_type: receiptType,
         receipt_date: receiptDate,
         receipt_ref: receiptRef.trim() || null,
+        vendor_name: vendorName.trim() || null,
         amount: amt,
         tax_amount: tax,
         total_amount: tot,
@@ -352,6 +359,30 @@ function ReceiptDetail({
                 <p className="text-sm text-neutral-600">{lockReason(receipt)}</p>
               </div>
             )}
+            {/* A REMINDER, not an error (Task 13): a slip from another trading
+                name of the same group is a legal receipt, so nothing here
+                blocks editing, approving or matching. The verdict is the
+                server's (vendor_mismatch, epms-api is_vendor_mismatch) — never
+                recomputed here, so this page and the list can never disagree.
+                It names BOTH merchants, because "vendor mismatch" alone gives
+                the reader nothing to act on. Rendered in read-only mode too:
+                a reconciled receipt is where this matters most and its form
+                is locked. */}
+            {receipt.vendor_mismatch && (
+              <div className="mb-5 flex gap-3 rounded-lg border border-warning-200 bg-warning-50 p-4">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0 text-warning-500 mt-0.5" />
+                <div className="text-sm text-warning-800">
+                  <p className="font-semibold">This receipt is from a different vendor</p>
+                  <p className="mt-0.5">
+                    The receipt says <span className="font-medium">{receipt.vendor_name}</span>, but
+                    agreement {receipt.agreement_number} is with{' '}
+                    <span className="font-medium">{receipt.agreement_vendor_name}</span>. Check it was
+                    charged to the right house account — or correct the vendor if it was keyed wrong.
+                    Different stores of the same group are fine.
+                  </p>
+                </div>
+              </div>
+            )}
             {isEditable && !canRecordReceipt && (
               <div className="mb-5 flex gap-3 rounded-lg border border-neutral-200 bg-neutral-50 p-4">
                 <Lock className="h-4 w-4 text-neutral-400 flex-shrink-0 mt-0.5" />
@@ -401,6 +432,18 @@ function ReceiptDetail({
                       id="receipt-ref" value={receiptRef} maxLength={64}
                       placeholder="Receipt number"
                       onChange={(e) => touch(setReceiptRef)(e.target.value)}
+                    />
+                  </FormField>
+                  <FormField
+                    label="Vendor on receipt" htmlFor="receipt-vendor"
+                    hint="The merchant printed on the slip. Leave it blank if it isn't legible."
+                  >
+                    {/* DB column is String(255) — same overflow rationale as
+                        Reference # above. */}
+                    <Input
+                      id="receipt-vendor" value={vendorName} maxLength={255}
+                      placeholder="e.g. Princess Auto #12"
+                      onChange={(e) => touch(setVendorName)(e.target.value)}
                     />
                   </FormField>
                   <FormField label={`Amount before tax (${receipt.currency})`} required htmlFor="receipt-amount">
@@ -482,6 +525,7 @@ function ReceiptDetail({
                 <MetaRow label="Receipt type" value={RECEIPT_TYPE_LABELS[receipt.receipt_type]} />
                 <MetaRow label="Receipt date" value={formatDate(receipt.receipt_date)} />
                 <MetaRow label="Reference #" value={receipt.receipt_ref ?? '—'} mono />
+                <MetaRow label="Vendor on receipt" value={receipt.vendor_name ?? '—'} />
                 <MetaRow label="Received by" value={userNames.get(receipt.received_by) ?? '—'} />
                 <MetaRow label="Amount before tax" value={formatAmount(Number(receipt.amount), receipt.currency)} mono />
                 <MetaRow label="Tax" value={formatAmount(Number(receipt.tax_amount), receipt.currency)} mono />
