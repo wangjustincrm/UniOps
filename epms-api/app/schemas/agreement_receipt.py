@@ -37,6 +37,21 @@ def validate_totals(*, amount: Decimal, tax_amount: Decimal, total_amount: Decim
         raise ValueError("total_amount must equal amount + tax_amount")
 
 
+def _vendor_words(name: str) -> list[str]:
+    """casefold + split on every non-alphanumeric character. No filtering."""
+    word = ""
+    words: list[str] = []
+    for ch in name.casefold():
+        if ch.isalnum():
+            word += ch
+        elif word:
+            words.append(word)
+            word = ""
+    if word:
+        words.append(word)
+    return words
+
+
 def normalize_vendor_name(name: str) -> str:
     """Fold a vendor name down to what two spellings of the SAME merchant share.
 
@@ -63,17 +78,7 @@ def normalize_vendor_name(name: str) -> str:
     a dictionary this system does not have and would make the result
     impossible to explain to the person looking at the warning.
     """
-    word = ""
-    words: list[str] = []
-    for ch in name.casefold():
-        if ch.isalnum():
-            word += ch
-        elif word:
-            words.append(word)
-            word = ""
-    if word:
-        words.append(word)
-    return "".join(w for w in words if not w.isdigit())
+    return "".join(w for w in _vendor_words(name) if not w.isdigit())
 
 
 def is_vendor_mismatch(receipt_vendor: str | None, agreement_vendor: str | None) -> bool:
@@ -116,9 +121,19 @@ def is_vendor_mismatch(receipt_vendor: str | None, agreement_vendor: str | None)
         return False
     a = normalize_vendor_name(receipt_vendor)
     b = normalize_vendor_name(agreement_vendor)
-    # A side that normalises to nothing (punctuation-only, e.g. "***") carries
-    # no evidence of disagreement — treat it like a blank rather than letting
-    # `"" in b` decide by accident.
+    # Review round 1, Minor 1: for a merchant whose name is ALL digits ("7-11",
+    # "1-800-GOT-JUNK" keyed as digits), dropping digit words erases the entire
+    # name — and an empty side then short-circuits to "no mismatch" below,
+    # making a 7-11 slip on a Princess Auto house account the one thing this
+    # function is for and cannot see. When digit-dropping erased a side, the
+    # digits ARE the name, so compare with them kept. Only then; the store
+    # number case above must keep its tolerance.
+    if not a or not b:
+        a = "".join(_vendor_words(receipt_vendor))
+        b = "".join(_vendor_words(agreement_vendor))
+    # A side that normalises to nothing even with digits kept (punctuation-only,
+    # e.g. an OCR reading of "***") carries no evidence of disagreement — treat
+    # it like a blank rather than letting `"" in b` decide by accident.
     if not a or not b:
         return False
     return a not in b and b not in a

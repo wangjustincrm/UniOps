@@ -74,3 +74,27 @@ def test_a_store_number_alone_never_identifies_a_merchant():
     """纯数字词(门店号/收银台号)被丢弃 —— 它从不是商家名里能识别身份的部分。"""
     assert normalize_vendor_name("Princess Auto #12") == normalize_vendor_name("Princess Auto 7")
     assert is_vendor_mismatch("Princess Auto 7", "Princess Auto #12") is False
+
+
+# ── Review round 1 (Minor 1): dropping digit words erases an ALL-DIGIT
+# merchant name entirely, and an empty side short-circuits to "no mismatch" —
+# which made a 7-11 slip on a Princess Auto house account invisible, i.e. the
+# exact mis-posting this whole field exists to catch. When digit-dropping
+# erased a side, the digits ARE the name: compare with them kept. ──────────
+
+def test_an_all_digit_merchant_name_is_still_compared():
+    assert is_vendor_mismatch("7-11", "Princess Auto") is True
+    assert normalize_vendor_name("7-11") == ""   # 这就是当初的盲区所在
+
+
+def test_the_all_digit_fallback_stays_tolerant_for_the_same_merchant():
+    """回落只是"别丢数字",不是"改判严格" —— 同一家的两种写法仍不算冲突。"""
+    assert is_vendor_mismatch("7-11", "7-11 Inc") is False
+    assert is_vendor_mismatch("7-11", "7 11") is False
+
+
+def test_the_fallback_does_not_loosen_the_store_number_case():
+    """回落只在某一侧被清空时才触发;门店号那条主路径不受影响。"""
+    assert is_vendor_mismatch("Princess Auto #12", "Princess Auto Ltd") is False
+    assert is_vendor_mismatch("Canadian Tire #241", "Princess Auto") is True
+

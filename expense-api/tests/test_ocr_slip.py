@@ -140,6 +140,66 @@ async def test_vendor_key_missing_entirely_is_none_not_a_keyerror(anthropic_stub
     assert result["amount"] == 100.00
 
 
+# ── Review round 1 (Minor 2): the prompt invites nulls, so the response
+# parser must survive them in BOTH shapes a model can produce — the pair with
+# a null inside (covered above) and a bare null in place of the pair. The
+# second used to be an AttributeError, i.e. a 500 on the whole extraction and
+# the recorder thrown back to fully manual entry. ─────────────────────────
+
+async def test_a_bare_null_field_does_not_kill_the_whole_extraction(anthropic_stub):
+    payload = _slip_json()
+    payload["vendor_name"] = None
+    anthropic_stub.response = _response(json.dumps(payload))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["vendor_name"] is None
+    # everything else still came through — one null field costs nothing
+    assert result["slip_ref"] == "TILL-04-8821"
+    assert result["amount"] == 100.00
+    assert result["total_amount"] == 113.00
+
+
+async def test_bare_nulls_across_every_slip_field_still_return_a_dict(anthropic_stub):
+    """把每个字段都换成裸 null —— 一个都不许炸,全部落各自的默认值。
+    裸 null 与"键缺失"是同一件事(都没有 {value, confidence} 这个对),
+    所以 currency 落 "CAD" —— 而 {"value": null} 那种写法仍然落 None
+    (见 test_vendor_absent_returns_none_not_an_error),与改动前一致。"""
+    anthropic_stub.response = _response(json.dumps(
+        {k: None for k in _slip_json()}))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result == {
+        "vendor_name": None, "slip_ref": None, "date": None,
+        "amount": None, "tax_amount": None, "total_amount": None,
+        "currency": "CAD",
+    }
+
+
+async def test_an_explicit_null_value_pair_is_none_not_the_default(anthropic_stub):
+    """{"value": null} 是"模型看了但没读到" —— 与"裸 null / 键缺失"分开处理,
+    currency 在这种写法下仍然是 None,与改动前逐字一致。"""
+    payload = _slip_json()
+    payload["currency"] = {"value": None, "confidence": 0.1}
+    anthropic_stub.response = _response(json.dumps(payload))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["currency"] is None
+
+
+async def test_a_missing_currency_key_still_defaults_to_cad(anthropic_stub):
+    """键缺失时的既有行为不许变 —— 这是 _slip_field 的 default 参数唯一的用处。"""
+    payload = _slip_json()
+    del payload["currency"]
+    anthropic_stub.response = _response(json.dumps(payload))
+
+    result = await ocr_service.extract_slip(b"fake-image-bytes", "image/jpeg")
+
+    assert result["currency"] == "CAD"
+
+
 async def test_unreadable_file_raises_value_error_not_runtime_error(monkeypatch):
     """anthropic.BadRequestError → ValueError → 调用方转 422 "手动录入", 不是 503。
     OCR 不可用时录入页必须照常工作。"""

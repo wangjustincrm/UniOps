@@ -364,6 +364,34 @@ async def extract_receipt(file_bytes: bytes, mime_type: str) -> dict:
     }
 
 
+def _slip_field(parsed: dict, key: str, default=None):
+    """Unwrap one ``{"value": ..., "confidence": ...}`` pair from a slip response.
+
+    Review round 1 (Minor 2): the direct form, ``parsed.get(k, {}).get("value")``,
+    survives a MISSING key but not a key whose value is JSON ``null`` — the
+    default never fires, ``.get`` lands on ``None``, and the AttributeError
+    takes down the whole extraction with a 500. `_SLIP_PROMPT` explicitly
+    invites nulls ("return null — this is normal and not an error"), so a model
+    that answers ``{"vendor_name": null}`` instead of
+    ``{"vendor_name": {"value": null}}`` is a well-behaved model, and it must
+    not cost the recorder their OCR.
+
+    Behaviour is otherwise byte-identical to what it replaces: a missing key
+    yields ``default``, a present pair yields its ``value`` (``default`` when
+    the pair itself omits one), and an explicit ``"value": null`` still yields
+    ``None`` — including for ``currency``, whose "CAD" default has always
+    applied to the key/field being absent, not to a null value.
+
+    Scoped to extract_slip on purpose. extract_invoice/extract_receipt read
+    their fields the same fragile way, but they serve OA expense claims and
+    invoice OCR in production and are out of this task's blast radius.
+    """
+    field = parsed.get(key)
+    if not isinstance(field, dict):
+        return default
+    return field.get("value", default)
+
+
 async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
     """Pickup-slip OCR for house_account agreement purchases.
 
@@ -417,9 +445,9 @@ async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
     except json.JSONDecodeError:
         raise ValueError("OCR returned invalid JSON")
 
-    amount = parsed.get("amount", {}).get("value")
-    tax_amount = parsed.get("tax_amount", {}).get("value")
-    total_amount = parsed.get("total_amount", {}).get("value")
+    amount = _slip_field(parsed, "amount")
+    tax_amount = _slip_field(parsed, "tax_amount")
+    total_amount = _slip_field(parsed, "total_amount")
 
     # Whole-branch review (small item A): counter slips very often print only a
     # subtotal and a total, no separate tax line — and the prompt explicitly
@@ -450,11 +478,11 @@ async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
         # against shop B's house account is the classic house-account
         # mis-posting), so a null here must stay null rather than being
         # back-filled with a guess.
-        "vendor_name": parsed.get("vendor_name", {}).get("value"),
-        "slip_ref": parsed.get("slip_ref", {}).get("value"),
-        "date": parsed.get("date", {}).get("value"),
+        "vendor_name": _slip_field(parsed, "vendor_name"),
+        "slip_ref": _slip_field(parsed, "slip_ref"),
+        "date": _slip_field(parsed, "date"),
         "amount": amount,
         "tax_amount": tax_amount,
         "total_amount": total_amount,
-        "currency": parsed.get("currency", {}).get("value", "CAD"),
+        "currency": _slip_field(parsed, "currency", "CAD"),
     }
