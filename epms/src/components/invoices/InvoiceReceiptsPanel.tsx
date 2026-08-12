@@ -285,7 +285,7 @@ function InvoiceReceiptsPanelBody({
             e.preventDefault()
             setReceiptRefCommitted(receiptRefInput)
           }}
-          placeholder="e.g. the counter receipt # printed on the invoice"
+          placeholder="e.g. the receipt or delivery note # printed on the invoice"
           className="h-8 px-3 rounded-lg border border-neutral-300 bg-white text-xs focus:outline-none focus:ring-1 focus:ring-primary-600"
         />
       </div>
@@ -298,7 +298,7 @@ function InvoiceReceiptsPanelBody({
         <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
           <div className="flex flex-1 items-center justify-between gap-2">
-            <p>Couldn't load pickup receipts — the list below may be incomplete. Do not settle without receipt evidence until this loads.</p>
+            <p>Couldn't load this agreement's receipts — the list below may be incomplete. Do not settle without receipt evidence until this loads.</p>
             <Button size="sm" variant="secondary" onClick={() => receiptsQuery.refetch()} disabled={receiptsQuery.isFetching}>
               {receiptsQuery.isFetching ? 'Retrying…' : 'Retry'}
             </Button>
@@ -312,7 +312,7 @@ function InvoiceReceiptsPanelBody({
             <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
               <div className="flex flex-1 items-center justify-between gap-2">
-                <p>Couldn't refresh the pickup receipt list — showing the last one loaded.</p>
+                <p>Couldn't refresh the receipt list — showing the last one loaded.</p>
                 <Button size="sm" variant="secondary" onClick={() => receiptsQuery.refetch()} disabled={receiptsQuery.isFetching}>
                   {receiptsQuery.isFetching ? 'Retrying…' : 'Retry'}
                 </Button>
@@ -321,16 +321,16 @@ function InvoiceReceiptsPanelBody({
           )}
           {!receiptsSettled ? (
             <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-neutral-400">
-              Loading pickup receipts…
+              Loading receipts…
             </p>
           ) : sortedReceipts.length === 0 ? (
             <p className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-4 text-center text-xs text-neutral-400">
-              No open pickup receipts on this agreement. (Receipts still awaiting AP review aren't listed here.)
+              No open receipts on this agreement. (Receipts still awaiting AP review aren't listed here.)
             </p>
           ) : (
             <div className="flex flex-col gap-2">
               <label className="text-xs font-medium text-neutral-700">
-                Which pickup receipt(s) does this invoice cover?
+                Which receipt(s) does this invoice cover?
               </label>
               <div className="flex flex-col gap-2">
                 {sortedReceipts.map((receipt) => (
@@ -371,7 +371,7 @@ function InvoiceReceiptsPanelBody({
                 rows={2}
                 value={varianceReason}
                 onChange={(e) => setVarianceReason(e.target.value)}
-                placeholder="e.g. Invoice includes freight not itemized on the counter receipt."
+                placeholder="e.g. Invoice includes freight not itemized on the receipt."
                 className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
               />
             </div>
@@ -407,22 +407,22 @@ function InvoiceReceiptsPanelBody({
       {selectedReceiptIds.length === 0 && receiptsSettled && (
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-neutral-700">
-            No pickup receipts selected — reason for settling without receipt evidence <span className="text-danger-600">*</span>
+            No receipts selected — reason for settling without receipt evidence <span className="text-danger-600">*</span>
           </label>
           <p className="text-[11px] text-neutral-500">
-            This invoice will be paid against the agreement with no pickup receipt to reconcile against.
+            This invoice will be paid against the agreement with no receipt to reconcile against.
             Explain why — this is recorded for audit.
           </p>
           {receiptsErrored && (
             <p className="text-[11px] font-medium text-warning-700">
-              The pickup receipt list failed to load — settling now will record this invoice as having no receipt evidence, even if receipts actually exist. Consider retrying above first.
+              The receipt list failed to load — settling now will record this invoice as having no receipt evidence, even if receipts actually exist. Consider retrying above first.
             </p>
           )}
           <textarea
             rows={3}
             value={legacyReason}
             onChange={(e) => setLegacyReason(e.target.value)}
-            placeholder="e.g. Monthly house-account statement for vendor counter pickups; pickup receipts not yet digitized."
+            placeholder="e.g. Monthly house-account statement; the receipts it covers have not been digitized."
             className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
           />
           <div className="flex justify-end">

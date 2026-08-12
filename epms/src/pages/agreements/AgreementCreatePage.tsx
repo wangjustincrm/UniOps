@@ -25,7 +25,11 @@ import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } fr
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
 
 const TYPE_OPTIONS: { value: AgreementType; label: string; hint: string }[] = [
-  { value: 'house_account', label: 'House Account', hint: 'Vendor counter pickups on a running account, billed monthly' },
+  // Whole-branch review (M8): a house account is not necessarily a counter
+  // pickup — counter slips, delivery notes and service sign-offs are all
+  // valid evidence on one (see ReceiptType). The hint must not narrow the
+  // type down to the one customer that inspired it.
+  { value: 'house_account', label: 'House Account', hint: 'Ongoing spend on a running account with a vendor, billed periodically — evidenced by receipts, delivery notes or service sign-offs' },
   { value: 'recurring', label: 'Recurring', hint: 'A repeating service or subscription-style spend' },
   { value: 'milestone', label: 'Milestone', hint: 'Spend released against agreed project milestones' },
 ]

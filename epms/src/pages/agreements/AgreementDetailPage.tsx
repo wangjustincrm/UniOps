@@ -375,7 +375,7 @@ export default function AgreementDetailPage() {
               <StatusBadge status={agreement.status as DocumentStatus} />
               <Badge variant="neutral">{TYPE_LABELS[agreement.agreement_type]}</Badge>
               {legacySettlementCount > 0 && (
-                <span title="Invoices settled against this agreement with no receipt evidence — the escape hatch this phase deliberately allows, to be narrowed once pickup receipts ship.">
+                <span title="Invoices settled against this agreement with no receipt evidence — recorded deliberately, with a stated reason, when no receipt exists to reconcile against.">
                   <Badge variant="warning">{legacySettlementCount} settled without receipt</Badge>
                 </span>
               )}

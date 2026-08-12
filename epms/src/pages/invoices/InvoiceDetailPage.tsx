@@ -277,11 +277,17 @@ export default function InvoiceDetailPage() {
   //
   // Three shapes, mirroring the backend's review_match copy
   // (epms-api/app/api/v1/invoices.py): legacy settlement (truly no evidence),
-  // house_account backed by claimed pickup receipts, and everything else
+  // house_account backed by claimed receipts, and everything else
   // (recurring / milestone, which bill from a schedule row rather than from
   // receipts). Deliberately no version numbers in user-facing copy.
   const claimedReceiptCount = inv.receipt_ids?.length ?? 0
-  const receiptNoun = claimedReceiptCount === 1 ? 'pickup receipt' : 'pickup receipts'
+  // Whole-branch review (M8): a plain "receipt", never "pickup receipt" — a
+  // house account can be a counter pickup, a monthly delivery, or an
+  // outsourced service (see ReceiptType), and this string is a bare count
+  // with no per-receipt type in hand to name (receipt_ids is a list of ids,
+  // not of records). Rows that DO have the type available render
+  // RECEIPT_TYPE_LABELS instead (DocumentChainTree, ReceiptListPage).
+  const receiptNoun = claimedReceiptCount === 1 ? 'receipt' : 'receipts'
   // house_account, linked, but neither backed by receipts nor declared
   // settled-without-evidence — the reachable "pending" state Task 6 opened up
   // (see the comment block below). Drives the 3-Way Match banner's color
@@ -302,11 +308,11 @@ export default function InvoiceDetailPage() {
         ? 'no receipt evidence recorded yet'
         : 'settled against the agreement'
   const agreementEvidenceDetail = inv.legacy_settlement
-    ? 'There is no PO or goods receipt on the agreement route, and no pickup receipt was claimed for this invoice, so there is nothing to reconcile against. It was settled on the agreement alone, against the recorded reason below.'
+    ? 'There is no PO or goods receipt on the agreement route, and no receipt was claimed for this invoice, so there is nothing to reconcile against. It was settled on the agreement alone, against the recorded reason below.'
     : claimedReceiptCount > 0
-      ? `There is no PO or goods receipt on the agreement route. Instead, ${claimedReceiptCount} ${receiptNoun} recorded against the agreement ${claimedReceiptCount === 1 ? 'is' : 'are'} claimed as the receipt evidence for this invoice; the receipt photos are attached to the agreement and carried through to the payment application.`
+      ? `There is no PO or goods receipt on the agreement route. Instead, ${claimedReceiptCount} ${receiptNoun} recorded against the agreement ${claimedReceiptCount === 1 ? 'is' : 'are'} claimed as the receipt evidence for this invoice; any photos recorded with them are carried through to the payment application.`
       : isHouseAccountRoute
-        ? 'There is no PO or goods receipt on the agreement route. No pickup receipt has been attached to this invoice yet, and it has not been declared settled without evidence either — attach the receipt(s) it covers, or explicitly settle without receipt evidence, below.'
+        ? 'There is no PO or goods receipt on the agreement route. No receipt has been attached to this invoice yet, and it has not been declared settled without evidence either — attach the receipt(s) it covers, or explicitly settle without receipt evidence, below.'
         : 'There is no PO or goods receipt on the agreement route. This invoice is settled against the agreement itself — recurring and milestone agreements bill from their schedule rows, so there is no 3-way match here.'
 
   const tabs = [
