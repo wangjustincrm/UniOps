@@ -27,7 +27,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   FileText, FileSignature, Package, Warehouse, CreditCard, Receipt, Ticket,
-  ArrowRight, ChevronRight, Paperclip,
+  ArrowRight, ChevronRight, Paperclip, AlertTriangle,
 } from 'lucide-react'
 import { cn, formatAmount } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/badge'
@@ -41,9 +41,9 @@ import { usePas } from '@/hooks/usePas'
 import { useAgreement } from '@/hooks/useAgreements'
 import { useAgreementReceipts } from '@/hooks/useAgreementReceipts'
 import type { GrStatus } from '@/services/gr'
-import type { InvoiceStatus, ApiInvoice } from '@/services/invoices'
+import type { InvoiceStatus } from '@/services/invoices'
 import type { ApiPa, PaStatus } from '@/services/pa'
-import { RECEIPT_TYPE_LABELS, type ApiReceipt } from '@/services/agreementReceipts'
+import { RECEIPT_TYPE_LABELS, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 
 // ─── Status maps ──────────────────────────────────────────────────────────────
@@ -106,6 +106,14 @@ function invStatusToDoc(s: InvoiceStatus): DocumentStatus {
 
 function paStatusToDoc(s: PaStatus): DocumentStatus {
   return ({ draft: 'draft', submitted: 'submitted', in_review: 'in_review', approved: 'approved', processed: 'paid', returned: 'returned', rejected: 'cancelled', cancelled: 'cancelled' } as Record<PaStatus, DocumentStatus>)[s]
+}
+
+// Fix round 1 (Minor 2): an explicit mapping, same convention as the three
+// functions above — a bare `r.status as DocumentStatus` cast would let a
+// future backend-added ReceiptStatus value compile silently and fall through
+// to StatusBadge's raw-snake_case fallback at runtime instead of failing here.
+function receiptStatusToDoc(s: ReceiptStatus): DocumentStatus {
+  return ({ pending_ap_review: 'pending_ap_review', open: 'open', reconciled: 'reconciled', voided: 'voided', rejected: 'rejected' } as Record<ReceiptStatus, DocumentStatus>)[s]
 }
 
 // Pickup-receipt row label — never a bare UUID (branch owner's ruling). Same
@@ -364,33 +372,76 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   // own agreement_id — services/pa.ts:74). If `search` ever stops matching
   // agreement_number this just degrades to fetching more rows, never to a
   // wrong result.
+  //
+  // Fix round 1 (Important a): the search TERM must not depend on `agreement`
+  // (GET /agreements/{id}, gated on epms.agreement.read — 15 roles, NOT
+  // including warehouse_staff/supervisor/vendor_manager). On a PA page,
+  // currentPa.agreement_number is a snapshot column on the PA response itself
+  // (schemas/pa.py:156, no agreement-read needed) — prefer it, and only fall
+  // back to `agreement?.number` on the Agreement page itself (currentType
+  // 'agr'), where `agreement` already loaded successfully by definition (the
+  // page couldn't have rendered agreement.id otherwise). This decouples the
+  // PA row layer from agreement-read entirely, so a PA the caller can already
+  // see (epms.pa.read) always shows up in its own chain.
+  const agrPaSearchTerm =
+    currentType === 'agr' ? agreement?.number : (currentPa?.agreement_number ?? agreement?.number)
   const { data: agrPasData } = usePas(
-    { search: agreement?.number },
-    isAgrAxis && !!agreementId && !!agreement?.number,
+    { search: agrPaSearchTerm },
+    isAgrAxis && !!agreementId && !!agrPaSearchTerm,
   )
   const agrPas = (agrPasData?.items ?? []).filter((p) => p.agreement_id === agreementId)
 
-  // Pickup-receipt evidence exists only for house_account agreements (recurring/
-  // milestone settle against the payment schedule instead — same convention
-  // AgreementDetailPage follows before fetching receipts at all).
-  const { data: agrReceiptsData } = useAgreementReceipts(
-    isAgrAxis && agreement?.agreement_type === 'house_account' ? agreementId : ''
+  // Fix round 1 (Important b): don't gate this fetch on `agreement` having
+  // loaded — that would make it silently never fire (and never surface
+  // agrReceiptsError below) for exactly the callers missing epms.agreement.read,
+  // the same permission GET /agreements/{id}/receipts itself requires
+  // (agreement_receipts.py ReceiptReadDep = require_permission("epms.agreement.read")).
+  // Only SKIP the fetch once we positively know (from an already-loaded
+  // `agreement`) that this is a recurring/milestone agreement, which never has
+  // receipt rows at all — the original perf optimization, preserved for the
+  // case where it doesn't hide a permission gap. While `agreement` is still
+  // unresolved (loading OR 403), attempt the fetch anyway: it'll either
+  // succeed (this agreement axis didn't even need agreement-read) or fail,
+  // and `isError` below drives an explicit "no permission" note instead of a
+  // silent empty layer.
+  const skipReceiptsFetch = agreement != null && agreement.agreement_type !== 'house_account'
+  const { data: agrReceiptsData, isError: agrReceiptsError } = useAgreementReceipts(
+    isAgrAxis && agreementId && !skipReceiptsFetch ? agreementId : ''
   )
   const agrReceiptsById = new Map<string, ApiReceipt>((agrReceiptsData?.items ?? []).map((r) => [r.id, r]))
 
   // Nest PAs under the invoice(s) they were raised from — same convention as
-  // pasByInvoice above. No orphan bucket needed here: every agreement-route PA
-  // is required to carry at least one invoice_id matched to THIS agreement
-  // (epms-api/app/api/v1/pa.py _validate_agreement_pa_invoices — there is no
-  // prepayment-off-the-agreement equivalent of the PO route's orphan case).
+  // pasByInvoice above, INCLUDING the orphan bucket.
+  //
+  // Fix round 1 (Critical): _validate_agreement_pa_invoices guarantees every
+  // agreement-route PA carries >=1 invoice_id matched to this agreement — but
+  // only on the BACKEND's own read of that invoice. It says nothing about
+  // whether THIS caller's `agrInvoices` (scoped GET /invoices?agreement_id=)
+  // actually contains that invoice. Two ways it can legitimately not:
+  //   1. crud/invoice.py get_all's scope OR-block (po_ids_subq / own_uploads /
+  //      task_user_id) has no agreement-scope branch at all, so a restricted
+  //      role (requester/dept_manager/dept_admin/gm/opm/supervisor/director)
+  //      viewing a PA they hold an approval task for gets an EMPTY invoice
+  //      list back for this agreement, even though their own PA is real.
+  //   2. crud/invoice.py:398 nulls invoice.agreement_id when an invoice gets
+  //      re-matched onto the PO route — a PA already raised against that
+  //      invoice stays valid, but the invoice silently drops out of
+  //      `?agreement_id=` from then on.
+  // Either way, without this bucket the PA the caller is ACTUALLY looking at
+  // could vanish from its own chain. Mirrors the PO axis's orphanPas exactly.
   const agrInvoiceIdSet = new Set(agrInvoices.map((i) => i.id))
   const agrPasByInvoice = new Map<string, typeof agrPas>()
+  const agrOrphanPas: typeof agrPas = []
   for (const pa of agrPas) {
-    for (const iid of pa.invoice_ids ?? []) {
-      if (!agrInvoiceIdSet.has(iid)) continue
-      const arr = agrPasByInvoice.get(iid) ?? []
-      arr.push(pa)
-      agrPasByInvoice.set(iid, arr)
+    const linked = (pa.invoice_ids ?? []).filter((iid) => agrInvoiceIdSet.has(iid))
+    if (linked.length === 0) {
+      agrOrphanPas.push(pa)
+    } else {
+      for (const iid of linked) {
+        const arr = agrPasByInvoice.get(iid) ?? []
+        arr.push(pa)
+        agrPasByInvoice.set(iid, arr)
+      }
     }
   }
 
@@ -400,6 +451,14 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   // PR detail → PR is anchor; PO/PA(PO-sourced) detail → PO is anchor;
   // Agreement/PA(agreement-sourced) detail → Agreement is anchor.
   const anchorIsPr = anchorKind === 'pr'
+
+  // Fix round 1 (Minor 1): while a PA page's own entry document hasn't loaded
+  // yet, currentPa is undefined, so currentPa?.po_id reads as falsy and
+  // anchorKind falls through to its 'agr' default — for one render, a
+  // PO-sourced PA page would flash the agreement axis's "No invoices matched…"
+  // empty state (wrong content, not just early). Suppress every empty-state
+  // line below during that specific window.
+  const paEntryStillLoading = currentType === 'pa' && !currentPa
 
   const [showAttachments, setShowAttachments] = useState(false)
   const isPa = currentType === 'pa'
@@ -576,18 +635,37 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
                                            PO axis above. recurring/milestone
                                            agreements simply have no receipts
                                            to nest — the invoice/PA levels
-                                           still render normally. */}
+                                           still render normally.
+          Fix round 1 (Critical): orphan PAs (agrOrphanPas — see the comment
+          where it's built) render as direct children of the Agreement, same
+          as the PO axis's orphanPas — so a PA the caller can see is never
+          missing from its own chain just because the invoice list didn't
+          come back with it. */}
       {isAgrAxis && (() => {
-        const last = agrInvoices.length - 1
+        const topCount = agrInvoices.length + agrOrphanPas.length
+        const last = topCount - 1
         const rows: React.ReactNode[] = []
+        let t = 0
 
-        agrInvoices.forEach((inv: ApiInvoice, idx) => {
+        // Fix round 1 (Important b): don't fail silently — an explanatory row
+        // instead of a Pickup Receipt layer that's just never there.
+        if (agrReceiptsError) {
+          rows.push(
+            <div key="agr-receipts-perm-note" className="mb-2 pl-1 flex items-center gap-1.5 text-[11px] text-neutral-400 italic">
+              <AlertTriangle className="h-3 w-3 shrink-0" />
+              You don't have permission to view this agreement's pickup receipt evidence.
+            </div>,
+          )
+        }
+
+        for (const inv of agrInvoices) {
+          const idx = t++
           const childReceipts = (inv.receipt_ids ?? [])
             .map((rid) => agrReceiptsById.get(rid))
             .filter((r): r is ApiReceipt => !!r)
           const childPas = agrPasByInvoice.get(inv.id) ?? []
           const childCount = childReceipts.length + childPas.length
-          const parentContinues = idx < last // more invoices after this one
+          const parentContinues = idx < last // more top-level nodes after this invoice
 
           rows.push(
             <TreeRow
@@ -614,8 +692,8 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
                 // field of its own (see services/agreementReceipts.ts), and
                 // this branch already only renders once `agreement` (and thus
                 // agreement.currency) is loaded.
-                meta={`${RECEIPT_TYPE_LABELS[r.receipt_type]} · ${formatAmount(Number(r.total_amount), agreement?.currency ?? '')}`}
-                statusDoc={r.status as DocumentStatus}
+                meta={`${RECEIPT_TYPE_LABELS[r.receipt_type] ?? r.receipt_type} · ${formatAmount(Number(r.total_amount), agreement?.currency ?? '')}`}
+                statusDoc={receiptStatusToDoc(r.status)}
                 href={`/agreements/${agreementId}`}
                 isLast={j === childReceipts.length - 1 && childPas.length === 0}
                 ancestorLines={[parentContinues]}
@@ -626,22 +704,27 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
           childPas.forEach((pa, j) =>
             rows.push(paRow(pa, `${inv.id}-${pa.id}`, j === childPas.length - 1, true, parentContinues)),
           )
-        })
+        }
+
+        for (const pa of agrOrphanPas) {
+          const idx = t++
+          rows.push(paRow(pa, pa.id, idx === last, false, false))
+        }
 
         return rows
       })()}
 
-      {totalChildren === 0 && anchorKind === 'po' && (
+      {!paEntryStillLoading && totalChildren === 0 && anchorKind === 'po' && (
         <div className="mt-2 pl-6">
           <p className="text-[11px] text-neutral-400 italic">No linked GRs, invoices, or payments yet</p>
         </div>
       )}
-      {totalChildren === 0 && anchorIsPr && !po && !currentPr?.po_id && (
+      {!paEntryStillLoading && totalChildren === 0 && anchorIsPr && !po && !currentPr?.po_id && (
         <div className="mt-2 pl-6">
           <p className="text-[11px] text-neutral-400 italic">No linked PO, GRs, invoices, or payments yet</p>
         </div>
       )}
-      {isAgrAxis && agrInvoices.length === 0 && (
+      {!paEntryStillLoading && isAgrAxis && agrInvoices.length === 0 && (
         <div className="mt-2 pl-6">
           <p className="text-[11px] text-neutral-400 italic">No invoices matched to this agreement yet</p>
         </div>
