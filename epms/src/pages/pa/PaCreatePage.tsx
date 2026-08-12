@@ -493,8 +493,48 @@ export default function PaCreatePage() {
     })
   }
 
+  // Everything that happens AFTER POST /pa returns 201. Split out because the
+  // failure mode it handles bit a real user: the PA is created first and
+  // submitted second, and when the second call failed (approval-api down) the
+  // catch below swallowed it — no message, no navigation, the form still armed.
+  // The operator, seeing nothing happen, clicked again; the second attempt was
+  // refused ("already claimed by an active PA") and the real PA sat in `draft`
+  // where nobody was looking for it.
+  //
+  // So: the created document is ALWAYS navigated to. Submission is the step
+  // that may fail, and when it does the operator lands on the PA that exists —
+  // which carries its own Submit action — with the reason stated.
+  const finishCreate = async (newPa: { id: string; status: string }) => {
+    let submitError: string | null = null
+    try {
+      if (newPa.status === 'draft') {
+        await paService.action(newPa.id, { action: 'submit' })
+      }
+    } catch (err) {
+      submitError = err instanceof Error ? err.message : 'Unknown error'
+    }
+    await queryClient.invalidateQueries({ queryKey: ['pas'] })
+    if (isAgreementMode) await queryClient.invalidateQueries({ queryKey: ['agreements'] })
+    if (submitError) {
+      alert(
+        `Payment application created, but it could not be submitted for approval:
+
+${submitError}
+
+` +
+        'It has been saved as a draft — open it and use Submit to try again.'
+      )
+      replaceTab(`/pa/${newPa.id}`)
+      return
+    }
+    replaceTab('/pa')
+  }
+
   const handleSubmit = async () => {
     setSubmitted(true)
+    // A second click while the first request is still open creates a SECOND
+    // payment application for the same invoices.
+    if (createPa.isPending) return
     if (isAgreementMode) {
       if (!agreement) return
       if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
@@ -520,14 +560,9 @@ export default function PaCreatePage() {
           invoice_ids: Array.from(selectedInvoiceIds),
           notes: notes.trim() || undefined,
         })
-        if (newPa.status === 'draft') {
-          await paService.action(newPa.id, { action: 'submit' })
-        }
-        await queryClient.invalidateQueries({ queryKey: ['pas'] })
-        await queryClient.invalidateQueries({ queryKey: ['agreements'] })
-        replaceTab('/pa')
+        await finishCreate(newPa)
       } catch {
-        // error handled by mutation
+        // POST /pa itself failed — surfaced by the mutation's error state below.
       }
       return
     }
@@ -584,14 +619,11 @@ export default function PaCreatePage() {
       })
       // net==0 settlements are finalized by the backend at creation (auto-reconciled
       // or queued for finance confirmation) and are no longer 'draft' — only submit
-      // documents that still need the standard approval flow.
-      if (newPa.status === 'draft') {
-        await paService.action(newPa.id, { action: 'submit' })
-      }
-      await queryClient.invalidateQueries({ queryKey: ['pas'] })
-      replaceTab('/pa')
+      // documents that still need the standard approval flow. finishCreate holds
+      // that rule, and the recovery when the submit half fails.
+      await finishCreate(newPa)
     } catch {
-      // error handled by mutation
+      // POST /pa itself failed — surfaced by the mutation's error state below.
     }
   }
 
@@ -1277,9 +1309,15 @@ export default function PaCreatePage() {
           {/* Actions */}
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={() => replaceTab('/pa')}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={!contextSelected || receiptOverrideMissing} className="gap-2">
+            <Button
+              onClick={handleSubmit}
+              disabled={!contextSelected || receiptOverrideMissing || createPa.isPending}
+              className="gap-2"
+            >
               <CreditCard className="h-4 w-4" />
-              {isReconcileOnly ? 'Reconcile Prepayment' : 'Submit Payment Application'}
+              {createPa.isPending
+                ? 'Creating…'
+                : isReconcileOnly ? 'Reconcile Prepayment' : 'Submit Payment Application'}
             </Button>
           </div>
         </div>
