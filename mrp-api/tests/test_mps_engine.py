@@ -288,9 +288,17 @@ def _items(**kv):
 
 
 def _by_week(lines):
+    """Layout by week as `(material_code, qty, is_gap)` triples.
+
+    The gap flag is part of the layout, not noise: without it a real
+    production line and a shortfall line of the same quantity in the same
+    week compare equal, and an assertion that two plans are "identical"
+    cannot tell "produced 41" from "41 short".
+    """
     out = {}
     for l in lines:
-        out.setdefault(l.plan_week_start, []).append((l.material_code, str(l.qty)))
+        out.setdefault(l.plan_week_start, []).append(
+            (l.material_code, str(l.qty), l.capacity_gap))
     return {w: sorted(v) for w, v in out.items()}
 
 
@@ -303,10 +311,10 @@ def test_golden_case_from_the_business_owner():
                             min_output_qty=Decimal("20"))
     lines = pack_bucket(_items(A=60, B=20, C=30, D=30), WEEKS, limits)
     assert _by_week(lines) == {
-        WEEKS[0]: [("A", "40")],
-        WEEKS[1]: [("A", "20"), ("B", "20")],
-        WEEKS[2]: [("C", "30")],
-        WEEKS[3]: [("D", "30")],
+        WEEKS[0]: [("A", "40", False)],
+        WEEKS[1]: [("A", "20", False), ("B", "20", False)],
+        WEEKS[2]: [("C", "30", False)],
+        WEEKS[3]: [("D", "30", False)],
     }
 
 
@@ -508,10 +516,10 @@ class TestPackBucketEdgeCases:
         lines = pack_bucket(_items(A=60, B=60, C=30), WEEKS, self.limits)
         assert not any(l.capacity_gap for l in lines)
         assert _by_week(lines) == {
-            WEEKS[0]: [("A", "40")],
-            WEEKS[1]: [("A", "20"), ("B", "20")],
-            WEEKS[2]: [("B", "40")],
-            WEEKS[3]: [("C", "30")],
+            WEEKS[0]: [("A", "40", False)],
+            WEEKS[1]: [("A", "20", False), ("B", "20", False)],
+            WEEKS[2]: [("B", "40", False)],
+            WEEKS[3]: [("C", "30", False)],
         }
 
     def test_levelling_stays_exact_at_awkward_quantities(self):
@@ -555,9 +563,9 @@ class TestPerWeekLimits:
         assert not any(l.capacity_gap for l in lines)
         assert WEEKS[2] not in {l.plan_week_start for l in lines}
         assert _by_week(lines) == {
-            WEEKS[0]: [("A", "30")],
-            WEEKS[1]: [("B", "30")],
-            WEEKS[3]: [("C", "30")],
+            WEEKS[0]: [("A", "30", False)],
+            WEEKS[1]: [("B", "30", False)],
+            WEEKS[3]: [("C", "30", False)],
         }
 
     def test_shutdown_week_is_stepped_over_mid_run_tight_regime(self):
@@ -567,9 +575,9 @@ class TestPerWeekLimits:
         lines = pack_bucket(_items(A=100, B=20), WEEKS, limits)
         assert not any(l.capacity_gap for l in lines)
         assert _by_week(lines) == {
-            WEEKS[0]: [("A", "40")],
-            WEEKS[1]: [("A", "40")],
-            WEEKS[3]: [("A", "20"), ("B", "20")],
+            WEEKS[0]: [("A", "40", False)],
+            WEEKS[1]: [("A", "40", False)],
+            WEEKS[3]: [("A", "20", False), ("B", "20", False)],
         }
 
     def test_every_week_shut_gaps_everything(self):
@@ -609,10 +617,10 @@ class TestRegimePredicate:
         # of the 160 available is actually demanded.
         lines = pack_bucket(_items(A=60, B=60), WEEKS, self.limits)
         assert _by_week(lines) == {
-            WEEKS[0]: [("A", "30")],
-            WEEKS[1]: [("A", "30")],
-            WEEKS[2]: [("B", "30")],
-            WEEKS[3]: [("B", "30")],
+            WEEKS[0]: [("A", "30", False)],
+            WEEKS[1]: [("A", "30", False)],
+            WEEKS[2]: [("B", "30", False)],
+            WEEKS[3]: [("B", "30", False)],
         }
 
     def test_strictly_over_goes_tight(self):
@@ -620,10 +628,10 @@ class TestRegimePredicate:
         # over-full (150 of 160) and packing tight is correct.
         lines = pack_bucket(_items(A=60, B=60, C=30), WEEKS, self.limits)
         assert _by_week(lines) == {
-            WEEKS[0]: [("A", "40")],
-            WEEKS[1]: [("A", "20"), ("B", "20")],
-            WEEKS[2]: [("B", "40")],
-            WEEKS[3]: [("C", "30")],
+            WEEKS[0]: [("A", "40", False)],
+            WEEKS[1]: [("A", "20", False), ("B", "20", False)],
+            WEEKS[2]: [("B", "40", False)],
+            WEEKS[3]: [("C", "30", False)],
         }
 
 
@@ -776,9 +784,9 @@ class TestContiguityIsOverOpenWeeks:
         # contiguous over open weeks while skipping a calendar week entirely.
         lines = pack_bucket(_items(A=90), WEEKS, [self.OPEN, self.OPEN, self.SHUT, self.OPEN])
         assert _by_week(lines) == {
-            WEEKS[0]: [("A", "30")],
-            WEEKS[1]: [("A", "30")],
-            WEEKS[3]: [("A", "30")],
+            WEEKS[0]: [("A", "30", False)],
+            WEEKS[1]: [("A", "30", False)],
+            WEEKS[3]: [("A", "30", False)],
         }
 
     def test_per_week_capacity_holds_under_closed_weeks(self):
@@ -828,10 +836,10 @@ def test_a_small_product_takes_an_empty_week_before_another_products_leftover():
     limits = CapacityLimits(None, Decimal("40"), Decimal("20"))
     lines = pack_bucket(_items(A=100, B=15, C=5), WEEKS, limits)
     assert _by_week(lines) == {
-        WEEKS[0]: [("A", "40")],
-        WEEKS[1]: [("A", "40")],
-        WEEKS[2]: [("A", "20"), ("C", "5")],
-        WEEKS[3]: [("B", "15")],
+        WEEKS[0]: [("A", "40", False)],
+        WEEKS[1]: [("A", "40", False)],
+        WEEKS[2]: [("A", "20", False), ("C", "5", False)],
+        WEEKS[3]: [("B", "15", False)],
     }
 
 
@@ -863,27 +871,28 @@ def test_a_run_stops_at_a_full_week_and_starts_where_it_places_most():
     assert sum((l.qty for l in lines), Decimal("0")) == Decimal("75")
 
 
-def _fixed_policy_plan(items, per_week, split, fullest):
+def _fixed_policy_plan(items, per_week, split, fullest, weeks=None):
     """One fixed-policy plan through the engine's internals, replicating
     `pack_bucket`'s pre-flight. `(False, False)` is the conservative
     baseline -- exactly the behaviour before the last-resort split and the
     fullest-start selection existed."""
     from app.services import mps_engine as E
 
+    weeks = WEEKS if weeks is None else weeks
     payload = [i for i in items if i.qty > 0]
     if not payload:
         return []
     ordered = sorted(payload, key=E._sort_key)
     open_weeks = [i for i, wk in enumerate(per_week) if E._week_can_host(wk)]
     if not open_weeks:
-        return E._pack_tight(ordered, WEEKS, per_week, open_weeks)
+        return E._pack_tight(ordered, weeks, per_week, open_weeks)
     ref_cap = E._reference_cap(per_week, open_weeks)
     needs = [E._need_weeks(i.qty, ref_cap) for i in ordered]
     if sum(needs) > len(open_weeks):
-        return E._pack_tight(ordered, WEEKS, per_week, open_weeks, split, fullest)
+        return E._pack_tight(ordered, weeks, per_week, open_weeks, split, fullest)
     floors = [per_week[i].min_output_qty for i in open_weeks
               if per_week[i].min_output_qty is not None]
-    return E._pack_spare(ordered, WEEKS, per_week, open_weeks, needs,
+    return E._pack_spare(ordered, weeks, per_week, open_weeks, needs,
                          max(floors) if floors else None)
 
 
@@ -909,10 +918,12 @@ class TestTheSplitMustEarnItsKeep:
         lines = pack_bucket(items, WEEKS, per_week)
 
         assert _by_week(lines) == {
-            WEEKS[0]: [("C", "40")],
-            WEEKS[1]: [("C", "11")],
-            WEEKS[2]: [("B", "40")],
-            WEEKS[3]: [("A", "41"), ("D", "12")],
+            WEEKS[0]: [("C", "40", False)],
+            WEEKS[1]: [("C", "11", False)],
+            WEEKS[2]: [("B", "40", False)],
+            # A is 41 SHORT here, not 41 produced -- the flag is what makes
+            # this expectation say so.
+            WEEKS[3]: [("A", "41", True), ("D", "12", False)],
         }
         assert [(l.material_code, str(l.qty)) for l in lines if l.capacity_gap] \
             == [("A", "41")]
@@ -964,18 +975,51 @@ class TestTheSplitMustEarnItsKeep:
                             assert planned == Decimal(str(q)), (sku, caps, case, code)
 
     def test_the_conservative_plan_wins_every_tie(self):
-        # Uniform capacity never needs the last-resort split, so the chosen
-        # plan must be byte-identical to the conservative baseline -- no
-        # gratuitous changeover bought with nothing.
-        limits = [CapacityLimits(None, Decimal("40"), Decimal("20"))] * 4
-        for case in ({"A": 60, "B": 20, "C": 30, "D": 30},
-                     {"A": 60, "B": 60, "C": 30},
-                     {"A": 200},
-                     {"A": 100, "B": 15, "C": 5}):
-            items = _items(**case)
-            assert _by_week(pack_bucket(items, WEEKS, limits)) == \
-                _by_week(_fixed_policy_plan(items, per_week=limits,
-                                            split=False, fullest=False)), case
+        """A REAL tie -- same unmet, different layouts -- broken conservatively.
+
+        Three uniform 50 t weeks, four SKUs allowed, no floor. E(103) fills
+        W1, W2 and 3 t of W3. Every strategy then leaves exactly 66 unmet
+        and produces exactly 150, but they get there differently:
+
+          conservative (False, False): C(46) and A(1) produced WHOLE,
+                                       B, D and F short
+          with the split (True, *):    F fragmented into a 47 t partial
+                                       batch, and C, A, B, D ALL short
+
+        The split spent a changeover to convert "a whole C ships" into
+        "47/48ths of an F, which nobody can ship". Equal shortfall must
+        therefore keep products whole -- i.e. keep the conservative plan.
+
+        (The version of this test before fix round 4 asserted the property
+        over inputs on which all four strategies produce the SAME plan, so
+        it could not have failed however the tie was broken -- and it did
+        not fail while the tie was in fact being broken the wrong way.)
+        """
+        weeks = WEEKS[:3]
+        per_week = [CapacityLimits(4, Decimal("50"), Decimal("1"))] * 3
+        items = _items(A=1, B=10, C=46, D=8, E=103, F=48)
+
+        plans = {(split, fullest):
+                 _fixed_policy_plan(items, per_week, split, fullest, weeks=weeks)
+                 for split in (False, True) for fullest in (False, True)}
+
+        # It genuinely is a tie: all four leave the same demand unmet...
+        assert {_unmet(p) for p in plans.values()} == {Decimal("66")}
+        conservative = plans[(False, False)]
+        # ...and they are genuinely different plans, so the tie-break decides.
+        assert _by_week(plans[(True, False)]) != _by_week(conservative)
+
+        assert _by_week(pack_bucket(items, weeks, per_week)) == \
+            _by_week(conservative)
+
+        # What the conservative layout buys, and what the split would cost.
+        produced = {(l.material_code, str(l.qty)) for l in conservative
+                    if not l.capacity_gap}
+        assert ("C", "46") in produced and ("A", "1") in produced
+        split_produced = {(l.material_code, str(l.qty))
+                          for l in plans[(True, False)] if not l.capacity_gap}
+        assert ("F", "47") in split_produced      # a 48 t product, 1 t short
+        assert ("C", "46") not in split_produced
 
 
 def test_the_last_resort_split_also_pays_under_uniform_capacity():

@@ -709,9 +709,18 @@ def _run_start(loads: list["_WeekLoad"], per_week: list[CapacityLimits],
     starting at W1 places 25 and stops at full W3; starting at W4 places 30.
     Same contiguity, 5 more product.
 
-    Neither is universally better once LATER items are considered, which is
-    why `pack_bucket` evaluates both and keeps the plan that leaves the
-    least demand unmet."""
+    **Read that example carefully: the run it describes only exists when
+    `allow_last_resort_split=True`.** A(35) fits inside W3's 40 t, so
+    `_fits_in_one_week` says yes and the non-splitting policy never reaches
+    this function for it at all -- it declares a 35 t gap instead. Fullest
+    start is INERT on its own: measured over 60,000 randomised buckets,
+    `(split=False, fullest=True)` never once beat `(False, False)`, and over
+    30,000 it produced zero layout differences. Its whole value is in
+    combination with the last-resort split, i.e. the `(True, True)` corner.
+
+    Neither policy is universally better once LATER items are considered,
+    which is why `pack_bucket` evaluates all four combinations and keeps the
+    plan that leaves the least demand unmet."""
     starts = []
     for i in open_weeks:
         if not loads[i].sku_room(code, per_week[i]):
@@ -1042,10 +1051,12 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
       `caps=[20, 5, 40, 30]` with `{A: 35, B: 40}`, B takes W3 and A then
       runs from W4 alone, placing 30 and falling 5 short -- rather than
       running W1(20) + W2(5), stopping dead at full W3, and falling 10
-      short. **Open weeks left idle beside a gap are therefore a deliberate
-      outcome, not a bug**: the plan that occupies W1 and W2 makes less
-      product. Unmet demand is the objective; week occupancy is not. About
-      85 of 30,000 randomised heterogeneous buckets end this way. Uniform
+      short. (That run is itself a last-resort split; the start choice
+      does nothing without one -- see `_run_start`.) **Open weeks left
+      idle beside a gap are therefore a deliberate outcome, not a bug**:
+      the plan that occupies W1 and W2 makes less product. Unmet demand
+      is the objective; week occupancy is not. About 85 of 30,000
+      randomised heterogeneous buckets end this way. Uniform
       capacity CANNOT: measured 0 of 30,000, because there an empty week is
       a full-capacity week, so the "whole quantity" search would have found
       it before any greedy fill ran.
@@ -1109,9 +1120,11 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
         # Both packing policies are genuinely ambiguous (see `_pack_tight`),
         # and either can be the wrong call depending on items this one has
         # not seen yet. So evaluate all four combinations and keep the plan
-        # that leaves the least demand unmet. The conservative baseline
-        # `(False, False)` is always among them and is listed first, so it
-        # also wins every tie -- a split has to EARN its changeover.
+        # that leaves the least demand unmet -- the single ranking key, see
+        # `_plan_shortfall`. The conservative baseline `(False, False)` is
+        # always among them and is generated first, and `min()` returns the
+        # FIRST minimum, so it also wins every tie: a split has to EARN its
+        # changeover with product, not merely match the conservative plan.
         plans = [
             _pack_tight(ordered, weeks, per_week, open_weeks,
                         allow_last_resort_split=split,
@@ -1133,16 +1146,25 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
     return _sorted_lines(lines)
 
 
-def _plan_shortfall(lines: list[WeeklyLine]) -> tuple[Decimal, int]:
-    """How bad a candidate plan is: unmet demand first, changeovers second.
+def _plan_shortfall(lines: list[WeeklyLine]) -> Decimal:
+    """How bad a candidate plan is: how much demand it leaves unmet.
 
     Total demand in a bucket is fixed, so less shortfall is strictly more
-    product made. Among plans that leave the same amount unmet, fewer
-    week-segments means fewer cleandowns -- so a plan only buys a split with
-    output it actually gains."""
-    unmet = sum((l.qty for l in lines if l.capacity_gap), Decimal("0"))
-    segments = sum(1 for l in lines if not l.capacity_gap)
-    return (unmet, segments)
+    product made. That is the ONLY ranking key: `pack_bucket` evaluates the
+    conservative plan first and `min()` keeps the first minimum, so an equal
+    score leaves the conservative plan in place and a split has to EARN its
+    changeover with product it actually gains.
+
+    There is deliberately no secondary key. Counting non-gap lines was tried
+    and removed: it does not measure changeovers (one run spanning three
+    weeks is three lines but a single cleandown), and it let a split win a
+    tie having bought nothing. On three uniform 50 t weeks with
+    `{A:1, B:10, C:46, D:8, E:103, F:48}` and `max_sku_count=4`, both plans
+    leave 66 unmet -- but the conservative one produces C(46) and A(1)
+    whole, while the split fragments F into a 47 t partial batch and leaves
+    C, A, B and D entirely short. A planner can ship a whole C; nobody can
+    ship 47/48ths of an F. Equal shortfall, so keep the products whole."""
+    return sum((l.qty for l in lines if l.capacity_gap), Decimal("0"))
 
 
 def _sorted_lines(lines: list[WeeklyLine]) -> list[WeeklyLine]:
