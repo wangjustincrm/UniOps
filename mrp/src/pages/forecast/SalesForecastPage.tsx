@@ -20,7 +20,7 @@
 // autosave instead of refetching/remounting the grid).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Check, Eye, Loader2, Lock, Sparkles, X } from 'lucide-react'
+import { AlertCircle, Check, Eye, Lightbulb, Link2, Loader2, Lock, Sparkles, X } from 'lucide-react'
 import { Button, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
@@ -33,9 +33,12 @@ import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { seriesApi, type GridResponse } from './seriesApi'
 import { forecastApi, type ForecastVersion } from './forecastApi'
+import { intentApi, isIntentCode, type IntentProduct } from './intentApi'
 import { GenerateOutlookModal } from './GenerateOutlookModal'
 import { OutlookViewerModal } from './OutlookViewerModal'
 import { CellHistoryPopover } from './CellHistoryPopover'
+import { AddIntentProductModal } from './AddIntentProductModal'
+import { BindIntentModal } from './BindIntentModal'
 import { bomStatusApi } from './bomStatusApi'
 
 const AUTOSAVE_DEBOUNCE_MS = 1200
@@ -182,6 +185,13 @@ export default function SalesForecastPage() {
   const [outlookOpen, setOutlookOpen] = useState(false)
   const [outlookBusy, setOutlookBusy] = useState(false)
   const [outlookError, setOutlookError] = useState<string | null>(null)
+  // Intent products (planned SKUs with no ERP material code yet) — see
+  // intentApi.ts's header. addIntentOpen drives AddIntentProductModal;
+  // bindTarget (non-null while BindIntentModal is open) is the active
+  // intent product's own row, not a session-added-row concept, since a
+  // planner can also bind a code that already existed before this visit.
+  const [addIntentOpen, setAddIntentOpen] = useState(false)
+  const [bindTarget, setBindTarget] = useState<IntentProduct | null>(null)
   // Outlooks panel (follow-up #2) — the version being viewed read-only in
   // OutlookViewerModal, or null when the panel/modal is closed.
   const [viewingVersion, setViewingVersion] = useState<ForecastVersion | null>(null)
@@ -262,6 +272,21 @@ export default function SalesForecastPage() {
     return [...items].sort((a, b) => b.created_at.localeCompare(a.created_at))
   }, [outlooksQuery.data])
 
+  // Active intent products — keyed by their placeholder INTENT-xxxxxxxx
+  // code for O(1) per-row lookup (name override, badge, Bind action). No
+  // permission gate: this is display metadata every grid viewer needs
+  // (isIntentCode() alone, used for tint/BOM-exclusion, doesn't depend on
+  // it — this map only adds the human name + the ability to open Bind).
+  const intentQuery = useQuery({
+    queryKey: ['intent-products'],
+    queryFn: () => intentApi.list(),
+  })
+  const intentByCode = useMemo(() => {
+    const map = new Map<string, IntentProduct>()
+    for (const ip of intentQuery.data ?? []) map.set(ip.code, ip)
+    return map
+  }, [intentQuery.data])
+
   const baseline = useMemo(() => buildBaseline(gridQuery.data), [gridQuery.data])
 
   // Deliberately just the requested range, not gridQuery.dataUpdatedAt —
@@ -317,11 +342,25 @@ export default function SalesForecastPage() {
     const visibleServerRows = !initialized
       ? serverRows
       : serverRows.filter((r) => matrixCols.some((c) => (liveCells.get(cellKey(r.material_code, c.id)) ?? 0) !== 0))
+    // Intent rows: gridQuery.data's `name` is always null for an
+    // INTENT-xxxxxxxx code (it comes from resolve_material_names against
+    // mdm-api, and an intent product isn't in the materials master by
+    // definition) — without this override every intent row would display
+    // its unreadable placeholder code instead of the human name the
+    // planner gave it. Deliberately just the name (no "CODE — Name"
+    // prefix real-material rows get below): the placeholder code is
+    // meaningless to a planner, unlike a real ERP code.
     return [
-      ...visibleServerRows.map((r) => ({ id: r.material_code, label: r.name ?? r.material_code })),
-      ...extraRows.map((m) => ({ id: m.code, label: m.name ? `${m.code} — ${m.name}` : m.code })),
+      ...visibleServerRows.map((r) => ({
+        id: r.material_code,
+        label: intentByCode.get(r.material_code)?.name ?? r.name ?? r.material_code,
+      })),
+      ...extraRows.map((m) => ({
+        id: m.code,
+        label: intentByCode.has(m.code) ? (intentByCode.get(m.code)?.name ?? m.code) : (m.name ? `${m.code} — ${m.name}` : m.code),
+      })),
     ]
-  }, [gridQuery.data, addedRows, initialized, matrixCols, liveCells])
+  }, [gridQuery.data, addedRows, initialized, matrixCols, liveCells, intentByCode])
 
   // Past-column read-only enforcement — every material x every month before
   // currentMonth. Built from the union of visible rows AND the full
@@ -355,8 +394,13 @@ export default function SalesForecastPage() {
   // hashes the key structurally, but a stable order also keeps this cheap to
   // eyeball in devtools). "Has a BOM" is a single source (mdm-api's
   // /boms/exist) shared with MPS — see bomStatusApi.ts.
+  // Intent codes are excluded from this query entirely (not just from the
+  // resulting badge) — a planned SKU with no ERP material code yet can
+  // never have a BOM, by definition, so "No BOM" would be actively
+  // misleading (it means a REAL product whose BOM hasn't been set up yet;
+  // see rowBadge below, which renders "Intent" instead for these rows).
   const gridProductCodes = useMemo(
-    () => [...new Set(matrixRows.map((r) => r.id))].sort(),
+    () => [...new Set(matrixRows.map((r) => r.id).filter((id) => !isIntentCode(id)))].sort(),
     [matrixRows],
   )
   const bomStatusQuery = useQuery({
@@ -372,6 +416,23 @@ export default function SalesForecastPage() {
     for (const code of gridProductCodes) if (!withBom.has(code)) s.add(code)
     return s
   }, [gridProductCodes, bomStatusQuery.data])
+
+  const intentRowIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of matrixRows) if (isIntentCode(r.id)) s.add(r.id)
+    return s
+  }, [matrixRows])
+
+  // Same amber tint mechanism No-BOM rows already use ("not schedulable
+  // yet") — an intent row reads the same way for a different reason (no
+  // real material code yet, vs. no BOM yet), see rowBadge for how the two
+  // are told apart.
+  const tintRowIds = useMemo(() => {
+    if (intentRowIds.size === 0) return noBomRowIds
+    const s = new Set(noBomRowIds)
+    for (const id of intentRowIds) s.add(id)
+    return s
+  }, [noBomRowIds, intentRowIds])
 
   // ── Autosave ──────────────────────────────────────────────────────────
   // flushRef always points at a closure from the most recent render (synced
@@ -541,6 +602,76 @@ export default function SalesForecastPage() {
     setFocusRequest((f) => (f?.rowId === code ? null : f))
   }
 
+  /** After a successful "Add intent product" create — seeds the new
+   *  placeholder code onto the grid via the exact same session-row
+   *  mechanic "Add Product" uses (a MaterialOption shim, since intent
+   *  products aren't in the materials master), so autosave/undo/paste all
+   *  keep working unmodified, and warms the intent-products cache so the
+   *  new row's name/badge/Bind action are correct on the very first
+   *  render (no round trip through intentQuery needed). */
+  function handleIntentCreated(created: IntentProduct) {
+    queryClient.setQueryData<IntentProduct[]>(['intent-products'], (prev) => [created, ...(prev ?? [])])
+    handleAddProduct({
+      id: created.id, code: created.code, name: created.name,
+      spec: null, item_type: null, erp_item_type: null, base_uom: null, is_active: true,
+    })
+  }
+
+  /** After a successful Bind — re-keys every cell this session holds for
+   *  the intent's placeholder code onto the real material code, mirroring
+   *  what bind_intent_to_material just did server-side. `committed` and
+   *  `liveCells` are updated identically (not just liveCells) so
+   *  `dirtyCells` stays empty: this data is already durably saved (the
+   *  bind endpoint wrote it), it must not be queued for another autosave.
+   *  gridQuery itself is deliberately never refetched mid-session (see its
+   *  header comment) — this is the client-side echo of that DB move, not a
+   *  second source of truth. */
+  function handleIntentBound(intentCode: string, material: MaterialOption) {
+    function reKeyed(prev: CellValueMap): CellValueMap {
+      const next = new Map(prev)
+      for (const [key, qty] of prev) {
+        const { rowId, colId } = parseCellKey(key)
+        if (rowId === intentCode) {
+          next.delete(key)
+          next.set(cellKey(material.code, colId), qty)
+        }
+      }
+      return next
+    }
+    setCommitted(reKeyed)
+    setLiveCells(reKeyed)
+    setAddedRows((prev) => {
+      const next = new Map(prev)
+      next.delete(intentCode)
+      if (!next.has(material.code)) next.set(material.code, material)
+      return next
+    })
+    // This code's data is already persisted — never offer the "not yet
+    // saved" quick-remove X for it (same invariant persistedAddedCodes
+    // documents above).
+    setPersistedAddedCodes((prev) => new Set(prev).add(material.code))
+    void queryClient.invalidateQueries({ queryKey: ['intent-products'] })
+  }
+
+  // BindIntentModal's "this will move N months / X t" preview — computed
+  // from `committed` (the last known persisted state), not `liveCells`, so
+  // it reflects what's actually on the server and about to move rather
+  // than an in-progress unsaved edit. See BindIntentModal.tsx's header for
+  // why this is a client-side estimate rather than a server dry-run.
+  const bindPreview = useMemo(() => {
+    if (!bindTarget) return { months: 0, totalKg: 0 }
+    let months = 0
+    let totalKg = 0
+    for (const [key, qty] of committed) {
+      const { rowId } = parseCellKey(key)
+      if (rowId === bindTarget.code && qty !== 0) {
+        months += 1
+        totalKg += qty
+      }
+    }
+    return { months, totalKg }
+  }, [bindTarget, committed])
+
   // Derived from displayUnit — purely display/entry, threaded into
   // <MatrixGrid> below. committed/liveCells/dirtyCells/the autosave payload
   // never see these; they stay in kg regardless of what's selected here.
@@ -610,6 +741,11 @@ export default function SalesForecastPage() {
                 placeholder="Add Product…"
               />
             </div>
+          )}
+          {canWriteForecast && (
+            <Button type="button" variant="secondary" size="sm" onClick={() => setAddIntentOpen(true)}>
+              <Lightbulb className="h-3.5 w-3.5" /> Add intent product
+            </Button>
           )}
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-medium text-neutral-500">Unit</span>
@@ -684,9 +820,24 @@ export default function SalesForecastPage() {
             onRowCleared={() => setClearRowId(null)}
             resolveMaterial={canWriteForecast ? resolveMaterial : undefined}
             highlightColIds={highlightColIds}
-            tintRowIds={noBomRowIds}
+            tintRowIds={tintRowIds}
             rowBadge={(row) => (
-              noBomRowIds.has(row.id) ? (
+              // Intent is checked FIRST and is exclusive with No BOM: an
+              // intent row can never have a BOM (there's no material for a
+              // BOM to attach to yet) but that's not the same fact as a
+              // real product's BOM not being set up yet — showing "No BOM"
+              // here would send a planner looking for a BOM that was never
+              // supposed to exist. gridProductCodes already keeps intent
+              // codes out of the /boms/exist query entirely (see above),
+              // so noBomRowIds.has(row.id) is never true for one anyway —
+              // this check is the explicit, can't-regress guarantee.
+              isIntentCode(row.id) ? (
+                <span title="Planned SKU with no ERP material code yet — recorded here, but never scheduled by MPS until it's bound to a real code.">
+                  <Badge variant="warning" className="shrink-0">
+                    Intent
+                  </Badge>
+                </span>
+              ) : noBomRowIds.has(row.id) ? (
                 // Badge (packages/shell) doesn't spread rest props onto its
                 // <span> — a `title` passed directly to it is silently
                 // dropped. Wrap it in a plain span carrying the tooltip.
@@ -707,19 +858,41 @@ export default function SalesForecastPage() {
                 rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
               })
             }}
-            rowActions={(row) => (
-              addedRows.has(row.id) && !persistedAddedCodes.has(row.id) ? (
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); handleRemoveAddedRow(row.id) }}
-                  aria-label={`Remove ${row.label} — not yet saved`}
-                  title="Remove — not yet saved"
-                  className="shrink-0 text-neutral-300 hover:text-danger-500"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              ) : null
-            )}
+            rowActions={(row) => {
+              // Only ever called while !readOnly (MatrixGrid gates
+              // rowActions on that itself — see its own prop doc), which
+              // here means canWriteForecast, the same permission the Bind
+              // endpoint requires — no extra gate needed.
+              const showRemove = addedRows.has(row.id) && !persistedAddedCodes.has(row.id)
+              const intent = intentByCode.get(row.id)
+              if (!showRemove && !intent) return null
+              return (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {intent && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setBindTarget(intent) }}
+                      aria-label={`Bind ${row.label} to a material code`}
+                      title="Bind to material code"
+                      className="shrink-0 text-neutral-400 hover:text-primary-600"
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  {showRemove && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleRemoveAddedRow(row.id) }}
+                      aria-label={`Remove ${row.label} — not yet saved`}
+                      title="Remove — not yet saved"
+                      className="shrink-0 text-neutral-300 hover:text-danger-500"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </span>
+              )
+            }}
           />
         </div>
       )}
@@ -786,8 +959,30 @@ export default function SalesForecastPage() {
         <GenerateOutlookModal
           busy={outlookBusy}
           error={outlookError}
+          intentCount={intentRowIds.size}
           onClose={() => setOutlookOpen(false)}
           onGenerate={handleGenerateOutlook}
+        />
+      )}
+
+      {addIntentOpen && (
+        <AddIntentProductModal
+          onClose={() => setAddIntentOpen(false)}
+          onCreated={handleIntentCreated}
+          notifySuccess={toasts.success}
+          notifyError={toasts.error}
+        />
+      )}
+
+      {bindTarget && (
+        <BindIntentModal
+          intent={bindTarget}
+          monthsWithData={bindPreview.months}
+          totalQtyKg={bindPreview.totalKg}
+          onClose={() => setBindTarget(null)}
+          onBound={(material) => handleIntentBound(bindTarget.code, material)}
+          notifySuccess={toasts.success}
+          notifyError={toasts.error}
         />
       )}
 

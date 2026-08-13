@@ -302,6 +302,12 @@ export default function ProductionPlanPage() {
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState(false)
   const [releasing, setReleasing] = useState(false)
 
+  // Intent-product rows (planned SKUs with no ERP material code yet) this
+  // run's generate/recalculate skipped entirely — see mpsApi.ts's
+  // MpsSkippedIntent. Not memoized: a plain array access, same cost class
+  // as `run?.stats?.prebuild_count` above.
+  const skippedIntent = run?.stats?.skipped_intent ?? []
+
   const releaseSummary = useMemo(() => {
     if (!run) return null
     const releasable = run.lines.filter((l) => !l.capacity_gap)
@@ -491,6 +497,25 @@ export default function ProductionPlanPage() {
             covers the forecast, so there is nothing to schedule. This is not a capacity-rule problem:
             your capacity rules only take effect once a product's forecast exceeds its available stock.
           </p>
+        </div>
+      )}
+
+      {/* Named callout for skipped intent products (design D9) — without
+          this a planner sees a run that's simply short some products, with
+          no way to tell "not scheduled because no BOM/capacity fits" (a
+          real gap) from "not scheduled because it isn't a real material
+          yet" (expected, not a gap at all). */}
+      {run && skippedIntent.length > 0 && (
+        <div role="status" className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+          <p className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {skippedIntent.length} intent product{skippedIntent.length === 1 ? '' : 's'} not scheduled this run:
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {skippedIntent.map((item) => (
+              <li key={item.code}>Not scheduled (intent): {item.name} · {formatQty(Number(item.qty))} kg</li>
+            ))}
+          </ul>
         </div>
       )}
 

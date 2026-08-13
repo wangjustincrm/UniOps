@@ -17,12 +17,23 @@ import { api } from '@/lib/api'
 // `string`, and StatusBadge renders any unrecognized value neutrally.
 export type MpsRunStatus = 'draft' | 'confirmed' | 'released'
 
+/** One intent-product row (planned SKU with no ERP material code yet, see
+ *  forecast/intentApi.ts) that generate()/recalculate() left out of `lines`
+ *  entirely — MPS never schedules these. `qty` is Decimal-as-string, same
+ *  wire convention as everything else in this file. */
+export interface MpsSkippedIntent {
+  code: string
+  name: string
+  qty: string
+}
+
 // Loosely typed: `stats` is a JSONB column (mps.py's `_compute_stats()`)
-// with no server-side schema guarantee beyond "these three keys today".
+// with no server-side schema guarantee beyond "these keys today".
 export interface MpsRunStats {
   line_count?: number
   prebuild_count?: number
   capacity_gap_count?: number
+  skipped_intent?: MpsSkippedIntent[]
 }
 
 export interface MpsLine {

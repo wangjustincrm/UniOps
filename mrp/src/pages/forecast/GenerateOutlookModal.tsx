@@ -17,12 +17,23 @@ function currentMonthDefault(): string {
 }
 
 export function GenerateOutlookModal({
-  onClose, onGenerate, busy, error,
+  onClose, onGenerate, busy, error, intentCount = 0,
 }: {
   onClose: () => void
   onGenerate: (anchorMonth: string, horizonMonths: number) => void
   busy: boolean
   error: string | null
+  /** Count of intent-product rows (planned SKUs with no ERP material code
+   *  yet) currently on the grid — see SalesForecastPage's `intentRowIds`.
+   *  Deliberately grid-wide rather than scoped to this modal's own
+   *  anchor/horizon fields below: there's no cheap way to recompute "which
+   *  intent codes have data in exactly this window" without duplicating
+   *  the page's month-range math in here, and the modal's own defaults
+   *  already match the page's highlighted outlook window in the common
+   *  case. Intent rows DO still flow into the snapshot (they're ordinary
+   *  mrp_demand_series rows, just flagged) — this is purely a heads-up
+   *  that MPS will never schedule them, not a filter. */
+  intentCount?: number
 }) {
   const [anchorMonth, setAnchorMonth] = useState(currentMonthDefault())
   const [horizonMonths, setHorizonMonths] = useState(18)
@@ -79,6 +90,13 @@ export function GenerateOutlookModal({
               aria-invalid={!horizonValid}
             />
           </FormField>
+
+          {intentCount > 0 && (
+            <p role="status" className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+              This snapshot includes {intentCount} intent product{intentCount === 1 ? '' : 's'}. They are recorded
+              but never scheduled.
+            </p>
+          )}
 
           {error && (
             <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
