@@ -211,8 +211,8 @@ git commit -m "feat(mrp): week calendar module with three configurable week defi
 - Produces:
   - `MrpPlanningParam`（`key` PK, `value` JSONB, `updated_by`, `updated_at`）
   - `get_param(db, key, default)` / `set_param(db, key, value, actor)`
-  - `GET /mrp/v1/params` → `{"week_calendar_mode": "iso_thursday"}`
-  - `PUT /mrp/v1/params/week_calendar_mode` body `{"value": "month_fixed"}`
+  - `GET /api/v1/params` → `{"week_calendar_mode": "iso_thursday"}`
+  - `PUT /api/v1/params/week_calendar_mode` body `{"value": "month_fixed"}`
 
 - [ ] **Step 1: 写失败测试**
 
@@ -222,23 +222,23 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_week_calendar_mode_defaults_to_iso_thursday(client, auth_headers):
-    r = await client.get("/mrp/v1/params", headers=auth_headers)
+    r = await client.get("/api/v1/params", headers=auth_headers)
     assert r.status_code == 200
     assert r.json()["week_calendar_mode"] == "iso_thursday"
 
 
 @pytest.mark.asyncio
 async def test_week_calendar_mode_round_trips(client, auth_headers):
-    r = await client.put("/mrp/v1/params/week_calendar_mode",
+    r = await client.put("/api/v1/params/week_calendar_mode",
                          json={"value": "month_fixed"}, headers=auth_headers)
     assert r.status_code == 200
-    assert (await client.get("/mrp/v1/params",
+    assert (await client.get("/api/v1/params",
                              headers=auth_headers)).json()["week_calendar_mode"] == "month_fixed"
 
 
 @pytest.mark.asyncio
 async def test_unknown_week_mode_is_rejected(client, auth_headers):
-    r = await client.put("/mrp/v1/params/week_calendar_mode",
+    r = await client.put("/api/v1/params/week_calendar_mode",
                          json={"value": "fiscal_445"}, headers=auth_headers)
     assert r.status_code == 422
 
@@ -250,7 +250,7 @@ async def test_params_write_requires_param_write_permission(client, non_admin_to
     # 打真实 gate 会炸在查表而不是 403；而 admin_token 走 system_admin 快速通道，
     # 根本不会触到权限键，用它压根测不出门禁。
     _deny_everything(monkeypatch)
-    r = await client.put("/mrp/v1/params/week_calendar_mode", json={"value": "month_fixed"},
+    r = await client.put("/api/v1/params/week_calendar_mode", json={"value": "month_fixed"},
                          headers={"Authorization": f"Bearer {non_admin_token}"})
     assert r.status_code == 403
 ```
@@ -327,14 +327,14 @@ git commit -m "feat(mrp): planning params table + week calendar mode setting"
 - Produces:
   - `resolve_limits_for_week(db, week_start) -> CapacityLimits`（例外覆盖常规规则）
   - `CapacityLimits` 扩展为 `(max_sku_count, max_output_qty, min_output_qty)`
-  - `GET/POST/PATCH/DELETE /mrp/v1/capacity/exceptions`
+  - `GET/POST/PATCH/DELETE /api/v1/capacity/exceptions`
 
 - [ ] **Step 1: 写失败测试**
 
 ```python
 @pytest.mark.asyncio
 async def test_min_output_qty_is_an_accepted_constraint_type(client, auth_headers):
-    r = await client.post("/mrp/v1/capacity/rules", headers=auth_headers, json={
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
         "scope_type": "factory", "constraint_type": "min_output_qty",
         "limit_value": "20000", "uom": "KG", "effective_from": "2026-01-01",
     })
@@ -343,11 +343,11 @@ async def test_min_output_qty_is_an_accepted_constraint_type(client, auth_header
 
 @pytest.mark.asyncio
 async def test_min_output_above_max_output_is_rejected(client, auth_headers):
-    await client.post("/mrp/v1/capacity/rules", headers=auth_headers, json={
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
         "scope_type": "factory", "constraint_type": "max_output_qty",
         "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
     })
-    r = await client.post("/mrp/v1/capacity/rules", headers=auth_headers, json={
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
         "scope_type": "factory", "constraint_type": "min_output_qty",
         "limit_value": "50000", "uom": "KG", "effective_from": "2026-01-01",
     })
@@ -359,11 +359,11 @@ async def test_min_output_above_max_output_is_rejected(client, auth_headers):
 async def test_week_exception_overrides_the_standing_rule(client, auth_headers, db_session):
     from datetime import date
     from app.services.capacity import resolve_limits_for_week
-    await client.post("/mrp/v1/capacity/rules", headers=auth_headers, json={
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
         "scope_type": "factory", "constraint_type": "max_output_qty",
         "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
     })
-    await client.post("/mrp/v1/capacity/exceptions", headers=auth_headers, json={
+    await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
         "week_start": "2026-08-10", "scope_type": "factory",
         "constraint_type": "max_output_qty", "limit_value": "0", "uom": "KG",
         "reason": "annual maintenance",
@@ -378,16 +378,16 @@ async def test_week_exception_overrides_the_standing_rule(client, auth_headers, 
 async def test_inactive_exception_is_ignored(client, auth_headers, db_session):
     from datetime import date
     from app.services.capacity import resolve_limits_for_week
-    await client.post("/mrp/v1/capacity/rules", headers=auth_headers, json={
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
         "scope_type": "factory", "constraint_type": "max_output_qty",
         "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
     })
-    exc = (await client.post("/mrp/v1/capacity/exceptions", headers=auth_headers, json={
+    exc = (await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
         "week_start": "2026-09-07", "scope_type": "factory",
         "constraint_type": "max_output_qty", "limit_value": "0", "uom": "KG",
         "reason": "cancelled",
     })).json()
-    await client.patch(f"/mrp/v1/capacity/exceptions/{exc['id']}",
+    await client.patch(f"/api/v1/capacity/exceptions/{exc['id']}",
                        json={"is_active": False}, headers=auth_headers)
     assert str((await resolve_limits_for_week(db_session,
                                               date(2026, 9, 7))).max_output_qty) == "40000.000"
@@ -873,7 +873,7 @@ async def test_generate_reports_products_without_shelf_life(client, auth_headers
         return {}
     monkeypatch.setattr(mps_api, "resolve_shelf_life", _no_shelf_life)
     ...
-    run = (await client.post("/mrp/v1/mps/runs",
+    run = (await client.post("/api/v1/mps/runs",
                              json={"forecast_version_id": version["id"]},
                              headers=auth_headers)).json()
     assert [x["code"] for x in run["stats"]["no_shelf_life"]] == ["S0093"]
@@ -912,7 +912,7 @@ async def test_export_has_month_header_row_over_week_columns(client, auth_header
     import io
     from openpyxl import load_workbook
 
-    r = await client.get(f"/mrp/v1/mps/runs/{released_run['id']}/export?unit=t",
+    r = await client.get(f"/api/v1/mps/runs/{released_run['id']}/export?unit=t",
                          headers=auth_headers)
     assert r.status_code == 200
     ws = load_workbook(io.BytesIO(r.content)).active
@@ -930,9 +930,9 @@ async def test_export_in_tonnes_divides_by_1000(client, auth_headers, released_r
     from openpyxl import load_workbook
 
     kg = load_workbook(io.BytesIO((await client.get(
-        f"/mrp/v1/mps/runs/{released_run['id']}/export?unit=kg", headers=auth_headers)).content)).active
+        f"/api/v1/mps/runs/{released_run['id']}/export?unit=kg", headers=auth_headers)).content)).active
     t = load_workbook(io.BytesIO((await client.get(
-        f"/mrp/v1/mps/runs/{released_run['id']}/export?unit=t", headers=auth_headers)).content)).active
+        f"/api/v1/mps/runs/{released_run['id']}/export?unit=t", headers=auth_headers)).content)).active
 
     kg_vals = [c.value for row in kg.iter_rows(min_row=3) for c in row if isinstance(c.value, (int, float))]
     t_vals = [c.value for row in t.iter_rows(min_row=3) for c in row if isinstance(c.value, (int, float))]

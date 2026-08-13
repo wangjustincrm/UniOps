@@ -245,16 +245,16 @@ git commit -m "feat(mrp): intent product table + forecast line snapshot flags"
 - Consumes: Task 1 的 `MrpIntentProduct`
 - Produces:
   - `generate_intent_code() -> str`（返回 `INTENT-` + 8 位小写 hex）
-  - `GET /mrp/v1/intent-products?status=active` → `list[IntentProductResponse]`
-  - `POST /mrp/v1/intent-products` body `{name, note}` → 201 `IntentProductResponse{id, code, name, note, status, bound_material_code}`
-  - `POST /mrp/v1/intent-products/{id}/drop` → 200，`status='dropped'`
+  - `GET /api/v1/intent-products?status=active|all`（Python 侧参数名不叫 status，用 `Query(alias="status")` 避开与 fastapi 的 `status` 模块重名——照抄 `series.py:199` 的 `alias="from"` 做法） → `list[IntentProductResponse]`
+  - `POST /api/v1/intent-products` body `{name, note}` → 201 `IntentProductResponse{id, code, name, note, status, bound_material_code}`
+  - `POST /api/v1/intent-products/{id}/drop` → 200，`status='dropped'`
 
 - [ ] **Step 1: 写失败测试**
 
 ```python
 @pytest.mark.asyncio
 async def test_create_intent_product_generates_placeholder_code(client, auth_headers):
-    r = await client.post("/mrp/v1/intent-products",
+    r = await client.post("/api/v1/intent-products",
                           json={"name": "Stage 3 New Formula", "note": "planning"},
                           headers=auth_headers)
     assert r.status_code == 201, r.text
@@ -268,19 +268,19 @@ async def test_create_intent_product_generates_placeholder_code(client, auth_hea
 
 @pytest.mark.asyncio
 async def test_create_intent_product_rejects_blank_name(client, auth_headers):
-    r = await client.post("/mrp/v1/intent-products", json={"name": "   "}, headers=auth_headers)
+    r = await client.post("/api/v1/intent-products", json={"name": "   "}, headers=auth_headers)
     assert r.status_code == 422
 
 
 @pytest.mark.asyncio
 async def test_list_returns_active_only_by_default(client, auth_headers):
-    created = (await client.post("/mrp/v1/intent-products", json={"name": "Keeper"},
+    created = (await client.post("/api/v1/intent-products", json={"name": "Keeper"},
                                  headers=auth_headers)).json()
-    dropped = (await client.post("/mrp/v1/intent-products", json={"name": "Gone"},
+    dropped = (await client.post("/api/v1/intent-products", json={"name": "Gone"},
                                  headers=auth_headers)).json()
-    await client.post(f"/mrp/v1/intent-products/{dropped['id']}/drop", headers=auth_headers)
+    await client.post(f"/api/v1/intent-products/{dropped['id']}/drop", headers=auth_headers)
 
-    codes = [i["code"] for i in (await client.get("/mrp/v1/intent-products",
+    codes = [i["code"] for i in (await client.get("/api/v1/intent-products",
                                                   headers=auth_headers)).json()]
     assert created["code"] in codes
     assert dropped["code"] not in codes
@@ -405,7 +405,7 @@ Expected: PASS（含 Task 1 的两条）
 
 - [ ] **Step 6: 补权限门禁测试**
 
-`mrp-api/tests/test_permission_gates.py` 已有同类用例，**照它的 `_deny_everything` 惯例写**——`mrp_test` 库里没有 identity 的 `role_permissions`/`role_defs`/`user_roles` 表，所以用 `non_admin_token` 打真实 gate 之前，必须 monkeypatch `uniops_authz.core.user_role_codes` 与 `_effective_matrix`（`admin_token` 走 system_admin 快速通道，根本不会触到权限键，用它测不出门禁）。追加一条：非授权 token 打 `POST /mrp/v1/intent-products` 必须 403。
+`mrp-api/tests/test_permission_gates.py` 已有同类用例，**照它的 `_deny_everything` 惯例写**——`mrp_test` 库里没有 identity 的 `role_permissions`/`role_defs`/`user_roles` 表，所以用 `non_admin_token` 打真实 gate 之前，必须 monkeypatch `uniops_authz.core.user_role_codes` 与 `_effective_matrix`（`admin_token` 走 system_admin 快速通道，根本不会触到权限键，用它测不出门禁）。追加一条：非授权 token 打 `POST /api/v1/intent-products` 必须 403。
 
 Run: `python -m pytest tests/test_permission_gates.py -q`
 Expected: PASS
@@ -430,7 +430,7 @@ git commit -m "feat(mrp): intent product CRUD endpoints"
 
 **Interfaces:**
 - Consumes: Task 2 的 `MrpIntentProduct`、`is_intent_code`
-- Produces: `POST /mrp/v1/intent-products/{id}/bind` body `{material_code}` → 200 `{intent, moved_months: int, moved_qty: str}`
+- Produces: `POST /api/v1/intent-products/{id}/bind` body `{material_code}` → 200 `{intent, moved_months: int, moved_qty: str}`
 
 **为什么是一个事务**：`mrp_demand_series` 与 `mrp_forecast_change_log` 里该占位码的所有行都要改名，中途失败会留下一半改名的数据——那是最难排查的一类脏数据。
 
@@ -440,14 +440,14 @@ git commit -m "feat(mrp): intent product CRUD endpoints"
 @pytest.mark.asyncio
 async def test_bind_moves_series_rows_and_marks_bound(client, auth_headers, db_session):
     from sqlalchemy import text
-    intent = (await client.post("/mrp/v1/intent-products", json={"name": "New SKU"},
+    intent = (await client.post("/api/v1/intent-products", json={"name": "New SKU"},
                                 headers=auth_headers)).json()
-    await client.put("/mrp/v1/series/cells", headers=auth_headers, json={"cells": [
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
         {"material_code": intent["code"], "month": "2027-01", "qty": "1000"},
         {"material_code": intent["code"], "month": "2027-02", "qty": "2000"},
     ]})
 
-    r = await client.post(f"/mrp/v1/intent-products/{intent['id']}/bind",
+    r = await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
                           json={"material_code": "S0093"}, headers=auth_headers)
     assert r.status_code == 200, r.text
     assert r.json()["moved_months"] == 2
@@ -460,7 +460,7 @@ async def test_bind_moves_series_rows_and_marks_bound(client, auth_headers, db_s
         "select count(*) from mrp_demand_series where material_code = :c"
     ), {"c": intent["code"]})).scalar() == 0
 
-    detail = (await client.get("/mrp/v1/intent-products?status_filter=all",
+    detail = (await client.get("/api/v1/intent-products?status=all",
                                headers=auth_headers)).json()
     bound = [i for i in detail if i["id"] == intent["id"]][0]
     assert bound["status"] == "bound"
@@ -470,16 +470,16 @@ async def test_bind_moves_series_rows_and_marks_bound(client, auth_headers, db_s
 @pytest.mark.asyncio
 async def test_bind_rejects_when_target_already_has_forecast(client, auth_headers):
     """D11: business says this cannot happen — so it must be loud, not silently merged."""
-    intent = (await client.post("/mrp/v1/intent-products", json={"name": "Collides"},
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Collides"},
                                 headers=auth_headers)).json()
-    await client.put("/mrp/v1/series/cells", headers=auth_headers, json={"cells": [
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
         {"material_code": intent["code"], "month": "2027-01", "qty": "50"},
     ]})
-    await client.put("/mrp/v1/series/cells", headers=auth_headers, json={"cells": [
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
         {"material_code": "S0060", "month": "2027-01", "qty": "200"},
     ]})
 
-    r = await client.post(f"/mrp/v1/intent-products/{intent['id']}/bind",
+    r = await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
                           json={"material_code": "S0060"}, headers=auth_headers)
     assert r.status_code == 409
     assert "already has forecast" in r.json()["detail"].lower()
@@ -487,11 +487,11 @@ async def test_bind_rejects_when_target_already_has_forecast(client, auth_header
 
 @pytest.mark.asyncio
 async def test_bind_is_rejected_twice(client, auth_headers):
-    intent = (await client.post("/mrp/v1/intent-products", json={"name": "Once"},
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Once"},
                                 headers=auth_headers)).json()
-    await client.post(f"/mrp/v1/intent-products/{intent['id']}/bind",
+    await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
                       json={"material_code": "S0074"}, headers=auth_headers)
-    r = await client.post(f"/mrp/v1/intent-products/{intent['id']}/bind",
+    r = await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
                           json={"material_code": "S0075"}, headers=auth_headers)
     assert r.status_code == 409
 
@@ -499,12 +499,12 @@ async def test_bind_is_rejected_twice(client, auth_headers):
 @pytest.mark.asyncio
 async def test_bind_rewrites_change_log_and_leaves_an_audit_row(client, auth_headers, db_session):
     from sqlalchemy import text
-    intent = (await client.post("/mrp/v1/intent-products", json={"name": "Audited"},
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Audited"},
                                 headers=auth_headers)).json()
-    await client.put("/mrp/v1/series/cells", headers=auth_headers, json={"cells": [
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
         {"material_code": intent["code"], "month": "2027-03", "qty": "10"},
     ]})
-    await client.post(f"/mrp/v1/intent-products/{intent['id']}/bind",
+    await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
                       json={"material_code": "S0064"}, headers=auth_headers)
 
     assert (await db_session.execute(text(
@@ -662,13 +662,13 @@ git commit -m "feat(mrp): bind an intent product to a real material code"
 @pytest.mark.asyncio
 async def test_outlook_snapshot_flags_intent_lines(client, auth_headers, db_session):
     from sqlalchemy import text
-    intent = (await client.post("/mrp/v1/intent-products", json={"name": "Planned SKU"},
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Planned SKU"},
                                 headers=auth_headers)).json()
-    await client.put("/mrp/v1/series/cells", headers=auth_headers, json={"cells": [
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
         {"material_code": intent["code"], "month": "2027-06", "qty": "500"},
         {"material_code": "S0093", "month": "2027-06", "qty": "800"},
     ]})
-    r = await client.post("/mrp/v1/series/outlook",
+    r = await client.post("/api/v1/series/outlook",
                           json={"anchor_month": "2027-06"}, headers=auth_headers)
     assert r.status_code == 201, r.text
 
@@ -686,16 +686,16 @@ async def test_outlook_snapshot_flags_intent_lines(client, auth_headers, db_sess
 ```python
 @pytest.mark.asyncio
 async def test_generate_skips_intent_rows_and_names_them(client, auth_headers):
-    intent = (await client.post("/mrp/v1/intent-products", json={"name": "Not Yet Real"},
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Not Yet Real"},
                                 headers=auth_headers)).json()
-    await client.put("/mrp/v1/series/cells", headers=auth_headers, json={"cells": [
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
         {"material_code": intent["code"], "month": "2027-09", "qty": "700"},
         {"material_code": "S0093", "month": "2027-09", "qty": "900"},
     ]})
-    version = (await client.post("/mrp/v1/series/outlook",
+    version = (await client.post("/api/v1/series/outlook",
                                  json={"anchor_month": "2027-09"}, headers=auth_headers)).json()
 
-    run = (await client.post("/mrp/v1/mps/runs",
+    run = (await client.post("/api/v1/mps/runs",
                              json={"forecast_version_id": version["id"]},
                              headers=auth_headers)).json()
     codes = {l["material_code"] for l in run["lines"]}
@@ -795,12 +795,12 @@ export interface IntentProduct {
 }
 
 export const intentApi = {
-  list: () => api.get<IntentProduct[]>('/mrp/v1/intent-products'),
+  list: () => api.get<IntentProduct[]>('/api/v1/intent-products'),
   create: (name: string, note?: string) =>
-    api.post<IntentProduct>('/mrp/v1/intent-products', { name, note }),
+    api.post<IntentProduct>('/api/v1/intent-products', { name, note }),
   bind: (id: string, materialCode: string) =>
     api.post<{ intent: IntentProduct; moved_months: number; moved_qty: string }>(
-      `/mrp/v1/intent-products/${id}/bind`, { material_code: materialCode }),
+      `/api/v1/intent-products/${id}/bind`, { material_code: materialCode }),
 }
 ```
 
