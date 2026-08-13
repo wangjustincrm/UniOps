@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -9,7 +10,11 @@ from sqlalchemy import select
 from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.models.intent import MrpIntentProduct
-from app.services.intent_products import generate_intent_code
+from app.services.intent_products import (
+    IntentBindConflict,
+    bind_intent_to_material,
+    generate_intent_code,
+)
 
 router = APIRouter(prefix="/intent-products", tags=["intent-products"])
 
@@ -62,6 +67,44 @@ async def create_intent_product(body: IntentProductCreate, db: SessionDep, paylo
     await db.commit()
     await db.refresh(row)
     return row
+
+
+class IntentBindRequest(BaseModel):
+    material_code: str
+
+
+class IntentBindResponse(BaseModel):
+    intent: IntentProductResponse
+    moved_months: int
+    moved_qty: Decimal
+
+
+@router.post("/{intent_id}/bind", response_model=IntentBindResponse)
+async def bind_intent_product(
+    intent_id: uuid.UUID, body: IntentBindRequest, db: SessionDep, payload: WriteDep,
+):
+    row = await db.get(MrpIntentProduct, intent_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "intent product not found")
+    if row.status != "active":
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"intent product is {row.status}, only active ones can be bound")
+    try:
+        moved_months, moved_qty = await bind_intent_to_material(
+            db, intent_code=row.code, material_code=body.material_code, actor_name=None,
+        )
+    except IntentBindConflict:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{body.material_code} already has forecast rows — merge them by hand first",
+        )
+    row.status = "bound"
+    row.bound_material_code = body.material_code
+    row.bound_at = datetime.now(timezone.utc)
+    row.bound_by = uuid.UUID(payload["sub"])
+    await db.commit()
+    await db.refresh(row)
+    return IntentBindResponse(intent=row, moved_months=moved_months, moved_qty=moved_qty)
 
 
 @router.post("/{intent_id}/drop", response_model=IntentProductResponse)

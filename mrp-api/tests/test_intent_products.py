@@ -82,3 +82,82 @@ async def test_intent_code_is_unique(db_session):
     db_session.add(MrpIntentProduct(code="INTENT-aaaaaaaa", name="B", status="active"))
     with pytest.raises(Exception):
         await db_session.flush()
+
+
+@pytest.mark.asyncio
+async def test_bind_moves_series_rows_and_marks_bound(client, auth_headers, db_session):
+    from sqlalchemy import text
+    intent = (await client.post("/api/v1/intent-products", json={"name": "New SKU"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-01", "qty": "1000"},
+        {"material_code": intent["code"], "month": "2027-02", "qty": "2000"},
+    ]})
+
+    r = await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
+                          json={"material_code": "S0093"}, headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["moved_months"] == 2
+
+    rows = (await db_session.execute(text(
+        "select month, qty from mrp_demand_series where material_code = 'S0093' order by month"
+    ))).all()
+    assert [(m, str(q)) for m, q in rows] == [("2027-01", "1000.000"), ("2027-02", "2000.000")]
+    assert (await db_session.execute(text(
+        "select count(*) from mrp_demand_series where material_code = :c"
+    ), {"c": intent["code"]})).scalar() == 0
+
+    detail = (await client.get("/api/v1/intent-products?status=all",
+                               headers=auth_headers)).json()
+    bound = [i for i in detail if i["id"] == intent["id"]][0]
+    assert bound["status"] == "bound"
+    assert bound["bound_material_code"] == "S0093"
+
+
+@pytest.mark.asyncio
+async def test_bind_rejects_when_target_already_has_forecast(client, auth_headers):
+    """D11: business says this cannot happen — so it must be loud, not silently merged."""
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Collides"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-01", "qty": "50"},
+    ]})
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": "S0060", "month": "2027-01", "qty": "200"},
+    ]})
+
+    r = await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
+                          json={"material_code": "S0060"}, headers=auth_headers)
+    assert r.status_code == 409
+    assert "already has forecast" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_bind_is_rejected_twice(client, auth_headers):
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Once"},
+                                headers=auth_headers)).json()
+    await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
+                      json={"material_code": "S0074"}, headers=auth_headers)
+    r = await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
+                          json={"material_code": "S0075"}, headers=auth_headers)
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_bind_rewrites_change_log_and_leaves_an_audit_row(client, auth_headers, db_session):
+    from sqlalchemy import text
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Audited"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-03", "qty": "10"},
+    ]})
+    await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
+                      json={"material_code": "S0064"}, headers=auth_headers)
+
+    assert (await db_session.execute(text(
+        "select count(*) from mrp_forecast_change_log where material_code = :c"
+    ), {"c": intent["code"]})).scalar() == 0
+    sources = (await db_session.execute(text(
+        "select source from mrp_forecast_change_log where material_code = 'S0064'"
+    ))).scalars().all()
+    assert "intent_bind" in sources
