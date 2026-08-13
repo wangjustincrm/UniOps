@@ -25,14 +25,17 @@ export function GenerateOutlookModal({
   error: string | null
   /** Count of intent-product rows (planned SKUs with no ERP material code
    *  yet) currently on the grid — see SalesForecastPage's `intentRowIds`.
-   *  Deliberately grid-wide rather than scoped to this modal's own
-   *  anchor/horizon fields below: there's no cheap way to recompute "which
-   *  intent codes have data in exactly this window" without duplicating
-   *  the page's month-range math in here, and the modal's own defaults
-   *  already match the page's highlighted outlook window in the common
-   *  case. Intent rows DO still flow into the snapshot (they're ordinary
-   *  mrp_demand_series rows, just flagged) — this is purely a heads-up
-   *  that MPS will never schedule them, not a filter. */
+   *  Deliberately worded below as a fact about the GRID, not the snapshot
+   *  this modal is about to produce: this count can both overstate (a
+   *  freshly added intent row with nothing saved yet is still counted,
+   *  even though freeze_outlook only ever snapshots non-zero PERSISTED
+   *  rows) and understate (the grid only spans [current-3, current+24]
+   *  while this modal's own anchor/horizon fields below can reach further
+   *  out) how many intent rows actually land inside THIS snapshot's
+   *  [anchor, anchor+horizon) window — there's no cheap way to recompute
+   *  that exactly without duplicating the page's month-range math in here.
+   *  The banner says what's true either way: these rows exist and MPS
+   *  will never schedule them. */
   intentCount?: number
 }) {
   const [anchorMonth, setAnchorMonth] = useState(currentMonthDefault())
@@ -93,8 +96,8 @@ export function GenerateOutlookModal({
 
           {intentCount > 0 && (
             <p role="status" className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
-              This snapshot includes {intentCount} intent product{intentCount === 1 ? '' : 's'}. They are recorded
-              but never scheduled.
+              The grid has {intentCount} intent product{intentCount === 1 ? '' : 's'}. Any with data in this window
+              are recorded but never scheduled.
             </p>
           )}
 

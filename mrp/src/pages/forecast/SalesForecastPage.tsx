@@ -192,6 +192,16 @@ export default function SalesForecastPage() {
   // planner can also bind a code that already existed before this visit.
   const [addIntentOpen, setAddIntentOpen] = useState(false)
   const [bindTarget, setBindTarget] = useState<IntentProduct | null>(null)
+  // Bumped after every successful bind — folded into `gridKey` below so a
+  // bind forces a fresh <MatrixGrid> mount. MatrixGrid is mount-once (see
+  // its own header comment and gridKey's comment below): its internal undo
+  // history is seeded from the `value` prop exactly once, in a `useState`
+  // initializer, and NEVER re-synced from a later prop change. A bind moves
+  // real data server-side from the intent code onto a real material code —
+  // there is no way to reflect that inside an already-mounted MatrixGrid
+  // instance short of remounting it. See fix-round-1 in task-5-report.md
+  // (Critical 1/2) for the full incident this replaced.
+  const [bindGeneration, setBindGeneration] = useState(0)
   // Outlooks panel (follow-up #2) — the version being viewed read-only in
   // OutlookViewerModal, or null when the panel/modal is closed.
   const [viewingVersion, setViewingVersion] = useState<ForecastVersion | null>(null)
@@ -289,10 +299,15 @@ export default function SalesForecastPage() {
 
   const baseline = useMemo(() => buildBaseline(gridQuery.data), [gridQuery.data])
 
-  // Deliberately just the requested range, not gridQuery.dataUpdatedAt —
-  // see the comment above. MatrixGrid mounts once, when `gridQuery.data`
-  // first becomes truthy, and never again for the life of this page.
-  const gridKey = `${rangeFrom}::${rangeTo}`
+  // Deliberately just the requested range plus `bindGeneration` — not
+  // gridQuery.dataUpdatedAt (see the comment above: a background refetch
+  // must NOT remount this grid, or it would wipe an in-progress edit's undo
+  // stack). `bindGeneration` is the one deliberate, user-initiated exception:
+  // a successful bind (handleIntentBound below) bumps it on purpose, because
+  // that's the only way an already-mounted MatrixGrid ever learns about data
+  // that moved server-side. Every other write path on this page (autosave,
+  // Add Product/Add intent product, paste) keeps editing the SAME mount.
+  const gridKey = `${rangeFrom}::${rangeTo}::${bindGeneration}`
 
   if (baseline !== syncedBaseline) {
     setSyncedBaseline(baseline)
@@ -301,6 +316,13 @@ export default function SalesForecastPage() {
     if (!initialized) setInitialized(true)
   }
 
+  // This block also does double duty as the fix for a bind's stale
+  // focus-anchor risk: gridKey changes on every bindGeneration bump, so a
+  // focusRequest still pointing at the just-bound (now gone) intent code
+  // gets cleared here before the remounted MatrixGrid ever sees it —
+  // without this, MatrixGrid.tsx's focusRequest effect finds no matching
+  // row in the new mount and returns early without ever calling
+  // onFocusRequestHandled, leaving the request stuck forever.
   if (gridKey !== syncedGridKeyForAddedRows) {
     setSyncedGridKeyForAddedRows(gridKey)
     if (addedRows.size > 0) setAddedRows(new Map())
@@ -617,40 +639,58 @@ export default function SalesForecastPage() {
     })
   }
 
-  /** After a successful Bind — re-keys every cell this session holds for
-   *  the intent's placeholder code onto the real material code, mirroring
-   *  what bind_intent_to_material just did server-side. `committed` and
-   *  `liveCells` are updated identically (not just liveCells) so
-   *  `dirtyCells` stays empty: this data is already durably saved (the
-   *  bind endpoint wrote it), it must not be queued for another autosave.
-   *  gridQuery itself is deliberately never refetched mid-session (see its
-   *  header comment) — this is the client-side echo of that DB move, not a
-   *  second source of truth. */
-  function handleIntentBound(intentCode: string, material: MaterialOption) {
-    function reKeyed(prev: CellValueMap): CellValueMap {
-      const next = new Map(prev)
-      for (const [key, qty] of prev) {
-        const { rowId, colId } = parseCellKey(key)
-        if (rowId === intentCode) {
-          next.delete(key)
-          next.set(cellKey(material.code, colId), qty)
-        }
-      }
-      return next
+  /** After a successful Bind. mrp-api's bind endpoint already moved every
+   *  series cell + change-log row from the intent's placeholder code onto
+   *  the real material code, server-side, in one transaction — the only
+   *  question here is how the CLIENT learns about it.
+   *
+   *  An earlier version of this function tried to re-key `committed`/
+   *  `liveCells` in place (move the same cell values from the intent code's
+   *  keys onto the real code's keys, client-side) to avoid a refetch. That
+   *  was wrong on two counts, both filed as Critical findings in fix round
+   *  1 (see task-5-report.md): (1) MatrixGrid is mount-once — it seeds its
+   *  own internal undo history from the `value` prop exactly once, in a
+   *  `useState` initializer (see MatrixGrid.tsx's own header comment), and
+   *  never re-syncs from a later prop change, so the re-keyed maps changed
+   *  the PARENT's state and nothing the grid actually displayed; the row
+   *  looked like it vanished until a hard reload. (2) MatrixGrid hands its
+   *  ENTIRE internal map back through `onChange` on every commit — so the
+   *  very next edit anywhere on the grid would overwrite `liveCells`
+   *  wholesale with the stale (pre-bind) map still keyed to the intent
+   *  code, making `dirtyCells` emit qty=0 for the real code (upsert_cells
+   *  treats 0 as delete) and the original values back under the intent
+   *  code — undoing the migration via ordinary autosave, with no UI path
+   *  back since the intent product is now 'bound' and 404/409s out of
+   *  `POST .../bind`.
+   *
+   *  The only correct fix is to remount: refetch the grid so server truth
+   *  is in the cache, THEN bump `bindGeneration` (folded into `gridKey`)
+   *  so React actually throws away the old MatrixGrid instance and mounts
+   *  a fresh one seeded from that server truth. This costs the undo stack,
+   *  which is the accepted trade for a rare, deliberate action — see
+   *  gridKey's own comment. No client-side cell math is needed at all: the
+   *  real material's row simply appears from gridQuery.data.rows like any
+   *  other server-loaded row once the refetch lands. */
+  async function handleIntentBound() {
+    // Called fire-and-forget (`void handleIntentBound()`) from the modal's
+    // onBound, since the bind itself already succeeded and toasted by the
+    // time this runs — a network hiccup on the REFETCH must not leave the
+    // bump silently un-fired. If the refetch fails, still bump
+    // bindGeneration in `finally` (remounting with whatever's in the cache
+    // is never worse than not remounting at all — the intent row will read
+    // wrong until the planner retries, same as before this whole feature
+    // existed) and say so, since the bind itself already happened
+    // server-side and there is nothing to retry there.
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['sales-forecast-grid', rangeFrom, rangeTo] }),
+        queryClient.invalidateQueries({ queryKey: ['intent-products'] }),
+      ])
+    } catch {
+      toasts.error('Bind succeeded, but the grid could not refresh automatically — reload the page to see the moved numbers.')
+    } finally {
+      setBindGeneration((g) => g + 1)
     }
-    setCommitted(reKeyed)
-    setLiveCells(reKeyed)
-    setAddedRows((prev) => {
-      const next = new Map(prev)
-      next.delete(intentCode)
-      if (!next.has(material.code)) next.set(material.code, material)
-      return next
-    })
-    // This code's data is already persisted — never offer the "not yet
-    // saved" quick-remove X for it (same invariant persistedAddedCodes
-    // documents above).
-    setPersistedAddedCodes((prev) => new Set(prev).add(material.code))
-    void queryClient.invalidateQueries({ queryKey: ['intent-products'] })
   }
 
   // BindIntentModal's "this will move N months / X t" preview — computed
@@ -671,6 +711,19 @@ export default function SalesForecastPage() {
     }
     return { months, totalKg }
   }, [bindTarget, committed])
+
+  // Bind must never race autosave (fix round 1, Critical 3): a bind that
+  // fires while a debounced PUT /series/cells is still pending, or right
+  // after one landed but before its own state settled, can (a) let that
+  // PUT's success handler write intent-code keys back into `committed`
+  // after the bind already moved them server-side, producing a spurious
+  // dirty diff and a ghost autosave, or (b) let a PUT queued before the
+  // bind land AFTER it, resurrecting the just-migrated months under the
+  // intent code — leaving the same data under both codes on the server.
+  // Blocking Bind on any outstanding save (dirty cells not yet flushed, or
+  // a flush in flight) sidesteps both: by the time Bind is clickable again,
+  // there is nothing left for a stray autosave to race against.
+  const bindBlocked = dirtyCells.length > 0 || saveState === 'saving'
 
   // Derived from displayUnit — purely display/entry, threaded into
   // <MatrixGrid> below. committed/liveCells/dirtyCells/the autosave payload
@@ -871,10 +924,19 @@ export default function SalesForecastPage() {
                   {intent && (
                     <button
                       type="button"
-                      onClick={(e) => { e.stopPropagation(); setBindTarget(intent) }}
-                      aria-label={`Bind ${row.label} to a material code`}
-                      title="Bind to material code"
-                      className="shrink-0 text-neutral-400 hover:text-primary-600"
+                      onClick={(e) => { e.stopPropagation(); if (!bindBlocked) setBindTarget(intent) }}
+                      disabled={bindBlocked}
+                      aria-label={
+                        bindBlocked
+                          ? `Bind ${row.label} to a material code — disabled until autosave finishes`
+                          : `Bind ${row.label} to a material code`
+                      }
+                      title={bindBlocked ? 'Waiting for autosave to finish before this can bind' : 'Bind to material code'}
+                      className={
+                        bindBlocked
+                          ? 'shrink-0 cursor-not-allowed text-neutral-200'
+                          : 'shrink-0 text-neutral-400 hover:text-primary-600'
+                      }
                     >
                       <Link2 className="h-3.5 w-3.5" />
                     </button>
@@ -980,7 +1042,7 @@ export default function SalesForecastPage() {
           monthsWithData={bindPreview.months}
           totalQtyKg={bindPreview.totalKg}
           onClose={() => setBindTarget(null)}
-          onBound={(material) => handleIntentBound(bindTarget.code, material)}
+          onBound={() => { void handleIntentBound() }}
           notifySuccess={toasts.success}
           notifyError={toasts.error}
         />

@@ -304,9 +304,25 @@ export default function ProductionPlanPage() {
 
   // Intent-product rows (planned SKUs with no ERP material code yet) this
   // run's generate/recalculate skipped entirely — see mpsApi.ts's
-  // MpsSkippedIntent. Not memoized: a plain array access, same cost class
-  // as `run?.stats?.prebuild_count` above.
-  const skippedIntent = run?.stats?.skipped_intent ?? []
+  // MpsSkippedIntent. mrp-api builds `stats.skipped_intent` as one entry
+  // PER mrp_forecast_lines row (unique on version_id + material_code +
+  // month, see mps.py's _skipped_intent_stats) — i.e. one intent PRODUCT
+  // with 18 forecast months produces 18 entries, all with the same code
+  // and name. Aggregated here by `code` (summing qty, keeping any one
+  // name) so the count/list below describe products, not product-months —
+  // the raw per-line array would report "18 intent products" for one and
+  // repeat its name 18 times with no indication that's what happened.
+  const skippedIntent = useMemo(() => {
+    const raw = run?.stats?.skipped_intent ?? []
+    const byCode = new Map<string, { code: string; name: string; qty: number }>()
+    for (const item of raw) {
+      const qty = Number(item.qty)
+      const existing = byCode.get(item.code)
+      if (existing) existing.qty += qty
+      else byCode.set(item.code, { code: item.code, name: item.name, qty })
+    }
+    return [...byCode.values()]
+  }, [run])
 
   const releaseSummary = useMemo(() => {
     if (!run) return null
@@ -513,7 +529,10 @@ export default function ProductionPlanPage() {
           </p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5">
             {skippedIntent.map((item) => (
-              <li key={item.code}>Not scheduled (intent): {item.name} · {formatQty(Number(item.qty))} kg</li>
+              // item.qty is already a number here (summed across this
+              // product's months by the aggregation above) — not the raw
+              // Decimal-as-string the wire sends per line.
+              <li key={item.code}>Not scheduled (intent): {item.name} · {formatQty(item.qty)} kg</li>
             ))}
           </ul>
         </div>

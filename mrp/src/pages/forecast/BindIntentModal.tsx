@@ -39,11 +39,13 @@ export function BindIntentModal({
   monthsWithData: number
   totalQtyKg: number
   onClose: () => void
-  /** Called after a successful bind, before onClose, with the real material
-   *  the planner picked — the page uses it to re-key the row's cells from
-   *  the intent code onto this material's code (same move the backend just
-   *  made server-side) and to seed it as a visible row. */
-  onBound: (material: MaterialOption) => void
+  /** Called after a successful bind, before onClose. Takes no arguments —
+   *  the page doesn't need to know which material was picked, only that a
+   *  bind happened: mrp-api's bind endpoint already moved the data
+   *  server-side, so the page's only job is to refetch and remount its
+   *  grid (see SalesForecastPage's handleIntentBound for why a remount,
+   *  not a client-side patch, is the only correct way to reflect this). */
+  onBound: () => void
   notifySuccess: (message: string) => void
   notifyError: (message: string) => void
 }) {
@@ -66,7 +68,7 @@ export function BindIntentModal({
         `Bound ${intent.name} to ${material.code} — moved ${result.moved_months} month(s), `
         + `${formatTonnes(Number(result.moved_qty))} t.`,
       )
-      onBound(material)
+      onBound()
       onClose()
     } catch (err) {
       // Verbatim: the 409 body here is exactly what decision D11 wants a
