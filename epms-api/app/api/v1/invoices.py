@@ -415,12 +415,10 @@ async def match_invoice(
             Task.document_id == inv.id, Task.assigned_user_id == caller_id,
             Task.is_completed.is_(False),
         ))).scalar_one_or_none()
-        reviewer_id = None
         if my_task is not None:
             my_task.is_completed = True
             my_task.completed_at = now_ts
             my_task.completed_by = caller_id
-            reviewer_id = my_task.created_by
 
         # Complete any OTHER open match_invoice tasks for this invoice (e.g. AP matched
         # directly while an assignee still had an open task — no orphans left behind).
