@@ -202,6 +202,21 @@ seeds `system_admin` / `ap_clerk` / `dept_admin`; anything beyond that is a
 deliberate choice you make there — and remember to tick View Agreements
 alongside it.
 
+**When creating a recurring agreement that has been running already:** set
+**Generate schedule from** to the first period this system should track.
+Leaving it blank generates the schedule from the contract's start, which for a
+mid-life agreement means a run of periods whose invoices were paid elsewhere
+and will never arrive — they stay unclaimed, the overdue sweep flips them, and
+the owner is emailed about them daily.
+
+The field is only editable while the agreement is a draft (or has been
+returned): after approval the recurrence fields are locked and the schedule is
+already generated, so there is no way to apply it retroactively. **Get it right
+at creation, or delete the agreement and create it again.** No repair path
+exists and none is planned — the decision (2026-08-13) is that go-live creates
+these agreements fresh, so the only ones that could be affected are dev-stack
+leftovers, which are disposable.
+
 ## Verification evidence
 
 | Suite | Result |
