@@ -853,3 +853,36 @@ async def test_generate_skips_intent_rows_and_names_them(client, auth_headers):
     skipped = run["stats"]["skipped_intent"]
     assert [s["code"] for s in skipped] == [intent["code"]]
     assert skipped[0]["name"] == "Not Yet Real"
+
+
+@pytest.mark.asyncio
+async def test_recalculate_still_skips_intent_rows(client, auth_headers):
+    """`recalculate_run` re-derives `demands` from `_build_demand_items`
+    independently of `create_run` (its own `select(ForecastLine)` round trip,
+    not a reuse of the first run's already-filtered lines) -- so the intent
+    exclusion has to be applied on THIS path too, or a clean run would
+    silently re-admit the intent product the moment a planner recalculates
+    it. This only fails if the filter is missing from recalculate_run
+    specifically: create_run's own filter has no bearing on what
+    recalculate_run computes fresh."""
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Still Not Real"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-10", "qty": "700"},
+        {"material_code": "S0093", "month": "2027-10", "qty": "900"},
+    ]})
+    version = (await client.post("/api/v1/series/outlook",
+                                 json={"anchor_month": "2027-10"}, headers=auth_headers)).json()
+
+    run = (await client.post("/api/v1/mps/runs",
+                             json={"forecast_version_id": version["id"]},
+                             headers=auth_headers)).json()
+
+    r = await client.post(f"/api/v1/mps/runs/{run['id']}/recalculate", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    recalced = r.json()
+    codes = {l["material_code"] for l in recalced["lines"]}
+    assert intent["code"] not in codes
+    skipped = recalced["stats"]["skipped_intent"]
+    assert [s["code"] for s in skipped] == [intent["code"]]
+    assert skipped[0]["name"] == "Still Not Real"
