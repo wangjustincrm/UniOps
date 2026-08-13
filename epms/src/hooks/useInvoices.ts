@@ -206,6 +206,30 @@ export function useSetInvoiceReceipts() {
 
 // Task 7/8: explicit "no receipt evidence" declaration. Same await-before-
 // onSuccess reasoning as useSetInvoiceReceipts above.
+// Assigning the billing period changes the invoice AND consumes a schedule
+// row, so both the invoice views and the agreement's schedule have to refresh —
+// the agreement detail page renders that schedule, and a period left showing
+// "pending" after it has been claimed is the same class of lie the receipt
+// views were fixed for.
+export function useAssignBillingPeriod() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ id, schedule_id }: { id: string; schedule_id: string }) =>
+      invoiceService.assignBillingPeriod(id, schedule_id),
+    onSuccess: async (data, { id }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+        queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
+        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        ...(data.agreement_id
+          ? [queryClient.invalidateQueries({ queryKey: ['agreements', data.agreement_id, 'schedule'] })]
+          : []),
+      ])
+    },
+  })
+}
+
 export function useSettleWithoutReceipt() {
   const queryClient = useQueryClient()
 

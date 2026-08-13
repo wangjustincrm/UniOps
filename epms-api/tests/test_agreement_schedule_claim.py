@@ -255,3 +255,79 @@ async def test_already_claimed_milestone_cannot_be_claimed_again(test_engine):
         with pytest.raises(ValueError, match="already has an invoice"):
             await sched_crud.claim_milestone(db, agr, inv2, row.id)
         await db.commit()
+
+
+# ── Assigning a billing period AFTER the match ───────────────────────────────
+# The escape hatch existed only at match time. An invoice the automatic claim
+# could not place lands in match_review with no period, is approved there
+# without gaining one, and then can never be paid — /match refuses to run twice
+# and the agreement's tolerance is no longer editable once it is active. This
+# is the way out.
+
+async def test_assign_billing_period_links_a_matched_invoice(test_engine):
+    from app.crud import invoice as invoice_crud
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        await sched_crud.ensure_period_rows(db, agr)
+        # Out of tolerance on purpose (expected 1200 ± 5%): exactly the state
+        # the user reported — matched, with no period, and unpayable.
+        inv = await _invoice(db, agr, vendor, user, total="2237.40")
+        assert await sched_crud.claim_next_period(db, agr, inv) is None
+        inv.agreement_id = agr.id
+        inv.status = "matched"
+        await db.flush()
+
+        target = (await db.execute(
+            select(AgreementPaymentSchedule)
+            .where(AgreementPaymentSchedule.agreement_id == agr.id)
+            .order_by(AgreementPaymentSchedule.sequence))).scalars().all()[1]
+
+        await invoice_crud.assign_billing_period(db, inv, target.id)
+        assert inv.schedule_id == target.id
+        refreshed = (await db.execute(
+            select(AgreementPaymentSchedule).where(
+                AgreementPaymentSchedule.id == target.id))).scalar_one()
+        assert refreshed.status == "received" and refreshed.invoice_id == inv.id
+        await db.commit()
+
+
+async def test_assign_billing_period_refuses_to_move_an_existing_link(test_engine):
+    """Reassigning would release a period that may already have been paid
+    against — a silent double-claim of the schedule."""
+    from app.crud import invoice as invoice_crud
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user)
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        assert row is not None
+        inv.agreement_id = agr.id
+        inv.schedule_id = row.id
+        await db.flush()
+
+        other = (await db.execute(
+            select(AgreementPaymentSchedule)
+            .where(AgreementPaymentSchedule.agreement_id == agr.id,
+                   AgreementPaymentSchedule.id != row.id)
+            .order_by(AgreementPaymentSchedule.sequence))).scalars().first()
+        with pytest.raises(ValueError, match="already linked"):
+            await invoice_crud.assign_billing_period(db, inv, other.id)
+        await db.rollback()
+
+
+async def test_assign_billing_period_refuses_a_taken_period(test_engine):
+    from app.crud import invoice as invoice_crud
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        await sched_crud.ensure_period_rows(db, agr)
+        first = await _invoice(db, agr, vendor, user)
+        taken = await sched_crud.claim_next_period(db, agr, first)
+        assert taken is not None
+
+        second = await _invoice(db, agr, vendor, user, total="2237.40")
+        second.agreement_id = agr.id
+        second.status = "matched"
+        await db.flush()
+        with pytest.raises(ValueError, match="already has an invoice"):
+            await invoice_crud.assign_billing_period(db, second, taken.id)
+        await db.rollback()

@@ -14,6 +14,7 @@ import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
 import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
+import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
@@ -1056,6 +1057,11 @@ export default function InvoiceDetailPage() {
                       surrounding isAgreementRoute branch also covers
                       recurring/milestone, which have no receipts at all. */}
                   <InvoiceReceiptsPanel invoice={inv} />
+                  {/* Renders only in the dead end it exists for: matched to a
+                      recurring agreement with no billing period claimed, which
+                      until now could never be paid and could never be fixed
+                      (see the component). */}
+                  <InvoiceBillingPeriodPanel invoice={inv} />
                 </div>
               ) : (
                 <>

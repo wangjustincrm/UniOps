@@ -21,6 +21,7 @@ from app.models.user import User
 from app.schemas.agreement import AgreementListResponse
 from app.schemas.agreement_receipt import ReceiptListResponse
 from app.schemas.invoice import (
+    AssignBillingPeriodRequest,
     AssignMatchRequest,
     DeclineMatchRequest,
     InvoiceCreate,
@@ -681,6 +682,33 @@ async def set_invoice_receipts(
     try:
         return await invoice_crud.set_receipts(
             db, inv, body.receipt_ids, body.variance_reason)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/{invoice_id}/billing-period", response_model=InvoiceResponse)
+async def assign_invoice_billing_period(
+    invoice_id: uuid.UUID,
+    body: AssignBillingPeriodRequest,
+    db: SessionDep,
+    user: CurrentUserPayload,
+):
+    """Link a matched recurring invoice to a billing period after the fact.
+
+    /match takes a schedule_id, but only while the invoice is still unmatched —
+    and an invoice that the automatic claim could not place lands in
+    match_review with no period, gets approved there without gaining one, and
+    then can never be paid ("not linked to a billing period") because /match
+    refuses to run twice and the agreement's tolerance is no longer editable.
+    This is the way out of that state, authorised exactly like every other
+    action on this page (_require_invoice_match_access).
+    """
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    await _require_invoice_match_access(db, user, inv)
+    try:
+        return await invoice_crud.assign_billing_period(db, inv, body.schedule_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

@@ -32,6 +32,11 @@ import type { DocumentStatus } from '@/types'
 // into that 422. recurring / milestone invoices have no receipt concept at all,
 // so nothing changes for them.
 function isPreselectableAgreementInvoice(inv: ApiInvoice): boolean {
+  // recurring: an invoice that never claimed a scheduled period is refused by
+  // the same gate (pa.py rejects "not linked to a billing period"). It is
+  // fixable — the invoice page offers the assignment — but until it is, this
+  // invoice cannot be paid and must not be proposed for payment.
+  if (inv.agreement_type === 'recurring') return !!inv.schedule_id
   if (inv.agreement_type !== 'house_account') return true
   return (inv.receipt_ids?.length ?? 0) > 0
 }
@@ -40,6 +45,14 @@ function isPreselectableAgreementInvoice(inv: ApiInvoice): boolean {
 // an arbitrary subset — the operator sees some boxes ticked and no reason for
 // the others, which is how "the system missed one" starts.
 function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
+  const cls0 = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium'
+  if (invoice.agreement_type === 'recurring') {
+    // Only worth a badge when it is the thing standing in the way — a period
+    // that IS linked needs no announcement.
+    return invoice.schedule_id
+      ? null
+      : <span className={cn(cls0, 'bg-danger-50 text-danger-700')}>No billing period</span>
+  }
   if (invoice.agreement_type !== 'house_account') return null
   const n = invoice.receipt_ids?.length ?? 0
   const cls = 'shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium'

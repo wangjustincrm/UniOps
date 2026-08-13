@@ -1353,3 +1353,58 @@ async def update_status(db: AsyncSession, invoice: Invoice, status: str) -> Invo
     await db.flush()
     await db.refresh(invoice)
     return invoice
+
+
+async def assign_billing_period(
+    db: AsyncSession, invoice: Invoice, schedule_id: uuid.UUID
+) -> Invoice:
+    """Link an ALREADY-MATCHED recurring invoice to a billing period.
+
+    The escape hatch existed only at match time (InvoiceMatchRequest.schedule_id
+    → claim_specific_period). Everything downstream of that moment was a dead
+    end: an invoice that FIFO could not claim lands in match_review with
+    schedule_id NULL, approving it there never sets one, /match refuses to run
+    again on a matched invoice, and PA creation then 422s "not linked to a
+    billing period" — forever. The agreement is active by then, so its
+    tolerance cannot be edited either. Reported by the user on an invoice whose
+    agreement had NO tolerance set at all (blank = exact match required), where
+    a tax-bearing invoice can never equal a net expected amount.
+
+    Deliberately narrow, because this bypasses the amount check the schedule
+    exists to enforce:
+      • recurring agreements only — milestone picks its stage at match time and
+        house_account has no schedule at all;
+      • only when the invoice currently has NO period, so it can never move a
+        claim from one period to another (that would silently free a period
+        that has already been paid against);
+      • the period must be unclaimed and belong to this agreement
+        (claim_specific_period's own guards, reused rather than re-implemented).
+
+    Raises ValueError; the endpoint maps it to 422.
+    """
+    from app.crud import agreement_schedule as agreement_schedule_crud
+
+    if invoice.agreement_id is None:
+        raise ValueError("This invoice is not matched to an agreement")
+    if invoice.schedule_id is not None:
+        raise ValueError(
+            "This invoice is already linked to a billing period. Reassigning it "
+            "would release a period that may already have been paid against.")
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError("Agreement not found")
+    if agr.agreement_type != "recurring":
+        raise ValueError("Only a recurring agreement bills from scheduled periods")
+
+    claimed = await agreement_schedule_crud.claim_specific_period(
+        db, agr, invoice, schedule_id)
+    invoice.schedule_id = claimed.id
+    # The confirmation task is the recurring route's only compensating control
+    # for having no goods receipt — a period claimed here needs it exactly as
+    # much as one claimed at match time.
+    await agreement_schedule_crud.create_confirm_task(db, agr, claimed)
+    await db.flush()
+    await db.refresh(invoice)
+    return invoice

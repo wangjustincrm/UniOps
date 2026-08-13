@@ -122,6 +122,12 @@ class InvoiceReceiptsRequest(BaseModel):
     variance_reason: str | None = None
 
 
+class AssignBillingPeriodRequest(BaseModel):
+    """POST /invoices/{id}/billing-period — the after-the-fact half of the
+    manual period assignment /match already accepts."""
+    schedule_id: uuid.UUID
+
+
 class SettleWithoutReceiptRequest(BaseModel):
     reason: str = Field(min_length=1)
 
@@ -199,6 +205,13 @@ class InvoiceResponse(BaseModel):
     # on purpose). Was write-only end to end — nothing in epms/src ever read
     # it back — the same silent-drop bug as receipt_ids above, one field over.
     receipt_variance_reason: str | None = None
+    # Which scheduled billing period this invoice claims (recurring route).
+    # Same silent-drop as receipt_ids above: the column has existed since
+    # Phase 1B and nothing ever sent it to the client, so the invoice page had
+    # no way to tell an invoice that claimed a period from one that never did
+    # — the state that makes it unpayable, and the only cue the "assign a
+    # billing period" action can key off.
+    schedule_id: uuid.UUID | None = None
     matched_at: datetime | None
     matched_by: uuid.UUID | None
     matched_by_name: str | None

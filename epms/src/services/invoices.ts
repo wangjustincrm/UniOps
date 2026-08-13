@@ -49,6 +49,12 @@ export interface ApiInvoice {
   // with the invoice total (submitted by MatchPanel.tsx, stored separately
   // from legacy_settlement_reason — see models/invoice.py:76-78).
   receipt_variance_reason?: string | null
+  // Which scheduled billing period this invoice claims (recurring route only —
+  // house_account has no schedule, milestone picks its stage at match time).
+  // NULL on a recurring invoice means the automatic claim could not place it,
+  // which is exactly the state that blocks payment: see
+  // InvoiceBillingPeriodPanel.
+  schedule_id?: string | null
   match_assignee_id?: string | null
   match_assignee_name?: string | null
   matched_at?: string
@@ -269,6 +275,11 @@ export const invoiceService = {
 
   // Explicit "no receipt evidence exists" declaration — releases any receipts
   // this invoice currently holds (crud/invoice.py settle_without_receipt).
+  // The after-the-fact half of /match's schedule_id — see the endpoint's own
+  // docstring for why an invoice can end up matched with no period at all.
+  assignBillingPeriod: (id: string, schedule_id: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/billing-period`, { schedule_id }),
+
   settleWithoutReceipt: (id: string, reason: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/settle-without-receipt`, { reason }),
 }
