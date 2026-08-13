@@ -51,6 +51,29 @@ never be anything but 100%). It now counts only invoices genuinely settled with
 no evidence. Expect the number to drop sharply — that is the fix, not a
 regression.
 
+## Only the counter slip is a priced document
+
+A counter slip IS the record: it is scanned, OCR reads it, the invoice
+reconciles against its total, and a slip with no photo is an exception AP has
+to review. A **delivery note** or a **service sign-off** is not that — it is
+somebody confirming that goods or a service arrived. So those two types were
+stripped to the minimum (user's ruling, 2026-08-13): date, reference, who
+received it, an **optional** attachment, notes. No OCR, no vendor field (the
+supplier is the agreement's, by construction), and **no amounts at all**.
+
+The three amount columns are NULL on those types rather than 0, and that is
+the load-bearing part: the invoice-side panel sums the receipts an invoice
+claims, so a stored 0 would be summed as a zero-value receipt and produce a
+difference equal to the whole invoice for the operator to explain. NULL means
+the receipt takes no part in the amount comparison — the panel shows "no
+amount" on the row, hides the difference line when nothing priced is selected,
+and the amount-matching accelerator skips those receipts entirely.
+
+Re-filing a counter slip as a delivery note on the detail page clears its
+figures in the same save. Half a set (amount and tax but no total) is refused:
+`total_amount` is what every downstream sum reads, so such a row would look
+priced and stay invisible to the comparison.
+
 ## Reconciling: baseline first, accelerators second
 
 Reconciliation happens on the **invoice detail page**. The operator ticks the
@@ -158,7 +181,7 @@ them one at a time from the detail page.
 
 | Service | Revision |
 |---|---|
-| epms-api | `ag04_agreement_receipts` → `ag05_invoice_agreement_type` → `ag06_receipt_vendor` → `ag07_receipt_vendor_id` → `ag08_agreement_schedule_start` |
+| epms-api | `ag04_agreement_receipts` → `ag05_invoice_agreement_type` → `ag06_receipt_vendor` → `ag07_receipt_vendor_id` → `ag08_agreement_schedule_start` → `ag09_receipt_amounts_nullable` |
 | identity-api | `0007_receipt_write_perm` |
 
 ★ **There IS a deploy-order constraint, unlike the superseded release.**

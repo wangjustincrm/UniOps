@@ -123,7 +123,12 @@ function receiptStatusToDoc(s: ReceiptStatus): DocumentStatus {
 // is formatted with the AGREEMENT's currency at the call site, never a
 // hardcoded one.
 function receiptRowLabel(r: ApiReceipt): string {
-  return r.receipt_ref || `${r.receipt_date} · ${Number(r.total_amount).toFixed(2)}`
+  // Falls back to date alone when the receipt carries no amount (ag09):
+  // "2026-08-04 · 0.00" would read as a zero-value receipt.
+  if (r.receipt_ref) return r.receipt_ref
+  return r.total_amount === null
+    ? r.receipt_date
+    : `${r.receipt_date} · ${Number(r.total_amount).toFixed(2)}`
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

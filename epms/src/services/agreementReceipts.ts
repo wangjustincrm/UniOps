@@ -41,6 +41,16 @@ export const EDITABLE_STATUSES = new Set<ReceiptStatus>(['open', 'pending_ap_rev
 // Lives here rather than in one of the two forms that need it (ReceiptEntryForm
 // for create, ReceiptDetailPage for edit): both post to the same validator, so
 // two copies could only ever drift apart.
+// One place to ask "does this receipt carry a monetary amount?" — NULL since
+// ag09 for a delivery note / service sign-off. Every renderer and every sum has
+// to answer it the same way: `Number(null)` is 0, so a reader that forgets
+// silently turns "no amount" into "zero dollars", which is the one reading that
+// makes the invoice-side reconciliation demand an explanation for a difference
+// nobody created.
+export function receiptTotal(receipt: { total_amount: string | null }): number | null {
+  return receipt.total_amount === null ? null : Number(receipt.total_amount)
+}
+
 export function receiptTotalsMatch(total: number, amount: number, tax: number): boolean {
   return Math.round(total * 100) === Math.round(amount * 100) + Math.round(tax * 100)
 }
@@ -67,9 +77,13 @@ export interface ApiReceipt {
   // two can never name two different merchants. When it isn't, this is the
   // raw text OCR read or the recorder typed, kept verbatim.
   vendor_name: string | null
-  amount: string
-  tax_amount: string
-  total_amount: string
+  // NULL on a delivery note / service sign-off (ag09): those types carry no
+  // money at all. Deliberately not 0 — 0 is a value, and a 0 would be summed
+  // into the invoice-side reconciliation as a zero-value receipt, producing a
+  // full-invoice "difference" for the operator to explain.
+  amount: string | null
+  tax_amount: string | null
+  total_amount: string | null
   received_by: string
   missing_receipt_reason: string | null
   ap_reviewed_by: string | null
@@ -174,9 +188,9 @@ export interface CreateReceiptBody {
   // there is no way to save a row whose id and name disagree.
   vendor_id?: string | null
   vendor_name?: string | null
-  amount: number
-  tax_amount: number
-  total_amount: number
+  amount?: number
+  tax_amount?: number
+  total_amount?: number
   received_by: string
   missing_receipt_reason?: string | null
   notes?: string | null
@@ -195,9 +209,11 @@ export interface UpdateReceiptBody {
   // binding alone.
   vendor_id?: string | null
   vendor_name?: string | null
-  amount?: number
-  tax_amount?: number
-  total_amount?: number
+  // null CLEARS the figure — how a receipt re-filed from a counter slip to a
+  // delivery note stops carrying an amount (ag09). Omitting the key leaves it.
+  amount?: number | null
+  tax_amount?: number | null
+  total_amount?: number | null
   received_by?: string
   missing_receipt_reason?: string | null
   notes?: string | null

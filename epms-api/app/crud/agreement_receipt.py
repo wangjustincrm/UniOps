@@ -262,7 +262,8 @@ async def update(db: AsyncSession, receipt: AgreementReceipt, body: ReceiptUpdat
     # (review finding #1):校验 body 自身在这里永远通过,因为大多数 PATCH
     # 天生只带一个金额字段。
     validate_totals(
-        amount=receipt.amount, tax_amount=receipt.tax_amount, total_amount=receipt.total_amount)
+        amount=receipt.amount, tax_amount=receipt.tax_amount, total_amount=receipt.total_amount,
+        receipt_type=receipt.receipt_type)
     await db.flush()
     return receipt
 

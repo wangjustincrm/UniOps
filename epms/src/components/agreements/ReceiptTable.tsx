@@ -6,7 +6,7 @@ import { StatusBadge } from '@/components/ui/badge'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
 import { useVoidReceipt, useApReviewReceipt } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
-import type { ApiReceipt } from '@/services/agreementReceipts'
+import { receiptTotal, type ApiReceipt } from '@/services/agreementReceipts'
 import type { ApiUserBrief } from '@/services/users'
 import type { DocumentStatus } from '@/types'
 
@@ -175,8 +175,14 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-neutral-700">{receipt.receipt_ref ?? '—'}</td>
+                    {/* An em-dash, not CA$0.00: a delivery note / service
+                        sign-off carries no amount at all (ag09), and rendering
+                        it as zero dollars states a figure the document never
+                        had. */}
                     <td className="px-4 py-2.5 text-right amount font-medium text-neutral-900">
-                      {formatAmount(Number(receipt.total_amount), currency)}
+                      {receiptTotal(receipt) === null
+                        ? <span className="text-neutral-400">—</span>
+                        : formatAmount(receiptTotal(receipt)!, currency)}
                     </td>
                     <td className="px-4 py-2.5 text-neutral-900">{receivedByName ?? '—'}</td>
                     <td className="px-4 py-2.5">

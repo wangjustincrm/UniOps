@@ -24,7 +24,13 @@ def _validate_receipt_type(v: str | None) -> str | None:
     return v
 
 
-def validate_totals(*, amount: Decimal, tax_amount: Decimal, total_amount: Decimal) -> None:
+def validate_totals(
+    *,
+    amount: Decimal | None,
+    tax_amount: Decimal | None,
+    total_amount: Decimal | None,
+    receipt_type: str | None = None,
+) -> None:
     """Shared by ReceiptCreate's schema validator and crud.agreement_receipt.update()
     (post-merge, on the MERGED row) — same drift-avoidance rationale as
     agreement.py's validate_recurrence/validate_validity_window: two copies
@@ -33,6 +39,22 @@ def validate_totals(*, amount: Decimal, tax_amount: Decimal, total_amount: Decim
     another is the normal case, not the exception, and later reconciliation
     arithmetic reads total_amount, so an inconsistency here is not cosmetic.
     """
+    # ag09: a delivery note / service sign-off carries no money — all three
+    # absent is a complete, valid receipt. A counter slip is a priced document
+    # and still requires them: the invoice reconciles against its total.
+    present = [v is not None for v in (amount, tax_amount, total_amount)]
+    if not any(present):
+        if receipt_type == "counter_slip":
+            raise ValueError(
+                "amount, tax_amount and total_amount are required on a counter slip")
+        return
+    if not all(present):
+        # Half a set is neither a confirmation nor a priced receipt, and
+        # total_amount is what every downstream sum reads — leaving it out
+        # while filling the others would make the receipt invisible to the
+        # comparison it looks like it should join.
+        raise ValueError(
+            "amount, tax_amount and total_amount must be given together, or all left out")
     if total_amount != amount + tax_amount:
         raise ValueError("total_amount must equal amount + tax_amount")
 
@@ -202,9 +224,10 @@ class ReceiptCreate(BaseModel):
     # 不该卡住录入。它与协议的供应商不一致时只是**提醒**,不拦写入 ——
     # 见 is_vendor_mismatch 的 docstring。
     vendor_name: str | None = None
-    amount: Decimal
-    tax_amount: Decimal
-    total_amount: Decimal
+    # ag09: absent on a delivery note / service sign-off — see validate_totals.
+    amount: Decimal | None = None
+    tax_amount: Decimal | None = None
+    total_amount: Decimal | None = None
     received_by: uuid.UUID
     missing_receipt_reason: str | None = None
     notes: str | None = None
@@ -217,7 +240,8 @@ class ReceiptCreate(BaseModel):
     @model_validator(mode="after")
     def _totals_are_consistent(self):
         validate_totals(
-            amount=self.amount, tax_amount=self.tax_amount, total_amount=self.total_amount)
+            amount=self.amount, tax_amount=self.tax_amount, total_amount=self.total_amount,
+            receipt_type=self.receipt_type)
         return self
 
 
@@ -261,9 +285,9 @@ class ReceiptResponse(BaseModel):
     receipt_ref: str | None
     vendor_id: uuid.UUID | None
     vendor_name: str | None
-    amount: Decimal
-    tax_amount: Decimal
-    total_amount: Decimal
+    amount: Decimal | None
+    tax_amount: Decimal | None
+    total_amount: Decimal | None
     received_by: uuid.UUID
     missing_receipt_reason: str | None
     ap_reviewed_by: uuid.UUID | None

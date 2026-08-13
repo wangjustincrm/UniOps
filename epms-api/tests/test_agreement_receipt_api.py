@@ -1281,3 +1281,76 @@ async def test_list_all_carries_vendor_matched_alongside_the_verdict(admin_clien
         detail = (await admin_client.get(_one_receipt_url(receipt_id))).json()
         assert detail["vendor_matched"] == by_id[receipt_id]["vendor_matched"]
         assert detail["vendor_mismatch"] == by_id[receipt_id]["vendor_mismatch"]
+
+
+# ── ag09: a delivery note / service sign-off carries no money ────────────────
+
+async def test_a_delivery_receipt_records_with_no_amounts(admin_client, test_engine):
+    """The user's ruling: everything except the counter slip is stripped to the
+    minimum. A delivery note confirms that goods arrived — there is no figure
+    printed on it, so the three amount columns stay NULL rather than 0.
+
+    NULL, not 0, is load-bearing: the invoice-side reconciliation sums the
+    receipts an invoice claims, and a 0 would be summed as a zero-value receipt
+    — producing a difference equal to the whole invoice for the operator to
+    explain.
+    """
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json={
+        "receipt_type": "delivery",
+        "receipt_date": "2026-08-04",
+        "receipt_ref": "DN-99001",
+        "received_by": str(user_id),
+    })
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["amount"] is None
+    assert body["tax_amount"] is None
+    assert body["total_amount"] is None
+    # No reason was given, so it is immediately usable — not parked in AP review.
+    assert body["status"] == "open"
+
+
+async def test_a_counter_slip_still_requires_its_amounts(admin_client, test_engine):
+    """The other half of the rule — the counter slip is unchanged. It IS a
+    priced document and the invoice reconciles against its total."""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json={
+        "receipt_type": "counter_slip",
+        "receipt_date": "2026-08-04",
+        "received_by": str(user_id),
+    })
+    assert r.status_code == 422, r.text
+
+
+async def test_amounts_must_be_given_together_or_not_at_all(admin_client, test_engine):
+    """Half a set is neither a confirmation nor a priced receipt. total_amount
+    is what every downstream sum reads, so a row carrying amount and tax but no
+    total would look priced and stay invisible to the comparison."""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    r = await admin_client.post(_receipts_url(agr["id"]), json={
+        "receipt_type": "delivery",
+        "receipt_date": "2026-08-04",
+        "received_by": str(user_id),
+        "amount": "100.00",
+        "tax_amount": "13.00",
+    })
+    assert r.status_code == 422, r.text
+
+
+async def test_refiling_a_slip_as_a_delivery_note_can_clear_its_amounts(admin_client, test_engine):
+    """The type is editable on the detail page, so the amounts have to be
+    clearable in the same PATCH — otherwise a re-filed receipt keeps taking
+    part in an amount comparison its new type says it has nothing to say
+    about."""
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    created = (await admin_client.post(
+        _receipts_url(agr["id"]), json=_receipt_payload(user_id, receipt_ref="RF-1"))).json()
+    assert created["total_amount"] is not None
+
+    r = await admin_client.patch(
+        f"{_receipts_url(agr['id'])}/{created['id']}",
+        json={"receipt_type": "delivery", "amount": None,
+              "tax_amount": None, "total_amount": None})
+    assert r.status_code == 200, r.text
+    assert r.json()["total_amount"] is None

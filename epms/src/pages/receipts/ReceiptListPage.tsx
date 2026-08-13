@@ -10,7 +10,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import { useAllReceipts, useVoidReceiptAny, useApReviewReceiptAny } from '@/hooks/useAgreementReceipts'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
-import { RECEIPT_TYPE_LABELS } from '@/services/agreementReceipts'
+import { receiptTotal, RECEIPT_TYPE_LABELS } from '@/services/agreementReceipts'
 import type { ApiReceiptWithAgreement, ReceiptStatus, ReceiptType } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
 
@@ -365,7 +365,12 @@ function ReceiptRow({
         {/* This list spans multiple agreements, which can each be a
             different currency (fix round 1, Critical) — must use THIS row's
             own currency, never a hardcoded one. */}
-        {formatAmount(Number(receipt.total_amount), receipt.currency)}
+        {/* Amount-less by design on a delivery note / service sign-off
+            (ag09) — an em-dash rather than a CA$0.00 that was never on the
+            document. */}
+        {receiptTotal(receipt) === null
+          ? <span className="text-neutral-400">—</span>
+          : formatAmount(receiptTotal(receipt)!, receipt.currency)}
       </td>
       <td className="px-4 py-3 text-neutral-600">{receivedByName ?? '—'}</td>
       <td className="px-4 py-3">

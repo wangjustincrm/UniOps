@@ -36,7 +36,42 @@ interface ReceiptEntryFormProps {
 // against the receipt id just returned. Two separate API calls, same pattern as
 // PrCreatePage (create doc, then upload attachments against the new id) —
 // there is no single create-with-attachment endpoint.
+// A counter slip is a scanned document the system reads: the photo IS the
+// record, OCR fills the form from it, and a slip with no photo is an exception
+// that AP has to review. A delivery note or a service sign-off is not that —
+// it is somebody confirming that goods or a service arrived. There may be a
+// signed PDF worth keeping, there may not be, and either way nobody is
+// scanning a work order for its totals. So the elaborate photo-and-OCR block
+// is the counter-slip's alone; the other two get a plain optional attachment.
+const TYPE_COPY = {
+  counter_slip: {
+    dateLabel: 'Receipt date',
+    refLabel: 'Reference #',
+    refPlaceholder: 'Receipt number',
+    byLabel: 'Picked up by',
+    byHint: 'The person who brought the receipt in — not a sign-off or approval.',
+  },
+  delivery: {
+    dateLabel: 'Delivery date',
+    refLabel: 'Delivery note #',
+    refPlaceholder: 'Delivery note number',
+    byLabel: 'Received by',
+    byHint: 'The person who took delivery.',
+  },
+  service: {
+    dateLabel: 'Service date',
+    refLabel: 'Work order #',
+    refPlaceholder: 'Work order number',
+    byLabel: 'Signed off by',
+    byHint: 'The person who confirmed the service was performed.',
+  },
+} as const
+
 export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess }: ReceiptEntryFormProps) {
+  // Only a counter slip runs OCR, demands a photo-or-reason, and routes to AP
+  // review when neither is there.
+  const isSlip = receiptType === 'counter_slip'
+  const copy = TYPE_COPY[receiptType]
   const { data: usersData } = useUserDirectory()
   const users = usersData?.items ?? []
   const createReceipt = useCreateReceipt(agreementId)
@@ -101,6 +136,10 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     e.target.value = ''
     if (!picked) return
     setFile(picked)
+    // Nothing to read: a delivery note or a work order is a confirmation, not
+    // a priced document, and running the slip extractor over it would only
+    // produce fields to un-fill.
+    if (!isSlip) return
     setOcrState('loading')
     try {
       const fields = await ocrService.receipt(picked)
@@ -142,7 +181,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     } else {
       setReceivedByError(null)
     }
-    if (!file && !missingReceiptReason.trim()) {
+    if (isSlip && !file && !missingReceiptReason.trim()) {
       setReasonError('Required when no photo is attached')
       hasError = true
     } else {
@@ -151,7 +190,13 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     const amt = Number(amount)
     const tax = Number(taxAmount)
     const tot = Number(totalAmount)
-    if (amount === '' || taxAmount === '' || totalAmount === '' || Number.isNaN(amt) || Number.isNaN(tax) || Number.isNaN(tot)) {
+    // Money is a counter-slip concern. A delivery note or a service sign-off
+    // records that something arrived, not what it cost — there is no figure
+    // printed on it to key in, and the invoice reconciles those types by
+    // their existence, not by a total (see InvoiceReceiptsPanel).
+    if (!isSlip) {
+      setAmountError(null)
+    } else if (amount === '' || taxAmount === '' || totalAmount === '' || Number.isNaN(amt) || Number.isNaN(tax) || Number.isNaN(tot)) {
       setAmountError('Amount, tax and total are all required — enter 0 for tax if the receipt shows none')
       hasError = true
     } else if (!receiptTotalsMatch(tot, amt, tax)) {
@@ -167,13 +212,24 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       receipt_type: receiptType,
       receipt_date: receiptDate,
       receipt_ref: receiptRef.trim() || undefined,
-      vendor_id: vendor.vendorId ?? undefined,
-      vendor_name: vendor.vendorName.trim() || undefined,
-      amount: amt,
-      tax_amount: tax,
-      total_amount: tot,
+      // Vendor, like the amounts, is a counter-slip question: a slip can come
+      // from any merchant and be filed against the wrong house account, which
+      // is what the mismatch check exists to catch. A delivery note against
+      // an agreement comes from that agreement's supplier by construction —
+      // asking again only invites a wrong answer. Omitted entirely (an empty
+      // vendor is never reported as a mismatch — schemas/agreement_receipt.py).
+      vendor_id: isSlip ? vendor.vendorId ?? undefined : undefined,
+      vendor_name: isSlip ? vendor.vendorName.trim() || undefined : undefined,
+      // Omitted, not zeroed — 0 is a value the reconciliation would sum.
+      amount: isSlip ? amt : undefined,
+      tax_amount: isSlip ? tax : undefined,
+      total_amount: isSlip ? tot : undefined,
       received_by: receivedBy,
-      missing_receipt_reason: !file ? missingReceiptReason.trim() || undefined : undefined,
+      // Only a counter slip can be "missing" its evidence — the attachment is
+      // optional on the other two, so there is nothing to explain and nothing
+      // for AP to review (crud/agreement_receipt.py routes to
+      // pending_ap_review on this field alone).
+      missing_receipt_reason: isSlip && !file ? missingReceiptReason.trim() || undefined : undefined,
       notes: notes.trim() || undefined,
     })
 
@@ -204,6 +260,26 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         // has always done this; the success branch was the one missing it.
         await invalidateReceiptViews(queryClient, agreementId)
       } catch (uploadErr) {
+        // On a delivery note or a service sign-off the attachment was OPTIONAL:
+        // a receipt with none is a complete, valid record, so a failed upload
+        // is a failed file transfer and nothing more. Compensating it into AP
+        // review — as the counter-slip path below does — would manufacture an
+        // exception out of a state the operator was entitled to submit
+        // deliberately. Say the file didn't attach, name where to add it, and
+        // leave the receipt alone.
+        if (!isSlip) {
+          const msg = uploadErr instanceof Error ? uploadErr.message : 'unknown error'
+          alert(
+            `The receipt was recorded, but the attachment failed to upload (${msg}). ` +
+            'The receipt itself is fine — open it from the Agreement Receipts list (/receipts) ' +
+            'to attach the file.'
+          )
+          // `finally` below still runs on this return — it owns the
+          // isUploadingAttachment reset.
+          resetForm()
+          onSuccess?.()
+          return
+        }
         // The receipt already exists as `status: "open"` with no evidence on
         // it — create()'s open/pending_ap_review routing decision was made
         // from the request body BEFORE this upload ever ran (it can't see
@@ -223,7 +299,9 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         // may not type one), so this fallback is a routine path, not an edge case.
         const receiptLabel = receipt.receipt_ref
           ? `receipt ${receipt.receipt_ref}`
-          : `the receipt dated ${receipt.receipt_date} for ${receipt.total_amount}`
+          : receipt.total_amount === null
+            ? `the receipt dated ${receipt.receipt_date}`
+            : `the receipt dated ${receipt.receipt_date} for ${receipt.total_amount}`
         try {
           await agreementReceiptService.update(agreementId, receipt.id, {
             missing_receipt_reason:
@@ -277,28 +355,46 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-      {/* Photo / OCR */}
+      {/* Counter slip: the photo IS the record — scanned, read, and required
+          unless explained. Delivery note / service sign-off: one optional
+          attachment, no OCR, no consequence for leaving it empty. */}
       <div className="flex flex-col gap-2">
-        <label className="text-sm font-medium text-neutral-700">Receipt photo</label>
+        <label className="text-sm font-medium text-neutral-700">
+          {isSlip ? 'Receipt photo' : 'Attachment'}
+          {!isSlip && <span className="ml-1.5 font-normal text-neutral-400">(optional)</span>}
+        </label>
         {!file ? (
           <label
             htmlFor="receipt-photo-upload"
-            className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 p-5 text-center hover:border-primary-400 hover:bg-primary-50 transition-colors"
+            className={cn(
+              'flex cursor-pointer items-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 text-center transition-colors hover:border-primary-400 hover:bg-primary-50',
+              isSlip ? 'flex-col p-5' : 'justify-center px-4 py-3',
+            )}
           >
-            <Upload className="h-6 w-6 text-neutral-400" />
-            <p className="text-sm font-medium text-neutral-700">Take or upload a photo of the receipt</p>
-            <p className="text-xs text-neutral-400">Vendor, amounts and date will be auto-filled — optional, but recommended</p>
+            <Upload className={cn('text-neutral-400', isSlip ? 'h-6 w-6' : 'h-4 w-4')} />
+            {isSlip ? (
+              <>
+                <p className="text-sm font-medium text-neutral-700">Take or upload a photo of the receipt</p>
+                <p className="text-xs text-neutral-400">Vendor, amounts and date will be auto-filled — optional, but recommended</p>
+              </>
+            ) : (
+              <p className="text-sm text-neutral-600">
+                Attach the signed {receiptType === 'delivery' ? 'delivery note' : 'sign-off'} if you have one
+              </p>
+            )}
             <input id="receipt-photo-upload" type="file" accept="image/*,.pdf" className="sr-only" onChange={handleFileChange} />
           </label>
         ) : (
           <div className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
             <span className="flex-1 truncate text-neutral-700">📎 {file.name}</span>
-            <button type="button" onClick={clearFile} className="text-neutral-400 hover:text-danger-600" aria-label="Remove photo">
+            <button type="button" onClick={clearFile} className="text-neutral-400 hover:text-danger-600" aria-label="Remove attachment">
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
         )}
 
+        {/* OCR only ever runs for a counter slip, so these three states are
+            unreachable on the other types — no need to guard them separately. */}
         {ocrState === 'loading' && (
           <p className="flex items-center gap-1.5 text-xs text-neutral-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> Reading receipt…
@@ -317,17 +413,18 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <FormField label="Receipt date" required htmlFor="receipt-date">
+        <FormField label={copy.dateLabel} required htmlFor="receipt-date">
           <Input id="receipt-date" type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} required />
         </FormField>
-        <FormField label="Reference #" htmlFor="receipt-ref">
+        <FormField label={copy.refLabel} htmlFor="receipt-ref">
           {/* DB column is String(64) — a paste that overflows it raises a
               psycopg StringDataRightTruncation (DataError), not an
               IntegrityError, so create_receipt's `except IntegrityError` for the
               friendly 409 doesn't catch it and it falls through to a bare 500.
               maxLength stops the overflow from ever reaching the request. */}
-          <Input id="receipt-ref" value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} placeholder="Receipt number" maxLength={64} />
+          <Input id="receipt-ref" value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} placeholder={copy.refPlaceholder} maxLength={64} />
         </FormField>
+        {isSlip && (
         <FormField
           label="Vendor on receipt"
           htmlFor="receipt-vendor"
@@ -345,17 +442,22 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
             disabled={isPending}
           />
         </FormField>
-        <FormField label="Amount (before tax)" required htmlFor="receipt-amount">
-          <Input id="receipt-amount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
-        </FormField>
-        <FormField label="Tax" required htmlFor="receipt-tax">
-          <Input id="receipt-tax" type="number" step="0.01" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
-        </FormField>
-        <FormField label="Total" required error={amountError ?? undefined} htmlFor="receipt-total">
-          <Input id="receipt-total" type="number" step="0.01" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
-        </FormField>
-        <FormField label="Picked up by" required error={receivedByError ?? undefined} htmlFor="receipt-picked-by"
-          hint="The person who brought the receipt in — not a sign-off or approval.">
+        )}
+        {isSlip && (
+          <>
+            <FormField label="Amount (before tax)" required htmlFor="receipt-amount">
+              <Input id="receipt-amount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </FormField>
+            <FormField label="Tax" required htmlFor="receipt-tax">
+              <Input id="receipt-tax" type="number" step="0.01" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
+            </FormField>
+            <FormField label="Total" required error={amountError ?? undefined} htmlFor="receipt-total">
+              <Input id="receipt-total" type="number" step="0.01" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
+            </FormField>
+          </>
+        )}
+        <FormField label={copy.byLabel} required error={receivedByError ?? undefined} htmlFor="receipt-picked-by"
+          hint={copy.byHint}>
           <select
             id="receipt-picked-by"
             value={receivedBy}
@@ -370,6 +472,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         </FormField>
       </div>
 
+      {isSlip && (
       <FormField
         label="Reason for missing photo"
         required={!file}
@@ -386,6 +489,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
           className="w-full resize-none rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
         />
       </FormField>
+      )}
 
       <FormField label="Notes" htmlFor="receipt-notes">
         <textarea

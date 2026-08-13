@@ -35,7 +35,8 @@ class AgreementReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     receipt_type: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default="counter_slip", index=True)
 
-    # receipt_date 与 total_amount 是基线匹配仅有的两个依据(设计 §4.1),都不可空。
+    # receipt_date 是基线匹配唯一恒在的依据(设计 §4.1)。total_amount 原本也
+    # 不可空,ag09 起对送货/服务两类放开 —— 那两类没有金额可录,详见下方列注释。
     receipt_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     # 凭证上的参考号 —— **什么都行**:小票号、交易号、送货单号。
@@ -73,10 +74,17 @@ class AgreementReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     # 绑不上时存 OCR/手工录入的原文。
     vendor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-    tax_amount: Mapped[Decimal] = mapped_column(
-        Numeric(15, 2), nullable=False, server_default="0")
-    total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    # ag09:三个金额列可空。柜台小票必填(它就是一张有价单据,发票拿它对账);
+    # 送货签收单/服务验收单没有金额可录 —— 那是"我收到了"的确认,不是价目。
+    # **不是默认 0**:0 是一个值,会被发票侧的对账求和当成 0 元凭证,算出一整张
+    # 发票的差额再让人解释。NULL 说的是实话:这张凭证不带金额,不参与金额比对。
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    # No server_default (ag09): with the column nullable, a default makes
+    # SQLAlchemy drop a None-valued tax_amount from the INSERT and let the
+    # database fill in 0 — storing "tax 0.00" on a receipt that has no amounts
+    # at all, which is a half-set the merged-row check then rejects.
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    total_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
 
     # 领用人 = 交单人。见类文档:这不是数字签认。
     received_by: Mapped[uuid.UUID] = mapped_column(

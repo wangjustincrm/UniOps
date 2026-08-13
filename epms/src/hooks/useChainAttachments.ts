@@ -102,7 +102,10 @@ function mapReceiptAtt(
 // would silently nest an extra directory level. Replace path separators
 // with a safe stand-in before the label is ever used.
 function receiptLabel(s: ApiReceipt): string {
-  const raw = s.receipt_ref || `${s.receipt_date} · ${Number(s.total_amount).toFixed(2)}`
+  // Same fallback as DocumentChainTree's receiptLabel — amount-less receipts
+  // (ag09) are identified by date alone rather than by a fictional 0.00.
+  const raw = s.receipt_ref
+    || (s.total_amount === null ? s.receipt_date : `${s.receipt_date} · ${Number(s.total_amount).toFixed(2)}`)
   return raw.replace(/[/\\]/g, '-')
 }
 

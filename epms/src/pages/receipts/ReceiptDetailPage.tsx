@@ -30,6 +30,7 @@ import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAt
 import {
   EDITABLE_STATUSES,
   RECEIPT_TYPE_LABELS,
+  receiptTotal,
   receiptTotalsMatch,
   type ApiReceiptWithAgreement,
   type ReceiptType,
@@ -155,9 +156,13 @@ function ReceiptDetail({
   const [vendor, setVendor] = useState<ReceiptVendorValue>({
     vendorId: receipt.vendor_id, vendorName: receipt.vendor_name ?? '',
   })
-  const [amount, setAmount] = useState(receipt.amount)
-  const [taxAmount, setTaxAmount] = useState(receipt.tax_amount)
-  const [totalAmount, setTotalAmount] = useState(receipt.total_amount)
+  // '' when the receipt carries no amount at all (ag09 — a delivery note /
+  // service sign-off). The inputs holding these are only rendered for a
+  // counter slip, so '' never reaches a user; it exists so the controlled
+  // inputs stay controlled if that ever changes.
+  const [amount, setAmount] = useState(receipt.amount ?? '')
+  const [taxAmount, setTaxAmount] = useState(receipt.tax_amount ?? '')
+  const [totalAmount, setTotalAmount] = useState(receipt.total_amount ?? '')
   const [receivedBy, setReceivedBy] = useState(receipt.received_by)
   const [missingReason, setMissingReason] = useState(receipt.missing_receipt_reason ?? '')
   const [notes, setNotes] = useState(receipt.notes ?? '')
@@ -176,9 +181,9 @@ function ReceiptDetail({
     setReceiptDate(receipt.receipt_date)
     setReceiptRef(receipt.receipt_ref ?? '')
     setVendor({ vendorId: receipt.vendor_id, vendorName: receipt.vendor_name ?? '' })
-    setAmount(receipt.amount)
-    setTaxAmount(receipt.tax_amount)
-    setTotalAmount(receipt.total_amount)
+    setAmount(receipt.amount ?? '')
+    setTaxAmount(receipt.tax_amount ?? '')
+    setTotalAmount(receipt.total_amount ?? '')
     setReceivedBy(receipt.received_by)
     setMissingReason(receipt.missing_receipt_reason ?? '')
     setNotes(receipt.notes ?? '')
@@ -203,17 +208,25 @@ function ReceiptDetail({
       setFormError('Received by is required')
       return
     }
-    if (amount === '' || taxAmount === '' || totalAmount === ''
-        || Number.isNaN(amt) || Number.isNaN(tax) || Number.isNaN(tot)) {
-      setFormError('Amount, tax and total are all required — enter 0 for tax if the receipt shows none')
-      return
-    }
-    // Cent-integer comparison, matching the backend's exact Decimal equality
-    // (see receiptTotalsMatch) — a float tolerance would let through values the
-    // API then rejects with a 422.
-    if (!receiptTotalsMatch(tot, amt, tax)) {
-      setFormError('Total must equal amount + tax')
-      return
+    // Money is a counter-slip matter (ag09). A delivery note / service
+    // sign-off has no amounts to validate — and the type is editable on this
+    // page, so this reads the CURRENT selection, not the saved one: re-filing
+    // a slip as a delivery note drops its amount requirement in the same
+    // submit that changes the type.
+    const isSlip = receiptType === 'counter_slip'
+    if (isSlip) {
+      if (amount === '' || taxAmount === '' || totalAmount === ''
+          || Number.isNaN(amt) || Number.isNaN(tax) || Number.isNaN(tot)) {
+        setFormError('Amount, tax and total are all required — enter 0 for tax if the receipt shows none')
+        return
+      }
+      // Cent-integer comparison, matching the backend's exact Decimal equality
+      // (see receiptTotalsMatch) — a float tolerance would let through values the
+      // API then rejects with a 422.
+      if (!receiptTotalsMatch(tot, amt, tax)) {
+        setFormError('Total must equal amount + tax')
+        return
+      }
     }
     setFormError(null)
     // mutate, not mutateAsync: the hook's onError already alerts, and
@@ -231,11 +244,15 @@ function ReceiptDetail({
         // sending one without the other is how an id and a name end up naming
         // two different merchants. null unbinds (the server leaves the text
         // alone in that case).
-        vendor_id: vendor.vendorId,
-        vendor_name: vendor.vendorName.trim() || null,
-        amount: amt,
-        tax_amount: tax,
-        total_amount: tot,
+        vendor_id: isSlip ? vendor.vendorId : null,
+        vendor_name: isSlip ? vendor.vendorName.trim() || null : null,
+        // Explicit nulls, not omissions: re-filing a counter slip as a
+        // delivery note has to CLEAR the figures it used to carry, or the
+        // receipt keeps taking part in an amount comparison its new type says
+        // it has nothing to say about.
+        amount: isSlip ? amt : null,
+        tax_amount: isSlip ? tax : null,
+        total_amount: isSlip ? tot : null,
         received_by: receivedBy,
         missing_receipt_reason: missingReason.trim() || null,
         notes: notes.trim() || null,
@@ -292,8 +309,8 @@ function ReceiptDetail({
               <StatusBadge status={receipt.status as DocumentStatus} />
             </div>
             <p className="mt-1 text-sm text-neutral-500">
-              {RECEIPT_TYPE_LABELS[receipt.receipt_type]} · {receipt.agreement_number} ·{' '}
-              {formatAmount(Number(receipt.total_amount), receipt.currency)}
+              {RECEIPT_TYPE_LABELS[receipt.receipt_type]} · {receipt.agreement_number}
+              {receiptTotal(receipt) !== null && <> · {formatAmount(receiptTotal(receipt)!, receipt.currency)}</>}
             </p>
           </div>
         </div>
@@ -447,6 +464,13 @@ function ReceiptDetail({
                       onChange={(e) => touch(setReceiptRef)(e.target.value)}
                     />
                   </FormField>
+                  {/* Vendor and the three figures are counter-slip fields
+                      (ag09): a delivery note / service sign-off records that
+                      something arrived, from the agreement's own supplier, at
+                      no stated price. Gated on the CURRENT type selection
+                      above, so re-filing a receipt collapses the form in the
+                      same interaction. */}
+                  {receiptType === 'counter_slip' && (<>
                   <FormField
                     label="Vendor on receipt" htmlFor="receipt-vendor"
                     hint="The merchant printed on the slip. Pick it from the vendor list if it's there — otherwise just type what the slip says, or leave it blank if it isn't legible."
@@ -478,6 +502,7 @@ function ReceiptDetail({
                       onChange={(e) => touch(setTotalAmount)(e.target.value)}
                     />
                   </FormField>
+                  </>)}
                   <FormField
                     label="Received by" required htmlFor="receipt-received-by"
                     hint="The person who brought the receipt in — not a sign-off or approval."
@@ -556,10 +581,19 @@ function ReceiptDetail({
                   </span>
                 </div>
                 <MetaRow label="Received by" value={userNames.get(receipt.received_by) ?? '—'} />
-                <MetaRow label="Amount before tax" value={formatAmount(Number(receipt.amount), receipt.currency)} mono />
-                <MetaRow label="Tax" value={formatAmount(Number(receipt.tax_amount), receipt.currency)} mono />
-                <MetaRow label="Total" value={formatAmount(Number(receipt.total_amount), receipt.currency)} mono />
-                <MetaRow label="Reason for missing photo" value={receipt.missing_receipt_reason ?? '—'} />
+                {/* Omitted entirely rather than shown as CA$0.00: on a
+                    delivery note / service sign-off there is no figure (ag09),
+                    and a row of zeros reads as a receipt worth nothing. */}
+                {receiptTotal(receipt) !== null && (
+                  <>
+                    <MetaRow label="Amount before tax" value={formatAmount(Number(receipt.amount), receipt.currency)} mono />
+                    <MetaRow label="Tax" value={formatAmount(Number(receipt.tax_amount), receipt.currency)} mono />
+                    <MetaRow label="Total" value={formatAmount(receiptTotal(receipt)!, receipt.currency)} mono />
+                  </>
+                )}
+                {receipt.missing_receipt_reason && (
+                  <MetaRow label="Reason for missing photo" value={receipt.missing_receipt_reason} />
+                )}
                 <MetaRow label="Notes" value={receipt.notes ?? '—'} />
               </div>
             )}

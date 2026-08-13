@@ -5,7 +5,7 @@ import { Badge, statusLabel } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useInvoiceAgreementReceipts, useSetInvoiceReceipts, useSettleWithoutReceipt } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
-import { RECEIPT_TYPE_LABELS, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
+import { RECEIPT_TYPE_LABELS, receiptTotal, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
 
 // Cent-rounded equality — plain float subtraction of two Number()-coerced
 // decimal strings can land a hair off zero (e.g. summing several selected
@@ -44,7 +44,9 @@ function ReceiptCandidateRow({
             {receipt.receipt_ref ?? '—'}
           </span>
           <span className="shrink-0 text-xs font-medium text-neutral-700">
-            {formatAmount(Number(receipt.total_amount), currency)}
+            {receiptTotal(receipt) === null
+              ? <span className="font-normal text-neutral-400">no amount</span>
+              : formatAmount(receiptTotal(receipt)!, currency)}
           </span>
         </div>
         <p className="text-[11px] text-neutral-400">{formatDate(receipt.receipt_date)}</p>
@@ -182,9 +184,20 @@ function InvoiceReceiptsPanelBody({
 
   const selectedReceipts = relevantReceipts.filter((r) => selectedReceiptIds.includes(r.id))
   const invoiceTotalAmount = Number(invoice.total_amount)
-  const selectedTotal = selectedReceipts.reduce((sum, r) => sum + Number(r.total_amount), 0)
+  // Only receipts that CARRY an amount take part in the comparison. A delivery
+  // note or a service sign-off has none (ag09): it confirms that something
+  // arrived, not what it cost. Summing it as 0 — which `Number(null)` quietly
+  // does — would produce a difference equal to the whole invoice and ask the
+  // operator to explain a discrepancy the document never claimed.
+  const pricedReceipts = selectedReceipts.filter((r) => receiptTotal(r) !== null)
+  const selectedTotal = pricedReceipts.reduce((sum, r) => sum + (receiptTotal(r) ?? 0), 0)
   const varianceAmount = selectedTotal - invoiceTotalAmount
-  const varianceIsZero = centsEqual(selectedTotal, invoiceTotalAmount)
+  // With nothing priced selected there is no comparison to make — not a
+  // variance of the full invoice, and not a variance of zero either. The
+  // difference row and its explanation box are hidden entirely, and
+  // handleSaveReceipts sends no variance reason.
+  const hasPricedSelection = pricedReceipts.length > 0
+  const varianceIsZero = !hasPricedSelection || centsEqual(selectedTotal, invoiceTotalAmount)
 
   // Tracks which receipt (at most one) is CURRENTLY checked because an
   // accelerator put it there, as opposed to the operator's own click — lets
@@ -229,7 +242,12 @@ function InvoiceReceiptsPanelBody({
     if (!desired && !receiptPreselectAppliedRef.current) {
       const invoiceDateMs = new Date(invoice.invoice_date).getTime()
       const uniqueMatches = openReceipts.filter((r) => {
-        if (!centsEqual(Number(r.total_amount), invoiceTotalAmount)) return false
+        // An amount-less receipt cannot match ON amount. Without this guard
+        // `Number(null)` makes every one of them look like a CA$0.00 receipt,
+        // so a zero-total invoice would pre-tick an arbitrary delivery note.
+        const total = receiptTotal(r)
+        if (total === null) return false
+        if (!centsEqual(total, invoiceTotalAmount)) return false
         const daysBefore = (invoiceDateMs - new Date(r.receipt_date).getTime()) / 86_400_000
         return daysBefore >= 0 && daysBefore <= 14
       })
@@ -410,6 +428,7 @@ function InvoiceReceiptsPanelBody({
 
       {selectedReceiptIds.length > 0 && (
         <div className="flex flex-col gap-1.5">
+          {hasPricedSelection && (
           <div className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs">
             <span className="text-neutral-500">
               Selected {formatAmount(selectedTotal, currency)}
@@ -419,6 +438,7 @@ function InvoiceReceiptsPanelBody({
               Difference {formatAmount(varianceAmount, currency)}
             </span>
           </div>
+          )}
           {/* A non-zero difference asks for an explanation but never blocks
               submit — counter purchases routinely differ from the receipt
               total by freight, discounts, or tax. */}
