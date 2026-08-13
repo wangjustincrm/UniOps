@@ -483,7 +483,7 @@ export default function InvoiceDetailPage() {
                         { id: inv.id, action: 'approve', note: reviewNote || undefined },
                         { onSuccess: () => setReviewNote('') },
                       )}>
-                      Approve Match
+                      Confirm Match
                     </Button>
                     <Button size="sm" variant="secondary" disabled={reviewMutation.isPending || !reviewNote.trim()}
                       onClick={() => reviewMutation.mutate(
