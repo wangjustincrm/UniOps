@@ -223,11 +223,21 @@ export default function PaDetailPage() {
   const paAction = usePaAction(id ?? '')
   const confirmSettlement = useConfirmSettlement(id ?? '')
   const { data: po } = usePo(pa?.po_id ?? '')
-  // Agreement-sourced PAs (Phase 1A) have po_id === null — nothing to filter
-  // invoices by, so skip the fetch rather than send a null po_id.
-  const { data: invoicesData } = useInvoices(pa?.po_id && pa.invoice_ids.length ? { po_id: pa.po_id } : undefined)
-  // The PO can carry multiple PAs/invoices, so narrow to the invoices actually
-  // linked to THIS PA (pa.invoice_ids) instead of showing every PO invoice.
+  // PO 路由按 po_id 取,协议路由按 agreement_id 取。原先只判 pa.po_id,
+  // 协议 PA(po_id 为 null)整个跳过 fetch,Linked Documents 永远显示
+  // "No invoices linked"。agreement_id 过滤后端早就支持(DocumentChainTree 已在用)。
+  //
+  // 刻意**不传** page/page_size:useInvoices 据此分流 —— 传了就走单页
+  // list(),不传才走 listAll()(fetchAllPages 逐页取全)。截断已由 listAll
+  // 解决,再传 page_size 反而把「取全部」降级成「封顶一页」。
+  const invoiceFilters = pa?.invoice_ids.length
+    ? (pa.po_id
+        ? { po_id: pa.po_id }
+        : pa.agreement_id
+          ? { agreement_id: pa.agreement_id }
+          : undefined)
+    : undefined
+  const { data: invoicesData } = useInvoices(invoiceFilters, !!invoiceFilters)
   const linkedInvoices = (invoicesData?.items ?? []).filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
 
