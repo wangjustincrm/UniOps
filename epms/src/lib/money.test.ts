@@ -7,10 +7,14 @@ describe('centsEqual', () => {
   })
 
   it('absorbs sub-cent float noise from summing decimal strings', () => {
-    // 19.99 + 0.01 + 80.00 does not land exactly on 100 in IEEE754
-    const summed = 19.99 + 0.01 + 80.0
-    expect(summed === 100).toBe(false)
-    expect(centsEqual(summed, 100)).toBe(true)
+    // Verified with node before writing: 1234.56 + 0.07 lands on
+    // 1234.6299999999998818, so `===` genuinely fails here.
+    // Do NOT substitute a "nicer" example without running it first —
+    // this assertion originally used 19.99 + 0.01 + 80.00, which sums to
+    // EXACTLY 100 in IEEE754 and therefore tested nothing.
+    const summed = 1234.56 + 0.07
+    expect(summed === 1234.63).toBe(false)
+    expect(centsEqual(summed, 1234.63)).toBe(true)
   })
 
   it('reports a genuine one-cent difference as unequal', () => {
