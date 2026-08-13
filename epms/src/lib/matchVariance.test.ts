@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchMode, buildLineComparisons, feeLines, feeLineTotal } from './matchVariance'
+import { matchMode, buildLineComparisons, feeLines, feeLineTotal, receiptSummary } from './matchVariance'
 import type { ApiInvoice, InvoiceAllocation } from '@/services/invoices'
 import type { ApiPoLineItem } from '@/services/po'
 
@@ -212,5 +212,47 @@ describe('feeLines / feeLineTotal', () => {
     // If this concatenated instead of adding, the total would be the string
     // "50.0012.50" or NaN — assert the real arithmetic result.
     expect(feeLineTotal(invoice)).toBe(62.5)
+  })
+})
+
+describe('receiptSummary', () => {
+  const inv = (total: string, receipts: Array<string | null>) => ({
+    total_amount: total,
+    claimed_receipts: receipts.map((total_amount, i) => ({
+      id: `r${i}`, receipt_ref: `R${i}`, receipt_date: '2026-08-01',
+      receipt_type: total_amount === null ? 'delivery' : 'counter_slip',
+      total_amount, vendor_name: null,
+    })),
+  }) as never
+
+  it('excludes receipts that carry no amount', () => {
+    const s = receiptSummary(inv('120.00', ['120.00', null]))
+    expect(s.pricedCount).toBe(1)
+    expect(s.receiptTotal).toBe(120)
+    expect(s.hasVariance).toBe(false)
+  })
+
+  it('reports zero variance when no priced receipt is claimed', () => {
+    const s = receiptSummary(inv('120.00', [null, null]))
+    expect(s.hasVariance).toBe(false)
+    // 关键:绝不能得出「差异 = 整张发票 120」这种误报
+    expect(s.variance).toBe(0)
+  })
+
+  it('compares against the tax-INCLUSIVE invoice total', () => {
+    // total_amount 是含税总额 —— 与 PO 分摊路线的税前口径**相反**,这是对的
+    const s = receiptSummary(inv('113.00', ['113.00']))
+    expect(s.hasVariance).toBe(false)
+  })
+
+  it('absorbs sub-cent float noise', () => {
+    const s = receiptSummary(inv('100.00', ['19.99', '0.01', '80.00']))
+    expect(s.hasVariance).toBe(false)
+  })
+
+  it('flags a genuine difference', () => {
+    const s = receiptSummary(inv('120.00', ['100.00']))
+    expect(s.hasVariance).toBe(true)
+    expect(s.variance).toBeCloseTo(-20, 2)
   })
 })

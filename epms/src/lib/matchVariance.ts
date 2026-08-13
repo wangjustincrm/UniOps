@@ -9,6 +9,7 @@
 // ApiInvoice). Using ApiInvoice here; functionally identical, naming only.
 import type { ApiInvoice, InvoiceAllocation } from '@/services/invoices'
 import type { ApiPoLineItem } from '@/services/po'
+import { centsEqual } from '@/lib/money'
 
 export type MatchMode = 'by-line' | 'by-amount'
 
@@ -112,4 +113,40 @@ export function feeLines(invoice: ApiInvoice): FeeLine[] {
 
 export function feeLineTotal(invoice: ApiInvoice): number {
   return feeLines(invoice).reduce((sum, l) => sum + l.amount, 0)
+}
+
+// House-account route (Task 8): compares an invoice's claimed receipts to the
+// invoice total. Same convention as InvoiceReceiptsPanel.tsx's existing
+// selection-preview logic (~lines 183-191) — that file is the source of truth
+// this mirrors, not a second implementation of the idea:
+//   ① Tax-INCLUSIVE — compares against invoice.total_amount, NOT invoice.amount.
+//      This is the OPPOSITE of the PO route's pre-tax basis above, and that
+//      asymmetry is correct: counter slips are tax-inclusive.
+//   ② Only receipts that carry an amount participate — delivery notes and
+//      service sign-offs (total_amount === null) are legitimately unpriced
+//      and must not be treated as zero.
+//   ③ Zero priced receipts claimed at all -> variance is 0 by definition, not
+//      "the whole invoice". Otherwise a delivery-note-only invoice would
+//      scream a full-invoice discrepancy that nobody created.
+//   ④ centsEqual, never `!== 0` — plain float subtraction can land a hair off
+//      zero when summing several receipt totals.
+export function receiptSummary(invoice: ApiInvoice): {
+  pricedCount: number
+  receiptTotal: number
+  variance: number
+  hasVariance: boolean
+} {
+  const priced = (invoice.claimed_receipts ?? []).filter(
+    (r) => r.total_amount !== null && r.total_amount !== undefined,
+  )
+  const receiptTotal = priced.reduce((sum, r) => sum + Number(r.total_amount), 0)
+  const invoiceTotal = Number(invoice.total_amount)
+  const hasPriced = priced.length > 0
+
+  return {
+    pricedCount: priced.length,
+    receiptTotal,
+    variance: hasPriced ? receiptTotal - invoiceTotal : 0,
+    hasVariance: hasPriced && !centsEqual(receiptTotal, invoiceTotal),
+  }
 }

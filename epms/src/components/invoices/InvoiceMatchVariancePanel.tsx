@@ -2,9 +2,10 @@ import { useState, type JSX } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { centsEqual } from '@/lib/money'
-import { matchMode, buildLineComparisons, feeLines, feeLineTotal } from '@/lib/matchVariance'
+import { matchMode, buildLineComparisons, feeLines, feeLineTotal, receiptSummary } from '@/lib/matchVariance'
+import { RECEIPT_TYPE_LABELS, type ReceiptType } from '@/services/agreementReceipts'
 import type { ApiInvoice } from '@/services/invoices'
 import type { ApiPoLineItem } from '@/services/po'
 
@@ -70,7 +71,108 @@ function FeeLinesSection({ invoice }: { invoice: ApiInvoice }) {
   )
 }
 
-export function InvoiceMatchVariancePanel({
+// House-account route (Task 8): compares the invoice to the receipts claimed
+// against it, not to a PO — an agreement carries no PO/GR at all. The
+// convention this must follow (tax-INCLUSIVE total_amount, unpriced receipts
+// excluded, zero variance when nothing priced is claimed) is not invented
+// here — it is InvoiceReceiptsPanel.tsx's existing selection-preview logic
+// (~lines 183-191), lifted into matchVariance.ts's receiptSummary() so both
+// call sites share one implementation.
+//
+// Renders NOTHING when there is no variance: unlike the PO-route panel
+// above (which always shows a success-toned "0 variance" row once matched),
+// this panel exists purely to flag something a manager needs to look at —
+// silence here is the normal, healthy state, not a state worth confirming.
+function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Element | null {
+  const [expanded, setExpanded] = useState(false)
+  const summary = receiptSummary(invoice)
+
+  if (!summary.hasVariance) return null
+
+  const receipts = invoice.claimed_receipts ?? []
+
+  return (
+    <div className="rounded-xl border overflow-hidden border-danger-200 bg-danger-50">
+      <div className="w-full flex items-center gap-2 pl-4 pr-2 py-2">
+        <Link
+          to={`/invoices/${invoice.id}`}
+          className="font-mono text-xs text-primary-700 hover:underline shrink-0"
+        >
+          {invoice.internal_ref}
+        </Link>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex-1 justify-start min-w-0 h-auto py-1.5 px-2 normal-case"
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Collapse receipt variance detail' : 'Expand receipt variance detail'}
+        >
+          {expanded
+            ? <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
+            : <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />}
+          <span className="text-sm font-semibold truncate text-danger-700">
+            · Receipts differ from invoice by {summary.variance >= 0 ? '+' : ''}{formatAmount(summary.variance, invoice.currency)}
+          </span>
+        </Button>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-inherit px-4 py-4 bg-white flex flex-col gap-4">
+          <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <table className="w-full text-sm min-w-[480px]">
+              <thead>
+                <tr className="border-b border-neutral-200 bg-neutral-50">
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Reference</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Date</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Type</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {receipts.map((r) => (
+                  <tr key={r.id} className="border-b border-neutral-100 last:border-0">
+                    <td className="px-3 py-2.5 font-mono text-xs text-neutral-800">{r.receipt_ref ?? '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-neutral-600">{formatDate(r.receipt_date)}</td>
+                    <td className="px-3 py-2.5 text-xs text-neutral-600">
+                      {RECEIPT_TYPE_LABELS[r.receipt_type as ReceiptType] ?? r.receipt_type}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-mono text-xs">
+                      {r.total_amount === null
+                        // Delivery / service evidence carries no amount — shown, but
+                        // visibly excluded from the total below (matches
+                        // InvoiceReceiptsPanel's candidate-row convention).
+                        ? <span className="text-neutral-400 italic">no amount</span>
+                        : formatAmount(Number(r.total_amount), invoice.currency)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={3} className="px-3 py-2 text-xs font-medium text-neutral-600">
+                    Priced receipts total ({summary.pricedCount} of {receipts.length})
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs font-medium text-neutral-600">
+                    {formatAmount(summary.receiptTotal, invoice.currency)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// PO route (Task 7): compares the invoice against its linked PO's allocation
+// rows. Extracted into its own component (rather than an inline branch of
+// the exported shell below) so its hooks are never called conditionally —
+// the shell picks exactly one of PoRouteVariancePanel / HouseAccountReceiptPanel
+// / nothing per invoice, and each owns its own state.
+function PoRouteVariancePanel({
   invoice, poLines, tolerancePct,
 }: {
   invoice: ApiInvoice
@@ -141,13 +243,25 @@ export function InvoiceMatchVariancePanel({
         <div className="border-t border-inherit px-4 py-4 bg-white flex flex-col gap-4">
           {mode === 'by-line' ? (
             <>
+              {/* Column label + caption (review finding, Task 8): this figure
+                  comes straight off allocation.variance, computed server-side
+                  (epms-api/app/crud/invoice.py:1050-1056) by summing
+                  InvoicePoAllocation.allocated_amount for the PO LINE — with
+                  no invoice_id filter. It is cumulative across every invoice
+                  ever matched against that line, not this invoice's share of
+                  it. The number is correct; only "Variance" as a bare label
+                  would misread as "this invoice is short/over by X" when
+                  partial invoicing across several invoices is a normal,
+                  supported case here. Do not recompute a per-invoice figure —
+                  there is no per-invoice reference in the data to compute it
+                  from; label honestly instead. */}
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[640px]">
                   <thead>
                     <tr className="border-b border-neutral-200 bg-neutral-50">
                       <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Invoice Line</th>
                       <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO Line</th>
-                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Variance</th>
+                      <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">PO line variance (all invoices)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -182,6 +296,9 @@ export function InvoiceMatchVariancePanel({
                   </tbody>
                 </table>
               </div>
+              <p className="text-[11px] text-neutral-400 italic">
+                PO line variance figures are cumulative across every invoice matched to that PO line, not this invoice's share alone.
+              </p>
               {hasFeeLines && <FeeLinesSection invoice={invoice} />}
             </>
           ) : (
@@ -258,4 +375,30 @@ export function InvoiceMatchVariancePanel({
       )}
     </div>
   )
+}
+
+// Route dispatcher. Deliberately has no hooks of its own and no `useState` —
+// each branch below is a self-contained component, so which one mounts for a
+// given invoice can change (a re-match, or simply a different invoice in the
+// linkedInvoices list PaDetailPage maps over) without violating the rules of
+// hooks.
+export function InvoiceMatchVariancePanel({
+  invoice, poLines, tolerancePct,
+}: {
+  invoice: ApiInvoice
+  poLines: ApiPoLineItem[] | undefined
+  tolerancePct: number
+}): JSX.Element | null {
+  // house_account has no PO/GR — it compares against claimed receipts
+  // instead (Task 8). recurring/milestone have neither a PO nor a receipt
+  // comparison worth surfacing here yet — render nothing rather than
+  // silently reusing PO-route logic against agreement data it was never
+  // built to read.
+  if (invoice.agreement_type === 'house_account') {
+    return <HouseAccountReceiptPanel invoice={invoice} />
+  }
+  if (invoice.agreement_type === 'recurring' || invoice.agreement_type === 'milestone') {
+    return null
+  }
+  return <PoRouteVariancePanel invoice={invoice} poLines={poLines} tolerancePct={tolerancePct} />
 }

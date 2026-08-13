@@ -646,13 +646,16 @@ export default function PaDetailPage() {
                 </div>
               </div>
 
-              {/* Invoice-to-PO variance — per-invoice, collapsed to a total,
-                  expandable to line detail. AP will not personally absorb a
-                  payment difference; this makes it visible to the manager who
-                  already approves the PA instead of adding an approval step.
-                  PO-route only (pa.po_id set) — the agreement route is a
-                  separate task; this mount point is the seam for it. */}
-              {pa.po_id && linkedInvoices.length > 0 && (
+              {/* Invoice-to-PO / invoice-to-receipts variance — per-invoice,
+                  collapsed to a total, expandable to line/receipt detail. AP
+                  will not personally absorb a payment difference; this makes
+                  it visible to the manager who already approves the PA
+                  instead of adding an approval step. Covers both the PO
+                  route (pa.po_id) and the house-account agreement route
+                  (pa.agreement_id, Task 8) — InvoiceMatchVariancePanel itself
+                  decides which comparison applies per invoice's
+                  agreement_type, and whether it has anything to show at all. */}
+              {(pa.po_id || pa.agreement_id) && linkedInvoices.length > 0 && (
                 <div className="flex flex-col gap-3">
                   {linkedInvoices.map((inv) => (
                     <InvoiceMatchVariancePanel
