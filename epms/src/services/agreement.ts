@@ -75,6 +75,8 @@ export interface ApiAgreement {
   recurring_type?: RecurringType | null
   expected_invoice_day?: number | null
   anchor_month?: number | null
+  /** ag08 — generate the schedule from here instead of valid_from. */
+  schedule_start_date?: string | null
   expected_amount_per_period?: string | null
   tolerance_pct?: string | null
   overdue_after_days?: number | null
@@ -108,6 +110,7 @@ export interface CreateAgreementBody {
   recurring_type?: RecurringType
   expected_invoice_day?: number
   anchor_month?: number
+  schedule_start_date?: string
   expected_amount_per_period?: number
   tolerance_pct?: number
   overdue_after_days?: number
@@ -139,6 +142,8 @@ export interface UpdateAgreementBody {
   recurring_type?: RecurringType | null
   expected_invoice_day?: number | null
   anchor_month?: number | null
+  /** ag08 — generate the schedule from here instead of valid_from. */
+  schedule_start_date?: string | null
   expected_amount_per_period?: number | null
   tolerance_pct?: number | null
   overdue_after_days?: number | null

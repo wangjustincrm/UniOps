@@ -173,6 +173,7 @@ export default function AgreementCreatePage() {
         body.recurring_type = recurringValue.recurringType || undefined
         body.expected_invoice_day = recurringValue.expectedInvoiceDay ? Number(recurringValue.expectedInvoiceDay) : undefined
         body.anchor_month = recurringValue.anchorMonth ? Number(recurringValue.anchorMonth) : undefined
+        body.schedule_start_date = recurringValue.scheduleStartDate || undefined
         body.expected_amount_per_period = recurringValue.amountPerPeriod ? Number(recurringValue.amountPerPeriod) : undefined
         body.tolerance_pct = recurringValue.tolerancePct ? Number(recurringValue.tolerancePct) : undefined
         body.overdue_after_days = recurringValue.overdueAfterDays ? Number(recurringValue.overdueAfterDays) : undefined

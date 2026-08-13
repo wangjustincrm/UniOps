@@ -144,6 +144,7 @@ export default function AgreementEditPage() {
       recurringType: agreement.recurring_type ?? '',
       expectedInvoiceDay: agreement.expected_invoice_day != null ? String(agreement.expected_invoice_day) : '',
       anchorMonth: agreement.anchor_month != null ? String(agreement.anchor_month) : '',
+      scheduleStartDate: agreement.schedule_start_date ?? '',
       amountPerPeriod: agreement.expected_amount_per_period ?? '',
       tolerancePct: agreement.tolerance_pct ?? '',
       overdueAfterDays: agreement.overdue_after_days != null ? String(agreement.overdue_after_days) : '7',
@@ -294,6 +295,7 @@ export default function AgreementEditPage() {
         body.recurring_type = recurringValue.recurringType || null
         body.expected_invoice_day = recurringValue.expectedInvoiceDay ? Number(recurringValue.expectedInvoiceDay) : null
         body.anchor_month = recurringValue.anchorMonth ? Number(recurringValue.anchorMonth) : null
+        body.schedule_start_date = recurringValue.scheduleStartDate || null
         body.expected_amount_per_period = recurringValue.amountPerPeriod ? Number(recurringValue.amountPerPeriod) : null
         body.tolerance_pct = recurringValue.tolerancePct ? Number(recurringValue.tolerancePct) : null
         body.overdue_after_days = recurringValue.overdueAfterDays ? Number(recurringValue.overdueAfterDays) : null

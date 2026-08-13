@@ -38,6 +38,7 @@ def validate_recurrence(
     overdue_after_days: int | None,
     valid_from: date,
     valid_to: date,
+    schedule_start_date: date | None = None,
 ) -> None:
     """The recurrence coherence rule. Factored out of AgreementCreate's schema
     validator so crud.agreement.update() can run the SAME check against the
@@ -65,20 +66,40 @@ def validate_recurrence(
                 f"anchor_month is required for a {recurring_type} cycle — real "
                 "billing cycles often do not start in January, and the contract start "
                 "date is not a reliable proxy for the billing anchor")
+        # 起始期必须落在有效期内。晚于 valid_to 会生成一份空排期 —— 协议看着
+        # 是 recurring,却一行期次都没有,任何发票都认领不到、PA 那道"未链接
+        # 期次"闸门永远过不去,而且到那时协议已 active、字段不可再改。
+        if schedule_start_date is not None:
+            if schedule_start_date > valid_to:
+                raise ValueError(
+                    "Schedule start date must fall inside the validity window — "
+                    f"it is after valid_to ({valid_to}), which would generate a "
+                    "recurring agreement with no billing periods at all")
+            if schedule_start_date < valid_from:
+                raise ValueError(
+                    f"Schedule start date cannot be before valid_from ({valid_from})")
         # 生成不出来的排期,建档/改档时就该挡住,而不是等审批通过那一刻才炸。
         from app.services.agreement_schedule import TooManyPeriods, build_period_rows
         try:
-            build_period_rows(
+            rows = build_period_rows(
                 recurring_type=recurring_type, valid_from=valid_from,
                 valid_to=valid_to, expected_invoice_day=expected_invoice_day,
-                anchor_month=anchor_month)
+                anchor_month=anchor_month, schedule_start_date=schedule_start_date)
         except TooManyPeriods as exc:
             raise ValueError(str(exc)) from exc
+        # 同一个理由的另一半:窗口本身合法,但起始期把最后一期也挤掉了
+        # (比如月结、起始期设在最后一期到票日之后的那几天)。
+        if not rows:
+            raise ValueError(
+                "These recurrence settings generate no billing periods at all — "
+                "check the schedule start date against the expected invoice day "
+                "and the validity window")
     else:
         bad = [n for n, v in (
             ("recurring_type", recurring_type),
             ("expected_invoice_day", expected_invoice_day),
             ("anchor_month", anchor_month),
+            ("schedule_start_date", schedule_start_date),
             ("expected_amount_per_period", expected_amount_per_period),
             ("tolerance_pct", tolerance_pct),
             ("overdue_after_days", overdue_after_days),
@@ -160,6 +181,7 @@ class AgreementCreate(BaseModel):
     recurring_type: str | None = None
     expected_invoice_day: int | None = Field(default=None, ge=1, le=31)
     anchor_month: int | None = Field(default=None, ge=1, le=12)
+    schedule_start_date: date | None = None
     expected_amount_per_period: Decimal | None = Field(default=None, ge=0)
     tolerance_pct: Decimal | None = Field(default=None, ge=0, le=100)
     overdue_after_days: int | None = Field(default=None, ge=0, le=365)
@@ -177,6 +199,7 @@ class AgreementCreate(BaseModel):
             recurring_type=self.recurring_type,
             expected_invoice_day=self.expected_invoice_day,
             anchor_month=self.anchor_month,
+            schedule_start_date=self.schedule_start_date,
             expected_amount_per_period=self.expected_amount_per_period,
             tolerance_pct=self.tolerance_pct,
             overdue_after_days=self.overdue_after_days,
@@ -215,6 +238,7 @@ class AgreementUpdate(BaseModel):
     recurring_type: str | None = None
     expected_invoice_day: int | None = Field(default=None, ge=1, le=31)
     anchor_month: int | None = Field(default=None, ge=1, le=12)
+    schedule_start_date: date | None = None
     expected_amount_per_period: Decimal | None = Field(default=None, ge=0)
     tolerance_pct: Decimal | None = Field(default=None, ge=0, le=100)
     overdue_after_days: int | None = Field(default=None, ge=0, le=365)
@@ -252,6 +276,7 @@ class AgreementResponse(BaseModel):
     recurring_type: str | None
     expected_invoice_day: int | None
     anchor_month: int | None
+    schedule_start_date: date | None
     expected_amount_per_period: Decimal | None
     tolerance_pct: Decimal | None
     overdue_after_days: int | None

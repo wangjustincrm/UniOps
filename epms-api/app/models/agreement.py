@@ -64,6 +64,12 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
     # 1..12,仅 quarterly / yearly 使用。**不从 valid_from 推导** —— 很多季度账单
     # 按合同起始月走(起始月 2 月 → 2/5/8/11),而签订日未必等于账单周期起点。
     anchor_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 排期起始期(ag08):排期从这一天起生成,而不是从 valid_from。协议往往已经跑了
+    # 一两年才进系统 —— 那些早期期次的票是在系统外付掉的,永远不会到这里来,却会
+    # 一直挂 pending、被逾期扫描翻成 overdue、每天给负责人发催票信。
+    # 期次网格本身仍按 valid_from 推,标签与季度/年度锚点保持合同的口径;这里只
+    # 决定从哪一行开始留。NULL = 从 valid_from 起,即本列出现之前的行为。
+    schedule_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     expected_amount_per_period: Mapped[Decimal | None] = mapped_column(
         Numeric(15, 2), nullable=True)
     # 百分数:5.00 = ±5%

@@ -242,3 +242,72 @@ async def test_get_schedule_endpoint_returns_rows_and_404s_for_unknown_agreement
 
     missing = await admin_client.get(f"{AGR_URL}/{uuid.uuid4()}/schedule")
     assert missing.status_code == 404
+
+
+# ── ag08: schedule start date ────────────────────────────────────────────────
+# An agreement is routinely entered into the system a year or two into its
+# life. Generating from valid_from produces rows for invoices that were paid
+# outside this system and will never arrive here: they sit `pending`, the
+# overdue sweep flips them, and the owner is emailed about them daily.
+
+async def test_schedule_starts_at_the_start_date_not_valid_from(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        agr = await _seed(
+            db, valid_from=date(2025, 1, 1), valid_to=date(2025, 12, 31),
+            recurring_type="monthly", expected_invoice_day=5,
+            schedule_start_date=date(2025, 10, 1))
+        n = await sched_crud.ensure_period_rows(db, agr)
+        rows = (await db.execute(
+            select(AgreementPaymentSchedule)
+            .where(AgreementPaymentSchedule.agreement_id == agr.id)
+            .order_by(AgreementPaymentSchedule.sequence))).scalars().all()
+        assert n == 3
+        assert [r.period_label for r in rows] == ["2025-10", "2025-11", "2025-12"]
+        # Renumbered from 1: sequence is the position in the schedule, not the
+        # contract's period count.
+        assert [r.sequence for r in rows] == [1, 2, 3]
+        await db.commit()
+
+
+async def test_the_period_grid_still_follows_the_contract_not_the_start_date(test_engine):
+    """The labels and the expected day come from valid_from's grid — the start
+    date only decides where the kept rows begin. A quarterly agreement anchored
+    on February still bills Feb/May/Aug/Nov after truncation; it does not
+    re-anchor onto whatever month the start date lands in."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        agr = await _seed(
+            db, valid_from=date(2025, 1, 1), valid_to=date(2025, 12, 31),
+            recurring_type="quarterly", expected_invoice_day=10, anchor_month=2,
+            schedule_start_date=date(2025, 6, 1))
+        await sched_crud.ensure_period_rows(db, agr)
+        rows = (await db.execute(
+            select(AgreementPaymentSchedule)
+            .where(AgreementPaymentSchedule.agreement_id == agr.id)
+            .order_by(AgreementPaymentSchedule.sequence))).scalars().all()
+        assert [r.period_label for r in rows] == ["2025-08", "2025-11"]
+        assert [r.expected_date for r in rows] == [date(2025, 8, 10), date(2025, 11, 10)]
+        await db.commit()
+
+
+async def test_a_start_date_before_valid_from_does_not_widen_the_window(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        agr = await _seed(
+            db, valid_from=date(2025, 6, 1), valid_to=date(2025, 8, 31),
+            recurring_type="monthly", expected_invoice_day=5,
+            schedule_start_date=date(2024, 1, 1))
+        n = await sched_crud.ensure_period_rows(db, agr)
+        assert n == 3  # Jun/Jul/Aug — unchanged by the earlier start date
+        await db.commit()
+
+
+async def test_no_start_date_is_todays_behaviour(test_engine):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        agr = await _seed(
+            db, valid_from=date(2025, 1, 1), valid_to=date(2025, 3, 31),
+            recurring_type="monthly", expected_invoice_day=5)
+        assert await sched_crud.ensure_period_rows(db, agr) == 3
+        await db.commit()

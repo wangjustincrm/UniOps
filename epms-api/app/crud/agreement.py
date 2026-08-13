@@ -140,6 +140,7 @@ async def update(
         overdue_after_days=agr.overdue_after_days,
         valid_from=agr.valid_from,
         valid_to=agr.valid_to,
+        schedule_start_date=agr.schedule_start_date,
     )
 
     # None = leave the stage rows alone; [] = clear them. Only a body that

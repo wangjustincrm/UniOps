@@ -6,6 +6,7 @@ import type { RecurringType } from '@/services/agreement'
 export interface RecurringFieldsValue {
   recurringType: RecurringType | ''
   expectedInvoiceDay: string
+  scheduleStartDate: string
   anchorMonth: string
   amountPerPeriod: string
   tolerancePct: string
@@ -17,6 +18,7 @@ export interface RecurringFieldsValue {
 export const EMPTY_RECURRING_FIELDS: RecurringFieldsValue = {
   recurringType: '',
   expectedInvoiceDay: '',
+  scheduleStartDate: '',
   anchorMonth: '',
   amountPerPeriod: '',
   tolerancePct: '',
@@ -132,6 +134,26 @@ export function RecurringFields(props: {
           )}
         </div>
       </div>
+
+      {/* Schedule start (ag08). An agreement is routinely entered into the
+          system a year or two into its life: generating from Valid From then
+          produces rows for invoices that were paid outside this system and
+          will never arrive here — they sit unclaimed, the overdue sweep flips
+          them, and the owner is emailed about them daily. */}
+      <FormField
+        label="Generate schedule from"
+        htmlFor="scheduleStartDate"
+        hint="Leave blank to start at Valid From. Set it when the agreement has been running outside the system — earlier periods are simply not created. The cycle itself is unaffected: labels and anchors still follow the contract."
+      >
+        <Input
+          id="scheduleStartDate"
+          type="date"
+          min={validFrom || undefined}
+          disabled={disabled}
+          value={value.scheduleStartDate}
+          onChange={(e) => set({ scheduleStartDate: e.target.value })}
+        />
+      </FormField>
 
       {isAnchored && (
         <FormField

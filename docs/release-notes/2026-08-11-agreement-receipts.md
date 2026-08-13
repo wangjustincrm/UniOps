@@ -158,7 +158,7 @@ them one at a time from the detail page.
 
 | Service | Revision |
 |---|---|
-| epms-api | `ag04_agreement_receipts` → `ag05_invoice_agreement_type` → `ag06_receipt_vendor` → `ag07_receipt_vendor_id` |
+| epms-api | `ag04_agreement_receipts` → `ag05_invoice_agreement_type` → `ag06_receipt_vendor` → `ag07_receipt_vendor_id` → `ag08_agreement_schedule_start` |
 | identity-api | `0007_receipt_write_perm` |
 
 ★ **There IS a deploy-order constraint, unlike the superseded release.**
@@ -174,6 +174,9 @@ pickup-slip migrations, which were rewritten rather than stacked — production
 sees one migration creating the final table, not a create-then-rename dance.
 `ag06` and `ag07` add the receipt's `vendor_name` and `vendor_id`; both are
 nullable and neither is backfilled, so they impose no ordering of their own.
+`ag08` adds `purchase_agreements.schedule_start_date`, also nullable and also
+not backfilled — NULL means "generate from valid_from", which is exactly the
+behaviour that column did not exist for.
 
 ⚠️ **Check before deploying:** any database whose `alembic_version` still reads
 `ag04_pickup_slips` or `ag05_slip_ref_uq_active`, or whose

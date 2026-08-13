@@ -93,11 +93,18 @@ def build_period_rows(
     valid_to: date,
     expected_invoice_day: int,
     anchor_month: int | None,
+    schedule_start_date: date | None = None,
 ) -> list[PeriodRow]:
     """按协议的周期参数产出整个有效期的排期行。
 
     边界规则(设计文档 §4.1):
       - 首期 expected_date < valid_from → 跳过(那张票在生效前就该到了)
+      - schedule_start_date(ag08,可选)→ 到票日早于它的期一律不生成。协议
+        中途上线时,合同前段的票是在系统外付掉的,给它们建行只会换来一串
+        永远认领不掉的 pending 和每天一封催票信。**网格仍按 valid_from 推**,
+        所以标签与季度/年度锚点保持合同口径,这里只决定从哪一行开始留;
+        留下来的行重新从 1 编号(sequence 是排期内的序号,不是合同期数)。
+        早于 valid_from 的值不会把范围反向扩大 —— 取两者中较晚的那个。
       - 期起始日 <= valid_to 的期都保留,即使 expected_date 晚于 valid_to
         (月结票总在期末之后才到,与 grace_days 的意图一致)
       - 超过 MAX_PERIOD_ROWS 行 → TooManyPeriods
@@ -125,8 +132,9 @@ def build_period_rows(
             for y, m in _month_starts(valid_from, valid_to, step, anchor)
         ]
 
-    # 首期跳过:只丢开头连续的、到票日早于生效日的期。
-    kept = [r for r in rows if r.expected_date >= valid_from]
+    # 首期跳过:只丢开头连续的、到票日早于起始日的期。
+    start = max(valid_from, schedule_start_date) if schedule_start_date else valid_from
+    kept = [r for r in rows if r.expected_date >= start]
     if len(kept) > MAX_PERIOD_ROWS:
         raise TooManyPeriods(
             f"This validity window would generate more than {MAX_PERIOD_ROWS} "
