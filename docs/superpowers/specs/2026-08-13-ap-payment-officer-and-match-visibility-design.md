@@ -134,7 +134,8 @@ W1 与 W2/W3/W4 之间没有代码依赖（前者是角色与付款授权，后�
 | `app/crud/current_step.py` | 角色显示名映射加入 |
 | `app/crud/pa.py:413` | `_create_process_pa_task` 的 `assigned_role` → `"payment_officer"` |
 | `app/crud/dashboard.py` | 新增 `build_payment_officer`（以 `build_ap_clerk` 为蓝本，仅保留付款视图）+ 路由分支 |
-| `app/schemas/user.py` | 角色字面量集合加入 |
+
+**`app/schemas/user.py` 的 `VALID_ROLES` 不加**（原稿写错，已更正）：该集合校验的是**主登录角色**，而 `payment_officer` 是附加角色。既有的 `erp_pa_officer` 正是如此 —— 在 `BUILT_IN_ROLES`（授权矩阵）里，但不在 `VALID_ROLES` 里。加进去会让它错误地可被设为某人的主角色。
 
 **注意**：`app/api/v1/invoices.py:49` 的 `_AP_ROLES` **不加** `payment_officer` —— 那是发票匹配授权，与付款职责无关；加入会反向扩权，与 SoD 目标冲突。
 
