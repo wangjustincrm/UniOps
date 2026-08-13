@@ -271,10 +271,49 @@ export default function AgreementDetailPage() {
   )
   const invoices = invoicesData?.items ?? []
   const legacySettlementCount = invoices.filter((inv) => inv.legacy_settlement).length
-  // "Matched-but-unpaid" — same filter PaCreatePage's agreement mode uses to
-  // populate its invoice picker. If this is 0, the create page would load to
-  // an empty Step 2 with nothing to select, so gate the button on it here.
-  const payableInvoiceCount = invoices.filter((inv) => inv.status === 'matched').length
+  // house_account agreements have no schedule rows at all (epms-api's
+  // ensure_period_rows returns 0 for non-recurring types, and milestone/period
+  // rows are never generated for house_account) — skip the fetch entirely
+  // rather than asking for a query that will always come back empty.
+  const { data: scheduleData } = useAgreementSchedule(
+    agreement && agreement.agreement_type !== 'house_account' ? agreement.id : ''
+  )
+  const scheduleRows = scheduleData?.items ?? []
+
+  // Invoices this agreement could actually be paid for — the SAME conditions
+  // POST /pa enforces (epms-api api/v1/pa.py::_assert_agreement_invoices), so
+  // the button is never offered for a click that can only end in a 422.
+  //
+  // "status is matched" was the old test, and it is only the first half. A
+  // recurring invoice also has to have claimed a period AND that period has to
+  // be confirmed; a house-account invoice has to carry receipts or an explicit
+  // no-evidence settlement. Offering Create PA before the department has
+  // clicked Confirm sent the operator through the whole create form to be
+  // refused at the end by "Service has not been confirmed for 2026-08".
+  const matchedInvoices = invoices.filter((inv) => inv.status === 'matched')
+  const confirmedScheduleIds = new Set(
+    scheduleRows.filter((r) => r.accepted_at !== null).map((r) => r.id),
+  )
+  const payableInvoices = matchedInvoices.filter((inv) => {
+    if (agreement?.agreement_type === 'recurring') {
+      return !!inv.schedule_id && confirmedScheduleIds.has(inv.schedule_id)
+    }
+    if (agreement?.agreement_type === 'house_account') {
+      return (inv.receipt_ids?.length ?? 0) > 0 || !!inv.legacy_settlement
+    }
+    return true   // milestone has no acceptance gate this phase
+  })
+  const payableInvoiceCount = payableInvoices.length
+  // Why the button is off, when there IS something matched but nothing payable.
+  // A vanished button teaches nothing; this is what turns "the button is gone"
+  // into "somebody needs to press Confirm".
+  const blockedReason =
+    payableInvoiceCount > 0 || matchedInvoices.length === 0 ? null
+    : agreement?.agreement_type === 'recurring'
+      ? 'An invoice is matched, but the period it claims has not been confirmed yet — use Confirm in the Payment Schedule below.'
+      : agreement?.agreement_type === 'house_account'
+        ? 'An invoice is matched, but it carries no receipts and has not been settled without receipt evidence — handle that on the invoice, under 3-Way Match.'
+        : null
 
   const perms = useRolePermissions().data?.permissions
   const canWrite = user?.role === 'system_admin' || !!perms?.['epms.agreement.write']
@@ -321,14 +360,6 @@ export default function AgreementDetailPage() {
   const canApprove =
     !!user && !!agreement && APPROVABLE_STATUSES.includes(agreement.status) && hasApproveTask
 
-  // house_account agreements have no schedule rows at all (epms-api's
-  // ensure_period_rows returns 0 for non-recurring types, and milestone/period
-  // rows are never generated for house_account) — skip the fetch entirely
-  // rather than asking for a query that will always come back empty.
-  const { data: scheduleData } = useAgreementSchedule(
-    agreement && agreement.agreement_type !== 'house_account' ? agreement.id : ''
-  )
-  const scheduleRows = scheduleData?.items ?? []
   const periodRows = scheduleRows.filter((r) => r.schedule_type === 'period')
   const milestoneRows = scheduleRows.filter((r) => r.schedule_type === 'milestone')
   const periodReceived = periodRows.filter((r) => r.status === 'received').length
@@ -477,6 +508,17 @@ export default function AgreementDetailPage() {
                   Create PA
                 </Button>
               </Link>
+            )}
+            {/* Shown disabled rather than hidden when something is matched but
+                not yet payable — the tooltip is the only place that says what
+                is missing. */}
+            {!canCreatePa && canCreatePaPerm && blockedReason && (
+              <span title={blockedReason}>
+                <Button size="sm" disabled>
+                  <CreditCard className="h-3.5 w-3.5" />
+                  Create PA
+                </Button>
+              </span>
             )}
           </div>
         </div>
