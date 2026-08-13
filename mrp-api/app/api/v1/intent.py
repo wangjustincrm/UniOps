@@ -27,6 +27,22 @@ ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
 WriteDep = Annotated[dict, Depends(require_permission("mrp.demand.write"))]
 
 
+def _sub_to_uuid(payload: dict) -> uuid.UUID | None:
+    """Same never-raises idiom `series.py`/`mps.py`/`consignment.py`/
+    `forecast.py` use to turn the JWT `sub` claim into an actor id. A missing
+    or malformed `sub` degrades to an unattributed (None) write — both
+    columns it feeds here (`created_by`, `bound_by`) are nullable, and
+    `bind_intent_to_material` already types `actor_id` as `uuid.UUID | None`
+    — instead of raising ValueError out of the handler as a 500."""
+    sub = payload.get("sub")
+    if not sub:
+        return None
+    try:
+        return uuid.UUID(sub)
+    except ValueError:
+        return None
+
+
 class IntentProductCreate(BaseModel):
     name: str
     note: str | None = None
@@ -66,7 +82,7 @@ async def list_intent_products(
 async def create_intent_product(body: IntentProductCreate, db: SessionDep, payload: WriteDep):
     row = MrpIntentProduct(
         code=generate_intent_code(), name=body.name, note=body.note,
-        status="active", created_by=uuid.UUID(payload["sub"]),
+        status="active", created_by=_sub_to_uuid(payload),
     )
     db.add(row)
     await db.commit()
@@ -95,7 +111,7 @@ async def bind_intent_product(
     if row.status != "active":
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"intent product is {row.status}, only active ones can be bound")
-    actor_id = uuid.UUID(payload["sub"])
+    actor_id = _sub_to_uuid(payload)
     # Once per request, same never-raises-degrades-to-None idiom
     # app/api/v1/series.py's PUT /series/cells uses for its own change-log
     # rows — a name lookup must never break the bind. Blocking sync

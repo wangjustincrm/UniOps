@@ -18,7 +18,11 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 class MrpIntentProduct(Base, UUIDPrimaryKey, TimestampMixin):
     __tablename__ = "mrp_intent_products"
 
-    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    # No `index=True`: the UNIQUE constraint already carries its own index,
+    # and the migration (mrp09) deliberately creates only that constraint.
+    # Declaring index=True here as well made `alembic revision --autogenerate`
+    # perpetually propose a redundant `ix_mrp_intent_products_code`.
+    code: Mapped[str] = mapped_column(String(50), unique=True)
     name: Mapped[str] = mapped_column(String(200))
     note: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="active", server_default="active")
