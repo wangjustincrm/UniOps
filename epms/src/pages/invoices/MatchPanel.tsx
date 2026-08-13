@@ -68,8 +68,8 @@ function withinPeriodTolerance(amount: number, expected: number, tolerancePct: n
   return amount >= expected - span && amount <= expected + span
 }
 
-// recurring — preview of the period the server will FIFO-claim on submit (no
-// date-window guessing on either side, see claim_next_period's comment).
+// recurring — preview of the period the server will claim on submit: the one
+// whose expected date is nearest this invoice's date (see claim_next_period).
 function RecurringPeriodPreview({
   loading, error, row, invoiceTotal, currency,
 }: { loading: boolean; error: boolean; row: ApiScheduleRow | undefined; invoiceTotal: number; currency: string }) {
@@ -87,7 +87,7 @@ function RecurringPeriodPreview({
   // SAME copy as the genuinely-empty case) even though periods may well
   // exist. Told apart so the operator knows it's a permission gap, not an
   // empty schedule — and submit is never disabled by it (see
-  // canSubmitAgreement): the server still FIFO-claims or routes to review
+  // canSubmitAgreement): the server still claims a period or routes to review
   // exactly as if nothing had been previewed at all.
   if (error) {
     return (
@@ -258,13 +258,38 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
         .filter((r) => r.schedule_type === 'period' && (r.status === 'pending' || r.status === 'overdue'))
         .sort((a, b) => a.sequence - b.sequence)
     : []
-  const nextPeriodRow = unclaimedPeriodRows[0]
+  // Which period the server will claim: the one whose EXPECTED DATE sits
+  // closest to this invoice's date — mirroring crud/agreement_schedule.py's
+  // claim_next_period exactly, because a preview that disagrees with the
+  // server is worse than no preview.
+  //
+  // This used to be `unclaimedPeriodRows[0]` (FIFO by sequence), and the
+  // mismatch it produced was not theoretical: an agreement onboarded a year
+  // into its life has its schedule generated from the CONTRACT's first
+  // period, so FIFO always proposed a historical period no invoice will ever
+  // fill — every match then failed tolerance and offered the manual picker,
+  // turning a genuine control into noise.
+  //
+  // Dates are compared as UTC-midnight timestamps: expected_date is a plain
+  // date string (YYYY-MM-DD) and new Date() parses that as UTC, while
+  // invoice_date may carry a time — normalising both to the date part keeps
+  // the comparison in whole days and free of timezone drift.
+  const invoiceDayMs = Date.parse(`${String(inv.invoice_date).slice(0, 10)}T00:00:00Z`)
+  const nextPeriodRow = unclaimedPeriodRows.length === 0 ? undefined : unclaimedPeriodRows.reduce((best, r) => {
+    const distance = (row: ApiScheduleRow) => {
+      if (!row.expected_date) return Number.POSITIVE_INFINITY
+      return Math.abs(Date.parse(`${String(row.expected_date).slice(0, 10)}T00:00:00Z`) - invoiceDayMs)
+    }
+    // Strictly less-than keeps the earlier sequence on a tie, matching the
+    // backend's `r.sequence` tiebreaker (the array is already sequence-sorted).
+    return distance(r) < distance(best) ? r : best
+  })
   const nextPeriodExpected = nextPeriodRow?.expected_amount != null ? Number(nextPeriodRow.expected_amount) : null
   const nextPeriodTolerancePct = nextPeriodRow?.tolerance_pct != null ? Number(nextPeriodRow.tolerance_pct) : 0
   const nextPeriodOutOfTolerance = !!nextPeriodRow && nextPeriodExpected !== null &&
     !withinPeriodTolerance(Number(inv.total_amount), nextPeriodExpected, nextPeriodTolerancePct)
   // Whole-branch review Blocker 2: offer the manual-assignment picker whenever
-  // the automatic FIFO claim can't be trusted — nothing claimable, the
+  // the automatic claim can't be trusted — nothing claimable, the
   // candidate is out of tolerance, or the schedule couldn't even be read. This
   // is an OVERRIDE, not a requirement (see canSubmitAgreement below) — the
   // spec's escape hatch is for the operator to reach for when they need it,
@@ -453,10 +478,10 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
               receipt or declaring a no-evidence settlement live on the
               invoice detail page (Task 7/8), not here. */}
 
-          {/* recurring — no reason field: the server FIFO-claims the next
-              pending/overdue period itself (see claim_next_period). Preview
-              which one, and warn (without blocking) if the total falls
-              outside its tolerance. */}
+          {/* recurring — no reason field: the server picks the period whose
+              expected date is nearest this invoice's date (see
+              claim_next_period). Preview which one, and warn (without
+              blocking) if the total falls outside its tolerance. */}
           {isRecurring && (
             <>
               <RecurringPeriodPreview

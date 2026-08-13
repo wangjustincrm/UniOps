@@ -76,7 +76,13 @@ async def test_a_row_past_expected_date_plus_grace_becomes_overdue(test_engine):
         row = await _row(db, agr, days_ago=8, grace=7)      # 到票日 + 7 < 今天
         flipped = await sweep_overdue_periods(db)
         await db.commit()
-        assert [r.id for r in flipped] == [row.id]
+        # Scoped to THIS agreement: sweep_overdue_periods is global, so any
+        # past-due row another test left pending in the shared database rides
+        # along in the return value — and does, now that claim_next_period
+        # picks by invoice date and leaves earlier periods unclaimed. Filtering
+        # keeps the assertion exact about the row under test rather than about
+        # whatever else happens to be in the database.
+        assert [r.id for r in flipped if r.agreement_id == agr.id] == [row.id]
         row_id = row.id
 
     # _factory uses expire_on_commit=False, so `row.status == "overdue"` would
@@ -172,7 +178,13 @@ async def test_an_expired_agreements_row_is_still_swept(test_engine):
         agr, _, _ = await _seed(db, status="expired")
         row = await _row(db, agr, days_ago=90, grace=7)
         flipped = await sweep_overdue_periods(db)
-        assert [r.id for r in flipped] == [row.id]
+        # Scoped to THIS agreement: sweep_overdue_periods is global, so any
+        # past-due row another test left pending in the shared database rides
+        # along in the return value — and does, now that claim_next_period
+        # picks by invoice date and leaves earlier periods unclaimed. Filtering
+        # keeps the assertion exact about the row under test rather than about
+        # whatever else happens to be in the database.
+        assert [r.id for r in flipped if r.agreement_id == agr.id] == [row.id]
         await db.commit()
 
 

@@ -1,4 +1,4 @@
-"""排期行认领 —— FIFO、容差、milestone 人工指定。"""
+"""排期行认领 —— 按发票日期就近、容差、milestone 人工指定。"""
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -43,13 +43,13 @@ async def _seed(db, **over):
     return agr, vendor, user
 
 
-async def _invoice(db, agr, vendor, user, total="1200.00"):
+async def _invoice(db, agr, vendor, user, total="1200.00", invoice_date=date(2026, 2, 3)):
     inv = Invoice(
         internal_ref=f"INV-{uuid.uuid4().hex[:8]}",
         vendor_invoice_number=f"B{uuid.uuid4().hex[:6]}",
         vendor_id=vendor.id, vendor_name=vendor.name,
         amount=Decimal(total), tax_amount=Decimal("0"), total_amount=Decimal(total),
-        currency="CAD", invoice_date=date(2026, 2, 3), due_date=date(2026, 3, 3),
+        currency="CAD", invoice_date=invoice_date, due_date=date(2026, 3, 3),
         status="unmatched", line_items=[], uploaded_by=user.id,
     )
     db.add(inv)
@@ -61,13 +61,50 @@ def _factory(test_engine):
     return async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def test_claim_takes_the_lowest_pending_sequence(test_engine):
+async def test_claim_takes_the_period_nearest_the_invoice_date(test_engine):
+    """The schedule runs 2026-01 / 02 / 03 with expected dates on the 5th. An
+    invoice dated 2026-02-03 belongs to February — two days from that row and
+    twenty-nine from January's.
+
+    This replaces FIFO-by-sequence. FIFO was fine on a schedule that starts
+    when the system does, and wrong the moment an agreement is onboarded
+    mid-life: the schedule is generated from the CONTRACT's first period, so
+    every invoice was offered a historical period no invoice will ever fill,
+    failed tolerance against it, and fell into match_review."""
     async with _factory(test_engine)() as db:
         agr, vendor, user = await _seed(db)
         await sched_crud.ensure_period_rows(db, agr)
         inv = await _invoice(db, agr, vendor, user)
         row = await sched_crud.claim_next_period(db, agr, inv)
-        assert row is not None and row.sequence == 1 and row.period_label == "2026-01"
+        assert row is not None and row.sequence == 2 and row.period_label == "2026-02"
+        await db.commit()
+
+
+async def test_an_invoice_arriving_just_after_the_expected_day_still_lands_on_its_own_period(test_engine):
+    """The case the old FIFO comment was written to protect: the bill for a
+    period often arrives a day or two LATE. Comparing against expected_date
+    (the period's own expected invoicing day) rather than the label's month
+    keeps that invoice on its own row — 2026-02-07 is two days from the 02-05
+    row and twenty-six from the 03-05 one."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user, invoice_date=date(2026, 2, 7))
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        assert row is not None and row.period_label == "2026-02"
+        await db.commit()
+
+
+async def test_a_mid_life_agreement_claims_the_current_period_not_the_first(test_engine):
+    """The reported bug, in miniature: a 2025 contract entered into the system
+    in 2026. FIFO proposed 2025-01 for an invoice dated 2026-08."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(
+            db, valid_from=date(2025, 1, 1), valid_to=date(2026, 12, 31))
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user, invoice_date=date(2026, 8, 4))
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        assert row is not None and row.period_label == "2026-08"
         await db.commit()
 
 
@@ -98,7 +135,10 @@ async def test_overdue_rows_are_still_claimable(test_engine):
             .order_by(AgreementPaymentSchedule.sequence).limit(1))).scalar_one()
         first.status = "overdue"
         await db.flush()
-        inv = await _invoice(db, agr, vendor, user)
+        # Dated into January so the nearest row IS the overdue one — the point
+        # of this test is that `overdue` does not exclude a row from claiming,
+        # not which row is nearest.
+        inv = await _invoice(db, agr, vendor, user, invoice_date=date(2026, 1, 6))
         row = await sched_crud.claim_next_period(db, agr, inv)
         assert row.sequence == 1 and row.status == "received"
         await db.commit()

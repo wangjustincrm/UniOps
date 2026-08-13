@@ -107,23 +107,43 @@ async def ensure_period_rows(db: AsyncSession, agr: PurchaseAgreement) -> int:
 async def claim_next_period(
     db: AsyncSession, agr: PurchaseAgreement, invoice
 ) -> AgreementPaymentSchedule | None:
-    """FIFO 认领。
+    """按发票日期认领 —— 取 expected_date 离 invoice_date 最近的那个未认领期次。
 
-    **按 sequence 取,不按发票日期选期次** —— 周期账单的到达日常常落在下一期
-    (8 月的网络费 9/3 才开票),按 invoice_date 落在哪个期窗口去选行会系统性地
-    错配一整期。周期账单本身按顺序来,FIFO 更贴合实际;乱序到达(供应商补开
-    上上个月的票)由人工在 match_review 指定,这是有意留的兜底。
+    **这条规则取代了原来的 FIFO(按 sequence 取第一个)。** 原注释担心的是
+    "8 月的网络费 9/3 才开票,按发票日期会错配一整期" —— 但那个担心的前提是
+    拿 period_label 的月份去套发票日期。这里比的是 `expected_date`(该期
+    *预计开票日*,由 expected_invoice_day 生成),9/3 的发票离 9/4 那行只差
+    一天、离 8/4 那行差三十天,选出来的正是该被它填掉的那一行。两种情形都对。
+
+    FIFO 真正的破绽是上线时点:协议往往已经跑了一两年才进系统,排期从合同
+    首期就生成出来,于是 FIFO 永远从一个再也不会有发票的历史期次开始 ——
+    每一张票都撞容差、每一张票都掉进 match_review,那道闸门就此变成噪音。
+    用户实测反馈:2026-08 的发票被认到 2025-01 上。
+
+    乱序到达(供应商补开上上个月的票)仍然落到最近的那一期;确实需要人工指定
+    的,claim_specific_period 那条逃生舱照旧。
+
+    `expected_date` 为空的行排到最后 —— 它们没有可比的日期,只能当兜底。
+    距离相同(发票正好落在两期正中)时取 sequence 小的那个:先欠的先还。
     """
-    row = (await db.execute(
+    rows = list((await db.execute(
         select(AgreementPaymentSchedule)
         .where(AgreementPaymentSchedule.agreement_id == agr.id,
                AgreementPaymentSchedule.schedule_type == "period",
                AgreementPaymentSchedule.status.in_(("pending", "overdue")))
         .order_by(AgreementPaymentSchedule.sequence)
-        .limit(1)
-    )).scalar_one_or_none()
-    if row is None:
+    )).scalars().all())
+    if not rows:
         return None
+    inv_date = invoice.invoice_date
+    row = min(
+        rows,
+        key=lambda r: (
+            r.expected_date is None,
+            abs((r.expected_date - inv_date).days) if r.expected_date is not None else 0,
+            r.sequence,
+        ),
+    )
 
     if row.expected_amount is not None:
         tol = row.tolerance_pct or Decimal("0")

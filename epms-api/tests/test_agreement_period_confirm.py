@@ -78,7 +78,11 @@ async def test_claiming_a_period_creates_a_confirm_task_for_the_owner(test_engin
         task = (await db.execute(select(Task).where(
             Task.document_id == agr.id, Task.type == "confirm_period"))).scalar_one()
         assert task.assigned_user_id == user.id
-        assert task.document_number == f"{agr.number} · 2026-01"
+        # Read off the row that was actually claimed, not a hardcoded label:
+        # which period an invoice claims is decided by its date
+        # (claim_next_period), and this test is about the TASK, not about that
+        # choice — test_agreement_schedule_claim.py pins the choice.
+        assert task.document_number == f"{agr.number} · {row.period_label}"
         assert task.is_completed is False
 
 
