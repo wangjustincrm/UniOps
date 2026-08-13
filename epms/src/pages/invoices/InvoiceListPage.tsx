@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
+import { AiBadge } from '@/components/ui/AiBadge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
 import { useInvoices, useCreateInvoice, useMatchInvoice, useResolveException, useDeleteInvoice } from '@/hooks/useInvoices'
@@ -28,7 +29,7 @@ import { AssignMatchDialog } from './AssignMatchDialog'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
-// offered the "Match to PO" action — the backend would 403.
+// offered the "Match Invoice" action (PO or Agreement route) — the backend would 403.
 const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
 
 // PO statuses an invoice can be matched/allocated against.
@@ -75,16 +76,6 @@ function SlaBadge({ uploadedAt }: { uploadedAt: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700">
       <CheckCircle2 className="h-3 w-3" /> On time
-    </span>
-  )
-}
-
-// ─── AI badge ─────────────────────────────────────────────────────────────────
-
-function AiBadge() {
-  return (
-    <span className="inline-flex items-center rounded-full bg-primary-50 border border-primary-200 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 ml-1.5">
-      AI
     </span>
   )
 }
@@ -1031,7 +1022,7 @@ function UnmatchedTab() {
                               onClick={() => { setDeletingId(null); setExpandedId(expandedId === inv.id ? null : inv.id) }}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors"
                             >
-                              Match to PO
+                              Match Invoice
                               {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                             </button>
                           )}

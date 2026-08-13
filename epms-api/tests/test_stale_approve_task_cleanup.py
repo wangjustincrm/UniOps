@@ -16,6 +16,7 @@ get_for_role must self-heal: complete open approve_* tasks whose document is no
 longer approvable. A submitted/in_review document must KEEP its approve task.
 """
 import uuid
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import task as task_crud
 from app.crud import user as user_crud
+from app.models.agreement import PurchaseAgreement
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
@@ -73,6 +75,17 @@ async def _pa(db, user, vendor, status):
     return pa
 
 
+async def _agreement(db, user, vendor, status):
+    agr = PurchaseAgreement(
+        number=f"AGR-{uuid.uuid4().hex[:6]}", title="Approve AGR",
+        agreement_type="house_account", vendor_id=vendor.id, vendor_name=vendor.name,
+        valid_from=date.today() - timedelta(days=10), valid_to=date.today() + timedelta(days=300),
+        status=status, not_to_exceed=Decimal("100.00"), created_by=user.id)
+    db.add(agr)
+    await db.flush()
+    return agr
+
+
 def _approve_task(doc_type, task_type, doc, user):
     # Personally assigned so surfacing is role-agnostic — this test isolates the
     # completion behaviour, not the role-broadcast matching.
@@ -88,6 +101,10 @@ def _approve_task(doc_type, task_type, doc, user):
 _PR_TERMINAL = ["approved", "rejected", "returned", "draft", "cancelled"]
 _PO_TERMINAL = ["approved", "issued", "partially_received", "fully_received", "closed", "cancelled"]
 _PA_TERMINAL = ["approved", "processed", "cancelled", "rejected", "returned"]
+# Agreements leave the approvable set the same ways a PO does — plus "active",
+# which is where a *successful* agr approval lands (engine._post_approve_agr
+# writes "active", not "approved") — and "expired"/"closed" for a future sweeper.
+_AGR_TERMINAL = ["active", "expired", "closed", "cancelled", "returned", "draft"]
 
 
 @pytest.mark.asyncio
@@ -168,4 +185,51 @@ async def test_approve_task_kept_when_doc_still_approvable(test_engine, status):
 
         surfaced = [t for t in tasks if t.type == "approve_po" and t.document_id == po.id]
         assert len(surfaced) == 1, f"'{status}' PO must keep its approve_po task"
+        assert surfaced[0].is_completed is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", _AGR_TERMINAL)
+async def test_approve_agr_completed_when_agreement_terminal(test_engine, status):
+    """Purchase Agreements were missing from _complete_stale_approve_tasks'
+    doc_specs, so an approve_agr task left behind after the agreement left an
+    approvable state became exactly the ghost this whole module exists to
+    prevent: visible in the Task Inbox, absent from the Dashboard, 409 on
+    click."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        user = await _user(db)
+        vendor = await _vendor(db)
+        agr = await _agreement(db, user, vendor, status)
+        task = _approve_task("agr", "approve_agr", agr, user)
+        db.add(task)
+        await db.commit()
+        task_id = task.id
+
+        tasks = await task_crud.get_for_role(db, "gm", user.id)
+        await db.commit()
+
+        surfaced = [t for t in tasks if t.type == "approve_agr" and t.document_id == agr.id]
+        assert surfaced == [], f"approve_agr on '{status}' agreement must not surface"
+        healed = await db.get(Task, task_id)
+        assert healed.is_completed is True
+        assert healed.completed_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["submitted", "in_review"])
+async def test_approve_agr_kept_while_agreement_still_approvable(test_engine, status):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        user = await _user(db)
+        vendor = await _vendor(db)
+        agr = await _agreement(db, user, vendor, status)
+        db.add(_approve_task("agr", "approve_agr", agr, user))
+        await db.commit()
+
+        tasks = await task_crud.get_for_role(db, "gm", user.id)
+        await db.commit()
+
+        surfaced = [t for t in tasks if t.type == "approve_agr" and t.document_id == agr.id]
+        assert len(surfaced) == 1, f"'{status}' agreement must keep its approve_agr task"
         assert surfaced[0].is_completed is False

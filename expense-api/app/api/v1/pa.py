@@ -354,8 +354,11 @@ async def pa_action(
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
         raise HTTPException(status_code=404, detail="PA not found")
-    # PA-DIR (no linked PO) uses its own configurable workflow; PA-PO uses "pa".
-    action_key = "pa_dir" if pa.po_id is None else "pa"
+    # PA-DIR uses its own configurable workflow; everything else uses "pa".
+    # NOT `po_id is None` — an EPMS Purchase Agreement PA also has no PO, and
+    # approving it through workflow_defs["pa_dir"] would run it down the wrong
+    # chain entirely. See PaymentApplication.is_direct.
+    action_key = "pa_dir" if pa.is_direct else "pa"
     # NOTE: "process" (payment) is intentionally NOT in PaActionRequest's
     # Literal — OA's only payment entry is POST /pa/{id}/pay, which forwards
     # to finance-api's unified executor (Phase 0-B1.5).
@@ -388,7 +391,7 @@ async def record_payment(
     # the posting event.
     try:
         await finance_client.execute_payment(
-            doc_kind="pa_dir" if pa.po_id is None else "pa",
+            doc_kind="pa_dir" if pa.is_direct else "pa",
             doc_id=pa_id, bearer_token=token,
             bank_account_id=body.bank_account_id,
         )

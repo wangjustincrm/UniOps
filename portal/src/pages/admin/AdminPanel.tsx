@@ -22,7 +22,7 @@ interface WorkflowNodeDef {
   role: string
 }
 
-type ActionKey = 'pr' | 'po' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -1344,11 +1344,18 @@ function RemittanceSettings() {
 
 // ── Approval Workflows ───────────────────────────────────────────────────────
 
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
+// Every key in approval-api's _WORKFLOW_DEFAULTS must be listed here. Saving
+// this form PATCHes workflow_defs, and epms-api crud/config.py::update replaces
+// that JSONB column WHOLESALE (only notification_settings is shallow-merged) —
+// so a key missing from this list is not merely uneditable, it is DELETED by
+// the next workflow save. approval-api reseeds it on its next boot (main.py
+// only fills gaps), but until then `workflow_defs->'agr'` reads NULL.
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
   po:          'Purchase Order',
+  agr:         'Purchase Agreement',
   pa:          'PA (PO-Linked)',
   pa_dir:      'PA (Direct)',
   exp:         'General Expense',
@@ -1380,6 +1387,8 @@ const WORKFLOW_ROLES = [
 const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   pr:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
   po:     [{ id: 'proc_mgr', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
+  // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['agr'].
+  agr:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'procurement_manager', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'finance_manager', role: 'finance_manager', label: 'Finance Manager' }],
   pa:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   pa_dir: [{ id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   exp:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],

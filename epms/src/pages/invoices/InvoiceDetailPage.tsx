@@ -13,6 +13,8 @@ import { computeSla } from '@/stores/invoice.store'
 import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
 import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
+import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
+import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
@@ -253,6 +255,66 @@ export default function InvoiceDetailPage() {
   const varianceAbs = Math.abs(Number(inv.variance ?? 0))
   const variancePctAbs = Math.abs(Number(inv.variance_pct ?? 0))
   const hasException = inv.status === 'exception'
+  // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
+  // apply — there is nothing to reconcile against but the agreement itself.
+  const isAgreementRoute = inv.match_route === 'agreement'
+  // Fix-round 1 (Important 1): read straight off the invoice response
+  // (agreement_type is a denormalized snapshot written at match time — see
+  // ag05_invoice_agreement_type) instead of a separate, more narrowly gated
+  // fetch. Every caller who can read this invoice at all gets the right
+  // answer; there is no "couldn't determine" state to fall back from into
+  // the wrong copy anymore.
+  const isHouseAccountRoute = inv.agreement_type === 'house_account'
+
+  // Whole-branch review (I1): every place that DESCRIBES an agreement-route
+  // match used to assert "settled without receipt evidence" from
+  // `isAgreementRoute` alone — the 3-Way Match banner, its body copy, and the
+  // permanent History entry — while the "Settled without receipt" badge two
+  // blocks below was already conditional on `legacy_settlement`. So a
+  // receipt-backed match rendered a page that contradicted itself AND
+  // contradicted the agreement detail page's legacySettlementCount, which
+  // this whole feature exists to make honest again. Derive the wording once,
+  // from the same field the badge uses, so all three read from one source.
+  //
+  // Three shapes, mirroring the backend's review_match copy
+  // (epms-api/app/api/v1/invoices.py): legacy settlement (truly no evidence),
+  // house_account backed by claimed receipts, and everything else
+  // (recurring / milestone, which bill from a schedule row rather than from
+  // receipts). Deliberately no version numbers in user-facing copy.
+  const claimedReceiptCount = inv.receipt_ids?.length ?? 0
+  // Whole-branch review (M8): a plain "receipt", never "pickup receipt" — a
+  // house account can be a counter pickup, a monthly delivery, or an
+  // outsourced service (see ReceiptType), and this string is a bare count
+  // with no per-receipt type in hand to name (receipt_ids is a list of ids,
+  // not of records). Rows that DO have the type available render
+  // RECEIPT_TYPE_LABELS instead (DocumentChainTree, ReceiptListPage).
+  const receiptNoun = claimedReceiptCount === 1 ? 'receipt' : 'receipts'
+  // house_account, linked, but neither backed by receipts nor declared
+  // settled-without-evidence — the reachable "pending" state Task 6 opened up
+  // (see the comment block below). Drives the 3-Way Match banner's color
+  // (fix-round 1, Minor 3) so a still-open action item never reads as done.
+  const evidencePending = isHouseAccountRoute && claimedReceiptCount === 0 && !inv.legacy_settlement
+  // Task 8: matching to house_account is now pure linkage (Task 6) — a
+  // freshly-matched invoice can sit with claimedReceiptCount === 0 AND
+  // legacy_settlement === false, a state that used to be unreachable (Phase
+  // 1A stamped legacy_settlement=True unconditionally at match time). That
+  // state means "pending", not "settled" — the fallback branch below must
+  // not claim otherwise for house_account, while still saying exactly that
+  // for recurring/milestone (which genuinely have no receipts, ever).
+  const agreementEvidenceSummary = inv.legacy_settlement
+    ? 'settled without receipt evidence'
+    : claimedReceiptCount > 0
+      ? `backed by ${claimedReceiptCount} ${receiptNoun}`
+      : isHouseAccountRoute
+        ? 'no receipt evidence recorded yet'
+        : 'settled against the agreement'
+  const agreementEvidenceDetail = inv.legacy_settlement
+    ? 'There is no PO or goods receipt on the agreement route, and no receipt was claimed for this invoice, so there is nothing to reconcile against. It was settled on the agreement alone, against the recorded reason below.'
+    : claimedReceiptCount > 0
+      ? `There is no PO or goods receipt on the agreement route. Instead, ${claimedReceiptCount} ${receiptNoun} recorded against the agreement ${claimedReceiptCount === 1 ? 'is' : 'are'} claimed as the receipt evidence for this invoice; any photos recorded with them are carried through to the payment application.`
+      : isHouseAccountRoute
+        ? 'There is no PO or goods receipt on the agreement route. No receipt has been attached to this invoice yet, and it has not been declared settled without evidence either — attach the receipt(s) it covers, or explicitly settle without receipt evidence, below.'
+        : 'There is no PO or goods receipt on the agreement route. This invoice is settled against the agreement itself — recurring and milestone agreements bill from their schedule rows, so there is no 3-way match here.'
 
   const tabs = [
     { key: 'details' as const, label: 'Invoice Details' },
@@ -293,7 +355,7 @@ export default function InvoiceDetailPage() {
             (isAp || inv.uploaded_by === user?.id || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)) && (
             <Button size="sm" className="gap-1.5" onClick={() => setShowMatchPanel((v) => !v)}>
               <GitMerge className="h-3.5 w-3.5" />
-              Match to PO
+              Match Invoice
             </Button>
           )}
           {isAp && !!inv && (inv.status === 'unmatched' || inv.status === 'exception') && !editing && (
@@ -469,6 +531,55 @@ export default function InvoiceDetailPage() {
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Linked Documents</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {(() => {
+                    // Agreement route: the PO slot shows the agreement instead —
+                    // there is no PO on this route at all.
+                    if (inv.match_route === 'agreement' && inv.agreement_id) {
+                      return (
+                        <div className="col-span-2 rounded-lg border border-neutral-200 px-3 py-2.5 flex flex-col gap-1.5">
+                          <p className="text-xs text-neutral-400">Agreement</p>
+                          <Link
+                            to={`/agreements/${inv.agreement_id}`}
+                            className="text-sm font-mono font-medium text-primary-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            {inv.agreement_number ?? inv.agreement_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
+                          </Link>
+                          {inv.legacy_settlement ? (
+                            <div className="flex flex-col gap-1 pt-1">
+                              <Badge variant="warning" className="self-start">Settled without receipt</Badge>
+                              {inv.legacy_settlement_reason && (
+                                <p className="text-xs text-neutral-500">{inv.legacy_settlement_reason}</p>
+                              )}
+                            </div>
+                          ) : claimedReceiptCount > 0 ? (
+                            /* Whole-branch review (I2): receipt_variance_reason was write-only
+                               end to end — MatchPanel collected it, the API returned it, and
+                               nothing ever rendered it. It is the mirror image of
+                               legacy_settlement_reason (why this invoice was settled with no
+                               evidence at all) and the two are mutually exclusive by
+                               construction: crud/invoice.py only records a variance reason on
+                               a receipt-backed match, and only a legacy reason on a receipt-less
+                               one. Render them in the same slot, on the same branch. */
+                            <div className="flex flex-col gap-1 pt-1">
+                              <Badge variant="success" className="self-start">
+                                {claimedReceiptCount} {receiptNoun} claimed
+                              </Badge>
+                              {inv.receipt_variance_reason && (
+                                <p className="text-xs text-neutral-500">
+                                  Amount variance: {inv.receipt_variance_reason}
+                                </p>
+                              )}
+                            </div>
+                          ) : isHouseAccountRoute ? (
+                            // Task 8: pure linkage means this is now a reachable,
+                            // ordinary pending state — not nothing to show. See
+                            // the Receipt Evidence panel on the 3-Way Match tab.
+                            <div className="flex flex-col gap-1 pt-1">
+                              <Badge variant="warning" className="self-start">No receipt evidence yet</Badge>
+                            </div>
+                          ) : null}
+                        </div>
+                      )
+                    }
                     const linkedPos = Array.from(
                       new Map(
                         (inv.allocations ?? []).map((a) => [a.po_id, a.po_number ?? a.po_id.slice(0, 8)]),
@@ -500,7 +611,7 @@ export default function InvoiceDetailPage() {
                       </div>
                     )
                   })()}
-                  {gr ? (
+                  {inv.match_route === 'agreement' ? null : gr ? (
                     <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2.5">
                       <div>
                         <p className="text-xs text-neutral-400">Goods Receipt</p>
@@ -878,6 +989,80 @@ export default function InvoiceDetailPage() {
                   <p className="text-xs text-neutral-400">Go to the Unmatched Queue to link this invoice to a PO</p>
                   <Link to="/invoices"><Button variant="secondary" size="sm">Go to Unmatched Queue</Button></Link>
                 </div>
+              ) : isAgreementRoute ? (
+                // Fix-round 1 (Minor 3): the outer card used to be
+                // unconditionally green + a success checkmark, even while the
+                // headline inside said "no receipt evidence recorded yet" —
+                // a house_account invoice linked but not yet reconciled is a
+                // pending state, not a success one, and a green success box
+                // saying so read as self-contradictory on first glance.
+                <div className={cn('rounded-xl border p-5 flex flex-col gap-3',
+                  evidencePending ? 'border-warning-200 bg-warning-50' : 'border-success-200 bg-success-50')}>
+                  <div className="flex items-center gap-4">
+                    {evidencePending
+                      ? <AlertTriangle className="h-8 w-8 text-warning-600 flex-shrink-0" />
+                      : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />}
+                    <div>
+                      <p className={cn('text-sm font-semibold', evidencePending ? 'text-warning-700' : 'text-success-700')}>
+                        Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)} — {agreementEvidenceSummary}
+                      </p>
+                      {inv.matched_at && (
+                        <p className="text-xs text-neutral-500 mt-0.5">
+                          Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-neutral-500">{agreementEvidenceDetail}</p>
+                  {inv.legacy_settlement ? (
+                    <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 flex flex-col gap-1">
+                      <Badge variant="warning" className="self-start">Settled without receipt</Badge>
+                      {inv.legacy_settlement_reason && (
+                        <p className="text-xs text-warning-800">{inv.legacy_settlement_reason}</p>
+                      )}
+                    </div>
+                  ) : claimedReceiptCount > 0 ? (
+                    /* I2, second of the two agreement blocks on this page — see the
+                       Linked Documents block above for why the variance reason and the
+                       legacy reason share one slot. Both blocks have to agree; a fix
+                       applied to only one of them recreates the split I1 came from. */
+                    <div className="rounded-lg border border-success-200 bg-white px-3 py-2.5 flex flex-col gap-1">
+                      <Badge variant="success" className="self-start">
+                        {claimedReceiptCount} {receiptNoun} claimed
+                      </Badge>
+                      {inv.receipt_variance_reason && (
+                        <p className="text-xs text-neutral-600">
+                          Amount variance: {inv.receipt_variance_reason}
+                        </p>
+                      )}
+                    </div>
+                  ) : isHouseAccountRoute ? (
+                    // Task 8: see the comment on the Linked Documents block above —
+                    // this is now a reachable pending state, not "nothing to show".
+                    <div className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 flex flex-col gap-1">
+                      <Badge variant="warning" className="self-start">No receipt evidence yet</Badge>
+                      <p className="text-xs text-warning-800">Attach the receipt(s) this invoice covers below, or explicitly settle without receipt evidence.</p>
+                    </div>
+                  ) : null}
+                  {inv.agreement_id && (
+                    <Link to={`/agreements/${inv.agreement_id}`}>
+                      <Button variant="secondary" size="sm" className="self-start gap-1.5">
+                        View Agreement <ExternalLink className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  )}
+                  {/* Task 8: reconcile receipt evidence — separate action from
+                      matching (Task 6 made /match pure linkage). Only ever
+                      renders for house_account (component-internal gate); the
+                      surrounding isAgreementRoute branch also covers
+                      recurring/milestone, which have no receipts at all. */}
+                  <InvoiceReceiptsPanel invoice={inv} />
+                  {/* Renders only in the dead end it exists for: matched to a
+                      recurring agreement with no billing period claimed, which
+                      until now could never be paid and could never be fixed
+                      (see the component). */}
+                  <InvoiceBillingPeriodPanel invoice={inv} />
+                </div>
               ) : (
                 <>
                   {/* Summary row */}
@@ -1031,7 +1216,12 @@ export default function InvoiceDetailPage() {
                   inv.matched_at && {
                     date: inv.matched_at,
                     actor: inv.matched_by_name ?? 'System',
-                    action: `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
+                    // I1: this entry is the permanent audit trace — the one place a
+                    // false "settled without receipt evidence" outlives the page it was
+                    // rendered on. Same derived wording as the banner above.
+                    action: isAgreementRoute
+                      ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
+                      : `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
                     color: hasException ? 'bg-danger-600' : 'bg-success-600',
                   },
                   {

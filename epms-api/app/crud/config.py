@@ -107,6 +107,9 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     # 每日 follow-up 提醒总开关(Portal → Admin → Notification Settings)。
     # 默认关;消费方一律 .get(..., False) 显式回落,老配置行没有该键也算关。
     "daily_followup_enabled": False,
+    # 默认 ON 是刻意的:daily_followup_enabled 默认 OFF,结果上线后没人知道要去
+    # admin 打开、提醒一直没发。开关的作用是"吵了可以关掉",不是"要用得先找到它"。
+    "agreement_overdue_enabled": True,
     # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
     # 不再逐个通知该角色成员。空 = 维持逐人发送。
     "role_shared_mailboxes": {},

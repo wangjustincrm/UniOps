@@ -7,6 +7,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
+from app.models.agreement import PurchaseAgreement
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -73,22 +74,36 @@ async def get_all(
     created_by: uuid.UUID | None = None,
     search: str | None = None,
     po_ids_subq=None,
+    agr_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[PaymentApplication], int]:
-    from sqlalchemy import or_
-    # EPMS owns PO-based PAs only; OA's Direct PAs (NULL po_id) live in the same
-    # shared table but belong to expense-api. Excluding them keeps PaResponse
-    # (po_id/po_number non-nullable) valid and avoids cross-domain bleed.
-    q = select(PaymentApplication).where(PaymentApplication.po_id.is_not(None))
-    if po_ids_subq is not None:
+    # EPMS owns PO-based AND agreement-based PAs; OA's Direct PAs have BOTH
+    # columns NULL, which is what keeps them out of this list. This is an
+    # ownership filter (is this row EPMS's at all), not a visibility filter —
+    # the po_ids_subq/agr_ids_subq block below is what scopes a restricted
+    # caller down further.
+    q = select(PaymentApplication).where(or_(
+        PaymentApplication.po_id.is_not(None),
+        PaymentApplication.agreement_id.is_not(None),
+    ))
+    if po_ids_subq is not None or agr_ids_subq is not None:
+        # A restricted (non-admin) caller: admit a PA if its PO falls inside
+        # their PO scope, OR its agreement falls inside their agreement scope,
+        # OR they created it themselves. po_ids_subq/agr_ids_subq come from the
+        # same build_scope() call and are currently always None together (both
+        # keyed off the same "any unrestricted role" check) or both set — but
+        # each branch below is written to stand on its own rather than lean on
+        # that coupling, in case the two ever diverge.
+        conds = [
+            PaymentApplication.po_id.in_(po_ids_subq) if po_ids_subq is not None
+            else PaymentApplication.po_id.is_not(None),
+            PaymentApplication.agreement_id.in_(agr_ids_subq) if agr_ids_subq is not None
+            else PaymentApplication.agreement_id.is_not(None),
+        ]
         if created_by:
-            q = q.where(or_(
-                PaymentApplication.po_id.in_(po_ids_subq),
-                PaymentApplication.created_by == created_by,
-            ))
-        else:
-            q = q.where(PaymentApplication.po_id.in_(po_ids_subq))
+            conds.append(PaymentApplication.created_by == created_by)
+        q = q.where(or_(*conds))
     elif created_by:
         q = q.where(PaymentApplication.created_by == created_by)
     if status:
@@ -98,22 +113,31 @@ async def get_all(
     if vendor_id:
         q = q.where(PaymentApplication.vendor_id == vendor_id)
     if search:
-        # Match what the UI advertises: PA #, vendor name, PO # (all snapshot
-        # columns on the PA row — no join needed; NULL po_number never matches).
+        # Match what the UI advertises: PA #, vendor name, PO #, agreement # (all
+        # snapshot columns on the PA row — no join needed; NULL never matches).
         term = f"%{search}%"
         q = q.where(
             PaymentApplication.pa_number.ilike(term)
             | PaymentApplication.vendor_name.ilike(term)
             | PaymentApplication.po_number.ilike(term)
+            | PaymentApplication.agreement_number.ilike(term)
         )
     if department_id:
-        # PA has no cost center — resolve department via PA → PO → PR → cost center.
-        q = q.where(PaymentApplication.po_id.in_(
-            select(PurchaseOrder.id).where(PurchaseOrder.pr_id.in_(
-                select(PurchaseRequest.id).where(PurchaseRequest.cost_center_id.in_(
-                    select(CostCenter.id).where(CostCenter.department_id == department_id)
+        # PA has no cost center of its own — resolve department either via
+        # PA → PO → PR → cost center (PO route), or directly off
+        # PaymentApplication.agreement_id → PurchaseAgreement.department_id
+        # (agreement route, which carries department_id on the row itself).
+        q = q.where(or_(
+            PaymentApplication.po_id.in_(
+                select(PurchaseOrder.id).where(PurchaseOrder.pr_id.in_(
+                    select(PurchaseRequest.id).where(PurchaseRequest.cost_center_id.in_(
+                        select(CostCenter.id).where(CostCenter.department_id == department_id)
+                    ))
                 ))
-            ))
+            ),
+            PaymentApplication.agreement_id.in_(
+                select(PurchaseAgreement.id).where(PurchaseAgreement.department_id == department_id)
+            ),
         ))
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
@@ -142,13 +166,14 @@ async def get_by_id(db: AsyncSession, pa_id: uuid.UUID) -> PaymentApplication | 
 async def create(
     db: AsyncSession,
     payload: PaCreate,
-    po_number: str,
+    po_number: str | None,
     vendor_id: uuid.UUID,
     vendor_name: str,
     created_by: uuid.UUID,
     receipt_override: bool = False,
     receipt_override_reason: str | None = None,
     receipt_override_by: uuid.UUID | None = None,
+    agreement_number: str | None = None,
 ) -> PaymentApplication:
     number = await _next_number(db)
     payment_amount = _compute_payment(payload)
@@ -158,6 +183,8 @@ async def create(
         title=payload.title,
         po_id=payload.po_id,
         po_number=po_number,
+        agreement_id=payload.agreement_id,
+        agreement_number=agreement_number,
         vendor_id=vendor_id,
         vendor_name=vendor_name,
         invoice_ids=[str(i) for i in payload.invoice_ids],
@@ -189,12 +216,17 @@ async def create(
     for item in _build_line_items(pa.id, payload.line_items):
         db.add(item)
 
-    # A PA now exists for this PO — clear any open "Create Payment Application"
-    # prompts for it (the task previously lingered because this was never called).
-    await _complete_create_pa_tasks(db, payload.po_id)
-    # A prepayment PA additionally satisfies the "Create Prepayment PA" prompt.
-    if pa.pa_type == "prepayment":
-        await _complete_create_prepayment_pa_tasks(db, payload.po_id)
+    # PO-only follow-up: agreement PAs have no PO, so there is no "Create Payment
+    # Application" / "Create Prepayment PA" task anchored to a po_id to clear —
+    # calling these with po_id=None would wrongly match tasks with a NULL
+    # document_id.
+    if payload.po_id is not None:
+        # A PA now exists for this PO — clear any open "Create Payment Application"
+        # prompts for it (the task previously lingered because this was never called).
+        await _complete_create_pa_tasks(db, payload.po_id)
+        # A prepayment PA additionally satisfies the "Create Prepayment PA" prompt.
+        if pa.pa_type == "prepayment":
+            await _complete_create_prepayment_pa_tasks(db, payload.po_id)
 
     await db.flush()
     await db.refresh(pa)

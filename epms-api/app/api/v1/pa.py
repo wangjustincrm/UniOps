@@ -9,13 +9,15 @@ from sqlalchemy import select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
-from app.core.access_scope import build_scope, _effective_role_codes
+from app.core.access_scope import build_scope, is_agreement_visible, _effective_role_codes
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services import finance_client
+from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
 from app.crud import po as po_crud
 from app.crud.current_step import enrich_current_step
+from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.config import CompanyConfig
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -30,6 +32,116 @@ from app.schemas.pr import ApprovalEventResponse
 router = APIRouter(prefix="/pa", tags=["payment-applications"])
 
 PaWriteDep = Annotated[dict, Depends(require_permission("epms.pa.write"))]
+
+# Invoice statuses that may back an agreement PA. Invoice statuses are
+# unmatched | matched | match_review | exception | approved | paid
+# (app/models/invoice.py). "match_review" is deliberately EXCLUDED: the
+# agreement route's review gate would otherwise be bypassable by raising the PA
+# before the reviewer answers. "paid" is excluded because it is already settled.
+_PAYABLE_INVOICE_STATUSES = ("matched", "approved")
+
+
+async def _validate_agreement_pa_invoices(
+    db: SessionDep, agr, invoice_ids: list[uuid.UUID],
+) -> None:
+    """The invoice-side gate for an agreement-backed PA: every listed invoice
+    must be matched to THIS agreement, cleared for payment, and — for a
+    recurring agreement — linked to a CONFIRMED billing period.
+
+    Extracted from create_pa (whole-branch review finding, Phase 1B): PATCH
+    /pa/{id} reassigns invoice_ids without ever re-running this. Create a PA
+    with a confirmed invoice, then PATCH the invoice list to an unconfirmed
+    one (or one with schedule_id NULL, or one matched to a different
+    agreement) and every gate below was silently bypassed — update_pa now
+    calls this too whenever pa.agreement_id is set and body.invoice_ids is
+    given.
+    """
+    if not invoice_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one invoice matched to this agreement is required "
+                   "— there is no goods-receipt override on this route.",
+        )
+    rows = (await db.execute(
+        select(Invoice.id, Invoice.internal_ref, Invoice.agreement_id, Invoice.status,
+               Invoice.schedule_id, Invoice.receipt_ids, Invoice.legacy_settlement)
+        .where(Invoice.id.in_(invoice_ids))
+    )).all()
+    if len(rows) != len(set(invoice_ids)):
+        raise HTTPException(status_code=422, detail="One or more invoices not found")
+    stray = [str(r.id) for r in rows if r.agreement_id != agr.id]
+    if stray:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invoice(s) not matched to agreement {agr.number}: {', '.join(stray)}")
+    # …and each must have CLEARED matching. The link alone is not enough: an
+    # invoice matched by a delegate sits at "match_review" with its
+    # agreement_id already set, so without this check the AP review gate
+    # (commit ebeb3f5) is bypassable simply by raising/editing the PA before
+    # the review is answered. On the PO route the GR is independent evidence;
+    # here the invoice IS the only evidence, so its review state is the
+    # control. "exception"/"unmatched" are excluded for the same reason.
+    not_ready = [
+        f"{r.internal_ref} ({r.status})"
+        for r in rows if r.status not in _PAYABLE_INVOICE_STATUSES
+    ]
+    if not_ready:
+        raise HTTPException(
+            status_code=422,
+            detail="Invoice(s) not cleared for payment — a matched, reviewed "
+                   f"invoice is required: {', '.join(not_ready)}")
+    # recurring 免 GR,履约确认是它唯一的代偿 —— 未确认的期次不许付款。
+    # milestone 本期没有验收闸门(设计 §5.3),house_account 走凭证路径(见下方
+    # 紧邻的闸门),所以这里按 agreement_type 分支,不能一刀切。
+    if agr.agreement_type == "recurring":
+        # Code review finding (Task 7 fix round): an INNER JOIN on
+        # Invoice.schedule_id == AgreementPaymentSchedule.id silently drops
+        # any invoice with schedule_id IS NULL from the result set instead of
+        # flagging it — and that state is reachable, not theoretical:
+        # claim_next_period returns None when nothing is claimable (out of
+        # tolerance, or the schedule is exhausted), routing the invoice to
+        # match_review with schedule_id left NULL; an AP reviewer's plain
+        # approve() there sets status="matched" unconditionally without ever
+        # touching schedule_id. That invoice would then sail through every
+        # check above (payable status, "matched to this agreement") with the
+        # confirmation control never having applied to it at all. So the
+        # unlinked case must be rejected on its own, checked directly against
+        # `rows` rather than through a join that can only see invoices
+        # already linked.
+        unlinked = [r.internal_ref for r in rows if r.schedule_id is None]
+        if unlinked:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"Invoice(s) not linked to a billing period: {', '.join(unlinked)}. "
+                        "They were never claimed against a scheduled period (out of "
+                        "tolerance or no candidate row when matched) — this needs to be "
+                        "resolved before a payment can be raised against them."))
+        schedule_ids = [r.schedule_id for r in rows]
+        unconfirmed = (await db.execute(
+            select(AgreementPaymentSchedule.period_label)
+            .where(AgreementPaymentSchedule.id.in_(schedule_ids),
+                   AgreementPaymentSchedule.accepted_at.is_(None))
+        )).scalars().all()
+        if unconfirmed:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"Service has not been confirmed for {', '.join(unconfirmed)}. "
+                        "The department must confirm delivery before payment can be raised."))
+    # house_account 免收货,凭证就是柜台小票/送货单/服务单(receipt_type)。1A 时
+    # 没有凭证可挂,所以每张发票都被标成 legacy —— 那些存量数据必须继续放行,
+    # 否则本期改动会卡死历史。pa.py:94 那句 "house_account 走凭证路径" 的注释
+    # 从此才是真的。
+    if agr.agreement_type == "house_account":
+        unsupported = [
+            r.internal_ref for r in rows
+            if not (r.receipt_ids or r.legacy_settlement)
+        ]
+        if unsupported:
+            raise HTTPException(
+                status_code=422,
+                detail=(f"No receipts are attached to {', '.join(unsupported)}. "
+                        "Match the invoice to the receipts it covers, or settle it "
+                        "explicitly without receipt evidence, before raising payment."))
 
 
 @router.get("", response_model=PaListResponse)
@@ -57,6 +169,7 @@ async def list_pas(
         department_id=department_id, search=search,
         created_by=created_by,
         po_ids_subq=scope["po_subq"],
+        agr_ids_subq=scope["agr_subq"],
         page=page, page_size=page_size,
     )
     await enrich_current_step(db, "pa", items)
@@ -89,6 +202,61 @@ def _may_create_pa_on_behalf(roles: set[str], po: PurchaseOrder) -> bool:
 
 @router.post("", response_model=PaResponse, status_code=201)
 async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: BearerToken):
+    # ── Agreement route: no PO, no GR, no receipt gate ─────────────────────────
+    if body.agreement_id is not None:
+        agr = await agr_crud.get_by_id(db, body.agreement_id)
+        if agr is None:
+            raise HTTPException(status_code=404, detail="Agreement not found")
+        # Holding epms.pa.write says you raise payments; it does not say you
+        # raise them against THIS agreement. `requester` holds that key in the
+        # default matrix, so without this an employee with no connection to a
+        # house account — not its creator, not its owner, not in its department
+        # — could raise a payment application against it. The agreement is the
+        # authorisation for its own payments, so the same row scope that decides
+        # whether you can see it decides whether you can spend it.
+        if not await is_agreement_visible(db, agr.id, await build_scope(db, user)):
+            raise HTTPException(status_code=404, detail="Agreement not found")
+        # No PO on this route means none of the PO-scoped prepayment/settlement/
+        # balance guards below (vendor cap, ownership-of-prepayment-PA, applied ≤
+        # prepaid) ever run — allowing pa_type through here would let a caller
+        # skip them entirely (e.g. settle someone else's PO-based prepayment PA
+        # by routing through an unrelated agreement). Only the plain-pay type is
+        # meaningful without a PO to prepay against or settle.
+        if body.pa_type != "regular":
+            raise HTTPException(
+                status_code=422,
+                detail="Only pa_type='regular' can be raised against an agreement "
+                       "(prepayment/settlement/balance require a PO).",
+            )
+        # The agreement itself is the PA's authorisation — it must actually be
+        # approved (or still inside its post-expiry grace window) before it can
+        # back a payment. Same admission rule invoices are matched under.
+        if not await agr_crud.is_admissible(db, agr):
+            raise HTTPException(
+                status_code=422,
+                detail=f"Agreement {agr.number} is not active (status={agr.status}) "
+                       "or is past its grace window — a PA cannot be raised against it.",
+            )
+        # There is no receipt gate on this route (never any GR) — the linked
+        # invoice(s) are the ONLY evidence this PA pays real, already-billed
+        # spend rather than an arbitrary amount against an approved ceiling.
+        # Every listed invoice must actually be matched to THIS agreement,
+        # cleared for payment, and (recurring) linked to a confirmed period —
+        # see _validate_agreement_pa_invoices, shared with update_pa's PATCH
+        # path so the same rules apply there too.
+        await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
+        # 收货闸门不适用:协议路线定义上就没有 GR(1A 无凭证,1B 才有)。
+        created = await pa_crud.create(
+            db, body,
+            po_number=None,
+            agreement_number=agr.number,
+            vendor_id=agr.vendor_id,
+            vendor_name=agr.vendor_name,
+            created_by=uuid.UUID(user["sub"]),
+        )
+        return created
+
+    # ── PO route below, unchanged ──────────────────────────────────────────────
     po = await po_crud.get_by_id(db, body.po_id)
     if po is None:
         raise HTTPException(status_code=404, detail="Purchase order not found")
@@ -312,7 +480,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     from app.core.access_scope import is_pa_visible
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     scope = await build_scope(db, user)
     if not await is_pa_visible(db, pa, scope):
@@ -323,10 +491,21 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
 @router.patch("/{pa_id}", response_model=PaResponse)
 async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWriteDep):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
+    # Whole-branch review finding: pa_crud.update() assigns invoice_ids
+    # unconditionally, with none of create_pa's agreement gates re-run — a
+    # PATCH could swap in an invoice that is unconfirmed, unlinked to a
+    # billing period, or matched to a different agreement entirely, and every
+    # check below would be bypassed. agreement_id itself is immutable here
+    # (PaUpdate has no such field), so only invoice_ids needs re-validating.
+    if pa.agreement_id is not None and body.invoice_ids is not None:
+        agr = await agr_crud.get_by_id(db, pa.agreement_id)
+        if agr is None:
+            raise HTTPException(status_code=404, detail="Agreement not found")
+        await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
     return await pa_crud.update(db, pa, body)
 
 
@@ -339,7 +518,7 @@ async def pa_action(
     token: BearerToken,
 ):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     try:
         if body.action == "process":
@@ -420,7 +599,7 @@ async def confirm_settlement(
     """Finance sign-off for a zero-cash settlement that has a variance (overpaid).
     No payment is made — it reconciles the prepayment and closes the invoice."""
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.pa_type != "settlement" or pa.payment_amount != 0:
         raise HTTPException(
@@ -438,7 +617,7 @@ async def confirm_settlement(
 @router.get("/{pa_id}/events", response_model=list[ApprovalEventResponse])
 async def pa_approval_events(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserPayload):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or pa.po_id is None:  # Direct PAs (NULL po_id) belong to OA, not EPMS
+    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
         raise HTTPException(status_code=404, detail="PA not found")
     return await pa_crud.get_approval_events(db, pa_id)
 

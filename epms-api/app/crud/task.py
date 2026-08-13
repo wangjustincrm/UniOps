@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.agreement import PurchaseAgreement
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -198,6 +199,11 @@ async def _complete_stale_approve_tasks(db: AsyncSession) -> None:
         ("pr", "approve_pr", PurchaseRequest),
         ("po", "approve_po", PurchaseOrder),
         ("pa", "approve_pa", PaymentApplication),
+        # Purchase Agreements leave the approvable set the same ways a PO does
+        # (approved -> "active", returned, cancelled) plus one route nothing
+        # else has: expiry. Omitting them here reproduces exactly the Task
+        # Inbox / Dashboard split this function was written to end.
+        ("agr", "approve_agr", PurchaseAgreement),
     )
     now = datetime.now(timezone.utc)
     for doc_type, task_type, Model in doc_specs:
@@ -254,7 +260,7 @@ async def _backfill_create_po_tasks(db: AsyncSession) -> None:
     is the symmetric safety net so the purchasing office actually sees the work.
 
     Scope: status='approved' AND po_id IS NULL (a PR with a PO needs no task;
-    _complete_stale_create_po_tasks completes any that slipped through).
+    _complete_stale_create_po_tasks completes any that fell through the cracks).
     """
     approved_prs_q = select(PurchaseRequest).where(
         PurchaseRequest.status == "approved",
