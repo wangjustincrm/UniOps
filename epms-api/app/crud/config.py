@@ -240,6 +240,25 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
     ),
 }
 
+# Previous default text for templates whose *default* copy was rewritten after
+# already shipping (as opposed to a brand-new key, which the plain "missing
+# keys" backfill below already handles). Used only as a comparison target in
+# get_or_create: a stored template that still matches this old default verbatim
+# was never customised, so it's safe to upgrade in place. A stored template
+# that differs was edited by a customer and must never be overwritten. Do not
+# reuse this dict for anything else — it exists solely for that one comparison.
+_SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS: dict = {
+    # Reworded 2026-08-13 (63b3e0d): the old copy read as "approve or reject a
+    # payment", which is what caused AP to refuse the task. See
+    # match_review_request above for the current default.
+    "match_review_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Match review required — invoice {invoice_number}",
+        "Hi {recipient_name},\n\nThe assigned matcher has completed matching on invoice <b>{invoice_number}</b> "
+        "with a non-zero variance. Please review the allocation and approve or reject it.\n\n"
+        "<a href=\"{link}\">Review Match</a>\n\n{company_name}",
+    ),
+}
+
 _P = lambda **kw: {k: kw.get(k, False) for k in PERMISSION_KEYS}  # noqa: E731
 
 # Defaults follow PRD §1.3 visibility table. view_* default True means the role
@@ -340,7 +359,11 @@ async def get_or_create(db: AsyncSession) -> CompanyConfig:
     """Return the singleton config row, creating it with defaults if absent.
 
     Also backfills any email_templates keys that are missing from the defaults
-    (so newly added templates are available without a full config reset).
+    (so newly added templates are available without a full config reset), and
+    upgrades any stored template that still matches a *previous* default
+    verbatim to the current default (so a copy rewrite ships to already-seeded
+    DBs). A stored template whose content differs from the previous default —
+    i.e. a customer edited it — is never touched.
     """
     result = await db.execute(select(CompanyConfig).limit(1))
     cfg = result.scalar_one_or_none()
@@ -350,11 +373,17 @@ async def get_or_create(db: AsyncSession) -> CompanyConfig:
         await db.flush()
         await db.refresh(cfg)
     else:
-        # Backfill any missing email template keys from defaults
         existing = cfg.email_templates or {}
+        # Backfill any missing email template keys from defaults
         missing = {k: v for k, v in _DEFAULT_EMAIL_TEMPLATES.items() if k not in existing}
-        if missing:
-            cfg.email_templates = {**existing, **missing}
+        # Upgrade stored templates that still equal a since-superseded default
+        upgrades = {
+            k: _DEFAULT_EMAIL_TEMPLATES[k]
+            for k, old_default in _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS.items()
+            if k in existing and existing[k] == old_default
+        }
+        if missing or upgrades:
+            cfg.email_templates = {**existing, **missing, **upgrades}
             flag_modified(cfg, "email_templates")
             await db.flush()
     return cfg

@@ -1816,6 +1816,9 @@ const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
   prepayment_settlement_overdue: 'PA — Prepayment Settlement Overdue',
   daily_pending_reminder: 'Daily Pending Tasks Reminder',
   sla_escalation: 'SLA Escalation Alert',
+  match_invoice_assigned: 'Invoice — Matching Assigned to You',
+  match_review_request: 'Invoice — Confirm Delegate Match',
+  exception_resolution_request: 'Invoice — Outside Match Tolerance',
 }
 
 const DEFAULT_NOTIF_SETTINGS: NotificationSettings = {
