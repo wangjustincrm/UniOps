@@ -121,6 +121,11 @@ async def admin_token():
 
 
 @pytest_asyncio.fixture
+async def auth_headers(admin_token):
+    return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest_asyncio.fixture
 async def non_admin_token():
     """A token for a role that is NOT system_admin (M12, final-phase
     review). `admin_token` short-circuits every `require_permission(...)`

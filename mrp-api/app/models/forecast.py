@@ -58,3 +58,10 @@ class ForecastLine(Base, UUIDPrimaryKey, TimestampMixin):
     qty: Mapped[object] = mapped_column(Numeric(18, 3), default=0, server_default="0")
     uom: Mapped[str] = mapped_column(String(10), default="KG", server_default="KG")
     freeze_flag: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    # Snapshot self-description (design §4.1): an outlook snapshot must stay
+    # readable after the intent product is bound to a real code or dropped,
+    # so the flag and the human name are frozen into the line itself rather
+    # than joined from mrp_intent_products at read time.
+    is_intent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    intent_name: Mapped[str | None] = mapped_column(String(200))
