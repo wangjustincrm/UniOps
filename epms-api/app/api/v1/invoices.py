@@ -532,16 +532,20 @@ async def match_invoice(
                 type="review_match", priority="normal",
                 document_type="invoice", document_id=inv.id,
                 document_number=inv.internal_ref,
+                # 角色池,不钉个人:钉住 assigned_user_id 会让 notification.py
+                # 只发派单者一人,并跳过 AP 共享邮箱分支(它只在无指派人时才查)。
                 assigned_role="ap_clerk",
-                assigned_user_id=reviewer_id,
                 created_by=caller_id,
-                title=f"Review match variance on invoice {inv.internal_ref}",
+                title=f"Confirm invoice match — {inv.internal_ref}",
                 description=review_description,
                 vendor=inv.vendor_name, amount=inv.total_amount,
             )
             db.add(review)
             await db.flush()
             await db.refresh(review)
+            # fire_and_forget_notify 的后台协程用**新 session** 按 id 读这条任务,
+            # 所以必须先提交,否则它读不到、静默 return(与 assign_match 同因同修)。
+            await db.commit()
             fire_and_forget_notify(review, db, extra_vars={"invoice_number": inv.internal_ref})
 
         if result.status == "matched":
