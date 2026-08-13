@@ -26,10 +26,9 @@ def upgrade() -> None:
         sa.Column("bound_at", sa.DateTime(timezone=True)),
         sa.Column("bound_by", postgresql.UUID(as_uuid=True)),
         sa.Column("created_by", postgresql.UUID(as_uuid=True)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
     )
-    op.create_index("ix_mrp_intent_products_code", "mrp_intent_products", ["code"])
     op.add_column("mrp_forecast_lines",
                   sa.Column("is_intent", sa.Boolean(), nullable=False, server_default="false"))
     op.add_column("mrp_forecast_lines", sa.Column("intent_name", sa.String(200)))
@@ -38,5 +37,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("mrp_forecast_lines", "intent_name")
     op.drop_column("mrp_forecast_lines", "is_intent")
-    op.drop_index("ix_mrp_intent_products_code", table_name="mrp_intent_products")
     op.drop_table("mrp_intent_products")
