@@ -287,6 +287,7 @@ async def list_invoices(
         page=page, page_size=page_size,
     )
     await _attach_match_assignees(db, items)
+    await invoice_crud.attach_claimed_receipts(db, items)
     return InvoiceListResponse(items=items, total=total)
 
 
@@ -316,11 +317,13 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
         caller_id = uuid.UUID(user["sub"])
         if await _has_open_match_task(db, caller_id, invoice_id):
             await _attach_match_assignees(db, [inv])
+            await invoice_crud.attach_claimed_receipts(db, [inv])
             return inv
         # Matcher retention: the person who performed the match retains detail visibility
         # even after their task is completed (you can see what you acted on).
         if inv.matched_by == caller_id:
             await _attach_match_assignees(db, [inv])
+            await invoice_crud.attach_claimed_receipts(db, [inv])
             return inv
         # An invoice matched to an agreement is part of that agreement's record,
         # and that record is gated on epms.agreement.read with no row scope —
@@ -331,10 +334,12 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
             db, scope["user_id"], scope["role"], "epms.agreement.read"
         ) and await is_agreement_visible(db, inv.agreement_id, scope):
             await _attach_match_assignees(db, [inv])
+            await invoice_crud.attach_claimed_receipts(db, [inv])
             return inv
         if not await invoice_crud.is_visible(db, inv, scope):
             raise HTTPException(status_code=404, detail="Invoice not found")
     await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
 
 
@@ -604,6 +609,7 @@ async def match_invoice(
         await finance_sync.sync_ap_invoice(db, result, token)
 
         await _attach_match_assignees(db, [result])
+        await invoice_crud.attach_claimed_receipts(db, [result])
         return result
     except (AgreementMatchInvalid, AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -852,6 +858,7 @@ async def decline_match(
     await db.commit()
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
 
 
@@ -949,6 +956,7 @@ async def assign_match(
     await db.commit()
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
 
 
@@ -1010,6 +1018,7 @@ async def match_review(
         await _on_invoice_matched(db, result)
     await finance_sync.sync_ap_invoice(db, result, token)
     await _attach_match_assignees(db, [result])
+    await invoice_crud.attach_claimed_receipts(db, [result])
     return result
 
 

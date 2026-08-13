@@ -44,15 +44,29 @@ PA_URL = "/api/v1/pa"
 
 async def _create_receipt(
     db: AsyncSession, agr, user_id: uuid.UUID, *,
-    amount: str = "100.00", tax_amount: str = "0.00", total_amount: str | None = None,
-    receipt_ref: str | None = None,
+    amount: str | None = "100.00", tax_amount: str | None = "0.00", total_amount: str | None = None,
+    receipt_ref: str | None = None, receipt_type: str = "counter_slip",
 ) -> AgreementReceipt:
-    total = Decimal(total_amount) if total_amount is not None else Decimal(amount) + Decimal(tax_amount)
+    # Task 5: amount-less receipts (delivery / service, ag09) have no total to
+    # sum — Decimal(None) would blow up, and amount=None + tax_amount="0.00"
+    # would wrongly manufacture a total where none exists. Every existing
+    # caller still passes str amounts and gets the old summed behaviour
+    # byte-for-byte; only an explicit amount=None (and total_amount=None)
+    # takes the new branch.
+    if total_amount is not None:
+        total = Decimal(total_amount)
+    elif amount is not None:
+        total = Decimal(amount) + Decimal(tax_amount or "0.00")
+    else:
+        total = None
     receipt = await agreement_receipt_crud.create(
         db, agr,
         ReceiptCreate(
             receipt_date=date(2026, 7, 15), receipt_ref=receipt_ref,
-            amount=Decimal(amount), tax_amount=Decimal(tax_amount), total_amount=total,
+            receipt_type=receipt_type,
+            amount=Decimal(amount) if amount is not None else None,
+            tax_amount=Decimal(tax_amount) if tax_amount is not None else None,
+            total_amount=total,
             received_by=user_id, missing_receipt_reason=None, notes=None,
         ),
         created_by=user_id,

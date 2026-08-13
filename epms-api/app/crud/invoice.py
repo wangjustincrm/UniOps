@@ -26,6 +26,7 @@ from app.models.user import User
 from app.models.vendor import Vendor
 from app.schemas.invoice import (
     AllocationInput,
+    ClaimedReceipt,
     InvoiceCreate,
     InvoiceExceptionRequest,
     InvoiceMatchRequest,
@@ -33,6 +34,71 @@ from app.schemas.invoice import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ── Claimed receipts (Task 5) ───────────────────────────────────────────────────
+
+async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
+    """Inject `claimed_receipts` onto ORM invoice instances, batched.
+
+    Mirrors api/v1/invoices.py::_attach_match_assignees — same call-site
+    pattern, same "decorate the ORM object in place" shape — except the
+    source is `Invoice.receipt_ids` (a JSONB array of receipt id strings)
+    instead of the Task table.
+
+    Single `WHERE AgreementReceipt.id IN (...)` query across every invoice
+    being serialised, never one query per invoice: the ids from ALL invoices
+    in `invoices` are unioned first, fetched in one round trip, then handed
+    back out per-invoice from an in-memory dict. This exists specifically to
+    feed the invoice LIST endpoint (a page of invoices), so an O(n) query
+    count here would reintroduce the exact N+1 this helper is meant to avoid.
+
+    See schemas/invoice.py::ClaimedReceipt for why this data has to ride on
+    the invoice's own read permission (view_invoice) rather than the
+    dedicated, more narrowly gated receipts route.
+    """
+    all_ids: set[uuid.UUID] = set()
+    for inv in invoices:
+        for rid in (inv.receipt_ids or []):
+            try:
+                all_ids.add(rid if isinstance(rid, uuid.UUID) else uuid.UUID(str(rid)))
+            except (ValueError, AttributeError, TypeError):
+                continue
+
+    receipts_by_id: dict[uuid.UUID, AgreementReceipt] = {}
+    if all_ids:
+        rows = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id.in_(all_ids))
+        )).scalars().all()
+        receipts_by_id = {r.id: r for r in rows}
+
+    for inv in invoices:
+        claimed: list[ClaimedReceipt] = []
+        for rid in (inv.receipt_ids or []):
+            try:
+                key = rid if isinstance(rid, uuid.UUID) else uuid.UUID(str(rid))
+            except (ValueError, AttributeError, TypeError):
+                continue
+            receipt = receipts_by_id.get(key)
+            if receipt is None:
+                continue
+            # total_amount stays exactly what the receipt holds — None for a
+            # delivery/service receipt that never had an amount, NOT coerced
+            # to 0 (see ClaimedReceipt's docstring: a later task sums only
+            # the priced receipts, and a coerced 0 would make an invoice
+            # whose only evidence is a delivery note report a variance equal
+            # to the whole invoice — a false alarm shown to a PA approver).
+            claimed.append(ClaimedReceipt(
+                id=receipt.id,
+                receipt_ref=receipt.receipt_ref,
+                receipt_date=receipt.receipt_date,
+                receipt_type=receipt.receipt_type,
+                total_amount=receipt.total_amount,
+                vendor_name=receipt.vendor_name,
+            ))
+        # Mirrors receipt_ids' own convention (see Invoice.receipt_ids /
+        # crud/invoice.py's release path): empty means None, not [].
+        inv.claimed_receipts = claimed or None
 
 
 # ── Number generation ──────────────────────────────────────────────────────────
