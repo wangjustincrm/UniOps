@@ -646,3 +646,207 @@ def test_the_same_bucket_item_object_passed_twice_is_packed_twice():
     lines = pack_bucket([item, item], WEEKS, CapacityLimits(None, Decimal("40"), Decimal("20")))
     assert sum((l.qty for l in lines), Decimal("0")) == Decimal("60")
     assert len({l.plan_week_start for l in lines}) == 2
+
+
+def _open_weeks_of(per_week):
+    """The weeks a per-week limits list leaves open, mirroring the engine's
+    own `_week_can_host` rule (deliberately restated here rather than
+    imported, so the test does not inherit a bug from the thing it tests)."""
+    return [w for w, lim in zip(WEEKS, per_week)
+            if not (lim.max_output_qty is not None and lim.max_output_qty <= 0)
+            and not (lim.max_sku_count is not None and lim.max_sku_count < 1)]
+
+
+class TestHeterogeneousCapacityNeverStrandsAnEmptyWeek:
+    """A de-rated or shut week must MOVE production, never destroy it.
+
+    `_fits_in_one_week` answers "may this be split?" using the LARGEST open
+    week's cap, but placement then needs ONE SPECIFIC week to have the room.
+    When the big week is already taken, an item could once neither split nor
+    place and became a phantom gap -- with entirely empty (smaller) weeks
+    sitting idle. Distinct from the fragment gap under uniform capacity,
+    where an empty week is by definition a full-capacity week and so always
+    still fits."""
+
+    def test_the_reviewers_repro_schedules_everything(self):
+        # caps 20 / 40 / 20 / 0. B(29) takes W2, the only week that fits it
+        # whole. A(25) fits no single remaining week -- and must therefore
+        # split across W1+W2 rather than gap while W1 and W3 stand empty.
+        caps = [CapacityLimits(None, Decimal(c), Decimal("20"))
+                for c in ("20", "40", "20", "0")]
+        lines = pack_bucket(_items(A=25, B=29), WEEKS, caps)
+        assert not any(l.capacity_gap for l in lines), _by_week(lines)
+        assert sum((l.qty for l in lines), Decimal("0")) == Decimal("54")
+        for l in lines:
+            cap = caps[WEEKS.index(l.plan_week_start)].max_output_qty
+            assert Decimal(str(l.qty)) <= cap, (l, cap)
+
+    def test_no_empty_open_week_is_left_idle_while_a_gap_is_declared(self):
+        """The property behind the repro, for the class the fallback closes:
+        an item that could not fit any ONE week no longer gaps while empty
+        weeks stand by.
+
+        NOT a universal invariant -- see
+        `test_a_run_stopping_at_a_full_week_may_strand_later_weeks` below for
+        the one remaining way an open week can be left idle alongside a gap.
+        These scenarios are all of the `_fits_in_one_week` variety."""
+        scenarios = [
+            (("20", "40", "20", "0"), {"A": 25, "B": 29}),
+            (("20", "40", "20", "0"), {"A": 25, "B": 29, "C": 15}),
+            (("10", "40", "15", "40"), {"A": 30, "B": 38, "C": 12}),
+            (("40", "5", "40", "5"), {"A": 35, "B": 35}),
+        ]
+        for cap_strs, case in scenarios:
+            caps = [CapacityLimits(None, Decimal(c), Decimal("5")) for c in cap_strs]
+            lines = pack_bucket(_items(**case), WEEKS, caps)
+            if not any(l.capacity_gap for l in lines):
+                continue
+            used = {l.plan_week_start for l in lines if not l.capacity_gap}
+            idle = [w for w in _open_weeks_of(caps) if w not in used]
+            assert not idle, (cap_strs, case, _by_week(lines), idle)
+
+    def test_a_last_resort_split_is_still_contiguous(self):
+        caps = [CapacityLimits(None, Decimal(c), Decimal("20"))
+                for c in ("20", "40", "20", "0")]
+        lines = pack_bucket(_items(A=25, B=29), WEEKS, caps)
+        open_weeks = _open_weeks_of(caps)
+        for code in ("A", "B"):
+            idx = sorted(open_weeks.index(l.plan_week_start) for l in lines
+                         if l.material_code == code and not l.capacity_gap)
+            assert idx == list(range(idx[0], idx[0] + len(idx))), (code, idx)
+
+
+class TestContiguityIsOverOpenWeeks:
+    """P1 redefined: a run steps over a closed week at no changeover cost,
+    because the line is down anyway. `TestPrinciples.test_p1` measures
+    indices against the natural WEEKS list and has no closed week in any of
+    its CASES, so it cannot see this meaning at all -- this class is what
+    actually holds it, on both the tight and the spare path."""
+
+    OPEN = CapacityLimits(None, Decimal("40"), Decimal("20"))
+    SHUT = CapacityLimits(None, Decimal("0"), Decimal("20"))
+    DERATED = CapacityLimits(None, Decimal("20"), Decimal("20"))
+
+    # W3 closed -> open-week ordinals are W1=0, W2=1, W4=2
+    SCENARIOS = [
+        # (per-week caps, case, which regime it lands in)
+        ([OPEN, OPEN, SHUT, OPEN], {"A": 100, "B": 20}, "tight"),
+        ([OPEN, OPEN, SHUT, OPEN], {"A": 30, "B": 30, "C": 30}, "spare"),
+        ([OPEN, OPEN, SHUT, OPEN], {"A": 90}, "spare"),
+        ([OPEN, OPEN, SHUT, OPEN], {"A": 60, "B": 40}, "spare"),
+        ([OPEN, SHUT, OPEN, OPEN], {"A": 110, "B": 10}, "tight"),
+        ([DERATED, OPEN, SHUT, OPEN], {"A": 25, "B": 29}, "tight"),
+    ]
+
+    def test_runs_are_contiguous_over_open_week_indices(self):
+        for per_week, case, _regime in self.SCENARIOS:
+            lines = pack_bucket(_items(**case), WEEKS, per_week)
+            open_weeks = _open_weeks_of(per_week)
+            for code in case:
+                idx = sorted(open_weeks.index(l.plan_week_start) for l in lines
+                             if l.material_code == code and not l.capacity_gap)
+                assert idx == list(range(idx[0], idx[0] + len(idx))), \
+                    (case, code, idx, _by_week(lines))
+
+    def test_nothing_is_ever_placed_in_a_closed_week(self):
+        for per_week, case, _regime in self.SCENARIOS:
+            lines = pack_bucket(_items(**case), WEEKS, per_week)
+            open_weeks = _open_weeks_of(per_week)
+            for l in lines:
+                assert l.plan_week_start in open_weeks, (case, l)
+
+    def test_a_spare_block_steps_over_the_shutdown(self):
+        # 90 over three open weeks: W1, W2 and W4, 30 each. The run is
+        # contiguous over open weeks while skipping a calendar week entirely.
+        lines = pack_bucket(_items(A=90), WEEKS, [self.OPEN, self.OPEN, self.SHUT, self.OPEN])
+        assert _by_week(lines) == {
+            WEEKS[0]: [("A", "30")],
+            WEEKS[1]: [("A", "30")],
+            WEEKS[3]: [("A", "30")],
+        }
+
+    def test_per_week_capacity_holds_under_closed_weeks(self):
+        for per_week, case, _regime in self.SCENARIOS:
+            lines = pack_bucket(_items(**case), WEEKS, per_week)
+            totals = {}
+            for l in lines:
+                if l.capacity_gap:
+                    continue
+                totals[l.plan_week_start] = (
+                    totals.get(l.plan_week_start, Decimal("0")) + Decimal(str(l.qty)))
+            for week, qty in totals.items():
+                cap = per_week[WEEKS.index(week)].max_output_qty
+                assert cap is None or qty <= cap, (case, week, qty, cap)
+
+
+def test_gap_in_an_all_closed_bucket_does_not_blame_a_closed_week():
+    """Display-only, but it is exactly the situation someone would be
+    debugging: pinning to weeks[-1] and reporting "under max_output_qty 0"
+    is true and useless."""
+    shut = CapacityLimits(None, Decimal("0"), Decimal("20"))
+    lines = pack_bucket(_items(A=30), WEEKS, [shut] * 4)
+    assert all(l.capacity_gap for l in lines)
+    reason = lines[0].prebuild_reason
+    assert "closed" in reason and "max_output_qty 0" not in reason, reason
+
+
+def test_gap_is_pinned_to_an_open_week_not_a_closed_one():
+    # W4 is shut and W1-W3 are single-SKU, so B(20) has nowhere to go. Its
+    # gap must land on the last OPEN week, not on the shutdown.
+    per_week = [CapacityLimits(1, Decimal("40"), Decimal("20"))] * 3 + \
+               [CapacityLimits(1, Decimal("0"), Decimal("20"))]
+    lines = pack_bucket(_items(A=40, B=20, C=40, D=40), WEEKS, per_week)
+    gaps = [l for l in lines if l.capacity_gap]
+    assert gaps, _by_week(lines)
+    assert all(l.plan_week_start != WEEKS[3] for l in gaps), _by_week(lines)
+
+
+def test_a_small_product_takes_an_empty_week_before_another_products_leftover():
+    """Spec 2.2's ordering, which lost its only discriminating case when
+    `{A:100, B:15}` moved to the spare regime under the `>` predicate.
+
+    A(100) leaves W3 holding 20 with 20 free, and B(15) would fit in that
+    leftover -- but W4 is entirely empty, and P3 prefers a week of one's own
+    to sharing one. The opposite rule (leftover space first) would put B in
+    W3 and leave W4 idle."""
+    limits = CapacityLimits(None, Decimal("40"), Decimal("20"))
+    lines = pack_bucket(_items(A=100, B=15, C=5), WEEKS, limits)
+    assert _by_week(lines) == {
+        WEEKS[0]: [("A", "40")],
+        WEEKS[1]: [("A", "40")],
+        WEEKS[2]: [("A", "20"), ("C", "5")],
+        WEEKS[3]: [("B", "15")],
+    }
+
+
+def test_a_run_stopping_at_a_full_week_may_strand_later_weeks():
+    """KNOWN, ACCEPTED residual of the phantom-gap class -- pinned so it
+    cannot drift silently, and so nobody reads it as an oversight.
+
+    B(40) takes W3, the only week that fits it whole. A(35) then fits no
+    single week, falls back to the greedy fill, and runs W1(20) + W2(5)
+    before hitting W3, which is now full. It STOPS there rather than hopping
+    to W4, because hopping would break P1 -- so its last 10 gaps while W4
+    sits empty with 30 of capacity.
+
+    Letting the run hop would demote contiguity from an invariant to a
+    preference. That is a design decision about the algorithm's flagship
+    principle, not something to slip into a fix round, so the trade stands
+    and is documented in `pack_bucket`'s docstring. Uniform capacity cannot
+    reach this state at all (an empty week is a full-capacity week, so the
+    whole-quantity search would have found it first)."""
+    caps = [CapacityLimits(None, Decimal(c), Decimal("1"))
+            for c in ("20", "5", "40", "30")]
+    lines = pack_bucket(_items(A=35, B=40), WEEKS, caps)
+
+    gaps = [l for l in lines if l.capacity_gap]
+    assert [(l.material_code, str(l.qty)) for l in gaps] == [("A", "10")], _by_week(lines)
+    assert WEEKS[3] not in {l.plan_week_start for l in lines}      # W4 left idle
+    # still contiguous, still conserved, still within every week's own cap
+    a_weeks = sorted(WEEKS.index(l.plan_week_start) for l in lines
+                     if l.material_code == "A" and not l.capacity_gap)
+    assert a_weeks == [0, 1]
+    assert sum((l.qty for l in lines), Decimal("0")) == Decimal("75")
+    for l in lines:
+        if not l.capacity_gap:
+            assert Decimal(str(l.qty)) <= caps[WEEKS.index(l.plan_week_start)].max_output_qty

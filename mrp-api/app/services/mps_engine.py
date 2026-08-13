@@ -152,6 +152,27 @@ cross-bucket pre-build step, not its output. A later task must resolve them
 before anything is persisted -- storing them raw would show a planner a
 permanent shortfall for demand that could have been pre-built.
 
+## KNOWN LIMITATION -- a de-rated week suppresses levelling
+
+`need_weeks` is sized off the SMALLEST open week's `max_output_qty` (see
+`_reference_cap`). That is the safe side -- it cannot over-produce, and it
+makes the spare regime's levelling provably unable to overfill any week --
+but it is blunt: **one merely de-rated week (not shut, just smaller) drags
+the WHOLE bucket into the tight regime and permanently suppresses P2's
+levelling.** With `caps=[40, 10, 40, 40]` and `{A: 60, B: 20}`:
+
+    W1 A40 | W2 A10 | W3 A10 | W4 B20
+
+-- exactly the front-loaded shape the `>` regime predicate was introduced to
+eliminate, because `ref_cap=10` inflates `sum(need_weeks)` to 8 against 4
+weeks. A shutdown week is NOT affected (closed weeks are excluded from the
+open set before `ref_cap` is taken), so this only bites on genuine de-rating.
+
+The cheaper alternative -- take the regime off the largest cap and have
+`_pack_spare` clamp each chunk to its own slot's cap -- touches the
+trickiest function here and was deliberately deferred. Do not "discover"
+this again: it is a known, accepted trade.
+
 See `pack_bucket`'s own docstring for the two regimes and every tie-break.
 """
 from collections.abc import Sequence
@@ -644,7 +665,25 @@ def _line(item: BucketItem, week: date, qty: Decimal, **kw) -> WeeklyLine:
     )
 
 
-def _gap_reason(qty: Decimal, limits: CapacityLimits) -> str:
+def _first_week_with_any_room(loads: list["_WeekLoad"], per_week: list[CapacityLimits],
+                              open_weeks: list[int], code: str) -> int | None:
+    """Earliest open week that can take at least SOMETHING of `code`."""
+    for i in open_weeks:
+        if not loads[i].sku_room(code, per_week[i]):
+            continue
+        room = loads[i].remaining(per_week[i])
+        if room is None or room > 0:
+            return i
+    return None
+
+
+def _gap_reason(qty: Decimal, limits: CapacityLimits, all_closed: bool = False) -> str:
+    if all_closed:
+        # Pinning the line to a closed week and then reporting "under
+        # max_output_qty 0" is technically true and completely unhelpful in
+        # exactly the situation someone would be debugging.
+        return (f"every week in this bucket is closed to production, "
+                f"so {_tidy(qty)} cannot be placed here at all")
     ceilings = []
     if limits.max_sku_count is not None:
         ceilings.append(f"max_sku_count {limits.max_sku_count}")
@@ -685,13 +724,7 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
             # previous oversized product left behind, which in a bucket that
             # is by definition over-full turns spare capacity into a phantom
             # gap.
-            start = next(
-                (i for i in open_weeks
-                 if loads[i].sku_room(code, per_week[i])
-                 and (loads[i].remaining(per_week[i]) is None
-                      or loads[i].remaining(per_week[i]) > 0)),
-                None,
-            )
+            start = _first_week_with_any_room(loads, per_week, open_weeks, code)
         else:
             # A product that fits inside one week is NEVER split (P1: a run
             # must be contiguous, and every split costs two cleandowns).
@@ -712,6 +745,22 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
                      if loads[i].has_room_for(code, qty, per_week[i])),
                     None,
                 )
+            if start is None:
+                # Last resort: NO single open week can hold the whole
+                # quantity, so "never split what fits in one week" has
+                # nothing left to protect -- its premise is false here.
+                # Fall back to the greedy fill rather than declare a gap.
+                #
+                # This bites under heterogeneous per-week capacity, where
+                # `_fits_in_one_week` says yes on the strength of the LARGEST
+                # open week while placement needs ONE SPECIFIC week to have
+                # the room. Once that big week is occupied the item could
+                # neither split nor place, and became a phantom gap while
+                # entirely empty (but smaller) weeks sat idle -- the exact
+                # opposite of what per-week capacity was added to achieve.
+                # Splitting is worse than not splitting; it is far better
+                # than a shortfall with capacity left unused.
+                start = _first_week_with_any_room(loads, per_week, open_weeks, code)
 
         remaining = qty
         last_used: int | None = None
@@ -736,12 +785,22 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
             # explicit gap line carrying the shortfall qty. Gap lines book
             # no capacity (they are a shortfall, not a production slot), and
             # are pinned to the last week this product actually occupied so
-            # they stay inside its run -- or to the bucket's last week when
-            # it got nowhere at all.
-            gap_index = last_used if last_used is not None else len(weeks) - 1
+            # they stay inside its run -- or, when it got nowhere at all, to
+            # the last OPEN week, never a closed one: a gap pinned to a
+            # shutdown week reads as "no room under max_output_qty 0", which
+            # is true and useless. Only when every week is closed is there
+            # nowhere honest to pin it, and then the reason says so.
+            if last_used is not None:
+                gap_index = last_used
+            elif open_weeks:
+                gap_index = open_weeks[-1]
+            else:
+                gap_index = len(weeks) - 1
             lines.append(_line(item, weeks[gap_index], remaining,
                                capacity_gap=True,
-                               prebuild_reason=_gap_reason(remaining, per_week[gap_index])))
+                               prebuild_reason=_gap_reason(
+                                   remaining, per_week[gap_index],
+                                   all_closed=not open_weeks)))
 
     return lines
 
@@ -846,11 +905,15 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
 
     - **P1 -- a product's run is contiguous.** Changeovers cost a cleandown
       each way, so A-then-B-then-A is never planned. A product whose quantity
-      fits within some week's capacity is never split at all; only a product
-      exceeding every week's capacity may span weeks, and then it fills whole
-      weeks and drops its remainder in the immediately following open week.
-      Contiguity is measured over OPEN weeks: a run stepping over a shutdown
-      week costs no changeover, because the line is down anyway.
+      fits within some week's capacity is never split *while a week that can
+      still take it whole exists*; only a product exceeding every week's
+      capacity may span weeks, and then it fills whole weeks and drops its
+      remainder in the immediately following open week. As a LAST RESORT --
+      when no open week, empty or otherwise, can take the whole quantity --
+      even a "small" product is split rather than turned into a shortfall
+      while capacity sits idle. Contiguity is measured over OPEN weeks: a run
+      stepping over a shutdown week costs no changeover, because the line is
+      down anyway.
     - **P2 -- when the month is not full, spread out** rather than cramming
       the first weeks and idling the plant at the end.
     - **P3 -- prefer one product per week.** Fewer changeovers again; a
@@ -894,6 +957,21 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
     - **Equal quantities** order by `material_code` ascending, then
       `demand_month` -- arbitrary but stable, so the same input always
       produces the same plan.
+    - **A gap line is never pinned to a closed week** unless every week in
+      the bucket is closed, in which case the reason says exactly that
+      instead of blaming the closed week's `max_output_qty 0`.
+    - **A run stops at the first open week that cannot take any more of it**
+      (already full, or too small) rather than hopping over it, because
+      hopping would break P1. Under heterogeneous capacity that can strand
+      open weeks BEYOND the wall: `caps=[20, 5, 40, 30]` with `{A: 35,
+      B: 40}` puts B in W3, then A fills W1(20) + W2(5), hits full W3, and
+      gaps its last 10 while W4 sits empty with 30 of capacity. P1 wins over
+      utilisation here, deliberately -- letting the run hop would demote
+      contiguity from an invariant to a preference, which is a design
+      decision, not a bug fix. Roughly 1 in 1000 randomised heterogeneous
+      buckets. Uniform capacity CANNOT produce it: there, an empty week is a
+      full-capacity week, so the "whole quantity" search would have found it
+      before the greedy fill ever ran.
     - **A product larger than the whole bucket's capacity** fills every week
       it can reach; the unproducible remainder becomes one `capacity_gap`
       line pinned to the last week it occupied. That week therefore carries
