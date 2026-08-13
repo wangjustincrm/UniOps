@@ -464,8 +464,9 @@ async def match_invoice(
                     review_description = (
                         f"Invoice {inv.internal_ref} was matched to agreement "
                         f"{result.agreement_number} as a legacy settlement (no receipt "
-                        f"evidence): {result.legacy_settlement_reason}. Please review and "
-                        "approve or reject."
+                        f"evidence): {result.legacy_settlement_reason}. Please confirm the "
+                        "linkage is correct. Approval of the payment amount happens later, "
+                        "on the Payment Application approval chain."
                     )
                 elif result.schedule_id is not None:
                     # recurring (auto-claimed or an explicit req.schedule_id)
@@ -475,7 +476,8 @@ async def match_invoice(
                     review_description = (
                         f"Invoice {inv.internal_ref} was matched to agreement "
                         f"{result.agreement_number} against a billing schedule row. "
-                        "Please review and approve or reject."
+                        "Please confirm the linkage is correct. Approval of the payment "
+                        "amount happens later, on the Payment Application approval chain."
                     )
                 else:
                     # Review fix (Important #2 follow-up, Task 5 round 2):
@@ -511,7 +513,9 @@ async def match_invoice(
                             f"Invoice {inv.internal_ref} was matched to agreement "
                             f"{result.agreement_number}. No receipt evidence or "
                             "no-evidence declaration has been recorded for it yet. "
-                            "Please review and approve or reject."
+                            "Please confirm the linkage is correct. Approval of the "
+                            "payment amount happens later, on the Payment Application "
+                            "approval chain."
                         )
                     else:
                         review_description = (
@@ -519,12 +523,15 @@ async def match_invoice(
                             f"{result.agreement_number}, but no billing period could be "
                             "auto-claimed (none pending, or the amount is outside "
                             "tolerance). Please review and manually assign the billing "
-                            "period this invoice covers."
+                            "period this invoice covers. Approval of the payment amount "
+                            "happens later, on the Payment Application approval chain."
                         )
             else:
                 review_description = (
                     f"Invoice {inv.internal_ref} was matched with a non-zero variance "
-                    f"({result.variance}). Please review and approve or reject."
+                    f"({result.variance}). Please confirm the linkage is correct. "
+                    "Approval of the payment amount happens later, on the Payment "
+                    "Application approval chain."
                 )
             review = Task(
                 type="review_match", priority="normal",

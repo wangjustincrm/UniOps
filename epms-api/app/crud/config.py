@@ -224,10 +224,12 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<a href=\"{link}\">Open Invoice &amp; Match to PO</a>\n\n{company_name}",
     ),
     "match_review_request": _DEFAULT_EMAIL_TEMPLATE(
-        "Match review required — invoice {invoice_number}",
-        "Hi {recipient_name},\n\nThe assigned matcher has completed matching on invoice <b>{invoice_number}</b> "
-        "with a non-zero variance. Please review the allocation and approve or reject it.\n\n"
-        "<a href=\"{link}\">Review Match</a>\n\n{company_name}",
+        "Confirm invoice match — {invoice_number}",
+        "Hi {recipient_name},\n\nA delegate has matched invoice <b>{invoice_number}</b> "
+        "on your behalf. Please confirm it is linked to the correct purchase order and "
+        "goods receipt.\n\nThis is a confirmation of the linkage only — approval of the "
+        "payment amount happens later, on the Payment Application approval chain.\n\n"
+        "<a href=\"{link}\">Confirm Match</a>\n\n{company_name}",
     ),
     "exception_resolution_request": _DEFAULT_EMAIL_TEMPLATE(
         "Invoice {invoice_number} is outside match tolerance",

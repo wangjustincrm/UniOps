@@ -461,8 +461,13 @@ export default function InvoiceDetailPage() {
                   <p className="text-sm font-semibold text-primary-800">Match pending review</p>
                   <p className="text-xs text-neutral-600">
                     This invoice was matched with a variance of {formatAmount(Math.abs(Number(inv.variance ?? 0)), inv.currency)}
-                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Approve to finalize the match,
+                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Confirm to finalize the match,
                     or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
+                  </p>
+                  <p className="text-xs text-neutral-500">
+                    Confirming records that this invoice is linked to the correct PO and goods
+                    receipt. It does not approve the payment amount — that happens on the Payment
+                    Application approval chain.
                   </p>
                   <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
                     placeholder="Review note (required to reject)..."
