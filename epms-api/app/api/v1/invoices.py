@@ -1018,12 +1018,12 @@ async def delete_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     try:
         await finance_sync.sync_ap_invoice(db, inv, token, void=True)
-        # Complete all open match_invoice and review_match tasks before hard delete
-        # so no orphaned tasks reference a non-existent invoice.
+        # Complete all open match_invoice / review_match / resolve_exception tasks
+        # before hard delete so no orphaned tasks reference a non-existent invoice.
         caller_id = uuid.UUID(user["sub"])
         now_ts = datetime.now(timezone.utc)
         open_tasks = (await db.execute(select(Task).where(
-            Task.type.in_(["match_invoice", "review_match"]),
+            Task.type.in_(["match_invoice", "review_match", "resolve_exception"]),
             Task.document_type == "invoice",
             Task.document_id == invoice_id,
             Task.is_completed.is_(False),

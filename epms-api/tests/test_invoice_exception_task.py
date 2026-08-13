@@ -74,3 +74,28 @@ async def test_resolving_exception_closes_the_task(admin_client):
     assert await _exception_task(inv["id"]) is None, "解决后不得留下开放任务"
     closed = await _exception_task(inv["id"], open_only=False)
     assert closed is not None and closed.is_completed is True
+
+
+@pytest.mark.asyncio
+async def test_deleting_exception_invoice_leaves_no_open_task(admin_client):
+    """crud/invoice.py 明确允许删除 status='exception' 的发票 —— 这是第三个
+    离开 exception 的出口。delete_invoice 硬删前按 type 白名单关任务
+    (invoices.py:~1026),必须把 resolve_exception 也算进去,否则留下一条
+    指向不存在发票的僵尸任务。硬删还是软关不重要,只断言"无开放任务"。"""
+    v = await _make_vendor(admin_client, "EXC3")
+    po = await _make_issued_po(admin_client, v["id"], [
+        {"description": "A", "qty": "1", "unit": "EA", "unit_price": "100.00"}])
+    inv = await _make_invoice(admin_client, v["id"], number="EXC-0003", amount="200.00",
+                              lines=[{"description": "L", "quantity": "1",
+                                      "unit_price": "200.00", "line_total": "200.00"}])
+    await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv["line_items"][0]["id"], "po_id": po["id"],
+         "po_line_id": po["line_items"][0]["id"],
+         "allocated_amount": "200.00", "allocated_tax": "0.00"}]})
+    assert await _exception_task(inv["id"]) is not None
+
+    r = await admin_client.delete(f"{INV_URL}/{inv['id']}")
+    assert r.status_code == 204, r.text
+
+    assert await _exception_task(inv["id"]) is None, \
+        "删除 exception 发票后不得留下开放的 resolve_exception 任务"
