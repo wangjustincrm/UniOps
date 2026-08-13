@@ -18,6 +18,15 @@ this task) — it is pinned to `'KG'` by convention only, per this task's
 brief: Phase 1B once shipped a KG/MT selector and it produced a silent
 1000x error, so this task does not reopen unit selection.
 
+`constraint_type` IS validated (`_validate_constraint_type`, fix round 1)
+against the three values the resolvers in `app/services/capacity.py`
+actually match on (`max_output_qty`, `max_sku_count`, `min_output_qty`), on
+every create/update for both `/rules` and `/exceptions`. Originally shipped
+as a bare unvalidated string (matching pre-existing behaviour for the first
+two constraint types) — fixed after review flagged that a typo'd value
+would be silently stored and then silently ignored by both resolvers, with
+no signal to the caller that the rule/exception does nothing.
+
 ## min_output_qty <=  max_output_qty validation — judgment call
 
 `min_output_qty` is a soft floor (see `app/services/mps_engine.py`'s
@@ -166,6 +175,27 @@ async def _get_exception_or_404(db: SessionDep, exception_id: uuid.UUID) -> MrpC
     return row
 
 
+_KNOWN_CONSTRAINT_TYPES = ("max_output_qty", "max_sku_count", "min_output_qty")
+
+
+def _validate_constraint_type(constraint_type: str) -> None:
+    """422 (never a silent no-op) on any `constraint_type` outside the
+    three values `resolve_effective_rules`/`resolve_limits_for_week`
+    (app/services/capacity.py) actually match on. Before this check, a
+    typo'd value (e.g. `'max_output_qtyy'`) was accepted and stored by both
+    `/rules` and `/exceptions`, and then silently matched nothing in either
+    resolver -- a rule or exception that looks saved in the UI/API response
+    but does nothing, the exact class of silent failure this codebase keeps
+    getting bitten by. No other constraint_type string exists anywhere in
+    this repo (verified by grep before adding this), so this rejects
+    nothing legitimate -- only genuinely unknown values."""
+    if constraint_type not in _KNOWN_CONSTRAINT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"unknown constraint_type {constraint_type!r}; must be one of {_KNOWN_CONSTRAINT_TYPES}",
+        )
+
+
 _MIN_MAX_TYPES = ("min_output_qty", "max_output_qty")
 
 
@@ -230,6 +260,7 @@ async def list_rules(db: SessionDep, _: ReadDep):
 
 @router.post("/rules", response_model=CapacityRuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(body: CapacityRuleCreate, db: SessionDep, _: WriteDep):
+    _validate_constraint_type(body.constraint_type)
     await _validate_min_max(
         db, scope_type=body.scope_type, scope_ref=body.scope_ref,
         constraint_type=body.constraint_type, limit_value=body.limit_value,
@@ -247,6 +278,8 @@ async def create_rule(body: CapacityRuleCreate, db: SessionDep, _: WriteDep):
 async def update_rule(rule_id: uuid.UUID, body: CapacityRuleUpdate, db: SessionDep, _: WriteDep):
     row = await _get_rule_or_404(db, rule_id)
     updates = body.model_dump(exclude_unset=True)
+    if "constraint_type" in updates:
+        _validate_constraint_type(updates["constraint_type"])
     await _validate_min_max(
         db,
         scope_type=updates.get("scope_type", row.scope_type),
@@ -285,6 +318,7 @@ async def list_exceptions(db: SessionDep, _: ReadDep):
 
 @router.post("/exceptions", response_model=CapacityExceptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_exception(body: CapacityExceptionCreate, db: SessionDep, _: WriteDep):
+    _validate_constraint_type(body.constraint_type)
     row = MrpCapacityException(**body.model_dump())
     db.add(row)
     try:
@@ -307,6 +341,8 @@ async def create_exception(body: CapacityExceptionCreate, db: SessionDep, _: Wri
 async def update_exception(exception_id: uuid.UUID, body: CapacityExceptionUpdate, db: SessionDep, _: WriteDep):
     row = await _get_exception_or_404(db, exception_id)
     updates = body.model_dump(exclude_unset=True)
+    if "constraint_type" in updates:
+        _validate_constraint_type(updates["constraint_type"])
     for field, value in updates.items():
         setattr(row, field, value)
     try:

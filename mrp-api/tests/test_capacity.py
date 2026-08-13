@@ -154,3 +154,48 @@ async def test_inactive_exception_is_ignored(client, auth_headers, db_session):
                        json={"is_active": False}, headers=auth_headers)
     assert str((await resolve_limits_for_week(db_session,
                                               date(2026, 9, 7))).max_output_qty) == "40000.000"
+
+
+# ── Fix round 1 (code review) ───────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_exception_with_scope_ref_does_not_leak_into_factory_wide_resolution(client, auth_headers, db_session):
+    """scope_type='factory' with a non-null scope_ref is nonsensical but not
+    schema-forbidden. resolve_limits_for_week must filter on
+    scope_ref IS NULL (not just scope_type == 'factory') so a stray row like
+    this can never be swept into the factory-wide resolution alongside the
+    real factory-wide rule."""
+    from app.services.capacity import resolve_limits_for_week
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    r = await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-08-10", "scope_type": "factory", "scope_ref": "line-1",
+        "constraint_type": "max_output_qty", "limit_value": "99999", "uom": "KG",
+        "reason": "scoped to a specific line, must not apply factory-wide",
+    })
+    assert r.status_code == 201, r.text
+    limits = await resolve_limits_for_week(db_session, date(2026, 8, 10))
+    assert str(limits.max_output_qty) == "40000.000"
+
+
+@pytest.mark.anyio
+async def test_rule_create_rejects_unknown_constraint_type(client, auth_headers):
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qtyy",
+        "limit_value": "1000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    assert r.status_code == 422
+    assert "max_output_qtyy" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_exception_create_rejects_unknown_constraint_type(client, auth_headers):
+    r = await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-08-10", "scope_type": "factory",
+        "constraint_type": "bogus_type", "limit_value": "0", "uom": "KG",
+    })
+    assert r.status_code == 422
+    assert "bogus_type" in r.json()["detail"]
