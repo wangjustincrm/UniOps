@@ -80,6 +80,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.demand_series import MrpDemandSeries, MrpForecastChangeLog
 from app.models.forecast import ForecastLine, ForecastVersion
+from app.models.intent import MrpIntentProduct
+from app.services.intent_products import is_intent_code
 from app.services.mdm_client import resolve_material_names
 
 _ZERO = Decimal("0")
@@ -349,6 +351,16 @@ async def freeze_outlook(
         select(MrpDemandSeries).where(MrpDemandSeries.month.in_(months))
     )).scalars().all()
 
+    # Intent-product name at freeze time, keyed by placeholder code, frozen
+    # into each ForecastLine below (`intent_name`) alongside `is_intent`
+    # (Task 4, `app/services/intent_products.py`) -- so a version stays
+    # self-explanatory years later even after its intent code is bound to a
+    # real material or dropped, without needing a live join back to
+    # `mrp_intent_products` at read time.
+    intent_names = dict((await db.execute(
+        select(MrpIntentProduct.code, MrpIntentProduct.name)
+    )).all())
+
     version = ForecastVersion(
         version_no=f"FCV-{anchor_month}-{uuid.uuid4().hex[:6].upper()}",
         status="confirmed",
@@ -368,6 +380,8 @@ async def freeze_outlook(
             month=row.month,
             qty=row.qty,
             uom=row.uom,
+            is_intent=is_intent_code(row.material_code),
+            intent_name=intent_names.get(row.material_code),
         ))
 
     await db.commit()

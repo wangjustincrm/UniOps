@@ -100,7 +100,7 @@ from app.api.v1.net_requirement import _generate_months, _load_forecast_by_mater
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
 from app.models.demand import MrpDemand
-from app.models.forecast import ForecastVersion
+from app.models.forecast import ForecastLine, ForecastVersion
 from app.models.mps import MrpMpsLine, MrpMpsRun
 from app.services import mps_export
 from app.services.capacity import resolve_effective_rules
@@ -276,14 +276,49 @@ async def _load_lines(db: SessionDep, run_id: uuid.UUID) -> list[MrpMpsLine]:
     return rows
 
 
-async def _build_demand_items(db: SessionDep, version: ForecastVersion) -> list[DemandItem]:
+async def _load_intent_lines(db: SessionDep, version: ForecastVersion) -> list[ForecastLine]:
+    """This version's frozen intent-product rows (Task 4) — filtered purely
+    on the frozen `is_intent` column, NEVER by re-deriving from the material
+    code via `is_intent_code()`. That's the whole reason `freeze_outlook`
+    (`app/services/demand_series.py`) writes `is_intent`/`intent_name` onto
+    each `ForecastLine` at freeze time instead of joining `mrp_intent_products`
+    here: a snapshot must stay self-explanatory even after its intent code is
+    later bound to a real material or dropped, and those are exactly the rows
+    a code-prefix guess would get wrong. Restricted to the version's current
+    horizon the same way `_load_forecast_by_material` is (a line surviving
+    outside the horizon after an edit shouldn't surface here either)."""
+    months = set(_generate_months(version.horizon_start_month, version.horizon_months))
+    rows = (await db.execute(
+        select(ForecastLine).where(
+            ForecastLine.version_id == version.id, ForecastLine.is_intent.is_(True),
+        )
+    )).scalars().all()
+    return [line for line in rows if line.month in months]
+
+
+def _skipped_intent_stats(intent_lines: list[ForecastLine]) -> list[dict]:
+    return [
+        {"code": l.material_code, "name": l.intent_name, "qty": str(l.qty)}
+        for l in intent_lines
+    ]
+
+
+async def _build_demand_items(
+    db: SessionDep, version: ForecastVersion, exclude_codes: frozenset[str] = frozenset(),
+) -> list[DemandItem]:
     """Same net-requirement computation `GET /net-requirement` performs (see
-    module docstring) — only positive net requirement becomes demand."""
+    module docstring) — only positive net requirement becomes demand.
+    `exclude_codes` (the version's intent-product material codes, see
+    `_load_intent_lines`) are skipped entirely — an intent product has no
+    real ERP material, so it must never reach the planning engine or a
+    persisted `MrpMpsLine`."""
     months = _generate_months(version.horizon_start_month, version.horizon_months)
     by_material = await _load_forecast_by_material(db, version.id, months)
 
     demands: list[DemandItem] = []
     for material_code, forecast_cells in by_material.items():
+        if material_code in exclude_codes:
+            continue
         forecast_by_month = {m: forecast_cells.get(m, Decimal("0")) for m in months}
         breakdown = await get_opening_stock_breakdown(db, material_code)
         for row in compute_net_requirements(forecast_by_month, breakdown.opening_stock):
@@ -435,7 +470,10 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
         safety_margin = DEFAULT_SAFETY_MARGIN_FRACTION
     lead = body.production_lead_months if body.production_lead_months is not None else 1
 
-    demands = await _build_demand_items(db, version)
+    intent_lines = await _load_intent_lines(db, version)
+    intent_codes = frozenset(l.material_code for l in intent_lines)
+
+    demands = await _build_demand_items(db, version, intent_codes)
     limits = await _resolve_capacity_limits(db, version.horizon_start_month)
     shelf_life = await resolve_shelf_life(token)
     lines = generate_mps(
@@ -448,6 +486,9 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     # this from live inventory.
     ctx = await _build_demand_context(db, version)
 
+    stats = _compute_stats(lines)
+    stats["skipped_intent"] = _skipped_intent_stats(intent_lines)
+
     run_no = await _next_run_no(db)
     run = MrpMpsRun(
         run_no=run_no,
@@ -457,7 +498,7 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
         status="draft",
         safety_margin_fraction=safety_margin,
         generated_by=_sub_to_uuid(payload),
-        stats=_compute_stats(lines),
+        stats=stats,
         production_lead_months=lead,
     )
     db.add(run)
@@ -569,8 +610,14 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     # be re-submitted to generate_mps -- the locked line already represents
     # that demand and already occupies its month's capacity ledger (seeded
     # from `locked`); re-adding it to `demands` would double-place it.
+    intent_lines = await _load_intent_lines(db, version)
+    intent_codes = frozenset(l.material_code for l in intent_lines)
+
+    # Same intent exclusion as create_run -- without it, a run generated
+    # after intent rows were already skipped would silently re-admit them on
+    # the very next recalculate.
     demands = [
-        d for d in await _build_demand_items(db, version)
+        d for d in await _build_demand_items(db, version, intent_codes)
         if (d.material_code, d.demand_month) not in locked_keys
     ]
     limits = await _resolve_capacity_limits(db, run.horizon_start_month)
@@ -608,7 +655,9 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
             demand_forecast=demand_forecast, opening_stock=opening_stock,
             lead_shortfall=lead_shortfall,
         ))
-    run.stats = _compute_stats(lines)
+    stats = _compute_stats(lines)
+    stats["skipped_intent"] = _skipped_intent_stats(intent_lines)
+    run.stats = stats
 
     await db.commit()
     await db.refresh(run)

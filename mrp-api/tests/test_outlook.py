@@ -220,3 +220,25 @@ async def test_freezing_outlook_does_not_supersede_prior_confirmed_forecast_vers
     statuses = {item["id"]: item["status"] for item in listing["items"]}
     assert statuses[str(v1.id)] == "confirmed"  # NOT superseded by the later outlook freeze
     assert statuses[v2["id"]] == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_outlook_snapshot_flags_intent_lines(client, auth_headers, db_session):
+    from sqlalchemy import text
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Planned SKU"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-06", "qty": "500"},
+        {"material_code": "S0093", "month": "2027-06", "qty": "800"},
+    ]})
+    r = await client.post("/api/v1/series/outlook",
+                          json={"anchor_month": "2027-06"}, headers=auth_headers)
+    assert r.status_code == 201, r.text
+
+    rows = (await db_session.execute(text(
+        "select material_code, is_intent, intent_name from mrp_forecast_lines "
+        "where version_id = :v"
+    ), {"v": r.json()["id"]})).all()
+    by_code = {c: (f, n) for c, f, n in rows}
+    assert by_code[intent["code"]] == (True, "Planned SKU")
+    assert by_code["S0093"][0] is False

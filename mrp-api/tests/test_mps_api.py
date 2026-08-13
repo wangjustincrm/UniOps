@@ -832,3 +832,24 @@ async def test_export_run_requires_permission(client, db_session, admin_token, n
     denied_headers = {"Authorization": f"Bearer {non_admin_token}"}
     r = await client.get(f"/api/v1/mps/runs/{run['id']}/export", headers=denied_headers)
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_generate_skips_intent_rows_and_names_them(client, auth_headers):
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Not Yet Real"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-09", "qty": "700"},
+        {"material_code": "S0093", "month": "2027-09", "qty": "900"},
+    ]})
+    version = (await client.post("/api/v1/series/outlook",
+                                 json={"anchor_month": "2027-09"}, headers=auth_headers)).json()
+
+    run = (await client.post("/api/v1/mps/runs",
+                             json={"forecast_version_id": version["id"]},
+                             headers=auth_headers)).json()
+    codes = {l["material_code"] for l in run["lines"]}
+    assert intent["code"] not in codes
+    skipped = run["stats"]["skipped_intent"]
+    assert [s["code"] for s in skipped] == [intent["code"]]
+    assert skipped[0]["name"] == "Not Yet Real"
