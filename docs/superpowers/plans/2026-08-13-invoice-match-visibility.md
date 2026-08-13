@@ -619,7 +619,23 @@ In `epms-api/app/api/v1/invoices.py`, replace the `else:` branch's `review_descr
                 )
 ```
 
-Apply the same closing sentence to the two agreement-route branches, replacing their trailing "Please review and approve or reject." with "Please confirm the linkage is correct. Approval of the payment amount happens later, on the Payment Application approval chain."
+There are **five** `review_description` assignment sites in this block, not two — verified by reading the file on 2026-08-13:
+
+| Line (approx) | Branch | Currently ends with |
+|---|---|---|
+| 464 | agreement route, `legacy_settlement` | "…approve or reject." |
+| 475 | agreement route, `schedule_id is not None` | "Please review and approve or reject." |
+| 510 | agreement route, `agr_type == "house_account"` | "Please review and approve or reject." |
+| 517 | agreement route, no claimable period | "…manually assign the billing period this invoice covers." |
+| 525 | PO route (the `else`) | "Please review and approve or reject." |
+
+Replace the trailing "Please review and approve or reject." in the four that carry it with:
+
+> "Please confirm the linkage is correct. Approval of the payment amount happens later, on the Payment Application approval chain."
+
+The site at ~517 asks the reviewer to *assign a billing period* rather than to approve anything — leave its instruction intact and simply append the same second sentence about where payment is approved.
+
+**Do NOT touch these other "approve or reject" occurrences** — they are about agreement RECEIPTS moving through AP review, an unrelated flow: `epms-api/app/crud/agreement_receipt.py:170`, `epms/src/pages/receipts/ReceiptDetailPage.tsx:528`, `epms/src/services/agreementReceipts.ts:120`, `epms-api/tests/test_agreement_receipt_attachments.py:205`.
 
 - [ ] **Step 2: Reword the email template**
 
