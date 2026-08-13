@@ -546,6 +546,40 @@ async def match_invoice(
             await db.commit()
             fire_and_forget_notify(review, db, extra_vars={"invoice_number": inv.internal_ref})
 
+        # 超容差(exception)任务:开一条 AP 角色池任务;若发票重新匹配后
+        # 不再落在 exception(改判 matched/match_review),关掉遗留的开放任务
+        # —— 否则会留下一条指向"已不再是 exception"发票的僵尸任务。
+        existing_exc_task = (await db.execute(select(Task).where(
+            Task.type == "resolve_exception", Task.document_type == "invoice",
+            Task.document_id == inv.id, Task.is_completed.is_(False),
+        ))).scalar_one_or_none()
+        if result.status == "exception":
+            if existing_exc_task is None:
+                exc_task = Task(
+                    type="resolve_exception", priority="normal",
+                    document_type="invoice", document_id=inv.id,
+                    document_number=inv.internal_ref,
+                    # 角色池(无指派人)——与 review_match 同理,这样才能命中共享邮箱。
+                    assigned_role="ap_clerk",
+                    created_by=caller_id,
+                    title=f"Resolve match exception — {inv.internal_ref}",
+                    description=(
+                        f"Invoice {inv.internal_ref} could not be matched within tolerance: "
+                        f"{result.exception_reason} Please resolve the exception or return "
+                        f"the invoice to the supplier."
+                    ),
+                    vendor=inv.vendor_name, amount=inv.total_amount,
+                )
+                db.add(exc_task)
+                await db.flush()
+                await db.refresh(exc_task)
+                await db.commit()   # 见 Task 2:后台通知协程读的是新 session
+                fire_and_forget_notify(exc_task, db, extra_vars={"invoice_number": inv.internal_ref})
+        elif existing_exc_task is not None:
+            existing_exc_task.is_completed = True
+            existing_exc_task.completed_at = now_ts
+            existing_exc_task.completed_by = caller_id
+
         if result.status == "matched":
             # A reference-only (fee-only) match produces zero InvoicePoAllocation
             # rows — that's the clean signal to skip the create_pa notification.
@@ -1017,6 +1051,14 @@ async def resolve_exception(
         raise HTTPException(status_code=404, detail="Invoice not found")
     try:
         result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=uuid.UUID(user["sub"]))
+        exc_task = (await db.execute(select(Task).where(
+            Task.type == "resolve_exception", Task.document_type == "invoice",
+            Task.document_id == inv.id, Task.is_completed.is_(False),
+        ))).scalar_one_or_none()
+        if exc_task is not None:
+            exc_task.is_completed = True
+            exc_task.completed_at = datetime.now(timezone.utc)
+            exc_task.completed_by = uuid.UUID(user["sub"])
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
         return result

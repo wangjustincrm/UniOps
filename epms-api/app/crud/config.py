@@ -229,6 +229,13 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "with a non-zero variance. Please review the allocation and approve or reject it.\n\n"
         "<a href=\"{link}\">Review Match</a>\n\n{company_name}",
     ),
+    "exception_resolution_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Invoice {invoice_number} is outside match tolerance",
+        "Hi {recipient_name},\n\nInvoice <b>{invoice_number}</b> from {vendor} "
+        "(CAD {amount}) could not be matched within tolerance. Please review the "
+        "allocation and either resolve the exception or return the invoice.\n\n"
+        "<a href=\"{link}\">Open Invoice</a>\n\n{company_name}",
+    ),
 }
 
 _P = lambda **kw: {k: kw.get(k, False) for k in PERMISSION_KEYS}  # noqa: E731

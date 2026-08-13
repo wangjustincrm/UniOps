@@ -26,6 +26,7 @@ export const ALL_TASK_TYPES = [
   'confirm_settlement',
   'review_match',
   'match_invoice',
+  'resolve_exception',
 ] as const
 
 export type TaskType = (typeof ALL_TASK_TYPES)[number]
@@ -42,6 +43,7 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   confirm_settlement: 'Confirm Settlement',
   review_match: 'Review Invoice Match',
   match_invoice: 'Match Invoice to PO',
+  resolve_exception: 'Resolve Match Exception',
   process_pa: 'Process Payment Application',
   approve_agr: 'Approve Agreement',
   revise_agr: 'Revise Agreement',
