@@ -677,19 +677,29 @@ class TestHeterogeneousCapacityNeverStrandsAnEmptyWeek:
         lines = pack_bucket(_items(A=25, B=29), WEEKS, caps)
         assert not any(l.capacity_gap for l in lines), _by_week(lines)
         assert sum((l.qty for l in lines), Decimal("0")) == Decimal("54")
+        # per WEEK, not per line: two lines summing over one week's cap is
+        # exactly the failure a per-line check would wave through.
+        totals = {}
         for l in lines:
-            cap = caps[WEEKS.index(l.plan_week_start)].max_output_qty
-            assert Decimal(str(l.qty)) <= cap, (l, cap)
+            totals[l.plan_week_start] = (
+                totals.get(l.plan_week_start, Decimal("0")) + Decimal(str(l.qty)))
+        for week, qty in totals.items():
+            cap = caps[WEEKS.index(week)].max_output_qty
+            assert qty <= cap, (week, qty, cap, _by_week(lines))
 
-    def test_no_empty_open_week_is_left_idle_while_a_gap_is_declared(self):
-        """The property behind the repro, for the class the fallback closes:
-        an item that could not fit any ONE week no longer gaps while empty
-        weeks stand by.
+    def test_these_heterogeneous_scenarios_schedule_completely(self):
+        """A REGRESSION TRIPWIRE, and the teeth are the no-gap assertion.
 
-        NOT a universal invariant -- see
-        `test_a_run_stopping_at_a_full_week_may_strand_later_weeks` below for
-        the one remaining way an open week can be left idle alongside a gap.
-        These scenarios are all of the `_fits_in_one_week` variety."""
+        Read the second loop honestly: all four scenarios currently schedule
+        with ZERO gaps, so the `continue` fires every time and the idle-week
+        assertion below it **never executes**. It is kept as a guard for the
+        day one of these does gap. What actually holds the fix is the first
+        assertion -- revert the last-resort split and scenarios 1 and 2 gap
+        immediately.
+
+        The idle-week property is NOT a universal invariant either: see
+        `test_a_run_stops_at_a_full_week_and_starts_where_it_places_most`
+        below, where a gap coexists with idle open weeks by design."""
         scenarios = [
             (("20", "40", "20", "0"), {"A": 25, "B": 29}),
             (("20", "40", "20", "0"), {"A": 25, "B": 29, "C": 15}),
@@ -699,8 +709,14 @@ class TestHeterogeneousCapacityNeverStrandsAnEmptyWeek:
         for cap_strs, case in scenarios:
             caps = [CapacityLimits(None, Decimal(c), Decimal("5")) for c in cap_strs]
             lines = pack_bucket(_items(**case), WEEKS, caps)
+            assert not any(l.capacity_gap for l in lines), (cap_strs, case, _by_week(lines))
+            assert sum((l.qty for l in lines), Decimal("0")) == Decimal(str(sum(case.values())))
+
+        for cap_strs, case in scenarios:
+            caps = [CapacityLimits(None, Decimal(c), Decimal("5")) for c in cap_strs]
+            lines = pack_bucket(_items(**case), WEEKS, caps)
             if not any(l.capacity_gap for l in lines):
-                continue
+                continue                      # currently always taken
             used = {l.plan_week_start for l in lines if not l.capacity_gap}
             idle = [w for w in _open_weeks_of(caps) if w not in used]
             assert not idle, (cap_strs, case, _by_week(lines), idle)
@@ -819,34 +835,190 @@ def test_a_small_product_takes_an_empty_week_before_another_products_leftover():
     }
 
 
-def test_a_run_stopping_at_a_full_week_may_strand_later_weeks():
-    """KNOWN, ACCEPTED residual of the phantom-gap class -- pinned so it
-    cannot drift silently, and so nobody reads it as an oversight.
+def test_a_run_stops_at_a_full_week_and_starts_where_it_places_most():
+    """A run is one unbroken block, so where it BEGINS is the only lever --
+    and it begins where it places the most, not at the earliest week with a
+    scrap of room.
 
     B(40) takes W3, the only week that fits it whole. A(35) then fits no
-    single week, falls back to the greedy fill, and runs W1(20) + W2(5)
-    before hitting W3, which is now full. It STOPS there rather than hopping
-    to W4, because hopping would break P1 -- so its last 10 gaps while W4
-    sits empty with 30 of capacity.
+    single week and falls back to a split. Starting at W1 would run
+    W1(20) + W2(5) and stop dead at full W3 -- 25 placed, 10 short.
+    Starting at W4 places 30 and is short only 5. Same P1, same single
+    contiguous block, 5 t more product.
 
-    Letting the run hop would demote contiguity from an invariant to a
-    preference. That is a design decision about the algorithm's flagship
-    principle, not something to slip into a fix round, so the trade stands
-    and is documented in `pack_bucket`'s docstring. Uniform capacity cannot
-    reach this state at all (an empty week is a full-capacity week, so the
-    whole-quantity search would have found it first)."""
+    Idle open weeks (here W1 and W2) alongside a gap are therefore a
+    DELIBERATE outcome, not the phantom-gap bug: the alternative plan uses
+    those weeks and makes less. Unmet demand is the objective; week
+    occupancy is not."""
     caps = [CapacityLimits(None, Decimal(c), Decimal("1"))
             for c in ("20", "5", "40", "30")]
     lines = pack_bucket(_items(A=35, B=40), WEEKS, caps)
 
     gaps = [l for l in lines if l.capacity_gap]
-    assert [(l.material_code, str(l.qty)) for l in gaps] == [("A", "10")], _by_week(lines)
-    assert WEEKS[3] not in {l.plan_week_start for l in lines}      # W4 left idle
-    # still contiguous, still conserved, still within every week's own cap
-    a_weeks = sorted(WEEKS.index(l.plan_week_start) for l in lines
-                     if l.material_code == "A" and not l.capacity_gap)
-    assert a_weeks == [0, 1]
+    assert [(l.material_code, str(l.qty)) for l in gaps] == [("A", "5")], _by_week(lines)
+    produced = [l for l in lines if not l.capacity_gap]
+    assert sorted((l.material_code, str(l.qty)) for l in produced) == \
+        [("A", "30"), ("B", "40")], _by_week(lines)
+    assert {l.plan_week_start for l in produced} == {WEEKS[2], WEEKS[3]}
     assert sum((l.qty for l in lines), Decimal("0")) == Decimal("75")
-    for l in lines:
-        if not l.capacity_gap:
-            assert Decimal(str(l.qty)) <= caps[WEEKS.index(l.plan_week_start)].max_output_qty
+
+
+def _fixed_policy_plan(items, per_week, split, fullest):
+    """One fixed-policy plan through the engine's internals, replicating
+    `pack_bucket`'s pre-flight. `(False, False)` is the conservative
+    baseline -- exactly the behaviour before the last-resort split and the
+    fullest-start selection existed."""
+    from app.services import mps_engine as E
+
+    payload = [i for i in items if i.qty > 0]
+    if not payload:
+        return []
+    ordered = sorted(payload, key=E._sort_key)
+    open_weeks = [i for i, wk in enumerate(per_week) if E._week_can_host(wk)]
+    if not open_weeks:
+        return E._pack_tight(ordered, WEEKS, per_week, open_weeks)
+    ref_cap = E._reference_cap(per_week, open_weeks)
+    needs = [E._need_weeks(i.qty, ref_cap) for i in ordered]
+    if sum(needs) > len(open_weeks):
+        return E._pack_tight(ordered, WEEKS, per_week, open_weeks, split, fullest)
+    floors = [per_week[i].min_output_qty for i in open_weeks
+              if per_week[i].min_output_qty is not None]
+    return E._pack_spare(ordered, WEEKS, per_week, open_weeks, needs,
+                         max(floors) if floors else None)
+
+
+def _unmet(lines):
+    return sum((Decimal(str(l.qty)) for l in lines if l.capacity_gap), Decimal("0"))
+
+
+class TestTheSplitMustEarnItsKeep:
+    """The last-resort split is a bet that it reduces the shortfall. Under
+    `max_sku_count=1` the bet can lose badly -- the sliver spilled into the
+    next week consumes that week's only SKU slot and destroys the rest of
+    its capacity for everyone else -- so `pack_bucket` evaluates the plan
+    without the split too and keeps whichever leaves less demand unmet."""
+
+    def test_a_sliver_that_poisons_a_single_sku_week_is_not_taken(self):
+        # caps 40/50/40/40, one SKU per week. C(51) splits W1(40)+W2(11).
+        # A(41) then fits no single week; splitting it W3(40)+W4(1) places
+        # 41 but the 1 t sliver locks W4, gapping B(40) and D(12) -- 92
+        # produced against 103 for simply leaving A short.
+        per_week = [CapacityLimits(1, Decimal(c), Decimal("1"))
+                    for c in ("40", "50", "40", "40")]
+        items = _items(A=41, B=40, C=51, D=12)
+        lines = pack_bucket(items, WEEKS, per_week)
+
+        assert _by_week(lines) == {
+            WEEKS[0]: [("C", "40")],
+            WEEKS[1]: [("C", "11")],
+            WEEKS[2]: [("B", "40")],
+            WEEKS[3]: [("A", "41"), ("D", "12")],
+        }
+        assert [(l.material_code, str(l.qty)) for l in lines if l.capacity_gap] \
+            == [("A", "41")]
+        produced = sum((l.qty for l in lines if not l.capacity_gap), Decimal("0"))
+        assert produced == Decimal("103")
+        # ...which is exactly the conservative plan, and strictly better than
+        # taking the split.
+        assert _unmet(lines) == _unmet(_fixed_policy_plan(items, per_week, False, False))
+        assert _unmet(lines) < _unmet(_fixed_policy_plan(items, per_week, True, False))
+
+    def test_never_leaves_more_unmet_than_the_conservative_baseline(self):
+        """The absolute bar: for ANY input, the chosen plan must not leave
+        more demand unmet than the no-split, earliest-start baseline. It is
+        structural -- that baseline is one of the four candidates
+        `pack_bucket` evaluates -- and this pins it across the trigger
+        profile that broke it (max_sku_count=1 with uneven weeks)."""
+        cap_sets = [
+            ("40", "40", "40", "40"),
+            ("40", "50", "40", "40"),
+            ("20", "40", "20", "0"),
+            ("20", "5", "40", "30"),
+            ("10", "40", "15", "40"),
+            ("50", "5", "50", "5"),
+        ]
+        cases = [
+            {"A": 41, "B": 40, "C": 51, "D": 12},
+            {"A": 25, "B": 29},
+            {"A": 35, "B": 40},
+            {"A": 60, "B": 20, "C": 30, "D": 30},
+            {"A": 100, "B": 15},
+            {"A": 51, "B": 49, "C": 7},
+        ]
+        for sku in (1, 2, 3, None):
+            for caps in cap_sets:
+                for min_out in ("1", "20"):
+                    per_week = [CapacityLimits(sku, Decimal(c), Decimal(min_out))
+                                for c in caps]
+                    for case in cases:
+                        items = _items(**case)
+                        actual = pack_bucket(items, WEEKS, per_week)
+                        baseline = _fixed_policy_plan(items, per_week, False, False)
+                        assert _unmet(actual) <= _unmet(baseline), \
+                            (sku, caps, min_out, case,
+                             _by_week(actual), _by_week(baseline))
+                        # and nothing is ever lost, whichever policy wins
+                        for code, q in case.items():
+                            planned = sum((Decimal(str(l.qty)) for l in actual
+                                           if l.material_code == code), Decimal("0"))
+                            assert planned == Decimal(str(q)), (sku, caps, case, code)
+
+    def test_the_conservative_plan_wins_every_tie(self):
+        # Uniform capacity never needs the last-resort split, so the chosen
+        # plan must be byte-identical to the conservative baseline -- no
+        # gratuitous changeover bought with nothing.
+        limits = [CapacityLimits(None, Decimal("40"), Decimal("20"))] * 4
+        for case in ({"A": 60, "B": 20, "C": 30, "D": 30},
+                     {"A": 60, "B": 60, "C": 30},
+                     {"A": 200},
+                     {"A": 100, "B": 15, "C": 5}):
+            items = _items(**case)
+            assert _by_week(pack_bucket(items, WEEKS, limits)) == \
+                _by_week(_fixed_policy_plan(items, per_week=limits,
+                                            split=False, fullest=False)), case
+
+
+def test_the_last_resort_split_also_pays_under_uniform_capacity():
+    """The split is not only a heterogeneous-capacity fix.
+
+    Uniform 40 t weeks. A(59) takes W1+W2(19), C(37) takes W3, B(33) takes
+    W4 -- and D(32) then finds no empty week and no single leftover big
+    enough, so the conservative plan leaves all 32 unmet. Spread across the
+    three leftovers (21 + 3 + 7) it is short only 1.
+
+    (Fullest-start, by contrast, IS heterogeneous-only: measured over 60,000
+    uniform-capacity buckets it never once beat the earliest-start baseline
+    on its own, because under uniform capacity the largest items are placed
+    first into empty weeks, so earliest and fullest coincide.)"""
+    limits = [CapacityLimits(None, Decimal("40"), Decimal("1"))] * 4
+    items = _items(A=59, B=33, C=37, D=32)
+    lines = pack_bucket(items, WEEKS, limits)
+
+    baseline = _fixed_policy_plan(items, limits, split=False, fullest=False)
+    assert _unmet(baseline) == Decimal("32")
+    assert _unmet(lines) == Decimal("1")
+    assert sum((l.qty for l in lines), Decimal("0")) == Decimal("161")
+    # D is one contiguous run despite being spread over three weeks
+    d_weeks = sorted(WEEKS.index(l.plan_week_start) for l in lines
+                     if l.material_code == "D" and not l.capacity_gap)
+    assert d_weeks == list(range(d_weeks[0], d_weeks[0] + len(d_weeks))), d_weeks
+
+
+def test_uniform_capacity_never_strands_an_open_week_beside_a_gap():
+    """The other half of the claim above, as a property rather than prose:
+    under uniform capacity a gap never coexists with an entirely unused
+    week. Verified over 30,000 randomised uniform buckets (0 occurrences);
+    this pins the deterministic core of that sweep."""
+    for cap in ("10", "20", "40", "50"):
+        for sku in (1, 2, 3, None):
+            limits = [CapacityLimits(sku, Decimal(cap), Decimal("1"))] * 4
+            for case in ({"A": 59, "B": 33, "C": 37, "D": 32},
+                         {"A": 41, "B": 40, "C": 51, "D": 12},
+                         {"A": 200}, {"A": 55, "B": 33, "C": 40, "D": 42},
+                         {"A": 60, "B": 20, "C": 30, "D": 30}):
+                lines = pack_bucket(_items(**case), WEEKS, limits)
+                if not any(l.capacity_gap for l in lines):
+                    continue
+                used = {l.plan_week_start for l in lines if not l.capacity_gap}
+                idle = [w for w in WEEKS if w not in used]
+                assert not idle, (cap, sku, case, _by_week(lines), idle)
