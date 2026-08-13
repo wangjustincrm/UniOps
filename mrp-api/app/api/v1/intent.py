@@ -3,18 +3,23 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 
 from app.core.authz import require_permission
-from app.core.deps import SessionDep
+from app.core.deps import BearerToken, SessionDep
 from app.models.intent import MrpIntentProduct
 from app.services.intent_products import (
     IntentBindConflict,
     bind_intent_to_material,
     generate_intent_code,
 )
+# Imported as a bare name (not accessed via the identity_client module) so
+# tests can `monkeypatch.setattr(intent, "resolve_current_user_name", ...)`
+# — same idiom app/api/v1/series.py uses for its own PUT /series/cells.
+from app.services.identity_client import resolve_current_user_name
 
 router = APIRouter(prefix="/intent-products", tags=["intent-products"])
 
@@ -82,6 +87,7 @@ class IntentBindResponse(BaseModel):
 @router.post("/{intent_id}/bind", response_model=IntentBindResponse)
 async def bind_intent_product(
     intent_id: uuid.UUID, body: IntentBindRequest, db: SessionDep, payload: WriteDep,
+    token: BearerToken,
 ):
     row = await db.get(MrpIntentProduct, intent_id)
     if row is None:
@@ -89,9 +95,17 @@ async def bind_intent_product(
     if row.status != "active":
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"intent product is {row.status}, only active ones can be bound")
+    actor_id = uuid.UUID(payload["sub"])
+    # Once per request, same never-raises-degrades-to-None idiom
+    # app/api/v1/series.py's PUT /series/cells uses for its own change-log
+    # rows — a name lookup must never break the bind. Blocking sync
+    # httpx.Client call, so it runs off the event loop via
+    # anyio.to_thread.run_sync (see identity_client.py's docstring).
+    actor_name = await anyio.to_thread.run_sync(resolve_current_user_name, token)
     try:
         moved_months, moved_qty = await bind_intent_to_material(
-            db, intent_code=row.code, material_code=body.material_code, actor_name=None,
+            db, intent_code=row.code, material_code=body.material_code,
+            actor_id=actor_id, actor_name=actor_name,
         )
     except IntentBindConflict:
         raise HTTPException(
@@ -101,7 +115,7 @@ async def bind_intent_product(
     row.status = "bound"
     row.bound_material_code = body.material_code
     row.bound_at = datetime.now(timezone.utc)
-    row.bound_by = uuid.UUID(payload["sub"])
+    row.bound_by = actor_id
     await db.commit()
     await db.refresh(row)
     return IntentBindResponse(intent=row, moved_months=moved_months, moved_qty=moved_qty)

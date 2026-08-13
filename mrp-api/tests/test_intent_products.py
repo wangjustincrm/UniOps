@@ -115,8 +115,14 @@ async def test_bind_moves_series_rows_and_marks_bound(client, auth_headers, db_s
 
 
 @pytest.mark.asyncio
-async def test_bind_rejects_when_target_already_has_forecast(client, auth_headers):
-    """D11: business says this cannot happen — so it must be loud, not silently merged."""
+async def test_bind_rejects_when_target_already_has_forecast(client, auth_headers, db_session):
+    """D11: business says this cannot happen — so it must be loud, not silently merged.
+
+    Fix round 1: a status code alone doesn't prove "reject and change
+    nothing" — it would still pass if the clash check moved below the
+    first UPDATE. Re-query everything the bind would have touched.
+    """
+    from sqlalchemy import text
     intent = (await client.post("/api/v1/intent-products", json={"name": "Collides"},
                                 headers=auth_headers)).json()
     await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
@@ -131,9 +137,26 @@ async def test_bind_rejects_when_target_already_has_forecast(client, auth_header
     assert r.status_code == 409
     assert "already has forecast" in r.json()["detail"].lower()
 
+    detail = (await client.get("/api/v1/intent-products?status=all",
+                               headers=auth_headers)).json()
+    row = [i for i in detail if i["id"] == intent["id"]][0]
+    assert row["status"] == "active"
+    assert row["bound_material_code"] is None
+
+    own_rows = (await db_session.execute(text(
+        "select month, qty from mrp_demand_series where material_code = :c order by month"
+    ), {"c": intent["code"]})).all()
+    assert [(m, str(q)) for m, q in own_rows] == [("2027-01", "50.000")]
+
+    target_rows = (await db_session.execute(text(
+        "select month, qty from mrp_demand_series where material_code = 'S0060' order by month"
+    ))).all()
+    assert [(m, str(q)) for m, q in target_rows] == [("2027-01", "200.000")]
+
 
 @pytest.mark.asyncio
-async def test_bind_is_rejected_twice(client, auth_headers):
+async def test_bind_is_rejected_twice(client, auth_headers, db_session):
+    from sqlalchemy import text
     intent = (await client.post("/api/v1/intent-products", json={"name": "Once"},
                                 headers=auth_headers)).json()
     await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
@@ -141,6 +164,19 @@ async def test_bind_is_rejected_twice(client, auth_headers):
     r = await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
                           json={"material_code": "S0075"}, headers=auth_headers)
     assert r.status_code == 409
+
+    detail = (await client.get("/api/v1/intent-products?status=all",
+                               headers=auth_headers)).json()
+    row = [i for i in detail if i["id"] == intent["id"]][0]
+    assert row["status"] == "bound"
+    assert row["bound_material_code"] == "S0074"
+
+    assert (await db_session.execute(text(
+        "select count(*) from mrp_demand_series where material_code = 'S0075'"
+    ))).scalar() == 0
+    assert (await db_session.execute(text(
+        "select count(*) from mrp_forecast_change_log where material_code = 'S0075'"
+    ))).scalar() == 0
 
 
 @pytest.mark.asyncio
@@ -157,7 +193,76 @@ async def test_bind_rewrites_change_log_and_leaves_an_audit_row(client, auth_hea
     assert (await db_session.execute(text(
         "select count(*) from mrp_forecast_change_log where material_code = :c"
     ), {"c": intent["code"]})).scalar() == 0
-    sources = (await db_session.execute(text(
-        "select source from mrp_forecast_change_log where material_code = 'S0064'"
-    ))).scalars().all()
+    log_rows = (await db_session.execute(text(
+        "select source, changed_by from mrp_forecast_change_log where material_code = 'S0064'"
+    ))).all()
+    sources = [s for s, _ in log_rows]
     assert "intent_bind" in sources
+    intent_bind_row = [row for row in log_rows if row[0] == "intent_bind"][0]
+    assert intent_bind_row[1] is not None  # changed_by — audit row must have an author
+
+
+@pytest.mark.asyncio
+async def test_bind_is_atomic_when_the_second_update_fails(
+    client, auth_headers, db_session, monkeypatch,
+):
+    """A half-renamed forecast (series moved, change log not — or vice
+    versa) is the single worst outcome this feature can produce. Force a
+    failure between the two UPDATEs inside bind_intent_to_material by
+    making `update(MrpForecastChangeLog)` raise, and prove nothing landed:
+    not the series rows, not the change log, not the intent product's
+    status.
+
+    The app has a catch-all `Exception` handler (app/main.py) that sends a
+    500 response, but Starlette's ServerErrorMiddleware re-raises the
+    original exception after sending it (that's what lets a test client
+    see it) — and httpx's ASGITransport defaults to re-raising app
+    exceptions to the caller (`raise_app_exceptions=True`), so `client.post`
+    itself raises here rather than returning a response.
+
+    The test harness's `client` fixture overrides `get_session` with a
+    bare `yield db_session` (no try/except) — unlike the real
+    `get_session`, which rolls back on any exception. So the assertions
+    below explicitly roll back `db_session` first, to reproduce exactly
+    what production's real dependency does on this same failure path
+    before checking the database is untouched.
+    """
+    from sqlalchemy import text
+
+    import app.services.intent_products as intent_products_module
+
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Half-renamed"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-04", "qty": "77"},
+    ]})
+
+    original_update = intent_products_module.update
+
+    def _boom(table):
+        if table is intent_products_module.MrpForecastChangeLog:
+            raise RuntimeError("simulated failure between the two UPDATEs")
+        return original_update(table)
+
+    monkeypatch.setattr(intent_products_module, "update", _boom)
+
+    with pytest.raises(RuntimeError, match="simulated failure"):
+        await client.post(f"/api/v1/intent-products/{intent['id']}/bind",
+                          json={"material_code": "S0081"}, headers=auth_headers)
+
+    await db_session.rollback()
+
+    assert (await db_session.execute(text(
+        "select count(*) from mrp_demand_series where material_code = 'S0081'"
+    ))).scalar() == 0
+    own_rows = (await db_session.execute(text(
+        "select month, qty from mrp_demand_series where material_code = :c order by month"
+    ), {"c": intent["code"]})).all()
+    assert [(m, str(q)) for m, q in own_rows] == [("2027-04", "77.000")]
+
+    monkeypatch.setattr(intent_products_module, "update", original_update)
+    detail = (await client.get("/api/v1/intent-products?status=all",
+                               headers=auth_headers)).json()
+    row = [i for i in detail if i["id"] == intent["id"]][0]
+    assert row["status"] == "active"
+    assert row["bound_material_code"] is None

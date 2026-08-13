@@ -1,5 +1,6 @@
 """Intent product lifecycle (design §5.3, decisions D7/D8/D11)."""
 import secrets
+import uuid
 from decimal import Decimal
 
 from sqlalchemy import func, select, update
@@ -33,7 +34,8 @@ class IntentBindConflict(Exception):
 
 
 async def bind_intent_to_material(
-    db: AsyncSession, *, intent_code: str, material_code: str, actor_name: str | None,
+    db: AsyncSession, *, intent_code: str, material_code: str,
+    actor_id: uuid.UUID | None, actor_name: str | None,
 ) -> tuple[int, Decimal]:
     """Move every series cell and change-log row from the placeholder code to
     the real material code, in one transaction. Returns (months, total_qty)."""
@@ -62,6 +64,6 @@ async def bind_intent_to_material(
         db.add(MrpForecastChangeLog(
             material_code=material_code, month=month,
             old_qty=qty, new_qty=qty,
-            source="intent_bind", changed_by_name=actor_name,
+            source="intent_bind", changed_by=actor_id, changed_by_name=actor_name,
         ))
     return moved_months, moved_qty
