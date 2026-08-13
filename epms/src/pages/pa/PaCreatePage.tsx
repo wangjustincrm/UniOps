@@ -735,7 +735,7 @@ ${submitError}
                   <div className="text-sm text-neutral-700 mt-0.5">{selectedPo.title}</div>
                   <div className="text-xs text-neutral-400 mt-0.5">{selectedPo.vendor_name}</div>
                   <div className="mt-2 flex items-center justify-between">
-                    <p className="text-[11px] text-neutral-400">Pre-filled from your task.</p>
+                    <p className="text-[11px] text-neutral-400">Pre-filled from the linked PO.</p>
                     <button
                       type="button"
                       onClick={() => setChangingPo(true)}
