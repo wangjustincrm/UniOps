@@ -3,6 +3,40 @@ from sqlalchemy import text
 
 
 @pytest.mark.asyncio
+async def test_create_intent_product_generates_placeholder_code(client, auth_headers):
+    r = await client.post("/api/v1/intent-products",
+                          json={"name": "Stage 3 New Formula", "note": "planning"},
+                          headers=auth_headers)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["code"].startswith("INTENT-")
+    assert len(body["code"]) == len("INTENT-") + 8
+    assert body["name"] == "Stage 3 New Formula"
+    assert body["status"] == "active"
+    assert body["bound_material_code"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_intent_product_rejects_blank_name(client, auth_headers):
+    r = await client.post("/api/v1/intent-products", json={"name": "   "}, headers=auth_headers)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_list_returns_active_only_by_default(client, auth_headers):
+    created = (await client.post("/api/v1/intent-products", json={"name": "Keeper"},
+                                 headers=auth_headers)).json()
+    dropped = (await client.post("/api/v1/intent-products", json={"name": "Gone"},
+                                 headers=auth_headers)).json()
+    await client.post(f"/api/v1/intent-products/{dropped['id']}/drop", headers=auth_headers)
+
+    codes = [i["code"] for i in (await client.get("/api/v1/intent-products",
+                                                  headers=auth_headers)).json()]
+    assert created["code"] in codes
+    assert dropped["code"] not in codes
+
+
+@pytest.mark.asyncio
 async def test_intent_tables_exist(db_session):
     """mrp09 建表 + forecast_lines 加列。"""
     cols = (await db_session.execute(text(
