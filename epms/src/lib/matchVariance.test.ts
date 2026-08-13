@@ -110,6 +110,9 @@ describe('buildLineComparisons', () => {
       invoiceQty: 10,
       invoiceUnitPrice: 100,
       invoiceAmount: 1000,
+      poId: 'po-1',
+      poNumber: null,   // makeAllocation's default fixture carries no po_number
+      poLineResolved: true,
       poLineDescription: 'Widget PO Line',
       poQty: 10,
       poUnitPrice: 95,
@@ -154,6 +157,7 @@ describe('buildLineComparisons', () => {
     const rows = buildLineComparisons(invoice, poLines)
     expect(rows[0].poAmount).toBeNull()
     expect(rows[0].poLineDescription).toBeNull()
+    expect(rows[0].poLineResolved).toBe(false)
     // No PO line to compare against — falls back to the invoice amount
     // rather than fabricating a zero/matched variance.
     expect(rows[0].variance).toBe(500)
@@ -240,8 +244,24 @@ describe('receiptSummary', () => {
   })
 
   it('compares against the tax-INCLUSIVE invoice total', () => {
-    // total_amount 是含税总额 —— 与 PO 分摊路线的税前口径**相反**,这是对的
-    const s = receiptSummary(inv('113.00', ['113.00']))
+    // total_amount 是含税总额 —— 与 PO 分摊路线的税前口径**相反**,这是对的。
+    // Whole-branch review (finding 8b): amount/tax_amount are given real
+    // values DIFFERENT from total_amount here — the previous fixture omitted
+    // `amount` entirely, so a regression reading invoice.amount instead of
+    // invoice.total_amount produced Number(undefined) = NaN, and the
+    // assertion happened to pass or fail on NaN-comparison quirks rather
+    // than on an honest numeric mismatch. With amount=100/tax=13 vs
+    // total=113, a wrong-field read would compare 113 against 100 and fail
+    // for a real, legible reason.
+    const s = receiptSummary({
+      amount: '100.00',
+      tax_amount: '13.00',
+      total_amount: '113.00',
+      claimed_receipts: [{
+        id: 'r0', receipt_ref: 'R0', receipt_date: '2026-08-01',
+        receipt_type: 'counter_slip', total_amount: '113.00', vendor_name: null,
+      }],
+    } as never)
     expect(s.hasVariance).toBe(false)
   })
 
