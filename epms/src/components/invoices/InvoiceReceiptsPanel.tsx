@@ -3,19 +3,10 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge, statusLabel } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { centsEqual } from '@/lib/money'
 import { useInvoiceAgreementReceipts, useSetInvoiceReceipts, useSettleWithoutReceipt } from '@/hooks/useInvoices'
 import type { ApiInvoice } from '@/services/invoices'
 import { RECEIPT_TYPE_LABELS, receiptTotal, type ApiReceipt, type ReceiptStatus } from '@/services/agreementReceipts'
-
-// Cent-rounded equality — plain float subtraction of two Number()-coerced
-// decimal strings can land a hair off zero (e.g. summing several selected
-// receipts' totals), which would otherwise make a genuinely-even match look
-// like it has a variance. Same convention as MatchPanel's centsEqual (this
-// logic was relocated here — Task 6 pulled receipt evidence off /match, and
-// Task 8 gives it a permanent home on the invoice detail page instead).
-function centsEqual(a: number, b: number): boolean {
-  return Math.round(a * 100) === Math.round(b * 100)
-}
 
 // One selectable candidate row — multi-select checkbox, mirrors MatchPanel's
 // (now-removed) ReceiptCandidateRow. Shows the type badge (Task 5/6 receipts
