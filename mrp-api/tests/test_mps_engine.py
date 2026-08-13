@@ -15,10 +15,11 @@ reproduces the exact pre-lead placement/prebuild/gap behaviour byte-for-byte
 (see `test_lead_zero_reproduces_same_month` below for the dedicated
 regression case).
 """
+from datetime import date
 from decimal import Decimal
 
 from app.services.mps_engine import (
-    CapacityLimits, DemandItem, PlannedLine, generate_mps,
+    BucketItem, CapacityLimits, DemandItem, PlannedLine, generate_mps, pack_bucket,
 )
 
 # Anchor used by pre-lead tests below: always <= every demand month they use,
@@ -268,3 +269,237 @@ def test_lead_clamped_and_capacity_full_at_current_month_is_gap_with_shortfall()
     assert line.capacity_gap is True
     assert line.is_prebuild is False              # gap lines are never is_prebuild
     assert line.shelf_life_ok is True              # blocked by capacity, not shelf life
+
+
+# ── Weekly bucket packing (weekly-MPS Task 4 brief, verbatim) ───────────────
+#
+# Single-bucket packing only: no lead time, no cross-bucket pre-build, no
+# shelf-life gate (those stay with `generate_mps` above and are re-based onto
+# weeks by Task 5). `pack_bucket` is a pure function that receives an
+# already-resolved `list[date]` of week starts (it must never care which of
+# `week_calendar.py`'s three modes produced them) and already-resolved
+# `CapacityLimits`.
+
+WEEKS = [date(2026, 8, 3), date(2026, 8, 10), date(2026, 8, 17), date(2026, 8, 24)]
+
+
+def _items(**kv):
+    return [BucketItem(code, "2026-08", Decimal(str(q))) for code, q in kv.items()]
+
+
+def _by_week(lines):
+    out = {}
+    for l in lines:
+        out.setdefault(l.plan_week_start, []).append((l.material_code, str(l.qty)))
+    return {w: sorted(v) for w, v in out.items()}
+
+
+def test_golden_case_from_the_business_owner():
+    """A60 B20 C30 D30, cap 40/week, 4 weeks — the plan the planner drew by hand.
+
+    W1 A40 | W2 A20+B20 | W3 C30 | W4 D30
+    """
+    limits = CapacityLimits(max_sku_count=None, max_output_qty=Decimal("40"),
+                            min_output_qty=Decimal("20"))
+    lines = pack_bucket(_items(A=60, B=20, C=30, D=30), WEEKS, limits)
+    assert _by_week(lines) == {
+        WEEKS[0]: [("A", "40")],
+        WEEKS[1]: [("A", "20"), ("B", "20")],
+        WEEKS[2]: [("C", "30")],
+        WEEKS[3]: [("D", "30")],
+    }
+
+
+def test_a_product_never_splits_when_it_fits_in_one_week():
+    """朴素贪心会把 C 切成 20+10 —— 那既多一次换线又让 W2 变三个品。"""
+    limits = CapacityLimits(None, Decimal("40"), Decimal("20"))
+    lines = pack_bucket(_items(A=60, C=30), WEEKS, limits)
+    c_weeks = {l.plan_week_start for l in lines if l.material_code == "C"}
+    assert len(c_weeks) == 1
+
+
+class TestSpreadRegime:
+    """周数富余：摊到最低产能就停，剩下的周空着（D6：别为了填日历烧能源）。"""
+
+    limits = CapacityLimits(None, Decimal("40"), Decimal("20"))
+
+    def test_single_product_at_exactly_min_output_stays_in_one_week(self):
+        lines = pack_bucket(_items(A=20), WEEKS, self.limits)
+        assert len(lines) == 1
+        assert str(lines[0].qty) == "20"
+
+    def test_single_product_below_min_output_is_clamped_to_one_week(self):
+        lines = pack_bucket(_items(A=10), WEEKS, self.limits)
+        assert len(lines) == 1
+        assert str(lines[0].qty) == "10"
+
+    def test_single_product_at_twice_min_output_spreads_over_two_weeks(self):
+        lines = pack_bucket(_items(A=40), WEEKS, self.limits)
+        assert sorted(str(l.qty) for l in lines) == ["20", "20"]
+        assert len({l.plan_week_start for l in lines}) == 2
+
+    def test_capacity_floor_wins_over_min_output(self):
+        """q=100, cap=40, min=50 → need_weeks=3 胜过 floor(100/50)=2。"""
+        limits = CapacityLimits(None, Decimal("40"), Decimal("50"))
+        lines = pack_bucket(_items(A=100), WEEKS, limits)
+        assert len({l.plan_week_start for l in lines}) == 3
+        assert all(Decimal(str(l.qty)) <= Decimal("40") for l in lines)
+
+    def test_spare_weeks_go_to_the_heaviest_product(self):
+        lines = pack_bucket(_items(A=60, B=20), WEEKS, self.limits)
+        a_weeks = {l.plan_week_start for l in lines if l.material_code == "A"}
+        b_weeks = {l.plan_week_start for l in lines if l.material_code == "B"}
+        assert len(a_weeks) == 3 and len(b_weeks) == 1
+        assert all(str(l.qty) == "20" for l in lines)
+
+
+class TestPrinciples:
+    """P1/P2/P3 的性质断言，跑一批构造输入。"""
+
+    limits = CapacityLimits(max_sku_count=2, max_output_qty=Decimal("40"),
+                            min_output_qty=Decimal("20"))
+    CASES = [
+        {"A": 60, "B": 20, "C": 30, "D": 30},
+        {"A": 100, "B": 15},
+        {"A": 20},
+        {"A": 35, "B": 35, "C": 35},
+        {"A": 5, "B": 5, "C": 5, "D": 5},
+        {"A": 160},
+    ]
+
+    def test_p1_each_product_occupies_a_contiguous_run(self):
+        for case in self.CASES:
+            lines = pack_bucket(_items(**case), WEEKS, self.limits)
+            for code in case:
+                idx = sorted(WEEKS.index(l.plan_week_start)
+                             for l in lines if l.material_code == code)
+                assert idx == list(range(idx[0], idx[0] + len(idx))), (case, code, idx)
+
+    def test_p2_no_empty_week_while_an_earlier_week_could_have_been_thinned(self):
+        for case in self.CASES:
+            lines = pack_bucket(_items(**case), WEEKS, self.limits)
+            used = {l.plan_week_start for l in lines}
+            if len(used) == len(WEEKS):
+                continue
+            for l in lines:
+                assert Decimal(str(l.qty)) < 2 * self.limits.min_output_qty, (case, l)
+
+    def test_p3_weekly_sku_count_never_exceeds_the_hard_limit(self):
+        for case in self.CASES:
+            lines = pack_bucket(_items(**case), WEEKS, self.limits)
+            per_week = {}
+            for l in lines:
+                per_week.setdefault(l.plan_week_start, set()).add(l.material_code)
+            assert all(len(v) <= 2 for v in per_week.values()), case
+
+    def test_nothing_is_silently_lost(self):
+        for case in self.CASES:
+            lines = pack_bucket(_items(**case), WEEKS, self.limits)
+            for code, q in case.items():
+                planned = sum((Decimal(str(l.qty)) for l in lines
+                               if l.material_code == code), Decimal("0"))
+                gap = sum((Decimal(str(l.qty)) for l in lines
+                           if l.material_code == code and l.capacity_gap), Decimal("0"))
+                assert planned == Decimal(str(q)), (case, code, planned)
+                del gap  # 缺口行也计入总量，只是带标记
+
+
+class TestPackBucketEdgeCases:
+    """Cases the Task 4 brief left open; each one pins down a decision that
+    `pack_bucket`'s docstring documents, so the decision cannot drift
+    silently later."""
+
+    limits = CapacityLimits(None, Decimal("40"), Decimal("20"))
+
+    def test_equal_quantities_break_the_tie_by_material_code(self):
+        # C and D are both 30; C must take the earlier week regardless of the
+        # order they arrive in. (Input order deliberately reversed here.)
+        lines = pack_bucket(_items(D=30, C=30, A=60, B=20), WEEKS, self.limits)
+        placed = {l.material_code: l.plan_week_start for l in lines
+                  if l.material_code in ("C", "D")}
+        assert placed == {"C": WEEKS[2], "D": WEEKS[3]}
+
+    def test_product_bigger_than_the_whole_bucket_gaps_the_remainder(self):
+        # 200 against 4 x 40 = 160 of capacity: 160 is produced, 40 surfaces
+        # as an explicit gap pinned to the last week the run occupied.
+        lines = pack_bucket(_items(A=200), WEEKS, self.limits)
+        produced = [l for l in lines if not l.capacity_gap]
+        gaps = [l for l in lines if l.capacity_gap]
+        assert [str(l.qty) for l in produced] == ["40"] * 4
+        assert len(gaps) == 1
+        assert str(gaps[0].qty) == "40" and gaps[0].plan_week_start == WEEKS[3]
+        assert gaps[0].prebuild_reason is not None
+        # nothing silently lost: gap lines still carry their qty
+        assert sum((l.qty for l in lines), Decimal("0")) == Decimal("200")
+
+    def test_zero_and_negative_quantities_are_dropped(self):
+        lines = pack_bucket(_items(A=0, B=30, Z=-5), WEEKS, self.limits)
+        assert [l.material_code for l in lines] == ["B"]
+
+    def test_bucket_with_no_weeks_refuses_to_drop_demand(self):
+        import pytest
+        with pytest.raises(ValueError):
+            pack_bucket(_items(A=30), [], self.limits)
+        assert pack_bucket([], [], self.limits) == []
+
+    def test_max_sku_count_can_block_the_leftover_packing_step(self):
+        # One SKU per week: A(60) takes W1+W2, C and D take W3/W4, and B(20)
+        # then has nowhere to go -- W2 has the qty room but not the SKU room.
+        limits = CapacityLimits(1, Decimal("40"), Decimal("20"))
+        lines = pack_bucket(_items(A=60, B=20, C=30, D=30), WEEKS, limits)
+        per_week = {}
+        for l in lines:
+            if not l.capacity_gap:
+                per_week.setdefault(l.plan_week_start, set()).add(l.material_code)
+        assert all(len(v) <= 1 for v in per_week.values())
+        gaps = [l for l in lines if l.capacity_gap]
+        assert [(l.material_code, str(l.qty)) for l in gaps] == [("B", "20")]
+
+    def test_max_sku_count_below_one_gaps_everything_even_in_the_spare_regime(self):
+        # A(30) alone is the spare regime (need_weeks 1 < 4 weeks), which lays
+        # out one product per week and so has no reason to look at the SKU
+        # ceiling -- it must still refuse to breach a ceiling of 0.
+        limits = CapacityLimits(0, Decimal("40"), Decimal("20"))
+        lines = pack_bucket(_items(A=30), WEEKS, limits)
+        assert all(l.capacity_gap for l in lines)
+        assert sum((l.qty for l in lines), Decimal("0")) == Decimal("30")
+
+    def test_non_positive_output_cap_gaps_everything_without_dividing_by_zero(self):
+        limits = CapacityLimits(None, Decimal("0"), Decimal("20"))
+        lines = pack_bucket(_items(A=30), WEEKS, limits)
+        assert all(l.capacity_gap for l in lines)
+        assert sum((l.qty for l in lines), Decimal("0")) == Decimal("30")
+
+    def test_no_min_output_floor_means_no_spreading_beyond_need_weeks(self):
+        limits = CapacityLimits(None, Decimal("40"), None)
+        lines = pack_bucket(_items(A=40), WEEKS, limits)
+        assert len(lines) == 1 and str(lines[0].qty) == "40"
+
+    def test_two_oversized_products_pack_tight_and_leave_a_week_for_a_third(self):
+        # A(60) leaves W2 half empty; B(60) must resume there rather than
+        # skipping to the next empty week, or C(30) would have no week left
+        # and would become a phantom gap despite the bucket having room.
+        lines = pack_bucket(_items(A=60, B=60, C=30), WEEKS, self.limits)
+        assert not any(l.capacity_gap for l in lines)
+        assert _by_week(lines) == {
+            WEEKS[0]: [("A", "40")],
+            WEEKS[1]: [("A", "20"), ("B", "20")],
+            WEEKS[2]: [("B", "40")],
+            WEEKS[3]: [("C", "30")],
+        }
+
+    def test_levelling_stays_exact_at_awkward_quantities(self):
+        limits = CapacityLimits(None, Decimal("500000"), Decimal("1"))
+        q = Decimal("1234567.891")
+        lines = pack_bucket([BucketItem("A", "2026-08", q)], WEEKS, limits)
+        assert sum((l.qty for l in lines), Decimal("0")) == q
+
+    def test_two_items_of_the_same_material_count_as_one_sku(self):
+        # Two demand months feeding one bucket (what Task 5 will do): they
+        # are two independent runs but only ever one SKU on the floor.
+        limits = CapacityLimits(1, Decimal("40"), Decimal("20"))
+        lines = pack_bucket(
+            [BucketItem("A", "2026-08", Decimal("30")),
+             BucketItem("A", "2026-09", Decimal("30"))], WEEKS, limits)
+        assert not any(l.capacity_gap for l in lines)
+        assert {l.demand_month for l in lines} == {"2026-08", "2026-09"}
