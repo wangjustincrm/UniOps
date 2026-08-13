@@ -706,7 +706,18 @@ The existing receipts route (`GET /invoices/{id}/agreements/{aid}/receipts`) is 
 
 - [ ] **Step 1: Write the failing test**
 
-Create `epms-api/tests/test_invoice_claimed_receipts.py` asserting that an invoice matched to a house-account agreement with two claimed receipts returns both in `claimed_receipts`, that a receipt with no amount comes back with `total_amount is None` (not `0`), and that an invoice with no claimed receipts returns `None` or `[]` consistently. Build the agreement and receipts with the helpers in `tests/test_invoice_receipts.py` — read that file first and reuse its fixtures rather than writing new ones.
+Create `epms-api/tests/test_invoice_claimed_receipts.py` asserting that an invoice matched to a house-account agreement with two claimed receipts returns both in `claimed_receipts`, that a receipt with no amount comes back with `total_amount is None` (not `0`), and that an invoice with no claimed receipts returns `None` or `[]` consistently.
+
+Reuse the fixtures in `tests/test_invoice_receipts.py` rather than writing new ones. Verified inventory (2026-08-13):
+
+- `_create_receipt(db, agr, user_id, *, amount="100.00", tax_amount="0.00", total_amount=None, receipt_ref=None)` — line 45
+- `_matched_invoice(admin_client, vendor_id, agr, amount="100.00")` — line 65, produces a house-account invoice already matched to `agr`
+- `_fresh_receipt(test_engine, receipt_id)` — line 75
+- Receipts are mounted onto an invoice with `PUT /invoices/{id}/receipts`
+
+**One gap you must close first.** `_create_receipt` cannot produce an amount-less receipt: it computes `total = Decimal(amount) + Decimal(tax_amount)` and exposes no `receipt_type`. The underlying schema does allow it — `ReceiptCreate` (schemas/agreement_receipt.py:215-230) has `receipt_type: str = "counter_slip"` and `amount` / `tax_amount` / `total_amount` all `Decimal | None = None`.
+
+Extend `_create_receipt` with `receipt_type: str = "counter_slip"` and let the amount arguments accept `None`, passing them straight through when they are `None` instead of summing. Keep every existing default exactly as it is, so the change is purely additive and no existing caller's behaviour shifts.
 
 The critical assertion:
 
