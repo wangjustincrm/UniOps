@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 
@@ -42,7 +42,10 @@ class IntentProductResponse(BaseModel):
 
 
 @router.get("", response_model=list[IntentProductResponse])
-async def list_intent_products(db: SessionDep, _: ReadDep, status_filter: str = "active"):
+async def list_intent_products(
+    db: SessionDep, _: ReadDep,
+    status_filter: str = Query("active", alias="status"),
+):
     stmt = select(MrpIntentProduct).order_by(MrpIntentProduct.created_at.desc())
     if status_filter != "all":
         stmt = stmt.where(MrpIntentProduct.status == status_filter)

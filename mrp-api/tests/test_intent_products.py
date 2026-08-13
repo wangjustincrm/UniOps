@@ -37,6 +37,27 @@ async def test_list_returns_active_only_by_default(client, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_list_status_all_query_param_includes_dropped(client, auth_headers):
+    """Fix round 1: the wire contract is `?status=all`, not `?status_filter=all`
+    (FastAPI silently ignores unrecognized query params, so this must
+    actually exercise the aliased name or it proves nothing)."""
+    created = (await client.post("/api/v1/intent-products", json={"name": "Keeper"},
+                                 headers=auth_headers)).json()
+    dropped = (await client.post("/api/v1/intent-products", json={"name": "Gone"},
+                                 headers=auth_headers)).json()
+    await client.post(f"/api/v1/intent-products/{dropped['id']}/drop", headers=auth_headers)
+
+    default_codes = [i["code"] for i in (await client.get(
+        "/api/v1/intent-products", headers=auth_headers)).json()]
+    assert dropped["code"] not in default_codes
+
+    all_codes = [i["code"] for i in (await client.get(
+        "/api/v1/intent-products", params={"status": "all"}, headers=auth_headers)).json()]
+    assert created["code"] in all_codes
+    assert dropped["code"] in all_codes
+
+
+@pytest.mark.asyncio
 async def test_intent_tables_exist(db_session):
     """mrp09 建表 + forecast_lines 加列。"""
     cols = (await db_session.execute(text(
