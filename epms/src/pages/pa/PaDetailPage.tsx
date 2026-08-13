@@ -21,6 +21,8 @@ import { paAttachmentService } from '@/services/paAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { PA_TYPE_LABEL, type PaStatus } from '@/services/pa'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
+import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
+import { useConfig } from '@/hooks/useConfig'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -240,6 +242,8 @@ export default function PaDetailPage() {
   const { data: invoicesData } = useInvoices(invoiceFilters, !!invoiceFilters)
   const linkedInvoices = (invoicesData?.items ?? []).filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
+  // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
+  const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
 
   const [activeTab, setActiveTab] = useState<'details' | 'attachments' | 'history'>('details')
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
@@ -641,6 +645,25 @@ export default function PaDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* Invoice-to-PO variance — per-invoice, collapsed to a total,
+                  expandable to line detail. AP will not personally absorb a
+                  payment difference; this makes it visible to the manager who
+                  already approves the PA instead of adding an approval step.
+                  PO-route only (pa.po_id set) — the agreement route is a
+                  separate task; this mount point is the seam for it. */}
+              {pa.po_id && linkedInvoices.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  {linkedInvoices.map((inv) => (
+                    <InvoiceMatchVariancePanel
+                      key={inv.id}
+                      invoice={inv}
+                      poLines={po?.line_items}
+                      tolerancePct={matchTolerancePct}
+                    />
+                  ))}
+                </div>
+              )}
             </>
           )}
 
