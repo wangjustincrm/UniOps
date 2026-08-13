@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-12-mrp-weekly-planning-and-intent-products-design.md`（§2 引擎、§3 周日历、§4 数据模型、§5.1/5.2/5.4 前端）
 
-**依赖**：本计划与 `2026-08-12-mrp-intent-products.md` 相互独立，可任意先后。若意向产品先落地，本计划的迁移编号从 `mrp10` 起；若本计划先落地，则本计划用 `mrp09`、意向产品用 `mrp10`。**动手第一步必看 `alembic heads` 的真实链尾，别照抄本文的编号。**
+**依赖**：意向产品那批**已经落地**（分支 `feature/mrp-intent-products`，本分支基于它）。**实测链尾 = `mrp09_intent_products`**，所以本计划的 `mrp10a` 接它、`mrp10b` 接 `mrp10a`。revision id 用完整描述式（全仓约定，`mrp02_forecast_consignment` 那种），≤32 字符。
 
 ## Global Constraints
 
@@ -20,7 +20,7 @@
 - **保质期校验按真实日期差**，禁止用「4.33 周/月」近似（18 个月窗口上会累积到整周级偏差）
 - **前端 user-facing 文案全英文**；UI 样式以 EPMS 为模板，用 `@uniops/shell` 原语，浮层 `createPortal` 到 body
 - **权限**：不新增权限键。参数与周例外走 `mrp.param.write`，排产走 `mrp.run.execute`，读走 `mrp.report.view`
-- **`auth_headers` fixture**：本计划测试都用它，但 conftest 现在只有 `admin_token`。第一个任务先补：`@pytest_asyncio.fixture async def auth_headers(admin_token): return {"Authorization": f"Bearer {admin_token}"}`（若意向产品计划已先加过则跳过）
+- **`auth_headers` fixture 已存在**（意向产品那批的 Task 1 加进了 `mrp-api/tests/conftest.py`），直接用，不要重复添加
 - **测试库禁止并发**：本计划专用 `mrp_weekly_test`（★库名必须**以 `_test` 结尾**——conftest 有 DROP SCHEMA 安全护栏，`mrp_test_xxx` 这种命名会被直接拒绝）
 - **跑测命令**（宿主机，容器内无 pytest）：
   ```bash
@@ -29,7 +29,7 @@
     TEST_MRP_DB=mrp_weekly_test ALLOWED_ORIGINS='["http://localhost:5179"]' \
     python -m pytest tests -q
   ```
-- **基线**：mrp-api 现有 **167 passed**。本计划会**重写** `test_mps_engine.py` 与 `test_mps_api.py` 里的月口径用例，所以总数会变——**Task 6 之后以「0 failed」+「月口径用例已全部改写为周口径且无一被删空」为准，不再以 167 为数字门槛**
+- **基线**：mrp-api 现有 **183 passed**（意向产品那批已落地，实测于 `fbcfd0e`）。本计划会**重写** `test_mps_engine.py` 与 `test_mps_api.py` 里的月口径用例，所以总数会变——**Task 6 之后以「0 failed」+「月口径用例已全部改写为周口径且无一被删空」为准，不再以 183 为数字门槛**
 - **前端门禁**：`cd mrp && npx tsc -p tsconfig.app.json --noEmit` 只许剩 baseUrl 一条；`--listFiles` 正面确认改动文件被编译
 
 ---
