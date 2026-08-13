@@ -190,8 +190,15 @@ export default function SalesForecastPage() {
   // bindTarget (non-null while BindIntentModal is open) is the active
   // intent product's own row, not a session-added-row concept, since a
   // planner can also bind a code that already existed before this visit.
+  // `bindTarget !== null` ALSO forces <MatrixGrid readOnly> below (fix
+  // round 2, Critical 3) — it stays non-null through the entire confirm→
+  // bind→refetch→remount sequence, not just while the picker is open, so
+  // the grid never becomes editable again while a stale, about-to-be-
+  // replaced instance is still mounted. See handleConfirmBind.
   const [addIntentOpen, setAddIntentOpen] = useState(false)
   const [bindTarget, setBindTarget] = useState<IntentProduct | null>(null)
+  const [bindBusy, setBindBusy] = useState(false)
+  const [bindError, setBindError] = useState<string | null>(null)
   // Bumped after every successful bind — folded into `gridKey` below so a
   // bind forces a fresh <MatrixGrid> mount. MatrixGrid is mount-once (see
   // its own header comment and gridKey's comment below): its internal undo
@@ -303,11 +310,22 @@ export default function SalesForecastPage() {
   // gridQuery.dataUpdatedAt (see the comment above: a background refetch
   // must NOT remount this grid, or it would wipe an in-progress edit's undo
   // stack). `bindGeneration` is the one deliberate, user-initiated exception:
-  // a successful bind (handleIntentBound below) bumps it on purpose, because
+  // a successful bind (handleConfirmBind below) bumps it on purpose, because
   // that's the only way an already-mounted MatrixGrid ever learns about data
   // that moved server-side. Every other write path on this page (autosave,
   // Add Product/Add intent product, paste) keeps editing the SAME mount.
   const gridKey = `${rangeFrom}::${rangeTo}::${bindGeneration}`
+  // Range-only half of the key above — deliberately excludes
+  // `bindGeneration`. Used below to gate the addedRows/persistedAddedCodes
+  // wipe: a genuine range change makes every session-added row stale (the
+  // ORIGINAL reason this block exists), but a bind-driven remount must
+  // NOT wipe rows unrelated to the one that was just bound (fix round 2,
+  // Important B — a second intent product created this session but not
+  // yet typed into lived only in `addedRows`; wiping the whole map on
+  // every bind made it vanish with no way to re-add it). The bound code's
+  // own now-stale addedRows/persistedAddedCodes/focusRequest entries are
+  // cleaned up surgically instead, in handleConfirmBind's success path.
+  const rangeKey = `${rangeFrom}::${rangeTo}`
 
   if (baseline !== syncedBaseline) {
     setSyncedBaseline(baseline)
@@ -316,15 +334,8 @@ export default function SalesForecastPage() {
     if (!initialized) setInitialized(true)
   }
 
-  // This block also does double duty as the fix for a bind's stale
-  // focus-anchor risk: gridKey changes on every bindGeneration bump, so a
-  // focusRequest still pointing at the just-bound (now gone) intent code
-  // gets cleared here before the remounted MatrixGrid ever sees it —
-  // without this, MatrixGrid.tsx's focusRequest effect finds no matching
-  // row in the new mount and returns early without ever calling
-  // onFocusRequestHandled, leaving the request stuck forever.
-  if (gridKey !== syncedGridKeyForAddedRows) {
-    setSyncedGridKeyForAddedRows(gridKey)
+  if (rangeKey !== syncedGridKeyForAddedRows) {
+    setSyncedGridKeyForAddedRows(rangeKey)
     if (addedRows.size > 0) setAddedRows(new Map())
     if (persistedAddedCodes.size > 0) setPersistedAddedCodes(new Set())
     if (focusRequest) setFocusRequest(null)
@@ -465,13 +476,20 @@ export default function SalesForecastPage() {
   // lint rule disallows a bare ref mutation in the render body); the effect
   // has no dependency array so it re-syncs after every render, same as the
   // canonical "useEventCallback" pattern.
-  const flushRef = useRef<() => void>(() => {})
+  //
+  // Return type is `Promise<boolean>` (fix round 2, Critical 3) — not just
+  // fire-and-forget — so handleConfirmBind can force-flush right before a
+  // bind and know, authoritatively, whether everything actually landed:
+  // `true` covers both "nothing was dirty" and "the save succeeded";
+  // `false` is the one case (the PUT itself threw) where cells are still
+  // dirty afterward and a bind must not proceed.
+  const flushRef = useRef<() => Promise<boolean>>(async () => true)
   const saveTimer = useRef<number | null>(null)
   const savedResetTimer = useRef<number | null>(null)
 
-  const doFlush = async () => {
+  const doFlush = async (): Promise<boolean> => {
     const months = gridQuery.data?.months ?? []
-    if (months.length === 0) return
+    if (months.length === 0) return true
     // A row added via "Add Product" that the planner hasn't typed anything
     // into yet has no dirty cell — and deliberately sends NOTHING for it.
     // An earlier version of this function sent an explicit qty=0
@@ -484,7 +502,7 @@ export default function SalesForecastPage() {
     // untouched added row simply stays local-only (keeps the X below) until
     // a real edit produces a dirty cell for its code.
     const cellsToSave = dirtyCells
-    if (cellsToSave.length === 0) return
+    if (cellsToSave.length === 0) return true
 
     setSaveState('saving')
     try {
@@ -502,9 +520,11 @@ export default function SalesForecastPage() {
       toasts.success(`${res.upserted} cell${res.upserted === 1 ? '' : 's'} saved.`)
       if (savedResetTimer.current) window.clearTimeout(savedResetTimer.current)
       savedResetTimer.current = window.setTimeout(() => setSaveState('idle'), 3000)
+      return true
     } catch (err) {
       setSaveState('error')
       toasts.error(errMsg(err, 'Autosave failed — please retry.'))
+      return false
     }
   }
 
@@ -639,57 +659,135 @@ export default function SalesForecastPage() {
     })
   }
 
-  /** After a successful Bind. mrp-api's bind endpoint already moved every
-   *  series cell + change-log row from the intent's placeholder code onto
-   *  the real material code, server-side, in one transaction — the only
-   *  question here is how the CLIENT learns about it.
+  /** Refetches the grid + intent-products lists and bumps `bindGeneration`
+   *  so MatrixGrid remounts off server truth — the client-side half of
+   *  "how does an already-mounted MatrixGrid learn a bind moved data
+   *  server-side" (see gridKey's comment for the full argument; fix round
+   *  1's task-5-report.md has the incident this replaced — an in-place
+   *  re-key that changed parent state MatrixGrid never re-reads).
    *
-   *  An earlier version of this function tried to re-key `committed`/
-   *  `liveCells` in place (move the same cell values from the intent code's
-   *  keys onto the real code's keys, client-side) to avoid a refetch. That
-   *  was wrong on two counts, both filed as Critical findings in fix round
-   *  1 (see task-5-report.md): (1) MatrixGrid is mount-once — it seeds its
-   *  own internal undo history from the `value` prop exactly once, in a
-   *  `useState` initializer (see MatrixGrid.tsx's own header comment), and
-   *  never re-syncs from a later prop change, so the re-keyed maps changed
-   *  the PARENT's state and nothing the grid actually displayed; the row
-   *  looked like it vanished until a hard reload. (2) MatrixGrid hands its
-   *  ENTIRE internal map back through `onChange` on every commit — so the
-   *  very next edit anywhere on the grid would overwrite `liveCells`
-   *  wholesale with the stale (pre-bind) map still keyed to the intent
-   *  code, making `dirtyCells` emit qty=0 for the real code (upsert_cells
-   *  treats 0 as delete) and the original values back under the intent
-   *  code — undoing the migration via ordinary autosave, with no UI path
-   *  back since the intent product is now 'bound' and 404/409s out of
-   *  `POST .../bind`.
-   *
-   *  The only correct fix is to remount: refetch the grid so server truth
-   *  is in the cache, THEN bump `bindGeneration` (folded into `gridKey`)
-   *  so React actually throws away the old MatrixGrid instance and mounts
-   *  a fresh one seeded from that server truth. This costs the undo stack,
-   *  which is the accepted trade for a rare, deliberate action — see
-   *  gridKey's own comment. No client-side cell math is needed at all: the
-   *  real material's row simply appears from gridQuery.data.rows like any
-   *  other server-loaded row once the refetch lands. */
-  async function handleIntentBound() {
-    // Called fire-and-forget (`void handleIntentBound()`) from the modal's
-    // onBound, since the bind itself already succeeded and toasted by the
-    // time this runs — a network hiccup on the REFETCH must not leave the
-    // bump silently un-fired. If the refetch fails, still bump
-    // bindGeneration in `finally` (remounting with whatever's in the cache
-    // is never worse than not remounting at all — the intent row will read
-    // wrong until the planner retries, same as before this whole feature
-    // existed) and say so, since the bind itself already happened
-    // server-side and there is nothing to retry there.
+   *  Fix round 2, Important A: `queryClient.invalidateQueries` swallows a
+   *  failed refetch into a no-op resolved promise UNLESS `throwOnError` is
+   *  passed (see query-core's `refetchQueries`: `if (!fetchOptions.
+   *  throwOnError) { promise = promise.catch(noop) }`) — the `try/catch`
+   *  below only does anything because `throwOnError: true` is passed on
+   *  the grid invalidation. Fix round 1's report claimed the catch already
+   *  worked; it did not, because that argument was never checked against
+   *  invalidateQueries' actual default. This is the corrected version. */
+  async function refetchAndRemount() {
     try {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['sales-forecast-grid', rangeFrom, rangeTo] }),
-        queryClient.invalidateQueries({ queryKey: ['intent-products'] }),
+        queryClient.invalidateQueries({ queryKey: ['sales-forecast-grid', rangeFrom, rangeTo] }, { throwOnError: true }),
+        queryClient.invalidateQueries({ queryKey: ['intent-products'] }, { throwOnError: true }),
       ])
     } catch {
       toasts.error('Bind succeeded, but the grid could not refresh automatically — reload the page to see the moved numbers.')
     } finally {
       setBindGeneration((g) => g + 1)
+    }
+  }
+
+  /** Confirm handler for BindIntentModal — owns the ENTIRE bind sequence
+   *  (guard, the actual POST, and the post-bind refetch+remount), not just
+   *  the network call, because the guard needs page-level state
+   *  (dirtyCells/saveTimer/flushRef) BindIntentModal itself never had.
+   *
+   *  Fix round 2, Critical 3 (two layers, per the review — either alone
+   *  left a hole):
+   *
+   *  Layer 1 lives where <MatrixGrid readOnly={...}> is rendered below:
+   *  `bindTarget !== null` forces `readOnly`, for the WHOLE time this
+   *  modal is open — not just at the moment the row's Bind icon was
+   *  clicked. That single prop closes every window-level listener
+   *  MatrixGrid registers regardless of what's visually covered by the
+   *  modal's backdrop: the paste handler's very first line is `if
+   *  (readOnly) return` (MatrixGrid.tsx, the `paste` effect), the undo/
+   *  redo branch checks `if (readOnly || locked) return` (the `keydown`
+   *  effect) — neither is gated on `data-matrix-input` the way Ctrl+C is,
+   *  which is exactly why Ctrl+Z used to reach past the modal. readOnly
+   *  also collapses every cell to the non-editable `<td>` branch in
+   *  MatrixCell (`nonEditable = readOnly || frozen`), which has no
+   *  `<input>` at all — so there is no DOM node left for a stray keystroke
+   *  to land in, and any not-yet-committed edit still sitting in a cell's
+   *  local buffer at the moment readOnly flips is simply dropped (never
+   *  reaches onCommit), not silently applied later.
+   *
+   *  Layer 2 is this function, right here, right before the fetch: cancel
+   *  any still-pending debounce timer, force a flush, and only proceed if
+   *  that flush actually left nothing dirty. This is not redundant with
+   *  Layer 1 — it is what happens if a save was ALREADY in flight (started
+   *  before bindTarget was set) or already dirty at the moment the Bind
+   *  icon was clicked, neither of which Layer 1 can undo after the fact,
+   *  since Layer 1 only stops FUTURE edits/paste/undo, it does not cancel
+   *  or await something already queued. */
+  async function handleConfirmBind(materialCode: string) {
+    if (!bindTarget) return
+    setBindBusy(true)
+    setBindError(null)
+    try {
+      if (saveTimer.current) {
+        window.clearTimeout(saveTimer.current)
+        saveTimer.current = null
+      }
+      // flushRef.current() is doFlush's own return value — `true` means
+      // either there was nothing to save or the save just succeeded (in
+      // which case `committed` was updated to match `liveCells` for every
+      // cell it just saved), `false` means the PUT itself threw and cells
+      // are still dirty. Checking `dirtyCells.length` on top of `flushed`
+      // is not stale-closure guesswork here: Layer 1 has already forced
+      // the grid readOnly (bindTarget is non-null for this whole call), so
+      // nothing NEW can have become dirty since this function started —
+      // `dirtyCells` can only still be non-empty here because the flush
+      // itself failed, which `flushed` already told us.
+      const flushed = await flushRef.current()
+      if (!flushed || dirtyCells.length > 0) {
+        setBindError('There are unsaved changes on the grid — resolve them, then try binding again.')
+        return
+      }
+      const result = await intentApi.bind(bindTarget.id, materialCode)
+      toasts.success(
+        `Bound ${bindTarget.name} to ${materialCode} — moved ${result.moved_months} month(s), `
+        + `${formatTonnes(Number(result.moved_qty))} t.`,
+      )
+      const boundCode = bindTarget.code
+      // Keep bindTarget set (grid stays readOnly) through the refetch +
+      // remount too — clearing it here, before the remount lands, would
+      // hand editing back to the OLD MatrixGrid instance, which is about
+      // to be discarded, letting a keystroke land on cells that vanish the
+      // instant bindGeneration bumps.
+      await refetchAndRemount()
+      // Fix round 2, Important B: drop just the bound code's now-stale
+      // session bookkeeping — it has zero cells left (bind moved them all
+      // away) and would otherwise ghost-render as an extra row forever
+      // (matrixRows' extraRows filter only excludes an addedRows entry
+      // whose code matches a CURRENT server row, and the bound code has
+      // none anymore post-bind). Everything else in addedRows/
+      // persistedAddedCodes survives this remount untouched — a second,
+      // untouched intent product created this same session must not
+      // disappear just because a DIFFERENT one got bound.
+      setAddedRows((prev) => {
+        if (!prev.has(boundCode)) return prev
+        const next = new Map(prev)
+        next.delete(boundCode)
+        return next
+      })
+      setPersistedAddedCodes((prev) => {
+        if (!prev.has(boundCode)) return prev
+        const next = new Set(prev)
+        next.delete(boundCode)
+        return next
+      })
+      setFocusRequest((f) => (f?.rowId === boundCode ? null : f))
+      setBindTarget(null)
+    } catch (err) {
+      // Verbatim: the 409 body here is exactly what decision D11 wants a
+      // human to read (e.g. "<code> already has forecast rows — merge them
+      // by hand first") — errMsg/ApiError already carry FastAPI's `detail`
+      // through as-is (see lib/api.ts's detailToMessage), so this is not a
+      // generic "bind failed" fallback overwriting it.
+      setBindError(errMsg(err, 'Could not bind this intent product — please retry.'))
+    } finally {
+      setBindBusy(false)
     }
   }
 
@@ -712,18 +810,34 @@ export default function SalesForecastPage() {
     return { months, totalKg }
   }, [bindTarget, committed])
 
-  // Bind must never race autosave (fix round 1, Critical 3): a bind that
-  // fires while a debounced PUT /series/cells is still pending, or right
-  // after one landed but before its own state settled, can (a) let that
-  // PUT's success handler write intent-code keys back into `committed`
-  // after the bind already moved them server-side, producing a spurious
-  // dirty diff and a ghost autosave, or (b) let a PUT queued before the
-  // bind land AFTER it, resurrecting the just-migrated months under the
-  // intent code — leaving the same data under both codes on the server.
-  // Blocking Bind on any outstanding save (dirty cells not yet flushed, or
-  // a flush in flight) sidesteps both: by the time Bind is clickable again,
-  // there is nothing left for a stray autosave to race against.
+  // UX affordance only — NOT the correctness guarantee. Fix round 1
+  // claimed this button-disabled check alone was sufficient to keep Bind
+  // from racing autosave; fix round 2's review showed that was false (it
+  // reasoned about mouse reachability, not about MatrixGrid's own window
+  // `keydown`/`paste` listeners, which are not gated on the modal's visual
+  // backdrop at all). The actual guarantee now lives in two other places:
+  // <MatrixGrid readOnly={...}> below (forced true for the whole time
+  // bindTarget is set, not just at this instant) and handleConfirmBind's
+  // own cancel-timer/flush/re-check sequence right before the POST. This
+  // constant only decides whether the row's Bind icon LOOKS clickable —
+  // disabling it here is still worth doing so a planner doesn't open the
+  // picker only to have handleConfirmBind immediately reject it, but a
+  // stale read of this value can never be the thing standing between a
+  // click and a race, because nothing downstream trusts it anymore.
   const bindBlocked = dirtyCells.length > 0 || saveState === 'saving'
+
+  // Fix round 2, Critical 3, Layer 1 — forced true for the ENTIRE time
+  // BindIntentModal is open (bindTarget non-null through confirm→bind→
+  // refetch→remount, not just while the picker is open; see
+  // handleConfirmBind). readOnly is not cosmetic here: MatrixGrid's paste
+  // effect starts with `if (readOnly) return` and its undo/redo keydown
+  // branch checks `if (readOnly || locked) return` — both are WINDOW
+  // listeners, reachable regardless of what the modal's backdrop visually
+  // covers, and neither is gated on focus being inside the grid (unlike
+  // Ctrl+C, which does check `data-matrix-input`). readOnly also collapses
+  // every MatrixCell to the non-editable `<td>` branch, so there is no
+  // `<input>` left for a stray keystroke to land in at all.
+  const gridReadOnly = !canWriteForecast || bindTarget !== null
 
   // Derived from displayUnit — purely display/entry, threaded into
   // <MatrixGrid> below. committed/liveCells/dirtyCells/the autosave payload
@@ -860,7 +974,7 @@ export default function SalesForecastPage() {
             value={liveCells}
             onChange={handleGridChange}
             frozenKeys={frozenKeys}
-            readOnly={!canWriteForecast}
+            readOnly={gridReadOnly}
             height={gridHeight}
             rowHeaderLabel="Product"
             rowTotalLabel={rowTotalLabel}
@@ -913,33 +1027,47 @@ export default function SalesForecastPage() {
             }}
             rowActions={(row) => {
               // Only ever called while !readOnly (MatrixGrid gates
-              // rowActions on that itself — see its own prop doc), which
-              // here means canWriteForecast, the same permission the Bind
-              // endpoint requires — no extra gate needed.
+              // rowActions on that itself — see its own prop doc). Since
+              // `readOnly={gridReadOnly}` above is also true for the
+              // entire time a bind is in flight, every row action
+              // (including every OTHER intent row's own Bind icon)
+              // disappears while BindIntentModal is open — consistent
+              // with nothing else on the grid being actionable then.
               const showRemove = addedRows.has(row.id) && !persistedAddedCodes.has(row.id)
               const intent = intentByCode.get(row.id)
               if (!showRemove && !intent) return null
               return (
                 <span className="flex shrink-0 items-center gap-1.5">
                   {intent && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); if (!bindBlocked) setBindTarget(intent) }}
-                      disabled={bindBlocked}
-                      aria-label={
-                        bindBlocked
-                          ? `Bind ${row.label} to a material code — disabled until autosave finishes`
-                          : `Bind ${row.label} to a material code`
-                      }
-                      title={bindBlocked ? 'Waiting for autosave to finish before this can bind' : 'Bind to material code'}
-                      className={
-                        bindBlocked
-                          ? 'shrink-0 cursor-not-allowed text-neutral-200'
-                          : 'shrink-0 text-neutral-400 hover:text-primary-600'
-                      }
-                    >
-                      <Link2 className="h-3.5 w-3.5" />
-                    </button>
+                    // A `title` on a DISABLED <button> is not reliably
+                    // rendered by every browser (fix round 2) — the same
+                    // problem the "No BOM"/"Intent" Badge tooltip above
+                    // already works around, by hanging the tooltip off a
+                    // plain, never-disabled wrapping <span> instead.
+                    <span title={bindBlocked ? 'Waiting for autosave to finish before this can bind' : 'Bind to material code'}>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); if (!bindBlocked) setBindTarget(intent) }}
+                        disabled={bindBlocked}
+                        aria-label={
+                          bindBlocked
+                            ? `Bind ${row.label} to a material code — disabled until autosave finishes`
+                            : `Bind ${row.label} to a material code`
+                        }
+                        // Disabled state must stay LEGIBLE, not fade to
+                        // invisible (fix round 2 — `text-neutral-200` on a
+                        // white cell background was nearly unreadable).
+                        // neutral-500 reads clearly as muted/inactive
+                        // without disappearing.
+                        className={
+                          bindBlocked
+                            ? 'shrink-0 cursor-not-allowed text-neutral-500'
+                            : 'shrink-0 text-neutral-400 hover:text-primary-600'
+                        }
+                      >
+                        <Link2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
                   )}
                   {showRemove && (
                     <button
@@ -1041,10 +1169,10 @@ export default function SalesForecastPage() {
           intent={bindTarget}
           monthsWithData={bindPreview.months}
           totalQtyKg={bindPreview.totalKg}
-          onClose={() => setBindTarget(null)}
-          onBound={() => { void handleIntentBound() }}
-          notifySuccess={toasts.success}
-          notifyError={toasts.error}
+          busy={bindBusy}
+          error={bindError}
+          onClose={() => { setBindTarget(null); setBindError(null) }}
+          onConfirm={(materialCode) => { void handleConfirmBind(materialCode) }}
         />
       )}
 
