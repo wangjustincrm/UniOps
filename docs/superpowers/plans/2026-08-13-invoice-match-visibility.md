@@ -797,7 +797,7 @@ git commit -m "feat(epms): expose claimed agreement receipts on the invoice resp
 
 ### Task 6: Fix the PA Detail invoice fetch for agreement PAs and long PO histories
 
-`PaDetailPage.tsx:228` skips the invoice fetch entirely when `pa.po_id` is null, so an agreement PA always renders "No invoices linked". It also uses the default `page_size=20` and then filters client-side by `pa.invoice_ids`, so a busy PO silently drops invoices.
+`PaDetailPage.tsx:228` skips the invoice fetch entirely when `pa.po_id` is null, so an agreement PA always renders "No invoices linked". The truncation half of this task is **already solved upstream** and must NOT be "fixed" again: `useInvoices` routes to `listAll()` — which pages through everything via `fetchAllPages` — whenever no `page`/`page_size` is supplied. Passing `page_size` opts OUT of that and reintroduces a cap. Verified 2026-08-13 after merging origin/main, which is where that behaviour arrived.
 
 **Files:**
 - Modify: `epms/src/pages/pa/PaDetailPage.tsx:226-231`
@@ -813,27 +813,28 @@ git commit -m "feat(epms): expose claimed agreement receipts on the invoice resp
   // 协议 PA(po_id 为 null)整个跳过 fetch,Linked Documents 永远显示
   // "No invoices linked"。agreement_id 过滤后端早就支持(DocumentChainTree 已在用)。
   //
-  // page_size 显式给到 200:默认 20 会在繁忙 PO 上截断,而下面还要按
-  // pa.invoice_ids 客户端过滤 —— 被截掉的发票就这样静默消失。
+  // 刻意**不传** page/page_size:useInvoices 据此分流 —— 传了就走单页
+  // list(),不传才走 listAll()(fetchAllPages 逐页取全)。截断已由 listAll
+  // 解决,再传 page_size 反而把「取全部」降级成「封顶一页」。
   const invoiceFilters = pa?.invoice_ids.length
     ? (pa.po_id
-        ? { po_id: pa.po_id, page_size: 200 }
+        ? { po_id: pa.po_id }
         : pa.agreement_id
-          ? { agreement_id: pa.agreement_id, page_size: 200 }
+          ? { agreement_id: pa.agreement_id }
           : undefined)
     : undefined
   const { data: invoicesData } = useInvoices(invoiceFilters, !!invoiceFilters)
   const linkedInvoices = (invoicesData?.items ?? []).filter((inv) => pa?.invoice_ids.includes(inv.id))
 ```
 
-- [ ] **Step 2: Confirm `InvoiceFilters` accepts `page_size` and `agreement_id`**
+- [ ] **Step 2: No type change needed — verify rather than assume**
 
 ```bash
 cd /c/Project/uniops-payofficer
 grep -n "InvoiceFilters" -A 12 epms/src/hooks/useInvoices.ts
 ```
 
-If either key is missing from the type, add it — the backend already accepts both (`api/v1/invoices.py:227-237`).
+`InvoiceFilters` (`epms/src/services/invoices.ts:194-202`) already declares `agreement_id`, and the backend already accepts it (`api/v1/invoices.py:227-237`). Confirm that is still true; do not add anything.
 
 - [ ] **Step 3: Verify the frontend type gate**
 
@@ -853,7 +854,7 @@ This is a reachability fix — a type check does not prove a user can see anythi
 ```bash
 cd /c/Project/uniops-payofficer
 git add epms/src/pages/pa/PaDetailPage.tsx
-git commit -m "fix(epms): load linked invoices for agreement PAs and stop truncating PO histories"
+git commit -m "fix(epms): load linked invoices for agreement PAs"
 ```
 
 ---
