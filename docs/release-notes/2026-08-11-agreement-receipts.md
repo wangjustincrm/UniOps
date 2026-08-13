@@ -285,8 +285,10 @@ leftovers, which are disposable.
 This frontend has no automated coverage. These need a browser and a real receipt
 photo before anyone should trust the feature in production:
 
-1. Upload a real photo and confirm OCR pre-fills reference, date and amounts.
-   The `slip` OCR mode has still never been executed against a real image.
+1. ~~Upload a real photo and confirm OCR pre-fills reference, date and amounts.~~
+   **Done (2026-08-13, by the product owner): the `slip` OCR mode was run
+   against a real receipt photo and read it correctly.** This was the last
+   path in the feature with no real-world data behind it.
 2. Correct an amount OCR misread, then submit — and confirm the page navigates
    away rather than just clearing the form.
 3. Submit with no photo plus a reason → lands in `pending_ap_review` → approve
@@ -300,9 +302,14 @@ photo before anyone should trust the feature in production:
    ticked** afterwards and the "settle without evidence" form does not appear.
 7. Detach all receipts from an invoice and confirm it returns to "pending"
    without stamping the legacy flag.
-8. **Open a house-account PA's attachment roll-up as `ap_clerk` *and* as `cfo`**
-   and download the receipt photos. Testing only as `ap_clerk` passes and would
-   hide the permission gap this release fixes.
+8. ~~Open a house-account PA's attachment roll-up as `ap_clerk` *and* as `cfo`.~~
+   **N/A (2026-08-13): the `cfo` role exists in production but has no user
+   assigned to it**, so there is nobody to test as. The grant identity 0006
+   adds for `cfo` is still correct and still worth having the day someone is
+   given that role — it is simply unexercisable today. Test as `ap_clerk`.
+   ⚠️ If a user is ever assigned the `cfo` role, run this check then: the
+   attachment roll-up degrading to "some attachments could not be loaded" is
+   silent, and the CFO is exactly who the evidence pack is for.
 9. Open the agreement detail page's Document Chain as a `dept_manager` who is an
    approver on one of its PAs — confirm that PA appears.
 10. Record a `delivery` and a `service` receipt, not just `counter_slip` — those
