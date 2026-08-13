@@ -334,13 +334,25 @@ function PoRouteVariancePanel({
 
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-2">Amount Allocated per PO</h4>
+                {/* Column label + caption (fix round 1, Important — same
+                    finding as the by-line table above, widened to here):
+                    total-value (by-amount) matches take the po_line_id IS
+                    NULL branch of the same backend query
+                    (epms-api/app/crud/invoice.py:1050-1056), summing
+                    InvoicePoAllocation.allocated_amount by po_id only — still
+                    no invoice_id predicate. This is cumulative across every
+                    invoice matched to that PO (compared against the PO
+                    subtotal, not a line total), not this invoice's share. The
+                    number is correct; only a bare "Variance" label would
+                    misread as this invoice's own shortfall/overage. Do not
+                    recompute — no per-invoice reference exists in the data. */}
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-sm min-w-[420px]">
                     <thead>
                       <tr className="border-b border-neutral-200 bg-neutral-50">
                         <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Allocated</th>
-                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Variance</th>
+                        <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">PO variance (all invoices)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -366,6 +378,9 @@ function PoRouteVariancePanel({
                     </tbody>
                   </table>
                 </div>
+                <p className="text-[11px] text-neutral-400 italic mt-1">
+                  PO variance figures are cumulative across every invoice matched to that PO, not this invoice's share alone.
+                </p>
               </div>
 
               {hasFeeLines && <FeeLinesSection invoice={invoice} />}
