@@ -60,9 +60,28 @@ def upgrade() -> None:
         "mrp_capacity_exceptions",
         ["week_start", "scope_type", "scope_ref", "constraint_type"],
     )
+    # Fix round 1 (code review): Postgres treats every NULL as distinct, so
+    # the constraint above does not dedupe factory-wide rows (scope_ref IS
+    # NULL) — the only scope this phase uses. Without this partial index, a
+    # planner could insert unlimited contradictory factory-wide exceptions
+    # for the same week + constraint_type ("week 32 max output = 0" and
+    # "= 40" side by side) with no DB guarantee for Task 3's resolver to
+    # lean on. The plain constraint above still correctly dedupes the
+    # non-null product_family/line rows a later phase may add, so it stays.
+    op.create_index(
+        "uq_mrp_capacity_exceptions_factory_week_constraint",
+        "mrp_capacity_exceptions",
+        ["week_start", "scope_type", "constraint_type"],
+        unique=True,
+        postgresql_where=sa.text("scope_ref IS NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "uq_mrp_capacity_exceptions_factory_week_constraint",
+        table_name="mrp_capacity_exceptions",
+    )
     op.drop_constraint(
         "uq_mrp_capacity_exceptions_week_scope_constraint",
         "mrp_capacity_exceptions", type_="unique",

@@ -4,8 +4,15 @@
 loss-rate parameters land in the same table later — see
 app/models/params.py's docstring). Round-trip + default + unknown-mode
 rejection + the write-permission gate.
+
+Also covers `mrp_capacity_exceptions`'s partial unique index (fix round 1)
+against raw SQL, not an ORM model — Task 3 owns that table's ORM model and
+must not create it again here.
 """
+from datetime import date
+
 import pytest
+from sqlalchemy import text
 
 
 def _deny_everything(monkeypatch):
@@ -59,3 +66,79 @@ async def test_params_write_requires_param_write_permission(client, non_admin_to
     r = await client.put("/api/v1/params/week_calendar_mode", json={"value": "month_fixed"},
                          headers={"Authorization": f"Bearer {non_admin_token}"})
     assert r.status_code == 403
+
+
+# ── mrp_capacity_exceptions: partial unique index (fix round 1) ────────────
+#
+# No ORM model exists for this table yet (Task 3 adds it), so these insert
+# raw SQL directly against db_session.
+
+_INSERT_EXCEPTION = text(
+    "INSERT INTO mrp_capacity_exceptions "
+    "(week_start, scope_type, scope_ref, constraint_type, limit_value) "
+    "VALUES (:week_start, :scope_type, :scope_ref, :constraint_type, :limit_value)"
+)
+
+_WEEK = date(2026, 8, 10)
+
+
+async def _insert_exception(db_session, **overrides):
+    params = {
+        "week_start": _WEEK, "scope_type": "factory", "scope_ref": None,
+        "constraint_type": "max_output_qty", "limit_value": 10,
+    }
+    params.update(overrides)
+    await db_session.execute(_INSERT_EXCEPTION, params)
+
+
+@pytest.mark.asyncio
+async def test_capacity_exception_duplicate_factory_week_and_type_is_rejected(db_session):
+    """uq_mrp_capacity_exceptions_factory_week_constraint. Postgres treats
+    every NULL as distinct, so the plain 4-column unique constraint
+    (week_start, scope_type, scope_ref, constraint_type) does not dedupe
+    factory-wide rows (scope_ref IS NULL) — the only scope this phase
+    uses. Without the partial index added in fix round 1, two
+    contradictory factory-wide rows ("week 32 max output = 0" and "= 40")
+    would both insert, and Task 3's resolver would pick one arbitrarily
+    with no DB guarantee. This proves the partial index blocks it."""
+    await _insert_exception(db_session, limit_value=0)
+    await db_session.flush()
+
+    # Raw SQL via db_session.execute() hits the DB immediately (unlike an
+    # ORM db.add(), which only flushes at the next flush()), so the
+    # constraint violation raises here, not on a later flush().
+    with pytest.raises(Exception):
+        await _insert_exception(db_session, limit_value=40)
+
+
+@pytest.mark.asyncio
+async def test_capacity_exception_allows_different_constraint_type_same_week(db_session):
+    """Two factory-wide rows for the same week but different
+    constraint_type must NOT collide — the partial index is scoped to
+    (week_start, scope_type, constraint_type), not just (week_start,
+    scope_type)."""
+    await _insert_exception(db_session, constraint_type="max_output_qty")
+    await _insert_exception(db_session, constraint_type="max_sku_count")
+    await db_session.flush()  # must not raise
+
+    count = (await db_session.execute(text(
+        "SELECT count(*) FROM mrp_capacity_exceptions WHERE week_start = :w"
+    ), {"w": _WEEK})).scalar()
+    assert count == 2
+
+
+@pytest.mark.asyncio
+async def test_capacity_exception_allows_factory_and_scoped_row_same_week_and_type(db_session):
+    """One factory-wide row (scope_ref NULL) and one scoped row (scope_ref
+    non-null) for the same week + constraint_type must both succeed — the
+    partial index only applies WHERE scope_ref IS NULL, and the plain
+    4-column constraint already treats the two rows as distinct since
+    their scope_ref differs."""
+    await _insert_exception(db_session, scope_type="factory", scope_ref=None)
+    await _insert_exception(db_session, scope_type="line", scope_ref="LINE-1")
+    await db_session.flush()  # must not raise
+
+    count = (await db_session.execute(text(
+        "SELECT count(*) FROM mrp_capacity_exceptions WHERE week_start = :w"
+    ), {"w": _WEEK})).scalar()
+    assert count == 2
