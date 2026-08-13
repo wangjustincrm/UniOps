@@ -251,9 +251,13 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from tests.test_invoice_allocations import (
-    INV_URL, _make_invoice, _make_issued_po, _make_vendor,
-)
+# 夹具分散在两个模块里(2026-08-13 实测):
+#   test_invoice_allocations —— INV_URL / _make_vendor / _make_issued_po
+#     (_make_issued_po 直建已下达 PO,不走审批服务,所以本地能跑)
+#   test_invoice_assign     —— _make_invoice
+#     (该模块的 _make_po 会走审批提交,本地 401→502,别用它)
+from tests.test_invoice_allocations import INV_URL, _make_issued_po, _make_vendor
+from tests.test_invoice_assign import _make_invoice
 
 
 async def _review_task(invoice_id):
@@ -386,9 +390,13 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from tests.test_invoice_allocations import (
-    INV_URL, _make_invoice, _make_issued_po, _make_vendor,
-)
+# 夹具分散在两个模块里(2026-08-13 实测):
+#   test_invoice_allocations —— INV_URL / _make_vendor / _make_issued_po
+#     (_make_issued_po 直建已下达 PO,不走审批服务,所以本地能跑)
+#   test_invoice_assign     —— _make_invoice
+#     (该模块的 _make_po 会走审批提交,本地 401→502,别用它)
+from tests.test_invoice_allocations import INV_URL, _make_issued_po, _make_vendor
+from tests.test_invoice_assign import _make_invoice
 
 
 async def _exception_task(invoice_id, *, open_only=True):
