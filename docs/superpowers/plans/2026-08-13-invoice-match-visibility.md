@@ -946,6 +946,7 @@ git commit -m "feat(epms): show invoice-to-PO variance with line detail on PA De
 ### Task 8: PA Detail variance panel — house-account receipts
 
 **Files:**
+- Modify: `epms/src/services/invoices.ts` (**add the missing frontend type — see Step 0**)
 - Modify: `epms/src/lib/matchVariance.ts` (add receipt summary)
 - Modify: `epms/src/lib/matchVariance.test.ts`
 - Modify: `epms/src/components/invoices/InvoiceMatchVariancePanel.tsx`
@@ -954,6 +955,33 @@ git commit -m "feat(epms): show invoice-to-PO variance with line detail on PA De
 **Interfaces:**
 - Consumes: `InvoiceResponse.claimed_receipts` from Task 5; `centsEqual` from `@/lib/money`
 - Produces: `export function receiptSummary(invoice: ApiInvoice): { pricedCount: number; receiptTotal: number; variance: number; hasVariance: boolean }`
+
+- [ ] **Step 0: Add the frontend type — it does not exist yet**
+
+Task 5 added `claimed_receipts` to the backend `InvoiceResponse`, but **nothing was added on the frontend** — verified 2026-08-13, `grep -rn "claimed_receipts" epms/src` returns zero hits. Without this step the rest of the task will not compile.
+
+In `epms/src/services/invoices.ts`, add the row type and the field on `ApiInvoice`, mirroring the backend `ClaimedReceipt` schema exactly:
+
+```typescript
+export interface ApiClaimedReceipt {
+  id: string
+  receipt_ref: string | null
+  receipt_date: string
+  receipt_type: string
+  // 可空,而且必须保持可空 —— delivery / service 两类凭证本就没有金额。
+  // 折成 0 会让下面的汇总把它算进去,凭空造出「差异 = 整张发票」的误报。
+  total_amount: string | null
+  vendor_name: string | null
+}
+```
+
+and on `ApiInvoice`:
+
+```typescript
+  claimed_receipts?: ApiClaimedReceipt[] | null
+```
+
+Note `total_amount` is `string | null`, not `number` — Pydantic serialises `Decimal` as a string.
 
 - [ ] **Step 1: Write the failing test**
 
