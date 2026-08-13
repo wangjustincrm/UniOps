@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchMode, buildLineComparisons } from './matchVariance'
+import { matchMode, buildLineComparisons, feeLines, feeLineTotal } from './matchVariance'
 import type { ApiInvoice, InvoiceAllocation } from '@/services/invoices'
 import type { ApiPoLineItem } from '@/services/po'
 
@@ -88,6 +88,10 @@ describe('matchMode', () => {
     ]
     expect(matchMode(allocations)).toBe('by-amount')
   })
+
+  it('returns by-amount for an empty allocations array (unreachable through the panel — it short-circuits on allocations.length === 0 — but the function is exported and must not throw or default to by-line)', () => {
+    expect(matchMode([])).toBe('by-amount')
+  })
 })
 
 describe('buildLineComparisons', () => {
@@ -168,5 +172,45 @@ describe('buildLineComparisons', () => {
 
     const rows = buildLineComparisons(invoice, poLines)
     expect(rows[0].variance).toBe(25)
+  })
+})
+
+describe('feeLines / feeLineTotal', () => {
+  it('returns only the lines flagged non_po_fee, with description and amount', () => {
+    const invoice = makeInvoice({
+      line_items: [
+        { id: 'line-1', description: 'Widget', quantity: 10, unit: 'ea', unit_price: 100, line_total: 1000, non_po_fee: false },
+        { id: 'line-2', description: 'Shipping', quantity: 1, unit: 'ea', unit_price: 50, line_total: 50, non_po_fee: true },
+      ],
+    })
+
+    expect(feeLines(invoice)).toEqual([{ description: 'Shipping', amount: 50 }])
+  })
+
+  it('returns an empty array when no line is flagged non_po_fee', () => {
+    const invoice = makeInvoice({
+      line_items: [
+        { id: 'line-1', description: 'Widget', quantity: 10, unit: 'ea', unit_price: 100, line_total: 1000, non_po_fee: false },
+      ],
+    })
+
+    expect(feeLines(invoice)).toEqual([])
+    expect(feeLineTotal(invoice)).toBe(0)
+  })
+
+  it('coerces a Decimal-as-string line_total with Number() and sums correctly across multiple fee lines', () => {
+    const invoice = makeInvoice({
+      line_items: [
+        { id: 'line-1', description: 'Widget', quantity: 10, unit: 'ea', unit_price: 100, line_total: 1000, non_po_fee: false },
+        // Simulates the real wire shape: Pydantic serialises Decimal as a
+        // JSON string.
+        { id: 'line-2', description: 'Shipping', quantity: 1, unit: 'ea', unit_price: 50, line_total: '50.00' as unknown as number, non_po_fee: true },
+        { id: 'line-3', description: 'Packaging', quantity: 1, unit: 'ea', unit_price: 12.5, line_total: '12.50' as unknown as number, non_po_fee: true },
+      ],
+    })
+
+    // If this concatenated instead of adding, the total would be the string
+    // "50.0012.50" or NaN — assert the real arithmetic result.
+    expect(feeLineTotal(invoice)).toBe(62.5)
   })
 })

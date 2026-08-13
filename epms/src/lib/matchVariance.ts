@@ -85,3 +85,31 @@ export function buildLineComparisons(invoice: ApiInvoice, poLines: ApiPoLineItem
     }
   })
 }
+
+export interface FeeLine {
+  description: string
+  amount: number
+}
+
+// Non-PO fee lines (non_po_fee === true — shipping, packaging, etc.) never
+// receive an allocation at all: the backend enforces that a line cannot be
+// both allocated to a PO and marked non-PO fee (crud/invoice.py's "mutual
+// exclusion" check), so they never appear in buildLineComparisons' output.
+//
+// Both match modes subtract these lines' pre-tax total from invoice.amount
+// before computing invoice.variance (crud/invoice.py:1101 — unconditional on
+// po_line_id, so this is NOT a by-line-only concern), which means the header
+// variance and the sum of the allocation rows legitimately disagree by
+// exactly this total whenever the invoice carries a fee line. Neither number
+// is wrong; the header is authoritative. The panel must render these lines
+// (see InvoiceMatchVariancePanel's fee-line section) or a manager checking
+// the arithmetic has no way to see why the rows don't sum to the headline.
+export function feeLines(invoice: ApiInvoice): FeeLine[] {
+  return (invoice.line_items ?? [])
+    .filter((l) => l.non_po_fee === true)
+    .map((l) => ({ description: l.description, amount: Number(l.line_total) }))
+}
+
+export function feeLineTotal(invoice: ApiInvoice): number {
+  return feeLines(invoice).reduce((sum, l) => sum + l.amount, 0)
+}
