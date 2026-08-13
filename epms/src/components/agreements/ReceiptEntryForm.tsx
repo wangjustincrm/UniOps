@@ -14,6 +14,7 @@ import {
   type ReceiptVendorSuggestion,
   type ReceiptVendorValue,
 } from '@/components/agreements/ReceiptVendorPicker'
+import { UserCombobox } from '@/components/agreements/UserCombobox'
 
 interface ReceiptEntryFormProps {
   agreementId: string
@@ -458,17 +459,17 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         )}
         <FormField label={copy.byLabel} required error={receivedByError ?? undefined} htmlFor="receipt-picked-by"
           hint={copy.byHint}>
-          <select
-            id="receipt-picked-by"
+          {/* Type-to-search, not a <select> of the whole company: this list is
+              every active employee, and picking from it by scrolling means
+              knowing where a name falls alphabetically. */}
+          <UserCombobox
+            inputId="receipt-picked-by"
             value={receivedBy}
-            onChange={(e) => setReceivedBy(e.target.value)}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-          >
-            <option value="">Select…</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>{u.full_name}</option>
-            ))}
-          </select>
+            onChange={setReceivedBy}
+            knownUsers={users}
+            disabled={isPending}
+            invalid={!!receivedByError}
+          />
         </FormField>
       </div>
 

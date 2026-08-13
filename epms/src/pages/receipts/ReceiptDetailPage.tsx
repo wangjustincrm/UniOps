@@ -26,6 +26,7 @@ import {
   ReceiptVendorPicker,
   type ReceiptVendorValue,
 } from '@/components/agreements/ReceiptVendorPicker'
+import { UserCombobox } from '@/components/agreements/UserCombobox'
 import { agreementReceiptAttachmentService } from '@/services/agreementReceiptAttachments'
 import {
   EDITABLE_STATUSES,
@@ -507,17 +508,14 @@ function ReceiptDetail({
                     label="Received by" required htmlFor="receipt-received-by"
                     hint="The person who brought the receipt in — not a sign-off or approval."
                   >
-                    <select
-                      id="receipt-received-by"
+                    {/* Type-to-search — same picker as the entry form. */}
+                    <UserCombobox
+                      inputId="receipt-received-by"
                       value={receivedBy}
-                      onChange={(e) => touch(setReceivedBy)(e.target.value)}
-                      className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
-                    >
-                      <option value="">Select…</option>
-                      {users.map((u) => (
-                        <option key={u.id} value={u.id}>{u.full_name}</option>
-                      ))}
-                    </select>
+                      onChange={touch(setReceivedBy)}
+                      knownUsers={users}
+                      disabled={anyPending}
+                    />
                   </FormField>
                 </div>
 
