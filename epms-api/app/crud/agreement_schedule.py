@@ -146,10 +146,19 @@ async def claim_next_period(
         ),
     )
 
-    if row.expected_amount is not None:
-        tol = row.tolerance_pct or Decimal("0")
-        span = row.expected_amount * tol / Decimal("100")
-        amount = Decimal(str(invoice.total_amount))
+    # ── 金额校验(用户裁定 2026-08-13)────────────────────────────────────
+    # 比的是发票**税前额**,不是含税总额。expected_amount_per_period 录的是
+    # 合同价 —— 合同谈的是净价,税是法定加上去的,税率会变、一票还可能多税率。
+    # 拿含税总额去比一个净额,任何带税协议**永远命中不了**:1,980 的月费开出
+    # 2,237.40 的票,差的正好是那 13% 的 HST,于是每一张票都超容差、每一张票
+    # 都掉进 match_review。这就是用户报上来的那张 INV-2026-0145。
+    #
+    # tolerance_pct 为 **NULL = 不做金额校验**;显式填 0 才是"必须分毫不差"。
+    # 原来 `or Decimal("0")` 把两者混为一谈,于是"容差没填"被解释成了系统里
+    # 最严的那档 —— 与字段留空的直觉正好相反。
+    if row.expected_amount is not None and row.tolerance_pct is not None:
+        span = row.expected_amount * row.tolerance_pct / Decimal("100")
+        amount = Decimal(str(invoice.amount))
         if not (row.expected_amount - span <= amount <= row.expected_amount + span):
             return None
 

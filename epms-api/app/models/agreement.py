@@ -72,7 +72,10 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
     schedule_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     expected_amount_per_period: Mapped[Decimal | None] = mapped_column(
         Numeric(15, 2), nullable=True)
-    # 百分数:5.00 = ±5%
+    # 百分数:5.00 = ±5%。**NULL = 不做金额校验**(用户裁定 2026-08-13);
+    # 显式 0 才是"必须分毫不差"。比对用发票**税前额**对 expected_amount_per_period
+    # —— 两条规则都实现在 crud/agreement_schedule.py::claim_next_period,那里
+    # 有完整理由。
     tolerance_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     overdue_after_days: Mapped[int | None] = mapped_column(
         Integer, nullable=True, server_default="7")

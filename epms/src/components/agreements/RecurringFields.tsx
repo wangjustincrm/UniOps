@@ -181,7 +181,7 @@ export function RecurringFields(props: {
         <FormField
           label="Expected amount per period"
           htmlFor="amountPerPeriod"
-          hint="Leave blank for usage-based bills — invoices will be claimed in order without an amount check"
+          hint="The contract price BEFORE tax — invoices are compared on their pre-tax amount. Leave blank for usage-based bills."
         >
           <Input
             id="amountPerPeriod"
@@ -204,7 +204,11 @@ export function RecurringFields(props: {
         <FormField
           label="Tolerance %"
           htmlFor="tolerancePct"
-          hint={!value.amountPerPeriod ? 'Set an expected amount to enable a tolerance' : undefined}
+          hint={
+            !value.amountPerPeriod
+              ? 'Set an expected amount to enable a tolerance'
+              : 'Leave blank to accept any amount. 0 means the pre-tax amount must match to the cent.'
+          }
         >
           <Input
             id="tolerancePct"

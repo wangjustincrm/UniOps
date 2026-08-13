@@ -74,6 +74,37 @@ figures in the same save. Half a set (amount and tax but no total) is refused:
 `total_amount` is what every downstream sum reads, so such a row would look
 priced and stay invisible to the comparison.
 
+## How a recurring invoice claims its billing period
+
+Two rules changed here on the user's ruling (2026-08-13), because between them
+they made the automatic claim unusable on any real agreement:
+
+- **The period is chosen by invoice date**, not FIFO by sequence — the row
+  whose expected date is nearest the invoice's. FIFO was fine on an agreement
+  whose schedule starts when the system does, and wrong the moment one is
+  onboarded mid-life: it proposed a historical period no invoice will ever
+  fill, so every invoice failed the amount check against it.
+- **The amount check compares the invoice's PRE-TAX amount**, because
+  `expected_amount_per_period` is the contract price and tax is added on top.
+  Comparing a tax-inclusive total against a net figure means a $1,980/month
+  contract billed with 13% HST is 13% "over tolerance" every month.
+- **A blank tolerance means no amount check at all.** It used to be read as 0
+  — the strictest setting the system has — which is the opposite of what
+  leaving a field empty suggests. An explicit `0` still means exact to the
+  cent.
+
+⚠️ **Set `Expected amount per period` to the NET contract price.** The field's
+hint says so now; agreements created before this release may have a
+tax-inclusive figure in it, which will now fail the comparison it used to pass.
+
+When the automatic claim still cannot place an invoice, it lands in
+match_review with no period — and an invoice that is approved from there
+without one **cannot be paid**. The invoice detail page now offers **Assign
+Billing Period** in exactly that state (`POST /invoices/{id}/billing-period`).
+Before this release that state was permanent: `/match` refuses to run twice,
+the manual assignment lived only inside the match panel, and an active
+agreement's tolerance can no longer be edited.
+
 ## Reconciling: baseline first, accelerators second
 
 Reconciliation happens on the **invoice detail page**. The operator ticks the

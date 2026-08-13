@@ -60,19 +60,29 @@ function AgreementCandidateRow({
   )
 }
 
-// Mirrors the backend's claim_next_period tolerance check (crud/agreement_schedule.py):
-// expected ± (expected * tolerance_pct / 100). Both operands must already be
-// Number()-coerced by the caller — decimal fields arrive as JSON strings.
-function withinPeriodTolerance(amount: number, expected: number, tolerancePct: number): boolean {
+// Mirrors the backend's claim_next_period amount check
+// (crud/agreement_schedule.py), including both of its rules:
+//   • the compared figure is the invoice's PRE-TAX amount, because
+//     expected_amount_per_period is the contract price and tax is added on
+//     top — comparing a tax-inclusive total against a net figure can never
+//     match on any tax-bearing agreement;
+//   • a NULL tolerance means no amount check at all (blank = don't care),
+//     while an explicit 0 means exact to the cent.
+// Both operands must already be Number()-coerced by the caller — decimal
+// fields arrive as JSON strings.
+function withinPeriodTolerance(
+  preTaxAmount: number, expected: number, tolerancePct: number | null,
+): boolean {
+  if (tolerancePct === null) return true
   const span = (expected * tolerancePct) / 100
-  return amount >= expected - span && amount <= expected + span
+  return preTaxAmount >= expected - span && preTaxAmount <= expected + span
 }
 
 // recurring — preview of the period the server will claim on submit: the one
 // whose expected date is nearest this invoice's date (see claim_next_period).
 function RecurringPeriodPreview({
-  loading, error, row, invoiceTotal, currency,
-}: { loading: boolean; error: boolean; row: ApiScheduleRow | undefined; invoiceTotal: number; currency: string }) {
+  loading, error, row, invoicePreTax, currency,
+}: { loading: boolean; error: boolean; row: ApiScheduleRow | undefined; invoicePreTax: number; currency: string }) {
   if (loading) {
     return (
       <p className="rounded-lg border border-neutral-200 bg-white px-3 py-2.5 text-xs text-neutral-400">
@@ -107,8 +117,8 @@ function RecurringPeriodPreview({
   }
   const label = row.period_label ?? `Period #${row.sequence}`
   const expected = row.expected_amount != null ? Number(row.expected_amount) : null
-  const tolerancePct = row.tolerance_pct != null ? Number(row.tolerance_pct) : 0
-  const outOfTolerance = expected !== null && !withinPeriodTolerance(invoiceTotal, expected, tolerancePct)
+  const tolerancePct = row.tolerance_pct != null ? Number(row.tolerance_pct) : null
+  const outOfTolerance = expected !== null && !withinPeriodTolerance(invoicePreTax, expected, tolerancePct)
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -120,7 +130,7 @@ function RecurringPeriodPreview({
       {outOfTolerance && (
         <div className="flex items-start gap-2 rounded-lg border border-warning-200 bg-warning-50 px-3 py-2.5 text-xs text-warning-800">
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-          <p>Amount is outside the tolerance for {label} — this invoice will go to review for manual assignment, unless you assign a period below.</p>
+          <p>The invoice's pre-tax amount is outside the tolerance for {label} — this invoice will go to review for manual assignment, unless you assign a period below.</p>
         </div>
       )}
     </div>
@@ -285,9 +295,11 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
     return distance(r) < distance(best) ? r : best
   })
   const nextPeriodExpected = nextPeriodRow?.expected_amount != null ? Number(nextPeriodRow.expected_amount) : null
-  const nextPeriodTolerancePct = nextPeriodRow?.tolerance_pct != null ? Number(nextPeriodRow.tolerance_pct) : 0
+  const nextPeriodTolerancePct = nextPeriodRow?.tolerance_pct != null ? Number(nextPeriodRow.tolerance_pct) : null
+  // Pre-tax, matching the server: expected_amount_per_period is a contract
+  // price, and inv.amount is this invoice's pre-tax figure.
   const nextPeriodOutOfTolerance = !!nextPeriodRow && nextPeriodExpected !== null &&
-    !withinPeriodTolerance(Number(inv.total_amount), nextPeriodExpected, nextPeriodTolerancePct)
+    !withinPeriodTolerance(Number(inv.amount), nextPeriodExpected, nextPeriodTolerancePct)
   // Whole-branch review Blocker 2: offer the manual-assignment picker whenever
   // the automatic claim can't be trusted — nothing claimable, the
   // candidate is out of tolerance, or the schedule couldn't even be read. This
@@ -488,7 +500,7 @@ export function MatchPanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => v
                 loading={scheduleLoading}
                 error={scheduleErrored}
                 row={nextPeriodRow}
-                invoiceTotal={Number(inv.total_amount)}
+                invoicePreTax={Number(inv.amount)}
                 currency={selectedAgreement?.currency ?? inv.currency}
               />
               {/* Manual-assignment override (whole-branch review Blocker 2) —

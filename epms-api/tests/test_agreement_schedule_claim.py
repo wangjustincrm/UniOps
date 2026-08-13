@@ -43,12 +43,17 @@ async def _seed(db, **over):
     return agr, vendor, user
 
 
-async def _invoice(db, agr, vendor, user, total="1200.00", invoice_date=date(2026, 2, 3)):
+async def _invoice(db, agr, vendor, user, total="1200.00", invoice_date=date(2026, 2, 3),
+                  tax="0"):
+    """`total` is the PRE-TAX amount and `tax` is added on top — the amount
+    check compares the pre-tax figure against the period's expected amount, so
+    a test that wants to exercise it has to be explicit about which is which."""
     inv = Invoice(
         internal_ref=f"INV-{uuid.uuid4().hex[:8]}",
         vendor_invoice_number=f"B{uuid.uuid4().hex[:6]}",
         vendor_id=vendor.id, vendor_name=vendor.name,
-        amount=Decimal(total), tax_amount=Decimal("0"), total_amount=Decimal(total),
+        amount=Decimal(total), tax_amount=Decimal(tax),
+        total_amount=Decimal(total) + Decimal(tax),
         currency="CAD", invoice_date=invoice_date, due_date=date(2026, 3, 3),
         status="unmatched", line_items=[], uploaded_by=user.id,
     )
@@ -331,3 +336,46 @@ async def test_assign_billing_period_refuses_a_taken_period(test_engine):
         with pytest.raises(ValueError, match="already has an invoice"):
             await invoice_crud.assign_billing_period(db, second, taken.id)
         await db.rollback()
+
+
+# ── The amount check's two rules (user's ruling, 2026-08-13) ────────────────
+
+async def test_tax_does_not_push_a_matching_invoice_out_of_tolerance(test_engine):
+    """The reported bug. expected_amount_per_period is the CONTRACT price, and
+    tax is added on top by law — comparing a tax-inclusive total against a net
+    figure means a $1,200 monthly contract billed with 13% HST is 13% "over
+    tolerance" every single month, and every invoice on such an agreement falls
+    into match_review."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db)  # expected 1200, tolerance 5%
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user, total="1200.00", tax="156.00")
+        assert inv.total_amount == Decimal("1356.00")
+        row = await sched_crud.claim_next_period(db, agr, inv)
+        assert row is not None, "claimed on the pre-tax amount, not the tax-inclusive total"
+        await db.commit()
+
+
+async def test_a_blank_tolerance_accepts_any_amount(test_engine):
+    """Blank means "don't check", not "check exactly". The previous reading —
+    `tolerance_pct or 0` — turned an unfilled field into the strictest setting
+    the system has, which is the opposite of what leaving it empty suggests."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db, tolerance_pct=None)
+        await sched_crud.ensure_period_rows(db, agr)
+        inv = await _invoice(db, agr, vendor, user, total="9999.99")
+        assert await sched_crud.claim_next_period(db, agr, inv) is not None
+        await db.commit()
+
+
+async def test_an_explicit_zero_tolerance_still_means_exact(test_engine):
+    """…and 0 keeps its meaning, so the strict setting is still reachable —
+    deliberately, by typing it."""
+    async with _factory(test_engine)() as db:
+        agr, vendor, user = await _seed(db, tolerance_pct=Decimal("0.00"))
+        await sched_crud.ensure_period_rows(db, agr)
+        off_by_a_cent = await _invoice(db, agr, vendor, user, total="1200.01")
+        assert await sched_crud.claim_next_period(db, agr, off_by_a_cent) is None
+        exact = await _invoice(db, agr, vendor, user, total="1200.00")
+        assert await sched_crud.claim_next_period(db, agr, exact) is not None
+        await db.commit()
