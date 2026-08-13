@@ -133,11 +133,34 @@ export function useMatchInvoice() {
   return useMutation({
     mutationFn: ({ id, ...body }: { id: string } & MatchInvoiceBody) =>
       invoiceService.match(id, body),
-    onSuccess: (_data, { id }) => {
-      queryClient.invalidateQueries({ queryKey: ['invoices'] })
-      queryClient.invalidateQueries({ queryKey: ['invoices', id] })
-      queryClient.invalidateQueries({ queryKey: ['tasks'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    // Matching an invoice to an AGREEMENT also mutates that agreement: a
+    // recurring match claims a scheduled period (crud/agreement_schedule.py
+    // claim_next_period marks the row `received` and stamps the invoice on it),
+    // and every match moves the agreement's consumed total. Neither of those
+    // lives under ['invoices'].
+    //
+    // Under the multi-tab shell the agreement page stays mounted in its own
+    // tab, so nothing refetched it: the user matched an invoice, went back to
+    // the agreement, and saw all six periods still "Pending" — while the
+    // database had period 1 `received` and holding that very invoice. The data
+    // was right and the screen was a lie.
+    //
+    // `data.agreement_id` comes off the RESPONSE, not the request: the request
+    // may carry agreement_id, but it may also be a PO match (nothing to do
+    // here) or a re-match that moved the invoice off an agreement.
+    onSuccess: async (data, { id }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['invoices'] }),
+        queryClient.invalidateQueries({ queryKey: ['invoices', id] }),
+        queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+        ...(data.agreement_id
+          ? [
+              queryClient.invalidateQueries({ queryKey: ['agreements', data.agreement_id, 'schedule'] }),
+              queryClient.invalidateQueries({ queryKey: ['agreements', data.agreement_id] }),
+            ]
+          : []),
+      ])
     },
   })
 }
