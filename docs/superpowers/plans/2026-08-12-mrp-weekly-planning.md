@@ -20,12 +20,13 @@
 - **保质期校验按真实日期差**，禁止用「4.33 周/月」近似（18 个月窗口上会累积到整周级偏差）
 - **前端 user-facing 文案全英文**；UI 样式以 EPMS 为模板，用 `@uniops/shell` 原语，浮层 `createPortal` 到 body
 - **权限**：不新增权限键。参数与周例外走 `mrp.param.write`，排产走 `mrp.run.execute`，读走 `mrp.report.view`
-- **测试库禁止并发**：本计划专用 `mrp_test_weekly`
+- **`auth_headers` fixture**：本计划测试都用它，但 conftest 现在只有 `admin_token`。第一个任务先补：`@pytest_asyncio.fixture async def auth_headers(admin_token): return {"Authorization": f"Bearer {admin_token}"}`（若意向产品计划已先加过则跳过）
+- **测试库禁止并发**：本计划专用 `mrp_weekly_test`（★库名必须**以 `_test` 结尾**——conftest 有 DROP SCHEMA 安全护栏，`mrp_test_xxx` 这种命名会被直接拒绝）
 - **跑测命令**（宿主机，容器内无 pytest）：
   ```bash
   PGPW=$(docker inspect uniops_postgres --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2)
   cd mrp-api && JWT_SECRET_KEY=test-secret TEST_PG_PASSWORD="$PGPW" \
-    TEST_MRP_DB=mrp_test_weekly ALLOWED_ORIGINS='["http://localhost:5179"]' \
+    TEST_MRP_DB=mrp_weekly_test ALLOWED_ORIGINS='["http://localhost:5179"]' \
     python -m pytest tests -q
   ```
 - **基线**：mrp-api 现有 **167 passed**。本计划会**重写** `test_mps_engine.py` 与 `test_mps_api.py` 里的月口径用例，所以总数会变——**Task 6 之后以「0 failed」+「月口径用例已全部改写为周口径且无一被删空」为准，不再以 167 为数字门槛**
@@ -243,13 +244,18 @@ async def test_unknown_week_mode_is_rejected(client, auth_headers):
 
 
 @pytest.mark.asyncio
-async def test_params_write_requires_param_write_permission(client, readonly_headers):
-    r = await client.put("/mrp/v1/params/week_calendar_mode",
-                         json={"value": "month_fixed"}, headers=readonly_headers)
+async def test_params_write_requires_param_write_permission(client, non_admin_token, monkeypatch):
+    # 必须照 tests/test_permission_gates.py 的 `_deny_everything` 惯例：mrp_test 库里
+    # 没有 identity 的 role_permissions/role_defs/user_roles 表，直接拿 non_admin_token
+    # 打真实 gate 会炸在查表而不是 403；而 admin_token 走 system_admin 快速通道，
+    # 根本不会触到权限键，用它压根测不出门禁。
+    _deny_everything(monkeypatch)
+    r = await client.put("/mrp/v1/params/week_calendar_mode", json={"value": "month_fixed"},
+                         headers={"Authorization": f"Bearer {non_admin_token}"})
     assert r.status_code == 403
 ```
 
-`readonly_headers` fixture 若不存在，照 `tests/test_permission_gates.py` 现有做法造一个。
+`_deny_everything` 从 `tests/test_permission_gates.py` 导入或照抄。
 
 - [ ] **Step 2: 运行，确认失败**
 

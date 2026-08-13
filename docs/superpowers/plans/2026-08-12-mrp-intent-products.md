@@ -17,12 +17,12 @@
 - **前端 user-facing 文案全英文**；代码注释可中文
 - **UI 样式以 EPMS 为模板**，用 `@uniops/shell` 的 Button 等原语，不要裸 `<button>`；浮层用 `createPortal` 到 body
 - **权限**：不新增权限键。写操作走 `mrp.demand.write`，读走 `mrp.report.view`
-- **测试库禁止并发**：同一时刻只能有一个 mrp-api 套件在跑（见 `feedback_uniops_test_db_concurrency`）。本计划专用测试库 `mrp_test_intent`，通过 `TEST_MRP_DB` 指定，避免和别的会话抢 `mrp_test`
+- **测试库禁止并发**：同一时刻只能有一个 mrp-api 套件在跑（见 `feedback_uniops_test_db_concurrency`）。本计划专用测试库 `mrp_intent_test`，通过 `TEST_MRP_DB` 指定，避免和别的会话抢 `mrp_test`（★库名必须**以 `_test` 结尾**——conftest 有 DROP SCHEMA 安全护栏，`mrp_test_xxx` 这种命名会被直接拒绝）
 - **跑测命令**（宿主机，容器内无 pytest）：
   ```bash
   PGPW=$(docker inspect uniops_postgres --format '{{range .Config.Env}}{{println .}}{{end}}' | grep POSTGRES_PASSWORD | cut -d= -f2)
   cd mrp-api && JWT_SECRET_KEY=test-secret TEST_PG_PASSWORD="$PGPW" \
-    TEST_MRP_DB=mrp_test_intent ALLOWED_ORIGINS='["http://localhost:5179"]' \
+    TEST_MRP_DB=mrp_intent_test ALLOWED_ORIGINS='["http://localhost:5179"]' \
     python -m pytest tests -q
   ```
 - **基线**：mrp-api 现有 **167 passed**，不许降；新增测试在其之上
@@ -53,6 +53,7 @@
 - Create: `mrp-api/app/models/intent.py`
 - Modify: `mrp-api/app/models/__init__.py`（注册新模型——**不注册则测试建不出表**，见 `reference_uniops_epms_test_invocation` 同类坑）
 - Modify: `mrp-api/app/models/forecast.py`（`ForecastLine` 加两列）
+- Modify: `mrp-api/tests/conftest.py`（补 `auth_headers` fixture，见 Step 1b）
 - Test: `mrp-api/tests/test_intent_products.py`
 
 **Interfaces:**
@@ -63,6 +64,18 @@
 
 Run: `cd mrp-api && python -m alembic heads`
 Expected: 只输出一行 `mrp08 (head)`。若出现两行，**停下**并先解决双 head，不要硬接（见 `feedback_uniops_alembic_new_migration_check_heads`）。
+
+- [ ] **Step 1b: 先给 conftest 补一个 `auth_headers` fixture**
+
+本计划所有测试都用 `auth_headers`，但 `mrp-api/tests/conftest.py` 现在只有 `admin_token`（各测试自己拼 header）。**先加这两行**，否则后面每个任务的测试都会因缺 fixture 而收集失败：
+
+```python
+@pytest_asyncio.fixture
+async def auth_headers(admin_token):
+    return {"Authorization": f"Bearer {admin_token}"}
+```
+
+若该 fixture 已存在（另一份计划先加过），跳过本步。
 
 - [ ] **Step 2: 写失败测试**
 
@@ -392,7 +405,7 @@ Expected: PASS（含 Task 1 的两条）
 
 - [ ] **Step 6: 补权限门禁测试**
 
-`mrp-api/tests/test_permission_gates.py` 已有同类用例，照其风格追加：无 `mrp.demand.write` 的 token 打 `POST /mrp/v1/intent-products` 必须 403。
+`mrp-api/tests/test_permission_gates.py` 已有同类用例，**照它的 `_deny_everything` 惯例写**——`mrp_test` 库里没有 identity 的 `role_permissions`/`role_defs`/`user_roles` 表，所以用 `non_admin_token` 打真实 gate 之前，必须 monkeypatch `uniops_authz.core.user_role_codes` 与 `_effective_matrix`（`admin_token` 走 system_admin 快速通道，根本不会触到权限键，用它测不出门禁）。追加一条：非授权 token 打 `POST /mrp/v1/intent-products` 必须 403。
 
 Run: `python -m pytest tests/test_permission_gates.py -q`
 Expected: PASS
