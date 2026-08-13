@@ -30,6 +30,17 @@ export interface LineComparison {
   invoiceQty: number | null
   invoiceUnitPrice: number | null
   invoiceAmount: number
+  // Whole-branch review (finding 6): one invoice can span several POs, but
+  // the caller (PaDetailPage) only has PA's own PO's line items on hand
+  // (usePo(pa.po_id)). poId/poNumber identify which PO this allocation
+  // actually belongs to — always populated, regardless of whether poLines
+  // resolved it — so a row for a different PO is explicable, not corrupt.
+  poId: string
+  poNumber: string | null
+  // False when po_line_id pointed at a line not present in the poLines the
+  // caller passed (typically: it belongs to a different PO than the one
+  // fetched here). qty/unitPrice/amount below are only meaningful when true.
+  poLineResolved: boolean
   poLineDescription: string | null
   poQty: number | null
   poUnitPrice: number | null
@@ -78,6 +89,9 @@ export function buildLineComparisons(invoice: ApiInvoice, poLines: ApiPoLineItem
       invoiceQty: invLine ? Number(invLine.quantity) : null,
       invoiceUnitPrice: invLine ? Number(invLine.unit_price) : null,
       invoiceAmount,
+      poId: a.po_id,
+      poNumber: a.po_number ?? null,
+      poLineResolved: !!poLine,
       poLineDescription: poLine ? poLine.description : (a.po_line_description ?? null),
       poQty: poLine ? Number(poLine.qty) : null,
       poUnitPrice: poLine ? Number(poLine.unit_price) : null,
@@ -99,12 +113,21 @@ export interface FeeLine {
 //
 // Both match modes subtract these lines' pre-tax total from invoice.amount
 // before computing invoice.variance (crud/invoice.py:1101 — unconditional on
-// po_line_id, so this is NOT a by-line-only concern), which means the header
+// po_line_id, so this is NOT a by-line-only concern).
+//
+// Whole-branch review (finding 4b): this comment used to claim the header
 // variance and the sum of the allocation rows legitimately disagree by
-// exactly this total whenever the invoice carries a fee line. Neither number
-// is wrong; the header is authoritative. The panel must render these lines
-// (see InvoiceMatchVariancePanel's fee-line section) or a manager checking
-// the arithmetic has no way to see why the rows don't sum to the headline.
+// EXACTLY this fee total. That was true only back when the rows were this
+// invoice's own allocations; they are now a PO-line/PO-wide figure —
+// cumulative across every invoice ever matched to that line
+// (InvoiceMatchVariancePanel's row captions) — so the header and the rows
+// can differ by an arbitrary amount unrelated to fee lines, even when the
+// invoice carries none. The header remains the authoritative "this invoice
+// vs its PO reference" number. The panel still renders these lines (see
+// InvoiceMatchVariancePanel's fee-line section) so a manager checking THIS
+// invoice's own arithmetic (amount - fee total = PO-matched amount) can see
+// where the fee portion went — that is the only reconciliation this section
+// supports, not header-vs-rows.
 export function feeLines(invoice: ApiInvoice): FeeLine[] {
   return (invoice.line_items ?? [])
     .filter((l) => l.non_po_fee === true)

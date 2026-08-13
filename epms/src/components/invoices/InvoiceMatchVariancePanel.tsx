@@ -30,11 +30,19 @@ import type { ApiPoLineItem } from '@/services/po'
 // (shipping/packaging, `non_po_fee: true`) are excluded from the PO
 // comparison entirely — they get no allocation — but their pre-tax total is
 // still subtracted from invoice.amount when the backend computes the header
-// variance (crud/invoice.py:1101, unconditional on po_line_id). So whenever
-// an invoice carries a fee line, the header variance and the sum of the rows
-// below it legitimately differ by that fee total. Both modes render a
-// FeeLinesSection so a manager checking the arithmetic can see why, instead
-// of being left to wonder whether the rows are wrong.
+// variance (crud/invoice.py:1101, unconditional on po_line_id).
+//
+// Whole-branch review (finding 4b): this comment used to claim that made the
+// header variance and the sum of the rows below it differ by EXACTLY the fee
+// total. That was written before the rows were discovered to be cumulative
+// across every invoice ever matched to the PO/line (see the row captions
+// below and matchVariance.ts's feeLines docstring) — the rows are not "this
+// invoice's share", so they can differ from the header by an amount that has
+// nothing to do with fee lines, even on an invoice with none. Both modes
+// still render a FeeLinesSection, but only so a manager checking THIS
+// invoice's own arithmetic (amount - fee total = PO-matched amount) can see
+// where the fee portion of its own total went — not so the header and the
+// rows can be reconciled against each other.
 function FeeLinesSection({ invoice }: { invoice: ApiInvoice }) {
   const lines = feeLines(invoice)
   if (lines.length === 0) return null
@@ -190,9 +198,19 @@ function PoRouteVariancePanel({
   const variancePct = Number(invoice.variance_pct ?? 0)
   const variancePctAbs = Math.abs(variancePct)
 
+  // Whole-branch review (finding 4c): tone used to key off the ABSOLUTE
+  // variance percentage, so a partially-invoiced PO line (variance < 0 —
+  // legitimate, explicitly supported partial billing) could render red on a
+  // screen a manager reads right before releasing money. The backend's own
+  // exception rule only fires on OVER-invoicing outside tolerance
+  // (crud/invoice.py: `if variance > 0 and not within_tolerance(...)`) —
+  // align the color with that: under-invoicing, at any magnitude, never
+  // reads as danger here.
   const tone: 'success' | 'warning' | 'danger' = centsEqual(variance, 0)
     ? 'success'
-    : variancePctAbs <= tolerancePct ? 'warning' : 'danger'
+    : variance < 0
+      ? 'warning'
+      : variancePctAbs <= tolerancePct ? 'warning' : 'danger'
 
   const toneClasses: Record<typeof tone, { border: string; bg: string; text: string }> = {
     success: { border: 'border-success-200', bg: 'bg-success-50', text: 'text-success-700' },
@@ -233,7 +251,14 @@ function PoRouteVariancePanel({
             ? <ChevronDown className="h-4 w-4 shrink-0 text-neutral-400" />
             : <ChevronRight className="h-4 w-4 shrink-0 text-neutral-400" />}
           <span className={cn('text-sm font-semibold truncate', tc.text)}>
-            · Total variance {variance >= 0 ? '+' : ''}{formatAmount(variance, invoice.currency)}{' '}
+            {/* Whole-branch review (finding 4a): this collapsed header is the
+                most prominent number on the row, and a DIFFERENT measure from
+                the row figures below it — this is (this invoice's amount -
+                fee lines) vs its PO reference (crud/invoice.py:1101), while
+                the expanded rows are cumulative across every invoice matched
+                to that PO/line (see the row captions). Qualify it so a reader
+                doesn't assume the two are answering the same question. */}
+            · This invoice vs PO reference {variance >= 0 ? '+' : ''}{formatAmount(variance, invoice.currency)}{' '}
             ({variancePct >= 0 ? '+' : ''}{variancePct.toFixed(2)}%)
           </span>
         </Button>
@@ -256,10 +281,18 @@ function PoRouteVariancePanel({
                   there is no per-invoice reference in the data to compute it
                   from; label honestly instead. */}
               <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[640px]">
+                <table className="w-full text-sm min-w-[720px]">
                   <thead>
                     <tr className="border-b border-neutral-200 bg-neutral-50">
                       <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Invoice Line</th>
+                      {/* Whole-branch review (finding 6): one invoice can span several
+                          POs, but the caller only has ONE PO's line items on hand
+                          (PaDetailPage's usePo(pa.po_id)) — an allocation pointing at
+                          a different PO used to render qty/price/amount as bare "—"
+                          with a description, which read as corrupt data. This column
+                          makes which PO the row belongs to explicit and clickable,
+                          same as the by-amount table below already does. */}
+                      <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO</th>
                       <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">PO Line</th>
                       <th className="px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">PO line variance (all invoices)</th>
                     </tr>
@@ -275,13 +308,24 @@ function PoRouteVariancePanel({
                           </p>
                         </td>
                         <td className="px-3 py-2.5">
+                          <Link to={`/po/${row.poId}`} className="font-mono text-xs text-primary-700 hover:underline">
+                            {row.poNumber ?? row.poId.slice(0, 8)}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-2.5">
                           {row.poLineDescription != null ? (
                             <>
                               <p className="text-xs font-medium text-neutral-800">{row.poLineDescription}</p>
-                              <p className="text-[11px] text-neutral-500">
-                                {row.poQty ?? '—'} × {row.poUnitPrice != null ? formatAmount(row.poUnitPrice, invoice.currency) : '—'}
-                                {' = '}{row.poAmount != null ? formatAmount(row.poAmount, invoice.currency) : '—'}
-                              </p>
+                              {row.poLineResolved ? (
+                                <p className="text-[11px] text-neutral-500">
+                                  {row.poQty ?? '—'} × {row.poUnitPrice != null ? formatAmount(row.poUnitPrice, invoice.currency) : '—'}
+                                  {' = '}{row.poAmount != null ? formatAmount(row.poAmount, invoice.currency) : '—'}
+                                </p>
+                              ) : (
+                                <p className="text-[11px] text-neutral-400 italic">
+                                  Qty/price not loaded on this page — see {row.poNumber ?? 'the PO'} above
+                                </p>
+                              )}
                             </>
                           ) : (
                             <p className="text-xs text-neutral-400 italic">PO line not available</p>
