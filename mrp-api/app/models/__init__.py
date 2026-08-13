@@ -9,3 +9,4 @@ from app.models.demand import MrpDemand  # noqa: F401
 from app.models.demand_series import MrpDemandSeries, MrpForecastChangeLog  # noqa: F401
 from app.models.intent import MrpIntentProduct  # noqa: F401
 from app.models.params import MrpPlanningParam  # noqa: F401
+from app.models.capacity import MrpCapacityRule, MrpCapacityException  # noqa: F401

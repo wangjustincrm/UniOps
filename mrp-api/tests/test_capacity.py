@@ -92,3 +92,65 @@ async def test_crud_roundtrip_and_permission_gate(client, admin_token, non_admin
         headers=denied_headers,
     )
     assert r.status_code == 403
+
+
+# ── Task 3: minimum weekly output constraint + per-week exceptions ─────────
+
+
+@pytest.mark.anyio
+async def test_min_output_qty_is_an_accepted_constraint_type(client, auth_headers):
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "min_output_qty",
+        "limit_value": "20000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.anyio
+async def test_min_output_above_max_output_is_rejected(client, auth_headers):
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "min_output_qty",
+        "limit_value": "50000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    assert r.status_code == 422
+    assert "min" in r.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_week_exception_overrides_the_standing_rule(client, auth_headers, db_session):
+    from app.services.capacity import resolve_limits_for_week
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-08-10", "scope_type": "factory",
+        "constraint_type": "max_output_qty", "limit_value": "0", "uom": "KG",
+        "reason": "annual maintenance",
+    })
+    normal = await resolve_limits_for_week(db_session, date(2026, 8, 3))
+    shut = await resolve_limits_for_week(db_session, date(2026, 8, 10))
+    assert str(normal.max_output_qty) == "40000.000"
+    assert str(shut.max_output_qty) == "0.000"
+
+
+@pytest.mark.anyio
+async def test_inactive_exception_is_ignored(client, auth_headers, db_session):
+    from app.services.capacity import resolve_limits_for_week
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    exc = (await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-09-07", "scope_type": "factory",
+        "constraint_type": "max_output_qty", "limit_value": "0", "uom": "KG",
+        "reason": "cancelled",
+    })).json()
+    await client.patch(f"/api/v1/capacity/exceptions/{exc['id']}",
+                       json={"is_active": False}, headers=auth_headers)
+    assert str((await resolve_limits_for_week(db_session,
+                                              date(2026, 9, 7))).max_output_qty) == "40000.000"

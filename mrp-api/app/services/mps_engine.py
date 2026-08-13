@@ -139,8 +139,19 @@ class DemandItem:
 
 @dataclass(frozen=True)
 class CapacityLimits:
-    max_sku_count: int | None       # per month; None = unlimited
-    max_output_qty: Decimal | None  # per month, KG; None = unlimited
+    max_sku_count: int | None            # per month; None = unlimited
+    max_output_qty: Decimal | None       # per month, KG; None = unlimited
+    # SOFT floor (weekly-MPS Task 3) -- defaults None (no floor) so every
+    # existing two-positional-arg call site (this module's own fits()/
+    # _overflow_reason(), and app/api/v1/mps.py's still-month-based
+    # _resolve_capacity_limits, deliberately left untouched by Task 3 --
+    # see that task's brief) keeps working unchanged. Unlike the two fields
+    # above, the placement algorithm (`fits`, `_overflow_reason`) does not
+    # read this field at all: min_output_qty only ever limits how thinly a
+    # later week-based scheduler may spread output across weeks, it must
+    # never reject a placement or create a capacity gap the way the max_*
+    # ceilings do.
+    min_output_qty: Decimal | None = None
 
 
 @dataclass(frozen=True)
