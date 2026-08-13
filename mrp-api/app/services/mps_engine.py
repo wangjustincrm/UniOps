@@ -136,13 +136,28 @@ those onto weeks and calls this function per bucket. It is a pure function
 of `(items, weeks, limits)`: it receives an already-resolved `list[date]` of
 week starts and never asks (or cares) which of `week_calendar.py`'s three
 week modes produced them, and it receives already-resolved `CapacityLimits`
-(never calls `capacity.resolve_limits_for_week` itself).
+-- one for the whole bucket, or one PER WEEK, which is the shape
+`capacity.resolve_limits_for_week` actually produces (it never calls that
+resolver itself). Per-week limits are what makes "week 32 is down for
+maintenance" expressible: such a week is closed, stepped over as a
+placement target, and its production goes to the other weeks.
+
+**`capacity_gap` on a `WeeklyLine` means "did not fit in THIS bucket", and
+is NOT the final shortfall the design describes.** Design §2.0 step ⑤ has
+quantity that will not fit overflow BACKWARDS into earlier weeks
+(pre-build) first; only running into the current week or the shelf-life
+limit makes a shortfall final. `pack_bucket` only ever sees one bucket and
+cannot perform that search, so its gap lines are the *input* to the
+cross-bucket pre-build step, not its output. A later task must resolve them
+before anything is persisted -- storing them raw would show a planner a
+permanent shortfall for demand that could have been pre-built.
 
 See `pack_bucket`'s own docstring for the two regimes and every tie-break.
 """
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_DOWN, ROUND_FLOOR, Decimal
+from decimal import ROUND_DOWN, ROUND_FLOOR, ROUND_UP, Decimal
 
 
 @dataclass(frozen=True)
@@ -429,6 +444,10 @@ class WeeklyLine:
     everything from `is_prebuild` onward defaults, because single-bucket
     packing has no opinion on lead time / pre-build / shelf life -- those
     are filled in by the later task that drives `pack_bucket` per bucket.
+
+    **`capacity_gap` here means "did not fit in THIS bucket" -- it is not
+    the design's final shortfall.** See `pack_bucket`'s docstring section
+    "What a capacity_gap line means at this layer" before persisting one.
     """
     material_code: str
     demand_month: str
@@ -474,24 +493,61 @@ def _ceil_div(qty: Decimal, divisor: Decimal) -> int:
     return int(whole) + (1 if remainder > 0 else 0)
 
 
-def _need_weeks(qty: Decimal, cap: Decimal | None, week_count: int) -> int:
-    """Minimum number of weeks `qty` must occupy at `cap` per week.
+def _week_can_host(limits: CapacityLimits) -> bool:
+    """Whether this week can host ANY production at all.
 
-    `cap is None` (unlimited) means any quantity fits in a single week, per
-    the design's "cap 为 None 时视作 1". A non-positive `cap` means nothing
-    can be produced at all: return more weeks than the bucket has, which
-    forces the tight regime, where the placement loop turns the whole
-    quantity into an explicit `capacity_gap` instead of dividing by zero."""
-    if cap is None:
+    A week with `max_output_qty <= 0` (the flagship example: "week 32 is
+    down for maintenance") or `max_sku_count < 1` is **closed**: it is not a
+    placement target for anybody. Closed weeks are skipped, not gapped --
+    a shutdown moves production to other weeks, it does not destroy it."""
+    if limits.max_output_qty is not None and limits.max_output_qty <= 0:
+        return False
+    if limits.max_sku_count is not None and limits.max_sku_count < 1:
+        return False
+    return True
+
+
+def _reference_cap(per_week: list[CapacityLimits], open_weeks: list[int]) -> Decimal | None:
+    """The weekly output cap used to size `need_weeks` for the regime test.
+
+    The **minimum** cap across the open weeks, not the maximum. Two reasons,
+    both about staying on the safe side when the weeks are not uniform:
+    `need_weeks` then over- rather than under-estimates how full the bucket
+    is, so a heterogeneous bucket tips into the tight regime, which honours
+    each week's own ceiling exactly; and it makes the spare regime's
+    levelling provably safe, since every product gets at least
+    `ceil(qty / min_cap)` weeks and therefore never puts more than the
+    smallest open week's cap into any single week.
+
+    `None` (unlimited) only when EVERY open week is unlimited."""
+    known = [per_week[i].max_output_qty for i in open_weeks
+             if per_week[i].max_output_qty is not None]
+    return min(known) if known else None
+
+
+def _need_weeks(qty: Decimal, ref_cap: Decimal | None) -> int:
+    """Minimum number of weeks `qty` must occupy at `ref_cap` per week.
+    `ref_cap is None` (unlimited) means one week, per the design's
+    "cap 为 None 时视作 1"."""
+    if ref_cap is None:
         return 1
-    if cap <= 0:
-        return week_count + 1
-    return _ceil_div(qty, cap)
+    return _ceil_div(qty, ref_cap)
 
 
-def _spread_ceiling(qty: Decimal, need: int, min_out: Decimal | None, week_count: int) -> int:
+def _fits_in_one_week(qty: Decimal, per_week: list[CapacityLimits], open_weeks: list[int]) -> bool:
+    """Whether SOME open week could hold `qty` whole (were it empty).
+
+    Deliberately the **maximum** cap, the mirror image of `_reference_cap`'s
+    minimum: this one decides whether P1 allows the product to be split at
+    all, and a product that some week could take whole must never be cut up
+    just because a different week is smaller."""
+    return any(per_week[i].max_output_qty is None or per_week[i].max_output_qty >= qty
+               for i in open_weeks)
+
+
+def _spread_ceiling(qty: Decimal, need: int, min_out: Decimal | None, slot_count: int) -> int:
     """Most weeks `qty` may be spread over: `max(need, floor(qty / min_out), 1)`,
-    clamped to the bucket's week count.
+    clamped to the number of open weeks.
 
     **Capacity always wins over the floor** -- `need` is a hard physical
     minimum, `min_out` only ever says "do not thin below this", so with
@@ -500,23 +556,37 @@ def _spread_ceiling(qty: Decimal, need: int, min_out: Decimal | None, week_count
     (None, or a non-positive value, which would be a division by zero and
     means "no floor configured" anyway) means no spreading beyond `need`."""
     if min_out is None or min_out <= 0:
-        return min(need, week_count)
-    return min(max(need, int(qty // min_out), 1), week_count)
+        return min(need, slot_count)
+    return min(max(need, int(qty // min_out), 1), slot_count)
 
 
-def _level(qty: Decimal, week_count: int) -> list[Decimal]:
-    """Split `qty` evenly across `week_count` weeks, **exactly**.
+def _level(qty: Decimal, span: int) -> list[Decimal]:
+    """Split `qty` evenly across `span` weeks, **exactly**.
 
     The last week is computed as `qty - (everything already allocated)`
     rather than being rounded like its siblings, so the parts always sum to
     exactly `qty`. Rounding every week independently would drift by up to
-    `week_count * quantum` and silently create (or destroy) product -- which
-    is precisely what `test_nothing_is_silently_lost` exists to catch."""
-    if week_count <= 1:
+    `span * quantum` and silently create (or destroy) product -- which is
+    precisely what `test_nothing_is_silently_lost` exists to catch.
+
+    `base` rounds **up**, so the tail absorbs a NEGATIVE remainder and can
+    only ever come out at or below `base`. Rounding down instead would push
+    the tail above its siblings and, at the wrong quantity, above the
+    weekly cap itself: `qty=119.999` over 3 weeks at `cap=40` gives
+    `base=39.999` and a tail of `40.001` -- one thousandth of a kilo over a
+    hard ceiling, from nothing but a rounding choice."""
+    if span <= 1:
         return [qty]
-    base = (qty / week_count).quantize(_QTY_QUANTUM, rounding=ROUND_DOWN)
-    allocated = base * (week_count - 1)
-    return [_tidy(base)] * (week_count - 1) + [_tidy(qty - allocated)]
+    base = (qty / span).quantize(_QTY_QUANTUM, rounding=ROUND_UP)
+    tail = qty - base * (span - 1)
+    if tail < 0:
+        # Only reachable at absurd inputs (a per-week share smaller than
+        # `(span - 1)` thousandths), where rounding up overshoots the whole
+        # quantity. Rounding down cannot go negative, and cannot overshoot
+        # the cap either -- that risk lives at the opposite extreme.
+        base = (qty / span).quantize(_QTY_QUANTUM, rounding=ROUND_DOWN)
+        tail = qty - base * (span - 1)
+    return [_tidy(base)] * (span - 1) + [_tidy(tail)]
 
 
 class _WeekLoad:
@@ -584,34 +654,42 @@ def _gap_reason(qty: Decimal, limits: CapacityLimits) -> str:
     return f"no week left in this bucket for {_tidy(qty)} under {ceiling_text}"
 
 
-def _pack_tight(items: list[BucketItem], weeks: list[date], limits: CapacityLimits) -> list[WeeklyLine]:
-    """Tight regime: the bucket is (at least) full, so pack, do not spread.
+def _pack_tight(ordered: list[BucketItem], weeks: list[date],
+                per_week: list[CapacityLimits], open_weeks: list[int]) -> list[WeeklyLine]:
+    """Tight regime: the bucket is over-full, so pack, do not spread.
 
     `min_output_qty` deliberately plays NO part here. There is no slack to
     thin anything into, and honouring a floor would only push a product into
     an extra week it does not need -- manufacturing a capacity gap out of
     nothing. The floor is a spreading limit, never a placement rule.
+
+    Only weeks in `open_weeks` are placement targets; closed weeks (a
+    maintenance shutdown, say) are stepped over, including in the middle of
+    a split run. Contiguity is therefore contiguity **over open weeks**: a
+    run crossing a shutdown costs no extra changeover, because the line is
+    down anyway.
     """
-    cap = limits.max_output_qty
     loads = [_WeekLoad() for _ in weeks]
     lines: list[WeeklyLine] = []
 
-    for item in sorted(items, key=_sort_key):
+    for item in ordered:
         code, qty = item.material_code, item.qty
-        spans_weeks = cap is not None and qty > cap
+        spans_weeks = not _fits_in_one_week(qty, per_week, open_weeks)
 
         if spans_weeks:
-            # Only a product that cannot physically fit in one week is
-            # allowed to be split, and then it starts at the earliest week
-            # with ANY room, fills whole weeks, and drops its remainder in
-            # the immediately following week. Starting at the earliest
-            # *empty* week instead would strand the partial week a previous
-            # oversized product left behind, which in a bucket that is by
-            # definition full turns spare capacity into a phantom gap.
+            # Only a product that cannot physically fit in ANY single week
+            # is allowed to be split, and then it starts at the earliest
+            # week with ANY room, fills whole weeks, and drops its remainder
+            # in the immediately following open week. Starting at the
+            # earliest *empty* week instead would strand the partial week a
+            # previous oversized product left behind, which in a bucket that
+            # is by definition over-full turns spare capacity into a phantom
+            # gap.
             start = next(
-                (i for i, load in enumerate(loads)
-                 if load.sku_room(code, limits)
-                 and (load.remaining(limits) is None or load.remaining(limits) > 0)),
+                (i for i in open_weeks
+                 if loads[i].sku_room(code, per_week[i])
+                 and (loads[i].remaining(per_week[i]) is None
+                      or loads[i].remaining(per_week[i]) > 0)),
                 None,
             )
         else:
@@ -624,33 +702,34 @@ def _pack_tight(items: list[BucketItem], weeks: list[date], limits: CapacityLimi
             # ones -- exactly the golden case's B (20) landing in W2's
             # leftover 20 after A, C and D have taken their own weeks.
             start = next(
-                (i for i, load in enumerate(loads)
-                 if load.is_empty and load.has_room_for(code, qty, limits)),
+                (i for i in open_weeks
+                 if loads[i].is_empty and loads[i].has_room_for(code, qty, per_week[i])),
                 None,
             )
             if start is None:
                 start = next(
-                    (i for i, load in enumerate(loads)
-                     if load.has_room_for(code, qty, limits)),
+                    (i for i in open_weeks
+                     if loads[i].has_room_for(code, qty, per_week[i])),
                     None,
                 )
 
         remaining = qty
         last_used: int | None = None
-        i = start if start is not None else len(weeks)
-        while remaining > 0 and i < len(weeks):
-            load = loads[i]
-            if not load.sku_room(code, limits):
-                break                      # stop rather than hop: P1 contiguity
-            room = load.remaining(limits)
-            take = remaining if room is None else min(remaining, room)
-            if take <= 0:
-                break
-            load.commit(code, take)
-            lines.append(_line(item, weeks[i], take))
-            remaining -= take
-            last_used = i
-            i += 1
+        if start is not None:
+            for i in open_weeks[open_weeks.index(start):]:
+                if remaining <= 0:
+                    break
+                load, limits = loads[i], per_week[i]
+                if not load.sku_room(code, limits):
+                    break              # stop rather than hop: P1 contiguity
+                room = load.remaining(limits)
+                take = remaining if room is None else min(remaining, room)
+                if take <= 0:
+                    break
+                load.commit(code, take)
+                lines.append(_line(item, weeks[i], take))
+                remaining -= take
+                last_used = i
 
         if remaining > 0:
             # Never silently drop demand: what did not fit surfaces as an
@@ -659,17 +738,18 @@ def _pack_tight(items: list[BucketItem], weeks: list[date], limits: CapacityLimi
             # are pinned to the last week this product actually occupied so
             # they stay inside its run -- or to the bucket's last week when
             # it got nowhere at all.
-            gap_week = weeks[last_used] if last_used is not None else weeks[-1]
-            lines.append(_line(item, gap_week, remaining,
+            gap_index = last_used if last_used is not None else len(weeks) - 1
+            lines.append(_line(item, weeks[gap_index], remaining,
                                capacity_gap=True,
-                               prebuild_reason=_gap_reason(remaining, limits)))
+                               prebuild_reason=_gap_reason(remaining, per_week[gap_index])))
 
     return lines
 
 
-def _pack_spare(items: list[BucketItem], weeks: list[date], limits: CapacityLimits,
-                needs: dict[int, int]) -> list[WeeklyLine]:
-    """Spare regime: more weeks than the demand strictly needs.
+def _pack_spare(ordered: list[BucketItem], weeks: list[date],
+                per_week: list[CapacityLimits], open_weeks: list[int],
+                needs: list[int], min_out: Decimal | None) -> list[WeeklyLine]:
+    """Spare regime: more open weeks than the demand strictly needs.
 
     Every product starts at its physical minimum `need_weeks` and may grow
     up to `_spread_ceiling`; the leftover weeks go one at a time to whichever
@@ -678,57 +758,99 @@ def _pack_spare(items: list[BucketItem], weeks: list[date], limits: CapacityLimi
     Growth stops at the `min_output_qty` floor, and **the weeks nobody can
     use stay empty** -- splitting 20 t into four 5 t weeks burns energy for
     nothing. Products are then laid out as contiguous blocks, largest first,
-    from the first week onward.
-    """
-    week_count = len(weeks)
-    ordered = sorted(items, key=_sort_key)
-    assigned = {id(item): needs[id(item)] for item in ordered}
-    ceilings = {
-        id(item): _spread_ceiling(item.qty, needs[id(item)], limits.min_output_qty, week_count)
-        for item in ordered
-    }
+    across the OPEN weeks in order (closed weeks are simply not slots).
 
-    spare = week_count - sum(assigned.values())
+    No week can be overfilled here: `_reference_cap` sizes `need_weeks` off
+    the smallest open week's cap, so `qty / span <= that cap <= every open
+    week's cap`. And every week holds exactly one product, so `max_sku_count`
+    cannot be breached either (a ceiling below 1 closes the week outright,
+    and `pack_bucket` routes a bucket with no open weeks at all to
+    `_pack_tight`).
+    """
+    slot_count = len(open_weeks)
+    # Keyed by POSITION in `ordered`, never by `id(item)`: `BucketItem` is a
+    # frozen dataclass, so a caller passing the same object twice would have
+    # the two entries collide and the layout loop could then run off the end
+    # of `open_weeks`.
+    assigned = list(needs)
+    ceilings = [_spread_ceiling(item.qty, needs[pos], min_out, slot_count)
+                for pos, item in enumerate(ordered)]
+
+    spare = slot_count - sum(assigned)
     while spare > 0:
-        candidates = [item for item in ordered if assigned[id(item)] < ceilings[id(item)]]
+        candidates = [pos for pos in range(len(ordered)) if assigned[pos] < ceilings[pos]]
         if not candidates:
-            break                          # everyone is at their floor: leave weeks empty
+            break                      # everyone is at their floor: leave weeks empty
         # Heaviest per-week load first; ties by larger total qty, then by
         # material_code / demand_month for a fully deterministic answer.
+        # Recomputed every round, so a product that has just been widened
+        # drops down the ranking and the next week flows elsewhere.
         heaviest = min(
             candidates,
-            key=lambda it: (-(it.qty / Decimal(assigned[id(it)])), -it.qty,
-                            it.material_code, it.demand_month),
+            key=lambda pos: (-(ordered[pos].qty / Decimal(assigned[pos])),
+                             -ordered[pos].qty,
+                             ordered[pos].material_code,
+                             ordered[pos].demand_month),
         )
-        assigned[id(heaviest)] += 1
+        assigned[heaviest] += 1
         spare -= 1
 
     lines: list[WeeklyLine] = []
     cursor = 0
-    for item in ordered:
-        span = assigned[id(item)]
+    for pos, item in enumerate(ordered):
+        span = assigned[pos]
         for offset, chunk in enumerate(_level(item.qty, span)):
-            lines.append(_line(item, weeks[cursor + offset], chunk))
+            lines.append(_line(item, weeks[open_weeks[cursor + offset]], chunk))
         cursor += span
     return lines
 
 
-def pack_bucket(items: list[BucketItem], weeks: list[date], limits: CapacityLimits) -> list[WeeklyLine]:
+def _normalize_limits(limits: "CapacityLimits | Sequence[CapacityLimits]",
+                      week_count: int) -> list[CapacityLimits]:
+    """One `CapacityLimits` applies to every week; a sequence binds
+    positionally and must be exactly as long as `weeks`.
+
+    A length mismatch is a hard `ValueError`: silently zipping to the
+    shorter of the two would quietly plan a maintenance shutdown into the
+    wrong week, which is worse than not planning at all."""
+    if isinstance(limits, CapacityLimits):
+        return [limits] * week_count
+    per_week = list(limits)
+    if len(per_week) != week_count:
+        raise ValueError(
+            f"pack_bucket got {len(per_week)} CapacityLimits for {week_count} weeks; "
+            "a per-week sequence must line up with `weeks` exactly."
+        )
+    return per_week
+
+
+def pack_bucket(items: list[BucketItem], weeks: list[date],
+                limits: "CapacityLimits | Sequence[CapacityLimits]") -> list[WeeklyLine]:
     """Pack one bucket's net requirements into that bucket's weeks.
 
     Pure function. `weeks` is an already-resolved ascending list of week-start
     dates (see `week_calendar.weeks_of_month`); this function never branches
-    on which week mode produced it. `limits` is already resolved for the
-    bucket (see `capacity.resolve_limits_for_week`); this function never
+    on which week mode produced it. `limits` is already resolved by the
+    caller (see `capacity.resolve_limits_for_week`); this function never
     touches the DB.
+
+    `limits` is either one `CapacityLimits` applied to every week, or a
+    sequence of exactly `len(weeks)` of them binding positionally --
+    matching what `resolve_limits_for_week(db, week_start)` actually
+    produces, which is per week. **A week whose `max_output_qty` is 0 (or
+    whose `max_sku_count` is below 1) is closed** -- a maintenance shutdown,
+    typically. It is skipped as a placement target and its production goes
+    to other weeks; it does NOT turn the bucket into a shortfall.
 
     ## The three principles it enforces
 
     - **P1 -- a product's run is contiguous.** Changeovers cost a cleandown
       each way, so A-then-B-then-A is never planned. A product whose quantity
-      fits within one week's capacity is never split at all; only a product
-      exceeding `max_output_qty` may span weeks, and then it fills whole
-      weeks and drops its remainder in the immediately following week.
+      fits within some week's capacity is never split at all; only a product
+      exceeding every week's capacity may span weeks, and then it fills whole
+      weeks and drops its remainder in the immediately following open week.
+      Contiguity is measured over OPEN weeks: a run stepping over a shutdown
+      week costs no changeover, because the line is down anyway.
     - **P2 -- when the month is not full, spread out** rather than cramming
       the first weeks and idling the plant at the end.
     - **P3 -- prefer one product per week.** Fewer changeovers again; a
@@ -736,12 +858,36 @@ def pack_bucket(items: list[BucketItem], weeks: list[date], limits: CapacityLimi
 
     ## The two regimes
 
-    `need_weeks(p) = ceil(qty / max_output_qty)` (1 when qty is unlimited).
+    `need_weeks(p) = ceil(qty / ref_cap)`, where `ref_cap` is the smallest
+    open week's `max_output_qty` (1 week when unlimited) -- see
+    `_reference_cap` for why the smallest and not the largest.
 
-    - **Tight** (`sum(need_weeks) >= len(weeks)`) -- see `_pack_tight`.
+    - **Tight** (`sum(need_weeks) > len(open weeks)`) -- see `_pack_tight`.
       `min_output_qty` does not apply: there is no room to thin anything.
-    - **Spare** (`sum(need_weeks) < len(weeks)`) -- see `_pack_spare`.
+    - **Spare** (`sum(need_weeks) <= len(open weeks)`) -- see `_pack_spare`.
       Empty weeks are a legitimate result.
+
+    The predicate is strictly greater. `need_weeks` is a CEILING, so its
+    slack is not consumed capacity, and treating equality as tight sends
+    comfortable months down the packing path: `{A: 60, B: 60}` at cap 40
+    over 4 weeks has `sum(need_weeks) == 4` yet only needs 120 of the 160
+    available. Tight would produce W1 40, W2 A20+B20, W3 40 and an idle W4 --
+    a P2 violation manufactured entirely by the ceiling's rounding. Spare
+    levels it to 30/30/30/30, which is what the plant manager would draw.
+
+    ## What a `capacity_gap` line means at this layer
+
+    **"Did not fit in THIS bucket" -- NOT the design's final shortfall.**
+    Per design §2.0 step ⑤, quantity that will not fit is supposed to
+    overflow BACKWARDS into earlier weeks (pre-build) before any of it is a
+    real gap; only running into the current week or the shelf-life limit
+    makes a shortfall final. `pack_bucket` sees exactly one bucket and
+    cannot do that search, so its gap lines are provisional: they are the
+    input to the cross-bucket pre-build step, not its output.
+
+    **A later task must resolve them before persisting.** Storing them
+    as-is would show a planner a permanent shortfall for demand that could
+    have been pre-built a week or two earlier.
 
     ## Edge cases and tie-breaks (none of which the design pinned down)
 
@@ -752,7 +898,9 @@ def pack_bucket(items: list[BucketItem], weeks: list[date], limits: CapacityLimi
       it can reach; the unproducible remainder becomes one `capacity_gap`
       line pinned to the last week it occupied. That week therefore carries
       two lines for that material (one real, one gap). The gap books no
-      capacity and is not part of the product's physical run.
+      capacity and is not part of the product's physical run -- so a
+      per-week SKU count or a contiguity check that counts gap lines will
+      misread it. Filter `capacity_gap` out before either.
     - **`qty <= 0` items are dropped** -- a zero net requirement is nothing
       to produce, and a negative one is upstream nonsense that must not be
       turned into a negative production line (nor divided by, when computing
@@ -760,23 +908,21 @@ def pack_bucket(items: list[BucketItem], weeks: list[date], limits: CapacityLimi
     - **A bucket with no weeks raises `ValueError`** when there is anything
       to pack. Returning `[]` would silently drop real demand, which this
       module never does. An empty `items` list with no weeks returns `[]`.
+    - **A bucket whose every week is closed** routes to `_pack_tight`, where
+      every item becomes an explicit gap -- including in what would
+      otherwise be the spare regime, which lays out one product per week and
+      so normally never consults the SKU ceiling at all.
     - **`max_sku_count` blocking the leftover-packing step** (a small product
       that would fit a week's spare qty, but that week already holds the
       maximum number of SKUs) makes that week ineligible; if no week is
-      eligible anywhere, the product becomes a `capacity_gap` on the
-      bucket's last week rather than breaching the ceiling. A
-      `max_sku_count` below 1 means no week may host any SKU at all, so
-      every item becomes a gap -- including in what would otherwise be the
-      spare regime, which lays out one product per week and so normally has
-      no reason to consult the SKU ceiling at all.
-    - **`max_output_qty <= 0`** likewise makes every item a gap (it forces
-      the tight regime, where no week can accept anything), instead of
-      dividing by zero in `need_weeks`.
-    - **Two BucketItems with the same `material_code`** (possible once a
-      later task feeds one bucket from more than one demand month) are packed
-      as two independent runs. They count as ONE SKU when they share a week,
-      which is physically right; but P1 contiguity is then guaranteed per
-      BucketItem, not per material.
+      eligible anywhere, the product becomes a `capacity_gap` rather than
+      breaching the ceiling.
+    - **Two BucketItems with the same `material_code`** (which Task 5's
+      bucketing by lead-shifted target month produces routinely, when two
+      demand months land in one bucket) are packed as two independent runs.
+      They count as ONE SKU when they share a week, which is physically
+      right; but P1 contiguity is then guaranteed per BucketItem, not per
+      material. Task 5 must decide explicitly whether to merge them first.
     """
     if not weeks:
         if not items:
@@ -786,25 +932,39 @@ def pack_bucket(items: list[BucketItem], weeks: list[date], limits: CapacityLimi
             "refusing to silently drop it."
         )
 
+    per_week = _normalize_limits(limits, len(weeks))
+
     payload = [item for item in items if item.qty > 0]
     if not payload:
         return []
 
-    week_count = len(weeks)
-    needs = {id(item): _need_weeks(item.qty, limits.max_output_qty, week_count)
-             for item in payload}
+    ordered = sorted(payload, key=_sort_key)
+    open_weeks = [i for i, wk in enumerate(per_week) if _week_can_host(wk)]
 
-    # `_pack_spare` lays out one product per week and therefore never needs
-    # to consult `max_sku_count` -- except when that ceiling is below 1, i.e.
-    # no week may host any SKU at all. Route that through `_pack_tight`,
-    # whose per-week `sku_room` check turns every item into an explicit gap
-    # instead of quietly breaching the ceiling.
-    no_week_can_host = limits.max_sku_count is not None and limits.max_sku_count < 1
+    if not open_weeks:
+        # Nothing can be produced anywhere in this bucket. `_pack_tight`'s
+        # per-week checks turn every item into an explicit gap; `_pack_spare`
+        # has no slots to lay anything out in and would silently drop them.
+        return _sorted_lines(_pack_tight(ordered, weeks, per_week, open_weeks))
 
-    if no_week_can_host or sum(needs.values()) >= week_count:
-        lines = _pack_tight(payload, weeks, limits)
+    ref_cap = _reference_cap(per_week, open_weeks)
+    needs = [_need_weeks(item.qty, ref_cap) for item in ordered]
+
+    if sum(needs) > len(open_weeks):
+        lines = _pack_tight(ordered, weeks, per_week, open_weeks)
     else:
-        lines = _pack_spare(payload, weeks, limits, needs)
+        # The floor is bucket-wide: it says how thinly the plant is willing
+        # to run at all, which is not a property of an individual week.
+        # Take the largest configured floor across the open weeks so no week
+        # is ever asked to run below its own minimum.
+        floors = [per_week[i].min_output_qty for i in open_weeks
+                  if per_week[i].min_output_qty is not None]
+        lines = _pack_spare(ordered, weeks, per_week, open_weeks, needs,
+                            max(floors) if floors else None)
 
+    return _sorted_lines(lines)
+
+
+def _sorted_lines(lines: list[WeeklyLine]) -> list[WeeklyLine]:
     return sorted(lines, key=lambda l: (l.plan_week_start, l.material_code,
                                         l.demand_month, l.capacity_gap))

@@ -365,6 +365,16 @@ class TestPrinciples:
         {"A": 35, "B": 35, "C": 35},
         {"A": 5, "B": 5, "C": 5, "D": 5},
         {"A": 160},
+        # sum(need_weeks) == len(weeks) exactly: a comfortable month (120 of
+        # 160 available) that the old `>=` predicate sent down the tight path
+        # and left with an idle W4. Under `>` it levels to 30/30/30/30.
+        {"A": 60, "B": 60},
+        # spare regime with span > 1 AND an awkward quantity, so `_level`'s
+        # division and `qty - allocated` tail actually run. Without this every
+        # CASE either goes tight (exact by construction) or has span 1 (which
+        # short-circuits), and a per-week-rounding implementation would sail
+        # through `test_nothing_is_silently_lost`.
+        {"A": 70},
     ]
 
     def test_p1_each_product_occupies_a_contiguous_run(self):
@@ -391,6 +401,22 @@ class TestPrinciples:
             for l in lines:
                 per_week.setdefault(l.plan_week_start, set()).add(l.material_code)
             assert all(len(v) <= 2 for v in per_week.values()), case
+
+    def test_per_week_capacity_is_never_exceeded(self):
+        """Without this, a degenerate implementation passes every other
+        property here: dump A=100 into W1 and spread B=15 over W2-W4 and you
+        get contiguous runs, all four weeks used (so P2 short-circuits), one
+        product per week, and nothing lost -- with W1 2.5x over capacity."""
+        for case in self.CASES:
+            lines = pack_bucket(_items(**case), WEEKS, self.limits)
+            per_week = {}
+            for l in lines:
+                if l.capacity_gap:
+                    continue           # a gap books no capacity anywhere
+                per_week[l.plan_week_start] = (
+                    per_week.get(l.plan_week_start, Decimal("0")) + Decimal(str(l.qty)))
+            assert all(v <= self.limits.max_output_qty for v in per_week.values()), \
+                (case, per_week)
 
     def test_nothing_is_silently_lost(self):
         for case in self.CASES:
@@ -503,3 +529,120 @@ class TestPackBucketEdgeCases:
              BucketItem("A", "2026-09", Decimal("30"))], WEEKS, limits)
         assert not any(l.capacity_gap for l in lines)
         assert {l.demand_month for l in lines} == {"2026-08", "2026-09"}
+
+
+class TestPerWeekLimits:
+    """`resolve_limits_for_week` resolves capacity PER WEEK, so `pack_bucket`
+    accepts a per-week sequence as well as one bucket-wide value. This is what
+    makes the design's flagship example -- "week 32 is down for maintenance,
+    max_output_qty = 0" -- expressible at all: such a week is skipped as a
+    placement target and its production moves elsewhere, rather than turning
+    the whole bucket into a shortfall."""
+
+    OPEN = CapacityLimits(None, Decimal("40"), Decimal("20"))
+    SHUT = CapacityLimits(None, Decimal("0"), Decimal("20"))
+
+    def test_a_uniform_sequence_matches_a_single_value(self):
+        single = pack_bucket(_items(A=60, B=20, C=30, D=30), WEEKS, self.OPEN)
+        per_week = pack_bucket(_items(A=60, B=20, C=30, D=30), WEEKS, [self.OPEN] * 4)
+        assert _by_week(single) == _by_week(per_week)
+
+    def test_shutdown_week_is_scheduled_around_not_gapped_spare_regime(self):
+        # Three 30s and four weeks: W3 shut, so the third product lands in W4
+        # instead. Nothing is short -- 90 against 120 of open capacity.
+        limits = [self.OPEN, self.OPEN, self.SHUT, self.OPEN]
+        lines = pack_bucket(_items(A=30, B=30, C=30), WEEKS, limits)
+        assert not any(l.capacity_gap for l in lines)
+        assert WEEKS[2] not in {l.plan_week_start for l in lines}
+        assert _by_week(lines) == {
+            WEEKS[0]: [("A", "30")],
+            WEEKS[1]: [("B", "30")],
+            WEEKS[3]: [("C", "30")],
+        }
+
+    def test_shutdown_week_is_stepped_over_mid_run_tight_regime(self):
+        # A=100 cannot fit one week, so it splits -- and must step OVER the
+        # shutdown rather than stopping at it. 120 demanded, 120 open: no gap.
+        limits = [self.OPEN, self.OPEN, self.SHUT, self.OPEN]
+        lines = pack_bucket(_items(A=100, B=20), WEEKS, limits)
+        assert not any(l.capacity_gap for l in lines)
+        assert _by_week(lines) == {
+            WEEKS[0]: [("A", "40")],
+            WEEKS[1]: [("A", "40")],
+            WEEKS[3]: [("A", "20"), ("B", "20")],
+        }
+
+    def test_every_week_shut_gaps_everything(self):
+        lines = pack_bucket(_items(A=30), WEEKS, [self.SHUT] * 4)
+        assert all(l.capacity_gap for l in lines)
+        assert sum((l.qty for l in lines), Decimal("0")) == Decimal("30")
+
+    def test_a_sequence_of_the_wrong_length_is_refused(self):
+        import pytest
+        with pytest.raises(ValueError):
+            pack_bucket(_items(A=30), WEEKS, [self.OPEN] * 3)
+
+    def test_a_tighter_week_never_gets_more_than_it_can_take(self):
+        # W2 is derated to 10. need_weeks is sized off the SMALLEST open cap,
+        # so the levelling can never hand a week more than that week can hold.
+        small = CapacityLimits(None, Decimal("10"), Decimal("5"))
+        limits = [self.OPEN, small, self.OPEN, self.OPEN]
+        lines = pack_bucket(_items(A=35), WEEKS, limits)
+        by_week = {l.plan_week_start: Decimal(str(l.qty)) for l in lines
+                   if not l.capacity_gap}
+        for week, qty in by_week.items():
+            assert qty <= limits[WEEKS.index(week)].max_output_qty, (week, qty)
+        assert sum((l.qty for l in lines), Decimal("0")) == Decimal("35")
+
+
+class TestRegimePredicate:
+    """`sum(need_weeks) > len(weeks)` is tight; equality is SPARE.
+
+    `need_weeks` is a ceiling, so its slack is not consumed capacity --
+    treating equality as tight sends comfortable months down the packing
+    path and idles the end of the month for no reason."""
+
+    limits = CapacityLimits(None, Decimal("40"), Decimal("20"))
+
+    def test_equality_goes_spare_and_uses_the_whole_month(self):
+        # {A:60, B:60}: sum(need_weeks) = 2 + 2 = 4 == 4 weeks, but only 120
+        # of the 160 available is actually demanded.
+        lines = pack_bucket(_items(A=60, B=60), WEEKS, self.limits)
+        assert _by_week(lines) == {
+            WEEKS[0]: [("A", "30")],
+            WEEKS[1]: [("A", "30")],
+            WEEKS[2]: [("B", "30")],
+            WEEKS[3]: [("B", "30")],
+        }
+
+    def test_strictly_over_goes_tight(self):
+        # Adding C=30 makes sum(need_weeks) = 5 > 4: the month really is
+        # over-full (150 of 160) and packing tight is correct.
+        lines = pack_bucket(_items(A=60, B=60, C=30), WEEKS, self.limits)
+        assert _by_week(lines) == {
+            WEEKS[0]: [("A", "40")],
+            WEEKS[1]: [("A", "20"), ("B", "20")],
+            WEEKS[2]: [("B", "40")],
+            WEEKS[3]: [("C", "30")],
+        }
+
+
+def test_level_tail_never_exceeds_the_weekly_cap():
+    """Rounding `base` DOWN would give 39.999/39.999/40.001 -- the tail a
+    thousandth of a kilo over a hard ceiling, purely from a rounding choice.
+    Rounding up makes the tail absorb a negative remainder instead."""
+    limits = CapacityLimits(None, Decimal("40"), Decimal("35"))
+    lines = pack_bucket([BucketItem("A", "2026-08", Decimal("119.999"))], WEEKS, limits)
+    assert all(Decimal(str(l.qty)) <= Decimal("40") for l in lines), \
+        [str(l.qty) for l in lines]
+    assert sum((l.qty for l in lines), Decimal("0")) == Decimal("119.999")
+
+
+def test_the_same_bucket_item_object_passed_twice_is_packed_twice():
+    """`_pack_spare` used to key its bookkeeping on `id(item)`; `BucketItem`
+    is frozen, so a caller reusing one object would have the two entries
+    collide and the layout loop could run off the end of the week list."""
+    item = BucketItem("A", "2026-08", Decimal("30"))
+    lines = pack_bucket([item, item], WEEKS, CapacityLimits(None, Decimal("40"), Decimal("20")))
+    assert sum((l.qty for l in lines), Decimal("0")) == Decimal("60")
+    assert len({l.plan_week_start for l in lines}) == 2
