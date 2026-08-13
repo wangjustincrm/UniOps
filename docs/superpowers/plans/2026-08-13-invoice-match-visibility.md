@@ -868,13 +868,13 @@ git commit -m "fix(epms): load linked invoices for agreement PAs"
 - Modify: `epms/src/pages/pa/PaDetailPage.tsx` (render it under Linked Documents)
 
 **Interfaces:**
-- Consumes: `centsEqual` from `@/lib/money`; `Invoice`, `InvoiceAllocation` from `@/services/invoices`
+- Consumes: `centsEqual` from `@/lib/money`; `ApiInvoice`, `InvoiceAllocation` from `@/services/invoices` (the exported type is **`ApiInvoice`** — there is no `Invoice` type)
 - Produces:
   - `export type MatchMode = 'by-line' | 'by-amount'`
   - `export function matchMode(allocations: InvoiceAllocation[]): MatchMode`
   - `export interface LineComparison { allocationId: string; invoiceLineDescription: string; invoiceQty: number | null; invoiceUnitPrice: number | null; invoiceAmount: number; poLineDescription: string | null; poQty: number | null; poUnitPrice: number | null; poAmount: number | null; variance: number }`
-  - `export function buildLineComparisons(invoice: Invoice, poLines: ApiPoLineItem[]): LineComparison[]`
-  - `export function InvoiceMatchVariancePanel(props: { invoice: Invoice; poLines: ApiPoLineItem[] | undefined; tolerancePct: number }): JSX.Element | null`
+  - `export function buildLineComparisons(invoice: ApiInvoice, poLines: ApiPoLineItem[]): LineComparison[]`
+  - `export function InvoiceMatchVariancePanel(props: { invoice: ApiInvoice; poLines: ApiPoLineItem[] | undefined; tolerancePct: number }): JSX.Element | null`
 
 - [ ] **Step 1: Write the failing test for the pure functions**
 
@@ -953,7 +953,7 @@ git commit -m "feat(epms): show invoice-to-PO variance with line detail on PA De
 
 **Interfaces:**
 - Consumes: `InvoiceResponse.claimed_receipts` from Task 5; `centsEqual` from `@/lib/money`
-- Produces: `export function receiptSummary(invoice: Invoice): { pricedCount: number; receiptTotal: number; variance: number; hasVariance: boolean }`
+- Produces: `export function receiptSummary(invoice: ApiInvoice): { pricedCount: number; receiptTotal: number; variance: number; hasVariance: boolean }`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1017,7 +1017,7 @@ Expected: FAIL — `receiptSummary` is not exported.
 //   ② 只有携带金额的凭证参与比较;delivery / service 没有金额。
 //   ③ 一张计价凭证都没有 → 零差异。否则会得出「差异 = 整张发票」的纯误报。
 //   ④ 用 centsEqual,不用 !== 0。
-export function receiptSummary(invoice: Invoice) {
+export function receiptSummary(invoice: ApiInvoice) {
   const priced = (invoice.claimed_receipts ?? []).filter(
     (r) => r.total_amount !== null && r.total_amount !== undefined)
   const receiptTotal = priced.reduce((sum, r) => sum + Number(r.total_amount), 0)
