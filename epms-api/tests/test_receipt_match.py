@@ -93,6 +93,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.crud import agreement_receipt as agreement_receipt_crud
+from app.crud.agreement_receipt import _STATUS_WORDS
 from app.crud.invoice import (
     delete as crud_delete,
     match as crud_match,
@@ -297,7 +298,12 @@ async def _assert_claim_rejects_non_open_receipt(admin_client, test_engine, stat
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        with pytest.raises(ValueError, match=status):
+        # Matches the OPERATOR-facing wording, not the storage value: the
+        # message names the receipt the way a person can find it and says the
+        # state in the words its badge uses ("removed", not "voided"). Pinning
+        # the raw status here would pass on a message nobody can act on, which
+        # is what this used to be — a bare uuid and a database word.
+        with pytest.raises(ValueError, match=_STATUS_WORDS[status]):
             await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv)
 
 
@@ -431,7 +437,7 @@ async def test_claim_leaves_earlier_receipts_untouched_when_a_later_id_is_invali
 
     async with factory() as db:
         db_inv = (await db.execute(select(Invoice).where(Invoice.id == inv_id))).scalar_one()
-        with pytest.raises(ValueError, match="voided"):
+        with pytest.raises(ValueError, match="removed"):
             await agreement_receipt_crud.claim(
                 db, agr, [open_receipt.id, voided_receipt.id], db_inv)
         # Committed on purpose (see docstring above) — NOT a claim about how
@@ -604,7 +610,7 @@ async def test_claim_rejects_a_receipt_reconciled_by_a_different_invoice(
 
     async with factory() as db:
         db_inv_b = (await db.execute(select(Invoice).where(Invoice.id == inv_b_id))).scalar_one()
-        with pytest.raises(ValueError, match="reconciled"):
+        with pytest.raises(ValueError, match="already attached to another invoice"):
             await agreement_receipt_crud.claim(db, agr, [receipt.id], db_inv_b)
 
     async with factory() as db:

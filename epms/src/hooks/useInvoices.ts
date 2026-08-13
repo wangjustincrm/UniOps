@@ -36,7 +36,21 @@ export function useMatchCandidates(invoiceId: string, enabled = true) {
 // agreement detail page's epms.agreement.read-gated endpoint.
 export function useInvoiceAgreementReceipts(invoiceId: string, agreementId: string, status?: ReceiptStatus) {
   return useQuery({
-    queryKey: ['invoices', invoiceId, 'agreements', agreementId, 'receipts', status],
+    // Keyed UNDER ['agreement-receipts'], not under ['invoices'], and that is
+    // the whole point: this is the THIRD view of the same rows, and it used to
+    // sit in a namespace no receipt mutation touched. invalidateReceiptViews
+    // (hooks/useAgreementReceipts.ts) refreshes ['agreement-receipts'] and
+    // ['agreements', id, 'receipts'] — neither prefix-matches ['invoices', …],
+    // so removing a receipt left THIS list serving it as claimable until a hard
+    // reload. Ticking it then failed with a raw-UUID 422 from the server.
+    //
+    // Same trick useReceipt's ['agreement-receipts', 'detail', id] uses: put
+    // the key under the prefix that is already invalidated and the refresh
+    // becomes structural, instead of something every future mutation has to
+    // remember. 'for-invoice' distinguishes it from useAllReceipts'
+    // ['agreement-receipts', filters] — a string never collides with that
+    // object.
+    queryKey: ['agreement-receipts', 'for-invoice', invoiceId, agreementId, status],
     queryFn: () => invoiceService.agreementReceipts(invoiceId, agreementId, status),
     enabled: Boolean(invoiceId) && Boolean(agreementId),
   })

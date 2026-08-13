@@ -81,6 +81,16 @@ export function useReceiptAttachments(agreementId: string, receiptId: string) {
 // makes writing one of the three agreement columns without the others
 // impossible.
 //
+// There is a THIRD view — the invoice detail page's reconciliation panel
+// (useInvoiceAgreementReceipts). It is not listed here because it is keyed
+// under ['agreement-receipts', 'for-invoice', …] and so is covered by the
+// first entry below. It was NOT always: it used to live under ['invoices', …],
+// which nothing here matched, and a removed receipt kept being offered as
+// claimable on that panel until a hard reload — the user hit the resulting
+// raw-UUID 422 on a service sign-off. Adding a view to this file is the wrong
+// instinct; putting its key under a prefix already invalidated here is the
+// right one, because it cannot be forgotten.
+//
 // Deliberately NOT invalidating bare ['agreements']: that prefix-matches every
 // other agreement's data app-wide plus every per-row attachment query, and
 // there is nothing on the agreement row itself for these mutations to refresh

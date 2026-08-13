@@ -22,6 +22,23 @@ from app.schemas.agreement_receipt import ReceiptCreate, ReceiptUpdate, validate
 # vendor NAME, agreement vendor ID.
 ReceiptRow = tuple[AgreementReceipt, str, str, str | None, int, str, uuid.UUID]
 
+# The words the OPERATOR sees, for use in messages they read. These mirror the
+# frontend's two label tables — components/ui/badge.tsx's statusLabel() and
+# services/agreementReceipts.ts's RECEIPT_TYPE_LABELS — because an error that
+# says "voided" about a receipt whose badge reads "Removed" makes the reader
+# hunt for a second thing that went wrong. Storage values are untouched.
+RECEIPT_TYPE_LABELS = {
+    "counter_slip": "counter slip",
+    "delivery": "delivery note",
+    "service": "service sign-off",
+}
+_STATUS_WORDS = {
+    "voided": "removed",
+    "rejected": "rejected",
+    "reconciled": "already attached to another invoice",
+    "pending_ap_review": "still awaiting AP review",
+}
+
 
 async def create(
     db: AsyncSession, agr: PurchaseAgreement, body: ReceiptCreate, created_by: uuid.UUID,
@@ -350,6 +367,20 @@ async def claim(
     """
     seen_ids = list(dict.fromkeys(receipt_ids))
     rows: list[AgreementReceipt] = []
+
+    def _name(receipt: AgreementReceipt) -> str:
+        """How the OPERATOR can find this receipt, not how the database does.
+
+        A bare uuid in a 422 is unusable: no screen renders it and nothing can
+        be searched by it, so "Receipt 9cad3d56-… is voided" tells the reader
+        only that something went wrong. The reference number is what is printed
+        on the paper and shown in every list; the date is the fallback for a
+        receipt that has none — the same pair ReceiptEntryForm falls back to
+        when it has to name a receipt in an alert.
+        """
+        if receipt.receipt_ref:
+            return f"receipt {receipt.receipt_ref}"
+        return f"the {RECEIPT_TYPE_LABELS.get(receipt.receipt_type, 'receipt')} dated {receipt.receipt_date}"
     for receipt_id in seen_ids:
         receipt = (await db.execute(
             select(AgreementReceipt).where(AgreementReceipt.id == receipt_id)
@@ -357,12 +388,20 @@ async def claim(
         if receipt is None or receipt.agreement_id != agr.id:
             raise ValueError(
                 f"Receipt {receipt_id} does not belong to agreement {agr.number}")
+        # (that one keeps the id: a receipt on the wrong agreement is a
+        # programming error, and the id is what a developer needs)
         already_held_by_this_invoice = (
             receipt.status == "reconciled" and receipt.invoice_id == invoice.id
         )
         if receipt.status != "open" and not already_held_by_this_invoice:
+            # Says what to DO about it. The overwhelmingly common cause is a
+            # stale list — the receipt was removed or claimed by another
+            # invoice after this page loaded — and "reload" is the whole fix,
+            # which the reader has no way to guess from a status name.
             raise ValueError(
-                f"Receipt {receipt_id} is {receipt.status}; only an open receipt can be claimed")
+                f"{_name(receipt)} is {_STATUS_WORDS.get(receipt.status, receipt.status)} "
+                "and can no longer be attached to an invoice. Reload the page to "
+                "see the receipts that are still available.")
         rows.append(receipt)
     for receipt in rows:
         receipt.status = "reconciled"
