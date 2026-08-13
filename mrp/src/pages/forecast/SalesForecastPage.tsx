@@ -173,10 +173,17 @@ export default function SalesForecastPage() {
   // would need a real delete, not implemented here; see
   // handleRemoveAddedRow). An added row with no value typed in yet is NOT
   // persisted (mrp_demand_series is sparse — see doFlush's comment) and
-  // must never land in this set purely for being added; today nothing adds
-  // a code here at all (a genuinely-saved added row still keeps its X too —
-  // a separate, minor gap, not the vanishing-row bug this set exists to
-  // avoid).
+  // must never land in this set purely for being added.
+  //
+  // NOTHING EVER ADDS TO THIS SET. That was the whole hole behind MUST FIX
+  // 1's second trigger: a row saved during this session kept its X, and the
+  // X deletes. `serverKnownRowIds` (below) is now what actually answers
+  // "does the server have a record of this row", derived from `committed` +
+  // the grid load + the intent-product registry rather than from
+  // bookkeeping someone has to remember to write. This set is kept only as
+  // a redundant extra `false` in that same condition and as the thing
+  // handleConfirmBind cleans up for a bound code; it is deliberately not
+  // load-bearing anymore.
   const [persistedAddedCodes, setPersistedAddedCodes] = useState<Set<string>>(new Set())
   const [syncedGridKeyForAddedRows, setSyncedGridKeyForAddedRows] = useState<string | null>(null)
   const [focusRequest, setFocusRequest] = useState<{ rowId: string; colId?: string } | null>(null)
@@ -209,6 +216,20 @@ export default function SalesForecastPage() {
   // instance short of remounting it. See fix-round-1 in task-5-report.md
   // (Critical 1/2) for the full incident this replaced.
   const [bindGeneration, setBindGeneration] = useState(0)
+  // Cross-task finding 1: set when the post-bind refetch FAILED. The bind
+  // itself succeeded server-side (its POST resolved before
+  // refetchAndRemount is even called), so the data has already moved — but
+  // every client-side map on this page still describes the pre-bind world.
+  // Folded into `gridReadOnly` below, permanently, because there is no
+  // honest way back from here without a full reload: `committed`/`liveCells`
+  // still hold the INTENT- cells the server no longer has, so any edit would
+  // autosave them straight back under a placeholder that is now
+  // `status='bound'` (re-binding 409s, and MPS skips it via the frozen
+  // `is_intent` column) — silent under-scheduling with no route out through
+  // the UI. Terminal by construction: nothing clears this flag, and
+  // MatrixGrid renders `rowActions` only while `!readOnly`
+  // (MatrixGrid.tsx:732), so no further bind can be started from this page.
+  const [bindRefreshFailed, setBindRefreshFailed] = useState(false)
   // Outlooks panel (follow-up #2) — the version being viewed read-only in
   // OutlookViewerModal, or null when the panel/modal is closed.
   const [viewingVersion, setViewingVersion] = useState<ForecastVersion | null>(null)
@@ -360,6 +381,30 @@ export default function SalesForecastPage() {
     [gridQuery.data],
   )
 
+  // Every row id the SERVER already owns a record for — the union of (a)
+  // the rows the grid load returned, (b) every code that has a durably-saved
+  // cell (`committed` is updated in place by doFlush after each successful
+  // autosave, so this covers rows first saved during THIS session, which
+  // gridQuery.data can never learn about — it is fetched once and
+  // deliberately never refetched, see its header comment), and (c) every
+  // active intent product, whose record lives in `mrp_intent_products` from
+  // the moment Create returns 201, independently of whether the sparse
+  // `mrp_demand_series` happens to hold a row for it.
+  //
+  // MUST FIX 1's second trigger: this is what `showRemove` (rowActions
+  // below) now tests, replacing `addedRows.has(row.id)` alone.
+  // `persistedAddedCodes` was meant to be that test but is never written to
+  // by anything (see its own declaration), so the quick-remove X stayed on
+  // rows that were already saved — and clicking it blanks the row, which
+  // autosaves qty:0, which upsert_cells turns into a DELETE.
+  const serverKnownRowIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const r of gridQuery.data?.rows ?? []) ids.add(r.material_code)
+    for (const key of committed.keys()) ids.add(parseCellKey(key).rowId)
+    for (const code of intentByCode.keys()) ids.add(code)
+    return ids
+  }, [gridQuery.data, committed, intentByCode])
+
   const matrixRows: MatrixRow[] = useMemo(() => {
     const serverRows = gridQuery.data?.rows ?? []
     const serverCodes = new Set(serverRows.map((r) => r.material_code))
@@ -383,7 +428,7 @@ export default function SalesForecastPage() {
     // planner gave it. Deliberately just the name (no "CODE — Name"
     // prefix real-material rows get below): the placeholder code is
     // meaningless to a planner, unlike a real ERP code.
-    return [
+    const out: MatrixRow[] = [
       ...visibleServerRows.map((r) => ({
         id: r.material_code,
         label: intentByCode.get(r.material_code)?.name ?? r.name ?? r.material_code,
@@ -393,7 +438,30 @@ export default function SalesForecastPage() {
         label: intentByCode.has(m.code) ? (intentByCode.get(m.code)?.name ?? m.code) : (m.name ? `${m.code} — ${m.name}` : m.code),
       })),
     ]
-  }, [gridQuery.data, addedRows, initialized, matrixCols, liveCells, intentByCode])
+    // MUST FIX 1: an intent product's EXISTENCE is owned by
+    // `mrp_intent_products`, not by whether `mrp_demand_series` happens to
+    // hold a row for it. Both sources above are blind to that:
+    // `gridQuery.data.rows` comes from the sparse series table (no row at
+    // all for a product with no quantity typed yet — and upsert_cells
+    // DELETES on qty==0), while `addedRows` is pure session state a refresh
+    // wipes. Create an intent product, type nothing, refresh: the named
+    // record the planner deliberately created had no row here, no
+    // MaterialPicker entry (that searches mdm master data, which by
+    // definition has no intent code) and no drop action — permanently
+    // unreachable. Appending every active intent product not already emitted
+    // above closes that, and also keeps an intent row visible after its
+    // quantities are cleared to zero (which drops it out of
+    // `visibleServerRows` while leaving the registry record behind).
+    // Only ACTIVE ones: intentApi.list() defaults to `status=active`, so a
+    // bound or dropped product is never resurrected here.
+    const emitted = new Set(out.map((r) => r.id))
+    for (const ip of intentQuery.data ?? []) {
+      if (emitted.has(ip.code)) continue
+      emitted.add(ip.code)
+      out.push({ id: ip.code, label: ip.name })
+    }
+    return out
+  }, [gridQuery.data, addedRows, initialized, matrixCols, liveCells, intentByCode, intentQuery.data])
 
   // Past-column read-only enforcement — every material x every month before
   // currentMonth. Built from the union of visible rows AND the full
@@ -681,6 +749,16 @@ export default function SalesForecastPage() {
         queryClient.invalidateQueries({ queryKey: ['intent-products'] }, { throwOnError: true }),
       ])
     } catch {
+      // Cross-task finding 1. A toast alone was not enough: `finally` still
+      // bumps `bindGeneration`, and handleConfirmBind then clears
+      // `bindTarget`, which used to release `readOnly` and hand a live,
+      // EDITABLE grid back — remounted from the stale `liveCells`, which
+      // still carries the INTENT- rows the server has already moved away.
+      // Typing there autosaves series rows back under a now-`bound`
+      // placeholder. This flag keeps the grid read-only for the rest of the
+      // page's life (see gridReadOnly), and drives a standing banner rather
+      // than a toast that scrolls away.
+      setBindRefreshFailed(true)
       toasts.error('Bind succeeded, but the grid could not refresh automatically — reload the page to see the moved numbers.')
     } finally {
       setBindGeneration((g) => g + 1)
@@ -745,9 +823,18 @@ export default function SalesForecastPage() {
         return
       }
       const result = await intentApi.bind(bindTarget.id, materialCode)
+      // The outlook caveat is not a nicety: MPS runs off an immutable
+      // ForecastVersion snapshot, and every snapshot frozen BEFORE this bind
+      // still carries this product's lines with `is_intent = true`, which
+      // _load_intent_lines / _build_demand_items exclude from scheduling
+      // (mrp-api/app/api/v1/mps.py). Correct by design — snapshots do not
+      // change retroactively — but a planner who binds and then re-runs the
+      // existing outlook sees the product skipped again and reads that as
+      // the bind not having worked.
       toasts.success(
         `Bound ${bindTarget.name} to ${materialCode} — moved ${result.moved_months} month(s), `
-        + `${formatTonnes(Number(result.moved_qty))} t.`,
+        + `${formatTonnes(Number(result.moved_qty))} t. Existing outlooks still exclude it: `
+        + 'generate a new outlook before MPS will schedule this product.',
       )
       const boundCode = bindTarget.code
       // Keep bindTarget set (grid stays readOnly) through the refetch +
@@ -837,7 +924,11 @@ export default function SalesForecastPage() {
   // Ctrl+C, which does check `data-matrix-input`). readOnly also collapses
   // every MatrixCell to the non-editable `<td>` branch, so there is no
   // `<input>` left for a stray keystroke to land in at all.
-  const gridReadOnly = !canWriteForecast || bindTarget !== null
+  // `bindRefreshFailed` is cross-task finding 1's half: once a post-bind
+  // refetch has failed, this page's client state provably disagrees with the
+  // server and cannot be reconciled without a reload, so editing stays shut
+  // for good (see that state's own declaration for the full argument).
+  const gridReadOnly = !canWriteForecast || bindTarget !== null || bindRefreshFailed
 
   // Derived from displayUnit — purely display/entry, threaded into
   // <MatrixGrid> below. committed/liveCells/dirtyCells/the autosave payload
@@ -894,6 +985,22 @@ export default function SalesForecastPage() {
         <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {errMsg(gridQuery.error, 'Could not load the forecast grid.')}
         </p>
+      )}
+
+      {/* Cross-task finding 1 — persistent, not a toast: the bind DID land
+          server-side, but this page's numbers are stale and editing is now
+          locked (gridReadOnly), so the planner needs a standing explanation
+          plus the one action that resolves it. */}
+      {bindRefreshFailed && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          <span>
+            The bind was saved, but this page could not reload the forecast afterwards — the
+            numbers below are out of date, so editing is locked. Reload to continue.
+          </span>
+          <Button type="button" size="sm" variant="secondary" onClick={() => window.location.reload()}>
+            Reload page
+          </Button>
+        </div>
       )}
 
       {/* Toolbar */}
@@ -1033,7 +1140,21 @@ export default function SalesForecastPage() {
               // (including every OTHER intent row's own Bind icon)
               // disappears while BindIntentModal is open — consistent
               // with nothing else on the grid being actionable then.
-              const showRemove = addedRows.has(row.id) && !persistedAddedCodes.has(row.id)
+              // MUST FIX 1, second trigger. The X clears the row, which
+              // autosaves qty:0, which upsert_cells turns into a DELETE — so
+              // it must appear ONLY for a row the server has no record of.
+              // `addedRows.has()` alone did not say that (the map keeps a
+              // code for the whole session, saved or not) and
+              // `persistedAddedCodes` — the set that was meant to say it —
+              // is never written to by anything. `serverKnownRowIds` (see
+              // above) is the real test: a durably-saved cell OR an
+              // intent-product record. For an intent row it is true from the
+              // instant Create returns 201, which is the case that matters:
+              // an ordinary product could at least be re-picked from master
+              // data, an intent product could not be recovered at all.
+              const showRemove = addedRows.has(row.id)
+                && !persistedAddedCodes.has(row.id)
+                && !serverKnownRowIds.has(row.id)
               const intent = intentByCode.get(row.id)
               if (!showRemove && !intent) return null
               return (
@@ -1054,14 +1175,18 @@ export default function SalesForecastPage() {
                             ? `Bind ${row.label} to a material code — disabled until autosave finishes`
                             : `Bind ${row.label} to a material code`
                         }
-                        // Disabled state must stay LEGIBLE, not fade to
-                        // invisible (fix round 2 — `text-neutral-200` on a
-                        // white cell background was nearly unreadable).
-                        // neutral-500 reads clearly as muted/inactive
-                        // without disappearing.
+                        // Disabled must read as LESS prominent than
+                        // enabled, and still stay legible. Fix round 2
+                        // over-corrected `text-neutral-200` (nearly
+                        // invisible) all the way to `text-neutral-500`,
+                        // which is DARKER than the enabled `text-neutral-400`
+                        // — the affordance read backwards. neutral-300 is one
+                        // step lighter than enabled and is the tone the
+                        // remove-X below already rests at, so it is a value
+                        // this grid is known to render legibly.
                         className={
                           bindBlocked
-                            ? 'shrink-0 cursor-not-allowed text-neutral-500'
+                            ? 'shrink-0 cursor-not-allowed text-neutral-300'
                             : 'shrink-0 text-neutral-400 hover:text-primary-600'
                         }
                       >

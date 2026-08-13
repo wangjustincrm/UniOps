@@ -314,12 +314,31 @@ export default function ProductionPlanPage() {
   // repeat its name 18 times with no indication that's what happened.
   const skippedIntent = useMemo(() => {
     const raw = run?.stats?.skipped_intent ?? []
-    const byCode = new Map<string, { code: string; name: string; qty: number }>()
+    const byCode = new Map<string, { code: string; name: string; namedFromLine: boolean; qty: number }>()
     for (const item of raw) {
       const qty = Number(item.qty)
       const existing = byCode.get(item.code)
-      if (existing) existing.qty += qty
-      else byCode.set(item.code, { code: item.code, name: item.name, qty })
+      // `item.name` is nullable on the wire (mpsApi.ts's MpsSkippedIntent —
+      // it is ForecastLine.intent_name, a nullable column, carried inside an
+      // unvalidated JSONB `stats` blob). Falling back to the placeholder
+      // code keeps the callout identifying SOMETHING; a bare null would have
+      // rendered as "Not scheduled (intent):  · 700 kg". Also prefers a
+      // non-null name from any later line of the same product over an
+      // earlier null one.
+      if (existing) {
+        existing.qty += qty
+        if (!existing.namedFromLine && item.name) {
+          existing.name = item.name
+          existing.namedFromLine = true
+        }
+      } else {
+        byCode.set(item.code, {
+          code: item.code,
+          name: item.name ?? item.code,
+          namedFromLine: !!item.name,
+          qty,
+        })
+      }
     }
     return [...byCode.values()]
   }, [run])

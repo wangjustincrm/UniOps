@@ -23,7 +23,15 @@ export type MpsRunStatus = 'draft' | 'confirmed' | 'released'
  *  wire convention as everything else in this file. */
 export interface MpsSkippedIntent {
   code: string
-  name: string
+  /** NULLABLE on the wire. The backend emits `ForecastLine.intent_name`
+   *  (mps.py's `_skipped_intent_stats`), a nullable column — every path
+   *  that writes it fills it in today, but nothing in the schema or the
+   *  query enforces that, and `stats` is an unvalidated JSONB blob besides.
+   *  Declaring it `string` made TypeScript vouch for a guarantee the server
+   *  does not give; a null would then have rendered as a nameless
+   *  "Not scheduled (intent):  · 700 kg". Render sites must fall back to
+   *  `code`. */
+  name: string | null
   qty: string
 }
 
