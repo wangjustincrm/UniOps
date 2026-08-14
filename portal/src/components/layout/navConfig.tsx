@@ -62,6 +62,12 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
     ],
   },
   {
+    // Applications, not pages. Each entry opens a module at its own root and
+    // that module's own sidebar takes over from there. Do not add a deep link
+    // to a single screen here — Agreements was listed for a while and it made
+    // one EPMS page look like a sibling of EPMS itself, reachable from Portal
+    // while every other EPMS page was not. It lives in the EPMS sidebar
+    // (epms/src/components/layout/Sidebar.tsx), gated on the same permission.
     title: 'MODULES',
     items: [
       { label: 'Procurement', icon: ShoppingCart, href: 'epms' },

@@ -418,6 +418,7 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "settle_prepayment": "prepayment_settlement_overdue",
         "match_invoice": "match_invoice_assigned",
         "review_match": "match_review_request",
+        "resolve_exception": "exception_resolution_request",
     }.get(task_type, "pr_approval_request")
 
 

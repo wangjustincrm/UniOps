@@ -6,7 +6,13 @@ from app.core.config import settings
 
 bearer = HTTPBearer()
 
-_FINANCE_ROLES = {"system_admin", "finance_manager", "finance_bp", "ap_clerk", "service_account"}
+# Read access to finance endpoints — NOT payment execution authority (that
+# gate is app/crud/payment_execute.py's _PAY_ROLES). ap_clerk stays here: AP
+# still needs to read finance data even though (2026-08-13 SoD) it can no
+# longer execute a payment. payment_officer is added so it can read what its
+# new execute authority needs.
+_FINANCE_ROLES = {"system_admin", "finance_manager", "finance_bp", "ap_clerk",
+                  "payment_officer", "service_account"}
 
 
 def get_token_payload(credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer)]) -> dict:

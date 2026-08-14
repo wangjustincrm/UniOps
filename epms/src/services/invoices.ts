@@ -1,5 +1,7 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiPo } from '@/services/po'
+import type { AgreementListResponse } from '@/services/agreement'
+import type { ReceiptListResponse, ReceiptStatus } from '@/services/agreementReceipts'
 
 export interface InvoiceLineItem {
   id?:          string
@@ -20,6 +22,20 @@ export type InvoiceStatus =
   | 'approved'
   | 'paid'
 
+// Task 8: one claimed receipt as returned on InvoiceResponse.claimed_receipts
+// (Task 5, backend-only until now) — mirrors ClaimedReceipt in
+// epms-api/app/schemas/invoice.py exactly.
+export interface ApiClaimedReceipt {
+  id: string
+  receipt_ref: string | null
+  receipt_date: string
+  receipt_type: string
+  // 可空,而且必须保持可空 —— delivery / service 两类凭证本就没有金额。
+  // 折成 0 会让下面的汇总把它算进去,凭空造出「差异 = 整张发票」的误报。
+  total_amount: string | null
+  vendor_name: string | null
+}
+
 export interface ApiInvoice {
   id: string
   internal_ref: string
@@ -39,6 +55,26 @@ export interface ApiInvoice {
   gr_id?: string
   gr_number?: string
   gr_ids?: string[]
+  // house_account with receipt_ids only: which pickup receipts this invoice claims —
+  // JSONB array on the backend (Invoice.receipt_ids), null before any claim, never
+  // an empty array (see crud/invoice.py: cleared to null on unclaim, never []).
+  receipt_ids?: string[] | null
+  // Full receipt rows for the house-account route (Task 5 on the backend,
+  // Task 8 here) — everything InvoiceMatchVariancePanel's receipt branch and
+  // receiptSummary() need (ref/date/type/amount) without a second fetch keyed
+  // off receipt_ids. Null/absent for a PO-route or recurring/milestone
+  // invoice, and for a house_account invoice that hasn't claimed anything yet.
+  claimed_receipts?: ApiClaimedReceipt[] | null
+  // Free-text explanation for why the claimed receipts' total doesn't line up
+  // with the invoice total (submitted by MatchPanel.tsx, stored separately
+  // from legacy_settlement_reason — see models/invoice.py:76-78).
+  receipt_variance_reason?: string | null
+  // Which scheduled billing period this invoice claims (recurring route only —
+  // house_account has no schedule, milestone picks its stage at match time).
+  // NULL on a recurring invoice means the automatic claim could not place it,
+  // which is exactly the state that blocks payment: see
+  // InvoiceBillingPeriodPanel.
+  schedule_id?: string | null
   match_assignee_id?: string | null
   match_assignee_name?: string | null
   matched_at?: string
@@ -61,6 +97,28 @@ export interface ApiInvoice {
   uploaded_by: string
   uploaded_by_name?: string
   created_at: string
+  // Agreement route (house-account / no-PO matching) — Phase 1A only.
+  agreement_id?: string | null
+  agreement_number?: string | null
+  // house_account | recurring | milestone — snapshot of the linked
+  // agreement's type, written at match time (Task 8 fix round 1). Readable
+  // by anyone who can read this invoice at all — deliberately NOT sourced
+  // from GET /agreements/{id} or /invoices/{id}/agreement-candidates, both
+  // gated more narrowly than plain invoice read access (see
+  // InvoiceReceiptsPanel.tsx's module docstring for the review finding this
+  // fixed: those routes 403 for warehouse_staff/supervisor/cfo/vendor_manager/
+  // erp_pa_officer, silently falling back to the wrong copy for house_account
+  // invoices with no evidence recorded yet).
+  agreement_type?: 'house_account' | 'recurring' | 'milestone' | null
+  // Which route this invoice was matched through. Only ever written as "po" or
+  // "agreement" by the backend (epms-api/app/crud/invoice.py) — null before
+  // any match. Not the same as `status`; a PO-route invoice keeps match_route
+  // "po" even after review/exception handling.
+  match_route?: 'po' | 'agreement' | null
+  // 1A has no receipt evidence at all: every agreement match is flagged and
+  // must carry a reason. This is the escape-hatch health metric Finance watches.
+  legacy_settlement?: boolean
+  legacy_settlement_reason?: string | null
 }
 
 export interface CreateInvoiceBody {
@@ -125,6 +183,27 @@ export interface MatchInvoiceBody {
   gr_ids?:       string[]
   po_line_ids?:  string[]
   reference_po_id?: string
+  // Agreement route — takes priority over every PO field on the backend when
+  // set (epms-api/app/schemas/invoice.py InvoiceMatchRequest). Task 6: this
+  // is pure linkage for every agreement_type, including house_account —
+  // mounting a receipt or declaring a no-evidence settlement moved off this
+  // request entirely (invoice detail page, Task 7/8); InvoiceMatchRequest no
+  // longer has receipt_ids / receipt_variance_reason / legacy_settlement_reason
+  // fields to mirror here.
+  agreement_id?: string
+  // milestone only — which schedule row (stage) this invoice pays for. recurring
+  // FIFO-claims its own row server-side and never reads this; house_account has
+  // no schedule rows at all. See InvoiceMatchRequest.schedule_id (epms-api).
+  schedule_id?: string
+}
+
+// Task 8: full-override body for PUT /invoices/{id}/receipts — receipt_ids is
+// the COMPLETE set of receipts this invoice should hold after the call;
+// anything currently held but not listed here is released back to `open` by
+// the backend (crud/invoice.py set_receipts — release-then-reclaim, no diff).
+export interface SetReceiptsBody {
+  receipt_ids: string[]
+  variance_reason?: string | null
 }
 
 export interface ResolveExceptionBody {
@@ -136,6 +215,7 @@ export interface InvoiceFilters {
   status?: string
   vendor_id?: string
   po_id?: string
+  agreement_id?: string
   search?: string
   page?: number
   page_size?: number
@@ -171,6 +251,26 @@ export const invoiceService = {
   matchCandidates: (id: string) =>
     api.get<{ items: ApiPo[]; total: number }>(`/invoices/${id}/match-candidates`),
 
+  // Candidate agreements for the agreement route (same vendor, inside the
+  // admission window — active, or expired-but-within-grace). Authorized
+  // identically to matchCandidates, NOT by a generic agreement scope. The
+  // server's admission window is the rule — do not filter further client-side.
+  agreementCandidates: (id: string) =>
+    api.get<AgreementListResponse>(`/invoices/${id}/agreement-candidates`),
+
+  // Pickup receipts for one of THIS invoice's candidate agreements — invoice-
+  // scoped counterpart to agreementReceiptService.list (services/agreementReceipts.ts),
+  // which hits GET /agreements/{id}/receipts gated on epms.agreement.read. That
+  // permission isn't granted to every role that can legitimately match an
+  // invoice (review finding, Task 10 round 2 Finding B), so MatchPanel calls
+  // THIS route instead — authorised identically to agreementCandidates
+  // above (same backend helper, not a parallel implementation).
+  agreementReceipts: (id: string, agreementId: string, status?: ReceiptStatus) =>
+    api.get<ReceiptListResponse>(
+      `/invoices/${id}/agreements/${agreementId}/receipts`,
+      status ? { status } : undefined,
+    ),
+
   // Assignee bounces the match assignment back to the assigner (note required).
   declineMatch: (id: string, note: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/decline-match`, { note }),
@@ -186,4 +286,20 @@ export const invoiceService = {
 
   reviewMatch: (id: string, action: 'approve' | 'reject', note?: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/match-review`, { action, note }),
+
+  // Task 7/8: mounting receipt evidence is its own action on the invoice
+  // detail page, separate from /match (Task 6 pulled it out of
+  // InvoiceMatchRequest). Full-override semantics — see SetReceiptsBody.
+  setReceipts: (id: string, body: SetReceiptsBody) =>
+    api.put<ApiInvoice>(`/invoices/${id}/receipts`, body),
+
+  // Explicit "no receipt evidence exists" declaration — releases any receipts
+  // this invoice currently holds (crud/invoice.py settle_without_receipt).
+  // The after-the-fact half of /match's schedule_id — see the endpoint's own
+  // docstring for why an invoice can end up matched with no period at all.
+  assignBillingPeriod: (id: string, schedule_id: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/billing-period`, { schedule_id }),
+
+  settleWithoutReceipt: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/settle-without-receipt`, { reason }),
 }

@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CheckCircle2, XCircle, RotateCcw, Pencil, ChevronDown,
   MessageSquare, X, Send, ExternalLink, FileText, Mail, ShoppingCart, Warehouse, Globe, Loader2,
+  CreditCard,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -10,7 +11,6 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
-import { OA_BASE_URL } from '@/lib/api'
 import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
@@ -21,6 +21,7 @@ import { downloadPdf } from '@/lib/pdf-utils'
 import { usePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
+import { useInvoices } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import type { ApiEvent } from '@/services/pr'
@@ -398,9 +399,15 @@ interface ApprovalModalProps {
   poNumber: string
   onConfirm: (comment: string) => void
   onClose: () => void
+  // The modal stays mounted until the action resolves, so without this the
+  // confirm button is live for the whole request. A second click re-posts the
+  // same action: usually a 409 the user reads as a failure, but for 'approve'
+  // it can silently consume the NEXT step's task when the same person approves
+  // two consecutive steps — two levels passed on one intended click.
+  isPending: boolean
 }
 
-function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalProps) {
+function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
@@ -470,7 +477,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalPr
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
-              disabled={!canSubmit}
+              disabled={!canSubmit || isPending}
               onClick={() => onConfirm(comment)}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
@@ -478,7 +485,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalPr
               )}
             >
               {config.icon}
-              {config.label}
+              {isPending ? 'Working…' : config.label}
             </button>
           </div>
         </div>
@@ -502,6 +509,9 @@ export default function PoDetailPage() {
   const deleteAttachment = useDeletePoAttachment(id ?? '')
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
+  // Drives the Create PA gate below — see the comment there for why the PO's
+  // own has_unpaid_invoice flag cannot be used on this page.
+  const { data: poInvoices } = useInvoices({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
   const { user } = useAuthStore()
@@ -559,10 +569,20 @@ export default function PoDetailPage() {
   // A hard-coded list also read only the JWT's primary role, so an ADDITIONAL
   // role granted through user_roles (e.g. a Procurement Officer allowed to raise
   // PAs on someone's behalf) never saw the button even with the matrix ticked.
+  // ...and on the PO actually having something to pay. The status alone is not
+  // that: an 'issued' PO with no invoice yet offers nothing a PA could be raised
+  // against, and PaCreatePage's own PO picker rejects it
+  // (`is_prepaid || has_unpaid_invoice`, PaCreatePage.tsx) — so the button was
+  // an invitation to a dead end. Mirror that same rule here so the entry point
+  // and the page it opens agree. `po.has_unpaid_invoice` cannot be used: only
+  // GET /po computes it, GET /po/{id} leaves the schema default false — hence
+  // the invoice fetch above, which uses the same header-OR-allocation rule the
+  // backend flag does (crud/invoice.py get_all).
+  const hasUnpaidInvoice = (poInvoices?.items ?? []).some((inv) => inv.status !== 'paid')
   const canCreatePa =
-    OA_BASE_URL &&
     po &&
     ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
+    (po.is_prepaid || hasUnpaidInvoice) &&
     (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   const isServicePo = po?.type === 4
   // Physical PO: warehouse/procurement roles, PO must be issued or partially received
@@ -659,6 +679,7 @@ export default function PoDetailPage() {
                 variant="secondary"
                 size="sm"
                 onClick={() => poAction.mutate({ action: 'cancel' })}
+                disabled={poAction.isPending}
               >
                 Withdraw
               </Button>
@@ -682,13 +703,13 @@ export default function PoDetailPage() {
               </button>
             )}
             {canCreatePa && (
-              <a
-                href={`${OA_BASE_URL}/pa/new?po_id=${po.id}&po_number=${encodeURIComponent(po.number)}&source=epms`}
+              <button
+                onClick={() => navigate(`/pa/new?poId=${po.id}`)}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary-600 px-3 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                <CreditCard className="h-3.5 w-3.5" />
                 Create PA
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -1043,6 +1064,7 @@ export default function PoDetailPage() {
           poNumber={po.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
           onClose={() => setPendingAction(null)}
+          isPending={poAction.isPending}
         />
       )}
 

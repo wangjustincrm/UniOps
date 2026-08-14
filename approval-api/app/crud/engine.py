@@ -1,6 +1,6 @@
 """Approval Engine — unified workflow execution for all UniOps modules.
 
-Supports action keys: pr, po, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<code>, vms_visit
+Supports action keys: pr, po, agr, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<code>, vms_visit
 Each action key binds to a configurable workflow stored in CompanyConfig.workflow_defs.
 """
 import uuid
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud.workflow import (get_dept_director_mapping, get_dept_gm_opm_mapping,
                                 get_dept_supervisor_enabled, get_role_management,
                                 post_holder_ids)
+from app.models.agreement import PurchaseAgreement
 from app.models.budget_plan import BudgetPlan
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
@@ -81,6 +82,22 @@ _DOC_META: dict[str, dict] = {
         "vendor_attr":  "vendor_name",
         "task_approve": "approve_po",
         "task_revise":  "revise_po",
+        "valid_submit":  ("draft", "returned"),
+        "valid_approve": ("submitted", "in_review"),
+        "valid_return":  ("submitted", "in_review"),
+        "valid_cancel":  ("draft", "returned", "submitted"),
+    },
+    # ── EPMS purchase agreements ──────────────────────────────────────────────
+    # Terminal approve flips status to "active" (not "approved") — an agreement
+    # is an authorisation window, and "active" is what the invoice match
+    # candidate pool filters on. Handled by _post_approve_agr below.
+    "agr": {
+        "model":        PurchaseAgreement,
+        "number_attr":  "number",
+        "amount_attr":  "not_to_exceed",
+        "vendor_attr":  "vendor_name",
+        "task_approve": "approve_agr",
+        "task_revise":  "revise_agr",
         "valid_submit":  ("draft", "returned"),
         "valid_approve": ("submitted", "in_review"),
         "valid_return":  ("submitted", "in_review"),
@@ -215,6 +232,11 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
     "po": [
         {"id": "proc_mgr",  "role": "procurement_manager", "label": "Procurement Manager"},
         {"id": "gm_or_opm", "role": "gm_or_opm",           "label": "GM / OPM"},
+    ],
+    "agr": [
+        {"id": "dept_manager",        "role": "dept_manager",        "label": "Department Manager"},
+        {"id": "procurement_manager", "role": "procurement_manager", "label": "Procurement Manager"},
+        {"id": "finance_manager",     "role": "finance_manager",     "label": "Finance Manager"},
     ],
     "pa": [
         {"id": "dept_manager", "role": "dept_manager",   "label": "Department Manager"},
@@ -476,6 +498,16 @@ async def _routing_department_id(
     """Department that drives dept-based approval routing (dept_manager /
     gm_or_opm / director). Prefer the department explicitly selected on the
     originating PR; fall back to the routing user's own department (legacy)."""
+    # 协议自带 department_id(建档时选定),没有 PR 可追溯 —— 直接用它。
+    # 必须与可见性口径一致:epms-api 的 PA 列表按 PurchaseAgreement.department_id
+    # 收窄(crud/pa.py)。若这里改用提交人部门,受限审批人会收到任务却在列表里
+    # 找不到单据;而且提交人无部门时(常见:采购/系统账号)整条链直接 409 卡死,
+    # 尽管协议自己的部门明明有在职经理。
+    if doc_type == "agr":
+        dept = getattr(doc, "department_id", None)
+        if dept:
+            return dept
+
     pr_id = None
     if doc_type == "pr":
         pr_id = doc.id
@@ -680,15 +712,28 @@ async def _post_approve_po(db: AsyncSession, po: PurchaseOrder) -> None:
         ))
 
 
+async def _post_approve_agr(db: AsyncSession, agr: PurchaseAgreement) -> None:
+    """Final approval activates the agreement rather than marking it 'approved'.
+
+    The invoice match candidate pool filters on status == "active" (plus the
+    grace window), so leaving it at "approved" would approve an agreement that
+    no invoice could ever be matched to.
+    """
+    agr.status = "active"
+
+
 async def _post_approve_pa(db: AsyncSession, pa: PaymentApplication) -> None:
-    """PA-PO: notify AP Clerk. Invoices are marked paid only on the process action."""
+    """PA-PO: notify Payment Officer. Invoices are marked paid only on the process action."""
     db.add(Task(
         type="process_pa",
         priority="normal",
         document_type="pa",
         document_id=pa.id,
         document_number=pa.pa_number,
-        assigned_role="ap_clerk",
+        # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13)。权限侧的隔离在
+        # finance-api 的 _PAY_ROLES;这里只负责把任务派给对的人 —— 别再改回
+        # ap_clerk。
+        assigned_role="payment_officer",
         title=f"Process Payment: {pa.pa_number} — {pa.title}",
         description=f"PA {pa.pa_number} has been fully approved. Please process the payment.",
         amount=pa.payment_amount,
@@ -697,14 +742,17 @@ async def _post_approve_pa(db: AsyncSession, pa: PaymentApplication) -> None:
 
 
 async def _post_approve_pa_dir(db: AsyncSession, pa: PaymentApplication) -> None:
-    """PA-DIR: notify AP Clerk only — invoices are in expense_invoices (OA-owned), not EPMS."""
+    """PA-DIR: notify Payment Officer only — invoices are in expense_invoices (OA-owned), not EPMS."""
     db.add(Task(
         type="process_pa",
         priority="normal",
         document_type="pa_dir",
         document_id=pa.id,
         document_number=pa.pa_number,
-        assigned_role="ap_clerk",
+        # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13)。权限侧的隔离在
+        # finance-api 的 _PAY_ROLES;这里只负责把任务派给对的人 —— 别再改回
+        # ap_clerk。
+        assigned_role="payment_officer",
         title=f"Process Direct Payment: {pa.pa_number} — {pa.title}",
         description=f"Direct PA {pa.pa_number} has been fully approved. Please process the payment.",
         amount=pa.payment_amount,
@@ -779,6 +827,7 @@ async def _post_approve_vms_visit(db: AsyncSession, visit: VmsVisit) -> None:
 _POST_APPROVE: dict[str, Any] = {
     "pr":     _post_approve_pr,
     "po":     _post_approve_po,
+    "agr":    _post_approve_agr,
     "pa":     _post_approve_pa,
     "pa_dir": _post_approve_pa_dir,
     "exp":    _post_approve_exp,

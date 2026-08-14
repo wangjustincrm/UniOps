@@ -26,11 +26,28 @@ router = APIRouter(prefix="/expenses", tags=["expenses"])
 
 logger = logging.getLogger(__name__)
 
-# Roles that can trigger the pay action (kept for my_actions inbox logic).
+# Roles that may VIEW payment-stage documents / OA payment attachments (kept for
+# my_actions inbox logic, list visibility, and invoice-attachment read/delete).
 # Intentionally fixed — payment authority is a hardcoded financial-role set,
 # not part of the configurable approval workflow (unlike the step→role
 # lookups in my_actions below, which are derived from workflow_defs).
-_CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "system_admin"}
+#
+# NOTE this is a VISIBILITY set, not the payment-execution gate — it still
+# includes ap_clerk (2026-08-13: AP Clerk keeps read access to payment-stage
+# docs/attachments after payment_officer took over execution; see finance-api's
+# _FINANCE_ROLES in app/core/deps.py, which is the same split). Do not remove
+# ap_clerk from here to "match" the pay gate below — that silently blinds AP.
+_CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "payment_officer", "system_admin"}
+
+# Who may actually EXECUTE the pay action — mirrors finance-api's authoritative
+# gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED in app/crud/payment_execute.py) so this
+# service's can_pay flag never grants a button finance-api's endpoint will 403,
+# nor hides one that endpoint would allow. ap_clerk is deliberately NOT in this
+# set — payment execution moved to payment_officer; system_admin is deliberately
+# primary-role-only (this codebase's convention, see budget_scope.py's
+# FULL_ACCESS_PRIMARY vs FULL_ACCESS_ASSIGNED).
+_PAY_PRIMARY = {"payment_officer", "finance_manager", "finance_bp", "system_admin"}
+_PAY_ASSIGNED = _PAY_PRIMARY - {"system_admin"}
 
 
 def _action_key(claim_type: str) -> str:
@@ -440,12 +457,9 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
     can_pay = False
     if claim.status == "approved" and claim.claim_type != "TRA":
         codes = await _user_role_codes(db, user_id, role)
-        can_pay = (
-            is_admin
-            or role in _CAN_PAY
-            or "finance_bp" in codes
-            or "finance_manager" in codes
-        )
+        # Mirrors finance-api's authoritative gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED)
+        # — NOT _CAN_PAY, which is a visibility set and still includes ap_clerk.
+        can_pay = role in _PAY_PRIMARY or bool(codes & _PAY_ASSIGNED)
 
     return ClaimPermissions(
         is_owner=is_owner,

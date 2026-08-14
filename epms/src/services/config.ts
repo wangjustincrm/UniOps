@@ -194,6 +194,9 @@ export interface CompanyConfig {
     pr: WorkflowNodeDef[]
     po: WorkflowNodeDef[]
     pa: WorkflowNodeDef[]
+    // Agreement (agr) workflow — admin-configurable in Portal, seeded from
+    // AGR_WORKFLOW server-side. Optional: legacy CompanyConfig rows predate it.
+    agr?: WorkflowNodeDef[]
   }
 }
 

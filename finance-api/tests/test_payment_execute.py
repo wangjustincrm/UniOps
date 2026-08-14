@@ -18,7 +18,7 @@ from app.models.payment import PaymentRecord
 from app.models.posting import PostingEvent, PostingLine
 
 
-def _token(role: str = "ap_clerk", user_id: str | None = None) -> str:
+def _token(role: str = "payment_officer", user_id: str | None = None) -> str:
     payload = {
         "sub": user_id or str(uuid.uuid4()), "role": role,
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
@@ -37,10 +37,11 @@ async def client(db_session):
     app.dependency_overrides.clear()
 
 
-def _pa(status="approved", po_id=None, invoice_ids=None) -> PaymentApplication:
+def _pa(status="approved", po_id=None, invoice_ids=None, agreement_id=None) -> PaymentApplication:
     return PaymentApplication(
         pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="Test PA", pa_type="PA-DIR",
         status=status, po_id=po_id, po_number="PO-1" if po_id else None,
+        agreement_id=agreement_id,
         vendor_id=uuid.uuid4(), vendor_name="ACME Inc",
         invoice_ids=invoice_ids or [], payment_amount=Decimal("500.00"),
         currency="CAD", created_by=uuid.uuid4(),
@@ -56,7 +57,7 @@ def _claim(status="approved") -> ExpenseClaim:
     )
 
 
-async def _execute(client, doc_kind, doc_id, role="ap_clerk", user_id=None, **body):
+async def _execute(client, doc_kind, doc_id, role="payment_officer", user_id=None, **body):
     return await client.post(
         "/finance/v1/payments/execute",
         json={"doc_kind": doc_kind, "doc_id": str(doc_id), **body},
@@ -135,6 +136,45 @@ async def test_execute_pa_po_marks_invoices_paid(client, db_session):
     assert r.status_code == 200, r.text
     await db_session.refresh(inv)
     assert inv.status == "paid"
+
+
+async def test_execute_agreement_pa_marks_invoices_paid_and_posts_as_pa(client, db_session):
+    """Code review NEW-1: an agreement PA (po_id NULL, agreement_id set) was
+    previously classified doc_kind='pa_dir' (OA Direct PA) purely because it
+    has no po_id — which skips the invoice-status-flip block at
+    crud/payment_execute.py entirely (that block only runs `if doc_kind ==
+    "pa"`) and mis-tags the posting event's source_doc_type as 'pa_dir',
+    misclassifying EPMS agreement spend as OA direct spend in the GL. This
+    locks the fix: PaymentApplication.is_direct (po_id AND agreement_id both
+    NULL) is now the discriminator, not po_id alone."""
+    from datetime import date as _date
+    inv = Invoice(
+        status="matched", internal_ref=f"INV-{uuid.uuid4().hex[:8]}",
+        vendor_invoice_number="VI-AGR-1", vendor_id=uuid.uuid4(), vendor_name="Princess Auto",
+        amount=Decimal("500.00"), tax_amount=Decimal("0"), total_amount=Decimal("500.00"),
+        currency="CAD", invoice_date=_date(2026, 6, 1), due_date=_date(2026, 7, 1),
+    )
+    db_session.add(inv)
+    await db_session.flush()
+    pa = _pa(po_id=None, agreement_id=uuid.uuid4(), invoice_ids=[str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await _execute(client, "pa", pa.id)
+    assert r.status_code == 200, r.text
+
+    await db_session.refresh(inv)
+    assert inv.status == "paid"
+
+    rec = (await db_session.execute(
+        select(PaymentRecord).where(PaymentRecord.doc_id == pa.id)
+    )).scalar_one()
+    assert rec.doc_kind == "pa"
+
+    ev = (await db_session.execute(
+        select(PostingEvent).where(PostingEvent.source_doc_id == pa.id)
+    )).scalar_one()
+    assert ev.source_doc_type == "pa"
 
 
 async def test_execute_claim_flips_paid_and_emits_three_lines(client, db_session):

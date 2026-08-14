@@ -8,6 +8,7 @@ from tests.test_invoice_assign import (
     INV_URL, _client_for_user, _make_invoice, _make_po, _make_user, _make_vendor,
     _open_match_task,
 )
+from tests.test_invoice_exception_task import _exception_task
 
 
 async def _open_review_task(invoice_id):
@@ -48,7 +49,11 @@ async def test_assignee_variance_goes_to_review(admin_client):
     assert await _open_match_task(inv["id"]) is None          # match 任务完成
     review = await _open_review_task(inv["id"])
     assert review is not None
-    assert review.assigned_user_id is not None                 # 给 assigner
+    # Whole-branch review finding 7: this branch deliberately removed pinning
+    # the review task to one assigner — that's what bypassed the AP shared
+    # mailbox. Role-pool task, not a personal assignment.
+    assert review.assigned_role == "ap_clerk"
+    assert review.assigned_user_id is None
 
 
 @pytest.mark.asyncio
@@ -70,6 +75,31 @@ async def test_review_approve_overbilled_lands_exception(admin_client):
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={"action": "approve"})
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "exception"
+
+
+@pytest.mark.asyncio
+async def test_review_approve_overbilled_creates_exception_task(admin_client):
+    """Whole-branch review finding 3: the delegate → AP-confirms → exception
+    route is the one this branch exists to serve, and the existing exception
+    tests (test_invoice_exception_task.py) all match directly as admin_client
+    — they never reach match_review at all, so they couldn't have caught this.
+    A delegate's over-tolerance match (require_review gate) lands in
+    match_review first; AP approving it in the review panel must raise the
+    same AP-pool resolve_exception task a direct over-tolerance match does."""
+    inv, _ = await _assigned_variance_match(admin_client, code="VND-REV-09",
+                                            number="REV-009", amount="1200.00")
+    assert inv["status"] == "match_review"
+    assert await _exception_task(inv["id"]) is None    # not raised at match_review time
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match-review", json={"action": "approve"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "exception"
+
+    task = await _exception_task(inv["id"])
+    assert task is not None, "approving into exception via match-review must raise an AP task"
+    assert task.assigned_role == "ap_clerk"
+    assert task.assigned_user_id is None, "role pool, so it hits the AP shared mailbox"
+    assert task.document_type == "invoice"
 
 
 @pytest.mark.asyncio

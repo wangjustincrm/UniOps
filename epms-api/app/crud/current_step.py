@@ -19,6 +19,7 @@ ROLE_LABELS: dict[str, str] = {
     "finance_bp": "Finance BP",
     "finance_manager": "Finance Manager",
     "vendor_manager": "Vendor Manager",
+    "payment_officer": "Payment Officer",
 }
 
 # Chain order for grouping/sorting — independent of per-doc approval_step_idx so

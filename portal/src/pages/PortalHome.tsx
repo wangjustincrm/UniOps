@@ -109,7 +109,7 @@ function buildSession(auth: ReturnType<typeof useAuthStore.getState>): string {
 }
 
 const DOC_PATH: Record<string, string> = {
-  pr: '/pr', po: '/po', pa: '/pa', gr: '/gr', invoice: '/invoices',
+  pr: '/pr', po: '/po', pa: '/pa', gr: '/gr', invoice: '/invoices', agr: '/agreements',
   // budget_plan is handled separately — it deep-links into the Finance module
   // (see the budget_plan branch in the task mapper), not EPMS.
   // VMS doc types deep-link into the VMS frontend, not EPMS.
@@ -239,6 +239,8 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   review_match: 'Review Invoice Match',
   match_invoice: 'Match Invoice to PO',
   process_pa: 'Process Payment Application',
+  approve_agr: 'Approve Agreement',
+  revise_agr: 'Revise Agreement',
   revise_pr: 'Revise Purchase Request',
   revise_po: 'Revise Purchase Order',
   revise_pa: 'Revise Payment Application',

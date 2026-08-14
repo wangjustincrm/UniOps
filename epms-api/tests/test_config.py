@@ -313,3 +313,61 @@ async def test_remittance_config_patches_and_defaults_empty(admin_client):
     })).json()
     assert patched["remittance_config"]["enabled"] is True
     assert patched["remittance_config"]["from_email"] == "ap@crm.test"
+
+
+# ── Email template upgrade-in-place (superseded defaults) ───────────────────
+
+@pytest.mark.asyncio
+async def test_stale_default_email_template_is_upgraded(admin_client, test_engine):
+    """A stored template that still equals the *previous* default verbatim
+    gets rewritten to the current default on next access (this is how the
+    match_review_request copy rewrite reaches already-seeded DBs)."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud.config import (
+        get_or_create, _DEFAULT_EMAIL_TEMPLATES, _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS,
+    )
+
+    # Ensure the singleton row exists.
+    await admin_client.get(CONFIG_URL)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        cfg = await get_or_create(db)
+        cfg.email_templates = {
+            **cfg.email_templates,
+            "match_review_request": _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS["match_review_request"],
+        }
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(cfg, "email_templates")
+        await db.commit()
+
+    async with factory() as db:
+        cfg = await get_or_create(db)
+        assert cfg.email_templates["match_review_request"] == _DEFAULT_EMAIL_TEMPLATES["match_review_request"]
+
+
+@pytest.mark.asyncio
+async def test_customised_email_template_is_not_overwritten(admin_client, test_engine):
+    """A stored template that does NOT match the previous default verbatim
+    was edited by a customer and must survive get_or_create untouched, even
+    though its key also appears in _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS."""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.crud.config import get_or_create
+
+    await admin_client.get(CONFIG_URL)
+
+    custom_template = {
+        "subject": "Custom subject — please look at this invoice",
+        "body": "This company wrote its own wording for this email.",
+    }
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        cfg = await get_or_create(db)
+        cfg.email_templates = {**cfg.email_templates, "match_review_request": custom_template}
+        flag_modified(cfg, "email_templates")
+        await db.commit()
+
+    async with factory() as db:
+        cfg = await get_or_create(db)
+        assert cfg.email_templates["match_review_request"] == custom_template

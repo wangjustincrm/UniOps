@@ -87,3 +87,6 @@ acme-state/
 # QBO sample/extract dumps — real vendor + AP data, never commit
 finance-api/data/qbo_samples/
 finance-api/data/qbo/
+
+# superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/
