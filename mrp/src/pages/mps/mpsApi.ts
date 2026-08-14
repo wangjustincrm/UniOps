@@ -1,6 +1,6 @@
-// Typed client for mrp-api's /mps/* endpoints (app/api/v1/mps.py, Phase 1B
-// Task 4 — design §6.5/§6.6 page 3). Decimal fields (qty, safety_margin_
-// fraction, used_qty, max_output_qty) arrive as JSON strings — same
+// Typed client for mrp-api's /mps/* endpoints (app/api/v1/mps.py — design
+// §2.0/§6.5, weekly since the 2026-08-12 rework). Decimal fields (qty,
+// safety_margin_fraction, used_qty, max_output_qty) arrive as JSON strings — same
 // project-wide FastAPI/Pydantic gotcha forecastApi.ts and capacityApi.ts
 // document (feedback_uniops_decimal_as_string in project memory) — so every
 // numeric field below is typed `string` at the wire boundary and converted
@@ -39,31 +39,66 @@ export interface MpsSkippedIntent {
 // with no server-side schema guarantee beyond "these keys today".
 export interface MpsRunStats {
   line_count?: number
+  /** Lines whose production crossed into an EARLIER month than the demand's
+   *  own bucket. NOT "lines placed earlier than their target week" — that is
+   *  `MpsLine.weeks_early`, and it is true of most lines of a healthy plan
+   *  (levelling across a month is the point). */
   prebuild_count?: number
   capacity_gap_count?: number
   skipped_intent?: MpsSkippedIntent[]
+  /** design §7: products this run planned with NO shelf life on record.
+   *  The engine still schedules them, but refuses to move them a single week
+   *  early (fail safe), which from the outside looks exactly like capacity
+   *  pressure. ERP's `exp` field has never been verified to hold values for
+   *  finished goods, so the generate summary names them. `name` is nullable
+   *  on the same degrade-to-null contract as `MpsSkippedIntent.name`. */
+  no_shelf_life?: MpsMissingShelfLife[]
+}
+
+export interface MpsMissingShelfLife {
+  code: string
+  name: string | null
 }
 
 export interface MpsLine {
   id: string
   material_code: string
   demand_month: string // 'YYYY-MM'
-  plan_month: string // 'YYYY-MM'
+  /** The week production is scheduled in, as an ISO date ('2026-09-28') on
+   *  the RUN's own week grid — not the current planning parameter's. */
+  plan_week_start: string
+  /** The month `plan_week_start` belongs to under the run's week mode
+   *  ('YYYY-MM'). Denormalized server-side: an ISO week can start in one
+   *  calendar month and belong to the next, so this is NOT
+   *  `plan_week_start.slice(0, 7)`. */
+  plan_week_month: string
+  /** Rendered label for `plan_week_start` under the run's mode, e.g.
+   *  '2026-W40 · Sep 28–Oct 4' or 'Sep W4 · Sep 22–28'. */
+  week_label: string
+  /** Whole weeks earlier than this line's lead-shifted target week.
+   *  **This is the field that answers "is this line early", not
+   *  `is_prebuild`.** */
+  weeks_early: number
   qty: string // Decimal-as-string
   demand_forecast: string // Decimal-as-string
   opening_stock: string // Decimal-as-string
+  /** Production pulled into an EARLIER MONTH than the demand's own bucket
+   *  month — a genuinely cross-month pre-build, worth an amber warning.
+   *  Producing early WITHIN the demand's own month is ordinary levelling and
+   *  is deliberately NOT flagged here: flagging it made 87% of the lines of
+   *  a gap-free plan read "pre-built", which is wallpaper. To ask "did this
+   *  land before its target week", read `weeks_early > 0`. */
   is_prebuild: boolean
   prebuild_reason: string | null
   shelf_life_ok: boolean
   capacity_gap: boolean
-  /** Production Lead Time (mrp08): true when the engine could not push
-   *  production back a full `production_lead_months` before the demand
-   *  month (clamped at the run's current month) — distinct from
-   *  `is_prebuild` (which just means plan_month != demand_month). A line
-   *  can be a shortfall without being a capacity_gap: shortfall means
-   *  "produced later than the lead asked for", gap means "demand unmet
-   *  even after that". See ProductionMatrix.tsx for how the two combine
-   *  on a cell (gap takes precedence). */
+  /** True when the engine could not push production back a full
+   *  `production_lead_weeks` before the demand month (the target week was
+   *  clamped to the current week). A line can be a shortfall without being
+   *  a capacity_gap: shortfall means "produced later than the lead asked
+   *  for", gap means "demand unmet even after that". See
+   *  ProductionMatrix.tsx for how the two combine on a cell (gap takes
+   *  precedence). */
   lead_shortfall: boolean
   locked_by_planner: boolean
   manual_adjusted: boolean
@@ -78,10 +113,17 @@ export interface MpsRun {
   horizon_months: number
   status: MpsRunStatus
   safety_margin_fraction: string // Decimal-as-string
-  /** Production Lead Time (mrp08): how many months earlier than a demand
-   *  month the engine tries to schedule production for it (default 1,
-   *  set at generate() time — see `generate()`'s opts below). */
-  production_lead_months: number
+  /** How many WEEKS earlier than a demand month's last week the engine
+   *  tries to schedule production for it (0–52, default 4; set at
+   *  generate() time — see `generate()`'s opts below). Snapshotted on the
+   *  run: recalculate reuses this, it is never re-read from settings. */
+  production_lead_weeks: number
+  /** Which week-boundary convention this run was GENERATED under
+   *  ('iso_thursday' | 'iso_first_day' | 'month_fixed'). Snapshotted at
+   *  generate time: changing the factory-wide parameter afterwards does not
+   *  reshape or relabel an existing run (design §5.4). Render this run's
+   *  weeks with `week_label`, never by re-deriving from today's setting. */
+  week_calendar_mode: string
   generated_by: string | null
   stats: MpsRunStats | null
 }
@@ -96,8 +138,14 @@ export interface MpsRunDetail extends MpsRun {
   lines: MpsLine[]
 }
 
-export interface CapacityOccupancyMonth {
-  month: string // 'YYYY-MM'
+/** Per-WEEK occupancy: what the plan books in a week vs. the limits in
+ *  force for that week, week exceptions (a maintenance week is
+ *  `max_output_qty: '0'`) included. Recomputed on every GET, never stored —
+ *  so it always answers "am I over the ceiling I have today". */
+export interface CapacityOccupancyWeek {
+  week_start: string // ISO date, the week's start
+  week_month: string // 'YYYY-MM', the week's owning month
+  week_label: string
   used_sku_count: number
   used_qty: string // Decimal-as-string
   max_sku_count: number | null
@@ -105,12 +153,18 @@ export interface CapacityOccupancyMonth {
 }
 
 export interface MpsRunGet extends MpsRunDetail {
-  capacity_occupancy: CapacityOccupancyMonth[]
+  capacity_occupancy: CapacityOccupancyWeek[]
 }
 
 export interface AdjustLineBody {
   qty?: number
-  plan_month?: string // 'YYYY-MM'
+  /** Move the line to a different week: an ISO date that must be a week
+   *  START on the run's own grid (422 otherwise). The server re-derives
+   *  `plan_week_month`/`weeks_early` and re-runs the shelf-life check, and
+   *  422s a week the shelf life does not allow rather than storing it. */
+  plan_week_start?: string
+  /** 422 on a line with `capacity_gap: true` — a shortfall is not committed
+   *  production, and the engine drops locked gap lines on recalculate. */
   locked_by_planner?: boolean
 }
 
@@ -118,16 +172,19 @@ export const mpsApi = {
   /** Requires the forecast version to be status='confirmed' (409 otherwise
    *  — see mps.py's create_run()). Both `opts` fields are optional and
    *  independently omittable: `safety_margin_fraction` omitted falls back
-   *  to the backend's own default (1/3 shelf life); `production_lead_months`
-   *  omitted falls back to the backend's default of 1 (mrp08). */
+   *  to the backend's own default (1/3 shelf life); `production_lead_weeks`
+   *  omitted falls back to the backend's default of 4. There is no
+   *  `week_calendar_mode` option — the mode is a factory-wide setting
+   *  (`PUT /params/week_calendar_mode`), and the run records whichever one
+   *  was in force. */
   generate: (
     forecastVersionId: string,
-    opts?: { safety_margin_fraction?: number; production_lead_months?: number },
+    opts?: { safety_margin_fraction?: number; production_lead_weeks?: number },
   ) =>
     api.post<MpsRunDetail>('/mps/runs', {
       forecast_version_id: forecastVersionId,
       ...(opts?.safety_margin_fraction != null ? { safety_margin_fraction: opts.safety_margin_fraction } : {}),
-      ...(opts?.production_lead_months != null ? { production_lead_months: opts.production_lead_months } : {}),
+      ...(opts?.production_lead_weeks != null ? { production_lead_weeks: opts.production_lead_weeks } : {}),
     }),
 
   get: (runId: string) => api.get<MpsRunGet>(`/mps/runs/${runId}`),
@@ -136,7 +193,7 @@ export const mpsApi = {
   recalculate: (runId: string) => api.post<MpsRunDetail>(`/mps/runs/${runId}/recalculate`, {}),
 
   /** Partial update (backend does exclude_unset-equivalent field-by-field
-   *  diffing) — any changed qty/plan_month sets manual_adjusted=true
+   *  diffing) — any changed qty/plan_week_start sets manual_adjusted=true
    *  server-side. 409s once the run is released. */
   adjustLine: (runId: string, lineId: string, body: AdjustLineBody) =>
     api.patch<MpsLine>(`/mps/runs/${runId}/lines/${lineId}`, body),

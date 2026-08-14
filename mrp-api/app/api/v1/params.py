@@ -12,7 +12,7 @@ columns).
 `get_param`/`set_param` are the reusable interface other services (future
 week-bucket-aware code, e.g. the MPS engine) import to read/write a param
 without going through HTTP — same "produce a plain function, not just an
-endpoint" idiom app/services/capacity.py's resolve_effective_rules follows.
+endpoint" idiom app/services/capacity.py's resolve_limits_for_week follows.
 
 GET is gated `mrp.report.view`; PUT is gated `mrp.param.write` — same key
 app/api/v1/capacity.py's write endpoints and admin_sync.py's /wms-sync use

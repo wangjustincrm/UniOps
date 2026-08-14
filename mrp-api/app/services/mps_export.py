@@ -8,7 +8,8 @@ Unlike the forecast grid (one row per material, one column per month, one
 number per cell), the production-plan matrix needs THREE numbers per
 material/month — Demand, Available (opening stock), Planned — so each
 product is rendered as three rows instead of one. Columns are the run's
-lines' **`plan_month`** (when production is scheduled), not `demand_month`
+lines' **`plan_week_month`** (the month production is scheduled in), not
+`demand_month`
 (when the forecast wants it) — those two can differ whenever the engine
 pre-builds a line ahead of its demand month for shelf-life reasons (see
 `app/services/mps_engine.py`'s docstring), and this export is specifically
@@ -21,8 +22,14 @@ this design), exactly the same computation `GET /runs/{id}` uses. This
 module only aggregates and renders; it never re-derives net-requirement math
 itself.
 
+**Still month-columned.** The weekly rework only renamed the field this
+reads (`plan_month` -> `plan_week_month`) so the endpoint keeps working
+against weekly lines; design §5.1's week columns with a month grouping
+header are a separate change and are not here yet. Columns are therefore
+still one per month, now derived from each line's plan WEEK's owning month.
+
 Decimal stays Decimal all the way from `MrpMpsLine.qty` / the demand context
-through the per-(material, plan_month) aggregation — the ONLY place a value
+through the per-(material, plan_week_month) aggregation — the ONLY place a value
 is coerced to `float` is the openpyxl cell boundary in `_scaled`, mirroring
 `forecast_io.build_export_workbook`'s own "float only at the very edge"
 discipline (see that module's docstring, M11 finding).
@@ -44,7 +51,7 @@ _METRIC_ROWS = (("Demand", "demand"), ("Available", "available"), ("Planned", "p
 
 class _LineLike(Protocol):
     material_code: str
-    plan_month: str
+    plan_week_month: str
     qty: Decimal
     demand_forecast: Decimal
     opening_stock: Decimal
@@ -63,13 +70,14 @@ def _scaled(value: Decimal, unit: str) -> float:
 def build_mps_matrix_workbook(
     run, lines: Iterable[_LineLike], unit: str, name_by_code: dict[str, str | None],
 ) -> bytes:
-    """Group `lines` by material_code -> plan_month, aggregating
+    """Group `lines` by material_code -> plan_week_month, aggregating
     planned=Σqty, demand=Σdemand_forecast, available=Σopening_stock per cell
-    (a (material, plan_month) pair can have more than one line whenever the
+    (a (material, plan_week_month) pair can have more than one line whenever the
     engine split demand across a gap-then-placed pair or similar — summing
     is the same "one number per cell" contract the forecast grid uses).
 
-    Sheet layout: header row `Product | Metric | <sorted distinct plan_months>`,
+    Sheet layout: header row `Product | Metric | <sorted distinct plan
+    months>`,
     then per product (sorted by material_code) three rows in Demand / Available
     / Planned order. `name_by_code` resolves the Product cell to the
     material's display name, falling back to the bare code when the map has
@@ -84,9 +92,9 @@ def build_mps_matrix_workbook(
     grouped: dict[str, dict[str, dict[str, Decimal]]] = {}
     months: set[str] = set()
     for line in lines:
-        months.add(line.plan_month)
+        months.add(line.plan_week_month)
         cell = grouped.setdefault(line.material_code, {}).setdefault(
-            line.plan_month, {"demand": Decimal("0"), "available": Decimal("0"), "planned": Decimal("0")},
+            line.plan_week_month, {"demand": Decimal("0"), "available": Decimal("0"), "planned": Decimal("0")},
         )
         cell["demand"] += line.demand_forecast
         cell["available"] += line.opening_stock

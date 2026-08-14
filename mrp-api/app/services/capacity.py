@@ -1,27 +1,24 @@
-"""Capacity rule resolution (Phase 1B Task 1; weekly resolver added by the
-weekly-MPS Task 3).
+"""Capacity rule resolution (Phase 1B Task 1; weekly since the 2026-08-12
+weekly-planning rework).
 
-`resolve_effective_rules` is what the (still month-based, Task-4-era) MPS
-algorithm calls to find out how much factory capacity applies to a given
-planning month — active rules only, filtered to those whose
-[effective_from, effective_to] window covers the first day of that month.
-`effective_to=None` means open-ended.
+`resolve_limits_for_week` is the ONE resolver: active `MrpCapacityRule`
+rows whose [effective_from, effective_to] window covers a given week-start
+date (`effective_to=None` means open-ended), plus a same-week active
+`MrpCapacityException` override per `constraint_type`.
 
-**Deliberately left untouched by Task 3**: `app/api/v1/mps.py` still calls
-`resolve_effective_rules` at its own module's lines 106/333/343. A later
-task rewires `mps.py` onto `resolve_limits_for_week` below and deletes this
-function in the same change; retiring it now would leave the engine without
-limits mid-plan, and rewiring `mps.py` now would collide with that task's
-own changes to the same lines. `resolve_limits_for_week` is added *beside*
-it, not in place of it.
+**A month-based `resolve_effective_rules` used to live beside it** — it
+took a `'YYYY-MM'` and returned the raw rule rows, and `app/api/v1/mps.py`
+fed them to the month-based engine as a single whole-horizon ceiling. Both
+were deleted together when `mps.py` moved onto weeks. They had to go in the
+same change: a monthly ceiling left reachable behind a "weekly" API keeps
+feeding the engine a number roughly 4x the real weekly capacity while
+looking replaced, which is precisely what migration `mrp10b` deactivates
+the standing rules to prevent.
 
-`resolve_limits_for_week` is the week-based replacement: same idea (active
-rules whose window covers a given date), plus a same-week active
-`MrpCapacityException` override per `constraint_type`. Both resolvers are
-scoped to `scope_type == 'factory'` only, mirroring `mps.py`'s own
-`_resolve_capacity_limits` comment — Phase 1B/1C only ever write
-factory-wide rows; product_family/line scoping stays a schema-level
-allowance for later, not something either resolver consumes yet.
+Scoped to `scope_type == 'factory'` AND `scope_ref IS NULL` only — Phase
+1B/1C only ever write factory-wide rows; product_family/line scoping stays
+a schema-level allowance for later, not something this resolver consumes
+yet.
 """
 from datetime import date
 from decimal import Decimal
@@ -33,19 +30,6 @@ from app.models.capacity import MrpCapacityException, MrpCapacityRule
 from app.services.mps_engine import CapacityLimits
 
 _OUTPUT_QTY_AND_SKU_TYPES = ("max_sku_count", "max_output_qty", "min_output_qty")
-
-
-def _month_first_day(month: str) -> date:
-    y, m = month.split("-")
-    return date(int(y), int(m), 1)
-
-
-async def resolve_effective_rules(db: AsyncSession, on_month: str) -> list[MrpCapacityRule]:
-    """Active rules whose [effective_from, effective_to] window covers the
-    first day of `on_month` ('YYYY-MM'). effective_to NULL = open-ended."""
-    d = _month_first_day(on_month)
-    rows = (await db.execute(select(MrpCapacityRule).where(MrpCapacityRule.is_active.is_(True)))).scalars().all()
-    return [r for r in rows if r.effective_from <= d and (r.effective_to is None or r.effective_to >= d)]
 
 
 async def _factory_rules_active_on(db: AsyncSession, on_date: date) -> list[MrpCapacityRule]:

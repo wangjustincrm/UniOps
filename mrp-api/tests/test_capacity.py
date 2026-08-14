@@ -1,9 +1,13 @@
 """Capacity rules master data (Phase 1B Task 1).
 
-`resolve_effective_rules` filters `mrp_capacity_rules` down to the active
-rows whose [effective_from, effective_to] window covers the first day of a
-given 'YYYY-MM' month — this is what the (later) MPS algorithm reads to know
-how much factory capacity is available for a given planning month.
+`resolve_limits_for_week` (see the weekly section further down) is what the
+MPS engine reads to know how much factory capacity a given WEEK has. Its
+month-based predecessor `resolve_effective_rules` -- and the one test that
+covered it, `test_resolve_effective_rules_filters_by_active_and_window` --
+were deleted together with the month-based engine when `app/api/v1/mps.py`
+moved onto weeks. Its two behaviours (active-only, window covers the date)
+are exercised by the weekly resolver's own tests, which go through the same
+`_factory_rules_active_on` filter.
 
 The CRUD API mirrors app/api/v1/consignment.py's shape: `mrp.report.view`
 gates GET, `mrp.param.write` gates POST/PATCH/DELETE (same permission keys
@@ -11,31 +15,8 @@ gates GET, `mrp.param.write` gates POST/PATCH/DELETE (same permission keys
 already exercises for mrp.param.write on a different endpoint).
 """
 from datetime import date
-from decimal import Decimal
 
 import pytest
-
-from app.models.capacity import MrpCapacityRule
-from app.services.capacity import resolve_effective_rules
-
-
-@pytest.mark.anyio
-async def test_resolve_effective_rules_filters_by_active_and_window(db_session):
-    db_session.add_all([
-        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_sku_count",
-                        limit_value=12, uom=None, effective_from=date(2026,1,1),
-                        effective_to=None, is_active=True),
-        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_output_qty",
-                        limit_value=160000, uom="KG", effective_from=date(2026,1,1),
-                        effective_to=date(2026,6,30), is_active=True),  # expired for 2026-09
-        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_sku_count",
-                        limit_value=99, uom=None, effective_from=date(2026,1,1),
-                        effective_to=None, is_active=False),  # inactive
-    ])
-    await db_session.commit()
-    rules = await resolve_effective_rules(db_session, "2026-09")
-    kinds = {(r.constraint_type, r.limit_value) for r in rules}
-    assert kinds == {("max_sku_count", 12)}
 
 
 @pytest.mark.anyio

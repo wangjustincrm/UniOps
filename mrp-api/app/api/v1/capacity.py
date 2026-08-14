@@ -180,8 +180,8 @@ _KNOWN_CONSTRAINT_TYPES = ("max_output_qty", "max_sku_count", "min_output_qty")
 
 def _validate_constraint_type(constraint_type: str) -> None:
     """422 (never a silent no-op) on any `constraint_type` outside the
-    three values `resolve_effective_rules`/`resolve_limits_for_week`
-    (app/services/capacity.py) actually match on. Before this check, a
+    three values `resolve_limits_for_week` (app/services/capacity.py)
+    actually matches on. Before this check, a
     typo'd value (e.g. `'max_output_qtyy'`) was accepted and stored by both
     `/rules` and `/exceptions`, and then silently matched nothing in either
     resolver -- a rule or exception that looks saved in the UI/API response
