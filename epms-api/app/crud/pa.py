@@ -403,24 +403,6 @@ async def _create_task(db: AsyncSession, pa: PaymentApplication, step: int, work
     ))
 
 
-async def _create_process_pa_task(db: AsyncSession, pa: PaymentApplication) -> None:
-    db.add(Task(
-        type="process_pa",
-        priority="normal",
-        document_type="pa",
-        document_id=pa.id,
-        document_number=pa.pa_number,
-        # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13):AP 的 Task Inbox
-        # 此前同时堆着 AP Review 与 Payment 两类任务。权限侧的隔离在
-        # finance-api 的 _PAY_ROLES,这里只负责把任务派给对的人。
-        assigned_role="payment_officer",
-        title=f"Process Payment: {pa.pa_number} — {pa.title}",
-        description=f"PA {pa.pa_number} has been fully approved. Please process the payment and mark as processed.",
-        amount=pa.payment_amount,
-        vendor=pa.vendor_name,
-    ))
-
-
 async def _create_revise_task(db: AsyncSession, pa: PaymentApplication) -> None:
     db.add(Task(
         type="revise_pa",

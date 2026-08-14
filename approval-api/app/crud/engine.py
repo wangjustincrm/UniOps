@@ -723,14 +723,17 @@ async def _post_approve_agr(db: AsyncSession, agr: PurchaseAgreement) -> None:
 
 
 async def _post_approve_pa(db: AsyncSession, pa: PaymentApplication) -> None:
-    """PA-PO: notify AP Clerk. Invoices are marked paid only on the process action."""
+    """PA-PO: notify Payment Officer. Invoices are marked paid only on the process action."""
     db.add(Task(
         type="process_pa",
         priority="normal",
         document_type="pa",
         document_id=pa.id,
         document_number=pa.pa_number,
-        assigned_role="ap_clerk",
+        # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13)。权限侧的隔离在
+        # finance-api 的 _PAY_ROLES;这里只负责把任务派给对的人 —— 别再改回
+        # ap_clerk。
+        assigned_role="payment_officer",
         title=f"Process Payment: {pa.pa_number} — {pa.title}",
         description=f"PA {pa.pa_number} has been fully approved. Please process the payment.",
         amount=pa.payment_amount,
@@ -739,14 +742,17 @@ async def _post_approve_pa(db: AsyncSession, pa: PaymentApplication) -> None:
 
 
 async def _post_approve_pa_dir(db: AsyncSession, pa: PaymentApplication) -> None:
-    """PA-DIR: notify AP Clerk only — invoices are in expense_invoices (OA-owned), not EPMS."""
+    """PA-DIR: notify Payment Officer only — invoices are in expense_invoices (OA-owned), not EPMS."""
     db.add(Task(
         type="process_pa",
         priority="normal",
         document_type="pa_dir",
         document_id=pa.id,
         document_number=pa.pa_number,
-        assigned_role="ap_clerk",
+        # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13)。权限侧的隔离在
+        # finance-api 的 _PAY_ROLES;这里只负责把任务派给对的人 —— 别再改回
+        # ap_clerk。
+        assigned_role="payment_officer",
         title=f"Process Direct Payment: {pa.pa_number} — {pa.title}",
         description=f"Direct PA {pa.pa_number} has been fully approved. Please process the payment.",
         amount=pa.payment_amount,
