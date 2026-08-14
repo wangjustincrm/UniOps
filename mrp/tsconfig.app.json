@@ -33,5 +33,9 @@
     "ignoreDeprecations": "6.0"
   },
   "include": ["src"],
-  "exclude": ["src/components/matrixGrid/verify.ts", "src/pages/mps/weekColumns.verify.ts"]
+  "exclude": [
+    "src/components/matrixGrid/verify.ts",
+    "src/pages/mps/weekColumns.verify.ts",
+    "src/pages/capacity/closedWeek.verify.ts"
+  ]
 }

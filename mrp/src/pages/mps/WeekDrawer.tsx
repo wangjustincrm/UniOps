@@ -62,6 +62,30 @@
 //    PATCH, rather than trusting whatever `existingException` prop was
 //    current when the drawer opened — closes the race where the query
 //    resolves or changes between open and Save.
+//
+// ## Final-review fix: a week can be closed by the OTHER constraint
+//
+// The engine closes a week on EITHER `max_output_qty <= 0` OR
+// `max_sku_count < 1` (`mps_engine.py::_week_can_host`). This drawer owns
+// exactly one row — the factory-wide `max_output_qty` one — so a week
+// closed by a `max_sku_count = 0` exception is a shutdown it can neither
+// represent nor undo. Before this fix it read that week as unmarked and
+// offered to "mark it as a maintenance week", which wrote a SECOND
+// exception row for the same week (different `constraint_type`, so the
+// partial unique index permits it): two rows saying "closed" in two
+// vocabularies, and unchecking the box afterwards would deactivate only
+// one of them while the column stayed closed and (now) tinted.
+//
+// Decision: when a `max_sku_count` exception closes this week, the drawer
+// goes READ-ONLY and says so, pointing at Capacity Rules -> Week
+// Exceptions — the same shape `nonZeroActiveOverride` already uses for the
+// other "state this drawer must not touch" case. Not "write it anyway"
+// (duplicate rows, and unchecking would lie about reopening the week), and
+// not "let it silently un-tick" (the week IS closed; showing it as open is
+// the original defect). The planner keeps a route to the row that actually
+// governs the week, at its own single source. The checkbox still shows the
+// TRUE state of the max_output_qty row so nothing is misrepresented while
+// it is disabled.
 import { useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, Info, Loader2, Wrench, X as XIcon } from 'lucide-react'
@@ -70,6 +94,7 @@ import { ApiError } from '@/lib/api'
 import type { ToastAction } from '@/hooks/useToasts'
 import type { WeekGridEntry } from './mpsApi'
 import { capacityApi, findExistingException, type CapacityException } from '../capacity/capacityApi'
+import { findSkuClosure } from '../capacity/closedWeek'
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -87,11 +112,21 @@ function splitWeekLabel(label: string | undefined, fallback: string): { short: s
 
 /** True exactly for the row this drawer is allowed to own: an ACTIVE
  *  `max_output_qty` exception whose value is exactly 0 — a shutdown, not a
- *  de-rate. Matches ProductionMatrix's/ProductionPlanPage's own
- *  `maintenanceWeekStarts` definition field-for-field (round-1 finding #1's
- *  fix) so the tint and this drawer's checkbox can never disagree. */
+ *  de-rate.
+ *
+ *  This is NOT the whole "is this week closed" question — `max_sku_count <
+ *  1` closes a week too, and the tint (`capacityApi.closesWeek`) covers
+ *  both. This predicate answers the narrower one this checkbox actually
+ *  controls: "is THIS drawer's own row currently marking the week as
+ *  maintenance". The `skuClosure` prop carries the other half. */
 function isMaintenanceRow(e: CapacityException | null): boolean {
-  return !!e && e.is_active && Number(e.limit_value) === 0
+  // `<= 0`, not `=== 0`, so this partitions the same way the tint does
+  // (`capacityApi.closesWeek`) and the engine does (`_week_can_host`):
+  // an active row is EITHER a shutdown (<= 0) or a de-rate (> 0), never
+  // neither. With `=== 0` a stored negative limit read as a "non-zero
+  // override" here while the column tinted closed -- the two halves of
+  // this same fix disagreeing with each other.
+  return !!e && e.is_active && Number(e.limit_value) <= 0
 }
 
 function formatQty(n: number): string {
@@ -99,7 +134,7 @@ function formatQty(n: number): string {
 }
 
 export function WeekDrawer({
-  week, existingException, existingExceptionLoading, existingExceptionError,
+  week, existingException, skuClosure, existingExceptionLoading, existingExceptionError,
   canWrite, onClose, onSaved, onRecalculate, notifySuccess, notifyError,
 }: {
   week: WeekGridEntry
@@ -111,6 +146,13 @@ export function WeekDrawer({
    *  for the INITIAL render — `handleSubmit` re-fetches fresh before
    *  deciding create vs. update regardless, see round-1 fix #2. */
   existingException: CapacityException | null
+  /** The ACTIVE `max_sku_count` exception closing this week, if any
+   *  (`capacityApi.findSkuClosure`) — `null` in the ordinary case. The
+   *  engine closes a week on `max_sku_count < 1` just as firmly as on
+   *  `max_output_qty <= 0`, but that is a row this drawer does not own, so
+   *  it goes read-only rather than writing a second shutdown row beside it.
+   *  See this file's header comment for the decision and its alternatives. */
+  skuClosure: CapacityException | null
   /** True while the page's exceptions query hasn't resolved yet — the
    *  checkbox/reason/Save stay withheld rather than rendering against data
    *  that might be stale or simply not there yet (round-1 fix #2). */
@@ -147,7 +189,14 @@ export function WeekDrawer({
   // "maintenance" (it isn't 0) nor let unchecking a box silently deactivate
   // it. Detected from whatever `existingException` the page currently has;
   // re-checked against the fresh read in `handleSubmit` too.
-  const nonZeroActiveOverride = !!existingException?.is_active && Number(existingException.limit_value) !== 0
+  const nonZeroActiveOverride = !!existingException?.is_active && Number(existingException.limit_value) > 0
+
+  // This week is already closed by the constraint this drawer does not
+  // manage. Same treatment as `nonZeroActiveOverride`: explain, withhold
+  // the write, point at the row that actually governs the week.
+  const closedBySkuLimit = !!skuClosure
+  /** Every reason this drawer must not write to this week's own row. */
+  const readOnlySlot = nonZeroActiveOverride || closedBySkuLimit
 
   const initialMaintenance = isMaintenanceRow(existingException)
   const [maintenance, setMaintenance] = useState(initialMaintenance)
@@ -158,9 +207,9 @@ export function WeekDrawer({
 
   const dataUnready = existingExceptionLoading || !!existingExceptionError
   // The whole form (not just Save) is disabled while data is unready or the
-  // slot is a non-zero override this drawer refuses to touch — both are
-  // "don't let the planner interact with state we can't vouch for" cases.
-  const formDisabled = submitting || dataUnready || nonZeroActiveOverride || !canWrite
+  // slot is one this drawer refuses to touch — all of them are "don't let
+  // the planner interact with state we can't vouch for" cases.
+  const formDisabled = submitting || dataUnready || readOnlySlot || !canWrite
 
   const { short: weekShort, range: weekRange } = splitWeekLabel(week.label, week.week_start)
 
@@ -171,7 +220,7 @@ export function WeekDrawer({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!canWrite || nonZeroActiveOverride) return
+    if (!canWrite || readOnlySlot) return
     const err = validateReason(maintenance, reason)
     setReasonError(err)
     if (err) return
@@ -190,12 +239,22 @@ export function WeekDrawer({
       const current = findExistingException(fresh, {
         week_start: week.week_start, scope_type: 'factory', scope_ref: null, constraint_type: 'max_output_qty',
       })
-      if (current?.is_active && Number(current.limit_value) !== 0) {
+      if (current?.is_active && Number(current.limit_value) > 0) {
         // Someone else turned this into a non-zero override between open
         // and Save — refuse rather than clobber it, same as the
         // render-time guard above.
         throw new ApiError(
           'This week now has a non-zero Max output / week override — reopen this drawer to see the current state.',
+          409, null,
+        )
+      }
+      // Same belt-and-suspenders for the other closure: a Max SKUs / week
+      // exception may have landed on this week between open and Save, and
+      // writing a max_output_qty row on top of it is exactly the duplicate
+      // this drawer exists not to create.
+      if (findSkuClosure(fresh, week.week_start)) {
+        throw new ApiError(
+          'This week is now closed by a Max SKUs / week exception — reopen this drawer to see the current state.',
           409, null,
         )
       }
@@ -289,6 +348,19 @@ export function WeekDrawer({
               </p>
             )}
 
+            {closedBySkuLimit && skuClosure && (
+              <p role="status" className="flex items-start gap-1.5 rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-xs text-primary-800">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  This week is already closed by a Max SKUs / week exception of
+                  {' '}{formatQty(Number(skuClosure.limit_value))} — the engine schedules no production here, which is
+                  why the column is greyed out. This drawer only manages the Max output / week (0) form of a shutdown,
+                  so marking or unmarking it here would add a second exception saying the same thing without being able
+                  to reopen the week. Edit or remove that exception in Capacity Rules → Week Exceptions instead.
+                </span>
+              </p>
+            )}
+
             <label className="flex min-h-[44px] cursor-pointer items-start gap-2 text-sm text-neutral-700">
               <input
                 type="checkbox"
@@ -315,7 +387,7 @@ export function WeekDrawer({
               htmlFor="week-drawer-reason"
               error={reasonError}
               hint={
-                nonZeroActiveOverride
+                readOnlySlot
                   ? undefined
                   : !canWrite
                     ? 'Read-only — you do not have permission to change this.'
@@ -346,9 +418,9 @@ export function WeekDrawer({
 
           <div className="flex justify-end gap-2 border-t border-neutral-200 px-5 py-4">
             <Button type="button" variant="secondary" size="sm" className="min-h-[44px]" onClick={onClose} disabled={submitting}>
-              {canWrite && !nonZeroActiveOverride ? 'Cancel' : 'Close'}
+              {canWrite && !readOnlySlot ? 'Cancel' : 'Close'}
             </Button>
-            {canWrite && !nonZeroActiveOverride && (
+            {canWrite && !readOnlySlot && (
               <Button type="submit" size="sm" className="min-h-[44px]" disabled={formDisabled}>
                 {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Save Changes

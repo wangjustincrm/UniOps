@@ -175,9 +175,15 @@ interface ProductionMatrixProps {
    *  week or a zero-net-demand month has zero lines by construction and
    *  would otherwise vanish from the axis. */
   weekGrid: WeekGridEntry[]
-  /** week_start values of every active `max_output_qty === 0` capacity
-   *  exception — i.e. every "maintenance week" — for the grey tint + wrench
-   *  icon on that week's header and Planned cell.
+  /** week_start values of every week a capacity exception CLOSES — the
+   *  grey tint + wrench icon on that week's header and Planned cell.
+   *
+   *  "Closed" is `capacityApi.closesWeek`, restated from the engine's own
+   *  `mps_engine.py::_week_can_host`: `max_output_qty <= 0` OR
+   *  `max_sku_count < 1`, factory scope, active. It used to be
+   *  `max_output_qty === 0` alone, which left a week closed by a
+   *  `Max SKUs / week` exception fully honoured by the engine and never
+   *  tinted here.
    *
    *  **Round-1 review fix: this must NOT be derived from
    *  `capacity_occupancy`.** `_compute_capacity_occupancy`
@@ -640,8 +646,9 @@ function PlannedCell({
   readOnly,
 }: {
   cell: MatrixCell
-  /** True for a week column whose currently effective max_output_qty is 0
-   *  (see ProductionMatrix's `maintenanceWeeks`) — tints the cell grey.
+  /** True for a week column an active capacity exception CLOSES —
+   *  `max_output_qty <= 0` or `max_sku_count < 1`, see ProductionMatrix's
+   *  `maintenanceWeeks` — tints the cell grey.
    *  Never true for a collapsed month's summary column (the caller only
    *  sets this for `col.kind === 'week'`). */
   isMaintenance: boolean

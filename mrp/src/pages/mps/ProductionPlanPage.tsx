@@ -22,6 +22,7 @@ import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { forecastApi, saveBlob } from '@/pages/forecast/forecastApi'
 import { bomStatusApi } from '@/pages/forecast/bomStatusApi'
 import { capacityApi, findExistingException } from '@/pages/capacity/capacityApi'
+import { closesWeek, findSkuClosure } from '@/pages/capacity/closedWeek'
 import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
 import { ProductionMatrix } from './ProductionMatrix'
 import { AdjustDrawer } from './AdjustDrawer'
@@ -264,21 +265,27 @@ export default function ProductionPlanPage() {
     return queryClient.invalidateQueries({ queryKey: ['capacity-exceptions'] })
   }
 
-  // Maintenance = an ACTIVE max_output_qty exception whose value is exactly
-  // 0, factory-wide — matches WeekDrawer's own (now-fixed, round 1)
-  // `initialMaintenance` gate exactly, so the tint and the drawer's
-  // checkbox can never disagree about which weeks count. A non-zero active
-  // override (a legitimate de-rate, not a shutdown) is deliberately NOT
-  // included — see WeekDrawer.tsx's header comment on round 1 finding #2.
+  // A CLOSED week — one the engine will not place anything into — is
+  // tinted. The predicate is `capacityApi.closesWeek`, restated from
+  // `mps_engine.py::_week_can_host`, so the tint means exactly what the
+  // engine does: `max_output_qty <= 0` OR `max_sku_count < 1`, factory
+  // scope, active.
+  //
+  // This used to test only `max_output_qty === 0`. `Max SKUs / week` is
+  // offered in the Week Exceptions dropdown and its value field accepts 0,
+  // so a week closed that way was fully honoured by the engine, never
+  // tinted here, and then offered to the planner by WeekDrawer as an
+  // unmarked week it could "mark as maintenance" — a second exception row
+  // for the same week (different constraint_type, so the partial unique
+  // index allows it) saying the same thing twice.
+  //
+  // A non-zero active max_output_qty override (a legitimate de-rate, not a
+  // shutdown) is still deliberately NOT tinted — the week can host
+  // production, just less of it. See WeekDrawer.tsx's round-1 finding #2.
   const maintenanceWeekStarts = useMemo(() => {
     const s = new Set<string>()
     for (const e of exceptionsQuery.data ?? []) {
-      if (
-        e.is_active && e.scope_type === 'factory' && e.scope_ref === null &&
-        e.constraint_type === 'max_output_qty' && Number(e.limit_value) === 0
-      ) {
-        s.add(e.week_start)
-      }
+      if (closesWeek(e)) s.add(e.week_start)
     }
     return s
   }, [exceptionsQuery.data])
@@ -676,6 +683,13 @@ export default function ProductionPlanPage() {
         const weekException = findExistingException(exceptionsQuery.data ?? [], {
           week_start: weekDrawerTarget.week_start, scope_type: 'factory', scope_ref: null, constraint_type: 'max_output_qty',
         })
+        // A `max_sku_count` exception that closes this week is a shutdown
+        // WeekDrawer does not own (it manages the max_output_qty row only)
+        // and cannot undo — it refuses to write rather than adding a second
+        // row that says the same thing. Part of the key below for the same
+        // reason `weekException` is: this arriving late must remount the
+        // drawer, not merely re-render it past its mount-time useState.
+        const weekSkuClosure = findSkuClosure(exceptionsQuery.data ?? [], weekDrawerTarget.week_start)
         return (
         <WeekDrawer
           // Round 2 fix: `maintenance`/`reason` are useState, initialized
@@ -696,9 +710,10 @@ export default function ProductionPlanPage() {
           // but would need its own guard against clobbering an
           // in-progress edit; the key is simpler and has no such edge case
           // (a fresh mount naturally starts from the just-arrived props).
-          key={`${weekDrawerTarget.week_start}::${exceptionsQuery.isLoading ? 'loading' : weekException?.id ?? 'none'}`}
+          key={`${weekDrawerTarget.week_start}::${exceptionsQuery.isLoading ? 'loading' : `${weekException?.id ?? 'none'}::${weekSkuClosure?.id ?? 'none'}`}`}
           week={weekDrawerTarget}
           existingException={weekException}
+          skuClosure={weekSkuClosure}
           existingExceptionLoading={exceptionsQuery.isLoading}
           existingExceptionError={exceptionsQuery.isError ? errMsg(exceptionsQuery.error, 'Could not load this week\'s current exception state.') : null}
           canWrite={canWriteParams}

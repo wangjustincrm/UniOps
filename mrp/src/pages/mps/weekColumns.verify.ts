@@ -15,7 +15,10 @@
  *
  * Run with:  npx tsx src/pages/mps/weekColumns.verify.ts   (from mrp/)
  */
-import { buildWeekColumns, buildWeekRefs, defaultExpandedMonths, type WeekGridEntryLike } from './weekColumns'
+import {
+  buildWeekColumns, buildWeekRefs, currentGridWeekStart, defaultExpandedMonths,
+  type WeekGridEntryLike,
+} from './weekColumns'
 
 let failures = 0
 function check(name: string, fn: () => boolean) {
@@ -188,6 +191,59 @@ check('that same empty month, when EXPANDED, shows its real week columns (not on
 })
 
 check('empty week_grid -> empty WeekRef list, no throw', () => buildWeekRefs([]).length === 0)
+
+// ── currentGridWeekStart ────────────────────────────────────────────────────
+//
+// The AdjustDrawer's week picker hides weeks that have passed, because
+// mrp-api's update_line 422s a move into one (a past week consumes demand
+// without occupying capacity). This is the predicate behind that filter, so
+// it lives here rather than in an inline useMemo the verify script cannot
+// reach — the same finding that moved the empty-month rule out of
+// ProductionMatrix.tsx.
+console.log('')
+console.log('currentGridWeekStart')
+
+// A four-week August plus two September weeks, the shape week_grid arrives
+// in (ascending, contiguous, one entry per real week).
+const GRID_WEEKS = [
+  { week_start: '2026-08-03' },
+  { week_start: '2026-08-10' },
+  { week_start: '2026-08-17' },
+  { week_start: '2026-08-24' },
+  { week_start: '2026-08-31' },
+]
+
+check('a day inside a week resolves to THAT week, not the next one', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-08-13') === '2026-08-10')
+
+check('the first day of a week resolves to that same week (boundary is inclusive)', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-08-17') === '2026-08-17')
+
+check('the last day of a week still resolves to that week, not the next', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-08-16') === '2026-08-10')
+
+check('today before the whole grid -> null, so nothing is treated as past', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-07-20') === null)
+
+check('today after the whole grid -> the last week (an elapsed run has no future weeks)', () =>
+  currentGridWeekStart(GRID_WEEKS, '2027-01-01') === '2026-08-31')
+
+check('empty grid -> null, no throw', () => currentGridWeekStart([], '2026-08-13') === null)
+
+// The property the picker actually depends on: everything strictly before
+// the answer is past, everything from it onward is still plannable. A
+// "return the first entry" or "return the last entry" implementation
+// satisfies some of the point checks above but not this partition.
+check('partitions the grid: exactly the weeks before the answer are past', () => {
+  const today = '2026-08-19'
+  const current = currentGridWeekStart(GRID_WEEKS, today)
+  const past = GRID_WEEKS.filter((w) => current !== null && w.week_start < current)
+  const open = GRID_WEEKS.filter((w) => current === null || w.week_start >= current)
+  return current === '2026-08-17' &&
+    past.length === 2 && open.length === 3 &&
+    past.every((w) => w.week_start < today) &&
+    open.every((w, i) => i === 0 || w.week_start > today)
+})
 
 // ── defaultExpandedMonths ───────────────────────────────────────────────────
 console.log('')

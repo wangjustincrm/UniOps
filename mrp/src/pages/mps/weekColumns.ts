@@ -138,6 +138,40 @@ export function buildWeekColumns(weeks: WeekRef[], expandedMonths: ReadonlySet<s
 }
 
 /**
+ * The `week_start` of the grid week that CONTAINS `todayIso`, or `null` when
+ * today falls before the whole grid (a run whose horizon has not started).
+ *
+ * Everything at or after this week is still plannable; anything before it
+ * has passed. Callers use it to keep past weeks out of the AdjustDrawer's
+ * week picker, because mrp-api's `update_line` rejects a move into one with
+ * a 422: the engine's canvas is `[w for w in weeks_of_month(...) if w >=
+ * current]`, so a line parked in a past week consumes its demand
+ * (`held_by_demand`) while occupying no week's capacity ledger.
+ *
+ * Derived by SCANNING the grid rather than by doing week arithmetic here:
+ * `week_grid` is already a contiguous partition of the run's months under
+ * the run's own frozen calendar mode, so "the week containing today" is
+ * simply the last entry starting on or before today. Computing it any other
+ * way would put a second implementation of the three week-boundary
+ * conventions on the client, which is exactly what the round-1 ruling
+ * ("week grid comes from the backend") rejected.
+ *
+ * `weeks` must be sorted ascending by `week_start` (ISO dates compare
+ * lexicographically, so a plain string sort is enough). `todayIso` should be
+ * the UTC date, matching mrp-api's `datetime.now(timezone.utc).date()`.
+ */
+export function currentGridWeekStart(
+  weeks: readonly { week_start: string }[], todayIso: string,
+): string | null {
+  let found: string | null = null
+  for (const w of weeks) {
+    if (w.week_start > todayIso) break
+    found = w.week_start
+  }
+  return found
+}
+
+/**
  * Default expand set per design §5.1: "current month + next 2", so the
  * opening view is ~13 columns rather than a full ~78-week horizon.
  * `months` must already be sorted ascending. If today's calendar month is

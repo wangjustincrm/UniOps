@@ -4,10 +4,23 @@
 // feedback_uniops_overlay_dropdown_portal in project memory).
 //
 // Weekly rework (Task 10): "change plan month" became "change plan WEEK".
-// The week picker offers exactly the run's own `week_grid` (never computed
+// The week picker offers the run's own `week_grid` (never computed
 // client-side — week boundary/ownership math is `week_calendar.py`'s alone,
 // see mpsApi.ts's WeekGridEntry doc), and crossing into a different month is
-// allowed (the picker is not filtered to the line's current month). The
+// allowed (the picker is not filtered to the line's current month).
+//
+// It IS filtered to weeks that have not passed. mrp-api's `update_line`
+// 422s a move into a past week, because the engine's canvas is
+// `[w for w in weeks_of_month(...) if w >= current]`: a line parked before
+// the current week is seeded into `held_by_demand` (consuming its demand)
+// but into no week's capacity ledger, so the plan reads as satisfied by
+// production nothing has room booked for. Offering a week the server always
+// refuses is the "don't offer an action that only 422s" rule this file
+// already follows for merging a capacity_gap line. The line's OWN week is
+// always kept in the list even if it has passed, so the select always has
+// an option matching its value and "leave it where it is" stays possible.
+// Which week is current comes from `weekColumns.ts`'s
+// `currentGridWeekStart` — a scan of the grid, not week arithmetic. The
 // server re-derives `plan_week_month`/`weeks_early` and re-runs the engine's
 // own shelf-life rule on every move — a move it refuses comes back as a 422
 // (mps.py's `update_line` docstring: "REJECTED, not stored with
@@ -42,6 +55,7 @@ import { AlertTriangle, CheckCircle2, Loader2, X as XIcon } from 'lucide-react'
 import { Button, Input, FormField } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
+import { currentGridWeekStart } from './weekColumns'
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -110,9 +124,34 @@ export function AdjustDrawer({
     () => [...weekGrid].sort((a, b) => a.week_start.localeCompare(b.week_start)),
     [weekGrid],
   )
+  // UTC, to match mrp-api's `datetime.now(timezone.utc).date()` — the two
+  // must agree on which week is current or the picker and the 422 disagree
+  // by a day at the boundary.
+  const currentWeekStart = useMemo(
+    () => currentGridWeekStart(sortedWeeks, new Date().toISOString().slice(0, 10)),
+    [sortedWeeks],
+  )
+  const hasPassed = (w: WeekGridEntry) =>
+    currentWeekStart !== null && w.week_start < currentWeekStart
+  // Past weeks are dropped from the picker (the server 422s them) — except
+  // the line's own week, which must stay selectable so the select's value
+  // always matches an option and a qty-only save is still possible on a
+  // line an old run left in a week that has since passed.
+  const selectableWeeks = useMemo(
+    () => sortedWeeks.filter((w) => !hasPassed(w) || w.week_start === line.plan_week_start),
+    [sortedWeeks, currentWeekStart, line.plan_week_start],
+  )
+  const hiddenPastWeeks = sortedWeeks.length - selectableWeeks.length
+
+  // Merge's neighbours come from the FULL grid, so "adjacent" always means
+  // calendar-adjacent — a passed neighbour is then withheld rather than
+  // silently replaced by the nearest future week, which would merge into a
+  // week that is not adjacent to anything.
   const weekIndex = sortedWeeks.findIndex((w) => w.week_start === line.plan_week_start)
-  const prevWeek = weekIndex > 0 ? sortedWeeks[weekIndex - 1] : null
-  const nextWeek = weekIndex >= 0 && weekIndex < sortedWeeks.length - 1 ? sortedWeeks[weekIndex + 1] : null
+  const rawPrev = weekIndex > 0 ? sortedWeeks[weekIndex - 1] : null
+  const rawNext = weekIndex >= 0 && weekIndex < sortedWeeks.length - 1 ? sortedWeeks[weekIndex + 1] : null
+  const prevWeek = rawPrev && !hasPassed(rawPrev) ? rawPrev : null
+  const nextWeek = rawNext && !hasPassed(rawNext) ? rawNext : null
   // A capacity_gap line is unmet demand, not committed production — merging
   // it would either try to lock a gap line (422, see update_line's own
   // refusal) or silently fold a shortfall into a real production quantity.
@@ -282,7 +321,14 @@ export function AdjustDrawer({
                 required
                 htmlFor="adjust-plan-week"
                 error={errors.week}
-                hint="Moving this line changes which week's capacity it occupies and re-runs the shelf-life check — crossing into a different month is allowed."
+                hint={
+                  "Moving this line changes which week's capacity it occupies and re-runs the " +
+                  'shelf-life check — crossing into a different month is allowed.' +
+                  (hiddenPastWeeks > 0
+                    ? ` ${hiddenPastWeeks} week${hiddenPastWeeks === 1 ? '' : 's'} already ` +
+                      'past are not listed — production cannot be planned into a week that has gone by.'
+                    : '')
+                }
               >
                 <select
                   id="adjust-plan-week"
@@ -291,7 +337,7 @@ export function AdjustDrawer({
                   disabled={submitting}
                   className="flex h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {sortedWeeks.map((w) => (
+                  {selectableWeeks.map((w) => (
                     <option key={w.week_start} value={w.week_start}>{weekOptionLabel(w)}</option>
                   ))}
                 </select>
