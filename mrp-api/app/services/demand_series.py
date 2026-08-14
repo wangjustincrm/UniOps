@@ -87,10 +87,13 @@ from app.services.numbering import next_timestamped_no
 
 _ZERO = Decimal("0")
 
-# Arbitrary fixed key for freeze_outlook's version_no advisory lock -- see
-# app/services/numbering.py's docstring. Distinct from mps.py's
-# _RUN_NO_LOCK_KEY (different table, no reason to serialize the two
-# together).
+# Arbitrary fixed key identifying "this table" for freeze_outlook's
+# version_no advisory lock -- combined with a hash of the specific prefix
+# (i.e. the anchor month) at the call site, see app/services/numbering.py's
+# docstring, so freezing FCV-2026-09 and FCV-2026-10 concurrently does NOT
+# serialize against each other (different bases, no possible collision).
+# Distinct from mps.py's _RUN_NO_LOCK_KEY (different table -- MPS runs and
+# outlook freezes must never wait on each other either).
 _VERSION_NO_LOCK_KEY = 778899222
 
 # Belt-and-suspenders shape guard on CellChange.month, independent of the
@@ -369,10 +372,21 @@ async def freeze_outlook(
     )).all())
 
     # `FCV-{anchor_month}-{DDHHMM}` -- day/hour/minute this freeze happened,
-    # not a random suffix, so two outlooks for the same anchor sort and read
-    # in creation order. See app/services/numbering.py for the collision
-    # handling this needs (two freezes for the same anchor in the same UTC
-    # minute are a real, observed case, not a hypothetical).
+    # not a random suffix, so two outlooks for the same anchor freeze
+    # session read as "when" rather than an opaque tag. This does NOT
+    # guarantee a global creation-order sort: DDHHMM repeats every calendar
+    # month, so two freezes of the same anchor a month (or a year) apart
+    # that happen to land on the same day-of-month/hour/minute collide on
+    # the SAME base and the later one gets a numerically-later `-N` suffix
+    # that has nothing to do with elapsed time -- it reads as "issued
+    # moments after", not "issued a month/year after". The guarantee that
+    # DOES hold: within a single calendar month, DDHHMM is monotonic with
+    # creation time, so ordering is reliable there. See
+    # app/services/numbering.py for the collision handling this needs (two
+    # freezes for the same anchor in the same UTC minute are a real,
+    # observed case, not a hypothetical) -- and for periodic freezes of the
+    # same anchor, a same-day-of-month/minute collision across months is
+    # also a real possibility, not just a same-minute one.
     version_no = await next_timestamped_no(
         db, lock_key=_VERSION_NO_LOCK_KEY,
         column=ForecastVersion.version_no, prefix=f"FCV-{anchor_month}-",

@@ -19,9 +19,11 @@ real, already-`unique=True` column available via the `db_session` fixture;
 nothing here is forecast-specific -- `MrpMpsRun.run_no` collisions are
 handled by the exact same function (see `app/api/v1/mps.py::_next_run_no`).
 """
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.forecast import ForecastVersion
 from app.services.numbering import next_timestamped_no
@@ -124,3 +126,95 @@ async def test_different_prefix_same_minute_does_not_collide(db_session):
         prefix="FCV-2026-08-", now=_NOW,
     )
     assert no == "FCV-2026-08-141554"
+
+
+# ── Genuine concurrency (separate sessions/transactions, not one coroutine
+# calling the function twice) ───────────────────────────────────────────────
+#
+# The four tests above call `next_timestamped_no` twice, sequentially,
+# awaited one after the other in the SAME coroutine/session -- the first
+# call's row is fully committed before the second call even starts. That
+# exercises the max-tail scan (the disambiguation logic) but never actually
+# contends for the advisory lock, because there is never a moment where two
+# callers are both mid-flight. A code-review pass confirmed this by deleting
+# the `pg_advisory_xact_lock` line from `numbering.py` and rerunning those
+# four tests unchanged: all four still passed. The test below is the fix --
+# see its docstring, and this file's "lock-removed verification" note below
+# it, for what closes that gap.
+
+
+@pytest.mark.anyio
+async def test_concurrent_creates_for_the_same_prefix_serialize_and_get_distinct_numbers(db_engine):
+    """Two GENUINELY concurrent callers -- separate `AsyncSession`s (hence
+    separate Postgres transactions) contending for the identical
+    `(lock_key, prefix)` -- must both succeed with distinct numbers. This is
+    the lock's actual job, and the thing the four single-coroutine tests
+    above cannot exercise (see the module-level note).
+
+    Mechanics: caller A acquires the lock, computes its number, stages the
+    insert, and then -- deliberately -- holds its transaction open
+    (uncommitted) for a second before committing, simulating "another
+    request is still in flight". Caller B starts 200ms later and tries to
+    acquire the SAME lock while A still holds it. With the lock working,
+    B's acquire attempt blocks at the Postgres level until A's transaction
+    ends, so B's "what's already taken" read happens strictly AFTER A's row
+    is committed and visible -- B correctly computes the `-2` suffix. A
+    always starts first and B is delayed, so which caller gets which number
+    is deterministic here; what is NOT predetermined, and is exactly what
+    this test is checking, is whether B's read waits for A's write.
+
+    This is verified to actually depend on the lock, not pass for
+    unrelated reasons: with the `pg_advisory_xact_lock` call in
+    `next_timestamped_no` temporarily deleted, this exact test raises
+    `IntegrityError`. What actually happens without the lock: B's SELECT
+    still reads "nothing taken" (A's insert is uncommitted, so still
+    invisible under MVCC) and computes the SAME bare number as A -- but
+    B's own INSERT then runs straight into Postgres' own unique-index
+    enforcement, which blocks a second concurrent insert of an
+    already-provisionally-taken key until the first transaction resolves.
+    So B's INSERT blocks until A commits at ~1s, at which point B's
+    now-unblocked insert discovers the row genuinely exists and raises
+    `IntegrityError` on B's `commit()` -- not A's, as a simpler "whoever
+    commits last loses" model would predict. Either way, something 500s
+    instead of both requests succeeding with distinct numbers; see
+    task-13-report.md for the real traceback this produced. Restored
+    immediately after."""
+    Session = async_sessionmaker(db_engine, expire_on_commit=False)
+    fixed = datetime(2026, 8, 20, 11, 30, 0, tzinfo=timezone.utc)  # DDHHMM = 201130
+
+    results: dict[str, str] = {}
+
+    async def _caller_a() -> None:
+        async with Session() as session:
+            no = await next_timestamped_no(
+                session, lock_key=201, column=ForecastVersion.version_no,
+                prefix="FCV-2026-08-", now=fixed,
+            )
+            session.add(ForecastVersion(
+                version_no=no, status="confirmed",
+                horizon_start_month="2026-08", horizon_months=1,
+            ))
+            await session.flush()  # the row exists in A's txn, still invisible to B
+            await asyncio.sleep(1.0)  # hold the lock open while B attempts below
+            await session.commit()
+        results["a"] = no
+
+    async def _caller_b() -> None:
+        await asyncio.sleep(0.2)  # let A acquire the lock and flush first
+        async with Session() as session:
+            no = await next_timestamped_no(
+                session, lock_key=201, column=ForecastVersion.version_no,
+                prefix="FCV-2026-08-", now=fixed,
+            )
+            session.add(ForecastVersion(
+                version_no=no, status="confirmed",
+                horizon_start_month="2026-08", horizon_months=1,
+            ))
+            await session.commit()
+        results["b"] = no
+
+    await asyncio.gather(_caller_a(), _caller_b())
+
+    assert results["a"] == "FCV-2026-08-201130"
+    assert results["b"] == "FCV-2026-08-201130-2"
+    assert results["a"] != results["b"]

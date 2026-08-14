@@ -190,11 +190,14 @@ DEFAULT_PRODUCTION_LEAD_WEEKS = 4
 # the same default `MrpMpsRun.week_calendar_mode` and mrp10a carry.
 _WEEK_CALENDAR_MODE_KEY = "week_calendar_mode"
 
-# Arbitrary fixed key for the run_no generation advisory lock -- serializes
-# concurrent POST /runs calls so two simultaneous requests never compute the
-# same "next number" from a stale read and collide on run_no's unique
-# constraint (see project_uniops_document_number_collision, project
-# memory; and app/services/numbering.py, which now does the generation).
+# Arbitrary fixed key identifying "this table" for the run_no generation
+# advisory lock -- combined with a hash of the specific prefix (i.e. the
+# horizon start month) at the call site, see app/services/numbering.py's
+# docstring, so two simultaneous POST /runs for the SAME horizon month
+# never compute the same "next number" from a stale read and collide on
+# run_no's unique constraint (see project_uniops_document_number_collision,
+# project memory), while two runs for DIFFERENT horizon months never wait
+# on each other -- different bases, no possible collision.
 # pg_advisory_xact_lock auto-releases at commit/rollback.
 _RUN_NO_LOCK_KEY = 778899221
 

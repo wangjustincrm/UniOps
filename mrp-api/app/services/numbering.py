@@ -17,12 +17,27 @@ problem (see project memory
 with "max existing tail + 1" serialized by a Postgres advisory lock; and
 `app/api/v1/mps.py`'s pre-existing `_next_run_no`, which used that pattern
 for the daily `MPS-YYYYMMDD-####` counter it replaces): take an advisory
-xact lock scoped to the caller (so two concurrent requests can't both read
-"nothing taken yet" and both try to insert the bare `DDHHMM`), then if the
-bare timestamp is already taken, disambiguate with `-2`, `-3`, ... by
-scanning existing numbers for the same base and taking max-tail + 1. The
-common case (no collision) still gets the exact `DDHHMM` the request asked
-for; only an actual same-minute collision pays for a suffix.
+xact lock scoped to the caller's `(lock_key, prefix)` pair (so two
+concurrent requests for the SAME base can't both read "nothing taken yet"
+and both try to insert the bare `DDHHMM`), then if the bare timestamp is
+already taken, disambiguate with `-2`, `-3`, ... by scanning existing
+numbers for the same base and taking max-tail + 1. The common case (no
+collision) still gets the exact `DDHHMM` the request asked for; only an
+actual same-minute collision pays for a suffix.
+
+The lock key is `(lock_key, hashtext(prefix))` -- Postgres'
+two-integer `pg_advisory_xact_lock(int, int)` overload, not the
+single-bigint one -- so only requests that could actually collide (same
+table, same prefix, i.e. same anchor/horizon month) ever serialize against
+each other. `lock_key` alone identifies the table/column (kept distinct
+per caller: `demand_series.py`'s `_VERSION_NO_LOCK_KEY`, `mps.py`'s
+`_RUN_NO_LOCK_KEY`); freezing `FCV-2026-09` and `FCV-2026-10`
+concurrently, or generating MPS runs for two different horizon months at
+once, must not wait on each other -- different prefixes produce different
+`base` strings and can never collide on the unique constraint, so there is
+nothing for a shared lock to protect there. A single constant key shared
+by every prefix would over-serialize: unrelated freezes/runs would queue up
+behind each other for no reason.
 
 Why not just add seconds (DDHHMMSS)? It shrinks the collision window but
 doesn't close it -- two requests can still land in the same second (the
@@ -58,8 +73,17 @@ async def next_timestamped_no(
     `_next_run_no`'s `today`) -- there is no local-timezone concept
     anywhere else in mrp-api to be consistent with instead, and introducing
     one just for this column would make it the odd one out.
+
+    The lock is `(lock_key, hashtext(prefix))`, not `lock_key` alone --
+    see module docstring for why: it scopes serialization to requests that
+    share BOTH the table (`lock_key`) and the exact base they could
+    collide on (`prefix`, which bakes in the anchor/horizon month), so
+    concurrent callers for different months never wait on each other.
+    `now` is read only AFTER the lock is acquired -- a caller that was
+    queued behind another gets its own fresh timestamp when it finally
+    runs, not a stale one captured before it started waiting.
     """
-    await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
+    await db.execute(select(func.pg_advisory_xact_lock(lock_key, func.hashtext(prefix))))
     now = now or datetime.now(timezone.utc)
     base = f"{prefix}{now:%d%H%M}"
 
