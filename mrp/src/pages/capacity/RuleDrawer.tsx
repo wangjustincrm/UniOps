@@ -37,15 +37,21 @@ import {
 } from './capacityApi'
 
 // Output-quantity capacity is KG-only, and not just as a UI default: the
-// MPS engine that consumes these rules (mrp-api's mps.py
-// _resolve_capacity_limits) reads `limit_value` as a bare Decimal and
+// MPS engine that consumes these rules (mrp-api's app/services/capacity.py
+// resolve_limits_for_week) reads `limit_value` as a bare Decimal and
 // enforces it as kilograms — it never looks at the `uom` column to convert.
 // A rule saved with any other unit (e.g. "50" meant as tonnes) would
 // silently be enforced as 50 kg, a 1000x error with no warning anywhere
 // downstream. So this field must not be a free choice: it is fixed to
 // 'KG', not offered as a picker, making a non-KG capacity rule impossible
-// to save from this form.
+// to save from this form. Applies to BOTH output-quantity constraint types
+// (max_output_qty and min_output_qty) — max_sku_count is a bare count and
+// carries no unit at all.
 const OUTPUT_UOM = 'KG'
+
+function isOutputQtyConstraint(t: CapacityConstraintType): boolean {
+  return t === 'max_output_qty' || t === 'min_output_qty'
+}
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -238,7 +244,7 @@ export function RuleDrawer({
       // Fixed, never user-editable — see OUTPUT_UOM's header comment: the
       // MPS engine enforces this number as KG unconditionally, so any
       // other recorded unit would silently misrepresent the limit.
-      uom: form.constraint_type === 'max_output_qty' ? OUTPUT_UOM : null,
+      uom: isOutputQtyConstraint(form.constraint_type) ? OUTPUT_UOM : null,
       effective_from: form.effective_from,
       effective_to: form.effective_to || null,
       is_active: form.is_active,
@@ -342,7 +348,7 @@ export function RuleDrawer({
                 />
               </FormField>
 
-              {form.constraint_type === 'max_output_qty' && (
+              {isOutputQtyConstraint(form.constraint_type) && (
                 <FormField
                   label="Unit"
                   hint="Fixed — the planning engine enforces this limit in kilograms only."

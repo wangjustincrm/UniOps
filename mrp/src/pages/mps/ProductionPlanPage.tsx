@@ -21,9 +21,11 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { forecastApi, saveBlob } from '@/pages/forecast/forecastApi'
 import { bomStatusApi } from '@/pages/forecast/bomStatusApi'
-import { mpsApi, type MpsLine } from './mpsApi'
+import { capacityApi, findExistingException } from '@/pages/capacity/capacityApi'
+import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
 import { ProductionMatrix } from './ProductionMatrix'
 import { AdjustDrawer } from './AdjustDrawer'
+import { WeekDrawer } from './WeekDrawer'
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -113,6 +115,11 @@ export default function ProductionPlanPage() {
   const canExecute = !!permsQuery.data?.permissions['mrp.run.execute']
   const canRelease = !!permsQuery.data?.permissions['mrp.proposal.confirm']
   const canView = !!permsQuery.data?.permissions['mrp.report.view']
+  // Gates WeekDrawer's checkbox (same key capacity/*.tsx uses for rule/
+  // exception writes) — deliberately independent of canExecute/canRelease:
+  // marking a maintenance week is a capacity-parameter change, not a
+  // run-execution or release action.
+  const canWriteParams = !!permsQuery.data?.permissions['mrp.param.write']
 
   // ── Display unit (kg/tonne) ─────────────────────────────────────────────
   const [displayUnit, setDisplayUnit] = useState<DisplayUnit>(() => loadDisplayUnit())
@@ -226,6 +233,25 @@ export default function ProductionPlanPage() {
     return s
   }, [runProductCodes, bomStatusQuery.data])
 
+  // Capacity exceptions — WeekDrawer's only source for "does this week
+  // already have a maintenance exception, and is it active" (its own
+  // read-before-write upsert rule, see capacityApi.ts's
+  // `findExistingException` doc: at most one exception row can ever exist
+  // per week+scope+constraint, so re-marking a week must PATCH that row,
+  // never POST a second one). ProductionMatrix's grey-tint/wrench signal
+  // does NOT come from this query — it reads the run's own live
+  // `capacity_occupancy` instead (see that component's header comment) —
+  // this is purely for the drawer's initial form state.
+  const exceptionsQuery = useQuery({
+    queryKey: ['capacity-exceptions'],
+    queryFn: () => capacityApi.listExceptions(),
+    enabled: !!runId,
+  })
+
+  function invalidateExceptions() {
+    return queryClient.invalidateQueries({ queryKey: ['capacity-exceptions'] })
+  }
+
   // ── Generate / Recalculate ──────────────────────────────────────────────
   const [generating, setGenerating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
@@ -282,6 +308,16 @@ export default function ProductionPlanPage() {
     }
     setPickerLines(lines)
   }
+
+  // ── Mark a week (from a matrix week header) ─────────────────────────────
+  // design §5.1's last bullet — same click-to-open interaction as
+  // handleAdjustCell above, just keyed off a week column instead of a
+  // Planned cell. See WeekDrawer.tsx's header comment for why this never
+  // calls handleRecalculate directly: it's only ever offered via the
+  // success toast's action button, so a hand adjustment elsewhere in this
+  // run doesn't get silently swept away by a recalculate the planner didn't
+  // ask for.
+  const [weekDrawerTarget, setWeekDrawerTarget] = useState<WeekGridEntry | null>(null)
 
   // ── Export ───────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false)
@@ -564,6 +600,8 @@ export default function ProductionPlanPage() {
           key={run.id}
           lines={run.lines}
           weekGrid={run.week_grid}
+          capacityOccupancy={run.capacity_occupancy}
+          onOpenWeekDrawer={setWeekDrawerTarget}
           materialsByCode={materialsByCode}
           noBomCodes={noBomCodes}
           unitScale={displayUnit === 't' ? 1000 : 1}
@@ -583,12 +621,29 @@ export default function ProductionPlanPage() {
         />
       )}
 
-      {adjustTarget && runId && (
+      {adjustTarget && runId && run && (
         <AdjustDrawer
           runId={runId}
           line={adjustTarget}
+          weekGrid={run.week_grid}
+          allLines={run.lines}
           onClose={() => setAdjustTarget(null)}
           onSaved={() => { void invalidateRun() }}
+          notifySuccess={toasts.success}
+          notifyError={toasts.error}
+        />
+      )}
+
+      {weekDrawerTarget && (
+        <WeekDrawer
+          week={weekDrawerTarget}
+          existingException={findExistingException(exceptionsQuery.data ?? [], {
+            week_start: weekDrawerTarget.week_start, scope_type: 'factory', scope_ref: null, constraint_type: 'max_output_qty',
+          })}
+          canWrite={canWriteParams}
+          onClose={() => setWeekDrawerTarget(null)}
+          onSaved={() => { void invalidateRun(); void invalidateExceptions() }}
+          onRecalculate={() => { void handleRecalculate() }}
           notifySuccess={toasts.success}
           notifyError={toasts.error}
         />

@@ -32,6 +32,15 @@ export function ToastStack({ toasts, onDismiss }: { toasts: ToastItem[]; onDismi
             ? <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
             : <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />}
           <span className="flex-1">{t.message}</span>
+          {t.action && (
+            <button
+              type="button"
+              onClick={() => { t.action!.onClick(); onDismiss(t.id) }}
+              className="shrink-0 rounded-md border border-current/30 px-2 py-1 text-xs font-medium hover:bg-current/10"
+            >
+              {t.action.label}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onDismiss(t.id)}

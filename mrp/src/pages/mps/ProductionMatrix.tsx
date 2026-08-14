@@ -49,11 +49,11 @@
 // separate top-offset math for row 2 — see the `<thead>` element's own
 // comment below for why.
 import { useMemo, useState } from 'react'
-import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight } from 'lucide-react'
+import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
 import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
-import type { MpsLine, WeekGridEntry } from './mpsApi'
+import type { CapacityOccupancyWeek, MpsLine, WeekGridEntry } from './mpsApi'
 import { buildWeekColumns, buildWeekRefs, defaultExpandedMonths, type Column, type WeekColumn } from './weekColumns'
 
 // Sensible default in-container scroll cap for now — the brief notes the
@@ -173,6 +173,20 @@ interface ProductionMatrixProps {
    *  week or a zero-net-demand month has zero lines by construction and
    *  would otherwise vanish from the axis. */
   weekGrid: WeekGridEntry[]
+  /** Live per-week occupancy (`GET /runs/{id}`'s `capacity_occupancy`) —
+   *  used ONLY to detect a maintenance week here (a week whose currently
+   *  effective `max_output_qty` is exactly 0), for the grey tint + wrench
+   *  icon on that week's header and Planned cell. Not used for anything
+   *  else in this file — the occupancy vs. limit comparison itself has no
+   *  display here yet. Optional: omitted, no week is ever tinted. */
+  capacityOccupancy?: CapacityOccupancyWeek[]
+  /** Fired when a WEEK column header is clicked (never for a collapsed
+   *  month's summary column, which has no single week to attach a
+   *  maintenance flag to) — opens WeekDrawer. Same click-to-open
+   *  interaction the Planned cells already use for AdjustDrawer; see
+   *  design §5.1's last bullet. Optional: omitted, week headers render as
+   *  plain (non-interactive) text, same as before this prop existed. */
+  onOpenWeekDrawer?: (week: WeekGridEntry) => void
   /** code -> MaterialOption, for the Product column's name (not part of
    *  MpsLineResponse itself — see mpsApi.ts / ProductionPlanPage.tsx for how
    *  this is built from mdm-api's materials master). A lookup miss falls
@@ -205,6 +219,8 @@ interface ProductionMatrixProps {
 export function ProductionMatrix({
   lines,
   weekGrid,
+  capacityOccupancy,
+  onOpenWeekDrawer,
   materialsByCode,
   noBomCodes,
   unitScale: _unitScale,
@@ -223,6 +239,26 @@ export function ProductionMatrix({
   // this: a maintenance week or a zero-net-demand month has zero lines by
   // construction and week_grid already enumerates its real weeks anyway).
   const weekRefs = useMemo(() => buildWeekRefs(weekGrid), [weekGrid])
+
+  // A week is "maintenance" for display purposes when its CURRENTLY
+  // effective max_output_qty (capacity_occupancy is computed live on every
+  // GET, exceptions included — see mpsApi.ts's CapacityOccupancyWeek doc)
+  // is exactly 0, regardless of who set that or when. `null`/undefined
+  // means "no ceiling configured", the opposite of maintenance, so this
+  // must not fall back to loose falsiness — an explicit numeric-zero check.
+  const maintenanceWeeks = useMemo(() => {
+    const s = new Set<string>()
+    for (const w of capacityOccupancy ?? []) {
+      if (w.max_output_qty != null && Number(w.max_output_qty) === 0) s.add(w.week_start)
+    }
+    return s
+  }, [capacityOccupancy])
+
+  const weekGridByStart = useMemo(() => {
+    const m = new Map<string, WeekGridEntry>()
+    for (const w of weekGrid) m.set(w.week_start, w)
+    return m
+  }, [weekGrid])
 
   const allMonthsOrdered = useMemo(
     () => [...new Set(weekRefs.map((w) => w.month))].sort(),
@@ -349,16 +385,38 @@ export function ProductionMatrix({
             })}
           </tr>
           <tr>
-            {columns.map((col) => (
-              <th
-                key={col.id}
-                className="h-7 border-b border-r border-neutral-200 bg-neutral-50 px-1.5 py-1 text-center text-[10px] font-medium text-neutral-500"
-                style={{ minWidth: WEEK_COL_MIN_WIDTH }}
-                title={col.kind === 'week' ? (col.label ?? col.week_start) : undefined}
-              >
-                {col.kind === 'week' ? weekColumnShortLabel(col) : ''}
-              </th>
-            ))}
+            {columns.map((col) => {
+              const isMaintenance = col.kind === 'week' && maintenanceWeeks.has(col.week_start)
+              return (
+                <th
+                  key={col.id}
+                  className={cn(
+                    'h-7 border-b border-r border-neutral-200 p-0 text-center text-[10px] font-medium text-neutral-500',
+                    isMaintenance ? 'bg-neutral-200' : 'bg-neutral-50',
+                  )}
+                  style={{ minWidth: WEEK_COL_MIN_WIDTH }}
+                >
+                  {col.kind === 'week' && onOpenWeekDrawer ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const week = weekGridByStart.get(col.week_start)
+                        if (week) onOpenWeekDrawer(week)
+                      }}
+                      title={`${col.label ?? col.week_start}${isMaintenance ? ' — maintenance week (click to view/edit)' : ' — click to mark as a maintenance week'}`}
+                      className="flex h-7 w-full min-w-[44px] items-center justify-center gap-1 px-1.5 hover:bg-primary-50 hover:text-primary-700 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    >
+                      {isMaintenance && <Wrench aria-hidden className="h-3 w-3 shrink-0 text-neutral-500" />}
+                      {weekColumnShortLabel(col)}
+                    </button>
+                  ) : (
+                    <span className="flex h-7 items-center justify-center px-1.5" title={col.kind === 'week' ? (col.label ?? col.week_start) : undefined}>
+                      {col.kind === 'week' ? weekColumnShortLabel(col) : ''}
+                    </span>
+                  )}
+                </th>
+              )
+            })}
           </tr>
         </thead>
         <tbody>
@@ -372,6 +430,7 @@ export function ProductionMatrix({
               monthSpans={monthSpans}
               getMonthCell={getMonthCell}
               getPlannedCell={getPlannedCell}
+              maintenanceWeeks={maintenanceWeeks}
               formatValue={formatValue}
               onAdjustCell={onAdjustCell}
               readOnly={readOnly}
@@ -421,6 +480,7 @@ function ProductRows({
   monthSpans,
   getMonthCell,
   getPlannedCell,
+  maintenanceWeeks,
   formatValue,
   onAdjustCell,
   readOnly,
@@ -432,6 +492,7 @@ function ProductRows({
   monthSpans: Map<string, number>
   getMonthCell: (materialCode: string, month: string) => MatrixCell
   getPlannedCell: (materialCode: string, col: Column) => MatrixCell
+  maintenanceWeeks: ReadonlySet<string>
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
@@ -516,6 +577,7 @@ function ProductRows({
           <PlannedCell
             key={col.id}
             cell={getPlannedCell(product.code, col)}
+            isMaintenance={col.kind === 'week' && maintenanceWeeks.has(col.week_start)}
             formatValue={formatValue}
             onAdjustCell={onAdjustCell}
             readOnly={readOnly}
@@ -557,11 +619,17 @@ function MonthMetricCell({
 
 function PlannedCell({
   cell,
+  isMaintenance,
   formatValue,
   onAdjustCell,
   readOnly,
 }: {
   cell: MatrixCell
+  /** True for a week column whose currently effective max_output_qty is 0
+   *  (see ProductionMatrix's `maintenanceWeeks`) — tints the cell grey.
+   *  Never true for a collapsed month's summary column (the caller only
+   *  sets this for `col.kind === 'week'`). */
+  isMaintenance: boolean
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
@@ -583,10 +651,19 @@ function PlannedCell({
   // produced later than the requested lead but still met) when a cell is
   // both — gap is the more severe condition a planner needs to see first.
   const showShortfall = cell.shortfall && !cell.gap
+  // Sum of the GAP lines' own qty (aggregateLines deliberately excludes it
+  // from `cell.planned`, see that function's own comment) — the cell
+  // already renders red/bold on a gap, but until now that only told a
+  // planner THAT demand went unmet, not by how much. Recovered straight
+  // from `cellLines` (already handed to this cell for the click-to-adjust
+  // affordance), so this needs no new data plumbing.
+  const gapQty = cell.gap
+    ? cell.cellLines.filter((l) => l.capacity_gap).reduce((sum, l) => sum + Number(l.qty), 0)
+    : 0
 
   if (!showCell) {
     return (
-      <td className="h-10 border-b border-r border-neutral-100 bg-success-50 px-2 text-right font-mono text-neutral-300">—</td>
+      <td className={cn('h-10 border-b border-r border-neutral-100 px-2 text-right font-mono text-neutral-300', isMaintenance ? 'bg-neutral-200' : 'bg-success-50')}>—</td>
     )
   }
 
@@ -600,7 +677,7 @@ function PlannedCell({
   )
 
   const cellTitle = cell.gap
-    ? `Capacity gap — unmet demand${title ? ` (${title})` : ''}`
+    ? `Capacity gap — ${formatValue(gapQty)} unmet demand${title ? ` (${title})` : ''}`
     : showShortfall
       ? 'Produced later than the lead — no earlier capacity/time'
       : title
@@ -613,7 +690,9 @@ function PlannedCell({
           ? 'bg-danger-50 text-danger-700'
           : showShortfall
             ? 'bg-warning-50 text-warning-800'
-            : 'bg-success-50 text-neutral-800',
+            : isMaintenance
+              ? 'bg-neutral-200 text-neutral-700'
+              : 'bg-success-50 text-neutral-800',
       )}
     >
       {readOnly ? (

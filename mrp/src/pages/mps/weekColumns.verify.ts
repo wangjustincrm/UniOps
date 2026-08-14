@@ -139,8 +139,21 @@ console.log('')
 console.log('buildWeekRefs')
 
 const GRID: WeekGridEntryLike[] = [
-  { week_start: '2026-08-03', week_month: '2026-08', label: 'Aug W1 · Aug 3–9' },
-  { week_start: '2026-08-10', week_month: '2026-08', label: 'Aug W2 · Aug 10–16' },
+  // ISO-straddling week: starts in JULY (week_start's own calendar month)
+  // but OWNS August (week_month) under iso_thursday — the Thursday of the
+  // week beginning Mon 2026-07-27 is 2026-07-30, but this fixture models
+  // the equally-real other direction of straddle (a week whose START
+  // calendar month and OWNING month differ) so that a mutant reading
+  // `week_start.slice(0, 7)` instead of `week_month` is actually exercised
+  // here. Task 9 review flagged that the original GRID had NO such
+  // entry — every week_start's own YYYY-MM already matched its week_month,
+  // so `week_month: g.week_month` and `month: g.week_start.slice(0, 7)`
+  // agreed on every row and a mutant swapping one for the other still
+  // passed all checks below. This is exactly the case `plan_week_month`
+  // exists for (see mpsApi.ts's `MpsLine.plan_week_month` doc).
+  { week_start: '2026-07-27', week_month: '2026-08', label: 'Aug W1 · Jul 27–Aug 2' },
+  { week_start: '2026-08-03', week_month: '2026-08', label: 'Aug W2 · Aug 3–9' },
+  { week_start: '2026-08-10', week_month: '2026-08', label: 'Aug W3 · Aug 10–16' },
   // 2026-09 stands in for a month with zero plan lines (a maintenance week,
   // or a demand month that netted to zero) — mrp-api's week_grid still
   // enumerates its real weeks (see _compute_week_grid's docstring), so
@@ -153,6 +166,12 @@ check('buildWeekRefs preserves every week_grid entry, in order, field for field'
   const refs = buildWeekRefs(GRID)
   return refs.length === GRID.length && refs.every((r, i) =>
     r.week_start === GRID[i].week_start && r.month === GRID[i].week_month && r.label === GRID[i].label)
+})
+
+check('an ISO-straddling week (week_start\'s own month differs from week_month) keeps its OWNING month, not week_start\'s calendar month — catches a `week_start.slice(0, 7)` mutant', () => {
+  const refs = buildWeekRefs(GRID)
+  const straddler = refs.find((r) => r.week_start === '2026-07-27')
+  return !!straddler && straddler.month === '2026-08' && straddler.month !== straddler.week_start.slice(0, 7)
 })
 
 check('a month with no lines of its own (only present because week_grid enumerated it) still occupies a column once fed through buildWeekColumns', () => {
