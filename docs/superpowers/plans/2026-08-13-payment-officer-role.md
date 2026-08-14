@@ -229,7 +229,8 @@ git commit -m "feat(epms): register payment_officer in the access control matrix
 ### Task 3: Redirect the process-payment task
 
 **Files:**
-- Modify: `epms-api/app/crud/pa.py:413` (`_create_process_pa_task`)
+- **Modify: `approval-api/app/crud/engine.py` — `_post_approve_pa` AND `_post_approve_pa_dir`** (the REAL emitters; verified 2026-08-13)
+- Delete: `epms-api/app/crud/pa.py`'s `_create_process_pa_task` — **dead code**, no callers anywhere in epms-api
 - Modify: `epms-api/app/crud/dashboard.py` (add `build_payment_officer` + routing branch near line 766)
 - Test: `epms-api/tests/test_process_pa_task_role.py` (create)
 
@@ -247,7 +248,14 @@ Expected: FAIL — role is `ap_clerk`.
 
 - [ ] **Step 3: Change the assignment**
 
-In `epms-api/app/crud/pa.py`:
+**The plan originally named the wrong file.** `epms-api`'s `_create_process_pa_task` has **no callers** — grep of `epms-api/` finds only its own definition. The live `process_pa` task is emitted by `approval-api/app/crud/engine.py` at two sites, both hardcoding `assigned_role="ap_clerk"`:
+
+- `_post_approve_pa` — the PA-PO route (EPMS purchase payments)
+- `_post_approve_pa_dir` — the **PA-DIR route (OA Direct PA)**, which the plan never mentioned at all
+
+Change **both**, and delete the dead epms-api function so it cannot mislead the next reader the way it misled this plan.
+
+In `approval-api/app/crud/engine.py` (both sites):
 
 ```python
         # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13):AP 的 Task Inbox
