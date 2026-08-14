@@ -132,7 +132,16 @@ W1 与 W2/W3/W4 之间没有代码依赖（前者是角色与付款授权，后�
 |---|---|
 | `app/crud/config.py` | `BUILT_IN_ROLES` 加入；`_BUILTIN_ROLE_NAMES` 加入标签（顺带补 `erp_pa_officer` 的既有缺失）；`LOCKED_PERMISSIONS` 加 `{"view_pa"}`；`_ROLE_DEFAULTS` 加默认授权行 |
 | `app/crud/current_step.py` | 角色显示名映射加入 |
-| `app/crud/pa.py:413` | `_create_process_pa_task` 的 `assigned_role` → `"payment_officer"` |
+| ~~`app/crud/pa.py:413`~~ | **原稿错误,已更正**:该函数是**死代码**(epms-api 内无任何调用者,2026-08-13 grep 证实)。真正产生 `process_pa` 任务的是 **approval-api** —— 见下 |
+
+**★ 真正的改动点在 approval-api,不在 epms-api**(原稿指错文件,照原样实施则生产上任务仍全部派给 `ap_clerk`,新角色拿不到任何工作):
+
+| 文件 | 站点 | 路线 |
+|---|---|---|
+| `approval-api/app/crud/engine.py` | `_post_approve_pa` | PA-PO(EPMS 采购付款) |
+| `approval-api/app/crud/engine.py` | `_post_approve_pa_dir` | **PA-DIR(OA Direct PA)** —— 原稿完全没提这条路线 |
+
+两处都硬编码 `assigned_role="ap_clerk"`,都要改。这是「数清消费者」教训的第五次复发:只看了 epms-api,漏掉整个 approval-api 服务树。
 | `app/crud/dashboard.py` | 新增 `build_payment_officer`（以 `build_ap_clerk` 为蓝本，仅保留付款视图）+ 路由分支 |
 
 **`app/schemas/user.py` 的 `VALID_ROLES` 不加**（原稿写错，已更正）：该集合校验的是**主登录角色**，而 `payment_officer` 是附加角色。既有的 `erp_pa_officer` 正是如此 —— 在 `BUILT_IN_ROLES`（授权矩阵）里，但不在 `VALID_ROLES` 里。加进去会让它错误地可被设为某人的主角色。
