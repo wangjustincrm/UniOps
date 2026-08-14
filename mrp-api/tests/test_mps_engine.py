@@ -19,7 +19,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.services.mps_engine import (
-    BucketItem, CapacityLimits, DemandItem, PlannedLine, generate_mps,
+    BucketItem, CapacityLimits, DemandItem, PlannedLine, WeeklyLine, generate_mps,
     generate_weekly_mps, pack_bucket,
 )
 from app.services.mps_engine import _minus_months, _prebuild_allowed
@@ -1084,15 +1084,25 @@ def test_uniform_capacity_never_strands_an_open_week_beside_a_gap():
 
 
 def test_lead_zero_reproduces_no_shift():
-    """lead=0 时目标周就是需求月末周，一步都不许提前。"""
+    """lead=0 时目标周就是需求月末周，产量不许溢出到需求月之外。
+
+    **本条相对 brief 原文已放宽**，依据 spec `dc9a78e`：原文断言
+    `{plan_week_start} == {末周}`，那要求画布只有一周；而画布是整月
+    （§2.0 ④）才是对的，否则四个活跃桶里有四个只剩一周、P2/P3 结构性
+    失效。月引擎的放置单位本来就是月，所以"不提前"= 落在需求月这个桶
+    之内，不是"只能落在末周"。"""
     lines = generate_mps(
         demands=[DemandItem("A", "2026-10", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
         lead_weeks=0, current_week=date(2026, 8, 3), mode="iso_thursday",
     )
-    assert {l.plan_week_start for l in lines} == {weeks_of_month("2026-10", "iso_thursday")[-1]}
-    assert all(l.weeks_early == 0 for l in lines)
+    assert lines
+    assert {l.plan_week_month for l in lines} == {"2026-10"}
+    assert not any(l.capacity_gap for l in lines)
+    # ...and nothing spilled into a week owned by an earlier month.
+    assert min(l.plan_week_start for l in lines) >= weeks_of_month(
+        "2026-10", "iso_thursday")[0]
 
 
 def test_lead_four_weeks_moves_the_target_back_four_weeks():
@@ -1179,12 +1189,12 @@ def _cap(cap="40", min_out="20", sku=None):
 
 
 def _run(demands, limits=None, shelf=None, margin="0.3333", lead=4,
-         now=date(2026, 8, 3), mode=_WEEKLY):
+         now=date(2026, 8, 3), mode=_WEEKLY, locked=None):
     return generate_weekly_mps(
         demands=demands, limits_for_week=limits or _cap(),
         shelf_life_months={"A": 24, "B": 24, "C": 24} if shelf is None else shelf,
         safety_margin_fraction=Decimal(margin), lead_weeks=lead,
-        current_week=now, mode=mode)
+        current_week=now, mode=mode, locked=locked)
 
 
 def _total(lines):
@@ -1236,20 +1246,41 @@ def test_shelf_life_rejects_a_week_the_4_33_approximation_would_admit():
     assert not any(l.plan_week_start == week and not l.capacity_gap for l in lines)
 
 
-def test_a_lead_longer_than_shelf_life_is_a_gap_before_anything_is_packed():
+def test_a_lead_longer_than_shelf_life_falls_back_to_a_legal_later_week():
     """The lead shift can outrun shelf life on its own -- the weekly form of
     the month engine's `test_shelf_life_shorter_than_lead_is_a_gap`. A
-    one-month shelf life allows 20 days; an 8-week lead puts 2026-10 demand
-    in the week of 2026-08-31, 31 days out."""
+    one-month shelf life at a 1/3 margin allows 20 days before 2026-10-01,
+    and an 8-week lead targets the week of 2026-08-31, 31 days out.
+
+    **That is not a shortfall.** The bucket (2026-09) also holds weeks LATER
+    than the target, which are closer to the demand month and therefore
+    legal. Producing late is worse than producing on the lead and enormously
+    better than not producing at all, so the plan falls back to 2026-09-21
+    (10 days out). Reporting a gap here -- which an earlier revision of this
+    engine did -- is the same false shortfall as the in-bucket one above."""
     lines = _run([DemandItem("A", "2026-10", Decimal("30"))], shelf={"A": 1},
                  lead=8, now=date(2026, 1, 5))
-    assert [(l.plan_week_start, l.capacity_gap, l.shelf_life_ok, l.is_prebuild)
-            for l in lines] == [(date(2026, 8, 31), True, False, False)]
-    assert "shelf life" in lines[0].prebuild_reason
-    # The same lead is fine once shelf life is long enough.
+    assert [(l.plan_week_start, l.capacity_gap) for l in lines] == [
+        (date(2026, 9, 21), False)]
+    assert (date(2026, 10, 1) - lines[0].plan_week_start).days == 10
+    # The same lead is unremarkable once shelf life is long enough.
     ok = _run([DemandItem("A", "2026-10", Decimal("30"))], shelf={"A": 24},
               lead=8, now=date(2026, 1, 5))
     assert not any(l.capacity_gap for l in ok)
+    assert {l.plan_week_start for l in ok} == {date(2026, 8, 31)}   # on the lead
+
+
+def test_a_bucket_with_no_week_shelf_life_allows_is_a_gap():
+    """The other side of that fallback: when not even the LAST week of the
+    bucket is close enough to the demand month, there is nowhere legal to go
+    and the shortfall is real. A 1-month shelf life at a 0.7 margin allows
+    9 days; the bucket's latest week is 10 days out."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("30"))], shelf={"A": 1},
+                 margin="0.7", lead=8, now=date(2026, 1, 5))
+    assert [(l.capacity_gap, l.shelf_life_ok, l.is_prebuild) for l in lines] == [
+        (True, False, False)]
+    assert _total(lines) == Decimal("30")
+    assert "shelf life" in lines[0].prebuild_reason
 
 
 def test_two_demand_months_of_one_material_are_merged_into_one_run():
@@ -1395,9 +1426,13 @@ def test_two_buckets_never_double_book_a_week():
             per_week[l.plan_week_start] = per_week.get(
                 l.plan_week_start, Decimal("0")) + Decimal(str(l.qty))
     assert per_week and max(per_week.values()) <= Decimal("40")
-    # October's own demand kept the October weeks; B pre-built around it.
-    assert {l.material_code for l in lines
-            if l.plan_week_start in (date(2026, 10, 19), date(2026, 10, 26))} == {"A"}
+    # The sharper form of the same claim: October's own plan is byte-identical
+    # whether or not November exists, i.e. B's pre-build took only the room A
+    # left and never displaced it.
+    alone = _run([DemandItem("A", "2026-10", Decimal("120"))], lead=0,
+                 now=date(2026, 6, 1))
+    assert [(l.plan_week_start, l.qty) for l in alone] == [
+        (l.plan_week_start, l.qty) for l in lines if l.material_code == "A"]
 
 
 def test_nothing_is_lost_and_no_week_is_overfilled_across_the_pipeline():
@@ -1476,3 +1511,212 @@ def test_the_dispatcher_refuses_to_guess():
                         current_week=date(2026, 8, 3), mode=_WEEKLY) == []
     assert generate_mps([], CapacityLimits(1, Decimal("1")), {}, Decimal("0"),
                         lead_months=0, current_month="2026-01") == []
+
+
+# ── Fix round 1 ─────────────────────────────────────────────────────────────
+
+
+def test_the_in_bucket_shelf_life_gate_moves_a_slice_it_does_not_short_it():
+    """A slice the packer put earlier than shelf life allows is handed BACK
+    to the backward walk, never emitted as a shortfall on the spot.
+
+    The walk starts at the bucket's last week, so the slice is re-offered
+    every week the bucket has left -- **its own target week included, where
+    it is not early at all and the gate does not apply**. Emitting the gap
+    directly reported 20 t short against a completely EMPTY 2026-10-26 in a
+    bucket holding 200 t of capacity against 80 t of demand, and a planner
+    escalates against a false shortfall.
+
+    Shelf life 1 month at a 1/2 margin allows 15 days before 2026-11-01;
+    2026-10-12 is 20 days out (refused), 2026-10-19 is 13 (allowed)."""
+    demands = [DemandItem("A", "2026-10", Decimal("40")),
+               DemandItem("A", "2026-11", Decimal("40"))]
+    lines = _run(demands, shelf={"A": 1}, margin="0.5")
+
+    assert _total(lines) == Decimal("80")
+    assert not any(l.capacity_gap for l in lines), [
+        (str(l.plan_week_start), l.demand_month, str(l.qty), l.capacity_gap)
+        for l in lines]
+    november = [l for l in lines if l.demand_month == "2026-11"]
+    assert _total(november) == Decimal("40")
+    # ...and the gate really did bite: nothing for November sits earlier than
+    # 15 days before it.
+    for l in november:
+        assert (date(2026, 11, 1) - l.plan_week_start).days <= 15, l
+    # The rescued slice landed on its own target week, which was empty.
+    assert date(2026, 10, 26) in {l.plan_week_start for l in november}
+
+
+def test_a_slice_the_gate_refuses_is_still_gated_after_it_is_re_placed():
+    """The rescue must not become an escape hatch: when the bucket has no
+    late week left either, the quantity still ends as an explicit shortfall
+    marked `shelf_life_ok=False`, not as production in a week shelf life
+    forbids."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("200")),
+                  DemandItem("A", "2026-11", Decimal("200"))],
+                 shelf={"A": 1}, margin="0.5", now=date(2026, 9, 28))
+    assert _total(lines) == Decimal("400")
+    for l in lines:
+        if l.capacity_gap:
+            continue
+        limit = 15 if l.demand_month == "2026-11" else 15
+        anchor = date(2026, 11, 1) if l.demand_month == "2026-11" else date(2026, 10, 1)
+        assert (anchor - l.plan_week_start).days <= limit, l
+    blocked = [l for l in lines if l.capacity_gap and not l.shelf_life_ok]
+    assert blocked, [(str(l.plan_week_start), l.demand_month, str(l.qty),
+                      l.shelf_life_ok) for l in lines if l.capacity_gap]
+
+
+def test_two_rows_for_one_material_in_one_week_are_folded_into_one_run():
+    """`_merge_same_slot` is a live path, not decoration: the backward walk
+    routinely lands in a week that already holds the same material for the
+    same demand month (444 of 6,000 randomised pipelines produce a real+real
+    pair). Two rows read as two production runs; physically it is one."""
+    limits = _cap("120", "20", 1)
+    demands = [DemandItem("A", "2026-09", Decimal("94")),
+               DemandItem("A", "2026-10", Decimal("262"))]
+    kwargs = dict(limits=limits, shelf={"A": None}, lead=6,
+                  now=date(2026, 8, 27), mode="iso_first_day")
+
+    lines = _run(demands, **kwargs)
+    slots = [(l.material_code, l.demand_month, l.plan_week_start, l.capacity_gap)
+             for l in lines]
+    assert len(slots) == len(set(slots)), slots
+    assert _total(lines) == Decimal("356")
+    assert (date(2026, 9, 14), Decimal("76.5")) in {
+        (l.plan_week_start, Decimal(str(l.qty))) for l in lines}
+
+    # Without the fold the same plan carries two rows for 2026-09-14 and two
+    # for 2026-09-21 -- same quantities, twice the apparent changeovers.
+    import app.services.mps_engine as engine
+    keep = engine._merge_same_slot
+    try:
+        engine._merge_same_slot = lambda rows: rows
+        unfolded = _run(demands, **kwargs)
+    finally:
+        engine._merge_same_slot = keep
+    assert len(unfolded) == len(lines) + 2
+    assert _total(unfolded) == _total(lines)
+
+
+def test_a_real_line_and_a_gap_line_in_one_week_are_never_folded():
+    """The other half of the fold's contract. Folding them would hide a
+    shortfall inside a production quantity -- the same week legitimately
+    carries "produced 40" and "40 short" at once."""
+    lines = _run([DemandItem("A", "2026-09", Decimal("292"))],
+                 limits=_cap("40", "20", 1), shelf={"A": None}, margin="0.5",
+                 lead=2, now=date(2026, 8, 3))
+    assert _total(lines) == Decimal("292")
+    shared = [l for l in lines if l.plan_week_start == date(2026, 9, 7)]
+    assert sorted((l.capacity_gap, Decimal(str(l.qty))) for l in shared) == [
+        (False, Decimal("40")), (True, Decimal("172"))]
+
+
+# ── Locked lines ────────────────────────────────────────────────────────────
+
+
+def _locked(code, demand_month, week, qty, **kw):
+    return WeeklyLine(material_code=code, demand_month=demand_month,
+                      plan_week_start=week,
+                      plan_week_month=owning_month(week, _WEEKLY),
+                      qty=Decimal(qty), locked=True, **kw)
+
+
+def test_a_locked_line_is_echoed_and_only_the_remainder_is_replanned():
+    """Locked production surviving a recalculate is shipped behaviour. The
+    quantity comes off its own `(material, demand month)` demand BY WEEK, so
+    a month that is part locked and part open keeps its open remainder --
+    dropping the whole key (which is sound monthly) would silently delete
+    it."""
+    held = _locked("A", "2026-10", date(2026, 10, 5), "30")
+    lines = _run([DemandItem("A", "2026-10", Decimal("100"))], locked=[held])
+    assert held in lines                                  # echoed byte for byte
+    assert _total(lines) == Decimal("100")                # 30 locked + 70 replanned
+    replanned = [l for l in lines if not l.locked]
+    assert _total(replanned) == Decimal("70")
+    assert not any(l.capacity_gap for l in lines)
+
+
+def test_locked_production_books_capacity_so_it_is_not_double_planned():
+    """One 40 t week, 40 t already locked in it: there is no room left, and
+    the rest must go elsewhere rather than being planned on top."""
+    only = date(2026, 10, 26)
+    limits = lambda w: CapacityLimits(None, Decimal("40") if w == only else Decimal("0"),
+                                      Decimal("20"))
+    held = _locked("A", "2026-10", only, "40")
+    lines = _run([DemandItem("A", "2026-10", Decimal("55"))], limits=limits,
+                 lead=0, locked=[held])
+    assert _total(lines) == Decimal("55")
+    assert sum(Decimal(str(l.qty)) for l in lines
+               if l.plan_week_start == only and not l.capacity_gap) == Decimal("40")
+    assert _total([l for l in lines if l.capacity_gap]) == Decimal("15")
+
+
+def test_a_product_joins_its_own_locked_week_without_a_second_sku_slot():
+    """Why the engine takes a pre-seeded LOAD rather than the caller
+    shrinking `max_sku_count` from outside.
+
+    `_WeekLoad.sku_room` deliberately does not charge a second slot for a
+    material already in that week. Expressed from outside as
+    `max_sku_count - 1`, a one-SKU week holding locked A becomes a zero-SKU
+    week -- closed to A itself -- and the rest of A is spuriously short.
+    With the load pre-seeded, A joins its own week and the week fills."""
+    only = date(2026, 10, 26)
+    limits = lambda w: CapacityLimits(1, Decimal("40") if w == only else Decimal("0"),
+                                      Decimal("20"))
+    held = _locked("A", "2026-10", only, "10")
+    lines = _run([DemandItem("A", "2026-10", Decimal("50"))], limits=limits,
+                 lead=0, locked=[held])
+    assert _total(lines) == Decimal("50")
+    assert sum(Decimal(str(l.qty)) for l in lines
+               if l.plan_week_start == only and not l.capacity_gap) == Decimal("40")
+
+    # The outside-in emulation, for contrast: max_sku_count 1 - 1 = 0 closes
+    # the week outright and nothing can be produced there at all.
+    assert all(l.capacity_gap for l in pack_bucket(
+        [BucketItem("A", "2026-10", Decimal("40"))], [only],
+        CapacityLimits(0, Decimal("30"), Decimal("20"))))
+
+
+def test_a_run_flows_through_a_locked_week_instead_of_splitting_in_two():
+    """P1 again: a locked week of the same product must not cut a run in
+    half. Seeded into the ledger it is just an occupied week the run can
+    keep filling; emulated as a closed or SKU-exhausted week it would be
+    stepped over, stranding its remaining capacity and costing a changeover
+    the month-based engine never charged."""
+    middle = date(2026, 10, 12)
+    held = _locked("A", "2026-10", middle, "10")
+    canvas = weeks_of_month("2026-10", _WEEKLY)
+    lines = _run([DemandItem("A", "2026-10", Decimal("140"))],
+                 limits=_cap("40", "20", 1), lead=0, locked=[held])
+    assert _total(lines) == Decimal("140")               # 130 replanned + 10 locked
+    assert not any(l.capacity_gap for l in lines)
+    used = sorted({canvas.index(l.plan_week_start) for l in lines})
+    assert used == list(range(used[0], used[-1] + 1)), used     # one unbroken run
+    assert sum(Decimal(str(l.qty)) for l in lines
+               if l.plan_week_start == middle) == Decimal("40")  # locked week filled
+
+
+def test_locked_quantity_beyond_the_demand_is_kept_not_overruled():
+    """A planner may have locked more than the current forecast asks for.
+    The engine echoes it and charges its capacity; it does not silently
+    delete a committed batch because a forecast moved."""
+    held = _locked("A", "2026-10", date(2026, 10, 5), "120")
+    lines = _run([DemandItem("A", "2026-10", Decimal("50"))], locked=[held])
+    assert lines == [held]
+
+
+def test_only_locked_input_still_returns_the_locked_plan():
+    held = _locked("A", "2026-10", date(2026, 10, 5), "30")
+    assert _run([], locked=[held]) == [held]
+    assert _run([DemandItem("A", "2026-10", Decimal("0"))], locked=[held]) == [held]
+
+
+def test_a_preload_of_the_wrong_length_is_refused():
+    """Same contract as the per-week limits sequence: booking a locked batch
+    into the wrong week is worse than refusing to plan."""
+    import pytest
+    with pytest.raises(ValueError, match="preload must line up"):
+        pack_bucket([BucketItem("A", "2026-08", Decimal("10"))], WEEKS,
+                    CapacityLimits(None, Decimal("40"), Decimal("20")),
+                    preloaded=[{}, {}, {}])
