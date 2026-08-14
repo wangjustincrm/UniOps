@@ -71,11 +71,13 @@ EPMS 发票匹配上线一段时间后，AP 反馈两类问题：
 
 **推论**：House Account 差异展示**不能**是纯前端改动，须在 PA 审批人可读的响应上补字段（见 §5.2）。
 
-### 2.7 付款权限只有一个权威落点
+### 2.7 付款权限只有一个权威落点——但只对「执行」成立
 
-EPMS 的 `process` 动作不自行判权，直接转发 finance-api 的 `execute_payment`（`epms-api/app/api/v1/pa.py:524`）；三个付款入口（EPMS PA / OA Direct PA / Finance 批次）都汇聚到那里。因此 SoD 只需改 `finance-api/app/crud/payment_execute.py::_PAY_ROLES` 一处。
+EPMS 的 `process` 动作不自行判权，直接转发 finance-api 的 `execute_payment`（`epms-api/app/api/v1/pa.py:524`）；三个付款入口（EPMS PA / OA Direct PA / Finance 批次）的**执行**都汇聚到那里。因此付款**执行** SoD 只需改 `finance-api/app/crud/payment_execute.py::_PAY_ROLES` 一处。
 
-`_user_role_codes` 已做「主角色 ∪ 附加角色」并集查询，**附加角色开箱即用**。
+**这不覆盖「谁能看到付款按钮／付款态文档」——OA（expense-api）自己维护一份独立的授权判定副本，不经过 finance-api：** `app/api/v1/expenses.py` 的 `_CAN_PAY`（可见性集合，含 `ap_clerk`）以及新增的 `_PAY_PRIMARY`/`_PAY_ASSIGNED`（执行权限集合，镜像 `_PAY_ROLES`/`_PAY_ROLES_ASSIGNED`），供 `GET /expenses/{id}/permissions` 与 `app/api/v1/pa.py` 的 `GET /pa/{id}/permissions` 计算 `can_pay`。这份副本上线时**必须**与 `_PAY_ROLES` 手动同步改动——遗漏会导致 `payment_officer` 收到 PA-DIR 的 `process_pa` 任务却在 OA 里看不到按钮，同时 `ap_clerk` 仍看得到按钮、点了却被 finance-api 403（本次全量审查发现此遗漏，已在实现阶段一并修复）。
+
+`_user_role_codes` 已做「主角色 ∪ 附加角色」并集查询，**附加角色开箱即用**——但仅限于会调用它的判定点；`_CAN_PAY` 系列常量本身不会自动跟着 finance-api 的权威口径走。
 
 ## 3. 范围
 
@@ -267,7 +269,7 @@ UI 文案一律英文（注释可中文）。
 | 风险 | 缓解 |
 |---|---|
 | AP 突然失去付款按钮被当故障上报 | 上线前告知；§4.4 已记录 |
-| 新角色未在 Portal Admin 勾人 → `process_pa` 任务无人认领 | 上线检查清单纳入「至少一名 payment_officer 已授予」；未授予时任务仍对 `finance_manager` 等可见（角色池 + 后备） |
+| 新角色未在 Portal Admin 勾人 → `process_pa` 任务无人认领 | **无「角色池 + 后备」——`epms-api/app/crud/task.py:530-538` 的匹配逻辑是纯 `assigned_role ∈ 该用户角色并集`，不存在退化到 `finance_manager` 等角色的兜底。** 一旦改派脚本跑过，在授予任何人 `payment_officer` 之前，全部 55 张任务对**除 `system_admin` 外的所有人都不可见**（`system_admin` 走的是另一条 `role == "system_admin"` 分支，不受此列表过滤）。上线检查清单**必须**把「至少一名 payment_officer 已授予」列为改派脚本执行的**前置条件**，而非事后可补的告知项 |
 | 遗漏角色枚举登记点导致某处 500 | §4.2 已逐文件列举；实现后以 grep `ap_clerk` 全量复核，逐个判定是否需要平行加入 |
 | `receipt_total` 字段增加发票读取的 N+1 查询 | 单次 `IN` 查询批量取凭证，不逐条查 |
 | 与其他会话并行开发冲突 | 独立 worktree + 独立分支；不 `git stash`（仓库级共享，会弹出其他会话 WIP）；随手 commit 不留 WIP |
