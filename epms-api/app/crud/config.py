@@ -295,14 +295,18 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     "cfo":                  _P(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "auditor":              _P(**_VIEW_ALL, **_BOOKING),
     "erp_pa_officer":       _P(**_VIEW_ALL, **_BOOKING),
-    # NOTE: deliberately NOT _VIEW_ALL. This set must match Task 1's migration
-    # _GRANTS exactly (view_po / view_invoice / view_pa), or "what the
-    # migration seeds" and "what the matrix default claims" disagree forever.
-    # Narrower than erp_pa_officer's _VIEW_ALL on purpose: payment_officer
-    # exists to SEGREGATE duties and acts on already-approved PAs — receipt
-    # and requisition were verified upstream, so view_pr / view_gr are not
-    # needed.
-    "payment_officer":      _P(view_po=True, view_invoice=True, view_pa=True, **_BOOKING),
+    # NOTE: deliberately NOT _VIEW_ALL. This set must match identity's 0008
+    # migration _GRANTS exactly (view_po / view_invoice / view_pa /
+    # view_finance), or "what the migration seeds" and "what the matrix
+    # default claims" disagree forever. Narrower than erp_pa_officer's
+    # _VIEW_ALL on purpose: payment_officer exists to SEGREGATE duties and
+    # acts on already-approved PAs — receipt and requisition were verified
+    # upstream, so view_pr / view_gr are not needed. view_finance IS needed
+    # (2026-08-13 whole-phase-review fix): without it Portal's finance nav
+    # (navConfig.tsx) hides Payments Hub / Payment Batches / Remittance, and
+    # batch payment is core to the role even though finance-api's own gate
+    # already permits it.
+    "payment_officer":      _P(view_po=True, view_invoice=True, view_pa=True, view_finance=True, **_BOOKING),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 

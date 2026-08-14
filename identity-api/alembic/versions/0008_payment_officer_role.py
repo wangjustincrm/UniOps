@@ -2,8 +2,16 @@
 
 payment_officer is an ADDITIONAL role (grantable to many users, never a base
 login role) that owns the Process-Payment task split out of ap_clerk. It gets
-read visibility of the payables chain; payment authority itself is enforced in
+read visibility of the payables chain, plus view_finance so Portal's finance
+nav (Payments Hub / Payment Batches / Remittance) is reachable, not just the
+per-PA "process" action inside EPMS. Payment authority itself is enforced in
 finance-api's _PAY_ROLES, not by a matrix permission.
+
+2026-08-13 whole-phase-review fix: view_finance added here (was missing from
+the original grant set — see §3 IMPORTANT finding in the phase review). Safe
+to edit this file in place because it had not shipped anywhere at review time;
+confirmed via `SELECT version_num FROM alembic_version_identity` against the
+local dev DB and by grep of prod release notes in MEMORY.md before editing.
 
 All inserts are ON CONFLICT DO NOTHING so this is safe to re-run, and
 self-sufficient on a fresh DB (it seeds the permission_defs rows it references
@@ -23,8 +31,17 @@ _PERM_DEFS = {
     "view_po":      ("epms", "View Po", 1),
     "view_invoice": ("epms", "View Invoice", 3),
     "view_pa":      ("epms", "View Pa", 4),
+    # Portal's finance nav (navConfig.tsx) gates Payments Hub / Payment
+    # Batches / Remittance on view_finance — without this grant
+    # payment_officer can pay one PA at a time from EPMS but cannot reach
+    # batch payment at all, even though finance-api's own gate already
+    # permits it (_check_can_pay / _FINANCE_ROLES). Module/label/sort match
+    # the row seed_authz.py / earlier migrations already produce for this
+    # key (module="finance", sort=14) so ON CONFLICT DO NOTHING is a true
+    # no-op wherever the key already exists.
+    "view_finance": ("finance", "View Finance", 14),
 }
-_GRANTS = ["view_po", "view_invoice", "view_pa"]
+_GRANTS = ["view_po", "view_invoice", "view_pa", "view_finance"]
 _LOCKS = ["view_pa"]
 
 
