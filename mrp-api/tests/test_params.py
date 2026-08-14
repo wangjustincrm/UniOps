@@ -142,3 +142,99 @@ async def test_capacity_exception_allows_factory_and_scoped_row_same_week_and_ty
         "SELECT count(*) FROM mrp_capacity_exceptions WHERE week_start = :w"
     ), {"w": _WEEK})).scalar()
     assert count == 2
+
+
+# ── week_start_dow（周起始日）+ 检修周平移 ────────────────────────────────
+#
+# 工厂的周是周六→周五。改这个设置会把整个周网格平移，而产能例外（检修周）是按
+# week_start 日期存的 —— 不跟着平移，检修周就会**静默失效**。所以平移与参数写入
+# 必须在同一个事务里，冲突时整体回滚。
+
+
+@pytest.mark.asyncio
+async def test_week_start_dow_defaults_to_monday(client, auth_headers):
+    r = await client.get("/api/v1/params", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json().get("week_start_dow") in (None, 0)
+
+
+@pytest.mark.asyncio
+async def test_put_week_start_dow_accepts_saturday(client, auth_headers):
+    r = await client.put("/api/v1/params/week_start_dow", json={"value": 5},
+                         headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["week_start_dow"] == 5
+    assert (await client.get("/api/v1/params", headers=auth_headers)).json()["week_start_dow"] == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", [-1, 7, "sat", 1.5, None, True])
+async def test_put_week_start_dow_rejects_bad_values(client, auth_headers, bad):
+    r = await client.put("/api/v1/params/week_start_dow", json={"value": bad},
+                         headers=auth_headers)
+    assert r.status_code == 422, r.text
+
+
+async def _make_exception(client, auth_headers, week_start: str):
+    r = await client.post("/api/v1/capacity/exceptions", json={
+        "week_start": week_start, "scope_type": "factory", "scope_ref": None,
+        "constraint_type": "max_output_qty", "limit_value": 0, "uom": "KG",
+    }, headers=auth_headers)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+@pytest.mark.asyncio
+async def test_changing_week_start_shifts_capacity_exceptions(client, auth_headers):
+    # 检修周：周一制下的 2026-08-17（周一）
+    await _make_exception(client, auth_headers, "2026-08-17")
+
+    r = await client.put("/api/v1/params/week_start_dow", json={"value": 5},
+                         headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["exceptions_shifted"] == 1
+
+    rows = (await client.get("/api/v1/capacity/exceptions", headers=auth_headers)).json()
+    # 8/17 落在周六起算的 8/15~8/21 那一周
+    assert [x["week_start"] for x in rows] == ["2026-08-15"]
+
+
+@pytest.mark.asyncio
+async def test_exceptions_already_on_the_new_grid_are_left_alone(client, auth_headers):
+    await _make_exception(client, auth_headers, "2026-08-15")     # 已经是周六
+    r = await client.put("/api/v1/params/week_start_dow", json={"value": 5},
+                         headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["exceptions_shifted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_exception_shift_conflict_is_409_and_changes_nothing(client, auth_headers):
+    # 周一制的 8/17(周一) 与 8/20(周四) 在周六制下都落进 8/15 那一周
+    await _make_exception(client, auth_headers, "2026-08-17")
+    await _make_exception(client, auth_headers, "2026-08-20")
+
+    r = await client.put("/api/v1/params/week_start_dow", json={"value": 5},
+                         headers=auth_headers)
+    assert r.status_code == 409, r.text
+    assert "2026-08-15" in r.text
+
+    # 整个请求回滚：参数没改，例外一条没动
+    params = (await client.get("/api/v1/params", headers=auth_headers)).json()
+    assert params.get("week_start_dow") in (None, 0)
+    rows = (await client.get("/api/v1/capacity/exceptions", headers=auth_headers)).json()
+    assert sorted(x["week_start"] for x in rows) == ["2026-08-17", "2026-08-20"]
+
+
+@pytest.mark.asyncio
+async def test_month_fixed_mode_shifts_nothing(client, auth_headers):
+    """month_fixed 的周按 1/8/15/22/29 切，与周起始日无关 —— 一条都不该动。"""
+    await client.put("/api/v1/params/week_calendar_mode", json={"value": "month_fixed"},
+                     headers=auth_headers)
+    await _make_exception(client, auth_headers, "2026-08-08")
+    r = await client.put("/api/v1/params/week_start_dow", json={"value": 5},
+                         headers=auth_headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["exceptions_shifted"] == 0
+    rows = (await client.get("/api/v1/capacity/exceptions", headers=auth_headers)).json()
+    assert [x["week_start"] for x in rows] == ["2026-08-08"]
