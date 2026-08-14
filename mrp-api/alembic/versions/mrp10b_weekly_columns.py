@@ -95,23 +95,33 @@ def upgrade() -> None:
         "mrp_mps_lines",
         sa.Column("weeks_early", sa.Integer(), nullable=False, server_default="0"),
     )
-    op.create_index("ix_mrp_mps_lines_plan_week", "mrp_mps_lines", ["plan_week_start"])
+    op.create_index("ix_mrp_mps_lines_plan_week_start", "mrp_mps_lines", ["plan_week_start"])
 
     op.add_column("mrp_demands", sa.Column("plan_week_start", sa.Date(), nullable=False))
-    op.create_index("ix_mrp_demands_plan_week", "mrp_demands", ["plan_week_start"])
+    op.create_index("ix_mrp_demands_plan_week_start", "mrp_demands", ["plan_week_start"])
 
 
 def downgrade() -> None:
     """Restores the monthly column shape only. The rows deleted by upgrade()
     (every mrp_mps_run, mrp_mps_line, mrp_demand as of this migration) are
     gone permanently -- this is a structural rollback, not a data recovery."""
-    op.drop_index("ix_mrp_demands_plan_week", table_name="mrp_demands")
+    op.drop_index("ix_mrp_demands_plan_week_start", table_name="mrp_demands")
     op.drop_column("mrp_demands", "plan_week_start")
 
-    op.drop_index("ix_mrp_mps_lines_plan_week", table_name="mrp_mps_lines")
+    op.drop_index("ix_mrp_mps_lines_plan_week_start", table_name="mrp_mps_lines")
     op.drop_column("mrp_mps_lines", "weeks_early")
     op.drop_column("mrp_mps_lines", "plan_week_month")
     op.drop_column("mrp_mps_lines", "plan_week_start")
+    # NOT NULL with no server_default: only safe because mrp_mps_lines is
+    # still empty here (upgrade() wiped it and downgrade() doesn't restore
+    # data). Run this downgrade later, once Task 7 has shipped and real
+    # weekly rows exist, and this add_column hard-fails on the NOT NULL
+    # constraint -- a loud, safe failure, not the silent-invention mode the
+    # upgrade side warns about, so left as-is. If that path ever matters,
+    # plan_week_month already holds each row's calendar month, so
+    # `plan_month = plan_week_month` would be a valid backfill to run before
+    # this add_column -- not implemented here since downgrade never runs
+    # against non-empty tables today.
     op.add_column("mrp_mps_lines", sa.Column("plan_month", sa.CHAR(7), nullable=False))
 
     op.drop_column("mrp_mps_runs", "week_calendar_mode")
