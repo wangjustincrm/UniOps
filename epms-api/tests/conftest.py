@@ -1,5 +1,6 @@
 """Shared pytest fixtures for the EPMS API test suite."""
 import asyncio
+import os
 import uuid
 
 import pytest
@@ -227,7 +228,12 @@ def _patch_mdm_client(monkeypatch):
 # Requires a pre-created database. Run once:
 #   python -m scripts.create_test_db
 _base_url, _ = str(settings.DATABASE_URL).rsplit("/", 1)
-_TEST_DB_URL = f"{_base_url}/epms_test"
+# TEST_EPMS_DB lets a second session run this suite against its own database.
+# The suite drops and recreates every table, so two sessions sharing `epms_test`
+# corrupt each other's runs (the 2026-08-11 three-way-allocation release saw a
+# shared DB produce three different fake failure counts). Same knob identity-api's
+# conftest has had as TEST_IDENTITY_DB.
+_TEST_DB_URL = f"{_base_url}/{os.getenv('TEST_EPMS_DB', 'epms_test')}"
 
 
 # ── Force all async tests to use the session event loop ───────────────────────
@@ -257,6 +263,20 @@ async def test_engine():
         await conn.execute(text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # approval-api's routing table (same physical DB in prod, no ORM model
+        # here). access_scope reads it with raw SQL whenever it resolves a scoped
+        # approver's departments, which every dashboard that counts pending
+        # approvals goes through — without the shadow those tests die on
+        # UndefinedTable instead of asserting anything.
+        await conn.execute(text("DROP TABLE IF EXISTS approval_dept_routing CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',"
+            " director_user_id uuid,"
+            " supervisor_enabled boolean NOT NULL DEFAULT false,"
+            " updated_by uuid,"
+            " updated_at timestamptz NOT NULL DEFAULT now())"))
         # role_defs / permission_defs / role_permissions / role_permission_locks
         # are also identity-owned (no ORM model here) — same physical DB in
         # prod. The shared uniops_authz package (require_permission,

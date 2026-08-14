@@ -22,6 +22,12 @@ BUILT_IN_ROLES: frozenset[str] = frozenset({
     "cfo", "auditor", "erp_pa_officer", "payment_officer", "system_admin",
 })
 
+# Roles granted ONLY through identity's user_roles side table — never written to
+# users.role. identity's role_defs.assignable_as_primary (migration 0009) is the
+# source of truth; this mirror only backs the identity-down fallback below, so
+# the primary-role guard does not come undone when identity is unreachable.
+ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer"})
+
 # Permissions that cannot be disabled for the given role (enforced server-side).
 # The view_* locks below correspond to roles that would be functionally broken
 # without that visibility (e.g. ap_clerk must see invoices to match them).
@@ -501,11 +507,12 @@ def list_all_roles(cfg: CompanyConfig) -> list[dict]:
             "description": "",
             "is_active": True,
             "is_builtin": True,
+            "assignable_as_primary": code not in ADDITIONAL_ONLY_ROLES,
         }
         for code in BUILT_IN_ROLES
     ]
     custom = [
-        {**cr, "is_builtin": False}
+        {"assignable_as_primary": True, **cr, "is_builtin": False}
         for cr in cfg.custom_roles
     ]
     return built_in + custom

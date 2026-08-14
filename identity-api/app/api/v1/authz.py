@@ -105,7 +105,8 @@ async def get_defs(db: SessionDep, _: CurrentUserPayload) -> dict:
         locked_for.setdefault(key, []).append(role)
     return {
         "roles": [{"code": r.code, "label": r.label, "sort": r.sort,
-                   "is_active": r.is_active} for r in roles],
+                   "is_active": r.is_active,
+                   "assignable_as_primary": r.assignable_as_primary} for r in roles],
         "permissions": [{"key": p.key, "module": p.module, "label": p.label,
                          "sort": p.sort, "locked_for": sorted(locked_for.get(p.key, []))}
                         for p in perms],
@@ -180,9 +181,20 @@ async def put_user_roles(user_id: uuid.UUID, body: UserRolesPut,
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if u is None:
         raise HTTPException(status_code=404, detail="User not found")
-    codes = {r.code for r in (await db.execute(select(RoleDef))).scalars().all()}
+    defs = {r.code: r for r in (await db.execute(select(RoleDef))).scalars().all()}
+    codes = set(defs)
     if body.primary not in codes:
         raise HTTPException(status_code=422, detail=f"Unknown role '{body.primary}'")
+    # ADDITIONAL-ONLY roles (erp_pa_officer / payment_officer) are granted through
+    # user_roles and must never become users.role — payment_officer as a primary
+    # role wins finance-api's PRIMARY-role payment short-circuit while bypassing
+    # the whole additional-role model. The frontends filter their dropdowns on the
+    # same flag from /authz/defs; this is the check that a direct API call hits.
+    if not defs[body.primary].assignable_as_primary:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Role '{body.primary}' is an additional-only role and cannot be "
+                   f"a primary role — grant it under Additional Roles instead")
     bad = [c for c in body.additional if c not in codes]
     if bad:
         raise HTTPException(status_code=422, detail=f"Unknown roles {bad}")

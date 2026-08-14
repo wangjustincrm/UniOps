@@ -259,6 +259,11 @@ async def list_roles(db: SessionDep, _: CurrentUserPayload, token: BearerToken):
             "description": "",
             "is_active": r.get("is_active", True),
             "is_builtin": r["code"] in BUILT_IN_ROLES,
+            # identity's role_defs.assignable_as_primary — false for roles that
+            # may only be held as ADDITIONAL (erp_pa_officer / payment_officer).
+            # Absent on an identity older than migration 0009 ⇒ treat as
+            # selectable, matching the pre-0009 behaviour.
+            "assignable_as_primary": r.get("assignable_as_primary", True),
         }
         for r in body.get("roles", [])
     ]

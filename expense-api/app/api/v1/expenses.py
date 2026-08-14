@@ -351,41 +351,58 @@ async def create_expense(
 @router.get("/my-actions", response_model=ExpenseClaimListResponse)
 async def my_actions(db: SessionDep, user: CurrentUserDep):
     """Returns expense claims where the current user needs to take action.
-    Used by Portal task inbox aggregation. Approver steps are derived from the
-    configured workflow_defs (per claim type) at request time — not a hardcoded
-    step→role map — so a customised approval flow stays consistent here.
+    Used by Portal task inbox aggregation.
+
+    The approval half reads the shared `tasks` table (written by approval-api) —
+    the same source `_can_act_on_claim` gates the Approve button on, so the inbox
+    lists exactly what the caller can actually act on. It used to select every
+    claim parked at a workflow step whose role the caller holds, which had no
+    department predicate at all: since `dept_manager` is a populous role, every
+    department manager saw every company claim at that step (requester name and
+    amount included). approval-api PINS a dept_manager task to the one manager
+    who routes for that claim's department, so reading tasks restores the scope
+    without this endpoint having to re-derive routing rules of its own.
+
+    Trade-off, deliberate: a claim whose approval task was closed while the claim
+    stayed open (the Mark Done incident) no longer appears here. It cannot be
+    approved by anyone — it needs the heal script, not an inbox row.
+
+    The payment half (approved claims for _CAN_PAY roles) is a role pool with no
+    per-document task, so it stays role-based.
     """
-    from sqlalchemy import or_, select
+    from sqlalchemy import and_, func, or_, select
     from app.models.expense import ExpenseClaim as EC
+    from app.models.task_mirror import TaskMirror as TM
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
     roles = await _user_role_codes(db, user_id, role)   # multi-role union
-    wf = await _get_workflow_defs(db)
 
-    conditions = []
+    # `gm_or_opm` is a synthetic assigned_role (not a real role code): approval-api
+    # broadcasts singleton-post steps under it so the CURRENT holder resolves live.
+    # Mirrors _can_act_on_claim.
+    assigned_roles = {r.lower() for r in roles}
+    if "gm" in assigned_roles or "opm" in assigned_roles:
+        assigned_roles.add("gm_or_opm")
 
-    def _add(ct_filter, key):
-        for idx, step in enumerate(wf.get(key) or []):
-            if step.get("role") in roles:
-                conditions.append(
-                    ct_filter
-                    & (EC.status.in_(["submitted", "in_review"]))
-                    & (EC.approval_step_idx == idx)
-                )
+    open_task_for_me = select(TM.document_id).where(
+        TM.is_completed.is_(False),
+        TM.type.like("approve_%"),
+        or_(
+            TM.assigned_user_id == user_id,
+            and_(TM.assigned_user_id.is_(None),
+                 func.lower(TM.assigned_role).in_(assigned_roles)),
+        ),
+    )
 
-    _add(EC.claim_type == "EXP", "exp")
-    _add(EC.claim_type == "MIL", "mil")
-    _add(EC.claim_type == "TRV", "trv")
-    _add(EC.claim_type.like("CFM%"), "cfm")
+    conditions = [
+        EC.status.in_(["submitted", "in_review"]) & EC.id.in_(open_task_for_me)
+    ]
 
     # TRA excluded — an approved Travel Application has total_amount 0 and never
     # enters the payment path, so it must not surface as a pay-action inbox item.
     if any(r in _CAN_PAY for r in roles):
         conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
-
-    if not conditions:
-        return ExpenseClaimListResponse(items=[], total=0)
 
     q = select(EC).where(or_(*conditions)).order_by(EC.created_at.desc()).limit(50)
     result = await db.execute(q)

@@ -15,12 +15,13 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { PmsImportPanel } from './PmsImportPanel'
 import {
-  useConfig, useUpdateConfig,
+  useConfig, useUpdateConfig, useRoles,
 } from '@/hooks/useConfig'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useUsers, useCreateUser, useUpdateUser, useDeleteUser } from '@/hooks/useUsers'
 import { type ApiUserRole, type ApiUser } from '@/services/users'
 import {
+  type CustomRole,
   type PdfTemplateSettings,
   type ServiceGrSlaConfig, type GrNotificationSlaConfig,
   type PrepaymentConfig, type CollectionConfig,
@@ -37,15 +38,28 @@ import { CURRENCIES } from '@/types'
 // payment_officer in particular must not be primary: finance-api's _check_can_pay
 // short-circuits on the primary role, so making it primary would hand out payment
 // authority while bypassing the additional-role model entirely.
-const ADDITIONAL_ONLY_ROLES = new Set<string>(['erp_pa_officer', 'payment_officer'])
-// ROLE_LABELS filtered down to roles selectable as a PRIMARY role — used by the
-// user-create/edit Role <select> and the CSV import's validation/template, both
-// of which write ApiUser.role. ROLE_LABELS itself stays complete (unfiltered)
-// because it's still needed to display these roles wherever a user holds them
-// as an additional role (search filter, table cell, etc).
-const PRIMARY_ROLE_LABELS = Object.fromEntries(
-  Object.entries(ROLE_LABELS).filter(([code]) => !ADDITIONAL_ONLY_ROLES.has(code)),
-) as Record<string, string>
+// Fallback for the primary-role filter, used only until GET /config/roles has
+// answered (and if it ever fails). The live answer is identity's
+// `role_defs.assignable_as_primary` — adding another additional-only role is a
+// data change there, not an edit here.
+const ADDITIONAL_ONLY_ROLES_FALLBACK = new Set<string>(['erp_pa_officer', 'payment_officer'])
+
+/** ROLE_LABELS filtered down to roles selectable as a PRIMARY role — used by the
+ *  user-create/edit Role <select> and the CSV import's validation/template, both
+ *  of which write ApiUser.role. ROLE_LABELS itself stays complete (unfiltered)
+ *  because it's still needed to display these roles wherever a user holds them
+ *  as an additional role (search filter, table cell, etc).
+ *
+ *  `roles` is GET /config/roles; while it loads we fall back to the constant
+ *  above, so the additional-only roles are never briefly selectable. */
+function primaryRoleLabels(roles: CustomRole[] | undefined): Record<string, string> {
+  const blocked = roles?.length
+    ? new Set(roles.filter((r) => r.assignable_as_primary === false).map((r) => r.code))
+    : ADDITIONAL_ONLY_ROLES_FALLBACK
+  return Object.fromEntries(
+    Object.entries(ROLE_LABELS).filter(([code]) => !blocked.has(code)),
+  ) as Record<string, string>
+}
 
 // ─── Nav sections ─────────────────────────────────────────────────────────────
 
@@ -1028,6 +1042,7 @@ const BLANK_USER: UserFormData = { full_name: '', email: '', role: 'requester', 
 const INITIAL_PASSWORD = 'Feihe12#$'
 
 function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: UserFormData; onSave: (d: UserFormData) => void; onCancel: () => void; title: string; saveError?: string | null }) {
+  const rolesQ = useRoles()
   const { data: deptData } = useDepartments()
   const activeDepts = (deptData?.items ?? []).filter((d) => d.is_active)
   const { data: usersData } = useUsers()
@@ -1076,7 +1091,7 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-neutral-700">Role <span className="text-danger-600">*</span></label>
           <select className={fldCls()} value={form.role} onChange={(e) => set('role', e.target.value)}>
-            {(Object.entries(PRIMARY_ROLE_LABELS) as [UserRole, string][]).map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
+            {(Object.entries(primaryRoleLabels(rolesQ.data)) as [UserRole, string][]).map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-4 h-10">
@@ -1115,7 +1130,6 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
 // ─── CSV helpers (User import/export) ─────────────────────────────────────────
 
 const CSV_HEADERS = ['full_name', 'email', 'role', 'erp_person_code', 'department', 'is_active', 'teams_account'] as const
-const VALID_ROLES = new Set(Object.keys(PRIMARY_ROLE_LABELS))
 
 interface CsvRow {
   full_name: string; email: string; role: string; erp_person_code: string; department: string; is_active: string; teams_account: string
@@ -1125,7 +1139,7 @@ interface ImportRow extends CsvRow {
   errors: string[]
 }
 
-function parseUserCsv(text: string): ImportRow[] {
+function parseUserCsv(text: string, validRoles: Set<string>): ImportRow[] {
   const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.trim())
   if (lines.length < 2) return []
   // header row: normalise to lowercase trimmed
@@ -1157,7 +1171,7 @@ function parseUserCsv(text: string): ImportRow[] {
     if (!row.email) row.errors.push('Email required')
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) row.errors.push('Invalid email')
     if (!row.role) row.errors.push('Role required')
-    else if (!VALID_ROLES.has(row.role)) row.errors.push(`Unknown role "${row.role}"`)
+    else if (!validRoles.has(row.role)) row.errors.push(`Unknown role "${row.role}"`)
     if (!row.erp_person_code) row.errors.push('ERP person code required')
     if (!row.department) row.errors.push('Department required')
     const activeRaw = row.is_active.toLowerCase()
@@ -1183,10 +1197,10 @@ function exportUsersCsv(users: ApiUser[]) {
   a.click(); URL.revokeObjectURL(url)
 }
 
-function downloadTemplate() {
+function downloadTemplate(validRoles: string[]) {
   const header = CSV_HEADERS.join(',')
   const example = 'Jane Smith,jane.smith@company.ca,requester,EMP-0001,Marketing,true,jane.smith@company.onmicrosoft.com'
-  const roleNote = `# Valid roles: ${Object.keys(PRIMARY_ROLE_LABELS).join(' | ')}`
+  const roleNote = `# Valid roles: ${validRoles.join(' | ')}`
   const blob = new Blob([[header, example, roleNote].join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url
@@ -1274,6 +1288,11 @@ function ImportPanel({ rows, existingEmails, onConfirm, onCancel }: {
 // ─── User Management ───────────────────────────────────────────────────────────
 
 function UserManagement() {
+  const rolesQ = useRoles()
+  // Roles a user may hold as their PRIMARY role — backs both the CSV import's
+  // validation and the downloadable template, so an additional-only role can't
+  // sneak in through a hand-edited CSV either.
+  const primaryRoleCodes = Object.keys(primaryRoleLabels(rolesQ.data))
   const { data: userData } = useUsers()
   const users = userData?.items ?? []
   const createUser = useCreateUser()
@@ -1311,7 +1330,7 @@ function UserManagement() {
     const reader = new FileReader()
     reader.onload = (ev) => {
       const text = ev.target?.result as string
-      const rows = parseUserCsv(text)
+      const rows = parseUserCsv(text, new Set(primaryRoleCodes))
       setImportRows(rows.length > 0 ? rows : null)
       if (rows.length === 0) alert('No data rows found. Check that the file has a header row and at least one data row.')
     }
@@ -1371,7 +1390,7 @@ function UserManagement() {
                     Export all users (.csv)
                   </button>
                   <button className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50 transition-colors"
-                    onClick={() => { downloadTemplate(); setShowExportMenu(false) }}>
+                    onClick={() => { downloadTemplate(primaryRoleCodes); setShowExportMenu(false) }}>
                     <FileText className="h-4 w-4 text-neutral-400" />
                     Download import template
                   </button>
