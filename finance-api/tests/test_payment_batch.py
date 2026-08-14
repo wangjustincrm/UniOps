@@ -160,7 +160,7 @@ async def test_create_and_execute_batch(client, db_session):
     assert batch["total"] == "300.00" and batch["status"] == "draft"
 
     r2 = await client.post(f"/finance/v1/payments/batches/{batch['id']}/execute",
-                           headers=_h("ap_clerk"))
+                           headers=_h("payment_officer"))
     assert r2.status_code == 200, r2.text
     assert r2.json()["paid"] == 2 and r2.json()["failed"] == 0
 
@@ -217,7 +217,7 @@ async def test_prepayment_pa_leaves_invoice_partially_paid(client, db_session):
                  invoice_ids=[str(inv.id)])
     db_session.add(prepay)
     await db_session.flush()
-    r = await client.post("/finance/v1/payments/execute", headers=_h("ap_clerk"),
+    r = await client.post("/finance/v1/payments/execute", headers=_h("payment_officer"),
                           json={"doc_kind": "pa", "doc_id": str(prepay.id)})
     assert r.status_code == 200, r.text
     await db_session.refresh(inv)
@@ -233,7 +233,7 @@ async def test_prepayment_pa_leaves_invoice_partially_paid(client, db_session):
                   invoice_ids=[str(inv.id)])
     db_session.add(balance)
     await db_session.flush()
-    r = await client.post("/finance/v1/payments/execute", headers=_h("ap_clerk"),
+    r = await client.post("/finance/v1/payments/execute", headers=_h("payment_officer"),
                           json={"doc_kind": "pa", "doc_id": str(balance.id)})
     assert r.status_code == 200, r.text
     await db_session.refresh(inv)
@@ -266,7 +266,7 @@ async def test_batch_with_claim_executes_and_flips_status(client, db_session):
     assert r.json()["total"] == "175.00"
 
     r2 = await client.post(f"/finance/v1/payments/batches/{r.json()['id']}/execute",
-                           headers=_h("ap_clerk"))
+                           headers=_h("payment_officer"))
     assert r2.status_code == 200, r2.text
     assert r2.json()["paid"] == 2 and r2.json()["failed"] == 0
 

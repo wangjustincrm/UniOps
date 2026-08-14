@@ -5,9 +5,9 @@ THE single implementation of "money goes out": status flip + payment_records
 legacy HTTP entries (epms-api PA action=process, expense-api /pa/{id}/pay and
 /expenses/{id}/pay) forward here.
 
-can_pay: JWT role in _PAY_ROLES, OR an ADDITIONAL role of finance_bp /
-finance_manager held in identity's user_roles (same physical DB — phase 3
-retired the old company_config.role_management assignments).
+can_pay: JWT role in _PAY_ROLES, OR any _PAY_ROLES member held as an
+ADDITIONAL role in identity's user_roles (same physical DB — phase 3 retired
+the old company_config.role_management assignments).
 """
 import uuid
 from datetime import date, datetime, timezone
@@ -33,7 +33,14 @@ from app.services import budget_client
 from app.schemas.payment_execute import PaymentExecuteRequest, PaymentExecuteResponse
 from app.services.posting import emit_event
 
-_PAY_ROLES = {"ap_clerk", "finance_manager", "finance_bp", "system_admin"}
+# Segregation of duties (2026-08-13): payment EXECUTION is split out of AP
+# Clerk. ap_clerk is deliberately REMOVED, not left in alongside
+# payment_officer — that removal is the entire point of the change; AP Clerk
+# still reads finance data (see _FINANCE_ROLES in app/core/deps.py), it just
+# can no longer move money. finance_manager / finance_bp / system_admin stay
+# as the availability fallback so payment doesn't deadlock while the
+# payment_officer holder is away.
+_PAY_ROLES = {"payment_officer", "finance_manager", "finance_bp", "system_admin"}
 
 
 class PaymentPermissionError(Exception):
@@ -82,7 +89,11 @@ async def _check_can_pay(db: AsyncSession, user: dict) -> None:
         return
     user_id = uuid.UUID(str(user.get("sub", "")))
     codes = await _user_role_codes(db, user_id, user.get("role", ""))
-    if "finance_bp" in codes or "finance_manager" in codes:
+    # Generalized against _PAY_ROLES (2026-08-13) rather than a hardcoded
+    # finance_bp/finance_manager check — payment_officer must also qualify
+    # when held as an ADDITIONAL role (identity user_roles), which is how it
+    # is expected to be assigned in production, not just as a primary role.
+    if codes & _PAY_ROLES:
         return
     raise PaymentPermissionError("Insufficient role to record payment")
 

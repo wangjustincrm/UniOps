@@ -18,7 +18,7 @@ from app.models.payment import PaymentRecord
 from app.models.posting import PostingEvent, PostingLine
 
 
-def _token(role: str = "ap_clerk", user_id: str | None = None) -> str:
+def _token(role: str = "payment_officer", user_id: str | None = None) -> str:
     payload = {
         "sub": user_id or str(uuid.uuid4()), "role": role,
         "exp": datetime.now(timezone.utc) + timedelta(hours=1),
@@ -57,7 +57,7 @@ def _claim(status="approved") -> ExpenseClaim:
     )
 
 
-async def _execute(client, doc_kind, doc_id, role="ap_clerk", user_id=None, **body):
+async def _execute(client, doc_kind, doc_id, role="payment_officer", user_id=None, **body):
     return await client.post(
         "/finance/v1/payments/execute",
         json={"doc_kind": doc_kind, "doc_id": str(doc_id), **body},
