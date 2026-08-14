@@ -260,6 +260,15 @@ export default function PaDetailPage() {
   // Must stay above the early returns below — calling it later would make the
   // hook count differ between the loading and loaded renders (Rules of Hooks).
   const { data: myTasks } = useTasks({ is_completed: false })
+  // Payment execution authority is segregated from ap_clerk (2026-08-13) and
+  // held by payment_officer (an additional role, invisible to user?.role) plus
+  // finance_manager/finance_bp/system_admin. Ask the server rather than
+  // re-deriving the role set client-side — same endpoint/gate the Finance
+  // Payment Batches UI uses (finance/src/pages/finance/PaymentBatchPage.tsx).
+  const { data: payPerm } = useQuery({
+    queryKey: ['payments-can-pay'],
+    queryFn: () => financeApi.get<{ can_pay: boolean }>('/payments/can-pay'),
+  })
 
   if (isLoading) {
     return (
@@ -293,7 +302,7 @@ export default function PaDetailPage() {
   const canApprove  =
     (['submitted', 'in_review'].includes(pa.status)) &&
     hasApproveTask
-  const canProcess  = user?.role === 'ap_clerk'
+  const canProcess  = payPerm?.can_pay ?? false
   const canSettle   = user?.role === 'requester' || user?.role === 'system_admin'
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
@@ -404,7 +413,7 @@ export default function PaDetailPage() {
               Settle Prepayment
             </Button>
           )}
-          {pa.pa_type === 'settlement' && pa.status === 'submitted' && Number(pa.payment_amount) === 0 && (canProcess || user?.role === 'system_admin') && (
+          {pa.pa_type === 'settlement' && pa.status === 'submitted' && Number(pa.payment_amount) === 0 && canProcess && (
             <Button
               onClick={() => confirmSettlement.mutate()}
               disabled={confirmSettlement.isPending}
