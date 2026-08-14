@@ -210,6 +210,13 @@ need_weeks(p) = ceil(q_p / cap)          # 产能决定的最少周数
 - 三行结构（Demand / Available / Planned）保留：**Demand 与 Available 仍按月**——月展开时显示在该月的**第一周列**并跨列居中，月折叠时显示在月汇总列；**只有 Planned 落到具体周**
 - 现有单滚动容器 + sticky 表头/首列/Total、缺口红格、No-BOM 徽章、KG/吨切换、导出全部沿用
 - Excel 导出改为周列 + 月分组表头
+- **★底部锁死的周合计行**（用户 2026-08-14 要求）：表格最后一行显示**每个周列的总产量**（全部产品之和），
+  用 `<tfoot sticky bottom-0>` 吸底，镜像表头那套（表头是整块 `<thead sticky top-0 z-20>`，首两列另加
+  `sticky left-* z-30`），滚动时始终可见。
+  - **口径与 Planned 行一致**：只统计实产、**排除 capacity_gap 行的量**——缺口不是产量，把它算进合计会让
+    "本周排了多少"这个数字失真
+  - 月**折叠**时，该月汇总列显示该月各周之和；月展开时逐周显示
+  - 跟随页面的 KG/吨 切换（走 `formatValue`）
 - **★点周表头 → 右侧抽屉设检修周**（用户 2026-08-13 要求；**不用右键**，与现有「点计划格 → AdjustDrawer」同一套交互）
   - 新增 `WeekDrawer`，照抄 `AdjustDrawer` 的形态：`createPortal` 到 body、`fixed inset-0 z-[90] flex justify-end bg-black/40`、
     Cancel/Save 按钮、`min-h-[44px]` 触控高度
