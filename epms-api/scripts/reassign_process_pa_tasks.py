@@ -21,7 +21,9 @@ Completed tasks are historical record and are never touched. Other task
 types on ap_clerk (e.g. resolve_exception) are untouched — only the payment
 workflow moved roles, not AP clerk's other duties.
 
-Idempotent: a second run finds no more ap_clerk rows and changes nothing.
+Idempotent: a second run finds no more ap_clerk rows and changes nothing —
+and, because it changed nothing, leaves an existing moved-ids file (below)
+exactly as it is rather than overwriting it with an empty ids list.
 
 Reverse (rollback) path, same script, --revert. IMPORTANT: after release,
 approval-api starts assigning brand-new process_pa tasks directly to
@@ -112,8 +114,15 @@ async def reassign(dry_run: bool, db_url: str | None = None,
                 f"--revert-all (revert_all=True) to explicitly opt into that full, "
                 f"unscoped sweep instead."
             )
-        record = json.loads(ids_path.read_text())
-        restrict_ids = [uuid.UUID(i) for i in record["ids"]]
+        try:
+            record = json.loads(ids_path.read_text())
+            restrict_ids = [uuid.UUID(i) for i in record["ids"]]
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            raise SystemExit(
+                f"Moved-ids record at {ids_path} is unreadable ({exc!r}); refusing to "
+                f"revert. Fix or remove the file, or pass --revert-all for an explicit "
+                f"unscoped sweep instead."
+            ) from exc
 
     scope_note = "FORWARD"
     if revert:
@@ -175,18 +184,28 @@ async def reassign(dry_run: bool, db_url: str | None = None,
     )
 
     if not dry_run and not revert:
-        # Forward apply only: record exactly which rows moved so a later
-        # --revert can undo only these, not tasks approval-api has since
-        # assigned directly to payment_officer.
-        record = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "from_role": from_role,
-            "to_role": to_role,
-            "count": stats["changed"],
-            "ids": [str(i) for i in changed_ids],
-        }
-        ids_path.write_text(json.dumps(record, indent=2))
-        print(f"  moved-ids recorded: {ids_path}")
+        if stats["changed"] == 0:
+            # Nothing moved this run — most likely a re-run of --apply after
+            # the backlog was already migrated (the idempotent no-op case).
+            # Leave any existing ids file exactly as it is: overwriting it
+            # here would replace a real moved-ids record with an empty one,
+            # and a later scoped --revert would then silently revert
+            # nothing — the same "quietly does nothing when you need it"
+            # failure this file exists to prevent.
+            print("  no rows changed; existing ids file left untouched")
+        else:
+            # Forward apply only: record exactly which rows moved so a later
+            # --revert can undo only these, not tasks approval-api has since
+            # assigned directly to payment_officer.
+            record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "from_role": from_role,
+                "to_role": to_role,
+                "count": stats["changed"],
+                "ids": [str(i) for i in changed_ids],
+            }
+            ids_path.write_text(json.dumps(record, indent=2))
+            print(f"  moved-ids recorded: {ids_path}")
 
     stats["changed_ids"] = [str(i) for i in changed_ids]
     return stats

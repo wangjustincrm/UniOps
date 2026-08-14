@@ -12,6 +12,7 @@ Task row with a random UUID is sufficient — no PA needs to exist.
 Every test passes its own tmp_path ids-file so runs never touch (or race on)
 scripts/reassign_process_pa_tasks.py's real default moved-ids file.
 """
+import json
 import uuid
 from decimal import Decimal
 from pathlib import Path
@@ -128,6 +129,43 @@ async def test_reassign_is_idempotent(tmp_path: Path):
         async with sm.AsyncSessionLocal() as db:
             reloaded = (await db.execute(select(Task).where(Task.id == task_id))).scalar_one()
             assert reloaded.assigned_role == "payment_officer", "must still be on the target role"
+    finally:
+        async with sm.AsyncSessionLocal() as db:
+            await db.execute(sa_delete(Task).where(Task.id == task_id))
+            await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_second_apply_leaves_ids_file_untouched(tmp_path: Path):
+    """A re-run of --apply after the backlog is already migrated is the
+    idempotent no-op case (changed == 0). It must not overwrite the
+    moved-ids file with an empty list — that would silently defang a later
+    scoped --revert, the same failure shape fix round 1 closed.
+    """
+    ids_file = tmp_path / "moved.json"
+    async with sm.AsyncSessionLocal() as db:
+        task = _make_task()
+        db.add(task)
+        await db.flush()
+        task_id = task.id
+        await db.commit()
+
+    try:
+        first = await reassign(dry_run=False, db_url=_TEST_DB_URL, ids_file=ids_file)
+        assert first["changed"] >= 1
+        first_record = json.loads(ids_file.read_text())
+        assert str(task_id) in first_record["ids"]
+
+        second = await reassign(dry_run=False, db_url=_TEST_DB_URL, ids_file=ids_file)
+        assert second["changed"] == 0
+
+        second_record = json.loads(ids_file.read_text())
+        assert second_record == first_record, (
+            "a no-op re-run must leave the existing ids file exactly as it was"
+        )
+        assert str(task_id) in second_record["ids"], (
+            "the ids file must still list the originally moved task, not an empty list"
+        )
     finally:
         async with sm.AsyncSessionLocal() as db:
             await db.execute(sa_delete(Task).where(Task.id == task_id))
