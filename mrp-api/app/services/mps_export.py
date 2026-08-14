@@ -51,6 +51,7 @@ _METRIC_ROWS = (("Demand", "demand"), ("Available", "available"), ("Planned", "p
 
 class _LineLike(Protocol):
     material_code: str
+    demand_month: str
     plan_week_month: str
     qty: Decimal
     demand_forecast: Decimal
@@ -70,11 +71,25 @@ def _scaled(value: Decimal, unit: str) -> float:
 def build_mps_matrix_workbook(
     run, lines: Iterable[_LineLike], unit: str, name_by_code: dict[str, str | None],
 ) -> bytes:
-    """Group `lines` by material_code -> plan_week_month, aggregating
-    planned=Σqty, demand=Σdemand_forecast, available=Σopening_stock per cell
-    (a (material, plan_week_month) pair can have more than one line whenever the
-    engine split demand across a gap-then-placed pair or similar — summing
-    is the same "one number per cell" contract the forecast grid uses).
+    """Group `lines` by material_code -> plan_week_month.
+
+    `planned` sums every line's qty. `demand`/`available` **must not**:
+    `demand_forecast` and `opening_stock` are snapshotted PER DEMAND MONTH
+    and copied onto every line of that month, so one demand month split
+    across four plan weeks carries the same 120 t four times. Summing them
+    reported 480 t of demand against 120 t planned -- a fabricated shortfall
+    on every product the weekly engine spreads across weeks, which is nearly
+    all of them. They are therefore counted ONCE per distinct
+    `(material_code, plan_week_month, demand_month)`.
+
+    (Under the month-based engine summing was correct, because two lines in
+    one `(material, plan_month)` cell necessarily came from two different
+    demand months. Weekly broke that premise, not the arithmetic.)
+
+    A demand month whose weeks straddle two plan months contributes its
+    forecast to BOTH columns, once each -- the same thing the month engine
+    did when a pre-build put one demand month in two plan months. The column
+    means "the demand behind what is built here", not a partition.
 
     Sheet layout: header row `Product | Metric | <sorted distinct plan
     months>`,
@@ -91,14 +106,21 @@ def build_mps_matrix_workbook(
     """
     grouped: dict[str, dict[str, dict[str, Decimal]]] = {}
     months: set[str] = set()
+    # (material_code, plan_week_month) -> demand months already counted into
+    # that cell's demand/available. See the docstring: those two are
+    # per-demand-month snapshots repeated on every week row.
+    counted: dict[tuple[str, str], set[str]] = {}
     for line in lines:
         months.add(line.plan_week_month)
         cell = grouped.setdefault(line.material_code, {}).setdefault(
             line.plan_week_month, {"demand": Decimal("0"), "available": Decimal("0"), "planned": Decimal("0")},
         )
-        cell["demand"] += line.demand_forecast
-        cell["available"] += line.opening_stock
         cell["planned"] += line.qty
+        seen = counted.setdefault((line.material_code, line.plan_week_month), set())
+        if line.demand_month not in seen:
+            seen.add(line.demand_month)
+            cell["demand"] += line.demand_forecast
+            cell["available"] += line.opening_stock
 
     sorted_months = sorted(months)
 

@@ -48,6 +48,9 @@ from app.services.week_calendar import (
 
 # The default every run gets when nobody has written mrp_planning_params.
 MODE = "iso_thursday"
+# mps.DEFAULT_PRODUCTION_LEAD_WEEKS, restated so a fixture guard can say "the
+# default would have put this somewhere else" without importing it.
+DEFAULT_LEAD_WEEKS = 4
 
 
 async def _no_shelf_life(token):
@@ -131,11 +134,37 @@ def _target_week_of(demand_month: str, lead_weeks: int) -> date:
     return current if target < current else target
 
 
+def _weeks_apart(earlier: date, later: date) -> int:
+    """Week steps from `earlier` up to `later` on MODE's grid. Written out
+    here rather than imported from `mps._weeks_between` so an assertion about
+    `weeks_early` cannot agree with the implementation by construction."""
+    steps, week = 0, earlier
+    while week < later:
+        week = shift_weeks(week, 1, MODE)
+        steps += 1
+    return steps
+
+
 def _bucket_month_of(demand_month: str, lead_weeks: int) -> str:
     """The owning month of the target week — i.e. the month the engine packs
     this demand into, which is where every non-overflowing line for it must
     land regardless of how the bucket levels internally."""
     return owning_month(_target_week_of(demand_month, lead_weeks), MODE)
+
+
+def _month_where_lead_crosses(lead_weeks: int) -> str:
+    """The first demand month at least three ahead (so the current-week clamp
+    never fires) whose lead-shifted target lands in the PREVIOUS month.
+
+    Not every month qualifies -- a 5-week month absorbs a 4-week lead
+    entirely (2026-12's last week 12-28 minus four is 11-30, still owned by
+    2026-12) -- so a hard-coded offset makes a lead test silently stop
+    observing the lead depending on when the suite runs."""
+    for k in range(3, 18):
+        m = _future_month(k)
+        if _bucket_month_of(m, lead_weeks) == _shift_month(m, -1):
+            return m
+    raise AssertionError(f"no month in the next 18 where a {lead_weeks}-week lead crosses")
 
 
 async def _factory_rule(client, headers, *, max_sku_count=50, max_output_qty="1000000"):
@@ -343,13 +372,7 @@ async def test_production_lead_weeks_shifts_the_plan_week_and_is_echoed(
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    # The first month at least three ahead (so the current-week clamp never
-    # fires) whose last week minus four lands in the PREVIOUS month. Not
-    # every month qualifies -- a 5-week month absorbs a 4-week lead entirely
-    # -- and hard-coding an offset would make this test silently stop
-    # observing the lead depending on when the suite runs.
-    start = next(m for m in (_future_month(k) for k in range(3, 18))
-                 if _bucket_month_of(m, 4) == _shift_month(m, -1))
+    start = _month_where_lead_crosses(4)
     version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
     await _factory_rule(client, headers)
 
@@ -382,7 +405,9 @@ async def test_production_lead_weeks_omitted_defaults_to_four(client, db_session
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    start = _future_month(4)
+    # A month where the default lead visibly crosses, so "the default was
+    # applied" is observable in the placement, not only in the echo.
+    start = _month_where_lead_crosses(4)
     version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
     await _factory_rule(client, headers)
 
@@ -392,7 +417,8 @@ async def test_production_lead_weeks_omitted_defaults_to_four(client, db_session
     assert r.status_code == 201, r.text
     run = r.json()
     assert run["production_lead_weeks"] == 4
-    assert run["lines"][0]["plan_week_month"] == _bucket_month_of(months[0], 4)
+    assert (run["lines"][0]["plan_week_month"]
+            == _bucket_month_of(months[0], 4) == _shift_month(months[0], -1))
 
 
 @pytest.mark.anyio
@@ -565,26 +591,36 @@ async def test_recalculate_uses_the_runs_stored_production_lead_weeks(
     client, db_session, admin_token, monkeypatch,
 ):
     """`recalculate_run` reads the lead back off the run (there is no way to
-    pass one) and re-derives placement from it."""
+    pass one) and re-derives placement from it.
+
+    Generated with lead 0 on a month where the DEFAULT lead of 4 buckets it
+    somewhere else, so a recalculate that fell back to the default instead of
+    reading the run lands where this test can see it. Generating with 4 --
+    the default -- would have made the two indistinguishable."""
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
     headers = {"Authorization": f"Bearer {admin_token}"}
 
-    start = _future_month(4)
+    start = _month_where_lead_crosses(4)
     version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
     await _factory_rule(client, headers)
 
     run = (await client.post(
         "/api/v1/mps/runs",
-        json={"forecast_version_id": version["id"], "production_lead_weeks": 4},
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
         headers=headers,
     )).json()
-    bucket = _bucket_month_of(months[0], 4)
+    bucket = _bucket_month_of(months[0], 0)
+    assert bucket == months[0]
+    assert _bucket_month_of(months[0], DEFAULT_LEAD_WEEKS) != bucket, (
+        "fixture guard: the default lead must bucket this month somewhere else, "
+        "or a recalculate ignoring the run's stored lead would look identical"
+    )
     assert run["lines"][0]["plan_week_month"] == bucket
 
     r = await client.post(f"/api/v1/mps/runs/{run['id']}/recalculate", headers=headers)
     assert r.status_code == 200, r.text
     recalced = r.json()
-    assert recalced["production_lead_weeks"] == 4
+    assert recalced["production_lead_weeks"] == 0
     assert recalced["lines"][0]["plan_week_month"] == bucket
     assert recalced["lines"][0]["lead_shortfall"] is False
     assert recalced["lines"][0]["capacity_gap"] is False
@@ -835,11 +871,21 @@ async def test_patch_line_moves_a_line_to_another_week_and_re_derives_the_month(
     )).json()
     line = run["lines"][0]
 
+    bucket = _bucket_month_of(months[0], 0)
     target = _target_week_of(months[0], 0)
-    # Three weeks earlier than the target: inside 18-month shelf life, and
-    # (at these fixtures) in the month BEFORE the demand month's bucket, so
-    # the month recomputation has something to get wrong.
-    moved_to = shift_weeks(target, -3, MODE)
+    # The last week of the month BEFORE the bucket. The move must genuinely
+    # cross a month boundary: "three weeks earlier than the target" CANNOT,
+    # because a month is only 4-5 weeks long and the lead-0 target is its
+    # LAST week -- which left both the plan_week_month recomputation and the
+    # is_prebuild recomputation with no true branch under test at all.
+    moved_to = weeks_of_month(_shift_month(bucket, -1), MODE)[-1]
+    assert owning_month(moved_to, MODE) < bucket, (
+        "fixture guard: the move must cross into an earlier month, or neither "
+        "the month nor the is_prebuild recomputation is exercised"
+    )
+    assert moved_to >= _current_week()  # never into the past
+    expected_early = _weeks_apart(moved_to, target)
+    assert expected_early > 0
 
     r = await client.patch(
         f"/api/v1/mps/runs/{run['id']}/lines/{line['id']}",
@@ -850,19 +896,39 @@ async def test_patch_line_moves_a_line_to_another_week_and_re_derives_the_month(
     body = r.json()
     assert body["plan_week_start"] == moved_to.isoformat()
     assert body["plan_week_month"] == owning_month(moved_to, MODE)
+    assert body["plan_week_month"] != line["plan_week_month"]  # it really changed month
     assert body["week_label"] == week_label(moved_to, MODE)
-    assert body["weeks_early"] == 3
+    assert body["weeks_early"] == expected_early
     assert body["manual_adjusted"] is True
-    # `is_prebuild` is the cross-bucket question, so it is true exactly when
-    # the new week's month precedes the demand's bucket month.
-    assert body["is_prebuild"] is (owning_month(moved_to, MODE) < _bucket_month_of(months[0], 0))
+    # `is_prebuild` is the cross-bucket question: TRUE here, by construction
+    # of the guard above.
+    assert body["is_prebuild"] is True
+    # ...and its explanation moved with it, instead of staying None (or
+    # keeping the engine's text about the week the line has just left).
+    assert body["prebuild_reason"] is not None
+    assert "moved by hand" in body["prebuild_reason"]
 
     # ...and it survives a re-read (i.e. it was persisted, not just echoed).
     got = await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)
     stored = next(l for l in got.json()["lines"] if l["id"] == line["id"])
     assert stored["plan_week_start"] == moved_to.isoformat()
     assert stored["plan_week_month"] == owning_month(moved_to, MODE)
-    assert stored["weeks_early"] == 3
+    assert stored["weeks_early"] == expected_early
+    assert stored["is_prebuild"] is True
+
+    # Moving it back inside the bucket flips both back. Levelling is not a
+    # pre-build and has nothing to explain, so the reason is CLEARED rather
+    # than left describing a move that no longer happened.
+    back = await client.patch(
+        f"/api/v1/mps/runs/{run['id']}/lines/{line['id']}",
+        json={"plan_week_start": target.isoformat()},
+        headers=headers,
+    )
+    assert back.status_code == 200, back.text
+    assert back.json()["plan_week_month"] == bucket
+    assert back.json()["is_prebuild"] is False
+    assert back.json()["weeks_early"] == 0
+    assert back.json()["prebuild_reason"] is None
 
 
 @pytest.mark.anyio
@@ -1134,6 +1200,17 @@ async def test_confirm_release_skips_capacity_gap_lines(client, db_session, admi
     assert len(gaps) == 1 and len(produced) == 1
     assert sum(Decimal(l["qty"]) for l in run["lines"]) == Decimal("100")
 
+    # A gap consumes no week's ledger, so it must not show up in occupancy
+    # either -- counting it would report a week at 100/50, i.e. over its own
+    # ceiling, purely because the demand it could NOT host is pinned there.
+    # (The gap and the produced line share a week here, which is what makes
+    # the difference between filtering and not filtering visible: 50 vs 100.)
+    assert gaps[0]["plan_week_start"] == produced[0]["plan_week_start"]
+    occ = (await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)).json()["capacity_occupancy"]
+    assert len(occ) == 1
+    assert Decimal(occ[0]["used_qty"]) == Decimal(produced[0]["qty"]) == Decimal("50")
+    assert Decimal(occ[0]["used_qty"]) <= Decimal(occ[0]["max_output_qty"])
+
     rel = await client.post(f"/api/v1/mps/runs/{run['id']}/confirm-release", headers=headers)
     assert rel.status_code == 200, rel.text
 
@@ -1367,6 +1444,10 @@ async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_sessio
         json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
         headers=headers,
     )).json()
+    # One line here on purpose (ample weekly capacity), so this test is about
+    # units and layout only. The multi-week case -- where per-demand-month
+    # snapshots must NOT be summed per row -- is
+    # test_export_does_not_multiply_demand_across_a_split_demand_month.
     assert len(run["lines"]) == 1
     line = run["lines"][0]
     qty_kg = Decimal(line["qty"])
@@ -1395,6 +1476,52 @@ async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_sessio
     ws_kg = wb_kg.active
     rows_kg = {row[1]: row for row in ws_kg.iter_rows(min_row=2, values_only=True)}
     assert rows_kg["Planned"][2] == float(qty_kg)
+
+
+@pytest.mark.anyio
+async def test_export_does_not_multiply_demand_across_a_split_demand_month(
+    client, db_session, admin_token, monkeypatch,
+):
+    """`demand_forecast`/`opening_stock` are snapshotted PER DEMAND MONTH and
+    copied onto every line of that month. Weekly, one demand month is split
+    across several week rows, so summing them per line reported N x the real
+    demand -- a fabricated shortfall on every product the engine spreads
+    across weeks, which is nearly all of them. Measured before the fix, with
+    three 40 t rows each carrying `demand_forecast=120`: Demand 360 against
+    Planned 120.
+
+    This fixture forces the split for real (120 t against a 40 t weekly cap)
+    rather than asserting on a single-line run, which is exactly how the
+    first version of the export test missed it."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(4)
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="120")
+    await _factory_rule(client, headers, max_sku_count=5, max_output_qty="40")
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    lines = run["lines"]
+    assert len(lines) >= 3, "fixture guard: 120 against a 40/week cap must span >=3 weeks"
+    assert {l["demand_month"] for l in lines} == {months[0]}
+    plan_months = {l["plan_week_month"] for l in lines}
+    assert len(plan_months) == 1, "fixture guard: one column, so the sum is unambiguous"
+    column = plan_months.pop()
+
+    r = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=kg", headers=headers)
+    assert r.status_code == 200, r.text
+    ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
+    header = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    assert header == ["Product", "Metric", column]
+    rows = {row[1]: row for row in ws.iter_rows(min_row=2, values_only=True)}
+    # The month's forecast counted ONCE, not once per week row.
+    assert rows["Demand"][2] == 120.0
+    assert rows["Planned"][2] == float(sum(Decimal(l["qty"]) for l in lines))
+    assert rows["Available"][2] == 0.0  # no opening stock, and not 3 x 0 either
 
 
 @pytest.mark.anyio

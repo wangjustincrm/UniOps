@@ -932,6 +932,11 @@ async def update_line(
     function is deliberately the single consumption point of the rule and a
     second copy here would be free to drift from it.
 
+    `prebuild_reason` moves with the line too (it explains an event that has
+    just been superseded) -- rewritten for a cross-month move, cleared for a
+    move inside the bucket, and left alone on a `capacity_gap` line, whose
+    reason is about unmet demand rather than about a week.
+
     A move the shelf-life rule refuses is REJECTED (422), not stored with
     `shelf_life_ok=False`. The engine only ever puts that flag on a
     `capacity_gap` line -- a produced line always carries
@@ -970,6 +975,7 @@ async def update_line(
                        f"{line.material_code}'s target week for {line.demand_month} demand, "
                        "which its shelf life does not allow",
             )
+        moved_from = line.plan_week_start
         line.plan_week_start = week
         line.plan_week_month = owning_month(week, mode)
         line.weeks_early = weeks_early
@@ -977,6 +983,24 @@ async def update_line(
         # into an earlier MONTH than the demand's own bucket. Moving within
         # the bucket is levelling, however early in it the new week sits.
         line.is_prebuild = line.plan_week_month < owning_month(target, mode)
+        if not line.capacity_gap:
+            # `prebuild_reason` explains an EVENT, so it has to move with the
+            # line. Left alone, a hand-move either produced `is_prebuild=True`
+            # with no reason at all, or kept the engine's narrative about a
+            # week the line is no longer in. Mirrors `_early_note`'s wording
+            # for a cross-month move and the engine's "levelling has nothing
+            # to explain" for one inside the bucket.
+            #
+            # A `capacity_gap` line keeps its reason: that text explains why
+            # the quantity is UNMET, which moving the row does not change.
+            if line.is_prebuild:
+                plural = "" if weeks_early == 1 else "s"
+                line.prebuild_reason = (
+                    f"pre-built {weeks_early} week{plural} early: moved by hand from the "
+                    f"week of {moved_from.isoformat()}"
+                )
+            else:
+                line.prebuild_reason = None
         changed = True
     if body.locked_by_planner is not None:
         if body.locked_by_planner and line.capacity_gap:

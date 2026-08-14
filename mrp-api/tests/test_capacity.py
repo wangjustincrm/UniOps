@@ -5,9 +5,15 @@ MPS engine reads to know how much factory capacity a given WEEK has. Its
 month-based predecessor `resolve_effective_rules` -- and the one test that
 covered it, `test_resolve_effective_rules_filters_by_active_and_window` --
 were deleted together with the month-based engine when `app/api/v1/mps.py`
-moved onto weeks. Its two behaviours (active-only, window covers the date)
-are exercised by the weekly resolver's own tests, which go through the same
-`_factory_rules_active_on` filter.
+moved onto weeks.
+
+The first version of that deletion claimed the weekly resolver's existing
+tests already covered its two behaviours. **They did not**: every one of them
+creates a single active, open-ended RULE, and the only `is_active=False` case
+is about an EXCEPTION. Nothing asserted that an inactive or expired RULE is
+excluded. `test_resolve_limits_for_week_ignores_inactive_and_expired_rules`
+below is the weekly replacement, and it goes through the same
+`_factory_rules_active_on` filter the deleted test did.
 
 The CRUD API mirrors app/api/v1/consignment.py's shape: `mrp.report.view`
 gates GET, `mrp.param.write` gates POST/PATCH/DELETE (same permission keys
@@ -135,6 +141,48 @@ async def test_inactive_exception_is_ignored(client, auth_headers, db_session):
                        json={"is_active": False}, headers=auth_headers)
     assert str((await resolve_limits_for_week(db_session,
                                               date(2026, 9, 7))).max_output_qty) == "40000.000"
+
+
+@pytest.mark.anyio
+async def test_resolve_limits_for_week_ignores_inactive_and_expired_rules(client, auth_headers, db_session):
+    """Replaces the deleted `test_resolve_effective_rules_filters_by_active_
+    and_window`. Three rules of the SAME constraint_type compete for one
+    week: an inactive one, one whose `effective_to` has passed, and the real
+    one. Only the real one may be resolved.
+
+    Without this, nothing anywhere asserted that a rule can be switched off
+    or allowed to expire -- a planner deactivating last year's ceiling would
+    have had no test saying it stops applying, which is exactly what
+    migration mrp10b relies on when it sets `is_active = false` on every
+    pre-existing monthly rule."""
+    from app.models.capacity import MrpCapacityRule
+    from app.services.capacity import resolve_limits_for_week
+
+    db_session.add_all([
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_output_qty",
+                        limit_value=999999, uom="KG", effective_from=date(2026, 1, 1),
+                        effective_to=None, is_active=False),                     # switched off
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_output_qty",
+                        limit_value=111111, uom="KG", effective_from=date(2026, 1, 1),
+                        effective_to=date(2026, 6, 30), is_active=True),         # expired
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_sku_count",
+                        limit_value=7, uom=None, effective_from=date(2026, 8, 1),
+                        effective_to=None, is_active=True),                      # in force
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_output_qty",
+                        limit_value=40000, uom="KG", effective_from=date(2026, 8, 1),
+                        effective_to=None, is_active=True),                      # in force
+    ])
+    await db_session.commit()
+
+    limits = await resolve_limits_for_week(db_session, date(2026, 8, 10))
+    assert str(limits.max_output_qty) == "40000.000"  # not 999999 and not 111111
+    assert limits.max_sku_count == 7
+
+    # ...and a week BEFORE the in-force rule starts resolves to no ceiling at
+    # all, rather than falling back to the expired one.
+    early = await resolve_limits_for_week(db_session, date(2026, 7, 6))
+    assert early.max_output_qty is None
+    assert early.max_sku_count is None
 
 
 # ── Fix round 1 (code review) ───────────────────────────────────────────────
