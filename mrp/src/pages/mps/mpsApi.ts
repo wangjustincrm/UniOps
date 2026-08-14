@@ -152,8 +152,29 @@ export interface CapacityOccupancyWeek {
   max_output_qty: string | null // Decimal-as-string
 }
 
+/** One column of the run's time axis — mrp-api's `_compute_week_grid`
+ *  (`app/api/v1/mps.py`), mirroring `mps_export.py`'s own `week_grid`
+ *  construction byte-for-byte so the on-screen matrix and the xlsx export
+ *  can never disagree on which weeks exist. Spans the run's declared
+ *  horizon UNION every month a line actually landed in (a lead-shifted
+ *  pre-build can land just before the nominal horizon start), walked
+ *  contiguously so no month between them is skipped.
+ *
+ *  **This — not the lines themselves — is the authoritative "which weeks
+ *  exist" list.** A week with zero lines (a maintenance week is
+ *  `max_output_qty: '0'` and has zero lines BY CONSTRUCTION) still gets an
+ *  entry here; deriving columns from `lines` alone would silently drop
+ *  that week's header — see ProductionMatrix.tsx's `weekColumns.ts`
+ *  usage. */
+export interface WeekGridEntry {
+  week_start: string // ISO date
+  week_month: string // 'YYYY-MM', the week's owning month
+  label: string
+}
+
 export interface MpsRunGet extends MpsRunDetail {
   capacity_occupancy: CapacityOccupancyWeek[]
+  week_grid: WeekGridEntry[]
 }
 
 export interface AdjustLineBody {

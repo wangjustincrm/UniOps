@@ -563,8 +563,7 @@ export default function ProductionPlanPage() {
         <ProductionMatrix
           key={run.id}
           lines={run.lines}
-          horizonStartMonth={run.horizon_start_month}
-          horizonMonths={run.horizon_months}
+          weekGrid={run.week_grid}
           materialsByCode={materialsByCode}
           noBomCodes={noBomCodes}
           unitScale={displayUnit === 't' ? 1000 : 1}

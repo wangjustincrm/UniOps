@@ -10,13 +10,30 @@
 //
 // The column MODEL (which months/weeks exist, expand/collapse state) is
 // pure logic split out into weekColumns.ts (verified by
-// weekColumns.verify.ts, `npx tsx`) — this file only renders it.
+// weekColumns.verify.ts, `npx tsx`) — this file only renders it. As of
+// review round 1, "which weeks exist" comes ENTIRELY from the run's own
+// `week_grid` (`GET /runs/{id}`, mrp-api's `_compute_week_grid`) via
+// `buildWeekRefs` — never derived from `lines` and never synthesized here.
+// A maintenance week has zero lines by construction (that is what "no
+// production this week" means) and still needs a header to click; `lines`
+// alone cannot answer "which weeks exist", only "which weeks have output".
 //
 // Two semantics this file must not get wrong (see mpsApi.ts's MpsLine for
 // the full doc): `is_prebuild` means the plan week's OWNING MONTH precedes
 // the demand's own bucket month, not "earlier than the target week" — for
 // "is this line early", read `weeks_early`. Demand and Available stay
 // MONTHLY (one value per product per month); only Planned is per-week.
+//
+// Demand/Available are snapshotted PER DEMAND MONTH and copied onto EVERY
+// line of that demand month (mrp07) — weekly, one demand month spans
+// several lines (several weeks, or a pre-build straddling two plan
+// months), so summing per LINE inflates by however many lines share the
+// snapshot. `aggregateLines` below dedups on `(column key, demand_month)`,
+// mirroring `app/services/mps_export.py::build_mps_matrix_workbook`'s own
+// `counted` set exactly (that fix already shipped once, in the export,
+// Task 7 — review round 1 caught that this file needed the same fix on the
+// other side of the wire; measured 480000/80000 against a true 120000/20000
+// on a realistic 4-week-levelled run before the fix).
 //
 // Sticky pattern ported verbatim from MatrixGrid.tsx's own header comment
 // (itself the Sales Forecast sticky fix): ONE `overflow-auto` container
@@ -36,8 +53,8 @@ import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight } from 'lucide-re
 import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
-import type { MpsLine } from './mpsApi'
-import { buildWeekColumns, monthsInHorizon, defaultExpandedMonths, type Column, type WeekColumn, type WeekRef } from './weekColumns'
+import type { MpsLine, WeekGridEntry } from './mpsApi'
+import { buildWeekColumns, buildWeekRefs, defaultExpandedMonths, type Column, type WeekColumn } from './weekColumns'
 
 // Sensible default in-container scroll cap for now — the brief notes the
 // parent may pass an explicit height later (mirroring SalesForecastPage's
@@ -80,9 +97,33 @@ function emptyCell(): MatrixCell {
  *  accumulation logic serves both the month-grain map (Demand/Available,
  *  and Planned for a collapsed month's summary column) and the week-grain
  *  map (Planned for an expanded month's week columns); only the grouping
- *  key differs. */
+ *  key differs.
+ *
+ *  Two rules here mirror `app/services/mps_export.py::build_mps_matrix_workbook`
+ *  exactly (review round 1):
+ *
+ *  - **Demand/Available dedup per `(key, demand_month)`, not per line.**
+ *    `demand_forecast`/`opening_stock` are a snapshot taken ONCE per demand
+ *    month and copied onto every line of that month — weekly, several
+ *    lines commonly share a demand month (several weeks' worth of one
+ *    month's levelled production, or a pre-build straddling two plan
+ *    months), so summing per line multiplies the true figure by however
+ *    many lines happen to land in the same cell. A `capacity_gap` line
+ *    still counts toward this dedup (it still carries the real demand
+ *    snapshot for its month) — excluding it would UNDER-report demand for
+ *    the unmet portion, the opposite of the bug being fixed.
+ *  - **Planned excludes `capacity_gap` lines' qty.** A gap line is an
+ *    un-placed shortfall, never a booked production slot
+ *    (`mps_engine.py`'s own docstring) — Task 7's review caught the export
+ *    making this same mistake (summing a gap line's qty straight into
+ *    "Planned"), and Task 8 fixed it there by giving Gap its own row. This
+ *    matrix has no separate Gap row (out of Task 9's scope), so a gap
+ *    contributes only to the `gap` flag, which still marks the cell red
+ *    with an alert icon (see `PlannedCell`) — never to the numeric total. */
 function aggregateLines(lines: MpsLine[], keyFn: (line: MpsLine) => string): Map<string, MatrixCell> {
   const map = new Map<string, MatrixCell>()
+  const countedDemandMonths = new Map<string, Set<string>>()
+
   for (const line of lines) {
     const key = keyFn(line)
     let cell = map.get(key)
@@ -90,14 +131,24 @@ function aggregateLines(lines: MpsLine[], keyFn: (line: MpsLine) => string): Map
       cell = emptyCell()
       map.set(key, cell)
     }
-    cell.demand += Number(line.demand_forecast)
-    cell.available += Number(line.opening_stock)
-    cell.planned += Number(line.qty)
+
     if (line.capacity_gap) cell.gap = true
+    else cell.planned += Number(line.qty)
     if (line.locked_by_planner) cell.locked = true
     if (line.lead_shortfall) cell.shortfall = true
     if (!cell.demandMonths.includes(line.demand_month)) cell.demandMonths.push(line.demand_month)
     cell.cellLines.push(line)
+
+    let seen = countedDemandMonths.get(key)
+    if (!seen) {
+      seen = new Set()
+      countedDemandMonths.set(key, seen)
+    }
+    if (!seen.has(line.demand_month)) {
+      seen.add(line.demand_month)
+      cell.demand += Number(line.demand_forecast)
+      cell.available += Number(line.opening_stock)
+    }
   }
   for (const cell of map.values()) cell.demandMonths.sort()
   return map
@@ -113,12 +164,15 @@ function weekCellKey(materialCode: string, weekStart: string): string {
 
 interface ProductionMatrixProps {
   lines: MpsLine[]
-  /** The run's declared horizon (`horizon_start_month` / `horizon_months`
-   *  off MpsRun) — used ONLY to make sure a month with zero net demand
-   *  (and so zero lines) still gets a column; every column that actually
-   *  carries data comes from `lines` itself, never invented from this. */
-  horizonStartMonth: string
-  horizonMonths: number
+  /** The run's own week grid (`GET /runs/{id}`'s `week_grid`, mrp-api's
+   *  `_compute_week_grid`) — the AUTHORITATIVE "which weeks exist" list,
+   *  covering the run's declared horizon plus any month a pre-build line
+   *  actually landed in, with every real week enumerated regardless of
+   *  whether it carries a line. Every column in this matrix comes from
+   *  this list via `buildWeekRefs`, never from `lines` — a maintenance
+   *  week or a zero-net-demand month has zero lines by construction and
+   *  would otherwise vanish from the axis. */
+  weekGrid: WeekGridEntry[]
   /** code -> MaterialOption, for the Product column's name (not part of
    *  MpsLineResponse itself — see mpsApi.ts / ProductionPlanPage.tsx for how
    *  this is built from mdm-api's materials master). A lookup miss falls
@@ -150,8 +204,7 @@ interface ProductionMatrixProps {
 
 export function ProductionMatrix({
   lines,
-  horizonStartMonth,
-  horizonMonths,
+  weekGrid,
   materialsByCode,
   noBomCodes,
   unitScale: _unitScale,
@@ -164,41 +217,12 @@ export function ProductionMatrix({
     return codes.map((code) => ({ code, name: materialsByCode.get(code)?.name ?? code }))
   }, [lines, materialsByCode])
 
-  // ── The known-weeks list handed to buildWeekColumns ─────────────────────
-  // Real weeks come straight off the lines (grouped by plan_week_month so a
-  // week is never mis-filed under the wrong month header — see
-  // MpsLine.plan_week_month's own doc on why that's NOT week_start.slice(0,7)).
-  // A month in the run's declared horizon that carries NO line at all (net
-  // demand nets to zero, and no other month's pre-build reaches it either)
-  // still needs a column — the brief's hard rule that an empty month must
-  // not silently skip the time axis — so it gets one synthetic placeholder
-  // WeekRef (the 1st of that month; cosmetic only, no cell ever keys off it
-  // besides the empty-column render).
-  const weekRefs = useMemo<WeekRef[]>(() => {
-    const byMonth = new Map<string, Map<string, string | undefined>>()
-    for (const line of lines) {
-      let weekMap = byMonth.get(line.plan_week_month)
-      if (!weekMap) {
-        weekMap = new Map()
-        byMonth.set(line.plan_week_month, weekMap)
-      }
-      if (!weekMap.has(line.plan_week_start)) weekMap.set(line.plan_week_start, line.week_label)
-    }
-
-    const horizonMonthList = monthsInHorizon(horizonStartMonth, horizonMonths)
-    const allMonths = new Set([...horizonMonthList, ...byMonth.keys()])
-
-    const refs: WeekRef[] = []
-    for (const month of [...allMonths].sort()) {
-      const weekMap = byMonth.get(month)
-      if (weekMap && weekMap.size > 0) {
-        for (const [week_start, label] of weekMap) refs.push({ week_start, month, label })
-      } else {
-        refs.push({ week_start: `${month}-01`, month })
-      }
-    }
-    return refs
-  }, [lines, horizonStartMonth, horizonMonths])
+  // The known-weeks list handed to buildWeekColumns — a straight,
+  // non-filtering conversion of the run's own week_grid (see this file's
+  // header comment and buildWeekRefs's own doc for why `lines` never feeds
+  // this: a maintenance week or a zero-net-demand month has zero lines by
+  // construction and week_grid already enumerates its real weeks anyway).
+  const weekRefs = useMemo(() => buildWeekRefs(weekGrid), [weekGrid])
 
   const allMonthsOrdered = useMemo(
     () => [...new Set(weekRefs.map((w) => w.month))].sort(),
@@ -362,9 +386,10 @@ export function ProductionMatrix({
 /** Short header text for a week column: the part of the server's
  *  `week_label` before ' · ' (e.g. 'Sep W4' or '2026-W40'), with the full
  *  label (including the day range) as the hover tooltip via the caller's
- *  `title`. A synthetic placeholder week (empty month) carries no label —
- *  its column falls back to the bare date so it still reads as something
- *  rather than blank. */
+ *  `title`. `label` is always present in practice (`week_grid` computes one
+ *  for every entry, including a week with zero lines) — the bare
+ *  `week_start` fallback is defensive only, for a `WeekRef` some future
+ *  caller constructs by hand without one. */
 function weekColumnShortLabel(col: WeekColumn): string {
   if (col.label) return col.label.split(' · ')[0]
   return col.week_start
@@ -541,18 +566,25 @@ function PlannedCell({
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
 }) {
-  // "Has production" = a non-zero planned qty; a cell that merely has lines
-  // but nets to zero output (e.g. fully covered by available stock) renders
-  // as empty, same as a cell with no lines at all — neither is something a
-  // planner would click to adjust.
+  // "Has production" = a non-zero REAL planned qty (aggregateLines now
+  // excludes capacity_gap lines' qty from `planned` — review round 1).
+  // `showCell` widens that to "has anything worth showing": a cell that is
+  // ENTIRELY a gap now correctly aggregates to `planned === 0`, but it must
+  // still render as the red/alert cell, not silently degrade to the "—"
+  // empty state below — that would regress "keep red gap cells" the moment
+  // a gap has no real production alongside it in the same cell. A cell
+  // with neither production nor a gap (e.g. fully covered by available
+  // stock) is the only case that renders as empty, same as a cell with no
+  // lines at all.
   const hasProduction = cell.planned > 0
+  const showCell = hasProduction || cell.gap
   const title = cell.demandMonths.length > 0 ? `For ${cell.demandMonths.join(', ')} demand` : undefined
   // Gap (red, unmet demand) takes precedence over shortfall (amber,
   // produced later than the requested lead but still met) when a cell is
   // both — gap is the more severe condition a planner needs to see first.
   const showShortfall = cell.shortfall && !cell.gap
 
-  if (!hasProduction) {
+  if (!showCell) {
     return (
       <td className="h-10 border-b border-r border-neutral-100 bg-success-50 px-2 text-right font-mono text-neutral-300">—</td>
     )

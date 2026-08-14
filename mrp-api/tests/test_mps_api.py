@@ -716,6 +716,82 @@ async def test_get_run_includes_capacity_occupancy_per_week(client, db_session, 
     assert row["week_label"] == week_label(date.fromisoformat(planned_week), MODE)
 
 
+# ── week_grid (Task 9 fix round 1: the matrix's time axis must not derive
+# "which weeks exist" from `lines` — a maintenance week has zero lines by
+# construction and would vanish with no header left to click) ─────────────
+
+
+@pytest.mark.anyio
+async def test_get_run_week_grid_matches_weeks_of_month_for_the_horizon(client, db_session, admin_token, monkeypatch):
+    """week_grid must be exactly `weeks_of_month(month, mode)` walked over
+    the run's horizon — same construction `mps_export.py`'s own week_grid
+    uses, so the matrix and the export can never disagree on column count."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, months = await _confirmed_version(db_session, start="2026-09", months=1, monthly_qty="40")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+
+    r = await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)
+    assert r.status_code == 200, r.text
+    grid = r.json()["week_grid"]
+
+    expected_weeks = weeks_of_month("2026-09", MODE)
+    assert [date.fromisoformat(e["week_start"]) for e in grid] == expected_weeks
+    assert {e["week_month"] for e in grid} == {"2026-09"}
+    assert [e["label"] for e in grid] == [week_label(w, MODE) for w in expected_weeks]
+
+
+@pytest.mark.anyio
+async def test_get_run_week_grid_covers_a_month_with_zero_lines(client, db_session, admin_token, monkeypatch):
+    """A month inside the run's declared horizon whose net requirement is
+    zero (so it produces NO lines at all -- not even a capacity_gap one)
+    must still contribute its weeks to week_grid. This is the same shape a
+    maintenance week produces: zero lines by construction, but the column
+    must still exist so a planner (and Task 10's WeekDrawer) has something
+    to click."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+
+    version = ForecastVersion(
+        version_no=f"FCV-2026-09-{uuid.uuid4().hex[:8].upper()}",
+        status="confirmed",
+        horizon_start_month="2026-09",
+        horizon_months=2,
+        confirmed_at=datetime.now(timezone.utc),
+    )
+    db_session.add(version)
+    await db_session.flush()
+    # Only 2026-09 gets a ForecastLine -- 2026-10 is left with ZERO net
+    # requirement on purpose (no row at all, not even a qty=0 one), so it
+    # produces no DemandItem and therefore no line whatsoever.
+    db_session.add(ForecastLine(version_id=version.id, material_code="S0093", month="2026-09", qty=Decimal("40")))
+    await db_session.commit()
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": str(version.id), "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    # Confirms the premise: October really did produce zero lines.
+    assert {l["demand_month"] for l in run["lines"]} == {"2026-09"}
+
+    r = await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)
+    assert r.status_code == 200, r.text
+    grid = r.json()["week_grid"]
+
+    months_in_grid = {e["week_month"] for e in grid}
+    assert months_in_grid == {"2026-09", "2026-10"}
+    october_weeks = {date.fromisoformat(e["week_start"]) for e in grid if e["week_month"] == "2026-10"}
+    assert october_weeks == set(weeks_of_month("2026-10", MODE))
+
+
 # ── Demand context snapshot ──────────────────────────────────────────────
 
 

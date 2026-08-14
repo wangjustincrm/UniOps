@@ -291,14 +291,35 @@ class CapacityOccupancyWeek(BaseModel):
     max_output_qty: Decimal | None
 
 
+class WeekGridEntry(BaseModel):
+    """One column of the run's time axis -- see `_compute_week_grid`'s
+    docstring for the exact construction (mirrors `mps_export.py`'s own
+    `week_grid`, byte-for-byte, so the on-screen matrix and the xlsx export
+    can never disagree on which weeks exist). A week with zero lines still
+    gets an entry -- consumers (the Production Plan matrix, Task 10's
+    WeekDrawer) must derive "which weeks exist" from THIS list, never from
+    `lines` alone, or a maintenance week (zero lines by construction) would
+    vanish from the axis with no header left to click to un-mark it."""
+    week_start: date
+    week_month: str
+    label: str
+
+
 class MpsRunGetResponse(MpsRunDetailResponse):
     # Computed on read, never stored -- always reflects the capacity rules
     # and week exceptions currently on file, not a snapshot from generation
-    # time. (The run's WEEK GRID is snapshotted -- see the module docstring
-    # -- so a released plan keeps its columns; what those columns are
-    # measured against is deliberately live, because "am I over the ceiling
-    # I have today" is the question a planner is asking when they look.)
+    # time. (The run's week GRID -- `week_grid` below -- is also computed on
+    # read rather than stored, but it is NOT live in the same sense: it is
+    # fully determined by the run's own frozen `horizon_start_month`/
+    # `horizon_months`/`week_calendar_mode` plus which weeks its OWN lines
+    # landed on, none of which change after generation, so recomputing it on
+    # every read is just avoiding a redundant stored copy -- a released
+    # plan's columns do not shift. What capacity_occupancy measures those
+    # columns against is the part that is deliberately live: "am I over the
+    # ceiling I have today" is the question a planner is asking when they
+    # look.)
     capacity_occupancy: list[CapacityOccupancyWeek]
+    week_grid: list[WeekGridEntry]
 
 
 class MpsLineUpdate(BaseModel):
@@ -637,6 +658,39 @@ def _line_response(line: MrpMpsLine, mode: str) -> MpsLineResponse:
     )
 
 
+def _compute_week_grid(
+    run: MrpMpsRun, lines: list[MrpMpsLine], mode: str,
+) -> list[WeekGridEntry]:
+    """Every week column this run's matrix (frontend) and xlsx export should
+    show — mirrors `app/services/mps_export.py::build_mps_matrix_workbook`'s
+    own `week_grid` construction EXACTLY (same union of the run's declared
+    horizon and every month a line actually landed in, same contiguous
+    month span so no month between them is skipped, same `weeks_of_month`
+    walk) so the on-screen matrix and the exported sheet can never disagree
+    on how many columns a run has.
+
+    Duplicated here rather than imported from `mps_export.py`: that module
+    is a services module and this is the api layer, the same
+    layering `mps_export.py`'s own `_generate_months`/`_month_span`
+    docstrings explain for why THEY duplicate rather than import from
+    `mps_engine.py`/`net_requirement.py`.
+
+    A week with zero lines still gets an entry — a maintenance week
+    (`max_output_qty=0`) has zero lines BY CONSTRUCTION, and a consumer that
+    derived "which weeks exist" from `lines` alone would give that week no
+    column at all, and so no header to click to un-mark it. Both the
+    Production Plan matrix and Task 10's WeekDrawer must build their
+    columns from THIS list, never from `lines`."""
+    horizon_months = _generate_months(run.horizon_start_month, run.horizon_months)
+    touched_months = {line.plan_week_month for line in lines}
+    all_months = set(horizon_months) | touched_months
+    span_months = _month_span(min(all_months), max(all_months)) if all_months else []
+    return [
+        WeekGridEntry(week_start=w, week_month=month, label=week_label(w, mode))
+        for month in span_months for w in weeks_of_month(month, mode)
+    ]
+
+
 async def _compute_capacity_occupancy(
     db: SessionDep, lines: list[MrpMpsLine], mode: str,
 ) -> list[CapacityOccupancyWeek]:
@@ -761,6 +815,7 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     # The run's OWN mode, never the current parameter (module docstring).
     mode = run.week_calendar_mode
     occupancy = await _compute_capacity_occupancy(db, lines, mode)
+    week_grid = _compute_week_grid(run, lines, mode)
     return MpsRunGetResponse(
         id=run.id, run_no=run.run_no, forecast_version_id=run.forecast_version_id,
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
@@ -770,6 +825,7 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
         week_calendar_mode=mode,
         lines=[_line_response(l, mode) for l in lines],
         capacity_occupancy=occupancy,
+        week_grid=week_grid,
     )
 
 
