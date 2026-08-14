@@ -12,7 +12,7 @@
 // call site, never trusted as a number in this file.
 import { api } from '@/lib/api'
 
-export type CapacityScopeType = 'factory' | 'product_family' | 'line'
+export type CapacityScopeType = 'factory' | 'product' | 'product_family' | 'line'
 export type CapacityConstraintType = 'max_sku_count' | 'max_output_qty' | 'min_output_qty'
 
 export interface CapacityRule {
@@ -50,6 +50,10 @@ export type CapacityRuleUpdateBody = CapacityRuleBody
 // so both stay in sync with one source of truth instead of two ad hoc maps.
 export const SCOPE_TYPE_LABEL: Record<CapacityScopeType, string> = {
   factory: 'Factory',
+  // A product-scoped rule carries the material code in `scope_ref`. It is
+  // the scope minimum lot sizes actually use: "how much is worth opening
+  // the line for" differs per product.
+  product: 'Product',
   product_family: 'Product Family',
   line: 'Line',
 }
@@ -63,7 +67,11 @@ export const SCOPE_TYPE_LABEL: Record<CapacityScopeType, string> = {
 export const CONSTRAINT_TYPE_LABEL: Record<CapacityConstraintType, string> = {
   max_sku_count: 'Max SKUs / week',
   max_output_qty: 'Max output / week',
-  min_output_qty: 'Min output / week',
+  // Renamed from 'Min output / week' when the value became a real
+  // constraint rather than a spreading hint: it is now the quantity below
+  // which the line is not opened at all, and a week-flavoured label
+  // suggested a weekly target instead.
+  min_output_qty: 'Minimum lot size',
 }
 
 export interface CapacityException {

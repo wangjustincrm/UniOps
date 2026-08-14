@@ -26,6 +26,7 @@ import { createPortal } from 'react-dom'
 import { AlertTriangle, Loader2, X as XIcon } from 'lucide-react'
 import { Button, Input, FormField } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
+import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
 import {
   capacityApi,
   SCOPE_TYPE_LABEL,
@@ -188,6 +189,7 @@ export function RuleDrawer({
   }
 
   function validateScopeRef(scopeType: CapacityScopeType, scopeRef: string): string | undefined {
+    if (scopeType === 'product' && !scopeRef.trim()) return 'Select a product.'
     if (scopeType !== 'factory' && !scopeRef.trim()) return 'Enter a scope reference.'
     return undefined
   }
@@ -298,7 +300,25 @@ export function RuleDrawer({
               </select>
             </FormField>
 
-            {form.scope_type !== 'factory' && (
+            {form.scope_type === 'product' && (
+              <FormField
+                label="Product"
+                required
+                htmlFor="rule-scope-ref"
+                error={errors.scope_ref}
+                hint="The minimum lot size applies to this product only."
+              >
+                <MaterialPicker
+                  value={form.scope_ref}
+                  onSelect={(m) => { set('scope_ref', m.code); clearError('scope_ref') }}
+                  onClear={() => set('scope_ref', '')}
+                  hasError={!!errors.scope_ref}
+                  disabled={submitting}
+                />
+              </FormField>
+            )}
+
+            {form.scope_type !== 'factory' && form.scope_type !== 'product' && (
               <FormField
                 label={form.scope_type === 'product_family' ? 'Product Family' : 'Line'}
                 required
