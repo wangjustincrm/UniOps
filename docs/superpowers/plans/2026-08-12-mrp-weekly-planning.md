@@ -1069,3 +1069,13 @@ else console.log('All checks passed.')
 - 无新权限键，`seed_authz` 不需要重跑
 - 只重建 mrp-api / mrp-web 两个镜像，其余 retag
 - **产能规则被停用后必须由计划员按周重填，否则生成的计划会没有产能约束**——发布清单里要写这一条
+- **★`mrp10b` + `mrp-api` + `mrp-web` 是一个原子发布，三者不能拆开**（2026-08-14 最终评审补记）：
+  - 新 `mrp-api` 在 `mrp10b` 之前跑不了（它读 `plan_week_start`）
+  - 旧 `mrp-api` 在 `mrp10b` 之后跑不了（它读 `plan_month`）
+  - 新 `mrp-web` 打到任何没有 `week_grid` 的 `mrp-api` 上会直接抛错
+  标准流程（先 `up -d` 再 `migrate-prod.sh`）会让 MPS 端点在「容器重启完成」到「迁移跑完」之间持续 500。
+  **迁移必须紧接容器重启执行，并预期一段仅影响 MRP 的短暂不可用。**
+- **★上生产前必须在还原的生产快照上彩排一次 `mrp09 → mrp10a → mrp10b`**：全部测试都是从 `DROP SCHEMA` 的
+  空库跑起的，所以「先 DELETE 再 ADD COLUMN NOT NULL」这条**破坏性路径从未对非空表执行过**，而生产恰恰是
+  非空的。彩排后核对：三张表已清空、新的 NOT NULL 列加成功、`mrp_capacity_rules` 全部 `is_active=false`
+  且旧值仍在、`mrp_planning_params` 有 `week_calendar_mode='iso_thursday'`。**先 pg_dump。**
