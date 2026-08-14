@@ -30,23 +30,6 @@ pytestmark = pytest.mark.asyncio
 DASH_URL = "/api/v1/dashboard"
 
 
-@pytest.fixture(autouse=True)
-async def _approval_dept_routing(test_engine):
-    """Shadow approval-api's `approval_dept_routing` (same physical DB in prod,
-    no ORM model here — access_scope reads it with raw SQL when resolving a
-    scoped approver's departments). Without it every dashboard that计算 pending
-    approvals errors out; the shared conftest doesn't create it, which is why
-    three tests in test_dashboard.py fail in a plain local checkout."""
-    async with test_engine.begin() as conn:
-        await conn.execute(sa.text(
-            "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
-            " dept_id uuid PRIMARY KEY,"
-            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',"
-            " director_user_id uuid,"
-            " supervisor_enabled boolean NOT NULL DEFAULT false,"
-            " updated_by uuid,"
-            " updated_at timestamptz NOT NULL DEFAULT now())"))
-    yield
 
 
 async def _client_with_roles(test_engine, primary: str, additional: list[str] = []):

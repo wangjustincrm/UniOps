@@ -263,6 +263,20 @@ async def test_engine():
         await conn.execute(text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # approval-api's routing table (same physical DB in prod, no ORM model
+        # here). access_scope reads it with raw SQL whenever it resolves a scoped
+        # approver's departments, which every dashboard that counts pending
+        # approvals goes through — without the shadow those tests die on
+        # UndefinedTable instead of asserting anything.
+        await conn.execute(text("DROP TABLE IF EXISTS approval_dept_routing CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',"
+            " director_user_id uuid,"
+            " supervisor_enabled boolean NOT NULL DEFAULT false,"
+            " updated_by uuid,"
+            " updated_at timestamptz NOT NULL DEFAULT now())"))
         # role_defs / permission_defs / role_permissions / role_permission_locks
         # are also identity-owned (no ORM model here) — same physical DB in
         # prod. The shared uniops_authz package (require_permission,
