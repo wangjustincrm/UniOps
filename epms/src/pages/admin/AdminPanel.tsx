@@ -31,6 +31,22 @@ import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
 import type { UserRole, Currency, CurrencyDef } from '@/types'
 import { CURRENCIES } from '@/types'
 
+// Roles that may only ever be held as ADDITIONAL roles (granted per-user via
+// identity's user_roles), never as a user's primary/base login role. Keep in
+// step with ApiUserRole in services/users.ts, which deliberately excludes them.
+// payment_officer in particular must not be primary: finance-api's _check_can_pay
+// short-circuits on the primary role, so making it primary would hand out payment
+// authority while bypassing the additional-role model entirely.
+const ADDITIONAL_ONLY_ROLES = new Set<string>(['erp_pa_officer', 'payment_officer'])
+// ROLE_LABELS filtered down to roles selectable as a PRIMARY role — used by the
+// user-create/edit Role <select> and the CSV import's validation/template, both
+// of which write ApiUser.role. ROLE_LABELS itself stays complete (unfiltered)
+// because it's still needed to display these roles wherever a user holds them
+// as an additional role (search filter, table cell, etc).
+const PRIMARY_ROLE_LABELS = Object.fromEntries(
+  Object.entries(ROLE_LABELS).filter(([code]) => !ADDITIONAL_ONLY_ROLES.has(code)),
+) as Record<string, string>
+
 // ─── Nav sections ─────────────────────────────────────────────────────────────
 
 type Section =
@@ -1060,7 +1076,7 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-neutral-700">Role <span className="text-danger-600">*</span></label>
           <select className={fldCls()} value={form.role} onChange={(e) => set('role', e.target.value)}>
-            {(Object.entries(ROLE_LABELS) as [UserRole, string][]).map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
+            {(Object.entries(PRIMARY_ROLE_LABELS) as [UserRole, string][]).map(([val, lbl]) => <option key={val} value={val}>{lbl}</option>)}
           </select>
         </div>
         <div className="flex items-center gap-4 h-10">
@@ -1099,7 +1115,7 @@ function UserForm({ initial, onSave, onCancel, title, saveError }: { initial: Us
 // ─── CSV helpers (User import/export) ─────────────────────────────────────────
 
 const CSV_HEADERS = ['full_name', 'email', 'role', 'erp_person_code', 'department', 'is_active', 'teams_account'] as const
-const VALID_ROLES = new Set(Object.keys(ROLE_LABELS))
+const VALID_ROLES = new Set(Object.keys(PRIMARY_ROLE_LABELS))
 
 interface CsvRow {
   full_name: string; email: string; role: string; erp_person_code: string; department: string; is_active: string; teams_account: string
@@ -1170,7 +1186,7 @@ function exportUsersCsv(users: ApiUser[]) {
 function downloadTemplate() {
   const header = CSV_HEADERS.join(',')
   const example = 'Jane Smith,jane.smith@company.ca,requester,EMP-0001,Marketing,true,jane.smith@company.onmicrosoft.com'
-  const roleNote = `# Valid roles: ${Object.keys(ROLE_LABELS).join(' | ')}`
+  const roleNote = `# Valid roles: ${Object.keys(PRIMARY_ROLE_LABELS).join(' | ')}`
   const blob = new Blob([[header, example, roleNote].join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url
