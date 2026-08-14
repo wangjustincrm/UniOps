@@ -5,9 +5,10 @@ THE single implementation of "money goes out": status flip + payment_records
 legacy HTTP entries (epms-api PA action=process, expense-api /pa/{id}/pay and
 /expenses/{id}/pay) forward here.
 
-can_pay: JWT role in _PAY_ROLES, OR any _PAY_ROLES member held as an
-ADDITIONAL role in identity's user_roles (same physical DB — phase 3 retired
-the old company_config.role_management assignments).
+can_pay: primary (JWT) role in _PAY_ROLES, OR an ADDITIONAL role (identity's
+user_roles) in _PAY_ROLES_ASSIGNED = _PAY_ROLES minus system_admin — this
+codebase treats system_admin as primary-role-only (see budget_scope.py's
+FULL_ACCESS_PRIMARY vs FULL_ACCESS_ASSIGNED).
 """
 import uuid
 from datetime import date, datetime, timezone
