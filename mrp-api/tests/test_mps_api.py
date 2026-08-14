@@ -203,6 +203,20 @@ async def _maintenance_week(client, headers, week_start: date, *, reason="annual
     return r.json()
 
 
+def _forward_filled(row_values):
+    """Row 1's month header only writes a value into the LEFTMOST cell of
+    each merged span (openpyxl reads every other cell of a merge as `None`,
+    even though the file visually shows one month across the whole span) --
+    this reproduces what a human looking at the sheet actually sees at any
+    given column."""
+    filled, current = [], None
+    for v in row_values:
+        if v is not None:
+            current = v
+        filled.append(current)
+    return filled
+
+
 def _deny_everything(monkeypatch):
     """Same two seams tests/test_permission_gates.py patches: `admin_token`
     short-circuits every gate, so a denial test must use `non_admin_token`
@@ -1419,15 +1433,14 @@ async def test_recalculate_still_skips_intent_rows(client, auth_headers, monkeyp
 
 @pytest.mark.anyio
 async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_session, admin_token, monkeypatch):
-    """GET .../export renders the production plan matrix: a Product/Metric
-    header, then Demand/Available/Planned rows per product across the run's
-    plan months. unit=t scales qty/1000 (3dp); unit=kg leaves the raw KG
-    value untouched.
+    """GET .../export renders the production plan matrix: row 1 = month
+    grouping (merged across that month's week columns), row 2 = week
+    labels, data from row 3 with Demand/Available/Planned/Gap rows per
+    product. unit=t scales qty/1000 (3dp); unit=kg leaves the raw KG value
+    untouched.
 
-    Columns are still MONTHS (each line's plan week's owning month) — design
-    §5.1's week columns with a month grouping header are a separate change,
-    and `app/services/mps_export.py` was only renamed onto the new field
-    here, not restructured."""
+    Columns are WEEKS since Task 8's restructuring (design §5.1) — each
+    line's OWN plan week, not just its owning month."""
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
 
     async def _fake_names(token):
@@ -1459,23 +1472,29 @@ async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_sessio
 
     wb = openpyxl.load_workbook(io.BytesIO(r.content))
     ws = wb.active
-    header = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
-    assert header == ["Product", "Metric", line["plan_week_month"]]
+    week = date.fromisoformat(line["plan_week_start"])
+    label = week_label(week, MODE)
+    header_row2 = [c.value for c in next(ws.iter_rows(min_row=2, max_row=2))]
+    col = header_row2.index(label)  # 0-based, matches values_only row tuples below
+    header_row1 = _forward_filled([c.value for c in next(ws.iter_rows(min_row=1, max_row=1))])
+    assert header_row1[:2] == ["Product", "Metric"]
+    assert header_row1[col] == line["plan_week_month"]
 
-    rows = {row[1]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-    assert set(rows) == {"Demand", "Available", "Planned"}
+    rows = {row[1]: row for row in ws.iter_rows(min_row=3, max_row=6, values_only=True)}
+    assert set(rows) == {"Demand", "Available", "Planned", "Gap"}
     for row in rows.values():
         assert row[0] == "Whole Milk Powder 25kg"  # resolved name, not the bare code
     expected_tonnes = float((qty_kg / Decimal("1000")).quantize(Decimal("0.001")))
-    assert rows["Planned"][2] == expected_tonnes
-    assert rows["Demand"][2] == float((Decimal("2500") / Decimal("1000")).quantize(Decimal("0.001")))
+    assert rows["Planned"][col] == expected_tonnes
+    assert rows["Demand"][col] == float((Decimal("2500") / Decimal("1000")).quantize(Decimal("0.001")))
+    assert rows["Gap"][col] == 0.0  # nothing unplaced in this fixture
 
     r_kg = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=kg", headers=headers)
     assert r_kg.status_code == 200, r_kg.text
     wb_kg = openpyxl.load_workbook(io.BytesIO(r_kg.content))
     ws_kg = wb_kg.active
-    rows_kg = {row[1]: row for row in ws_kg.iter_rows(min_row=2, values_only=True)}
-    assert rows_kg["Planned"][2] == float(qty_kg)
+    rows_kg = {row[1]: row for row in ws_kg.iter_rows(min_row=3, max_row=6, values_only=True)}
+    assert rows_kg["Planned"][col] == float(qty_kg)
 
 
 @pytest.mark.anyio
@@ -1484,11 +1503,22 @@ async def test_export_does_not_multiply_demand_across_a_split_demand_month(
 ):
     """`demand_forecast`/`opening_stock` are snapshotted PER DEMAND MONTH and
     copied onto every line of that month. Weekly, one demand month is split
-    across several week rows, so summing them per line reported N x the real
-    demand -- a fabricated shortfall on every product the engine spreads
-    across weeks, which is nearly all of them. Measured before the fix, with
-    three 40 t rows each carrying `demand_forecast=120`: Demand 360 against
-    Planned 120.
+    across several week ROWS -- and since Task 8, each of those weeks is now
+    its own COLUMN too. Summing every line touching a cell without dedup
+    reported N x the real demand -- a fabricated shortfall on every product
+    the engine spreads across weeks, which is nearly all of them. Measured
+    before the Task 7 fix, with three 40 t rows each carrying
+    `demand_forecast=120`: Demand 360 against Planned 120.
+
+    Under week columns each of those three lines lands in a DIFFERENT week
+    column (this fixture's guard below confirms it), so the risk this test
+    pins is dedup WITHIN one cell: each individual week's Demand cell must
+    read exactly the month's 120, not some multiple of it, and Planned in
+    that same cell must be that week's own slice, not the month total. (A
+    demand month whose lines land on several DIFFERENT week columns
+    legitimately shows 120 in each of them, once per column touched -- see
+    `app/services/mps_export.py`'s docstring -- summing those cells together
+    across columns is not this test's concern.)
 
     This fixture forces the split for real (120 t against a 40 t weekly cap)
     rather than asserting on a single-line run, which is exactly how the
@@ -1508,20 +1538,29 @@ async def test_export_does_not_multiply_demand_across_a_split_demand_month(
     lines = run["lines"]
     assert len(lines) >= 3, "fixture guard: 120 against a 40/week cap must span >=3 weeks"
     assert {l["demand_month"] for l in lines} == {months[0]}
-    plan_months = {l["plan_week_month"] for l in lines}
-    assert len(plan_months) == 1, "fixture guard: one column, so the sum is unambiguous"
-    column = plan_months.pop()
+    plan_weeks = {l["plan_week_start"] for l in lines}
+    assert len(plan_weeks) == len(lines), (
+        "fixture guard: one week column per line, so a per-cell dedup bug "
+        "cannot hide behind two lines sharing a column"
+    )
 
     r = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=kg", headers=headers)
     assert r.status_code == 200, r.text
     ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
-    header = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
-    assert header == ["Product", "Metric", column]
-    rows = {row[1]: row for row in ws.iter_rows(min_row=2, values_only=True)}
-    # The month's forecast counted ONCE, not once per week row.
-    assert rows["Demand"][2] == 120.0
-    assert rows["Planned"][2] == float(sum(Decimal(l["qty"]) for l in lines))
-    assert rows["Available"][2] == 0.0  # no opening stock, and not 3 x 0 either
+    header_row2 = [c.value for c in next(ws.iter_rows(min_row=2, max_row=2))]
+    rows = {row[1]: row for row in ws.iter_rows(min_row=3, max_row=6, values_only=True)}
+
+    for line in lines:
+        week = date.fromisoformat(line["plan_week_start"])
+        col = header_row2.index(week_label(week, MODE))
+        # The month's forecast counted ONCE per touched column, not summed
+        # again for every line that happens to share it (none do here, per
+        # the fixture guard, but the dedup set must still land on the right
+        # value rather than only working by having nothing to dedup).
+        assert rows["Demand"][col] == 120.0
+        assert rows["Planned"][col] == float(Decimal(line["qty"]))
+        assert rows["Available"][col] == 0.0  # no opening stock
+        assert rows["Gap"][col] == 0.0  # nothing unplaced in this fixture
 
 
 @pytest.mark.anyio
@@ -1540,3 +1579,172 @@ async def test_export_run_requires_permission(client, db_session, admin_token, n
     denied_headers = {"Authorization": f"Bearer {non_admin_token}"}
     r = await client.get(f"/api/v1/mps/runs/{run['id']}/export", headers=denied_headers)
     assert r.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_export_has_month_header_row_over_week_columns(client, db_session, admin_token, monkeypatch):
+    """Row 1 groups week columns under merged month cells; row 2 carries the
+    week labels. This is the layout Task 8 introduces — a bare rename onto
+    still-monthly columns (what this file had before) would fail both
+    assertions below."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, _ = await _confirmed_version(db_session, months=1)
+    await _factory_rule(client, headers)
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+
+    r = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=t", headers=headers)
+    assert r.status_code == 200, r.text
+    ws = openpyxl.load_workbook(io.BytesIO(r.content)).active
+
+    merged = [str(rng) for rng in ws.merged_cells.ranges]
+    assert merged, "month header cells must be merged across their weeks"
+    week_header = [c.value for c in ws[2] if c.value]
+    assert any("W" in str(v) for v in week_header)
+
+
+@pytest.mark.anyio
+async def test_export_in_tonnes_divides_by_1000(client, db_session, admin_token, monkeypatch):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, _ = await _confirmed_version(db_session, months=1)
+    await _factory_rule(client, headers)
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+
+    kg = openpyxl.load_workbook(io.BytesIO((await client.get(
+        f"/api/v1/mps/runs/{run['id']}/export?unit=kg", headers=headers)).content)).active
+    t = openpyxl.load_workbook(io.BytesIO((await client.get(
+        f"/api/v1/mps/runs/{run['id']}/export?unit=t", headers=headers)).content)).active
+
+    kg_vals = [c.value for row in kg.iter_rows(min_row=3) for c in row if isinstance(c.value, (int, float))]
+    t_vals = [c.value for row in t.iter_rows(min_row=3) for c in row if isinstance(c.value, (int, float))]
+    assert kg_vals and len(kg_vals) == len(t_vals)
+    assert all(abs(k / 1000 - v) < 0.001 for k, v in zip(kg_vals, t_vals))
+
+
+def test_export_dedups_demand_across_two_straddled_month_columns():
+    """Unit-level regression, exercising `mps_export.build_mps_matrix_workbook`
+    directly with hand-built lines (faster and more deterministic than
+    driving the full weekly engine into this exact shape through the API --
+    see task-8-brief.md).
+
+    This is the case Task 7's carried-over fix has to survive: ONE demand
+    month whose lines straddle TWO DIFFERENT MONTH COLUMNS (a prebuild
+    pulling part of a month's demand into the previous month), plus -- in
+    the same fixture -- two lines sharing the exact same (material, week)
+    cell for that demand month, to prove the per-column dedup still holds
+    within a single cell too. A naive per-line-sum export would report:
+    - the August cell inflated to 240 (two lines, same demand_month, same
+      week, summed without dedup) instead of 120, and
+    - the demand month potentially missing from one of the two months
+      entirely if the month-grouping restructuring keyed columns by month
+      instead of by the line's own week.
+    Neither happens here: every touched cell reads exactly 120 once, and
+    both August and September keep their own column group."""
+    from types import SimpleNamespace
+
+    from app.services import mps_export
+
+    mode = "iso_thursday"
+    aug_week_a = weeks_of_month("2026-08", mode)[-1]  # last week of August: the prebuild
+    aug_week_b = weeks_of_month("2026-08", mode)[-2]  # a second, different August week
+    sep_week = weeks_of_month("2026-09", mode)[0]
+
+    def line(week, month, qty, *, gap=False):
+        return SimpleNamespace(
+            material_code="M1", demand_month="2026-09",
+            plan_week_start=week, plan_week_month=month,
+            qty=Decimal(qty), demand_forecast=Decimal("120"),
+            opening_stock=Decimal("0"), capacity_gap=gap,
+        )
+
+    lines = [
+        # Two DIFFERENT lines sharing the exact same (material, week) cell --
+        # the dedup set must still only count this demand month's 120 once.
+        line(aug_week_a, "2026-08", "25"),
+        line(aug_week_a, "2026-08", "15"),
+        # A second, different August week -- proves the dedup key is per
+        # WEEK, not "first touch of the month wins" or similar.
+        line(aug_week_b, "2026-08", "20"),
+        # September: a different month column entirely.
+        line(sep_week, "2026-09", "60"),
+    ]
+    run = SimpleNamespace(
+        run_no="MPS-TEST-0001", horizon_start_month="2026-08", horizon_months=2,
+        week_calendar_mode=mode,
+    )
+
+    content = mps_export.build_mps_matrix_workbook(run, lines, "kg", {})
+    ws = openpyxl.load_workbook(io.BytesIO(content)).active
+
+    header_row1 = _forward_filled([c.value for c in ws[1]])
+    header_row2 = [c.value for c in ws[2]]
+    col_a = header_row2.index(week_label(aug_week_a, mode))
+    col_b = header_row2.index(week_label(aug_week_b, mode))
+    col_sep = header_row2.index(week_label(sep_week, mode))
+
+    rows = {row[1]: row for row in ws.iter_rows(min_row=3, max_row=6, values_only=True)}
+
+    # Each touched column carries the demand month's 120 exactly once --
+    # not doubled by the two lines sharing col_a, not multiplied by however
+    # many weeks/months the demand was split across.
+    assert rows["Demand"][col_a] == 120.0
+    assert rows["Demand"][col_b] == 120.0
+    assert rows["Demand"][col_sep] == 120.0
+
+    # Planned is the real split, untouched by the dedup.
+    assert rows["Planned"][col_a] == 40.0  # 25 + 15
+    assert rows["Planned"][col_b] == 20.0
+    assert rows["Planned"][col_sep] == 60.0
+
+    # The month header row keeps August's two columns and September's one
+    # column in their own groups -- the restructuring didn't collapse or
+    # drop either month.
+    assert header_row1[col_a] == header_row1[col_b] == "2026-08"
+    assert header_row1[col_sep] == "2026-09"
+
+
+def test_export_excludes_capacity_gap_qty_from_planned():
+    """Task 7's review: the export used to sum `capacity_gap` lines' qty
+    straight into Planned -- a shortfall reported as if it had been
+    produced. Gap lines get their own row instead, and Planned must not
+    include them (module docstring's "Capacity-gap lines get their own
+    row" section)."""
+    from types import SimpleNamespace
+
+    from app.services import mps_export
+
+    mode = "iso_thursday"
+    week = weeks_of_month("2026-08", mode)[0]
+
+    def line(qty, *, gap):
+        return SimpleNamespace(
+            material_code="M1", demand_month="2026-08",
+            plan_week_start=week, plan_week_month="2026-08",
+            qty=Decimal(qty), demand_forecast=Decimal("100"),
+            opening_stock=Decimal("0"), capacity_gap=gap,
+        )
+
+    lines = [line("30", gap=False), line("70", gap=True)]
+    run = SimpleNamespace(
+        run_no="MPS-TEST-0002", horizon_start_month="2026-08", horizon_months=1,
+        week_calendar_mode=mode,
+    )
+
+    content = mps_export.build_mps_matrix_workbook(run, lines, "kg", {})
+    ws = openpyxl.load_workbook(io.BytesIO(content)).active
+    header_row2 = [c.value for c in ws[2]]
+    col = header_row2.index(week_label(week, mode))
+    rows = {row[1]: row for row in ws.iter_rows(min_row=3, max_row=6, values_only=True)}
+
+    assert rows["Planned"][col] == 30.0  # the gap's 70 must NOT be in here
+    assert rows["Gap"][col] == 70.0
+    assert rows["Demand"][col] == 100.0  # dedup unaffected by the gap flag
