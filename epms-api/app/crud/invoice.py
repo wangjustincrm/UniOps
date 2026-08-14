@@ -101,6 +101,47 @@ async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
         inv.claimed_receipts = claimed or None
 
 
+async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> None:
+    """Inject `po_number` + `po_line_description` onto each invoice's
+    allocation rows, batched — display-only fields resolved at read time,
+    never stored on `InvoicePoAllocation` (see that model).
+
+    Same batching shape as `attach_claimed_receipts` above: every `po_id`
+    and every `po_line_id` across ALL allocations of ALL invoices being
+    serialised is unioned first, each resolved with a single
+    `WHERE id IN (...)` query, then handed back out per-allocation from an
+    in-memory dict. Must be called from both the detail path (get_by_id)
+    and the LIST path (get_all, a whole page of invoices) — an O(n) query
+    count here is a hot-path N+1 that would run on every invoice list load.
+
+    `inv.allocations` itself is loaded via `lazy="selectin"` on the Invoice
+    model, so accessing it here across many invoices is already a single
+    batched query, not the N+1 this function guards against.
+    """
+    all_allocs = [a for inv in invoices for a in (inv.allocations or [])]
+    if not all_allocs:
+        return
+
+    po_ids = {a.po_id for a in all_allocs}
+    line_ids = {a.po_line_id for a in all_allocs if a.po_line_id is not None}
+
+    po_numbers: dict = {}
+    if po_ids:
+        po_numbers = dict((await db.execute(
+            select(PurchaseOrder.id, PurchaseOrder.number).where(PurchaseOrder.id.in_(po_ids))
+        )).all())
+
+    line_descs: dict = {}
+    if line_ids:
+        line_descs = dict((await db.execute(
+            select(PoLineItem.id, PoLineItem.description).where(PoLineItem.id.in_(line_ids))
+        )).all())
+
+    for a in all_allocs:
+        a.po_number = po_numbers.get(a.po_id)
+        a.po_line_description = line_descs.get(a.po_line_id) if a.po_line_id else None
+
+
 # ── Number generation ──────────────────────────────────────────────────────────
 
 def within_tolerance(variance: Decimal, variance_pct: Decimal | None, tolerance_pct: Decimal) -> bool:
@@ -197,6 +238,7 @@ async def get_all(
     items = list((await db.execute(
         q.order_by(Invoice.created_at.desc()).offset(offset).limit(page_size)
     )).scalars().all())
+    await attach_allocation_display_fields(db, items)
     return items, total
 
 
@@ -207,21 +249,7 @@ async def get_by_id(db: AsyncSession, invoice_id: uuid.UUID) -> Invoice | None:
         return None
     # Enrich allocations with human-readable PO number + PO line description
     # (display only — resolved at read time, not stored on the allocation row).
-    allocs = inv.allocations
-    if allocs:
-        po_ids = {a.po_id for a in allocs}
-        line_ids = {a.po_line_id for a in allocs if a.po_line_id is not None}
-        po_numbers = dict((await db.execute(
-            select(PurchaseOrder.id, PurchaseOrder.number).where(PurchaseOrder.id.in_(po_ids))
-        )).all())
-        line_descs: dict = {}
-        if line_ids:
-            line_descs = dict((await db.execute(
-                select(PoLineItem.id, PoLineItem.description).where(PoLineItem.id.in_(line_ids))
-            )).all())
-        for a in allocs:
-            a.po_number = po_numbers.get(a.po_id)
-            a.po_line_description = line_descs.get(a.po_line_id) if a.po_line_id else None
+    await attach_allocation_display_fields(db, [inv])
     return inv
 
 
