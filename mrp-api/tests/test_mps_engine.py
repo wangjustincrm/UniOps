@@ -1785,3 +1785,100 @@ def test_a_lot_that_fits_nowhere_at_all_is_still_a_capacity_gap():
                  now=date(2026, 9, 1), locked=blocked)
     gaps = [l for l in lines if l.material_code == "A" and l.capacity_gap]
     assert gaps, [(l.material_code, l.qty, l.capacity_gap) for l in lines]
+
+
+# ── 超产结转、covered 行、保质期警告 ──────────────────────────────────────
+#
+# 顶批量多产的部分不会凭空消失：它作为库存自动抵减后续月份的需求（用户定的
+# 「顶到 20 并扣后续，不拉不凑」）。被抵完的月份仍要产出一条 qty=0 的行，
+# 否则那个产品那个月在矩阵里整个消失，计划员看到的是「这月没需求」。
+
+
+def test_surplus_covers_the_following_months_and_only_one_run_is_opened():
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11", "2026-12")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+
+    produced = [l for l in lines if l.qty > 0 and not l.capacity_gap]
+    assert len(produced) == 1, [(l.demand_month, l.qty) for l in produced]
+    assert produced[0].qty == Decimal("20")
+    assert produced[0].surplus_qty == Decimal("15")
+
+    covered = sorted((l.demand_month, l.carry_in_qty) for l in lines if l.covered_by_carry)
+    assert covered == [("2026-11", Decimal("5")), ("2026-12", Decimal("5"))]
+
+
+def test_covered_rows_carry_no_quantity_and_book_no_capacity():
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+    covered = [l for l in lines if l.covered_by_carry]
+    assert covered
+    assert all(l.qty == Decimal("0") for l in covered)
+    assert all(not l.capacity_gap for l in covered)
+    assert all(l.plan_week_start is not None for l in covered)
+
+
+def test_a_covered_month_still_appears_so_the_planner_can_see_it():
+    """★没有这条，被抵完的月份一条 line 都没有 → 矩阵里那个格子整个消失。"""
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+    assert {l.demand_month for l in lines} == {"2026-10", "2026-11"}
+
+
+def test_conservation_holds_once_the_surplus_is_counted():
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11", "2026-12")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+    produced = sum((l.qty for l in lines if not l.capacity_gap), Decimal("0"))
+    gap = sum((l.qty for l in lines if l.capacity_gap), Decimal("0"))
+    surplus = sum((l.surplus_qty for l in lines), Decimal("0"))
+    carried = sum((l.carry_in_qty for l in lines), Decimal("0"))
+    assert produced + gap == sum(d.qty for d in demands) + surplus - carried
+
+
+def test_surplus_that_outlives_its_shelf_life_is_flagged_but_still_planned():
+    """A 每月只要 1 吨，批量 20 → 多产的 19 吨要 19 个月才吃完，而保质期只有 6
+    个月。按用户的决定：照顶，只标警告，不拦。"""
+    demands = [DemandItem("A", f"2026-{m:02d}", Decimal("1")) for m in (10, 11, 12)]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28), shelf={"A": 6})
+    produced = [l for l in lines if l.qty > 0 and not l.capacity_gap]
+    assert len(produced) == 1
+    assert produced[0].qty == Decimal("20")            # 照顶
+    assert produced[0].surplus_expiry_risk is True     # 只警告
+
+
+def test_surplus_consumed_well_within_shelf_life_is_not_flagged():
+    demands = [DemandItem("A", m, Decimal("10")) for m in ("2026-10", "2026-11")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28), shelf={"A": 24})
+    produced = [l for l in lines if l.qty > 0 and not l.capacity_gap]
+    assert any(l.surplus_qty > 0 for l in produced)
+    assert not any(l.surplus_expiry_risk for l in produced)
+
+
+def test_merging_two_lines_on_one_slot_keeps_the_lot_size_bookkeeping():
+    """★`_merge_same_slot` 曾是逐字段重建 —— 每加一个新字段，合并时就被静默
+    丢掉。这条钉住超产/结转/标记在折叠后仍在。"""
+    from app.services.mps_engine import _merge_same_slot
+
+    week = date(2026, 10, 5)
+    a = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                   qty=Decimal("12"), surplus_qty=Decimal("7"),
+                   carry_in_qty=Decimal("3"), below_min_lot=True)
+    b = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                   qty=Decimal("8"), surplus_qty=Decimal("1"),
+                   surplus_expiry_risk=True)
+    merged = _merge_same_slot([a, b])
+    assert len(merged) == 1
+    assert merged[0].qty == Decimal("20")
+    assert merged[0].surplus_qty == Decimal("8")
+    assert merged[0].carry_in_qty == Decimal("3")
+    assert merged[0].below_min_lot is True
+    assert merged[0].surplus_expiry_risk is True
+
+
+def test_a_covered_row_is_never_folded_into_a_production_line():
+    week = date(2026, 10, 5)
+    covered = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                         qty=Decimal("0"), carry_in_qty=Decimal("5"), covered_by_carry=True)
+    real = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                      qty=Decimal("20"))
+    from app.services.mps_engine import _merge_same_slot
+    assert len(_merge_same_slot([covered, real])) == 2
