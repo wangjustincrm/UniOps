@@ -672,12 +672,33 @@ export default function ProductionPlanPage() {
         />
       )}
 
-      {weekDrawerTarget && (
+      {weekDrawerTarget && (() => {
+        const weekException = findExistingException(exceptionsQuery.data ?? [], {
+          week_start: weekDrawerTarget.week_start, scope_type: 'factory', scope_ref: null, constraint_type: 'max_output_qty',
+        })
+        return (
         <WeekDrawer
+          // Round 2 fix: `maintenance`/`reason` are useState, initialized
+          // ONCE at mount from `existingException` — but the exceptions
+          // query can still be loading (or errored-then-refetched) at the
+          // moment this drawer first mounts, racing the much heavier
+          // GET /runs/{id}. Without a key, the prop updating later does
+          // NOT re-run those initializers, so an already-marked week can
+          // mount unchecked/empty-reason and then have Save PATCH
+          // `is_active: false` on a week the planner never actually
+          // unmarked (same wrong-initial-state class as round 1's finding
+          // #3, one tick later). Keying on the resolved row's identity
+          // (falling back to a "loading"/"none" sentinel while unresolved)
+          // forces React to unmount+remount — not just re-render — once
+          // the real exception state lands, so the checkbox/reason always
+          // initialize from data that has actually arrived. An effect
+          // syncing state on `existingException` changes would also work,
+          // but would need its own guard against clobbering an
+          // in-progress edit; the key is simpler and has no such edge case
+          // (a fresh mount naturally starts from the just-arrived props).
+          key={`${weekDrawerTarget.week_start}::${exceptionsQuery.isLoading ? 'loading' : weekException?.id ?? 'none'}`}
           week={weekDrawerTarget}
-          existingException={findExistingException(exceptionsQuery.data ?? [], {
-            week_start: weekDrawerTarget.week_start, scope_type: 'factory', scope_ref: null, constraint_type: 'max_output_qty',
-          })}
+          existingException={weekException}
           existingExceptionLoading={exceptionsQuery.isLoading}
           existingExceptionError={exceptionsQuery.isError ? errMsg(exceptionsQuery.error, 'Could not load this week\'s current exception state.') : null}
           canWrite={canWriteParams}
@@ -691,7 +712,8 @@ export default function ProductionPlanPage() {
           notifySuccess={toasts.success}
           notifyError={toasts.error}
         />
-      )}
+        )
+      })()}
 
       {releaseConfirmOpen && run && releaseSummary && (
         <ConfirmDialog

@@ -129,7 +129,15 @@ export function AdjustDrawer({
   // is simpler and safer than trying to fold an unsaved qty edit into a
   // merge PATCH — save the qty change first, or merge first, but never both
   // in one click.
-  const qtyDirty = qty !== line.qty
+  // Numeric, not string, comparison — `qty` is free-typed text and
+  // `line.qty` is the server's Decimal-as-string ('40000.000'), so a
+  // string `!==` flagged "dirty" on formatting-only differences (e.g.
+  // retyping '40000' over '40000.000') even though nothing actually
+  // changed. `Number(qty)` on an empty/invalid field is `NaN`/`0`, both of
+  // which correctly still compare unequal to a real saved qty — so this
+  // stays a safe default (Merge disabled) for a field that isn't a valid
+  // number yet, not just for a genuinely changed one.
+  const qtyDirty = Number(qty) !== Number(line.qty)
 
   async function saveLine(
     body: Parameters<typeof mpsApi.adjustLine>[2],
