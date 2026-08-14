@@ -834,11 +834,17 @@ async def export_run(
     run_id: uuid.UUID, db: SessionDep, _: ReportDep, token: BearerToken,
     unit: str = Query(default="t", pattern="^(kg|t)$"),
 ):
-    """Production plan matrix (Product x plan_week_month, Demand/Available/Planned
-    rows per product) as xlsx — mirrors forecast.py's `GET .../export`
+    """Production plan matrix as xlsx — mirrors forecast.py's `GET .../export`
     (openpyxl workbook built off the same per-line demand context `GET
-    /runs/{id}` renders, returned as a binary attachment). See
-    app/services/mps_export.py's docstring for the aggregation/columns.
+    /runs/{id}` renders, returned as a binary attachment).
+
+    Columns are WEEKS (`plan_week_start`) grouped under a merged month
+    header row, and each product gets FOUR metric rows — Demand, Available,
+    Planned, Gap. Demand and Available are month-grain: one merged, centred
+    cell spanning that month's week columns, matching what
+    `ProductionMatrix.tsx` renders for the same run. Only Planned and Gap
+    are per week. See app/services/mps_export.py's docstring for the
+    aggregation, the column derivation and the dedup rule.
 
     Names resolved the same one-batched-call/degrade-to-code contract every
     other mdm-api-backed read in this service uses (see
@@ -999,6 +1005,14 @@ async def update_line(
     `shelf_life_ok=True` -- so storing a produced line that fails the rule
     would invent a row shape nothing downstream knows how to read, for
     product that expires before the month it was made for.
+
+    A move into a week BEFORE the current one is rejected the same way, and
+    for a structurally similar reason: the engine's canvas is `w >= current`
+    in every bucket, so a line parked in a past week is counted against its
+    demand (`held_by_demand`) while occupying no week of the capacity
+    ledger. The plan would then show demand as satisfied by production the
+    factory has no room booked for. `AdjustDrawer`'s week picker filters
+    past weeks out for the same reason; this is the enforcement behind it.
     """
     run = await _get_run_or_404(db, run_id)
     _require_not_released(run)
@@ -1018,6 +1032,24 @@ async def update_line(
                        f"'{mode}' calendar",
             )
         current_week = week_start_of(datetime.now(timezone.utc).date(), mode)
+        if week < current_week:
+            # A past week is not a place production can happen, and the
+            # engine's canvas says so: every bucket is `[w for w in
+            # weeks_of_month(...) if w >= current]`. A locked line sitting
+            # in a week the canvas does not contain is seeded into
+            # `held_by_demand` (so it CONSUMES its demand) but into no
+            # week's capacity ledger (so it consumes no capacity) -- the
+            # quantity disappears from the factory's load while still
+            # counting as satisfied demand. Rejected here rather than
+            # stored, for the same reason a shelf-life-illegal move is:
+            # a row the engine cannot represent must not reach the table.
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"the week of {week.isoformat()} has already passed (the current week "
+                       f"starts {current_week.isoformat()}); production cannot be planned into "
+                       "a past week -- it would consume the demand without occupying any "
+                       "week's capacity",
+            )
         target = _target_week(line.demand_month, run.production_lead_weeks, current_week, mode)
         weeks_early = _weeks_between(week, target, mode)
         shelf_life = await resolve_shelf_life(token)

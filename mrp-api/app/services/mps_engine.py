@@ -1312,7 +1312,18 @@ def generate_mps(
         if left > 0:
             payload.append(DemandItem(item.material_code, item.demand_month, left))
     if not payload:
-        return _sorted_lines(locked_lines)
+        # Every demand is already covered by locked lines, so there is
+        # nothing to pack -- but this early return still owes the caller the
+        # SAME shape the long path produces at the bottom of this function,
+        # `_merge_same_slot` included. It is not an optimisation detail:
+        # AdjustDrawer's "Merge into adjacent week" locks BOTH lines onto one
+        # slot precisely so that the next recalculate folds them into a
+        # single row, and a single-product plan whose demand the two locked
+        # lines fully cover takes exactly this path. Returning unmerged here
+        # made the merge silently do nothing whenever it was the only thing
+        # the run had to do, and quietly work as soon as any unrelated open
+        # demand existed.
+        return _sorted_lines(_merge_same_slot(locked_lines))
 
     # ② Lead shift, per demand month -- every item of a demand month shares
     #    one target week, because the target depends only on the month.

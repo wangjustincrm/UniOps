@@ -217,6 +217,35 @@ def _forward_filled(row_values):
     return filled
 
 
+def _month_spans(ws):
+    """`{month: (first_col_0based, last_col_0based)}` from row 1's merges.
+
+    Row 1 writes a month into the leftmost cell of its span and merges the
+    rest away, so the span IS the merge range. Demand/Available must occupy
+    exactly the same span on their own rows (design 5.1) -- this helper is
+    what lets a test compare the two rather than trusting either alone."""
+    row1 = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    filled = _forward_filled(row1)
+    spans = {}
+    for idx, month in enumerate(filled):
+        if idx < 2 or month is None:
+            continue
+        first, _last = spans.get(month, (idx, idx))
+        spans[month] = (first, idx)
+    return spans
+
+
+def _merged_range_at(ws, row, col0):
+    """The merge range covering 0-based data column `col0` on `row`, as
+    (first_col_0based, last_col_0based); a lone unmerged cell answers
+    (col0, col0)."""
+    col1 = col0 + 1
+    for rng in ws.merged_cells.ranges:
+        if rng.min_row <= row <= rng.max_row and rng.min_col <= col1 <= rng.max_col:
+            return (rng.min_col - 1, rng.max_col - 1)
+    return (col0, col0)
+
+
 def _deny_everything(monkeypatch):
     """Same two seams tests/test_permission_gates.py patches: `admin_token`
     short-circuits every gate, so a denial test must use `non_admin_token`
@@ -1058,6 +1087,71 @@ async def test_patch_line_rejects_a_week_that_is_not_a_week_start(
 
 
 @pytest.mark.anyio
+async def test_patch_line_refuses_a_week_that_has_already_passed(
+    client, db_session, admin_token, monkeypatch,
+):
+    """A past week is a place the engine's canvas cannot represent.
+
+    Every bucket is `[w for w in weeks_of_month(...) if w >= current]`, so a
+    line parked before the current week is seeded into `held_by_demand` (it
+    CONSUMES its demand) but into no week's capacity ledger (it consumes no
+    capacity). The plan then shows that demand as satisfied by production
+    the factory has no room booked for, and nothing anywhere says so.
+
+    The week picker filters these out, but the picker is not the boundary --
+    a stale tab, a replayed request or a direct PATCH reaches this endpoint
+    with whatever week it likes.
+
+    Pinned on the MESSAGE, not just the 422: a past week is also earlier
+    than its target, so the shelf-life rule below would refuse most of these
+    anyway and a bare `status_code == 422` would pass with this guard
+    deleted. Shelf life is stubbed generous here for the same reason."""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version, months = await _confirmed_version(db_session, months=1)
+    await _factory_rule(client, headers)
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    line = run["lines"][0]
+    before = line["plan_week_start"]
+
+    current_week = week_start_of(datetime.now(timezone.utc).date(), MODE)
+    last_week = shift_weeks(current_week, -1, MODE)
+    assert week_start_of(last_week, MODE) == last_week  # fixture guard: on-grid
+    assert last_week < current_week
+
+    r = await client.patch(
+        f"/api/v1/mps/runs/{run['id']}/lines/{line['id']}",
+        json={"plan_week_start": last_week.isoformat()},
+        headers=headers,
+    )
+    assert r.status_code == 422, r.text
+    assert "already passed" in r.text, (
+        "the 422 must be the past-week refusal, not the shelf-life one that "
+        "would also fire on this week -- otherwise deleting the guard still "
+        "passes this test"
+    )
+
+    got = await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)
+    stored = next(l for l in got.json()["lines"] if l["id"] == line["id"])
+    assert stored["plan_week_start"] == before  # nothing was written
+    assert stored["manual_adjusted"] is False
+
+    # The CURRENT week is fine -- the boundary is `<`, not `<=`. Without
+    # this half, moving the boundary to `<=` would go unnoticed.
+    ok = await client.patch(
+        f"/api/v1/mps/runs/{run['id']}/lines/{line['id']}",
+        json={"plan_week_start": current_week.isoformat()},
+        headers=headers,
+    )
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["plan_week_start"] == current_week.isoformat()
+
+
+@pytest.mark.anyio
 async def test_patch_line_refuses_a_week_shelf_life_does_not_allow(
     client, db_session, admin_token, monkeypatch,
 ):
@@ -1562,8 +1656,12 @@ async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_sessio
         assert row[0] == "Whole Milk Powder 25kg"  # resolved name, not the bare code
     expected_tonnes = float((qty_kg / Decimal("1000")).quantize(Decimal("0.001")))
     assert rows["Planned"][col] == expected_tonnes
-    assert rows["Demand"][col] == float((Decimal("2500") / Decimal("1000")).quantize(Decimal("0.001")))
     assert rows["Gap"][col] == 0.0  # nothing unplaced in this fixture
+    # Demand is MONTH-grain: it lives in the leftmost column of its month's
+    # span, not in this line's own week column (design 5.1).
+    month_first, _month_last = _month_spans(ws)[line["plan_week_month"]]
+    assert rows["Demand"][month_first] == float(
+        (Decimal("2500") / Decimal("1000")).quantize(Decimal("0.001")))
 
     r_kg = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=kg", headers=headers)
     assert r_kg.status_code == 200, r_kg.text
@@ -1574,31 +1672,34 @@ async def test_export_run_returns_xlsx_matrix_in_tonnes_and_kg(client, db_sessio
 
 
 @pytest.mark.anyio
-async def test_export_does_not_multiply_demand_across_a_split_demand_month(
+async def test_export_writes_one_merged_demand_cell_per_month_not_one_per_week(
     client, db_session, admin_token, monkeypatch,
 ):
-    """`demand_forecast`/`opening_stock` are snapshotted PER DEMAND MONTH and
-    copied onto every line of that month. Weekly, one demand month is split
-    across several week ROWS -- and since Task 8, each of those weeks is now
-    its own COLUMN too. Summing every line touching a cell without dedup
-    reported N x the real demand -- a fabricated shortfall on every product
-    the engine spreads across weeks, which is nearly all of them. Measured
-    before the Task 7 fix, with three 40 t rows each carrying
-    `demand_forecast=120`: Demand 360 against Planned 120.
+    """Demand/Available are MONTH figures and get ONE merged cell per month,
+    spanning exactly the columns row 1's month header spans (design 5.1).
 
-    Under week columns each of those three lines lands in a DIFFERENT week
-    column (this fixture's guard below confirms it), so the risk this test
-    pins is dedup WITHIN one cell: each individual week's Demand cell must
-    read exactly the month's 120, not some multiple of it, and Planned in
-    that same cell must be that week's own slice, not the month total. (A
-    demand month whose lines land on several DIFFERENT week columns
-    legitimately shows 120 in each of them, once per column touched -- see
-    `app/services/mps_export.py`'s docstring -- summing those cells together
-    across columns is not this test's concern.)
+    `demand_forecast`/`opening_stock` are snapshotted per demand month and
+    copied onto every line of that month. Two separate defects have come out
+    of that. Task 7 fixed the first (summing them per LINE, reported 360
+    against a real 120). The second survived until the final review: keying
+    them per WEEK wrote the whole month's 120 into each of the 3-5 week
+    columns it touched, so the sheet read Demand 120/120/120/120 against
+    Planned 30/30/30/30 -- a 90 t weekly shortfall that does not exist -- and
+    the Demand row summed to 4x the real demand for anyone who selected it in
+    Excel. The matrix never did this (`MonthMetricCell` emits Demand once,
+    `colSpan`-merged across the month), so the export and the UI described
+    the same run differently.
 
     This fixture forces the split for real (120 t against a 40 t weekly cap)
-    rather than asserting on a single-line run, which is exactly how the
-    first version of the export test missed it."""
+    rather than asserting on a single-line run, which is how the first
+    version of this test missed the per-line defect. It pins BOTH defects:
+
+    * the month cell reads 120, so restoring the per-line sum (which would
+      make it 3 x 120 = 360 in that one cell) fails here;
+    * the rest of the month's span is empty and the span equals row 1's, so
+      re-keying per week -- writing 120 into every week column again --
+      fails here too.
+    """
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _shelf_life_18)
     headers = {"Authorization": f"Bearer {admin_token}"}
 
@@ -1619,6 +1720,12 @@ async def test_export_does_not_multiply_demand_across_a_split_demand_month(
         "fixture guard: one week column per line, so a per-cell dedup bug "
         "cannot hide behind two lines sharing a column"
     )
+    plan_months = {l["plan_week_month"] for l in lines}
+    assert len(plan_months) == 1, (
+        "fixture guard: this test is about several WEEKS of ONE month; a "
+        "straddle would legitimately show the month figure twice"
+    )
+    plan_month = plan_months.pop()
 
     r = await client.get(f"/api/v1/mps/runs/{run['id']}/export?unit=kg", headers=headers)
     assert r.status_code == 200, r.text
@@ -1626,16 +1733,36 @@ async def test_export_does_not_multiply_demand_across_a_split_demand_month(
     header_row2 = [c.value for c in next(ws.iter_rows(min_row=2, max_row=2))]
     rows = {row[1]: row for row in ws.iter_rows(min_row=3, max_row=6, values_only=True)}
 
+    month_first, month_last = _month_spans(ws)[plan_month]
+    assert month_last > month_first, (
+        "fixture guard: the month must span several week columns, or "
+        "'once per month' and 'once per week' are the same assertion"
+    )
+
+    # The month's figure, ONCE, in the month's first column.
+    assert rows["Demand"][month_first] == 120.0
+    assert rows["Available"][month_first] == 0.0  # no opening stock
+
+    # ...and nowhere else in the span. This is the half that fails if
+    # Demand/Available go back to being written per week: those columns
+    # would carry 120.0 instead of None.
+    for col in range(month_first + 1, month_last + 1):
+        assert rows["Demand"][col] is None, (
+            f"column {col} of month {plan_month} repeats the month's Demand; "
+            "Demand must be written once and merged across the month"
+        )
+        assert rows["Available"][col] is None
+
+    # The merged span is the SAME one row 1 uses for the month header --
+    # not merely "merged somehow".
+    assert _merged_range_at(ws, 3, month_first) == (month_first, month_last)
+    assert _merged_range_at(ws, 4, month_first) == (month_first, month_last)
+
+    # Planned/Gap stay per-week: each line's own slice in its own column.
     for line in lines:
         week = date.fromisoformat(line["plan_week_start"])
         col = header_row2.index(week_label(week, MODE))
-        # The month's forecast counted ONCE per touched column, not summed
-        # again for every line that happens to share it (none do here, per
-        # the fixture guard, but the dedup set must still land on the right
-        # value rather than only working by having nothing to dedup).
-        assert rows["Demand"][col] == 120.0
         assert rows["Planned"][col] == float(Decimal(line["qty"]))
-        assert rows["Available"][col] == 0.0  # no opening stock
         assert rows["Gap"][col] == 0.0  # nothing unplaced in this fixture
 
 
@@ -1713,18 +1840,21 @@ def test_export_dedups_demand_across_two_straddled_month_columns():
     see task-8-brief.md).
 
     This is the case Task 7's carried-over fix has to survive: ONE demand
-    month whose lines straddle TWO DIFFERENT MONTH COLUMNS (a prebuild
+    month whose lines straddle TWO DIFFERENT MONTH COLUMN GROUPS (a prebuild
     pulling part of a month's demand into the previous month), plus -- in
-    the same fixture -- two lines sharing the exact same (material, week)
-    cell for that demand month, to prove the per-column dedup still holds
-    within a single cell too. A naive per-line-sum export would report:
-    - the August cell inflated to 240 (two lines, same demand_month, same
-      week, summed without dedup) instead of 120, and
-    - the demand month potentially missing from one of the two months
-      entirely if the month-grouping restructuring keyed columns by month
-      instead of by the line's own week.
-    Neither happens here: every touched cell reads exactly 120 once, and
-    both August and September keep their own column group."""
+    the same fixture -- THREE August lines of that one demand month, two of
+    them sharing the exact same (material, week) cell.
+
+    Demand is month-grain and merged across its month (design 5.1), so what
+    the sheet must show is 120 ONCE in August's group and 120 ONCE in
+    September's:
+    - a naive per-line sum reports August as 360 (three lines x 120);
+    - dropping the dedup for two lines of one week alone reports 240;
+    - counting the demand month once OVERALL instead of once per month
+      leaves one of the two months at 0, losing the straddle;
+    - writing the figure per WEEK instead of per month puts 120 into every
+      August week column, which is the defect this fix wave removed.
+    All four are excluded below."""
     from types import SimpleNamespace
 
     from app.services import mps_export
@@ -1769,23 +1899,98 @@ def test_export_dedups_demand_across_two_straddled_month_columns():
 
     rows = {row[1]: row for row in ws.iter_rows(min_row=3, max_row=6, values_only=True)}
 
-    # Each touched column carries the demand month's 120 exactly once --
-    # not doubled by the two lines sharing col_a, not multiplied by however
-    # many weeks/months the demand was split across.
-    assert rows["Demand"][col_a] == 120.0
-    assert rows["Demand"][col_b] == 120.0
-    assert rows["Demand"][col_sep] == 120.0
+    spans = _month_spans(ws)
+    aug_first, aug_last = spans["2026-08"]
+    sep_first, sep_last = spans["2026-09"]
 
-    # Planned is the real split, untouched by the dedup.
+    # 120 ONCE per month group -- not 360 (three August lines summed), not
+    # 240 (the two lines sharing col_a summed), and present in BOTH months
+    # rather than counted once overall.
+    assert rows["Demand"][aug_first] == 120.0
+    assert rows["Demand"][sep_first] == 120.0
+
+    # ...and repeated nowhere inside either span: the merge is the only
+    # thing that carries the figure across the month's other weeks.
+    for col in range(aug_first + 1, aug_last + 1):
+        assert rows["Demand"][col] is None, f"August column {col} repeats the month figure"
+    for col in range(sep_first + 1, sep_last + 1):
+        assert rows["Demand"][col] is None, f"September column {col} repeats the month figure"
+
+    # The Demand row's merge is exactly the month header's merge.
+    assert _merged_range_at(ws, 3, aug_first) == (aug_first, aug_last)
+    assert _merged_range_at(ws, 3, sep_first) == (sep_first, sep_last)
+
+    # Planned is the real per-week split, untouched by any of this.
     assert rows["Planned"][col_a] == 40.0  # 25 + 15
     assert rows["Planned"][col_b] == 20.0
     assert rows["Planned"][col_sep] == 60.0
 
-    # The month header row keeps August's two columns and September's one
-    # column in their own groups -- the restructuring didn't collapse or
-    # drop either month.
+    # The month header row keeps August's two touched columns and
+    # September's in their own groups -- the restructuring didn't collapse
+    # or drop either month.
     assert header_row1[col_a] == header_row1[col_b] == "2026-08"
     assert header_row1[col_sep] == "2026-09"
+
+
+def test_week_grid_and_export_columns_are_the_same_list():
+    """`mps.py::_compute_week_grid` and `mps_export.py`'s own `week_grid` are
+    two byte-for-byte copies of one construction, in two modules, with
+    nothing tying them together. That duplication is exactly what lets the
+    on-screen matrix (which builds its columns from `week_grid`) and the
+    xlsx export disagree about which weeks a run has -- the disagreement the
+    rest of this fix wave is about, in its other shape.
+
+    This pins them to each other: same run, same lines, same ordered list of
+    (month, week label) columns. Either side changing its span rule, its
+    month walk, its calendar mode handling or its ordering breaks this test
+    without needing anyone to notice the other copy exists.
+
+    The fixture deliberately includes a line landing OUTSIDE the declared
+    horizon (a pre-build in the month before `horizon_start_month`) and a
+    non-default calendar mode, because the union-with-touched-months and the
+    mode plumbing are the two places these copies would most plausibly
+    drift; a single-month, default-mode fixture would pass either way."""
+    from types import SimpleNamespace
+
+    from app.services import mps_export
+
+    mode = "iso_first_day"  # NOT the default, so a hardcoded mode fails here
+    prebuild_week = weeks_of_month("2026-06", mode)[-1]
+    inside_week = weeks_of_month("2026-09", mode)[0]
+
+    def line(week, month):
+        return SimpleNamespace(
+            material_code="M1", demand_month="2026-09",
+            plan_week_start=week, plan_week_month=month,
+            qty=Decimal("10"), demand_forecast=Decimal("10"),
+            opening_stock=Decimal("0"), capacity_gap=False,
+        )
+
+    # Horizon is Aug-Sep; the pre-build line drags June in, so the span must
+    # come out Jun-Jul-Aug-Sep on BOTH sides. July AND August are present
+    # only because the span is CONTIGUOUS -- no line touches either, and a
+    # side that merely sorted the touched months would skip them.
+    run = SimpleNamespace(
+        run_no="MPS-PARITY-0001", horizon_start_month="2026-08", horizon_months=2,
+        week_calendar_mode=mode,
+    )
+    lines = [line(prebuild_week, "2026-06"), line(inside_week, "2026-09")]
+
+    grid = mps_module._compute_week_grid(run, lines, mode)
+    assert {e.week_month for e in grid} == {"2026-06", "2026-07", "2026-08", "2026-09"}, (
+        "fixture guard: the span must cover a month outside the horizon AND "
+        "months that are neither in the horizon nor touched by a line, or "
+        "this test compares the easy case where sorting the months and "
+        "spanning them give the same answer"
+    )
+
+    ws = openpyxl.load_workbook(io.BytesIO(
+        mps_export.build_mps_matrix_workbook(run, lines, "kg", {}))).active
+    export_months = _forward_filled([c.value for c in ws[1]])[2:]
+    export_labels = [c.value for c in ws[2]][2:]
+
+    assert export_months == [e.week_month for e in grid]
+    assert export_labels == [e.label for e in grid]
 
 
 def test_export_excludes_capacity_gap_qty_from_planned():

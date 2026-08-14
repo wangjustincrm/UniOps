@@ -67,31 +67,37 @@ The row is emitted for every product even when it is all zero, so the sheet
 shape is stable across exports/products instead of coming and going with
 whether a run happens to have any shortfalls.
 
-## The (material, demand_month) dedup key, carried over per column
+## Demand and Available are MONTHLY, spanned across the month's weeks
 
-`demand_forecast`/`opening_stock` are snapshotted PER DEMAND MONTH and
-copied onto every line of that month (mrp07). Under the month-column layout
-this was safe to sum per `(material, plan_week_month)` cell because two
-lines sharing a cell necessarily came from two different demand months.
-Weekly broke that premise — one demand month spans several week ROWS, each
-carrying the whole month's figure — and Task 7 fixed the resulting N x
-inflation (measured 360 against a real 120) by counting each contribution
-once per distinct `(material, plan_week_month, demand_month)` rather than
-per line.
+Only **Planned** and **Gap** are per-week. `demand_forecast`/`opening_stock`
+are snapshotted PER DEMAND MONTH and copied onto every line of that month
+(mrp07), so they are month-grain figures with no weekly meaning at all —
+design §5.1 says so explicitly ("Demand 与 Available 仍按月……显示在该月的
+第一周列并跨列居中；只有 Planned 落到具体周").
 
-Week columns are a strictly finer grouping than `plan_week_month`, so the
-same fix carries over unchanged in shape: replace the column key with the
-WEEK a line landed on (`plan_week_start`) instead of the month. A demand
-month whose lines land on several different weeks (whether inside one
-plan-month or straddling two, via prebuild) contributes its snapshot to
-EVERY week column it touches, once each per column — never zero times (a
-straddled demand month must not vanish from either month's group) and never
-more than once for the same (material, week, demand_month) combination. The
-column still means "the demand behind what is built here", not a partition;
-summing a Demand row across several weeks of one month is expected to
-reproduce that month's figure that many times over — that is not this
-module re-inflating anything, it is the same number shown once per place it
-is relevant, exactly as the pre-Task-8 per-month columns already did.
+They are therefore aggregated per `(material_code, plan_week_month)`,
+written into the month's FIRST week column, and merged across exactly the
+span row 1 already merges the month header over — one span, computed once
+in `month_columns` and used by both, so the header and the values cannot
+drift apart. This is what `ProductionMatrix.tsx`'s `MonthMetricCell` does on
+the other side of the wire (`colSpan={monthSpans.get(month)}`, reading the
+month-grain `aggregateLines(lines, monthCellKey(code, plan_week_month))`
+map), and the two must agree: the same run rendered two ways must not tell
+a planner two different things.
+
+Writing the month figure into every week column instead — which this module
+did between Task 8 and the final review — made the sheet read Demand
+120/120/120/120 against Planned 30/30/30/30, i.e. a 90 t weekly shortfall
+that does not exist, and made the Demand row sum to 4x the real demand for
+anyone who selected it in Excel.
+
+Within a month the per-demand-month snapshot is still counted ONCE per
+distinct `(material_code, plan_week_month, demand_month)` (the `counted`
+set) and never once per line: one demand month routinely spans several
+lines, and summing them was the N x inflation Task 7 first fixed (measured
+360 against a real 120). A demand month whose lines straddle TWO plan
+months contributes once to EACH of those months — never zero times (it must
+not vanish from either group) and never twice within one.
 """
 from __future__ import annotations
 
@@ -101,6 +107,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Iterable, Protocol
 
 from openpyxl import Workbook
+from openpyxl.styles import Alignment
 
 from app.services.week_calendar import week_label, weeks_of_month
 
@@ -109,6 +116,14 @@ _THREE_DP = Decimal("0.001")
 
 # Row order within each product's four-row block.
 _METRIC_ROW_LABELS = ("Demand", "Available", "Planned", "Gap")
+
+# The two month-grain metrics: written once per MONTH in that month's first
+# week column and merged across it (design 5.1), not once per week. The
+# other two are per-week. See the module docstring's "Demand and Available
+# are MONTHLY" section.
+_MONTH_GRAIN_METRICS = frozenset({"Demand", "Available"})
+
+_SPANNED = Alignment(horizontal="center", vertical="center")
 
 # Data columns start at column 3 (1-indexed): col 1 = Product, col 2 = Metric.
 _FIRST_DATA_COLUMN = 3
@@ -136,11 +151,16 @@ def _scaled(value: Decimal, unit: str) -> float:
 
 
 def _generate_months(start_month: str, count: int) -> list[str]:
-    """Mirrors `app/api/v1/net_requirement.py::_generate_months` /
-    `app/services/mps_engine.py::_generate_months` exactly. Duplicated here
-    rather than imported for the same reason `mps_engine.py` duplicates it
-    instead of reaching into the api layer: a services module should not
-    depend on `app/api/v1/*`."""
+    """Mirrors `app/api/v1/forecast.py::_generate_months` and
+    `app/api/v1/net_requirement.py::_generate_months` exactly — those two are
+    the real precedent for duplicating this three-line month walk rather
+    than importing it (net_requirement's own docstring says "Mirrors
+    app/api/v1/forecast.py::_generate_months exactly"). Duplicated here so a
+    services module does not depend on `app/api/v1/*`.
+
+    (An earlier version of this docstring cited
+    `app/services/mps_engine.py::_generate_months`. That function has never
+    existed in this repo — the engine walks weeks, not months.)"""
     year, month = (int(p) for p in start_month.split("-"))
     months = []
     for i in range(count):
@@ -163,18 +183,25 @@ def _month_span(first: str, last: str) -> list[str]:
 def build_mps_matrix_workbook(
     run, lines: Iterable[_LineLike], unit: str, name_by_code: dict[str, str | None],
 ) -> bytes:
-    """Group `lines` by material_code -> plan_week_start (the column).
+    """Group `lines` by material_code -> plan_week_start (the week columns)
+    for Planned/Gap, and by material_code -> plan_week_month for
+    Demand/Available.
 
     `planned` sums every non-gap line's qty landing on that exact week.
     `gap` sums every gap line's qty on that week (excluded from `planned` —
     see module docstring). `demand`/`available` are the frozen per-demand-
-    month snapshot, added once per distinct `(material_code, plan_week_start,
-    demand_month)` — see module docstring's dedup section.
+    month snapshot, month-grain, added once per distinct
+    `(material_code, plan_week_month, demand_month)` — see the module
+    docstring's "Demand and Available are MONTHLY" section for why they are
+    not per week, and what the sheet looked like when they were.
 
     Sheet layout: row 1 = month grouping (merged across that month's week
     columns), row 2 = week labels (`week_label` under `run.week_calendar_mode`
     — the run's OWN stored mode), data from row 3: four rows per product
     (sorted by material_code) in Demand / Available / Planned / Gap order.
+    Demand and Available occupy one merged, centred cell per month, over the
+    SAME span as that month's row-1 header; Planned and Gap get one cell per
+    week column.
     `name_by_code` resolves the Product cell to the material's display name,
     falling back to the bare code when the map has no entry (mdm-api
     degrade-to-{} contract — see `app.services.mdm_client.resolve_material_names`'s
@@ -201,30 +228,44 @@ def build_mps_matrix_workbook(
         (month, w) for month in span_months for w in weeks_of_month(month, mode)
     ]
 
-    # (material_code, plan_week_start) -> aggregate. `demand`/`available`
-    # dedup on `counted` (see module docstring); `planned`/`gap` are plain
-    # sums split by `capacity_gap`.
+    # Each month's column span, 1-indexed and inclusive, derived from the
+    # grid itself (the grid is month-contiguous by construction above).
+    # ONE span, used by row 1's month header merge AND by every product's
+    # Demand/Available merge -- computing it twice would let the header and
+    # the values it labels drift apart, which is the class of bug this
+    # module keeps hitting.
+    month_columns: dict[str, tuple[int, int]] = {}
+    for offset, (month, _w) in enumerate(week_grid):
+        col = _FIRST_DATA_COLUMN + offset
+        first, _last = month_columns.get(month, (col, col))
+        month_columns[month] = (first, col)
+
+    # Planned/Gap are keyed (material_code, plan_week_start) -- per WEEK.
+    # Demand/Available are keyed (material_code, plan_week_month) -- per
+    # MONTH, deduped on `counted` because the snapshot is copied onto every
+    # line of a demand month (see module docstring).
     planned: dict[tuple[str, date], Decimal] = {}
     gap: dict[tuple[str, date], Decimal] = {}
-    demand: dict[tuple[str, date], Decimal] = {}
-    available: dict[tuple[str, date], Decimal] = {}
-    counted: dict[tuple[str, date], set[str]] = {}
+    demand: dict[tuple[str, str], Decimal] = {}
+    available: dict[tuple[str, str], Decimal] = {}
+    counted: dict[tuple[str, str], set[str]] = {}
     materials: set[str] = set()
 
     for line in lines:
         materials.add(line.material_code)
-        key = (line.material_code, line.plan_week_start)
+        week_key = (line.material_code, line.plan_week_start)
+        month_key = (line.material_code, line.plan_week_month)
 
         if line.capacity_gap:
-            gap[key] = gap.get(key, Decimal("0")) + line.qty
+            gap[week_key] = gap.get(week_key, Decimal("0")) + line.qty
         else:
-            planned[key] = planned.get(key, Decimal("0")) + line.qty
+            planned[week_key] = planned.get(week_key, Decimal("0")) + line.qty
 
-        seen = counted.setdefault(key, set())
+        seen = counted.setdefault(month_key, set())
         if line.demand_month not in seen:
             seen.add(line.demand_month)
-            demand[key] = demand.get(key, Decimal("0")) + line.demand_forecast
-            available[key] = available.get(key, Decimal("0")) + line.opening_stock
+            demand[month_key] = demand.get(month_key, Decimal("0")) + line.demand_forecast
+            available[month_key] = available.get(month_key, Decimal("0")) + line.opening_stock
 
     wb = Workbook()
     ws = wb.active
@@ -235,20 +276,13 @@ def build_mps_matrix_workbook(
     ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
     ws.merge_cells(start_row=1, start_column=2, end_row=2, end_column=2)
 
-    # Row 1 (month grouping, merged across the month's own week columns) and
-    # row 2 (week labels), walked month by month so each month's span is
-    # contiguous and known up front for the merge.
-    col = _FIRST_DATA_COLUMN
-    for month in span_months:
-        weeks = weeks_of_month(month, mode)
-        if not weeks:
-            continue
-        start_col = col
-        for w in weeks:
-            ws.cell(row=2, column=col, value=week_label(w, mode))
-            col += 1
-        end_col = col - 1
-        ws.cell(row=1, column=start_col, value=month)
+    # Row 2 (week labels), then row 1 (month grouping merged across that
+    # month's own week columns) from the shared `month_columns` span.
+    for offset, (_month, w) in enumerate(week_grid):
+        ws.cell(row=2, column=_FIRST_DATA_COLUMN + offset, value=week_label(w, mode))
+    for month, (start_col, end_col) in month_columns.items():
+        cell = ws.cell(row=1, column=start_col, value=month)
+        cell.alignment = _SPANNED
         if end_col > start_col:
             ws.merge_cells(start_row=1, start_column=start_col, end_row=1, end_column=end_col)
 
@@ -260,11 +294,24 @@ def build_mps_matrix_workbook(
             table = tables[label]
             ws.cell(row=row, column=1, value=product_name)
             ws.cell(row=row, column=2, value=label)
-            col = _FIRST_DATA_COLUMN
-            for _month, w in week_grid:
-                value = table.get((material_code, w), Decimal("0"))
-                ws.cell(row=row, column=col, value=_scaled(value, unit))
-                col += 1
+            if label in _MONTH_GRAIN_METRICS:
+                # One merged, centred cell per month -- the same span row 1
+                # merged the month header over. The rest of the span is left
+                # EMPTY by the merge rather than repeating the figure:
+                # repeating it made a levelled month read as a weekly
+                # shortfall and made the row sum to N x the real demand.
+                for month, (start_col, end_col) in month_columns.items():
+                    value = table.get((material_code, month), Decimal("0"))
+                    cell = ws.cell(row=row, column=start_col, value=_scaled(value, unit))
+                    cell.alignment = _SPANNED
+                    if end_col > start_col:
+                        ws.merge_cells(start_row=row, start_column=start_col,
+                                       end_row=row, end_column=end_col)
+            else:
+                for offset, (_month, w) in enumerate(week_grid):
+                    value = table.get((material_code, w), Decimal("0"))
+                    ws.cell(row=row, column=_FIRST_DATA_COLUMN + offset,
+                            value=_scaled(value, unit))
             row += 1
 
     buf = io.BytesIO()

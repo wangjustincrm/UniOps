@@ -1452,6 +1452,42 @@ def test_only_locked_input_still_returns_the_locked_plan():
     assert _run([DemandItem("A", "2026-10", Decimal("0"))], locked=[held]) == [held]
 
 
+def test_two_locked_lines_on_one_slot_fold_even_when_nothing_is_left_to_plan():
+    """The "nothing left to plan" early return owes the same fold as the
+    long path -- this is what AdjustDrawer's "Merge into adjacent week"
+    depends on.
+
+    That handler locks BOTH lines onto one week and tells the planner to
+    hit Recalculate; the fold is `_merge_same_slot`'s job at the bottom of
+    `generate_mps`. The early return for "every demand is already covered
+    by locked lines" used to skip it, so the acceptance case -- ONE product
+    whose whole demand is those two locked lines -- came back as two 20 t
+    rows, while the very same pair folded to one 40 t row as soon as any
+    unrelated open demand kept the function off the early path.
+
+    The second half is the point: both paths must agree. A fix that folds
+    only when something else happens to be open is not a fix."""
+    week = date(2026, 10, 5)
+    pair = [_locked("A", "2026-10", week, "20000"),
+            _locked("A", "2026-10", week, "20000")]
+    roomy = _cap("100000", None, None)
+
+    # Nothing open: the early return path (payload is empty).
+    only_locked = _run([DemandItem("A", "2026-10", Decimal("40000"))],
+                       limits=roomy, locked=pair)
+    assert [(l.plan_week_start, Decimal(str(l.qty)), l.locked) for l in only_locked] == [
+        (week, Decimal("40000"), True)]
+
+    # One unrelated open demand: the long path. Same product, same fold.
+    with_open = _run([DemandItem("A", "2026-10", Decimal("40000")),
+                      DemandItem("B", "2026-10", Decimal("5000"))],
+                     limits=roomy, locked=pair)
+    assert [(l.plan_week_start, Decimal(str(l.qty)), l.locked)
+            for l in with_open if l.material_code == "A"] == [
+        (week, Decimal("40000"), True)]
+    assert _total(with_open) == Decimal("45000")
+
+
 def test_a_preload_of_the_wrong_length_is_refused():
     """Same contract as the per-week limits sequence: booking a locked batch
     into the wrong week is worse than refusing to plan."""
