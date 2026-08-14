@@ -19,7 +19,7 @@ BUILT_IN_ROLES: frozenset[str] = frozenset({
     "requester", "dept_admin", "dept_manager", "gm", "opm",
     "procurement_officer", "procurement_manager", "warehouse_staff",
     "ap_clerk", "finance_bp", "finance_manager", "vendor_manager",
-    "cfo", "auditor", "erp_pa_officer", "system_admin",
+    "cfo", "auditor", "erp_pa_officer", "payment_officer", "system_admin",
 })
 
 # Permissions that cannot be disabled for the given role (enforced server-side).
@@ -34,6 +34,7 @@ LOCKED_PERMISSIONS: dict[str, set[str]] = {
     "finance_bp":           {"view_pa"},
     "finance_manager":      {"view_pa"},
     "erp_pa_officer":       {"view_po", "view_pa"},
+    "payment_officer":      {"view_pa"},
     "system_admin":         {"admin_panel"},
 }
 
@@ -294,6 +295,14 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     "cfo":                  _P(pa_override_receipt=True, **_VIEW_ALL, **_FINANCE_ALL, **_BOOKING),
     "auditor":              _P(**_VIEW_ALL, **_BOOKING),
     "erp_pa_officer":       _P(**_VIEW_ALL, **_BOOKING),
+    # NOTE: deliberately NOT _VIEW_ALL. This set must match Task 1's migration
+    # _GRANTS exactly (view_po / view_invoice / view_pa), or "what the
+    # migration seeds" and "what the matrix default claims" disagree forever.
+    # Narrower than erp_pa_officer's _VIEW_ALL on purpose: payment_officer
+    # exists to SEGREGATE duties and acts on already-approved PAs — receipt
+    # and requisition were verified upstream, so view_pr / view_gr are not
+    # needed.
+    "payment_officer":      _P(view_po=True, view_invoice=True, view_pa=True, **_BOOKING),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 
@@ -587,6 +596,8 @@ _BUILTIN_ROLE_NAMES: dict[str, str] = {
     "vendor_manager": "Vendor Manager",
     "cfo": "CFO",
     "auditor": "Auditor",
+    "erp_pa_officer": "ERP PA Officer",
+    "payment_officer": "Payment Officer",
     "system_admin": "System Admin",
 }
 
