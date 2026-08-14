@@ -1393,10 +1393,15 @@ def test_locked_production_books_capacity_so_it_is_not_double_planned():
     held = _locked("A", "2026-10", only, "40")
     lines = _run([DemandItem("A", "2026-10", Decimal("55"))], limits=limits,
                  lead=0, locked=[held])
-    assert _total(lines) == Decimal("55")
+    # 55 demanded, 40 already locked, 15 left to plan -- and 15 is under the
+    # 20 t minimum lot, so the remainder rounds up to a whole 20 t batch
+    # (5 t of surplus). The point of the test is unchanged: none of it may be
+    # planned on top of the locked week, which is full.
+    assert _total(lines) == Decimal("60")
+    assert sum(l.surplus_qty for l in lines) == Decimal("5")
     assert sum(Decimal(str(l.qty)) for l in lines
                if l.plan_week_start == only and not l.capacity_gap) == Decimal("40")
-    assert _total([l for l in lines if l.capacity_gap]) == Decimal("15")
+    assert _total([l for l in lines if l.capacity_gap]) == Decimal("20")
 
 
 def test_a_product_joins_its_own_locked_week_without_a_second_sku_slot():
@@ -1708,3 +1713,75 @@ def test_a_product_without_its_own_rule_falls_back_to_the_factory_floor():
     lines = [l for l in pack_bucket([BucketItem("B", "2026-09", Decimal("80"))], weeks, limits,
                                     min_lots={"A": Decimal("10")}) if l.qty > 0]
     assert len(lines) == 2          # B 用全厂的 40，不是 A 的 10
+
+
+# ── 顶批量与三段落位搜索 ─────────────────────────────────────────────────
+#
+# 用户定的规则：某月需求不足最小批量时，一律顶到最小批量（多产的抵后续月）。
+# 顶起来的那一批**整批落一周，不许拆**；本月周内放不下就往前一个月找，前面也
+# 没有才往后排并报警，全窗口都塞不下才算缺口。
+
+
+def _fill(code: str, weeks: list, qty="40", demand_month="2026-09"):
+    """Locked production that occupies whole weeks — the engine books locked
+    lines into the ledger before scheduling, so this is how a test says
+    'these weeks are already full'."""
+    return [WeeklyLine(material_code=code, demand_month=demand_month,
+                       plan_week_start=w, qty=Decimal(qty)) for w in weeks]
+
+
+def test_a_month_below_the_lot_size_is_rounded_up_to_it():
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 28))
+    produced = [l for l in lines if not l.capacity_gap and l.qty > 0]
+    assert len(produced) == 1, produced
+    assert produced[0].qty == Decimal("20")           # 顶到最小批量
+    assert produced[0].surplus_qty == Decimal("15")   # 其中 15 是超产
+    assert produced[0].late_production is False
+
+
+def test_the_rounded_lot_is_never_split_across_weeks():
+    """拆开就又低于下限了 —— 顶批量的意义就没了。"""
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 28))
+    produced = [l for l in lines if not l.capacity_gap and l.qty > 0]
+    assert len({l.plan_week_start for l in produced}) == 1
+
+
+def test_a_full_month_pushes_the_lot_backwards_before_anything_else():
+    """当月周被占满 → 往前一个月找空档（提前生产），不是往后。"""
+    october = weeks_of_month("2026-10", _WEEKLY)
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 1), locked=_fill("Z", october, demand_month="2026-10"))
+    placed = [l for l in lines if l.material_code == "A" and not l.capacity_gap]
+    assert len(placed) == 1
+    assert placed[0].qty == Decimal("20")
+    assert placed[0].plan_week_start < october[0]      # 落在 10 月之前
+    assert placed[0].late_production is False
+
+
+def test_only_when_earlier_weeks_are_gone_does_the_lot_go_late_and_say_so():
+    """前面全满才往后排，并且必须标 late_production（会缺货，要报警）。"""
+    september = weeks_of_month("2026-09", _WEEKLY)
+    october = weeks_of_month("2026-10", _WEEKLY)
+    blocked = _fill("Z", september + october, demand_month="2026-10")
+    lines = _run([DemandItem("A", "2026-10", Decimal("5")),
+                  DemandItem("A", "2026-12", Decimal("100"))],
+                 lead=0, now=date(2026, 9, 1), locked=blocked)
+    late = [l for l in lines if l.material_code == "A" and l.demand_month == "2026-10"
+            and not l.capacity_gap]
+    assert len(late) == 1, late
+    assert late[0].qty == Decimal("20")
+    assert late[0].plan_week_start > october[-1]        # 排到了 10 月之后
+    assert late[0].late_production is True
+
+
+def test_a_lot_that_fits_nowhere_at_all_is_still_a_capacity_gap():
+    """全窗口塞不下才是缺口 —— 需求绝不静默消失。"""
+    september = weeks_of_month("2026-09", _WEEKLY)
+    october = weeks_of_month("2026-10", _WEEKLY)
+    blocked = _fill("Z", september + october, demand_month="2026-10")
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 1), locked=blocked)
+    gaps = [l for l in lines if l.material_code == "A" and l.capacity_gap]
+    assert gaps, [(l.material_code, l.qty, l.capacity_gap) for l in lines]
