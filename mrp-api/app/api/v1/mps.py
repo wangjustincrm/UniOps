@@ -147,7 +147,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 
 from app.api.v1.net_requirement import _generate_months, _load_forecast_by_material
 from app.api.v1.params import get_param
@@ -163,6 +163,7 @@ from app.services.mps_engine import (
     CapacityLimits, DemandItem, WeeklyLine, _placement_allowed, generate_mps,
 )
 from app.services.net_requirement import compute_net_requirements, get_opening_stock_breakdown
+from app.services.numbering import next_timestamped_no
 from app.services.week_calendar import (
     WEEK_MODES, owning_month, shift_weeks, week_label, week_start_of, weeks_of_month,
 )
@@ -192,8 +193,9 @@ _WEEK_CALENDAR_MODE_KEY = "week_calendar_mode"
 # Arbitrary fixed key for the run_no generation advisory lock -- serializes
 # concurrent POST /runs calls so two simultaneous requests never compute the
 # same "next number" from a stale read and collide on run_no's unique
-# constraint (see feedback_uniops_document_number_collision, project
-# memory). pg_advisory_xact_lock auto-releases at commit/rollback.
+# constraint (see project_uniops_document_number_collision, project
+# memory; and app/services/numbering.py, which now does the generation).
+# pg_advisory_xact_lock auto-releases at commit/rollback.
 _RUN_NO_LOCK_KEY = 778899221
 
 
@@ -540,23 +542,17 @@ def _weeks_between(earlier: date, later: date, mode: str) -> int:
     return steps
 
 
-async def _next_run_no(db: SessionDep) -> str:
-    """`MPS-YYYYMMDD-####`, max-tail+1 among today's existing run numbers,
-    serialized by an advisory lock so two concurrent POST /runs never race
-    to the same number (see this module's `_RUN_NO_LOCK_KEY` comment)."""
-    await db.execute(select(func.pg_advisory_xact_lock(_RUN_NO_LOCK_KEY)))
-    today = datetime.now(timezone.utc).date()
-    prefix = f"MPS-{today:%Y%m%d}-"
-    existing = (await db.execute(
-        select(MrpMpsRun.run_no).where(MrpMpsRun.run_no.like(f"{prefix}%"))
-    )).scalars().all()
-    max_tail = 0
-    for run_no in existing:
-        try:
-            max_tail = max(max_tail, int(run_no[len(prefix):]))
-        except ValueError:
-            continue  # not one of ours (shouldn't happen given the LIKE filter) -- ignore
-    return f"{prefix}{max_tail + 1:04d}"
+async def _next_run_no(db: SessionDep, horizon_start_month: str) -> str:
+    """`MPS-{horizon_start_month}-{DDHHMM}` -- mirrors `freeze_outlook`'s
+    `FCV-{anchor_month}-{DDHHMM}` (app/services/demand_series.py) so a run
+    and the outlook it was generated from read the same way and line up
+    visually. Collision handling (two runs for the same horizon month in the
+    same UTC minute) lives in `app/services/numbering.next_timestamped_no`,
+    serialized by this module's `_RUN_NO_LOCK_KEY`."""
+    return await next_timestamped_no(
+        db, lock_key=_RUN_NO_LOCK_KEY,
+        column=MrpMpsRun.run_no, prefix=f"MPS-{horizon_start_month}-",
+    )
 
 
 def _compute_stats(lines: list[WeeklyLine]) -> dict:
@@ -769,7 +765,7 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     stats["skipped_intent"] = _skipped_intent_stats(intent_lines)
     stats["no_shelf_life"] = await _no_shelf_life_stats(lines, shelf_life, token)
 
-    run_no = await _next_run_no(db)
+    run_no = await _next_run_no(db, version.horizon_start_month)
     run = MrpMpsRun(
         run_no=run_no,
         forecast_version_id=version.id,

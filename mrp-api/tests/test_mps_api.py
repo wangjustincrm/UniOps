@@ -33,6 +33,7 @@ built this way is indistinguishable to it from one freeze_outlook would
 have produced.
 """
 import io
+import re
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -45,6 +46,12 @@ from app.models.forecast import ForecastLine, ForecastVersion
 from app.services.week_calendar import (
     owning_month, shift_weeks, week_label, week_start_of, weeks_of_month,
 )
+
+# `MPS-{horizon_start_month}-{DDHHMM}`, optionally `-N` disambiguated (see
+# app/services/numbering.py) -- pins the actual shape, not just the "MPS-"
+# literal prefix, so a regression back to the old daily-counter
+# `MPS-YYYYMMDD-####` shape would fail this pattern.
+_RUN_NO_RE = re.compile(r"^MPS-\d{4}-\d{2}-\d{6}(-\d+)?$")
 
 # The default every run gets when nobody has written mrp_planning_params.
 MODE = "iso_thursday"
@@ -284,7 +291,8 @@ async def test_generate_run_and_confirm_release_end_to_end(client, db_session, a
     assert r.status_code == 201, r.text
     run = r.json()
     assert run["status"] == "draft"
-    assert run["run_no"].startswith("MPS-")
+    assert _RUN_NO_RE.match(run["run_no"])
+    assert run["run_no"].startswith("MPS-2026-09-")
     assert Decimal(run["safety_margin_fraction"]) == Decimal("0.3333")
     assert run["production_lead_weeks"] == 0
     assert run["week_calendar_mode"] == MODE
@@ -329,6 +337,55 @@ async def test_generate_run_and_confirm_release_end_to_end(client, db_session, a
         assert row.demand_month == line["plan_week_month"]
         assert row.qty == Decimal(line["qty"])
         assert row.material_code == line["material_code"]
+
+
+@pytest.mark.anyio
+async def test_generate_two_runs_in_the_same_minute_both_succeed(client, db_session, admin_token, monkeypatch):
+    """The exact scenario the task calls out by name: generating two MPS
+    runs off the same horizon inside the same UTC minute must not 500 with
+    an IntegrityError on `run_no`'s unique constraint -- observed in
+    practice (an automated pass created three inside a couple of minutes).
+    The clock is pinned so the collision is guaranteed rather than
+    incidental to wall-clock timing.
+
+    Mutation this catches: if `_next_run_no` reverted to computing `run_no`
+    inline without `next_timestamped_no`'s collision check, the second
+    POST here would 500 instead of 201ing with a distinct, `-2`-suffixed
+    number."""
+    from datetime import datetime as real_datetime, timezone
+
+    from app.services import numbering
+
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    version, _months = await _confirmed_version(db_session)
+    await _factory_rule(client, headers)
+
+    fixed = real_datetime(2026, 9, 3, 9, 15, 0, tzinfo=timezone.utc)
+
+    class _FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(numbering, "datetime", _FrozenDateTime)
+
+    r1 = await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )
+    r2 = await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )
+    assert r1.status_code == 201, r1.text
+    assert r2.status_code == 201, r2.text
+    run1, run2 = r1.json(), r2.json()
+    assert run1["run_no"] == "MPS-2026-09-030915"
+    assert run2["run_no"] == "MPS-2026-09-030915-2"
 
 
 @pytest.mark.anyio

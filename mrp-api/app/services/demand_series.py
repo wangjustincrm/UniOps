@@ -83,8 +83,15 @@ from app.models.forecast import ForecastLine, ForecastVersion
 from app.models.intent import MrpIntentProduct
 from app.services.intent_products import is_intent_code
 from app.services.mdm_client import resolve_material_names
+from app.services.numbering import next_timestamped_no
 
 _ZERO = Decimal("0")
+
+# Arbitrary fixed key for freeze_outlook's version_no advisory lock -- see
+# app/services/numbering.py's docstring. Distinct from mps.py's
+# _RUN_NO_LOCK_KEY (different table, no reason to serialize the two
+# together).
+_VERSION_NO_LOCK_KEY = 778899222
 
 # Belt-and-suspenders shape guard on CellChange.month, independent of the
 # HTTP layer's own SeriesCellUpsert.month field_validator (app/api/v1/series.py)
@@ -361,8 +368,18 @@ async def freeze_outlook(
         select(MrpIntentProduct.code, MrpIntentProduct.name)
     )).all())
 
+    # `FCV-{anchor_month}-{DDHHMM}` -- day/hour/minute this freeze happened,
+    # not a random suffix, so two outlooks for the same anchor sort and read
+    # in creation order. See app/services/numbering.py for the collision
+    # handling this needs (two freezes for the same anchor in the same UTC
+    # minute are a real, observed case, not a hypothetical).
+    version_no = await next_timestamped_no(
+        db, lock_key=_VERSION_NO_LOCK_KEY,
+        column=ForecastVersion.version_no, prefix=f"FCV-{anchor_month}-",
+    )
+
     version = ForecastVersion(
-        version_no=f"FCV-{anchor_month}-{uuid.uuid4().hex[:6].upper()}",
+        version_no=version_no,
         status="confirmed",
         horizon_start_month=anchor_month,
         horizon_months=horizon_months,
