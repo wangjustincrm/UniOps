@@ -188,8 +188,14 @@ In `epms-api/app/crud/config.py`:
 # LOCKED_PERMISSIONS — add an entry:
     "payment_officer":      {"view_pa"},
 
-# _ROLE_DEFAULTS — add alongside erp_pa_officer:
-    "payment_officer":      _P(**_VIEW_ALL, **_BOOKING),
+# _ROLE_DEFAULTS — add alongside erp_pa_officer.
+# NOTE: deliberately NOT _VIEW_ALL. This set must match Task 1's migration
+# _GRANTS exactly (view_po / view_invoice / view_pa), or "what the migration
+# seeds" and "what the matrix default claims" disagree forever.
+# Narrower than erp_pa_officer's _VIEW_ALL on purpose: payment_officer exists
+# to SEGREGATE duties, and it acts on already-approved PAs — receipt and
+# requisition were verified upstream, so view_pr / view_gr are not needed.
+    "payment_officer":      _P(view_po=True, view_invoice=True, view_pa=True, **_BOOKING),
 
 # _BUILTIN_ROLE_NAMES — add the label:
     "payment_officer": "Payment Officer",
