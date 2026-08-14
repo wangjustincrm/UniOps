@@ -157,7 +157,7 @@ from app.models.demand import MrpDemand
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.models.mps import MrpMpsLine, MrpMpsRun
 from app.services import mps_export
-from app.services.capacity import resolve_limits_for_week
+from app.services.capacity import resolve_limits_for_week, resolve_min_lots
 from app.services.mdm_client import resolve_material_names, resolve_shelf_life
 from app.services.mps_engine import (
     CapacityLimits, DemandItem, WeeklyLine, _placement_allowed, generate_mps,
@@ -259,6 +259,18 @@ class MpsLineResponse(BaseModel):
     # defaulting NULL (pre-mrp07 lines) to 0 -- never a live recompute.
     demand_forecast: Decimal = Decimal("0")
     opening_stock: Decimal = Decimal("0")
+    # Minimum lot size (mrp11). `surplus_qty` is the part of `qty` that
+    # exceeds the net requirement because the batch was rounded up to a whole
+    # lot -- real production, released to 1C and purchased for.
+    # `carry_in_qty` is how much of this month was already covered by an
+    # earlier month's surplus; a month covered in FULL comes back as a
+    # qty-0 line with `covered_by_carry`, so the matrix can still show it.
+    surplus_qty: Decimal = Decimal("0")
+    carry_in_qty: Decimal = Decimal("0")
+    covered_by_carry: bool = False
+    late_production: bool = False
+    surplus_expiry_risk: bool = False
+    below_min_lot: bool = False
     # True when the run's production_lead_weeks called for production to
     # have already started (the target week was clamped to the current
     # week) -- see mps_engine.generate_mps's pipeline docstring, step 2.
@@ -590,7 +602,19 @@ def _compute_stats(lines: list[WeeklyLine]) -> dict:
         # asking "how early is this line" must read `weeks_early` instead.
         "prebuild_count": sum(1 for l in lines if l.is_prebuild),
         "capacity_gap_count": sum(1 for l in lines if l.capacity_gap),
+        # Minimum lot size (mrp11): how much this plan makes over and above
+        # the net requirement because batches were rounded up, and how much
+        # of that the horizon never consumes -- stock the plant is left
+        # holding when the plan runs out. Serialised as strings; Decimal
+        # goes over the wire as a string everywhere in this codebase.
+        "total_surplus": str(_tidy_total(l.surplus_qty for l in lines)),
+        "unconsumed_surplus": str(_tidy_total(l.surplus_qty for l in lines)
+                                  - _tidy_total(l.carry_in_qty for l in lines)),
     }
+
+
+def _tidy_total(values) -> Decimal:
+    return sum(values, Decimal("0"))
 
 
 async def _no_shelf_life_stats(
@@ -678,6 +702,12 @@ def _line_response(line: MrpMpsLine, mode: str, start_dow: int) -> MpsLineRespon
         demand_forecast=line.demand_forecast if line.demand_forecast is not None else Decimal("0"),
         opening_stock=line.opening_stock if line.opening_stock is not None else Decimal("0"),
         lead_shortfall=line.lead_shortfall,
+        surplus_qty=line.surplus_qty,
+        carry_in_qty=line.carry_in_qty,
+        covered_by_carry=line.covered_by_carry,
+        late_production=line.late_production,
+        surplus_expiry_risk=line.surplus_expiry_risk,
+        below_min_lot=line.below_min_lot,
     )
 
 
@@ -782,9 +812,14 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
         mode, start_dow,
     ))
     shelf_life = await resolve_shelf_life(token)
+    # Resolved from the CURRENT rules, like capacity itself: a recalculation
+    # is meant to reflect today's plant, and only the calendar and lead time
+    # are snapshots.
+    min_lots = await resolve_min_lots(db, current_week)
     lines = generate_mps(
         demands, limits_for_week, shelf_life, safety_margin,
         lead_weeks=lead, current_week=current_week, mode=mode, start_dow=start_dow,
+        min_lots=min_lots,
     )
     # Snapshot the demand context (gross forecast + rolled-forward opening
     # stock) onto each line NOW, at generate time -- see
@@ -829,6 +864,11 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
             capacity_gap=line.capacity_gap, locked_by_planner=False, manual_adjusted=False,
             demand_forecast=demand_forecast, opening_stock=opening_stock,
             lead_shortfall=line.lead_shortfall,
+            surplus_qty=line.surplus_qty, carry_in_qty=line.carry_in_qty,
+            covered_by_carry=line.covered_by_carry,
+            late_production=line.late_production,
+            surplus_expiry_risk=line.surplus_expiry_risk,
+            below_min_lot=line.below_min_lot,
         ))
 
     await db.commit()
@@ -966,10 +1006,11 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
         mode, start_dow,
     ))
     shelf_life = await resolve_shelf_life(token)
+    min_lots = await resolve_min_lots(db, current_week)
     lines = generate_mps(
         demands, limits_for_week, shelf_life, run.safety_margin_fraction,
         lead_weeks=lead, current_week=current_week, mode=mode, start_dow=start_dow,
-        locked=locked_weekly,
+        locked=locked_weekly, min_lots=min_lots,
     )
     # Snapshot the demand context for the newly (re)placed, non-locked lines
     # -- same write-time contract as create_run.
@@ -1000,6 +1041,11 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
             manual_adjusted=manual_adjusted,
             demand_forecast=demand_forecast, opening_stock=opening_stock,
             lead_shortfall=line.lead_shortfall,
+            surplus_qty=line.surplus_qty, carry_in_qty=line.carry_in_qty,
+            covered_by_carry=line.covered_by_carry,
+            late_production=line.late_production,
+            surplus_expiry_risk=line.surplus_expiry_risk,
+            below_min_lot=line.below_min_lot,
         ))
     stats = _compute_stats(lines)
     stats["skipped_intent"] = _skipped_intent_stats(intent_lines)
@@ -1169,6 +1215,11 @@ async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
             # Unmet-demand exception, not a booked production order -- never
             # materialized into mrp_demands (see module docstring). Still
             # persisted as an MrpMpsLine above, so it stays visible.
+            continue
+        if line.qty <= 0:
+            # A month covered in full by an earlier batch's surplus. It
+            # exists so the matrix can show the month; there is nothing to
+            # produce, so there is nothing for 1C to buy materials for.
             continue
         db.add(MrpDemand(
             source_run_id=run.id, demand_type="mps", material_code=line.material_code,

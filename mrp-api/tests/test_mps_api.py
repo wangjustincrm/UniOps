@@ -40,6 +40,7 @@ from decimal import Decimal
 
 import openpyxl
 import pytest
+import sqlalchemy as sa
 
 from app.api.v1 import mps as mps_module
 from app.models.forecast import ForecastLine, ForecastVersion
@@ -2170,3 +2171,95 @@ async def test_changing_the_week_start_day_does_not_reshape_an_existing_run(
     assert fresh["week_start_dow"] == 5
     assert all(date.fromisoformat(l["plan_week_start"]).weekday() == 5
                for l in fresh["lines"])
+
+
+# ── 最小批量：持久化、发布口径、摘要 ──────────────────────────────────────
+
+
+async def _product_lot(client, headers, material="S0093", lot="500"):
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": material,
+        "constraint_type": "min_output_qty", "limit_value": lot, "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.anyio
+async def test_lot_size_fields_are_persisted_and_returned(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=3,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+    await _product_lot(client, headers, lot="500")
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+
+    produced = [l for l in run["lines"] if Decimal(l["qty"]) > 0 and not l["capacity_gap"]]
+    assert len(produced) == 1, [(l["demand_month"], l["qty"]) for l in run["lines"]]
+    assert Decimal(produced[0]["qty"]) == Decimal("500")          # 100 顶到 500
+    assert Decimal(produced[0]["surplus_qty"]) == Decimal("400")
+
+    covered = [l for l in run["lines"] if l["covered_by_carry"]]
+    assert len(covered) == 2                                       # 后两个月被抵完
+    assert all(Decimal(l["qty"]) == 0 for l in covered)
+    assert sum(Decimal(l["carry_in_qty"]) for l in covered) == Decimal("200")
+
+
+@pytest.mark.anyio
+async def test_release_writes_the_actual_production_quantity(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★喂给 1C 的必须是实际产量（含超产），否则原料按净需求买 = 少买。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=3,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+    await _product_lot(client, headers, lot="500")
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    released = await client.post(f"/api/v1/mps/runs/{run['id']}/confirm-release",
+                                 headers=headers)
+    assert released.status_code == 200, released.text
+
+    rows = (await db_session.execute(
+        sa.text("SELECT qty FROM mrp_demands WHERE demand_type = 'mps'")
+    )).scalars().all()
+    assert rows, "release wrote no demand at all"
+    assert sum(Decimal(str(q)) for q in rows) == Decimal("500")     # 实际产量，不是净需求 300
+    assert all(Decimal(str(q)) > 0 for q in rows), "covered months must not be released"
+
+
+@pytest.mark.anyio
+async def test_stats_report_the_surplus(client, db_session, admin_token, monkeypatch):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=3,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+    await _product_lot(client, headers, lot="500")
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    stats = run["stats"]
+    assert Decimal(stats["total_surplus"]) == Decimal("400")
+    # 300 的需求里只有 200 被结转吃掉，窗口末还剩 200 没人消化
+    assert Decimal(stats["unconsumed_surplus"]) == Decimal("200")
