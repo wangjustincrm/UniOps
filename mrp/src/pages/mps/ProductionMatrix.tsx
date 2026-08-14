@@ -331,6 +331,26 @@ export function ProductionMatrix({
     return spans
   }, [columns])
 
+  // Readability fix (business owner: "边框颜色太淡了，很难轻松区分周" — the
+  // Planned row's week-to-week separators were nearly invisible under its
+  // green tint). The header already distinguishes a plain week separator
+  // (`border-neutral-200`) from a month boundary (`border-r-2
+  // border-r-neutral-300`, on the month `<th>`'s own right edge) — this set
+  // carries that SAME distinction down into the body/footer, so a planner
+  // scrolling horizontally can tell "next week" from "next month" at a
+  // glance, not just in the header row. A column is a boundary when it is
+  // the LAST column belonging to its month in the flat `columns` list
+  // (works identically for a real week column or a collapsed month's single
+  // summary column — either way, that is where the month visually ends).
+  const monthBoundaryColumnIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (let i = 0; i < columns.length; i++) {
+      const isLast = i === columns.length - 1 || columns[i + 1].month !== columns[i].month
+      if (isLast) ids.add(columns[i].id)
+    }
+    return ids
+  }, [columns])
+
   const monthCellMap = useMemo(
     () => aggregateLines(lines, (l) => monthCellKey(l.material_code, l.plan_week_month)),
     [lines],
@@ -482,6 +502,7 @@ export function ProductionMatrix({
               getMonthCell={getMonthCell}
               getPlannedCell={getPlannedCell}
               maintenanceWeeks={maintenanceWeeks}
+              monthBoundaryColumnIds={monthBoundaryColumnIds}
               formatValue={formatValue}
               onAdjustCell={onAdjustCell}
               readOnly={readOnly}
@@ -514,10 +535,14 @@ export function ProductionMatrix({
             </td>
             {columns.map((col) => {
               const total = weekTotals.get(col.id) ?? 0
+              const isMonthBoundary = monthBoundaryColumnIds.has(col.id)
               return (
                 <td
                   key={col.id}
-                  className="h-8 border-t-2 border-r border-t-neutral-300 border-neutral-100 bg-neutral-50 px-2 text-right font-mono text-xs font-semibold text-neutral-700"
+                  className={cn(
+                    'h-8 border-t-2 border-t-neutral-300 bg-neutral-50 px-2 text-right font-mono text-xs font-semibold text-neutral-700',
+                    isMonthBoundary ? 'border-r-2 border-r-neutral-300' : 'border-r border-r-neutral-200',
+                  )}
                 >
                   {total === 0 ? <span className="text-neutral-300">—</span> : formatValue(total)}
                 </td>
@@ -569,6 +594,7 @@ function ProductRows({
   getMonthCell,
   getPlannedCell,
   maintenanceWeeks,
+  monthBoundaryColumnIds,
   formatValue,
   onAdjustCell,
   readOnly,
@@ -581,6 +607,10 @@ function ProductRows({
   getMonthCell: (materialCode: string, month: string) => MatrixCell
   getPlannedCell: (materialCode: string, col: Column) => MatrixCell
   maintenanceWeeks: ReadonlySet<string>
+  /** Column ids that sit at a month's right edge (readability fix, see
+   *  ProductionMatrix's own `monthBoundaryColumnIds` doc) — strengthens the
+   *  Planned row's separator there to match the header's month boundary. */
+  monthBoundaryColumnIds: ReadonlySet<string>
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
@@ -666,6 +696,7 @@ function ProductRows({
             key={col.id}
             cell={getPlannedCell(product.code, col)}
             isMaintenance={col.kind === 'week' && maintenanceWeeks.has(col.week_start)}
+            isMonthBoundary={monthBoundaryColumnIds.has(col.id)}
             formatValue={formatValue}
             onAdjustCell={onAdjustCell}
             readOnly={readOnly}
@@ -695,7 +726,15 @@ function MonthMetricCell({
     <td
       colSpan={span}
       className={cn(
-        'h-10 border-b border-r border-neutral-100 bg-white px-2 text-center font-mono',
+        // This cell's colSpan always covers the WHOLE month (span =
+        // monthSpans.get(month), same count whether the month is collapsed
+        // to one column or expanded to its weeks) — its right edge is
+        // therefore always a month boundary, never an interior week
+        // separator, so it always gets the header's stronger boundary
+        // treatment (border-r-2 border-r-neutral-300), never the plain
+        // border-neutral-100 a same-row interior line would use if one
+        // existed here.
+        'h-10 border-b border-b-neutral-100 border-r-2 border-r-neutral-300 bg-white px-2 text-center font-mono',
         metric === 'Demand' ? 'text-neutral-700' : 'text-neutral-500',
         borderTop && 'border-t-2 border-t-neutral-300',
       )}
@@ -708,6 +747,7 @@ function MonthMetricCell({
 function PlannedCell({
   cell,
   isMaintenance,
+  isMonthBoundary,
   formatValue,
   onAdjustCell,
   readOnly,
@@ -719,6 +759,12 @@ function PlannedCell({
    *  Never true for a collapsed month's summary column (the caller only
    *  sets this for `col.kind === 'week'`). */
   isMaintenance: boolean
+  /** True when this column is the last one belonging to its month
+   *  (ProductionMatrix's `monthBoundaryColumnIds`) — strengthens the right
+   *  border to match the header's own month-boundary line, so a planner
+   *  scrolling the (only per-week-granular) Planned row can tell "next
+   *  week" from "next month" the same way the header already can. */
+  isMonthBoundary: boolean
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
@@ -750,9 +796,16 @@ function PlannedCell({
     ? cell.cellLines.filter((l) => l.capacity_gap).reduce((sum, l) => sum + Number(l.qty), 0)
     : 0
 
+  // Same two-tier right border the header uses (plain week separator vs.
+  // a stronger month boundary) — shared by both this cell's empty and
+  // populated render below so the grid line is identical regardless of
+  // which branch renders, and by the footer/MonthMetricCell so the whole
+  // column lines up top to bottom.
+  const borderRClass = isMonthBoundary ? 'border-r-2 border-r-neutral-300' : 'border-r border-r-neutral-200'
+
   if (!showCell) {
     return (
-      <td className={cn('h-10 border-b border-r border-neutral-100 px-2 text-right font-mono text-neutral-300', isMaintenance ? 'bg-neutral-200' : 'bg-success-50')}>—</td>
+      <td className={cn('h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-neutral-300', borderRClass, isMaintenance ? 'bg-neutral-200' : 'bg-success-50')}>—</td>
     )
   }
 
@@ -774,7 +827,8 @@ function PlannedCell({
   return (
     <td
       className={cn(
-        'h-10 border-b border-r border-neutral-100 px-2 text-right font-mono text-sm font-bold',
+        'h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-sm font-bold',
+        borderRClass,
         cell.gap
           ? 'bg-danger-50 text-danger-700'
           : showShortfall
