@@ -1,5 +1,6 @@
 """Shared pytest fixtures for the EPMS API test suite."""
 import asyncio
+import os
 import uuid
 
 import pytest
@@ -227,7 +228,12 @@ def _patch_mdm_client(monkeypatch):
 # Requires a pre-created database. Run once:
 #   python -m scripts.create_test_db
 _base_url, _ = str(settings.DATABASE_URL).rsplit("/", 1)
-_TEST_DB_URL = f"{_base_url}/epms_test"
+# TEST_EPMS_DB lets a second session run this suite against its own database.
+# The suite drops and recreates every table, so two sessions sharing `epms_test`
+# corrupt each other's runs (the 2026-08-11 three-way-allocation release saw a
+# shared DB produce three different fake failure counts). Same knob identity-api's
+# conftest has had as TEST_IDENTITY_DB.
+_TEST_DB_URL = f"{_base_url}/{os.getenv('TEST_EPMS_DB', 'epms_test')}"
 
 
 # ── Force all async tests to use the session event loop ───────────────────────

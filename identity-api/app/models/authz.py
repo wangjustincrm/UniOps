@@ -20,6 +20,12 @@ class RoleDef(Base):
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # False for ADDITIONAL-ONLY roles (erp_pa_officer / payment_officer): they
+    # are granted through user_roles and must never land in users.role. Enforced
+    # in put_user_roles and surfaced in /authz/defs so the Portal and EPMS admin
+    # dropdowns filter themselves instead of each keeping a hardcoded list.
+    assignable_as_primary: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true")
 
 
 class PermissionDef(Base):

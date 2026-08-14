@@ -51,3 +51,43 @@ def test_payment_officer_is_not_a_primary_login_role():
     assert "payment_officer" not in VALID_ROLES, (
         "payment_officer 是附加角色。VALID_ROLES 校验的是主登录角色 —— "
         "加进去会让它可被设为某人的主角色,复制 erp_pa_officer 的处理方式")
+
+
+# ── assignable_as_primary passthrough (2026-08-14) ───────────────────────────
+# The "additional-only" rule became data on identity's role_defs
+# (migration 0009). GET /config/roles must carry the flag through so the EPMS
+# Admin Panel filters its primary-role <select> / CSV import on what the
+# backend says instead of its own hardcoded copy — and the identity-down
+# fallback must keep the flag false, or the guard would come UNDONE exactly
+# when identity is unavailable.
+
+@pytest.mark.asyncio
+async def test_roles_passthrough_assignable_as_primary(admin_client, mocker):
+    mocker.patch.object(
+        config_api, "_forward_identity",
+        mocker.AsyncMock(return_value=(200, {"roles": [
+            {"code": "requester", "label": "Requester", "sort": 0,
+             "is_active": True, "assignable_as_primary": True},
+            {"code": "payment_officer", "label": "Payment Officer", "sort": 18,
+             "is_active": True, "assignable_as_primary": False},
+        ], "permissions": []})),
+    )
+    r = await admin_client.get("/api/v1/config/roles")
+    assert r.status_code == 200
+    roles = {row["code"]: row for row in r.json()}
+    assert roles["requester"]["assignable_as_primary"] is True
+    assert roles["payment_officer"]["assignable_as_primary"] is False
+
+
+@pytest.mark.asyncio
+async def test_additional_only_roles_stay_blocked_when_identity_down(admin_client, mocker):
+    mocker.patch.object(
+        config_api, "_forward_identity",
+        mocker.AsyncMock(side_effect=httpx.ConnectError("identity is down")),
+    )
+    r = await admin_client.get("/api/v1/config/roles")
+    assert r.status_code == 200
+    roles = {row["code"]: row for row in r.json()}
+    assert roles["payment_officer"]["assignable_as_primary"] is False
+    assert roles["erp_pa_officer"]["assignable_as_primary"] is False
+    assert roles["ap_clerk"]["assignable_as_primary"] is True

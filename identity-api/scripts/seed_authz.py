@@ -59,6 +59,13 @@ ROLE_LABELS = {  # built-in 18
     "system_admin": "System Admin",
 }
 
+# Roles granted ONLY through identity's user_roles side table — never written to
+# users.role. Mirrored into role_defs.assignable_as_primary (migration 0009),
+# which is what put_user_roles and both admin frontends actually read.
+# payment_officer is seeded by migration 0008, not by this script, but is listed
+# here so a fresh seed_authz on a migrated DB never flips it back.
+ADDITIONAL_ONLY_ROLES = {"erp_pa_officer", "payment_officer"}
+
 LOCKED = {
     "requester": {"view_pr"},
     "procurement_officer": {"view_pr", "view_po", "view_gr"},
@@ -135,8 +142,9 @@ async def seed_authz(session) -> dict:
 
     for i, (code, label) in enumerate(ROLE_LABELS.items()):
         await session.execute(sa.text(
-            "INSERT INTO role_defs(code,label,sort,is_active) VALUES (:c,:l,:s,true) "
-            "ON CONFLICT (code) DO NOTHING"), {"c": code, "l": label, "s": i})
+            "INSERT INTO role_defs(code,label,sort,is_active,assignable_as_primary) "
+            "VALUES (:c,:l,:s,true,:p) ON CONFLICT (code) DO NOTHING"),
+            {"c": code, "l": label, "s": i, "p": code not in ADDITIONAL_ONLY_ROLES})
     for cr in custom:
         await session.execute(sa.text(
             "INSERT INTO role_defs(code,label,sort,is_active) VALUES (:c,:l,900,:a) "

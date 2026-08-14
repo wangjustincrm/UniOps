@@ -799,8 +799,39 @@ async def build_system_admin(db: AsyncSession) -> DashboardResponse:
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 
+# Roles that only ever exist as ADDITIONAL roles (identity's
+# role_defs.assignable_as_primary = false) but still own a dashboard, in the
+# order they win when the primary role has none. Without this, every builder
+# below that names an additional-only role is unreachable code: the dispatcher
+# reads the JWT's PRIMARY role, and these are never anyone's primary role.
+_ADDITIONAL_ROLE_DASHBOARDS: tuple[str, ...] = ("payment_officer",)
+
+# Primary roles whose dashboard is not simply the role name. Keep in sync with
+# the branches in build() — this is only used to decide whether the primary role
+# already owns a dashboard before falling back to additional roles.
+_PRIMARY_WITH_DASHBOARD = frozenset({
+    "dept_manager", "gm", "opm", "director", "supervisor", "dept_admin",
+    "procurement_officer", "procurement_manager", "warehouse_staff", "ap_clerk",
+    "finance_bp", "finance_manager", "cfo", "auditor", "vendor_manager",
+    "system_admin",
+})
+
+
 async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardResponse:
-    if role in ("dept_manager", "gm", "opm"):
+    if role not in _PRIMARY_WITH_DASHBOARD:
+        # The primary role has no dashboard of its own (requester, or a custom
+        # role). An additional role may still carry one — this is what makes
+        # payment_officer's dashboard reachable at all.
+        eff = await _effective_roles(db, role, user_id)
+        for code in _ADDITIONAL_ROLE_DASHBOARDS:
+            if code in eff:
+                role = code
+                break
+    # director / supervisor / dept_admin are scoped approvers: the EPMS frontend
+    # has always routed them to the Approver dashboard, but they used to fall
+    # through to build_requester here, so their "Pending Approvals" list was
+    # structurally empty (the requester payload has no pending_approvals at all).
+    if role in ("dept_manager", "gm", "opm", "director", "supervisor", "dept_admin"):
         return await build_approver(db, user_id, role)
     if role in ("procurement_officer", "procurement_manager"):
         return await build_procurement(db)
