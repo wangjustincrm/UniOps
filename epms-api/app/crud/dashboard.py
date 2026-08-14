@@ -568,6 +568,49 @@ async def build_ap_clerk(db: AsyncSession) -> DashboardResponse:
     )
 
 
+async def build_payment_officer(db: AsyncSession) -> DashboardResponse:
+    """Payment execution split out of AP Clerk (2026-08-13): scoped to PAs that
+    have cleared approval and are waiting to be paid, plus this role's own
+    throughput. Deliberately excludes ap_clerk's unmatched/exception invoice
+    counts — those belong to the AP review job this role is separated from."""
+    awaiting_r = await db.execute(
+        select(func.count()).select_from(PaymentApplication).where(
+            PaymentApplication.status == "approved"
+        )
+    )
+    awaiting_value_r = await db.execute(
+        select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
+            PaymentApplication.status == "approved"
+        )
+    )
+    processed_month_r = await db.execute(
+        select(func.count()).select_from(PaymentApplication).where(
+            PaymentApplication.status == "processed",
+            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+        )
+    )
+    processed_month_value_r = await db.execute(
+        select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
+            PaymentApplication.status == "processed",
+            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+        )
+    )
+
+    awaiting_pas = await _pa_rows(db, ["approved"])
+
+    awaiting_count = awaiting_r.scalar_one()
+    return DashboardResponse(
+        role="payment_officer",
+        kpis=[
+            KpiCard(title="PAs Awaiting Payment", value=str(awaiting_count), alert=awaiting_count > 0),
+            KpiCard(title="Value Awaiting Payment", value=_fmt(Decimal(str(awaiting_value_r.scalar_one())))),
+            KpiCard(title="Processed This Month", value=str(processed_month_r.scalar_one())),
+            KpiCard(title="Value Processed This Month", value=_fmt(Decimal(str(processed_month_value_r.scalar_one())))),
+        ],
+        pa_in_review=awaiting_pas,
+    )
+
+
 async def build_finance_bp(db: AsyncSession) -> DashboardResponse:
     in_review_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
@@ -765,6 +808,8 @@ async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardRes
         return await build_warehouse(db)
     if role == "ap_clerk":
         return await build_ap_clerk(db)
+    if role == "payment_officer":
+        return await build_payment_officer(db)
     if role == "finance_bp":
         return await build_finance_bp(db)
     if role == "finance_manager":
