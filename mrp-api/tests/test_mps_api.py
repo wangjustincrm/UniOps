@@ -1945,7 +1945,7 @@ def test_export_dedups_demand_across_two_straddled_month_columns():
     ]
     run = SimpleNamespace(
         run_no="MPS-TEST-0001", horizon_start_month="2026-08", horizon_months=2,
-        week_calendar_mode=mode,
+        week_calendar_mode=mode, week_start_dow=0,
     )
 
     content = mps_export.build_mps_matrix_workbook(run, lines, "kg", {})
@@ -2032,11 +2032,11 @@ def test_week_grid_and_export_columns_are_the_same_list():
     # side that merely sorted the touched months would skip them.
     run = SimpleNamespace(
         run_no="MPS-PARITY-0001", horizon_start_month="2026-08", horizon_months=2,
-        week_calendar_mode=mode,
+        week_calendar_mode=mode, week_start_dow=0,
     )
     lines = [line(prebuild_week, "2026-06"), line(inside_week, "2026-09")]
 
-    grid = mps_module._compute_week_grid(run, lines, mode)
+    grid = mps_module._compute_week_grid(run, lines, mode, run.week_start_dow)
     assert {e.week_month for e in grid} == {"2026-06", "2026-07", "2026-08", "2026-09"}, (
         "fixture guard: the span must cover a month outside the horizon AND "
         "months that are neither in the horizon nor touched by a line, or "
@@ -2077,7 +2077,7 @@ def test_export_excludes_capacity_gap_qty_from_planned():
     lines = [line("30", gap=False), line("70", gap=True)]
     run = SimpleNamespace(
         run_no="MPS-TEST-0002", horizon_start_month="2026-08", horizon_months=1,
-        week_calendar_mode=mode,
+        week_calendar_mode=mode, week_start_dow=0,
     )
 
     content = mps_export.build_mps_matrix_workbook(run, lines, "kg", {})
@@ -2089,3 +2089,84 @@ def test_export_excludes_capacity_gap_qty_from_planned():
     assert rows["Planned"][col] == 30.0  # the gap's 70 must NOT be in here
     assert rows["Gap"][col] == 70.0
     assert rows["Demand"][col] == 100.0  # dedup unaffected by the gap flag
+
+
+# ── The run's week START DAY is a snapshot too ───────────────────────────
+
+
+@pytest.mark.anyio
+async def test_run_snapshots_the_week_start_day_in_force_at_generate_time(
+    client, db_session, admin_token, monkeypatch,
+):
+    """工厂的周是周六→周五。设成 5 之后生成的 run，每条计划行都必须落在周六，
+    并把 5 记在 run 上（回放要用）。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    put = await client.put("/api/v1/params/week_start_dow", json={"value": 5}, headers=headers)
+    assert put.status_code == 200, put.text
+
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert run["week_start_dow"] == 5
+    assert run["lines"], "fixture guard: a run with no lines proves nothing"
+    for line in run["lines"]:
+        week = date.fromisoformat(line["plan_week_start"])
+        assert week.weekday() == 5, (line["plan_week_start"], line["week_label"])
+    for entry in run.get("week_grid", []):
+        assert date.fromisoformat(entry["week_start"]).weekday() == 5
+
+
+@pytest.mark.anyio
+async def test_changing_the_week_start_day_does_not_reshape_an_existing_run(
+    client, db_session, admin_token, monkeypatch,
+):
+    """已存在的计划必须留在它自己的网格上 —— 否则改个设置就会把已发布计划的
+    周列整体重画。见证是周几本身，不只是回显的数字。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert run["week_start_dow"] == 0
+    original_weeks = sorted(l["plan_week_start"] for l in run["lines"])
+    original_labels = sorted(l["week_label"] for l in run["lines"])
+    assert all(date.fromisoformat(w).weekday() == 0 for w in original_weeks)
+
+    put = await client.put("/api/v1/params/week_start_dow", json={"value": 5}, headers=headers)
+    assert put.status_code == 200, put.text
+
+    body = (await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)).json()
+    assert body["week_start_dow"] == 0
+    assert sorted(l["plan_week_start"] for l in body["lines"]) == original_weeks
+    assert sorted(l["week_label"] for l in body["lines"]) == original_labels
+    assert all(date.fromisoformat(e["week_start"]).weekday() == 0 for e in body["week_grid"])
+
+    recalced = (await client.post(
+        f"/api/v1/mps/runs/{run['id']}/recalculate", headers=headers)).json()
+    assert recalced["week_start_dow"] == 0
+    assert all(date.fromisoformat(l["plan_week_start"]).weekday() == 0
+               for l in recalced["lines"])
+
+    # 而新 run 确实吃到新设置 —— 否则上面的断言在「PUT 什么也没干」时也会通过。
+    fresh = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert fresh["week_start_dow"] == 5
+    assert all(date.fromisoformat(l["plan_week_start"]).weekday() == 5
+               for l in fresh["lines"])

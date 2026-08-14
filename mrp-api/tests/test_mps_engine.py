@@ -845,7 +845,7 @@ def test_lead_zero_reproduces_no_shift():
         demands=[DemandItem("A", "2026-10", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 8, 3), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 8, 3), mode="iso_thursday", start_dow=0,
     )
     assert lines
     assert {l.plan_week_month for l in lines} == {"2026-10"}
@@ -861,7 +861,7 @@ def test_lead_four_weeks_moves_the_target_back_four_weeks():
         demands=[DemandItem("A", "2026-10", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday",
+        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday", start_dow=0,
     )
     assert {l.plan_week_start for l in lines} == {target}
 
@@ -871,7 +871,7 @@ def test_lead_clamped_to_current_week_flags_shortfall():
         demands=[DemandItem("A", "2026-08", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=12, current_week=date(2026, 8, 24), mode="iso_thursday",
+        lead_weeks=12, current_week=date(2026, 8, 24), mode="iso_thursday", start_dow=0,
     )
     assert all(l.plan_week_start >= date(2026, 8, 24) for l in lines)
     assert any(l.lead_shortfall for l in lines)
@@ -883,7 +883,7 @@ def test_weeks_early_counts_prebuild_only_not_the_lead_itself():
         demands=[DemandItem("A", "2026-10", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday",
+        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday", start_dow=0,
     )
     assert all(l.weeks_early == 0 and not l.is_prebuild for l in lines)
 
@@ -894,7 +894,7 @@ def test_overflow_moves_earlier_and_marks_prebuild():
         demands=[DemandItem("A", "2026-10", Decimal("300"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 6, 1), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 6, 1), mode="iso_thursday", start_dow=0,
     )
     assert sum(Decimal(str(l.qty)) for l in lines) == Decimal("300")
     assert any(l.is_prebuild and l.weeks_early > 0 for l in lines)
@@ -907,7 +907,7 @@ def test_shelf_life_uses_real_date_difference_not_4_33_weeks_per_month():
         demands=[DemandItem("A", "2026-10", Decimal("400"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 3}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday", start_dow=0,
     )
     demand_start = date(2026, 10, 1)
     for l in lines:
@@ -920,7 +920,7 @@ def test_missing_shelf_life_means_never_movable():
         demands=[DemandItem("A", "2026-10", Decimal("300"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday", start_dow=0,
     )
     assert any(l.capacity_gap for l in lines)
     assert all(not l.is_prebuild for l in lines)
@@ -939,12 +939,15 @@ def _cap(cap="40", min_out="20", sku=None):
 
 
 def _run(demands, limits=None, shelf=None, margin="0.3333", lead=4,
-         now=date(2026, 8, 3), mode=_WEEKLY, locked=None):
+         now=date(2026, 8, 3), mode=_WEEKLY, dow=0, locked=None):
+    # dow=0 (Monday) is what every pre-mrp11 run was planned on, so the
+    # existing expectations stay exactly as they were; the Saturday-start
+    # grid gets its own tests rather than silently re-baselining these.
     return generate_mps(
         demands=demands, limits_for_week=limits or _cap(),
         shelf_life_months={"A": 24, "B": 24, "C": 24} if shelf is None else shelf,
         safety_margin_fraction=Decimal(margin), lead_weeks=lead,
-        current_week=now, mode=mode, locked=locked)
+        current_week=now, mode=mode, start_dow=dow, locked=locked)
 
 
 def _total(lines):

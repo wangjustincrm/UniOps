@@ -280,6 +280,10 @@ class MpsRunResponse(BaseModel):
     # the calendar it was generated under".
     production_lead_weeks: int
     week_calendar_mode: str
+    # The week grid this run was planned on (0=Monday .. 6=Sunday). Read it
+    # instead of the current planning parameter: a released plan keeps the
+    # columns it was released with.
+    week_start_dow: int = 0
 
 
 class MpsRunDetailResponse(MpsRunResponse):
@@ -441,6 +445,15 @@ async def _build_demand_items(
     return demands
 
 
+async def _resolve_week_start_dow(db: SessionDep) -> int:
+    """The factory-wide week start day currently in force, for a run being
+    generated NOW. Every other endpoint reads it off the RUN instead, the
+    same rule `_resolve_week_mode` follows: the grid a released plan was
+    drawn on must not move when somebody edits a setting."""
+    value = await get_param(db, "week_start_dow", 0)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 async def _resolve_week_mode(db: SessionDep) -> str:
     """The factory-wide week definition currently in force, for a run being
     generated NOW. Every other endpoint reads the mode off the RUN instead
@@ -465,7 +478,8 @@ def _month_span(first: str, last: str) -> list[str]:
     return [f"{i // 12:04d}-{i % 12 + 1:02d}" for i in range(start, end + 1)]
 
 
-def _planning_weeks(current: date, demand_months: list[str], mode: str) -> list[date]:
+def _planning_weeks(current: date, demand_months: list[str], mode: str,
+                    start_dow: int) -> list[date]:
     """Every week `generate_mps` can possibly ask `limits_for_week` about.
 
     The engine only ever touches weeks `>= current_week` (a bucket canvas is
@@ -482,12 +496,13 @@ def _planning_weeks(current: date, demand_months: list[str], mode: str) -> list[
     owned by month M can START in M-1, which is exactly why this iterates
     `weeks_of_month` per month rather than stepping days.
     """
-    here = owning_month(current, mode)
+    here = owning_month(current, mode, start_dow=start_dow)
     first = min([here] + demand_months)
     last = max([here] + demand_months)
     weeks: set[date] = set()
     for month in _month_span(first, last):
-        weeks.update(w for w in weeks_of_month(month, mode) if w >= current)
+        weeks.update(w for w in weeks_of_month(month, mode, start_dow=start_dow)
+                     if w >= current)
     return sorted(weeks)
 
 
@@ -517,16 +532,18 @@ async def _week_limits_lookup(
     return _for_week
 
 
-def _target_week(demand_month: str, lead_weeks: int, current: date, mode: str) -> date:
+def _target_week(demand_month: str, lead_weeks: int, current: date, mode: str,
+                 start_dow: int) -> date:
     """`generate_mps`'s step 2, for one demand month: the last week of the
     demand month shifted back `lead_weeks`, never before `current`. Kept in
     step with the engine deliberately -- `update_line` needs the same target
     to recompute `weeks_early` for a hand-moved line."""
-    standard = shift_weeks(weeks_of_month(demand_month, mode)[-1], -lead_weeks, mode)
+    standard = shift_weeks(weeks_of_month(demand_month, mode, start_dow=start_dow)[-1],
+                           -lead_weeks, mode, start_dow=start_dow)
     return current if standard < current else standard
 
 
-def _weeks_between(earlier: date, later: date, mode: str) -> int:
+def _weeks_between(earlier: date, later: date, mode: str, start_dow: int) -> int:
     """Whole week steps from `earlier` up to `later` on this mode's grid; 0
     if `earlier` is not before `later`. Walks with `shift_weeks` rather than
     dividing a day difference by 7 -- under `month_fixed` a week is 1-7 days
@@ -536,7 +553,7 @@ def _weeks_between(earlier: date, later: date, mode: str) -> int:
     steps = 0
     week = earlier
     while week < later:
-        week = shift_weeks(week, 1, mode)
+        week = shift_weeks(week, 1, mode, start_dow=start_dow)
         steps += 1
         if steps > 5000:  # pragma: no cover -- off-grid input would never terminate
             raise RuntimeError(
@@ -607,7 +624,9 @@ async def _run_detail_response(db: SessionDep, run: MrpMpsRun) -> MpsRunDetailRe
         generated_by=run.generated_by, stats=run.stats,
         production_lead_weeks=run.production_lead_weeks,
         week_calendar_mode=run.week_calendar_mode,
-        lines=[_line_response(l, run.week_calendar_mode) for l in lines],
+        week_start_dow=run.week_start_dow,
+        lines=[_line_response(l, run.week_calendar_mode, run.week_start_dow)
+               for l in lines],
     )
 
 
@@ -636,7 +655,7 @@ async def _build_demand_context(db: SessionDep, version: ForecastVersion) -> dic
     return ctx
 
 
-def _line_response(line: MrpMpsLine, mode: str) -> MpsLineResponse:
+def _line_response(line: MrpMpsLine, mode: str, start_dow: int) -> MpsLineResponse:
     """Reads the frozen demand-context snapshot straight off the line
     (`MrpMpsLine.demand_forecast`/`opening_stock`, written once at
     generate/recalculate time -- see `_build_demand_context`'s docstring).
@@ -650,7 +669,7 @@ def _line_response(line: MrpMpsLine, mode: str) -> MpsLineResponse:
     return MpsLineResponse(
         id=line.id, material_code=line.material_code, demand_month=line.demand_month,
         plan_week_start=line.plan_week_start, plan_week_month=line.plan_week_month,
-        week_label=week_label(line.plan_week_start, mode),
+        week_label=week_label(line.plan_week_start, mode, start_dow=start_dow),
         weeks_early=line.weeks_early,
         qty=line.qty, is_prebuild=line.is_prebuild,
         prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
@@ -663,7 +682,7 @@ def _line_response(line: MrpMpsLine, mode: str) -> MpsLineResponse:
 
 
 def _compute_week_grid(
-    run: MrpMpsRun, lines: list[MrpMpsLine], mode: str,
+    run: MrpMpsRun, lines: list[MrpMpsLine], mode: str, start_dow: int,
 ) -> list[WeekGridEntry]:
     """Every week column this run's matrix (frontend) and xlsx export should
     show — mirrors `app/services/mps_export.py::build_mps_matrix_workbook`'s
@@ -690,13 +709,14 @@ def _compute_week_grid(
     all_months = set(horizon_months) | touched_months
     span_months = _month_span(min(all_months), max(all_months)) if all_months else []
     return [
-        WeekGridEntry(week_start=w, week_month=month, label=week_label(w, mode))
-        for month in span_months for w in weeks_of_month(month, mode)
+        WeekGridEntry(week_start=w, week_month=month,
+                      label=week_label(w, mode, start_dow=start_dow))
+        for month in span_months for w in weeks_of_month(month, mode, start_dow=start_dow)
     ]
 
 
 async def _compute_capacity_occupancy(
-    db: SessionDep, lines: list[MrpMpsLine], mode: str,
+    db: SessionDep, lines: list[MrpMpsLine], mode: str, start_dow: int,
 ) -> list[CapacityOccupancyWeek]:
     """Used qty/SKU count per PLAN WEEK vs. the limits effective for that
     week (standing rules plus that week's exceptions), re-resolved fresh on
@@ -720,8 +740,8 @@ async def _compute_capacity_occupancy(
         skus, qty = by_week[week]
         limits = await resolve_limits_for_week(db, week)
         occupancy.append(CapacityOccupancyWeek(
-            week_start=week, week_month=owning_month(week, mode),
-            week_label=week_label(week, mode),
+            week_start=week, week_month=owning_month(week, mode, start_dow=start_dow),
+            week_label=week_label(week, mode, start_dow=start_dow),
             used_sku_count=len(skus), used_qty=qty,
             max_sku_count=limits.max_sku_count, max_output_qty=limits.max_output_qty,
         ))
@@ -749,19 +769,22 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     # The ONE place the current planning parameter is read. Everything
     # afterwards -- this request included -- goes through `run.week_calendar_mode`.
     mode = await _resolve_week_mode(db)
-    current_week = week_start_of(datetime.now(timezone.utc).date(), mode)
+    start_dow = await _resolve_week_start_dow(db)
+    current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
+                                 start_dow=start_dow)
 
     intent_lines = await _load_intent_lines(db, version)
     intent_codes = frozenset(l.material_code for l in intent_lines)
 
     demands = await _build_demand_items(db, version, intent_codes)
     limits_for_week = await _week_limits_lookup(db, _planning_weeks(
-        current_week, _generate_months(version.horizon_start_month, version.horizon_months), mode,
+        current_week, _generate_months(version.horizon_start_month, version.horizon_months),
+        mode, start_dow,
     ))
     shelf_life = await resolve_shelf_life(token)
     lines = generate_mps(
         demands, limits_for_week, shelf_life, safety_margin,
-        lead_weeks=lead, current_week=current_week, mode=mode,
+        lead_weeks=lead, current_week=current_week, mode=mode, start_dow=start_dow,
     )
     # Snapshot the demand context (gross forecast + rolled-forward opening
     # stock) onto each line NOW, at generate time -- see
@@ -785,6 +808,7 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
         stats=stats,
         production_lead_weeks=lead,
         week_calendar_mode=mode,
+        week_start_dow=start_dow,
     )
     db.add(run)
     await db.flush()  # assign run.id for the lines' FK below
@@ -818,8 +842,9 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     lines = await _load_lines(db, run.id)
     # The run's OWN mode, never the current parameter (module docstring).
     mode = run.week_calendar_mode
-    occupancy = await _compute_capacity_occupancy(db, lines, mode)
-    week_grid = _compute_week_grid(run, lines, mode)
+    start_dow = run.week_start_dow
+    occupancy = await _compute_capacity_occupancy(db, lines, mode, start_dow)
+    week_grid = _compute_week_grid(run, lines, mode, start_dow)
     return MpsRunGetResponse(
         id=run.id, run_no=run.run_no, forecast_version_id=run.forecast_version_id,
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
@@ -827,7 +852,8 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
         generated_by=run.generated_by, stats=run.stats,
         production_lead_weeks=run.production_lead_weeks,
         week_calendar_mode=mode,
-        lines=[_line_response(l, mode) for l in lines],
+        week_start_dow=start_dow,
+        lines=[_line_response(l, mode, start_dow) for l in lines],
         capacity_occupancy=occupancy,
         week_grid=week_grid,
     )
@@ -856,7 +882,8 @@ async def export_run(
     row falls back to its bare material_code, never a broken export."""
     run = await _get_run_or_404(db, run_id)
     lines = await _load_lines(db, run.id)
-    line_responses = [_line_response(l, run.week_calendar_mode) for l in lines]
+    line_responses = [_line_response(l, run.week_calendar_mode, run.week_start_dow)
+                      for l in lines]
 
     codes = {l.material_code for l in line_responses}
     names = await resolve_material_names(token) if codes else {}
@@ -879,8 +906,10 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     # The run's OWN calendar and lead, never the current planning parameter
     # or a fresh default -- see this module's docstring.
     mode = run.week_calendar_mode
+    start_dow = run.week_start_dow
     lead = run.production_lead_weeks
-    current_week = week_start_of(datetime.now(timezone.utc).date(), mode)
+    current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
+                                 start_dow=start_dow)
 
     existing_lines = await _load_lines(db, run.id)
     locked_existing = [l for l in existing_lines if l.locked_by_planner]
@@ -933,12 +962,13 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     # month's demand the planner did not lock.
     demands = await _build_demand_items(db, version, intent_codes)
     limits_for_week = await _week_limits_lookup(db, _planning_weeks(
-        current_week, _generate_months(version.horizon_start_month, version.horizon_months), mode,
+        current_week, _generate_months(version.horizon_start_month, version.horizon_months),
+        mode, start_dow,
     ))
     shelf_life = await resolve_shelf_life(token)
     lines = generate_mps(
         demands, limits_for_week, shelf_life, run.safety_margin_fraction,
-        lead_weeks=lead, current_week=current_week, mode=mode,
+        lead_weeks=lead, current_week=current_week, mode=mode, start_dow=start_dow,
         locked=locked_weekly,
     )
     # Snapshot the demand context for the newly (re)placed, non-locked lines
@@ -1022,6 +1052,7 @@ async def update_line(
     _require_not_released(run)
     line = await _get_line_or_404(db, run_id, line_id)
     mode = run.week_calendar_mode
+    start_dow = run.week_start_dow
 
     changed = False
     if body.qty is not None and body.qty != line.qty:
@@ -1029,13 +1060,14 @@ async def update_line(
         changed = True
     if body.plan_week_start is not None and body.plan_week_start != line.plan_week_start:
         week = body.plan_week_start
-        if week_start_of(week, mode) != week:
+        if week_start_of(week, mode, start_dow=start_dow) != week:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"{week.isoformat()} is not the start of a week under this run's "
                        f"'{mode}' calendar",
             )
-        current_week = week_start_of(datetime.now(timezone.utc).date(), mode)
+        current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
+                                     start_dow=start_dow)
         if week < current_week:
             # A past week is not a place production can happen, and the
             # engine's canvas says so: every bucket is `[w for w in
@@ -1054,8 +1086,9 @@ async def update_line(
                        "a past week -- it would consume the demand without occupying any "
                        "week's capacity",
             )
-        target = _target_week(line.demand_month, run.production_lead_weeks, current_week, mode)
-        weeks_early = _weeks_between(week, target, mode)
+        target = _target_week(line.demand_month, run.production_lead_weeks, current_week,
+                              mode, start_dow)
+        weeks_early = _weeks_between(week, target, mode, start_dow)
         shelf_life = await resolve_shelf_life(token)
         if not _placement_allowed(
             week, line.demand_month, shelf_life.get(line.material_code),
@@ -1069,12 +1102,13 @@ async def update_line(
             )
         moved_from = line.plan_week_start
         line.plan_week_start = week
-        line.plan_week_month = owning_month(week, mode)
+        line.plan_week_month = owning_month(week, mode, start_dow=start_dow)
         line.weeks_early = weeks_early
         # Same definition the engine uses: a pre-build is production pulled
         # into an earlier MONTH than the demand's own bucket. Moving within
         # the bucket is levelling, however early in it the new week sits.
-        line.is_prebuild = line.plan_week_month < owning_month(target, mode)
+        line.is_prebuild = line.plan_week_month < owning_month(target, mode,
+                                                              start_dow=start_dow)
         if not line.capacity_gap:
             # `prebuild_reason` explains an EVENT, so it has to move with the
             # line. Left alone, a hand-move either produced `is_prebuild=True`
@@ -1112,7 +1146,7 @@ async def update_line(
 
     await db.commit()
     await db.refresh(line)
-    return _line_response(line, mode)
+    return _line_response(line, mode, start_dow)
 
 
 @router.post("/runs/{run_id}/confirm-release", response_model=MpsRunDetailResponse)

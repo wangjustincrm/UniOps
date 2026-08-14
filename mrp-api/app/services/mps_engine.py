@@ -1163,6 +1163,7 @@ def generate_mps(
     lead_weeks: int,
     current_week: date,
     mode: str,
+    start_dow: int,
     locked: list[WeeklyLine] | None = None,
 ) -> list[WeeklyLine]:
     """The weekly master production schedule, per design §2.0's six steps.
@@ -1171,6 +1172,10 @@ def generate_mps(
     already-bound resolver (Task 3's `resolve_limits_for_week` partial);
     `current_week` is the "now" this run schedules from and is normalised to
     its own week start, so a caller may pass any day of the current week.
+    `start_dow` says which weekday a week begins on (0=Monday .. 6=Sunday);
+    it has no default on purpose -- callers must pass the RUN's stored
+    `week_start_dow`, never the current planning parameter, or a released
+    plan would silently re-bucket itself onto a different grid.
 
     ## The pipeline
 
@@ -1262,7 +1267,7 @@ def generate_mps(
     be part locked and part open, and dropping the key entirely would
     silently delete the open remainder.
     """
-    current = week_start_of(current_week, mode)
+    current = week_start_of(current_week, mode, start_dow=start_dow)
 
     # A locked line carrying `capacity_gap=True` is DROPPED, not echoed.
     # Callers do produce them: the API layer rebuilds locked lines from
@@ -1330,7 +1335,8 @@ def generate_mps(
     targets: dict[str, date] = {}
     clamped: dict[str, bool] = {}
     for month in {d.demand_month for d in payload}:
-        standard = shift_weeks(weeks_of_month(month, mode)[-1], -lead_weeks, mode)
+        standard = shift_weeks(weeks_of_month(month, mode, start_dow=start_dow)[-1],
+                               -lead_weeks, mode, start_dow=start_dow)
         clamped[month] = standard < current
         targets[month] = current if clamped[month] else standard
 
@@ -1350,7 +1356,9 @@ def generate_mps(
     # ③ Bucket by the owning month of the target week.
     buckets: dict[str, list[DemandItem]] = {}
     for item in payload:
-        buckets.setdefault(owning_month(targets[item.demand_month], mode), []).append(item)
+        buckets.setdefault(
+            owning_month(targets[item.demand_month], mode, start_dow=start_dow),
+            []).append(item)
 
     # (bucket_month, canvas, material_code, demand_month, qty, bucket_reason)
     overflow: list[tuple[str, list[date], str, str, Decimal, str | None]] = []
@@ -1361,7 +1369,8 @@ def generate_mps(
         # P2 levelling and P3 one-product-per-week have somewhere to operate.
         # Only the past is excluded. Never empty: every member's target week
         # is one of this month's own weeks and is >= `current`.
-        canvas = [w for w in weeks_of_month(bucket_month, mode) if w >= current]
+        canvas = [w for w in weeks_of_month(bucket_month, mode, start_dow=start_dow)
+                  if w >= current]
         per_week = [limits_for_week(w) for w in canvas]
         preloaded = [locked_by_week.get(w, {}) for w in canvas]
 
@@ -1412,7 +1421,8 @@ def generate_mps(
                     lines.append(WeeklyLine(
                         material_code=code, demand_month=demand_month,
                         plan_week_start=line.plan_week_start,
-                        plan_week_month=owning_month(line.plan_week_start, mode),
+                        plan_week_month=owning_month(line.plan_week_start, mode,
+                                                     start_dow=start_dow),
                         qty=_tidy(take),
                         # Inside the demand's OWN bucket month, so never a
                         # pre-build however early in the month it sits --
@@ -1470,7 +1480,7 @@ def generate_mps(
 
         while remaining > 0:
             if cursor < 0:
-                timeline.insert(0, shift_weeks(timeline[0], -1, mode))
+                timeline.insert(0, shift_weeks(timeline[0], -1, mode, start_dow=start_dow))
                 pos += 1
                 cursor = 0
             week = timeline[cursor]
@@ -1493,7 +1503,7 @@ def generate_mps(
                     take = remaining if room is None else min(remaining, room)
                     if take > 0:
                         load.commit(code, take)
-                        week_month = owning_month(week, mode)
+                        week_month = owning_month(week, mode, start_dow=start_dow)
                         crossed = week_month < bucket_month
                         lines.append(WeeklyLine(
                             material_code=code, demand_month=demand_month,
@@ -1537,7 +1547,7 @@ def generate_mps(
             lines.append(WeeklyLine(
                 material_code=code, demand_month=demand_month,
                 plan_week_start=target,
-                plan_week_month=owning_month(target, mode),
+                plan_week_month=owning_month(target, mode, start_dow=start_dow),
                 qty=_tidy(remaining),
                 prebuild_reason=f"{bucket_reason}; {why}" if bucket_reason else why,
                 shelf_life_ok=not blocked_by_shelf_life,

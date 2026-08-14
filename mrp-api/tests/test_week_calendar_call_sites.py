@@ -9,7 +9,6 @@
 import ast
 from pathlib import Path
 
-import pytest
 
 _GUARDED = {"week_start_of", "owning_month", "weeks_of_month", "shift_weeks", "week_label"}
 _APP = Path(__file__).resolve().parents[1] / "app"
@@ -23,13 +22,6 @@ def _call_name(node: ast.Call) -> str | None:
     return None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="expected red until the run's week_start_dow is threaded through "
-           "mps.py / mps_engine.py / mps_export.py (plan Task 4); strict=True "
-           "so it fails loudly the moment that task lands and this marker "
-           "must be removed",
-)
 def test_every_app_call_passes_start_dow_explicitly():
     offenders: list[str] = []
     for path in sorted(_APP.rglob("*.py")):
