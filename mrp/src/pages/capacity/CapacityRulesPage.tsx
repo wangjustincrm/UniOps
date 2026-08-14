@@ -12,7 +12,7 @@
 // 403 (see hooks/usePermissions.ts, mirrors BomExplorerPage's canSync gate).
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, Plus, Trash2, X as XIcon } from 'lucide-react'
 import { Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
@@ -22,6 +22,27 @@ import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
 import { capacityApi, SCOPE_TYPE_LABEL, CONSTRAINT_TYPE_LABEL, type CapacityRule } from './capacityApi'
 import { RuleDrawer } from './RuleDrawer'
+import { PlanningCalendarSection } from './PlanningCalendarSection'
+import { WeekExceptionsSection } from './WeekExceptionsSection'
+
+// design §7's docstring at the schema level (migration `mrp10b`): every
+// pre-weekly-rework rule was `is_active=false`d, not deleted, because its
+// `limit_value` was a MONTHLY ceiling that would silently read as a WEEKLY
+// one (~4x too generous) if left active under the new per-week resolver.
+// This banner is the one-time, dismissible surface of that migration event
+// — "one-time" meaning "until the planner acknowledges it", tracked in
+// localStorage (same pattern ProductionPlanPage.tsx's display-unit toggle
+// uses), not a server-side flag: there is no backend field recording
+// whether any given user has seen it, and this task adds none.
+const BANNER_DISMISSED_KEY = 'mrp.capacityRules.weeklyMigrationBannerDismissed'
+
+function loadBannerDismissed(): boolean {
+  try {
+    return window.localStorage.getItem(BANNER_DISMISSED_KEY) === '1'
+  } catch {
+    return false // localStorage unavailable (e.g. privacy mode) — default to showing it
+  }
+}
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -50,6 +71,16 @@ export default function CapacityRulesPage() {
   const [drawerRule, setDrawerRule] = useState<CapacityRule | 'new' | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<CapacityRule | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [bannerDismissed, setBannerDismissed] = useState(() => loadBannerDismissed())
+
+  function dismissBanner() {
+    setBannerDismissed(true)
+    try {
+      window.localStorage.setItem(BANNER_DISMISSED_KEY, '1')
+    } catch {
+      // localStorage unavailable — the banner just reappears next visit, not a functional problem
+    }
+  }
 
   function invalidate() {
     return queryClient.invalidateQueries({ queryKey: ['capacity-rules'] })
@@ -80,6 +111,30 @@ export default function CapacityRulesPage() {
           </Button>
         )}
       </div>
+
+      {/* One-time migration banner — design §5.4/§7: every rule that existed
+          before the weekly rework was deactivated (mrp10b), not deleted,
+          because a monthly ceiling silently misread as a weekly one is a
+          ~4x capacity error with no other signal anywhere in the UI. */}
+      {!bannerDismissed && (
+        <div role="status" className="flex items-start justify-between gap-3 rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-800">
+          <span>
+            Capacity rules now read per week. Existing rules were deactivated by the weekly migration —
+            please re-enter them.
+          </span>
+          <button
+            type="button"
+            onClick={dismissBanner}
+            aria-label="Dismiss this notice"
+            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center text-warning-600 hover:text-warning-900"
+          >
+            <XIcon className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      <PlanningCalendarSection canWrite={canWrite} />
+      <WeekExceptionsSection canWrite={canWrite} notifySuccess={toasts.success} notifyError={toasts.error} />
 
       {rulesQuery.isError && (
         <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">

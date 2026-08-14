@@ -17,12 +17,26 @@ function currentMonthDefault(): string {
 }
 
 export function GenerateOutlookModal({
-  onClose, onGenerate, busy, error,
+  onClose, onGenerate, busy, error, intentCount = 0,
 }: {
   onClose: () => void
   onGenerate: (anchorMonth: string, horizonMonths: number) => void
   busy: boolean
   error: string | null
+  /** Count of intent-product rows (planned SKUs with no ERP material code
+   *  yet) currently on the grid — see SalesForecastPage's `intentRowIds`.
+   *  Deliberately worded below as a fact about the GRID, not the snapshot
+   *  this modal is about to produce: this count can both overstate (a
+   *  freshly added intent row with nothing saved yet is still counted,
+   *  even though freeze_outlook only ever snapshots non-zero PERSISTED
+   *  rows) and understate (the grid only spans [current-3, current+24]
+   *  while this modal's own anchor/horizon fields below can reach further
+   *  out) how many intent rows actually land inside THIS snapshot's
+   *  [anchor, anchor+horizon) window — there's no cheap way to recompute
+   *  that exactly without duplicating the page's month-range math in here.
+   *  The banner says what's true either way: these rows exist and MPS
+   *  will never schedule them. */
+  intentCount?: number
 }) {
   const [anchorMonth, setAnchorMonth] = useState(currentMonthDefault())
   const [horizonMonths, setHorizonMonths] = useState(18)
@@ -79,6 +93,13 @@ export function GenerateOutlookModal({
               aria-invalid={!horizonValid}
             />
           </FormField>
+
+          {intentCount > 0 && (
+            <p role="status" className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-800">
+              The grid has {intentCount} intent product{intentCount === 1 ? '' : 's'}. Any with data in this window
+              are recorded but never scheduled.
+            </p>
+          )}
 
           {error && (
             <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">

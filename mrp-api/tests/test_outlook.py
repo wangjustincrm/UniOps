@@ -14,6 +14,7 @@ the first version's lines are unchanged (immutability); the `POST
 task makes — freezing (and confirming) does NOT supersede a prior
 confirmed version, several stay `confirmed` at once (design §4.3).
 """
+import re
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -23,6 +24,15 @@ from sqlalchemy import select
 
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.services.demand_series import CellChange, freeze_outlook, upsert_cells
+
+# `FCV-{anchor_month, no dash}-{MMDDHH}`, optionally `-N` disambiguated (see
+# app/services/numbering.py). Pins the actual shape -- YYYYMM with no
+# separating dash, creation month/day/hour zero-padded to exactly 6 digits
+# -- not just the literal prefix, so a regression back to the old
+# `FCV-2026-09-DDHHMM` shape (dashed month, day/hour/minute) or to the
+# original random-hex suffix would fail this pattern even though it still
+# starts with "FCV-202609-".
+_VERSION_NO_RE = re.compile(r"^FCV-\d{6}-\d{6}(-\d+)?$")
 
 
 # ── freeze_outlook (service-level) ──────────────────────────────────────────
@@ -51,7 +61,8 @@ async def test_freeze_outlook_snapshot_matches_series_window(db_session):
     assert version.horizon_months == 3
     assert version.source_anchor_month == "2026-09"
     assert version.created_by == creator
-    assert version.version_no.startswith("FCV-2026-09-")
+    assert _VERSION_NO_RE.match(version.version_no)
+    assert version.version_no.startswith("FCV-202609-")
 
     lines = (await db_session.execute(
         select(ForecastLine).where(ForecastLine.version_id == version.id)
@@ -81,6 +92,7 @@ async def test_freeze_outlook_second_freeze_is_a_new_version_first_unchanged(db_
     v2 = await freeze_outlook(db_session, "2026-09", 1, created_by=None)
 
     assert v1.id != v2.id
+    assert _VERSION_NO_RE.match(v1.version_no) and _VERSION_NO_RE.match(v2.version_no)
     assert v1.version_no != v2.version_no
     assert v1.status == "confirmed" and v2.status == "confirmed"
 
@@ -106,6 +118,42 @@ async def test_freeze_outlook_empty_window_creates_version_with_no_lines(db_sess
         select(ForecastLine).where(ForecastLine.version_id == version.id)
     )).scalars().all()
     assert lines == []
+
+
+@pytest.mark.anyio
+async def test_freeze_outlook_two_freezes_in_the_same_hour_both_succeed(db_session, monkeypatch):
+    """The scenario the task calls out as now routine, not rare: freezing
+    two outlooks for the same anchor inside the same UTC HOUR (MMDDHH has
+    no minute of its own) must not 500 with an IntegrityError on
+    `version_no`'s unique constraint. The two back-to-back freezes in the
+    immutability test above already exercise this most of the time, but
+    only by luck of wall-clock timing near an hour boundary -- this test
+    pins the clock so the collision is guaranteed, not incidental.
+
+    Mutation this catches: if `freeze_outlook` reverted to computing
+    `version_no` inline (bypassing `next_timestamped_no`'s collision check --
+    e.g. the pre-fix `uuid4().hex[:6]` shape, or a naive `f"{prefix}{now}"`
+    with no existing-rows check), the second `freeze_outlook` call here would
+    raise `IntegrityError` instead of returning a second confirmed version."""
+    from datetime import datetime as real_datetime, timezone
+
+    from app.services import numbering
+
+    fixed = real_datetime(2026, 9, 3, 9, 15, 0, tzinfo=timezone.utc)
+
+    class _FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return fixed
+
+    monkeypatch.setattr(numbering, "datetime", _FrozenDateTime)
+
+    v1 = await freeze_outlook(db_session, "2026-09", 1, created_by=None)
+    v2 = await freeze_outlook(db_session, "2026-09", 1, created_by=None)
+
+    assert v1.version_no == "FCV-202609-090309"
+    assert v2.version_no == "FCV-202609-090309-2"
+    assert v1.status == "confirmed" and v2.status == "confirmed"
 
 
 # ── POST /series/outlook (API-level) ────────────────────────────────────────
@@ -220,3 +268,25 @@ async def test_freezing_outlook_does_not_supersede_prior_confirmed_forecast_vers
     statuses = {item["id"]: item["status"] for item in listing["items"]}
     assert statuses[str(v1.id)] == "confirmed"  # NOT superseded by the later outlook freeze
     assert statuses[v2["id"]] == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_outlook_snapshot_flags_intent_lines(client, auth_headers, db_session):
+    from sqlalchemy import text
+    intent = (await client.post("/api/v1/intent-products", json={"name": "Planned SKU"},
+                                headers=auth_headers)).json()
+    await client.put("/api/v1/series/cells", headers=auth_headers, json={"cells": [
+        {"material_code": intent["code"], "month": "2027-06", "qty": "500"},
+        {"material_code": "S0093", "month": "2027-06", "qty": "800"},
+    ]})
+    r = await client.post("/api/v1/series/outlook",
+                          json={"anchor_month": "2027-06"}, headers=auth_headers)
+    assert r.status_code == 201, r.text
+
+    rows = (await db_session.execute(text(
+        "select material_code, is_intent, intent_name from mrp_forecast_lines "
+        "where version_id = :v"
+    ), {"v": r.json()["id"]})).all()
+    by_code = {c: (f, n) for c, f, n in rows}
+    assert by_code[intent["code"]] == (True, "Planned SKU")
+    assert by_code["S0093"][0] is False

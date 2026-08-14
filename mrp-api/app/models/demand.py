@@ -6,7 +6,7 @@ DDL lives in `alembic/versions/mrp04_capacity_mps_demand.py` alongside
 """
 import uuid
 
-from sqlalchemy import CHAR, Numeric, String
+from sqlalchemy import CHAR, Date, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,4 +21,7 @@ class MrpDemand(Base, UUIDPrimaryKey, TimestampMixin):
     demand_type: Mapped[str] = mapped_column(String(20), default="mps", server_default="mps")
     material_code: Mapped[str] = mapped_column(String(50), index=True)
     demand_month: Mapped[str] = mapped_column(CHAR(7), index=True)
+    # Weekly planning (mrp10b): the week-start date this demand row applies
+    # to, alongside demand_month, for Phase 1C's material explosion.
+    plan_week_start: Mapped[object] = mapped_column(Date, index=True)
     qty: Mapped[object] = mapped_column(Numeric(18, 3))

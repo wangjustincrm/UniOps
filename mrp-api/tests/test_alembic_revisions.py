@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from sqlalchemy import text
+
 VERSIONS_DIR = Path(__file__).resolve().parent.parent / "alembic" / "versions"
 
 # Alembic's default `alembic_version.version_num` column width (see
@@ -52,3 +54,25 @@ def test_revision_id_fits_version_num_column(filename, revision_id):
         "this migration can never be stamped as applied. Shorten the revision id "
         "(and update any down_revision referencing it)."
     )
+
+
+@pytest.mark.asyncio
+async def test_weekly_columns_exist_and_monthly_ones_are_gone(db_session):
+    """mrp10b (weekly-bucket migration) must land the new weekly columns and
+    remove the monthly ones it replaces on mrp_mps_runs/mrp_mps_lines/
+    mrp_demands. See task-6-brief.md, Decision D9."""
+
+    async def cols(table):
+        return set((await db_session.execute(text(
+            "select column_name from information_schema.columns where table_name = :t"
+        ), {"t": table})).scalars().all())
+
+    runs = await cols("mrp_mps_runs")
+    assert "production_lead_weeks" in runs and "week_calendar_mode" in runs
+    assert "production_lead_months" not in runs
+
+    lines = await cols("mrp_mps_lines")
+    assert {"plan_week_start", "plan_week_month", "weeks_early"} <= lines
+    assert "plan_month" not in lines
+
+    assert "plan_week_start" in await cols("mrp_demands")

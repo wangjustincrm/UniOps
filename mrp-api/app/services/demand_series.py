@@ -80,9 +80,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.demand_series import MrpDemandSeries, MrpForecastChangeLog
 from app.models.forecast import ForecastLine, ForecastVersion
+from app.models.intent import MrpIntentProduct
+from app.services.intent_products import is_intent_code
 from app.services.mdm_client import resolve_material_names
+from app.services.numbering import next_timestamped_no
 
 _ZERO = Decimal("0")
+
+# Arbitrary fixed key identifying "this table" for freeze_outlook's
+# version_no advisory lock -- combined with a hash of the specific prefix
+# (i.e. the anchor month) at the call site, see app/services/numbering.py's
+# docstring, so freezing FCV-202609 and FCV-202610 concurrently does NOT
+# serialize against each other (different bases, no possible collision).
+# Distinct from mps.py's _RUN_NO_LOCK_KEY (different table -- MPS runs and
+# outlook freezes must never wait on each other either).
+_VERSION_NO_LOCK_KEY = 778899222
 
 # Belt-and-suspenders shape guard on CellChange.month, independent of the
 # HTTP layer's own SeriesCellUpsert.month field_validator (app/api/v1/series.py)
@@ -349,8 +361,42 @@ async def freeze_outlook(
         select(MrpDemandSeries).where(MrpDemandSeries.month.in_(months))
     )).scalars().all()
 
+    # Intent-product name at freeze time, keyed by placeholder code, frozen
+    # into each ForecastLine below (`intent_name`) alongside `is_intent`
+    # (Task 4, `app/services/intent_products.py`) -- so a version stays
+    # self-explanatory years later even after its intent code is bound to a
+    # real material or dropped, without needing a live join back to
+    # `mrp_intent_products` at read time.
+    intent_names = dict((await db.execute(
+        select(MrpIntentProduct.code, MrpIntentProduct.name)
+    )).all())
+
+    # `FCV-{anchor_month, no dash}-{MMDDHH}` -- e.g. `FCV-202610-081417` for
+    # an outlook anchored at 2026-10, frozen 14 Aug 17:11 UTC. `YYYYMM` is
+    # the horizon's start month (no dash, so it can't be misread as a date
+    # sitting inside the horizon month -- the ambiguity the owner flagged
+    # in round one); `MMDDHH` is the creation month/day/hour, not a random
+    # suffix, so two outlooks for the same anchor read as "when" rather
+    # than an opaque tag. Because `MMDDHH` now carries the real creation
+    # month itself (unlike the old `DDHHMM`), two freezes of the same
+    # anchor a calendar month or a year apart no longer collide just for
+    # sharing a day-of-month/hour -- the month digit already tells them
+    # apart. What DOES still collide, routinely rather than rarely, is two
+    # freezes of the same anchor inside the same UTC HOUR (minute is no
+    # longer part of the number): those share the exact same base and the
+    # later one gets a numerically-later `-N` suffix that reflects arrival
+    # order within that hour, not elapsed time -- ordering is only
+    # guaranteed to the hour, not finer. See app/services/numbering.py for
+    # the collision handling this needs (same-hour collisions are the
+    # expected case in a normal working session, not an edge case).
+    version_no = await next_timestamped_no(
+        db, lock_key=_VERSION_NO_LOCK_KEY,
+        column=ForecastVersion.version_no,
+        prefix=f"FCV-{anchor_month.replace('-', '')}-",
+    )
+
     version = ForecastVersion(
-        version_no=f"FCV-{anchor_month}-{uuid.uuid4().hex[:6].upper()}",
+        version_no=version_no,
         status="confirmed",
         horizon_start_month=anchor_month,
         horizon_months=horizon_months,
@@ -368,6 +414,8 @@ async def freeze_outlook(
             month=row.month,
             qty=row.qty,
             uom=row.uom,
+            is_intent=is_intent_code(row.material_code),
+            intent_name=intent_names.get(row.material_code),
         ))
 
     await db.commit()

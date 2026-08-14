@@ -21,6 +21,7 @@ import {
   initHistory, commitCells, commitCellsAndRows, undo, redo,
   currentCells, currentExtraRows, canUndo, canRedo,
 } from './history'
+import { pruneFocus } from './focus'
 
 let failures = 0
 function check(name: string, cond: boolean) {
@@ -358,6 +359,26 @@ console.log('history: undo/redo')
   h = commitCells(h, (prev) => new Map(prev).set('z', 99))
   check('branching commit truncates stale redo branch', !canRedo(h))
 }
+
+// -- pruneFocus (stale focus/selection anchors after the grid shrinks) ---
+// Regression: Sales Forecast's "Add Product" focuses the new row by index,
+// and removing that row shrinks `rows` while the index stays behind. The
+// focus-sync effect then dereferenced rows[focus.rowIdx].id and the whole
+// tab crashed with "Cannot read properties of undefined (reading 'id')".
+console.log('')
+console.log('pruneFocus')
+check('keeps an in-range anchor (same object identity, so no render loop)', (() => {
+  const f = { rowIdx: 2, colIdx: 3 }
+  return pruneFocus(f, 5, 18) === f
+})())
+check('drops an anchor whose row is gone (the Add-then-remove crash)',
+  pruneFocus({ rowIdx: 4, colIdx: 0 }, 4, 18) === null)
+check('drops an anchor whose column is gone',
+  pruneFocus({ rowIdx: 0, colIdx: 18 }, 4, 18) === null)
+check('drops every anchor when the grid empties out',
+  pruneFocus({ rowIdx: 0, colIdx: 0 }, 0, 18) === null)
+check('passes null through', pruneFocus(null, 5, 18) === null)
+check('rejects negative indices', pruneFocus({ rowIdx: -1, colIdx: 0 }, 5, 18) === null)
 
 console.log('')
 if (failures > 0) {

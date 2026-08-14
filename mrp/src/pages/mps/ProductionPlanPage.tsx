@@ -21,9 +21,12 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { forecastApi, saveBlob } from '@/pages/forecast/forecastApi'
 import { bomStatusApi } from '@/pages/forecast/bomStatusApi'
-import { mpsApi, type MpsLine } from './mpsApi'
+import { capacityApi, findExistingException } from '@/pages/capacity/capacityApi'
+import { closesWeek, findSkuClosure } from '@/pages/capacity/closedWeek'
+import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
 import { ProductionMatrix } from './ProductionMatrix'
 import { AdjustDrawer } from './AdjustDrawer'
+import { WeekDrawer } from './WeekDrawer'
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -53,8 +56,9 @@ function loadDisplayUnit(): DisplayUnit {
 
 /** A single ProductionMatrix Planned cell can aggregate more than one
  *  MpsLine (e.g. two different demand_months pre-built into the same
- *  plan_month) — see ProductionMatrix.tsx's `onAdjustCell` contract and
- *  Task 4's report. This picker lets the planner disambiguate which of the
+ *  plan week, or several weeks rolled into one collapsed month's summary
+ *  column) — see ProductionMatrix.tsx's `onAdjustCell` contract and Task
+ *  4's report. This picker lets the planner disambiguate which of the
  *  underlying lines they meant to adjust before the single-line
  *  AdjustDrawer opens. */
 function AdjustCellPicker({
@@ -112,6 +116,11 @@ export default function ProductionPlanPage() {
   const canExecute = !!permsQuery.data?.permissions['mrp.run.execute']
   const canRelease = !!permsQuery.data?.permissions['mrp.proposal.confirm']
   const canView = !!permsQuery.data?.permissions['mrp.report.view']
+  // Gates WeekDrawer's checkbox (same key capacity/*.tsx uses for rule/
+  // exception writes) — deliberately independent of canExecute/canRelease:
+  // marking a maintenance week is a capacity-parameter change, not a
+  // run-execution or release action.
+  const canWriteParams = !!permsQuery.data?.permissions['mrp.param.write']
 
   // ── Display unit (kg/tonne) ─────────────────────────────────────────────
   const [displayUnit, setDisplayUnit] = useState<DisplayUnit>(() => loadDisplayUnit())
@@ -225,19 +234,76 @@ export default function ProductionPlanPage() {
     return s
   }, [runProductCodes, bomStatusQuery.data])
 
+  // Capacity exceptions — double duty since round 1's review fix:
+  //  (1) WeekDrawer's source for "does this week already have a maintenance
+  //      exception, and is it active" (its own read-before-write upsert
+  //      rule, see capacityApi.ts's `findExistingException` doc: at most
+  //      one exception row can ever exist per week+scope+constraint, so
+  //      re-marking a week must PATCH that row, never POST a second one).
+  //  (2) ProductionMatrix's grey-tint/wrench signal. Round 1: this used to
+  //      read `run.capacity_occupancy` instead — WRONG, because occupancy
+  //      is built from the run's own LINES (mrp-api's
+  //      `_compute_capacity_occupancy`) and a maintenance week has ZERO
+  //      lines by construction (`_week_can_host` closes it to all
+  //      placement) — so the tint vanished the instant a planner did the
+  //      one thing the WeekDrawer save toast tells them to do
+  //      (Recalculate), and stayed gone on reload. Exceptions describe what
+  //      is CONFIGURED, not what got PLACED, so they don't share that blind
+  //      spot. (The alternative — have the backend emit an occupancy row
+  //      for every week_grid entry regardless of lines — would work too,
+  //      but reshapes a response several other things already read
+  //      ["how full is this week"] for a display concern this file alone
+  //      has; reusing the query already on this page is the smaller,
+  //      better-scoped fix.)
+  const exceptionsQuery = useQuery({
+    queryKey: ['capacity-exceptions'],
+    queryFn: () => capacityApi.listExceptions(),
+    enabled: !!runId,
+  })
+
+  function invalidateExceptions() {
+    return queryClient.invalidateQueries({ queryKey: ['capacity-exceptions'] })
+  }
+
+  // A CLOSED week — one the engine will not place anything into — is
+  // tinted. The predicate is `capacityApi.closesWeek`, restated from
+  // `mps_engine.py::_week_can_host`, so the tint means exactly what the
+  // engine does: `max_output_qty <= 0` OR `max_sku_count < 1`, factory
+  // scope, active.
+  //
+  // This used to test only `max_output_qty === 0`. `Max SKUs / week` is
+  // offered in the Week Exceptions dropdown and its value field accepts 0,
+  // so a week closed that way was fully honoured by the engine, never
+  // tinted here, and then offered to the planner by WeekDrawer as an
+  // unmarked week it could "mark as maintenance" — a second exception row
+  // for the same week (different constraint_type, so the partial unique
+  // index allows it) saying the same thing twice.
+  //
+  // A non-zero active max_output_qty override (a legitimate de-rate, not a
+  // shutdown) is still deliberately NOT tinted — the week can host
+  // production, just less of it. See WeekDrawer.tsx's round-1 finding #2.
+  const maintenanceWeekStarts = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of exceptionsQuery.data ?? []) {
+      if (closesWeek(e)) s.add(e.week_start)
+    }
+    return s
+  }, [exceptionsQuery.data])
+
   // ── Generate / Recalculate ──────────────────────────────────────────────
   const [generating, setGenerating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
-  // Production Lead Time (mrp08): how many months earlier than a demand
-  // month the engine should try to schedule production — default 1 matches
-  // the backend's own default (mps.py's create_run()) when omitted.
-  const [leadMonths, setLeadMonths] = useState(1)
+  // Production Lead Time (mrp08, now WEEKS since the weekly rework): how
+  // many weeks earlier than a demand month's last week the engine should
+  // try to schedule production — default 4 matches the backend's own
+  // default (mps.py's DEFAULT_PRODUCTION_LEAD_WEEKS) when omitted.
+  const [leadWeeks, setLeadWeeks] = useState(4)
 
   async function handleGenerate() {
     if (!selectedVersionId) return
     setGenerating(true)
     try {
-      const result = await mpsApi.generate(selectedVersionId, { production_lead_months: leadMonths })
+      const result = await mpsApi.generate(selectedVersionId, { production_lead_weeks: leadWeeks })
       setRunId(result.id)
       toasts.success(`Generated ${result.run_no} — ${result.lines.length} line(s).`)
     } catch (err) {
@@ -281,6 +347,16 @@ export default function ProductionPlanPage() {
     setPickerLines(lines)
   }
 
+  // ── Mark a week (from a matrix week header) ─────────────────────────────
+  // design §5.1's last bullet — same click-to-open interaction as
+  // handleAdjustCell above, just keyed off a week column instead of a
+  // Planned cell. See WeekDrawer.tsx's header comment for why this never
+  // calls handleRecalculate directly: it's only ever offered via the
+  // success toast's action button, so a hand adjustment elsewhere in this
+  // run doesn't get silently swept away by a recalculate the planner didn't
+  // ask for.
+  const [weekDrawerTarget, setWeekDrawerTarget] = useState<WeekGridEntry | null>(null)
+
   // ── Export ───────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false)
 
@@ -301,6 +377,47 @@ export default function ProductionPlanPage() {
   // ── Confirm & Release ────────────────────────────────────────────────────
   const [releaseConfirmOpen, setReleaseConfirmOpen] = useState(false)
   const [releasing, setReleasing] = useState(false)
+
+  // Intent-product rows (planned SKUs with no ERP material code yet) this
+  // run's generate/recalculate skipped entirely — see mpsApi.ts's
+  // MpsSkippedIntent. mrp-api builds `stats.skipped_intent` as one entry
+  // PER mrp_forecast_lines row (unique on version_id + material_code +
+  // month, see mps.py's _skipped_intent_stats) — i.e. one intent PRODUCT
+  // with 18 forecast months produces 18 entries, all with the same code
+  // and name. Aggregated here by `code` (summing qty, keeping any one
+  // name) so the count/list below describe products, not product-months —
+  // the raw per-line array would report "18 intent products" for one and
+  // repeat its name 18 times with no indication that's what happened.
+  const skippedIntent = useMemo(() => {
+    const raw = run?.stats?.skipped_intent ?? []
+    const byCode = new Map<string, { code: string; name: string; namedFromLine: boolean; qty: number }>()
+    for (const item of raw) {
+      const qty = Number(item.qty)
+      const existing = byCode.get(item.code)
+      // `item.name` is nullable on the wire (mpsApi.ts's MpsSkippedIntent —
+      // it is ForecastLine.intent_name, a nullable column, carried inside an
+      // unvalidated JSONB `stats` blob). Falling back to the placeholder
+      // code keeps the callout identifying SOMETHING; a bare null would have
+      // rendered as "Not scheduled (intent):  · 700 kg". Also prefers a
+      // non-null name from any later line of the same product over an
+      // earlier null one.
+      if (existing) {
+        existing.qty += qty
+        if (!existing.namedFromLine && item.name) {
+          existing.name = item.name
+          existing.namedFromLine = true
+        }
+      } else {
+        byCode.set(item.code, {
+          code: item.code,
+          name: item.name ?? item.code,
+          namedFromLine: !!item.name,
+          qty,
+        })
+      }
+    }
+    return [...byCode.values()]
+  }, [run])
 
   const releaseSummary = useMemo(() => {
     if (!run) return null
@@ -396,16 +513,16 @@ export default function ProductionPlanPage() {
         <div className="flex flex-wrap items-center gap-2">
           {canExecute && (
             <>
-              <FormField label="Lead (months)" htmlFor="mps-lead-months">
+              <FormField label="Lead (weeks)" htmlFor="mps-lead-weeks">
                 <input
-                  id="mps-lead-months"
+                  id="mps-lead-weeks"
                   type="number"
                   min={0}
-                  max={12}
-                  value={leadMonths}
+                  max={52}
+                  value={leadWeeks}
                   onChange={(e) => {
                     const n = Number(e.target.value)
-                    setLeadMonths(Number.isFinite(n) ? Math.min(12, Math.max(0, Math.trunc(n))) : 0)
+                    setLeadWeeks(Number.isFinite(n) ? Math.min(52, Math.max(0, Math.trunc(n))) : 0)
                   }}
                   disabled={generating}
                   title="Applies when you Generate a new run; Recalculate keeps the run's lead."
@@ -494,10 +611,42 @@ export default function ProductionPlanPage() {
         </div>
       )}
 
+      {/* Named callout for skipped intent products (design D9) — without
+          this a planner sees a run that's simply short some products, with
+          no way to tell "not scheduled because no BOM/capacity fits" (a
+          real gap) from "not scheduled because it isn't a real material
+          yet" (expected, not a gap at all). */}
+      {run && skippedIntent.length > 0 && (
+        <div role="status" className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+          <p className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            {skippedIntent.length} intent product{skippedIntent.length === 1 ? '' : 's'} not scheduled this run:
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5">
+            {skippedIntent.map((item) => (
+              // item.qty is already a number here (summed across this
+              // product's months by the aggregation above) — not the raw
+              // Decimal-as-string the wire sends per line.
+              <li key={item.code}>Not scheduled (intent): {item.name} · {formatQty(item.qty)} kg</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {exceptionsQuery.isError && (
+        <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          {errMsg(exceptionsQuery.error, 'Could not load capacity exceptions — maintenance-week markers below may be incomplete.')}
+        </p>
+      )}
+
       {run && run.lines.length > 0 && (
         <ProductionMatrix
           key={run.id}
           lines={run.lines}
+          weekGrid={run.week_grid}
+          maintenanceWeekStarts={maintenanceWeekStarts}
+          maintenanceDataUnready={exceptionsQuery.isLoading || exceptionsQuery.isError}
+          onOpenWeekDrawer={setWeekDrawerTarget}
           materialsByCode={materialsByCode}
           noBomCodes={noBomCodes}
           unitScale={displayUnit === 't' ? 1000 : 1}
@@ -517,16 +666,69 @@ export default function ProductionPlanPage() {
         />
       )}
 
-      {adjustTarget && runId && (
+      {adjustTarget && runId && run && (
         <AdjustDrawer
           runId={runId}
           line={adjustTarget}
+          weekGrid={run.week_grid}
+          allLines={run.lines}
           onClose={() => setAdjustTarget(null)}
           onSaved={() => { void invalidateRun() }}
           notifySuccess={toasts.success}
           notifyError={toasts.error}
         />
       )}
+
+      {weekDrawerTarget && (() => {
+        const weekException = findExistingException(exceptionsQuery.data ?? [], {
+          week_start: weekDrawerTarget.week_start, scope_type: 'factory', scope_ref: null, constraint_type: 'max_output_qty',
+        })
+        // A `max_sku_count` exception that closes this week is a shutdown
+        // WeekDrawer does not own (it manages the max_output_qty row only)
+        // and cannot undo — it refuses to write rather than adding a second
+        // row that says the same thing. Part of the key below for the same
+        // reason `weekException` is: this arriving late must remount the
+        // drawer, not merely re-render it past its mount-time useState.
+        const weekSkuClosure = findSkuClosure(exceptionsQuery.data ?? [], weekDrawerTarget.week_start)
+        return (
+        <WeekDrawer
+          // Round 2 fix: `maintenance`/`reason` are useState, initialized
+          // ONCE at mount from `existingException` — but the exceptions
+          // query can still be loading (or errored-then-refetched) at the
+          // moment this drawer first mounts, racing the much heavier
+          // GET /runs/{id}. Without a key, the prop updating later does
+          // NOT re-run those initializers, so an already-marked week can
+          // mount unchecked/empty-reason and then have Save PATCH
+          // `is_active: false` on a week the planner never actually
+          // unmarked (same wrong-initial-state class as round 1's finding
+          // #3, one tick later). Keying on the resolved row's identity
+          // (falling back to a "loading"/"none" sentinel while unresolved)
+          // forces React to unmount+remount — not just re-render — once
+          // the real exception state lands, so the checkbox/reason always
+          // initialize from data that has actually arrived. An effect
+          // syncing state on `existingException` changes would also work,
+          // but would need its own guard against clobbering an
+          // in-progress edit; the key is simpler and has no such edge case
+          // (a fresh mount naturally starts from the just-arrived props).
+          key={`${weekDrawerTarget.week_start}::${exceptionsQuery.isLoading ? 'loading' : `${weekException?.id ?? 'none'}::${weekSkuClosure?.id ?? 'none'}`}`}
+          week={weekDrawerTarget}
+          existingException={weekException}
+          skuClosure={weekSkuClosure}
+          existingExceptionLoading={exceptionsQuery.isLoading}
+          existingExceptionError={exceptionsQuery.isError ? errMsg(exceptionsQuery.error, 'Could not load this week\'s current exception state.') : null}
+          canWrite={canWriteParams}
+          onClose={() => setWeekDrawerTarget(null)}
+          onSaved={() => { void invalidateRun(); void invalidateExceptions() }}
+          // Round 1 fix #5a: the toolbar's own Recalculate button already
+          // guards on isReleased (a released run 409s recalculate) — the
+          // toast's action button must match, or the planner gets an error
+          // toast for clicking exactly what this drawer told them to click.
+          onRecalculate={isReleased ? undefined : () => { void handleRecalculate() }}
+          notifySuccess={toasts.success}
+          notifyError={toasts.error}
+        />
+        )
+      })()}
 
       {releaseConfirmOpen && run && releaseSummary && (
         <ConfirmDialog

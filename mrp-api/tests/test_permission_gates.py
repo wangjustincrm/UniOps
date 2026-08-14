@@ -118,3 +118,13 @@ async def test_net_requirement_read_gate_403s_non_permitted_role(client, non_adm
         "/api/v1/net-requirement", params={"version_id": str(uuid.uuid4())}, headers=headers,
     )
     assert r.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_intent_product_write_gate_403s_non_permitted_role(client, non_admin_token, monkeypatch):
+    _deny_everything(monkeypatch)
+    headers = {"Authorization": f"Bearer {non_admin_token}"}
+    r = await client.post(
+        "/api/v1/intent-products", json={"name": "Should Not Be Created"}, headers=headers,
+    )
+    assert r.status_code == 403

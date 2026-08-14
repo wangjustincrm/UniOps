@@ -39,6 +39,7 @@ import {
   type GridRow, type GridCol, type PastePlan, type FullTablePastePlan,
   type PasteAnchor, type RangeSelection, type MaterialResolver, type CellWrite,
 } from './matrixGrid/pasteLogic'
+import { pruneFocus, type FocusCell } from './matrixGrid/focus'
 import { ConfirmDialog } from './ConfirmDialog'
 
 export type { GridRow, GridCol }
@@ -161,11 +162,6 @@ function defaultFormat(n: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n)
 }
 
-interface FocusCell {
-  rowIdx: number
-  colIdx: number
-}
-
 export function MatrixGrid({
   rows: rowsProp, cols, value, onChange, frozenKeys, readOnly = false, height = 480,
   rowHeaderLabel = 'Row', rowTotalLabel = 'Total', colTotalLabel = 'Total',
@@ -198,6 +194,15 @@ export function MatrixGrid({
 
   const [focus, setFocus] = useState<FocusCell | null>(null)
   const [selEnd, setSelEnd] = useState<FocusCell | null>(null)
+
+  // `focus`/`selEnd` are grid *coordinates*, so a shrinking grid leaves them
+  // pointing at nothing — most visibly when Sales Forecast removes the row
+  // its own "Add Product" just focused. Drop anchors that no longer address
+  // a live cell instead of letting them rot into an out-of-range index.
+  useEffect(() => {
+    setFocus((f) => pruneFocus(f, rows.length, cols.length))
+    setSelEnd((s) => pruneFocus(s, rows.length, cols.length))
+  }, [rows.length, cols.length])
   const [invalidByKey, setInvalidByKey] = useState<Map<string, string>>(new Map())
   const [report, setReport] = useState<string | null>(null)
   // A pending >100-cell paste confirmation (see the paste handler below).
@@ -520,7 +525,12 @@ export function MatrixGrid({
   }, [])
   useEffect(() => {
     if (!focus) { pendingNavKey.current = null; return }
-    const key = cellKey(rows[focus.rowIdx].id, cols[focus.colIdx].id)
+    // The prune effect above runs earlier in this same commit, but its
+    // setFocus only lands on the *next* render — `focus` here is still the
+    // stale anchor, so re-check before dereferencing.
+    const focusRow = rows[focus.rowIdx]
+    if (!focusRow) { pendingNavKey.current = null; return }
+    const key = cellKey(focusRow.id, cols[focus.colIdx].id)
     const el = cellRefs.current.get(key)
     if (el) {
       if (pendingNavKey.current === key) {
