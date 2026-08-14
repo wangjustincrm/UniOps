@@ -145,6 +145,11 @@ function vmsDeeplinkPath(docType: string, docId: string): string {
 
 const CLAIM_TYPE_LABEL: Record<string, string> = {
   EXP: 'Expense Claim', MIL: 'Mileage Claim', TRV: 'Travel Expense',
+  // TRA rows started arriving on the OA feed once /expenses/my-actions became
+  // task-driven (they have approval tasks like any other claim; the old
+  // workflow-step query only looked at exp/mil/trv/cfm). Without a label the
+  // row title read "TRA — Pending Dept. Approval".
+  TRA: 'Travel Application',
 }
 
 const STATUS_LABEL: Record<string, string> = {

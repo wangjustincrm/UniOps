@@ -158,3 +158,16 @@ async def test_payment_branch_still_role_based(test_engine):
 async def test_approved_travel_application_still_excluded_from_payment_branch(test_engine):
     cid = await _seed_claim(test_engine, claim_type="TRA", status="approved")
     assert str(cid) not in await _inbox_ids("ap_clerk", str(uuid.uuid4()))
+
+
+@pytest.mark.asyncio
+async def test_travel_application_awaiting_approval_now_appears(test_engine):
+    """TRA is excluded from the PAYMENT branch (an approved one has amount 0 and
+    never gets paid) but it is a normal document while it is being approved. The
+    old workflow-step query only looked at exp/mil/trv/cfm, so a TRA approver saw
+    nothing here and had to find it through the EPMS task feed — which had no
+    OA deep-link for `tra` and pointed at the wrong app. Task-driven fixes both."""
+    me = str(uuid.uuid4())
+    cid = await _seed_claim(test_engine, claim_type="TRA")
+    await _add_task(cid, user_id=me, task_type="approve_tra")
+    assert str(cid) in await _inbox_ids("dept_manager", me)
