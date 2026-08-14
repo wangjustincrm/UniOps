@@ -1363,7 +1363,6 @@ def test_an_idle_week_in_the_same_bucket_is_used_before_reporting_a_shortfall():
             date(2026, 9, 14): "40", date(2026, 9, 21): "30"}
     limits = lambda w: CapacityLimits(None, Decimal(caps.get(w, "0")), Decimal("1"))
     canvas = weeks_of_month("2026-09", _WEEKLY)
-    assert shift_weeks(canvas[-1], -3, _WEEKLY) == canvas[0]      # full-month canvas
 
     packed = pack_bucket([BucketItem("A", "2026-09", Decimal("35")),
                           BucketItem("B", "2026-09", Decimal("40"))],
@@ -1374,11 +1373,19 @@ def test_an_idle_week_in_the_same_bucket_is_used_before_reporting_a_shortfall():
 
     lines = _run([DemandItem("A", "2026-09", Decimal("35")),
                   DemandItem("B", "2026-09", Decimal("40"))],
-                 limits=limits, lead=3, now=date(2026, 1, 5))
+                 limits=limits, lead=0, now=date(2026, 1, 5))
     assert not any(l.capacity_gap for l in lines), [(str(l.plan_week_start), l.qty) for l in lines]
     assert _total(lines) == Decimal("75")
-    assert (date(2026, 9, 7), Decimal("5")) in {
-        (l.plan_week_start, Decimal(str(l.qty))) for l in lines}
+    rescued = [l for l in lines if l.plan_week_start == date(2026, 9, 7)]
+    assert [Decimal(str(l.qty)) for l in rescued] == [Decimal("5")]
+
+    # The rescued line is the walk placing INSIDE the bucket, two weeks
+    # earlier than the (lead=0) target of 2026-09-21. It records that
+    # distance and is still not a pre-build: it never left its own month.
+    assert rescued[0].weeks_early == 2
+    assert rescued[0].is_prebuild is False
+    assert rescued[0].plan_week_month == "2026-09"
+    assert all(not l.is_prebuild for l in lines)
 
 
 def test_a_closed_week_is_stepped_over_by_the_backward_walk():
@@ -1720,3 +1727,75 @@ def test_a_preload_of_the_wrong_length_is_refused():
         pack_bucket([BucketItem("A", "2026-08", Decimal("10"))], WEEKS,
                     CapacityLimits(None, Decimal("40"), Decimal("20")),
                     preloaded=[{}, {}, {}])
+
+
+# ── Fix round 2 ─────────────────────────────────────────────────────────────
+
+
+def test_levelling_inside_the_bucket_is_not_a_prebuild_but_crossing_one_is():
+    """`is_prebuild` and `weeks_early` answer different questions.
+
+    Under a whole-month canvas, producing early WITHIN the demand's own
+    bucket month is ordinary levelling -- the very thing the whole-month
+    canvas exists to enable -- not production pulled ahead of need. Flagging
+    it made 87% of the lines of a gap-free plan read "pre-built" at
+    `lead_weeks=0` on a plan with zero cross-bucket movement, which is
+    wallpaper rather than a warning.
+
+    So `is_prebuild` is true only when the plan week's OWNING MONTH precedes
+    the demand's bucket month, while `weeks_early` stays the plain week
+    distance from the target -- the quantity the shelf-life gate reasons
+    about. A levelled line therefore reads `weeks_early > 0` together with
+    `is_prebuild=False`, and that pairing is correct.
+
+    300 t against a 200 t October bucket: five weeks fill October, the
+    remaining 100 t crosses into September."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("300"))], lead=0,
+                 now=date(2026, 6, 1))
+    assert _total(lines) == Decimal("300")
+    assert not any(l.capacity_gap for l in lines)
+
+    for l in lines:
+        assert l.is_prebuild == (l.plan_week_month < "2026-10"), l
+
+    inside = [l for l in lines if l.plan_week_month == "2026-10"]
+    crossed = [l for l in lines if l.plan_week_month == "2026-09"]
+    assert inside and crossed
+
+    # Half one: levelled inside the bucket -- early in weeks, not a pre-build,
+    # and carrying no reason, because nothing happened worth explaining.
+    assert [l for l in inside if l.weeks_early > 0], "no levelled line to test"
+    for l in inside:
+        assert l.is_prebuild is False and l.prebuild_reason is None, l
+    assert max(l.weeks_early for l in inside) == 4
+
+    # Half two: pulled into an earlier bucket month -- flagged, with a reason.
+    for l in crossed:
+        assert l.is_prebuild is True and l.weeks_early > 0, l
+        assert "pre-built" in l.prebuild_reason
+
+    # ...and the test is the OWNING month, not the calendar date: 2026-09-28
+    # is a September date belonging to an October week, and is not a pre-build.
+    sep28 = [l for l in lines if l.plan_week_start == date(2026, 9, 28)]
+    assert len(sep28) == 1
+    assert sep28[0].plan_week_month == "2026-10"
+    assert sep28[0].is_prebuild is False and sep28[0].weeks_early == 4
+
+
+def test_a_gap_free_plan_flags_no_prebuild_when_nothing_crossed_a_bucket():
+    """The property behind the number: on a plan that fits, no line claims to
+    be a pre-build, at any lead. This is what 87% used to look like."""
+    codes = [f"P{i}" for i in range(4)]
+    demands = [DemandItem(c, m, Decimal("100"))
+               for c in codes for m in ("2026-09", "2026-10", "2026-11")]
+    limits = _cap("400", "20")
+    for lead in (0, 1, 2, 4, 6):
+        lines = _run(demands, limits=limits, shelf={c: 24 for c in codes},
+                     lead=lead, now=date(2026, 6, 1))
+        assert not any(l.capacity_gap for l in lines), lead
+        assert _total(lines) == Decimal("1200"), lead
+        flagged = [l for l in lines if l.is_prebuild]
+        assert not flagged, (lead, [(str(l.plan_week_start), l.plan_week_month,
+                                     l.demand_month) for l in flagged])
+        # ...while the week distances are still recorded.
+        assert any(l.weeks_early > 0 for l in lines), lead

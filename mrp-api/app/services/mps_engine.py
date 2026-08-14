@@ -514,9 +514,29 @@ class WeeklyLine:
     # Filled in by `generate_weekly_mps`, not by `pack_bucket`: the owning
     # month of `plan_week_start` depends on the week mode, and `pack_bucket`
     # is deliberately mode-blind (it only ever receives a resolved list of
-    # week starts). `weeks_early` likewise needs the lead-shifted target
-    # week, which single-bucket packing never sees.
+    # week starts). `is_prebuild` / `weeks_early` likewise need the
+    # lead-shifted target week and the demand's bucket, neither of which
+    # single-bucket packing ever sees.
     plan_week_month: str | None = None
+    # **`is_prebuild` and `weeks_early` answer different questions and do
+    # NOT track each other.**
+    #
+    # `is_prebuild` -- was this production pulled into a month EARLIER than
+    # the one the demand was bucketed into? That is the only thing worth
+    # warning a planner about: stock made in a month it was not planned for,
+    # sitting in a warehouse waiting. Producing early WITHIN the demand's own
+    # bucket month is ordinary levelling -- spreading across the month is the
+    # whole reason the canvas is the whole month -- and is not flagged.
+    # Measured: flagging it made 87% of the lines of a gap-free plan read
+    # "pre-built" at `lead_weeks=0` (58% at 4) on a plan containing zero
+    # cross-bucket movement. A warning on 87% of lines is wallpaper.
+    #
+    # `weeks_early` -- how many whole weeks earlier than its lead-shifted
+    # target week the line landed, levelling included. It stays a plain
+    # distance because that is what the shelf-life gate measures (how long
+    # the stock must survive) and what a detail view wants to show. So a
+    # levelled line routinely carries `weeks_early > 0` with
+    # `is_prebuild=False`; that pairing is correct, not a bug.
     is_prebuild: bool = False
     weeks_early: int = 0
     prebuild_reason: str | None = None
@@ -1402,6 +1422,11 @@ def _peel(queue: list[list], amount: Decimal) -> list[tuple[str, Decimal]]:
 
 
 def _early_note(weeks_early: int, bucket_reason: str | None) -> str:
+    """Reason text for a line that crossed into an earlier bucket month.
+
+    Only ever reached for a genuine cross-bucket pre-build; levelling inside
+    the demand's own bucket carries no reason at all, because nothing
+    happened that needs explaining."""
     plural = "" if weeks_early == 1 else "s"
     note = f"pre-built {weeks_early} week{plural} early"
     return f"{note}: {bucket_reason}" if bucket_reason else note
@@ -1489,14 +1514,26 @@ def generate_weekly_mps(
     the eight active buckets over 2026-06..2027-06 came out with a
     ONE-WEEK canvas (a 4-week bucket month receives exactly one demand
     month, whose target is that month's last week), where P2 levelling and
-    P3 one-product-per-week are structurally inoperative, and 39% of the
-    lines of a gap-free plan came back flagged `is_prebuild` (62% at
-    `lead_weeks=0`) -- precisely the "every line says pre-built, so the flag
-    is noise" outcome design §2.6 exists to prevent.
+    P3 one-product-per-week are structurally inoperative. (That measurement
+    also flagged 39% of a gap-free plan's lines as `is_prebuild`, 62% at
+    `lead_weeks=0`. Widening the canvas alone did not fix that -- it made it
+    worse, 58% and 87% -- because the target week sits at one END of the
+    bucket, so every levelled line is "earlier than target". The flag's
+    definition was the actual defect; see below.)
 
     `lead_weeks=0` therefore means production lands **inside the demand
     month**, not "in its last week only": the month-based engine whose
     no-shift behaviour it reproduces places by month.
+
+    ## `is_prebuild` is a bucket question; `weeks_early` is a week distance
+
+    They deliberately do not track each other -- see `WeeklyLine`'s field
+    comments. `is_prebuild` is true only when a line's owning month precedes
+    the demand's own bucket month, i.e. production was genuinely pulled into
+    an earlier month. Anything inside the bucket, however early in it, is
+    levelling. `weeks_early` remains the plain week distance from the target
+    because that is the quantity the shelf-life gate reasons about, so a
+    levelled line normally reads `weeks_early > 0, is_prebuild=False`.
 
     ## Same material, two demand months, one bucket: merged before packing
 
@@ -1662,8 +1699,15 @@ def generate_weekly_mps(
                         plan_week_start=line.plan_week_start,
                         plan_week_month=owning_month(line.plan_week_start, mode),
                         qty=_tidy(take),
-                        is_prebuild=early > 0, weeks_early=early,
-                        prebuild_reason=_early_note(early, line.prebuild_reason) if early else None,
+                        # Inside the demand's OWN bucket month, so never a
+                        # pre-build however early in the month it sits --
+                        # spreading across the month is levelling, which is
+                        # the entire reason the canvas is the whole month.
+                        # `weeks_early` still records the real week distance
+                        # from the target: the shelf-life gate needs it, and
+                        # so does anyone reading the line in detail.
+                        is_prebuild=False, weeks_early=early,
+                        prebuild_reason=line.prebuild_reason,
                         lead_shortfall=clamped[demand_month]))
                     ledger.setdefault(line.plan_week_start, _WeekLoad()).commit(code, take)
 
@@ -1734,20 +1778,22 @@ def generate_weekly_mps(
                     take = remaining if room is None else min(remaining, room)
                     if take > 0:
                         load.commit(code, take)
+                        week_month = owning_month(week, mode)
+                        crossed = week_month < bucket_month
                         lines.append(WeeklyLine(
                             material_code=code, demand_month=demand_month,
                             plan_week_start=week,
-                            plan_week_month=owning_month(week, mode),
+                            plan_week_month=week_month,
                             qty=_tidy(take),
-                            is_prebuild=early > 0, weeks_early=early,
+                            is_prebuild=crossed, weeks_early=early,
                             prebuild_reason=(
-                                _early_note(early, bucket_reason) if early
-                                # Not early, so not a pre-build -- but it did
-                                # not land where the packer first put it, and
-                                # echoing the packer's "no week left" verbatim
-                                # onto a line that DID find a week reads as a
-                                # contradiction.
-                                else f"re-placed later in bucket {bucket_month}: {bucket_reason}"),
+                                _early_note(early, bucket_reason) if crossed
+                                # Still inside the demand's own bucket month:
+                                # not a pre-build, but it did not land where
+                                # the packer first put it, and echoing the
+                                # packer's "no week left" verbatim onto a line
+                                # that DID find a week reads as a contradiction.
+                                else f"re-placed within bucket {bucket_month}: {bucket_reason}"),
                             lead_shortfall=clamped[demand_month]))
                         remaining -= take
             # A full or closed week is stepped over, not stopped at: this is
