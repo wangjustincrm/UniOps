@@ -16,8 +16,8 @@
  * Run with:  npx tsx src/pages/mps/weekColumns.verify.ts   (from mrp/)
  */
 import {
-  buildWeekColumns, buildWeekRefs, currentGridWeekStart, defaultExpandedMonths,
-  type WeekGridEntryLike,
+  buildWeekColumns, buildWeekRefs, currentGridWeekStart, defaultExpandedMonths, sumPlannedByColumn,
+  type Column, type PlannedContribution, type WeekGridEntryLike,
 } from './weekColumns'
 
 let failures = 0
@@ -268,6 +268,111 @@ check('current month NOT in the horizon (run fully in the future) falls back to 
 })
 
 check('empty horizon -> empty expand set, no throw', () => defaultExpandedMonths([], new Date('2026-08-15T00:00:00Z')).size === 0)
+
+// ── sumPlannedByColumn ──────────────────────────────────────────────────────
+//
+// The pinned weekly-total footer row (design §5.1's last bullet). See
+// weekColumns.ts's own doc on `sumPlannedByColumn`/`PlannedContribution` for
+// why this takes an already-gap-excluded `planned` per (product, column)
+// rather than raw MpsLines: the exclusion is `aggregateLines`'
+// (ProductionMatrix.tsx) job, already documented and exercised by that
+// file's own comment trail — this function's contract is narrower: sum by
+// column, never lose or cross-contaminate a column, and never omit one
+// `columns` says exists.
+console.log('')
+console.log('sumPlannedByColumn')
+
+const WEEK_COLS: Column[] = [
+  { kind: 'week', id: 'w:2026-08-03', month: '2026-08', week_start: '2026-08-03' },
+  { kind: 'week', id: 'w:2026-08-10', month: '2026-08', week_start: '2026-08-10' },
+  { kind: 'week', id: 'w:2026-08-17', month: '2026-08', week_start: '2026-08-17' },
+  { kind: 'week', id: 'w:2026-08-24', month: '2026-08', week_start: '2026-08-24' },
+]
+
+check('a week column sums Planned across several products, not just the last one seen', () => {
+  // Three products land in the SAME week column (w:2026-08-10). A mutation
+  // that assigns instead of accumulates (`totals.set(id, c.planned)` instead
+  // of `totals.set(id, prev + c.planned)`) would leave this at 3000 (the
+  // last contribution) instead of 6000 (the sum of all three) — catching
+  // exactly the "overwrite, don't accumulate" class of bug.
+  const contributions: PlannedContribution[] = [
+    { columnId: 'w:2026-08-10', planned: 1000 },
+    { columnId: 'w:2026-08-10', planned: 2000 },
+    { columnId: 'w:2026-08-10', planned: 3000 },
+  ]
+  const totals = sumPlannedByColumn(contributions, WEEK_COLS)
+  return totals.get('w:2026-08-10') === 6000
+})
+
+check('contributions to one column never leak into a sibling column\'s total', () => {
+  // A mutation that sums ALL contributions into every column (e.g. ignoring
+  // `columnId` and just returning the grand total under every key) would
+  // pass the single-column check above but fail this one: the untouched
+  // column must stay at exactly what IT was given, not pick up its
+  // neighbour's number. This is also the shape of "a column whose only line
+  // is a capacity_gap must read 0, not the gap qty" one layer up: the caller
+  // (ProductionMatrix.tsx) hands this function `cell.planned`, which
+  // `aggregateLines` already zeroes for a gap-only cell — what THIS function
+  // must not do is let that legitimate 0 get contaminated by a neighbouring
+  // column's real production.
+  const contributions: PlannedContribution[] = [
+    { columnId: 'w:2026-08-03', planned: 5000 }, // a real, busy week
+    { columnId: 'w:2026-08-10', planned: 0 },    // stands in for a gap-only cell: aggregateLines already excluded the gap qty before this ever sees it
+  ]
+  const totals = sumPlannedByColumn(contributions, WEEK_COLS)
+  return totals.get('w:2026-08-03') === 5000 && totals.get('w:2026-08-10') === 0
+})
+
+check('a column with NO contributions at all still reads as a real 0, not undefined', () => {
+  // Stands in for an empty column — a maintenance week, or a month that
+  // netted to zero for every product, so no (product, column) pair was ever
+  // pushed for it. A mutation that only seeds/updates totals for columns
+  // that appear in `contributions` (dropping the `for (const col of
+  // columns) totals.set(col.id, 0)` pre-seed) would leave `.get()` returning
+  // `undefined` here — the caller's `weekTotals.get(col.id) ?? 0` would mask
+  // that with `?? 0` today, but this pins the CONTRACT (every real column
+  // has a real 0) rather than relying on a defensive fallback at the call
+  // site to paper over it.
+  const totals = sumPlannedByColumn([], WEEK_COLS)
+  return totals.size === WEEK_COLS.length && totals.get('w:2026-08-17') === 0
+})
+
+check('a collapsed month\'s total equals the sum of what its weeks would total, expanded', () => {
+  // Same underlying per-product weekly figures, read at two different
+  // grains — exactly what "the month summary column, collapsed, must equal
+  // its 4-5 weeks, expanded" (design §5.1) requires. Two products, four
+  // weeks: expanded, each product contributes one entry per week column;
+  // collapsed, each product contributes ONE entry to the single month
+  // column, valued at that product's own four-week sum (mirroring what
+  // `aggregateLines`' month-grain map — the same map `getMonthCell` reads —
+  // actually produces: one accumulated total per product per month, not a
+  // re-derivation performed by this function). A mutation that, say, only
+  // sums the FIRST contribution per column (instead of accumulating) would
+  // make the expanded-then-summed total diverge from the collapsed total on
+  // this fixture (5000 + 16000 = 21000 either way only if accumulation is
+  // real on both sides), since both readings exercise the same underlying
+  // accumulation logic on different partitions of the same numbers.
+  const productA = [1000, 2000, 1500, 500] // by week, Aug W1..W4 (sums to 5000)
+  const productB = [4000, 3000, 3000, 6000] // sums to 16000
+  const expandedContributions: PlannedContribution[] = WEEK_COLS.flatMap((col, i) => [
+    { columnId: col.id, planned: productA[i] },
+    { columnId: col.id, planned: productB[i] },
+  ])
+  const expandedTotals = sumPlannedByColumn(expandedContributions, WEEK_COLS)
+  const expandedSum = WEEK_COLS.reduce((sum, col) => sum + (expandedTotals.get(col.id) ?? 0), 0)
+
+  const monthCol: Column[] = [{ kind: 'monthSummary', id: 'm:2026-08', month: '2026-08' }]
+  const collapsedContributions: PlannedContribution[] = [
+    { columnId: 'm:2026-08', planned: productA.reduce((a, b) => a + b, 0) },
+    { columnId: 'm:2026-08', planned: productB.reduce((a, b) => a + b, 0) },
+  ]
+  const collapsedTotal = sumPlannedByColumn(collapsedContributions, monthCol).get('m:2026-08')
+
+  return expandedSum === 21000 && collapsedTotal === 21000 && expandedSum === collapsedTotal
+})
+
+check('empty contributions and empty columns -> empty map, no throw', () =>
+  sumPlannedByColumn([], []).size === 0)
 
 console.log('')
 if (failures > 0) { console.log(`${failures} check(s) FAILED`); process.exit(1) }

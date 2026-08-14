@@ -172,6 +172,67 @@ export function currentGridWeekStart(
 }
 
 /**
+ * One product's Planned contribution to one column — the minimal shape the
+ * pinned weekly-total footer row (design §5.1's last bullet, "★底部锁死的
+ * 周合计行") needs, decoupled from ProductionMatrix.tsx's full `MatrixCell`
+ * (which also carries demand/available/locked/shortfall/cellLines — none of
+ * that is this function's business).
+ *
+ * Callers pass `cell.planned` straight through. That field is ALREADY
+ * capacity_gap-excluded by `aggregateLines` in ProductionMatrix.tsx (see
+ * that function's own comment: "Planned excludes capacity_gap lines' qty" —
+ * a gap is unmet demand, never booked output), which is exactly the split
+ * the spec calls for: "只统计实产、排除 capacity_gap 行的量". This function
+ * does not re-derive or re-check that exclusion — it trusts the cell it is
+ * given — so a cell whose only underlying line is a gap arrives here with
+ * `planned: 0` already, same as a column with no lines at all.
+ */
+export interface PlannedContribution {
+  /** Must match a `Column['id']` from the same `columns` list passed to
+   *  `sumPlannedByColumn` — a `WeekColumn`'s `w:<week_start>` or a
+   *  `MonthSummaryColumn`'s `m:<month>`. */
+  columnId: string
+  planned: number
+}
+
+/**
+ * Sums Planned contributions across every product, one total per column —
+ * the numbers the pinned footer row renders. Every column in `columns`
+ * appears as a key in the result, even one with zero contributions (a
+ * column no product has any line in at all, e.g. a maintenance week or a
+ * month that netted to zero everywhere) — `columns` is authoritative for
+ * "which columns exist" (same reasoning `buildWeekRefs`'s own doc gives for
+ * why the axis must never be derived from which cells happen to have data),
+ * so a column absent from `contributions` must still read as a real 0, not
+ * be missing from the map entirely (which would make `.get(col.id)` return
+ * `undefined` and silently break the caller's "0 -> em-dash" render rule).
+ *
+ * Deliberately grain-agnostic: whether `columns` holds one `week` column per
+ * week (an expanded month) or one `monthSummary` column (a collapsed month)
+ * is entirely the caller's concern (`ProductionMatrix.tsx`'s
+ * `getPlannedCell`, which already picks the week-grain or month-grain
+ * aggregate to match what the Planned row above shows) — this function only
+ * ever groups-and-sums by whatever `columnId` each contribution carries.
+ * That is also why a collapsed month's total equals the sum of its
+ * (unrendered) weeks: both are the same underlying lines, summed by
+ * `aggregateLines` under a coarser or finer key — this function does not
+ * re-derive that equality, it just must not corrupt whichever grain it is
+ * handed (see weekColumns.verify.ts's cross-grain check for the assertion
+ * that actually pins this).
+ */
+export function sumPlannedByColumn(
+  contributions: readonly PlannedContribution[],
+  columns: readonly Column[],
+): Map<string, number> {
+  const totals = new Map<string, number>()
+  for (const col of columns) totals.set(col.id, 0)
+  for (const c of contributions) {
+    totals.set(c.columnId, (totals.get(c.columnId) ?? 0) + c.planned)
+  }
+  return totals
+}
+
+/**
  * Default expand set per design §5.1: "current month + next 2", so the
  * opening view is ~13 columns rather than a full ~78-week horizon.
  * `months` must already be sorted ascending. If today's calendar month is

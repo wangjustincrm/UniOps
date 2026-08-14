@@ -47,14 +47,24 @@
 // row + week row) instead of one, but still ONE sticky unit: `<thead>`
 // itself carries `sticky top-0`, so both rows ride along together with no
 // separate top-offset math for row 2 — see the `<thead>` element's own
-// comment below for why.
+// comment below for why. The pinned weekly-total row (design §5.1's last
+// bullet) mirrors this at the OTHER end of the table: `<tfoot sticky
+// bottom-0>` is its own single sticky unit, with the same "corner cells get
+// an extra `sticky left-*`" treatment as the header — see the `<tfoot>`
+// element's own comment. The totalling itself (which products' Planned
+// cells feed which column) is pure logic in `weekColumns.ts`'s
+// `sumPlannedByColumn`, verified by `weekColumns.verify.ts` — this file only
+// builds the per-(product, column) contributions and renders the result.
 import { useMemo, useState } from 'react'
 import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
 import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
 import type { MpsLine, WeekGridEntry } from './mpsApi'
-import { buildWeekColumns, buildWeekRefs, defaultExpandedMonths, type Column, type WeekColumn } from './weekColumns'
+import {
+  buildWeekColumns, buildWeekRefs, defaultExpandedMonths, sumPlannedByColumn,
+  type Column, type PlannedContribution, type WeekColumn,
+} from './weekColumns'
 
 // Sensible default in-container scroll cap for now — the brief notes the
 // parent may pass an explicit height later (mirroring SalesForecastPage's
@@ -344,6 +354,26 @@ export function ProductionMatrix({
     return col.kind === 'week' ? getWeekCell(materialCode, col.week_start) : getMonthCell(materialCode, col.month)
   }
 
+  // Pinned weekly-total footer row (design §5.1's last bullet) — one
+  // contribution per (product, column), reading the SAME `getPlannedCell`
+  // the Planned row itself renders from, so the footer can never disagree
+  // with the column of numbers it sits under (a collapsed month's summary
+  // column and an expanded month's per-week columns each already resolve to
+  // the right grain via `getPlannedCell` — see that function's own doc).
+  // `.planned` is capacity_gap-EXCLUDED by `aggregateLines` already (see its
+  // header comment), so this sums real output only, matching the spec's
+  // "只统计实产、排除 capacity_gap 行的量".
+  const weekTotals = useMemo(() => {
+    const contributions: PlannedContribution[] = []
+    for (const product of products) {
+      for (const col of columns) {
+        contributions.push({ columnId: col.id, planned: getPlannedCell(product.code, col).planned })
+      }
+    }
+    return sumPlannedByColumn(contributions, columns)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- getPlannedCell closes over monthCellMap/weekCellMap, both already in this memo's real dependency chain via `lines`
+  }, [products, columns, monthCellMap, weekCellMap])
+
   if (products.length === 0 || orderedMonths.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-12 text-center">
@@ -458,6 +488,43 @@ export function ProductionMatrix({
             />
           ))}
         </tbody>
+        {/* Pinned weekly-total footer (design §5.1's last bullet, "★底部锁死
+            的周合计行") — mirrors the header's own sticky technique exactly:
+            the WHOLE `<tfoot>` is the sticky-bottom unit (`sticky bottom-0`),
+            not per-cell offsets, same reasoning as the `<thead>` comment
+            above. Its two left-hand cells get their OWN extra `sticky
+            left-*` for horizontal pinning, at the SAME z-tier as the
+            header's corner cells (z-30) — the header corner and the footer's
+            left cells never occupy the same pixels at once (one pins top,
+            the other bottom), so sharing a tier is safe and keeps this to
+            the two z-tiers the header already established (z-20 for the
+            sticky unit itself, z-30 for the bit that's ALSO pinned
+            horizontally) rather than inventing a third. */}
+        <tfoot className="sticky bottom-0 z-20 bg-neutral-50">
+          <tr>
+            <td
+              className="sticky left-0 z-30 border-t-2 border-r border-t-neutral-300 border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-semibold text-neutral-600"
+              style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
+            />
+            <td
+              className="sticky z-30 border-t-2 border-r border-t-neutral-300 border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-semibold text-neutral-600"
+              style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
+            >
+              Total
+            </td>
+            {columns.map((col) => {
+              const total = weekTotals.get(col.id) ?? 0
+              return (
+                <td
+                  key={col.id}
+                  className="h-8 border-t-2 border-r border-t-neutral-300 border-neutral-100 bg-neutral-50 px-2 text-right font-mono text-xs font-semibold text-neutral-700"
+                >
+                  {total === 0 ? <span className="text-neutral-300">—</span> : formatValue(total)}
+                </td>
+              )
+            })}
+          </tr>
+        </tfoot>
       </table>
     </div>
   )
