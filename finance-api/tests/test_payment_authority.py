@@ -52,3 +52,28 @@ async def test_finance_manager_remains_a_fallback(db_session):
     """Availability fallback: if the payment_officer holder is away, payment
     must not deadlock."""
     await payment_execute._check_can_pay(db_session, _user(role="finance_manager"))
+
+
+async def test_system_admin_as_additional_role_is_denied(db_session):
+    """Fix round 1 (2026-08-13): the first draft generalized the
+    additional-role check to `codes & _PAY_ROLES`, which also newly admitted
+    system_admin held as an ADDITIONAL role. This codebase treats
+    system_admin as a PRIMARY-role grant only (budget_scope.py's
+    FULL_ACCESS_PRIMARY vs FULL_ACCESS_ASSIGNED encodes the same split, as do
+    admin.py's require_system_admin and the shared uniops_authz package) — an
+    unprivileged primary role plus system_admin tacked on as a secondary
+    grant must NOT unlock payment execution. Locks _PAY_ROLES_ASSIGNED's
+    exclusion of system_admin."""
+    user_id = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'system_admin')"),
+        {"u": str(user_id)})
+    try:
+        await payment_execute._check_can_pay(
+            db_session, _user(role="requester", user_id=user_id))
+        assert False, (
+            "system_admin held as an ADDITIONAL role must not confer payment "
+            "execution authority (fix round 1, 2026-08-13)"
+        )
+    except PaymentPermissionError:
+        pass

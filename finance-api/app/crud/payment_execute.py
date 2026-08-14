@@ -42,6 +42,16 @@ from app.services.posting import emit_event
 # payment_officer holder is away.
 _PAY_ROLES = {"payment_officer", "finance_manager", "finance_bp", "system_admin"}
 
+# Roles that confer payment authority when held as an ADDITIONAL (assigned)
+# role. system_admin is deliberately EXCLUDED here (fix round 1, 2026-08-13):
+# this codebase treats system_admin as a PRIMARY-role grant only — see
+# budget_scope.py's FULL_ACCESS_PRIMARY (has system_admin) vs
+# FULL_ACCESS_ASSIGNED (does not), and the same split in admin.py's
+# require_system_admin and the shared uniops_authz package. Deriving from
+# _PAY_ROLES (rather than a second hand-maintained literal) keeps this from
+# drifting the next time _PAY_ROLES changes.
+_PAY_ROLES_ASSIGNED = _PAY_ROLES - {"system_admin"}
+
 
 class PaymentPermissionError(Exception):
     pass
@@ -89,11 +99,13 @@ async def _check_can_pay(db: AsyncSession, user: dict) -> None:
         return
     user_id = uuid.UUID(str(user.get("sub", "")))
     codes = await _user_role_codes(db, user_id, user.get("role", ""))
-    # Generalized against _PAY_ROLES (2026-08-13) rather than a hardcoded
-    # finance_bp/finance_manager check — payment_officer must also qualify
-    # when held as an ADDITIONAL role (identity user_roles), which is how it
-    # is expected to be assigned in production, not just as a primary role.
-    if codes & _PAY_ROLES:
+    # Generalized against _PAY_ROLES_ASSIGNED (2026-08-13, narrowed in fix
+    # round 1) rather than a hardcoded finance_bp/finance_manager check —
+    # payment_officer must also qualify when held as an ADDITIONAL role
+    # (identity user_roles), which is how it is expected to be assigned in
+    # production. system_admin is excluded from this branch on purpose: see
+    # _PAY_ROLES_ASSIGNED's comment above.
+    if codes & _PAY_ROLES_ASSIGNED:
         return
     raise PaymentPermissionError("Insufficient role to record payment")
 
