@@ -282,7 +282,7 @@ async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUser
     shared tasks table (same contract as the expense-claim endpoint) plus the user's
     role union (JWT base role ∪ identity user_roles additional roles), since approval
     roles (Finance BP, etc.) are assignments, not JWT role claims."""
-    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim
+    from app.api.v1.expenses import _PAY_ASSIGNED, _PAY_PRIMARY, _can_act_on_claim
 
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
@@ -301,12 +301,9 @@ async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUser
     can_pay = False
     if pa.status == "approved":
         codes = await _user_role_codes(db, user_id, role)
-        can_pay = (
-            is_admin
-            or role in _CAN_PAY
-            or "finance_bp" in codes
-            or "finance_manager" in codes
-        )
+        # Mirrors finance-api's authoritative gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED)
+        # — NOT _CAN_PAY, which is a visibility set and still includes ap_clerk.
+        can_pay = role in _PAY_PRIMARY or bool(codes & _PAY_ASSIGNED)
 
     return PaPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)
 
