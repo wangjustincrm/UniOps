@@ -33,6 +33,61 @@ from app.services.week_calendar import week_start_of
 _OUTPUT_QTY_AND_SKU_TYPES = ("max_sku_count", "max_output_qty", "min_output_qty")
 
 
+PRODUCT_SCOPE = "product"
+
+
+async def resolve_min_lots(db: AsyncSession, week_start: date) -> dict[str, Decimal]:
+    """Per-product minimum lot sizes in force during `week_start`.
+
+    "Minimum lot size" is the business rule *open the line at all and you
+    make at least this much* — running less burns a changeover and a
+    cleandown to produce a token quantity. It differs per product (pack
+    size, recipe, line speed), which is why it is a `scope_type='product'`
+    rule keyed by `scope_ref=<material_code>` rather than the one
+    factory-wide number.
+
+    Only products with their OWN rule appear here. Everything else falls
+    back to `resolve_default_min_lot` (the factory-wide `min_output_qty`),
+    and a product with neither has no floor at all — the pre-existing
+    behaviour, so an unconfigured factory plans exactly as it does today.
+
+    Deliberately NOT folded into `resolve_limits_for_week`: that resolver
+    returns per-week ceilings scoped strictly to `scope_type='factory' AND
+    scope_ref IS NULL`, a filter its partial unique index depends on.
+    Product rows would break that guarantee.
+    """
+    rows = (await db.execute(
+        select(MrpCapacityRule)
+        .where(
+            MrpCapacityRule.scope_type == PRODUCT_SCOPE,
+            MrpCapacityRule.scope_ref.is_not(None),
+            MrpCapacityRule.constraint_type == "min_output_qty",
+            MrpCapacityRule.is_active.is_(True),
+            MrpCapacityRule.effective_from <= week_start,
+        )
+        .order_by(MrpCapacityRule.id)
+    )).scalars().all()
+    lots: dict[str, Decimal] = {}
+    for rule in rows:
+        if rule.effective_to is not None and rule.effective_to < week_start:
+            continue
+        # Last one wins, ordered by id -- the same deterministic tie-break
+        # `_factory_rules_active_on` uses for overlapping factory rules.
+        lots[rule.scope_ref] = rule.limit_value
+    return lots
+
+
+async def resolve_default_min_lot(db: AsyncSession, week_start: date) -> Decimal | None:
+    """The factory-wide `min_output_qty` in force during `week_start`, i.e.
+    the floor for products with no rule of their own. `None` means no floor
+    is configured and the engine may spread output as thin as capacity
+    allows (the behaviour before minimum lot sizes existed)."""
+    for rule in await _factory_rules_active_on(db, week_start):
+        if rule.constraint_type == "min_output_qty":
+            return rule.limit_value
+    return None
+
+
 class ExceptionShiftConflict(Exception):
     """Two exceptions would land on the same week after a grid change.
 

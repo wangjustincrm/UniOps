@@ -228,3 +228,138 @@ async def test_exception_create_rejects_unknown_constraint_type(client, auth_hea
     })
     assert r.status_code == 422
     assert "bogus_type" in r.json()["detail"]
+
+
+# ── 产品级最小生产批量 ────────────────────────────────────────────────────
+#
+# 「开一次工最少产这么多」这个数每个产品不同，用同一张规则表的 scope_type
+# 'product' + scope_ref=<material_code> 表达。全厂的 min_output_qty 退化成
+# 「没配产品级规则时的默认下限」。
+
+
+@pytest.mark.anyio
+async def test_product_scope_min_output_qty_round_trips(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-001",
+        "constraint_type": "min_output_qty", "limit_value": "20000", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 201, r.text
+    assert r.json()["scope_ref"] == "FG-001"
+
+
+@pytest.mark.anyio
+async def test_product_scope_requires_a_material_code(client, admin_token):
+    """scope_ref 为空的 product 规则解析不到任何产品 —— 存下来只会是死规则。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for bad in (None, "", "   "):
+        r = await client.post("/api/v1/capacity/rules", json={
+            "scope_type": "product", "scope_ref": bad,
+            "constraint_type": "min_output_qty", "limit_value": "20000", "uom": "KG",
+            "effective_from": "2026-01-01",
+        }, headers=headers)
+        assert r.status_code == 422, (bad, r.text)
+
+
+@pytest.mark.anyio
+async def test_unknown_scope_type_is_rejected(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "warehouse", "scope_ref": None,
+        "constraint_type": "min_output_qty", "limit_value": "10", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.anyio
+async def test_product_min_lot_above_the_factory_max_is_rejected(client, admin_token):
+    """产品级批量大于全厂周产能 = 这产品每次都凑不满一周，永远走「往后排+报警」。
+    规则本身就是错的，建的时候就挡。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "factory", "scope_ref": None, "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)
+
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-001",
+        "constraint_type": "min_output_qty", "limit_value": "50000", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 422, r.text
+    assert "max_output_qty" in r.text
+
+    # 等于上限是允许的（正好一周产满）
+    ok = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-002",
+        "constraint_type": "min_output_qty", "limit_value": "40000", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert ok.status_code == 201, ok.text
+
+
+@pytest.mark.anyio
+async def test_product_min_lot_check_ignores_non_overlapping_windows(client, admin_token):
+    """全厂产能 2027 年才生效 —— 2026 的产品批量与它并不同时有效，不该被挡。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "factory", "scope_ref": None, "constraint_type": "max_output_qty",
+        "limit_value": "10000", "uom": "KG", "effective_from": "2027-01-01",
+    }, headers=headers)
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-003",
+        "constraint_type": "min_output_qty", "limit_value": "20000", "uom": "KG",
+        "effective_from": "2026-01-01", "effective_to": "2026-12-31",
+    }, headers=headers)
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.anyio
+async def test_resolve_min_lots_prefers_the_product_rule_over_the_factory_floor(
+    client, db_session, admin_token,
+):
+    from decimal import Decimal
+
+    from app.services.capacity import resolve_default_min_lot, resolve_min_lots
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "factory", "scope_ref": None, "constraint_type": "min_output_qty",
+        "limit_value": "10000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-001", "constraint_type": "min_output_qty",
+        "limit_value": "20000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)
+
+    lots = await resolve_min_lots(db_session, date(2026, 8, 17))
+    assert lots["FG-001"] == Decimal("20000.000")
+    assert "FG-002" not in lots          # 没有产品级规则的不出现，由全厂默认兜底
+    assert await resolve_default_min_lot(db_session, date(2026, 8, 17)) == Decimal("10000.000")
+
+
+@pytest.mark.anyio
+async def test_resolve_min_lots_respects_effective_windows_and_is_active(
+    client, db_session, admin_token,
+):
+    from app.services.capacity import resolve_min_lots
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    expired = (await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-OLD", "constraint_type": "min_output_qty",
+        "limit_value": "9000", "uom": "KG",
+        "effective_from": "2026-01-01", "effective_to": "2026-06-30",
+    }, headers=headers)).json()
+    assert expired["id"]
+    inactive = (await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-OFF", "constraint_type": "min_output_qty",
+        "limit_value": "9000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)).json()
+    await client.patch(f"/api/v1/capacity/rules/{inactive['id']}",
+                       json={"is_active": False}, headers=headers)
+
+    lots = await resolve_min_lots(db_session, date(2026, 8, 17))
+    assert "FG-OLD" not in lots          # 窗口已过
+    assert "FG-OFF" not in lots          # 已停用
