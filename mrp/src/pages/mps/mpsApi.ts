@@ -103,6 +103,14 @@ export interface MpsLine {
   locked_by_planner: boolean
   manual_adjusted: boolean
   status: string
+  // Minimum lot size (mrp11) — see MpsLineLotFields below for what each
+  // one means. Decimals arrive as strings; wrap in Number().
+  surplus_qty: string
+  carry_in_qty: string
+  covered_by_carry: boolean
+  late_production: boolean
+  surplus_expiry_risk: boolean
+  below_min_lot: boolean
 }
 
 export interface MpsRun {

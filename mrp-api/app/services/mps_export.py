@@ -138,6 +138,12 @@ class _LineLike(Protocol):
     demand_forecast: Decimal
     opening_stock: Decimal
     capacity_gap: bool
+    # Minimum lot size (mrp11): how much of this month was already covered
+    # by an earlier batch's surplus. It is part of what is AVAILABLE to the
+    # month, so the sheet must add it the same way the on-screen matrix
+    # does -- the two are mirrored implementations and a divergence here
+    # shows up as an export that contradicts the screen.
+    carry_in_qty: Decimal
 
 
 def _scaled(value: Decimal, unit: str) -> float:
@@ -269,7 +275,8 @@ def build_mps_matrix_workbook(
         if line.demand_month not in seen:
             seen.add(line.demand_month)
             demand[month_key] = demand.get(month_key, Decimal("0")) + line.demand_forecast
-            available[month_key] = available.get(month_key, Decimal("0")) + line.opening_stock
+            available[month_key] = (available.get(month_key, Decimal("0"))
+                                    + line.opening_stock + line.carry_in_qty)
 
     wb = Workbook()
     ws = wb.active

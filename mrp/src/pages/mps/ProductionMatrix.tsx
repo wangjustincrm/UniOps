@@ -94,6 +94,21 @@ interface MatrixCell {
    *  its demand month (clamped at "now"). Display-only marker on the
    *  Planned row — gap (red) takes precedence when a cell is both. */
   shortfall: boolean
+  /** Minimum lot size (mrp11). `carriedIn` is the part of `available` that
+   *  came from an earlier batch's surplus rather than from stock on hand —
+   *  shown in the tooltip so "Available 15 t" is never a number with no
+   *  provenance. `surplus` is how much of `planned` exceeds the net
+   *  requirement because the batch was rounded up to a whole lot.
+   *  `covered` marks a month whose whole requirement was met by that
+   *  surplus, which produces a qty-0 line: without it the cell would render
+   *  as an ordinary empty one and read as "no demand" instead of
+   *  "already made". */
+  carriedIn: number
+  surplus: number
+  covered: boolean
+  late: boolean
+  expiryRisk: boolean
+  belowMinLot: boolean
   demandMonths: string[]
   /** The underlying MpsLine[] this cell aggregates — handed back verbatim
    *  to onAdjustCell so the caller (AdjustDrawer) knows exactly which
@@ -102,7 +117,11 @@ interface MatrixCell {
 }
 
 function emptyCell(): MatrixCell {
-  return { demand: 0, available: 0, planned: 0, gap: false, locked: false, shortfall: false, demandMonths: [], cellLines: [] }
+  return {
+    demand: 0, available: 0, planned: 0, gap: false, locked: false, shortfall: false,
+    carriedIn: 0, surplus: 0, covered: false, late: false, expiryRisk: false,
+    belowMinLot: false, demandMonths: [], cellLines: [],
+  }
 }
 
 /** Aggregates `lines` into one MatrixCell per key from `keyFn` — the same
@@ -148,6 +167,13 @@ function aggregateLines(lines: MpsLine[], keyFn: (line: MpsLine) => string): Map
     else cell.planned += Number(line.qty)
     if (line.locked_by_planner) cell.locked = true
     if (line.lead_shortfall) cell.shortfall = true
+    // Per LINE, not per demand month: a levelled run is several lines and
+    // each carries its own share of the rounded-up quantity.
+    cell.surplus += Number(line.surplus_qty)
+    if (line.covered_by_carry) cell.covered = true
+    if (line.late_production) cell.late = true
+    if (line.surplus_expiry_risk) cell.expiryRisk = true
+    if (line.below_min_lot) cell.belowMinLot = true
     if (!cell.demandMonths.includes(line.demand_month)) cell.demandMonths.push(line.demand_month)
     cell.cellLines.push(line)
 
@@ -159,7 +185,12 @@ function aggregateLines(lines: MpsLine[], keyFn: (line: MpsLine) => string): Map
     if (!seen.has(line.demand_month)) {
       seen.add(line.demand_month)
       cell.demand += Number(line.demand_forecast)
-      cell.available += Number(line.opening_stock)
+      // Stock on hand PLUS whatever an earlier batch's surplus left for
+      // this month. Without the carry the matrix shows "Demand 5,
+      // Available 0, Planned 0" for a month that is fully covered — three
+      // numbers that contradict each other.
+      cell.available += Number(line.opening_stock) + Number(line.carry_in_qty)
+      cell.carriedIn += Number(line.carry_in_qty)
     }
   }
   for (const cell of map.values()) cell.demandMonths.sort()
@@ -722,8 +753,12 @@ function MonthMetricCell({
 }) {
   const hasData = cell.cellLines.length > 0
   const value = metric === 'Demand' ? cell.demand : cell.available
+  const title = metric === 'Available' && cell.carriedIn > 0
+    ? `Includes ${formatValue(cell.carriedIn)} carried from an earlier minimum-lot batch`
+    : undefined
   return (
     <td
+      title={title}
       colSpan={span}
       className={cn(
         // This cell's colSpan always covers the WHOLE month (span =
@@ -780,12 +815,18 @@ function PlannedCell({
   // stock) is the only case that renders as empty, same as a cell with no
   // lines at all.
   const hasProduction = cell.planned > 0
-  const showCell = hasProduction || cell.gap
+  // A covered month has a real line (qty 0) and belongs on screen: it is
+  // demand that was already made, not demand that does not exist.
+  const showCell = hasProduction || cell.gap || cell.covered
   const title = cell.demandMonths.length > 0 ? `For ${cell.demandMonths.join(', ')} demand` : undefined
   // Gap (red, unmet demand) takes precedence over shortfall (amber,
   // produced later than the requested lead but still met) when a cell is
   // both — gap is the more severe condition a planner needs to see first.
   const showShortfall = cell.shortfall && !cell.gap
+  // Produced AFTER the month that needed it, because neither that month nor
+  // any earlier week could host a whole lot. Amber like the lead shortfall,
+  // and outranked by a gap for the same reason.
+  const showLate = cell.late && !cell.gap && !cell.shortfall
   // Sum of the GAP lines' own qty (aggregateLines deliberately excludes it
   // from `cell.planned`, see that function's own comment) — the cell
   // already renders red/bold on a gap, but until now that only told a
@@ -809,20 +850,48 @@ function PlannedCell({
     )
   }
 
+  if (!hasProduction && !cell.gap && cell.covered) {
+    return (
+      <td
+        title={`Covered by an earlier minimum-lot batch${title ? ` (${title})` : ''}`}
+        className={cn(
+          'h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-xs italic text-neutral-400',
+          borderRClass, isMaintenance ? 'bg-neutral-200' : 'bg-success-50',
+        )}
+      >
+        covered
+      </td>
+    )
+  }
+
   const valueNode = (
     <span className="inline-flex items-center justify-end gap-1">
       {cell.gap && <AlertTriangle aria-hidden className="h-3 w-3 shrink-0 text-danger-600" />}
       {showShortfall && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-600" />}
+      {showLate && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-600" />}
       {formatValue(cell.planned)}
       {cell.locked && <Lock aria-hidden className="h-3 w-3 shrink-0 text-neutral-400" />}
     </span>
   )
 
-  const cellTitle = cell.gap
+  // Reads bottom-up: whatever else is true, a planner wants to know how
+  // much of this number is not actually demanded.
+  const lotNote = [
+    cell.surplus > 0
+      ? `${formatValue(cell.planned - cell.surplus)} required + ${formatValue(cell.surplus)} minimum-lot surplus`
+      : null,
+    cell.expiryRisk ? 'surplus may expire before it is used' : null,
+    cell.belowMinLot ? 'below the minimum lot size — weekly capacity cannot reach it' : null,
+  ].filter(Boolean).join('; ')
+
+  const baseTitle = cell.gap
     ? `Capacity gap — ${formatValue(gapQty)} unmet demand${title ? ` (${title})` : ''}`
     : showShortfall
       ? 'Produced later than the lead — no earlier capacity/time'
-      : title
+      : showLate
+        ? 'Produced after the month that needed it — nothing earlier could hold a whole lot'
+        : title
+  const cellTitle = [baseTitle, lotNote].filter(Boolean).join(' · ') || undefined
 
   return (
     <td

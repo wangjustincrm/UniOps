@@ -1931,6 +1931,7 @@ def test_export_dedups_demand_across_two_straddled_month_columns():
             plan_week_start=week, plan_week_month=month,
             qty=Decimal(qty), demand_forecast=Decimal("120"),
             opening_stock=Decimal("0"), capacity_gap=gap,
+            carry_in_qty=Decimal("0"),
         )
 
     lines = [
@@ -2025,6 +2026,7 @@ def test_week_grid_and_export_columns_are_the_same_list():
             plan_week_start=week, plan_week_month=month,
             qty=Decimal("10"), demand_forecast=Decimal("10"),
             opening_stock=Decimal("0"), capacity_gap=False,
+            carry_in_qty=Decimal("0"),
         )
 
     # Horizon is Aug-Sep; the pre-build line drags June in, so the span must
@@ -2073,6 +2075,7 @@ def test_export_excludes_capacity_gap_qty_from_planned():
             plan_week_start=week, plan_week_month="2026-08",
             qty=Decimal(qty), demand_forecast=Decimal("100"),
             opening_stock=Decimal("0"), capacity_gap=gap,
+            carry_in_qty=Decimal("0"),
         )
 
     lines = [line("30", gap=False), line("70", gap=True)]
