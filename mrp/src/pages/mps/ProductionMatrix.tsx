@@ -282,10 +282,15 @@ interface ProductionMatrixProps {
    *  `readOnly`) — receives the exact MpsLine[] this cell aggregates. */
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
+  /** Last month of the run's frozen zone ('YYYY-MM'), or null when nothing
+   *  is frozen. Those columns are greyed and their cells are not clickable:
+   *  the materials are bought, and the API refuses to change them anyway. */
+  frozenUntilMonth?: string | null
 }
 
 export function ProductionMatrix({
   lines,
+  frozenUntilMonth = null,
   weekGrid,
   maintenanceWeekStarts,
   maintenanceDataUnready,
@@ -537,6 +542,7 @@ export function ProductionMatrix({
               formatValue={formatValue}
               onAdjustCell={onAdjustCell}
               readOnly={readOnly}
+              frozenUntilMonth={frozenUntilMonth}
             />
           ))}
         </tbody>
@@ -629,6 +635,7 @@ function ProductRows({
   formatValue,
   onAdjustCell,
   readOnly,
+  frozenUntilMonth,
 }: {
   product: { code: string; name: string }
   noBom: boolean
@@ -645,6 +652,9 @@ function ProductRows({
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
+  /** Last month of the run's frozen zone, or null — those columns are
+   *  greyed and never clickable. */
+  frozenUntilMonth: string | null
 }) {
   const productCell = (
     <td
@@ -730,7 +740,11 @@ function ProductRows({
             isMonthBoundary={monthBoundaryColumnIds.has(col.id)}
             formatValue={formatValue}
             onAdjustCell={onAdjustCell}
-            readOnly={readOnly}
+            // A frozen month is read-only whatever the run's own status: its
+            // materials are bought, and the API refuses the PATCH anyway —
+            // a clickable cell that always errors is worse than no click.
+            readOnly={readOnly || (!!frozenUntilMonth && col.month <= frozenUntilMonth)}
+            isFrozen={!!frozenUntilMonth && col.month <= frozenUntilMonth}
           />
         ))}
       </tr>
@@ -803,6 +817,9 @@ function PlannedCell({
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
+  /** Inside the run's frozen zone — tinted like a maintenance week and
+   *  never clickable. */
+  isFrozen?: boolean
 }) {
   // "Has production" = a non-zero REAL planned qty (aggregateLines now
   // excludes capacity_gap lines' qty from `planned` — review round 1).

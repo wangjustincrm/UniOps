@@ -1221,6 +1221,20 @@ async def update_line(
     mode = run.week_calendar_mode
     start_dow = run.week_start_dow
 
+    # The frozen zone is not a UI convention: its materials are already
+    # bought, so the API refuses to change it whatever the caller is. A
+    # greyed-out cell stops a click, not a request.
+    frozen_until = _frozen_until(run)
+    if frozen_until is not None and line.plan_week_month <= frozen_until:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"the week of {line.plan_week_start.isoformat()} is inside this run's "
+                f"frozen zone (through {frozen_until}); its materials are already "
+                f"purchased and the plan cannot be changed"
+            ),
+        )
+
     changed = False
     if body.qty is not None and body.qty != line.qty:
         line.qty = body.qty

@@ -2365,3 +2365,44 @@ async def test_frozen_months_rejects_bad_values(client, admin_token, bad):
     headers = {"Authorization": f"Bearer {admin_token}"}
     r = await client.put("/api/v1/params/frozen_months", json={"value": bad}, headers=headers)
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.anyio
+async def test_adjusting_a_frozen_line_is_refused_by_the_api(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★只靠前端灰掉是挡不住的 —— 后端必须自己拒。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(1)
+    version, _ = await _confirmed_version(db_session, start=start, months=6,
+                                          monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    first = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    await client.post(f"/api/v1/mps/runs/{first['id']}/confirm-release", headers=headers)
+
+    second = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    frozen_until = second["frozen_until_month"]
+    frozen_line = next(l for l in second["lines"] if l["plan_week_month"] <= frozen_until)
+    liquid_line = next(l for l in second["lines"] if l["plan_week_month"] > frozen_until)
+
+    blocked = await client.patch(
+        f"/api/v1/mps/runs/{second['id']}/lines/{frozen_line['id']}",
+        json={"qty": "1"}, headers=headers)
+    assert blocked.status_code == 422, blocked.text
+    assert "frozen" in blocked.text.lower()
+
+    # 自由区照常可改 —— 否则上面那条在「所有 adjust 都坏了」时也会通过
+    allowed = await client.patch(
+        f"/api/v1/mps/runs/{second['id']}/lines/{liquid_line['id']}",
+        json={"qty": "1"}, headers=headers)
+    assert allowed.status_code == 200, allowed.text

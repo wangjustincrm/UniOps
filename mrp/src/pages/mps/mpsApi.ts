@@ -137,6 +137,13 @@ export interface MpsRun {
    *  switching the setting must not redraw the columns of a plan already
    *  released. Never re-derive a week's day from today's setting. */
   week_start_dow: number
+  /** Frozen zone: months whose materials are already purchased, inherited
+   *  from the plan in force and not re-planned. `frozen_months` is what was
+   *  actually applied (0 for a first run, which has nothing to inherit) and
+   *  `frozen_until_month` is the last month it covers, or null. The API
+   *  refuses to adjust a line inside it; the matrix greys those columns. */
+  frozen_months: number
+  frozen_until_month: string | null
   generated_by: string | null
   stats: MpsRunStats | null
 }
