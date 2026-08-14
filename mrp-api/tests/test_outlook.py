@@ -25,12 +25,14 @@ from sqlalchemy import select
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.services.demand_series import CellChange, freeze_outlook, upsert_cells
 
-# `FCV-{anchor_month}-{DDHHMM}`, optionally `-N` disambiguated (see
-# app/services/numbering.py). Pins the actual shape -- day/hour/minute,
-# zero-padded to exactly 6 digits -- not just the literal prefix, so a
-# regression back to the old 6-hex-char suffix (or to some other width)
-# would fail this pattern even though it still starts with "FCV-2026-09-".
-_VERSION_NO_RE = re.compile(r"^FCV-\d{4}-\d{2}-\d{6}(-\d+)?$")
+# `FCV-{anchor_month, no dash}-{MMDDHH}`, optionally `-N` disambiguated (see
+# app/services/numbering.py). Pins the actual shape -- YYYYMM with no
+# separating dash, creation month/day/hour zero-padded to exactly 6 digits
+# -- not just the literal prefix, so a regression back to the old
+# `FCV-2026-09-DDHHMM` shape (dashed month, day/hour/minute) or to the
+# original random-hex suffix would fail this pattern even though it still
+# starts with "FCV-202609-".
+_VERSION_NO_RE = re.compile(r"^FCV-\d{6}-\d{6}(-\d+)?$")
 
 
 # ── freeze_outlook (service-level) ──────────────────────────────────────────
@@ -60,7 +62,7 @@ async def test_freeze_outlook_snapshot_matches_series_window(db_session):
     assert version.source_anchor_month == "2026-09"
     assert version.created_by == creator
     assert _VERSION_NO_RE.match(version.version_no)
-    assert version.version_no.startswith("FCV-2026-09-")
+    assert version.version_no.startswith("FCV-202609-")
 
     lines = (await db_session.execute(
         select(ForecastLine).where(ForecastLine.version_id == version.id)
@@ -119,13 +121,14 @@ async def test_freeze_outlook_empty_window_creates_version_with_no_lines(db_sess
 
 
 @pytest.mark.anyio
-async def test_freeze_outlook_two_freezes_in_the_same_minute_both_succeed(db_session, monkeypatch):
-    """The exact scenario the task calls out by name: freezing two outlooks
-    for the same anchor inside the same UTC minute must not 500 with an
-    IntegrityError on `version_no`'s unique constraint. The two back-to-back
-    freezes in the immutability test above already exercise this most of the
-    time, but only by luck of wall-clock timing near a minute boundary --
-    this test pins the clock so the collision is guaranteed, not incidental.
+async def test_freeze_outlook_two_freezes_in_the_same_hour_both_succeed(db_session, monkeypatch):
+    """The scenario the task calls out as now routine, not rare: freezing
+    two outlooks for the same anchor inside the same UTC HOUR (MMDDHH has
+    no minute of its own) must not 500 with an IntegrityError on
+    `version_no`'s unique constraint. The two back-to-back freezes in the
+    immutability test above already exercise this most of the time, but
+    only by luck of wall-clock timing near an hour boundary -- this test
+    pins the clock so the collision is guaranteed, not incidental.
 
     Mutation this catches: if `freeze_outlook` reverted to computing
     `version_no` inline (bypassing `next_timestamped_no`'s collision check --
@@ -148,8 +151,8 @@ async def test_freeze_outlook_two_freezes_in_the_same_minute_both_succeed(db_ses
     v1 = await freeze_outlook(db_session, "2026-09", 1, created_by=None)
     v2 = await freeze_outlook(db_session, "2026-09", 1, created_by=None)
 
-    assert v1.version_no == "FCV-2026-09-030915"
-    assert v2.version_no == "FCV-2026-09-030915-2"
+    assert v1.version_no == "FCV-202609-090309"
+    assert v2.version_no == "FCV-202609-090309-2"
     assert v1.status == "confirmed" and v2.status == "confirmed"
 
 

@@ -546,15 +546,20 @@ def _weeks_between(earlier: date, later: date, mode: str) -> int:
 
 
 async def _next_run_no(db: SessionDep, horizon_start_month: str) -> str:
-    """`MPS-{horizon_start_month}-{DDHHMM}` -- mirrors `freeze_outlook`'s
-    `FCV-{anchor_month}-{DDHHMM}` (app/services/demand_series.py) so a run
-    and the outlook it was generated from read the same way and line up
-    visually. Collision handling (two runs for the same horizon month in the
-    same UTC minute) lives in `app/services/numbering.next_timestamped_no`,
-    serialized by this module's `_RUN_NO_LOCK_KEY`."""
+    """`MPS-{horizon_start_month, no dash}-{MMDDHH}` -- mirrors
+    `freeze_outlook`'s `FCV-{anchor_month, no dash}-{MMDDHH}`
+    (app/services/demand_series.py) so a run and the outlook it was
+    generated from read the same way and line up visually. `MMDDHH` drops
+    the minute the previous `DDHHMM` shape had, so a same-UTC-hour
+    collision for the same horizon month is now the routine case (an
+    ordinary session generating several runs inside one hour hits it every
+    time), not an edge case -- collision handling lives in
+    `app/services/numbering.next_timestamped_no`, serialized by this
+    module's `_RUN_NO_LOCK_KEY`."""
     return await next_timestamped_no(
         db, lock_key=_RUN_NO_LOCK_KEY,
-        column=MrpMpsRun.run_no, prefix=f"MPS-{horizon_start_month}-",
+        column=MrpMpsRun.run_no,
+        prefix=f"MPS-{horizon_start_month.replace('-', '')}-",
     )
 
 

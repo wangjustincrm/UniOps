@@ -90,7 +90,7 @@ _ZERO = Decimal("0")
 # Arbitrary fixed key identifying "this table" for freeze_outlook's
 # version_no advisory lock -- combined with a hash of the specific prefix
 # (i.e. the anchor month) at the call site, see app/services/numbering.py's
-# docstring, so freezing FCV-2026-09 and FCV-2026-10 concurrently does NOT
+# docstring, so freezing FCV-202609 and FCV-202610 concurrently does NOT
 # serialize against each other (different bases, no possible collision).
 # Distinct from mps.py's _RUN_NO_LOCK_KEY (different table -- MPS runs and
 # outlook freezes must never wait on each other either).
@@ -371,25 +371,28 @@ async def freeze_outlook(
         select(MrpIntentProduct.code, MrpIntentProduct.name)
     )).all())
 
-    # `FCV-{anchor_month}-{DDHHMM}` -- day/hour/minute this freeze happened,
-    # not a random suffix, so two outlooks for the same anchor freeze
-    # session read as "when" rather than an opaque tag. This does NOT
-    # guarantee a global creation-order sort: DDHHMM repeats every calendar
-    # month, so two freezes of the same anchor a month (or a year) apart
-    # that happen to land on the same day-of-month/hour/minute collide on
-    # the SAME base and the later one gets a numerically-later `-N` suffix
-    # that has nothing to do with elapsed time -- it reads as "issued
-    # moments after", not "issued a month/year after". The guarantee that
-    # DOES hold: within a single calendar month, DDHHMM is monotonic with
-    # creation time, so ordering is reliable there. See
-    # app/services/numbering.py for the collision handling this needs (two
-    # freezes for the same anchor in the same UTC minute are a real,
-    # observed case, not a hypothetical) -- and for periodic freezes of the
-    # same anchor, a same-day-of-month/minute collision across months is
-    # also a real possibility, not just a same-minute one.
+    # `FCV-{anchor_month, no dash}-{MMDDHH}` -- e.g. `FCV-202610-081417` for
+    # an outlook anchored at 2026-10, frozen 14 Aug 17:11 UTC. `YYYYMM` is
+    # the horizon's start month (no dash, so it can't be misread as a date
+    # sitting inside the horizon month -- the ambiguity the owner flagged
+    # in round one); `MMDDHH` is the creation month/day/hour, not a random
+    # suffix, so two outlooks for the same anchor read as "when" rather
+    # than an opaque tag. Because `MMDDHH` now carries the real creation
+    # month itself (unlike the old `DDHHMM`), two freezes of the same
+    # anchor a calendar month or a year apart no longer collide just for
+    # sharing a day-of-month/hour -- the month digit already tells them
+    # apart. What DOES still collide, routinely rather than rarely, is two
+    # freezes of the same anchor inside the same UTC HOUR (minute is no
+    # longer part of the number): those share the exact same base and the
+    # later one gets a numerically-later `-N` suffix that reflects arrival
+    # order within that hour, not elapsed time -- ordering is only
+    # guaranteed to the hour, not finer. See app/services/numbering.py for
+    # the collision handling this needs (same-hour collisions are the
+    # expected case in a normal working session, not an edge case).
     version_no = await next_timestamped_no(
         db, lock_key=_VERSION_NO_LOCK_KEY,
-        column=ForecastVersion.version_no, prefix=f"FCV-{anchor_month}-",
+        column=ForecastVersion.version_no,
+        prefix=f"FCV-{anchor_month.replace('-', '')}-",
     )
 
     version = ForecastVersion(
