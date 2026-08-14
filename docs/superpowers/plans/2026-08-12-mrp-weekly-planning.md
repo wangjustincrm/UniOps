@@ -1040,10 +1040,13 @@ else console.log('All checks passed.')
 - [ ] **Step 2: Capacity Rules 文案改周**：`Max output / week`、`Max SKUs / week`、新增 `Min output / week`；`min > max` 时后端 422 的 detail 原样显示在表单里（`role="alert"`）
 - [ ] **Step 3: Planning Calendar 区块**：三种周定义下拉 + 每种一行说明 + 提示"改动只影响之后新生成的计划，已发布计划沿用生成时的模式"
 - [ ] **Step 4: Week Exceptions 区块**：列表 + 新增/停用（选周、选约束、填值、填原因）
-- [ ] **Step 4b: Production Plan 周表头右键设检修周**（见 spec §5.1 末条）：右键菜单 `Mark as maintenance week` /
-      `Clear maintenance` + 悬停小箭头作为非右键入口 + 检修周整列灰底扳手图标 + 标记后提示并给 `Recalculate now` 按钮。
-      写的是一条 `max_output_qty=0` 的周例外，走 `mrp.param.write`。**前端不做任何产量分摊**——月内重排是引擎的事，
-      已实测：120t/4 周在 W3 关闭后自动变 40/40/40。
+- [ ] **Step 4b: 点 Production Plan 的周表头 → 右侧 `WeekDrawer` 设检修周**（见 spec §5.1 末条）。
+      **不用右键**——与现有「点计划格 → AdjustDrawer」同一套交互。新建 `mrp/src/pages/mps/WeekDrawer.tsx`，
+      照抄 `AdjustDrawer.tsx` 的骨架（`createPortal`、`fixed inset-0 z-[90] flex justify-end bg-black/40`、
+      Cancel/Save、`min-h-[44px]`）。内容 = 周标签与日期区间 + `Maintenance week (no production)` 勾选框 + 原因文本框；
+      门禁 `mrp.param.write`（无权限则勾选框禁用并写明原因，只读用户仍可打开查看）；检修周整列灰底 + 扳手图标；
+      保存后 toast 带 `Recalculate now` 按钮。写的是一条 `max_output_qty=0` 的周例外。
+      **前端不做任何产量分摊**——月内重排是引擎的事，已实测：120t/4 周在 W3 关闭后自动变 40/40/40。
 - [ ] **Step 5: 一次性横幅**：页面顶部提示"Capacity rules now read per week. Existing rules were deactivated by the weekly migration — please re-enter them."（对应迁移里的 `is_active=false`）
 - [ ] **Step 6: tsc 门禁** + `--listFiles` 正面确认新文件
 - [ ] **Step 7: Commit** — `feat(mrp): weekly capacity rules, week exceptions, planning calendar`
