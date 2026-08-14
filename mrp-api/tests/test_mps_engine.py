@@ -14,7 +14,7 @@ life), the lead shift and its clamp, the multi-hop skip over full periods,
 locked lines consuming capacity, and gap vs. shelf-life-gap all have weekly
 equivalents below -- on real dates, which is the entire point of the rework.
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from app.services.mps_engine import (
@@ -647,8 +647,12 @@ def _fixed_policy_plan(items, per_week, split, fullest, weeks=None):
         return E._pack_tight(ordered, weeks, per_week, open_weeks, split, fullest)
     floors = [per_week[i].min_output_qty for i in open_weeks
               if per_week[i].min_output_qty is not None]
+    floor = max(floors) if floors else None
+    # `_pack_spare` now takes the per-product resolver `pack_bucket` builds,
+    # not one bucket-wide number; with no product rules it is the factory
+    # floor for every code, which is exactly what this helper used to pass.
     return E._pack_spare(ordered, weeks, per_week, open_weeks, needs,
-                         max(floors) if floors else None)
+                         lambda _code: floor)
 
 
 def _unmet(lines):
@@ -1619,3 +1623,88 @@ def test_a_locked_shortfall_does_not_suppress_a_shortage_that_is_still_real():
     assert _total(lines) == Decimal("100")
     assert _total([l for l in lines if l.capacity_gap]) == Decimal("60")
     assert not any(l.locked for l in lines)
+
+
+# ── 约束 G：产品×周 的产量要么 0，要么 ≥ 该产品的最小批量 ──────────────────
+#
+# 「开一次工最少产这么多，再低就是烧能源」。原来的 min_output_qty 只是
+# `_spread_ceiling` 里「别摊太薄」的软下限；现在它同时是开工下限，且按产品配。
+
+
+def _lot_weeks(n=3, first=date(2026, 9, 5)):
+    return [first + timedelta(days=7 * i) for i in range(n)]
+
+
+def test_golden_case_is_unchanged_by_minimum_lot_sizes():
+    """黄金用例是全套排产规则的锚点：加了最小批量后答案一个字都不许变。"""
+    weeks = _lot_weeks(4)
+    items = [BucketItem("A", "2026-09", Decimal("60")), BucketItem("B", "2026-09", Decimal("20")),
+             BucketItem("C", "2026-09", Decimal("30")), BucketItem("D", "2026-09", Decimal("30"))]
+    limits = CapacityLimits(None, Decimal("40"), min_output_qty=Decimal("20"))
+    lots = {c: Decimal("20") for c in "ABCD"}
+
+    without = {(l.material_code, l.plan_week_start): l.qty
+               for l in pack_bucket(items, weeks, limits)}
+    with_lots = {(l.material_code, l.plan_week_start): l.qty
+                 for l in pack_bucket(items, weeks, limits, min_lots=lots)}
+    assert with_lots == without
+    assert with_lots == {
+        ("A", weeks[0]): Decimal("40"), ("A", weeks[1]): Decimal("20"),
+        ("B", weeks[1]): Decimal("20"), ("C", weeks[2]): Decimal("30"),
+        ("D", weeks[3]): Decimal("30"),
+    }
+
+
+# A(90) 需要 3 周、B(5) 需要 1 周，而开放周只有 3 —— sum(need) > 周数，落在
+# **紧张体制**（`_pack_tight`，逐周填满）。富余体制本来就会均分，证明不了尾槽。
+_TIGHT_ITEMS = [BucketItem("A", "2026-09", Decimal("90")),
+                BucketItem("B", "2026-09", Decimal("5"))]
+
+
+def test_tight_regime_relevels_a_tail_below_the_lot_size():
+    """紧张体制下 90 / 周产能 40 / 批量 20 → 30+30+30，不留 10 吨的尾巴。"""
+    weeks = _lot_weeks(3)
+    lines = pack_bucket(_TIGHT_ITEMS, weeks, CapacityLimits(None, Decimal("40")),
+                        min_lots={"A": Decimal("20")})
+    a = sorted(l.qty for l in lines if l.material_code == "A" and not l.capacity_gap)
+    assert a == [Decimal("30")] * 3
+    assert not any(l.below_min_lot for l in lines if l.material_code == "A")
+
+
+def test_without_a_lot_size_the_tail_is_left_alone():
+    """没配批量就没有下限 —— 保持原来的贴边装箱，证明上一条不是巧合。"""
+    weeks = _lot_weeks(3)
+    lines = pack_bucket(_TIGHT_ITEMS, weeks, CapacityLimits(None, Decimal("40")))
+    a = sorted(l.qty for l in lines if l.material_code == "A" and not l.capacity_gap)
+    assert a == [Decimal("10"), Decimal("40"), Decimal("40")]
+
+
+def test_capacity_wins_when_no_week_can_reach_the_lot_size():
+    """21 / 周产能 20 / 批量 20：一周装不下 21，两周必然都低于下限。
+    照排并标 below_min_lot，**绝不**为了凑下限顶到 40（凭空多产近一倍）。"""
+    weeks = _lot_weeks(2)
+    lines = pack_bucket([BucketItem("A", "2026-09", Decimal("21"))], weeks,
+                        CapacityLimits(None, Decimal("20")),
+                        min_lots={"A": Decimal("20")})
+    produced = [l for l in lines if not l.capacity_gap]
+    assert sum(l.qty for l in produced) == Decimal("21")
+    assert all(l.below_min_lot for l in produced)
+    assert sorted(l.qty for l in produced) == [Decimal("10.5"), Decimal("10.5")]
+
+
+def test_a_product_lot_size_overrides_the_factory_floor():
+    """全厂下限 10 允许摊 4 周；产品自己的 40 只允许摊 2 周。"""
+    weeks = _lot_weeks(4)
+    limits = CapacityLimits(None, Decimal("100"), min_output_qty=Decimal("10"))
+    lines = [l for l in pack_bucket([BucketItem("A", "2026-09", Decimal("80"))], weeks, limits,
+                                    min_lots={"A": Decimal("40")}) if l.qty > 0]
+    assert len(lines) == 2
+    assert all(l.qty == Decimal("40") for l in lines)
+
+
+def test_a_product_without_its_own_rule_falls_back_to_the_factory_floor():
+    weeks = _lot_weeks(4)
+    limits = CapacityLimits(None, Decimal("100"), min_output_qty=Decimal("40"))
+    lines = [l for l in pack_bucket([BucketItem("B", "2026-09", Decimal("80"))], weeks, limits,
+                                    min_lots={"A": Decimal("10")}) if l.qty > 0]
+    assert len(lines) == 2          # B 用全厂的 40，不是 A 的 10

@@ -122,7 +122,7 @@ case over 18 months); it does not need to.
 """
 from calendar import monthrange
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
 
@@ -214,6 +214,13 @@ class WeeklyLine:
     capacity_gap: bool = False
     locked: bool = False
     lead_shortfall: bool = False
+    # This week runs BELOW the product's minimum lot size, because weekly
+    # capacity cannot reach the lot in a single week (21 t of demand, a 20 t
+    # week and a 20 t lot: two weeks of 10.5 is the only way to make it at
+    # all). Capacity wins over the floor -- the alternative, rounding up to
+    # two whole lots, invents nearly double the demand. This is the ONE
+    # sanctioned exception to "produce 0 or at least a lot".
+    below_min_lot: bool = False
 
 
 # `mrp_mps_lines.qty` is Numeric(18, 3); level a run to the same resolution
@@ -491,7 +498,8 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
                 per_week: list[CapacityLimits], open_weeks: list[int],
                 allow_last_resort_split: bool = False,
                 prefer_fullest_start: bool = False,
-                preloaded: list[dict[str, Decimal]] | None = None) -> list[WeeklyLine]:
+                preloaded: list[dict[str, Decimal]] | None = None,
+                lot_of: "Callable[[str], Decimal | None] | None" = None) -> list[WeeklyLine]:
     """Tight regime: the bucket is over-full, so pack, do not spread.
 
     Two policy switches, because neither choice is universally right and
@@ -507,10 +515,16 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
     conservative baseline and is always one of the evaluated candidates, so
     the chosen plan can never leave more demand unmet than it would.
 
-    `min_output_qty` deliberately plays NO part here. There is no slack to
-    thin anything into, and honouring a floor would only push a product into
-    an extra week it does not need -- manufacturing a capacity gap out of
-    nothing. The floor is a spreading limit, never a placement rule.
+    The lot size never pushes a product into an EXTRA week here -- there is
+    no slack to spread into, and doing so would manufacture a capacity gap
+    out of nothing. What it does do is even out the tail: filling weeks to
+    the brim leaves the remainder in the last one (90 t at a 40 t cap gives
+    40+40+10), and a 10 t run costs the same changeover and cleandown as a
+    30 t one. `_relevel_run` re-levels that run over the weeks it already
+    occupies -- same weeks, same total, no gap -- so 90 t comes out
+    30+30+30. When even levelling cannot reach the lot (weekly capacity is
+    simply too small), the run is left levelled and flagged
+    `below_min_lot`; capacity wins.
 
     Only weeks in `open_weeks` are placement targets; closed weeks (a
     maintenance shutdown, say) are stepped over, including in the middle of
@@ -593,6 +607,7 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
 
         remaining = qty
         last_used: int | None = None
+        placed: list[tuple[int, int]] = []      # (index into `lines`, week index)
         if start is not None:
             for i in open_weeks[open_weeks.index(start):]:
                 if remaining <= 0:
@@ -605,9 +620,13 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
                 if take <= 0:
                     break
                 load.commit(code, take)
+                placed.append((len(lines), i))
                 lines.append(_line(item, weeks[i], take))
                 remaining -= take
                 last_used = i
+
+        _relevel_run(lines, placed, loads, per_week, code,
+                     lot_of(code) if lot_of else None)
 
         if remaining > 0:
             # Never silently drop demand: what did not fit surfaces as an
@@ -634,9 +653,51 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
     return lines
 
 
+def _relevel_run(lines: list[WeeklyLine], placed: list[tuple[int, int]],
+                 loads: list["_WeekLoad"], per_week: list[CapacityLimits],
+                 code: str, lot: Decimal | None) -> None:
+    """Even out one product's just-placed run so no week sits below `lot`.
+
+    Same weeks, same total, so nothing is added to or taken from the bucket:
+    a re-level can never turn met demand into a shortfall, and the
+    shortfall-ranked choice between packing policies is unaffected.
+
+    The span is never shortened. Dropping a week would mean removing the
+    product from that week's SKU set, and `_WeekLoad` tracks a set of codes
+    with one running total -- it cannot tell whether some OTHER item of the
+    same material also occupies that week (two demand months of one product
+    routinely land in one bucket). Levelling in place needs no such
+    accounting.
+
+    Leaves the run untouched when levelling would breach a week's own
+    ceiling, which heterogeneous per-week capacity allows: an uneven run
+    that fits beats an even one that does not.
+    """
+    if lot is None or len(placed) < 2:
+        return
+    quantities = [lines[li].qty for li, _ in placed]
+    if all(q >= lot for q in quantities):
+        return
+
+    total = sum(quantities, Decimal("0"))
+    chunks = _level(total, len(placed))
+    for pos, (_, week_index) in enumerate(placed):
+        ceiling = per_week[week_index].max_output_qty
+        if ceiling is None:
+            continue
+        others = loads[week_index].qty - quantities[pos]
+        if others + chunks[pos] > ceiling:
+            return
+
+    for pos, (line_index, week_index) in enumerate(placed):
+        loads[week_index].qty += chunks[pos] - quantities[pos]
+        lines[line_index] = replace(lines[line_index], qty=_tidy(chunks[pos]))
+
+
 def _pack_spare(ordered: list[BucketItem], weeks: list[date],
                 per_week: list[CapacityLimits], open_weeks: list[int],
-                needs: list[int], min_out: Decimal | None) -> list[WeeklyLine]:
+                needs: list[int],
+                lot_of: "Callable[[str], Decimal | None]") -> list[WeeklyLine]:
     """Spare regime: more open weeks than the demand strictly needs.
 
     Every product starts at its physical minimum `need_weeks` and may grow
@@ -661,7 +722,9 @@ def _pack_spare(ordered: list[BucketItem], weeks: list[date],
     # the two entries collide and the layout loop could then run off the end
     # of `open_weeks`.
     assigned = list(needs)
-    ceilings = [_spread_ceiling(item.qty, needs[pos], min_out, slot_count)
+    # Per PRODUCT, not per factory: the floor is "what is worth opening the
+    # line for", and that differs by product.
+    ceilings = [_spread_ceiling(item.qty, needs[pos], lot_of(item.material_code), slot_count)
                 for pos, item in enumerate(ordered)]
 
     spare = slot_count - sum(assigned)
@@ -731,7 +794,8 @@ def _normalize_preload(preloaded: "Sequence[dict[str, Decimal]] | None",
 
 def pack_bucket(items: list[BucketItem], weeks: list[date],
                 limits: "CapacityLimits | Sequence[CapacityLimits]",
-                preloaded: "Sequence[dict[str, Decimal]] | None" = None) -> list[WeeklyLine]:
+                preloaded: "Sequence[dict[str, Decimal]] | None" = None,
+                min_lots: "dict[str, Decimal] | None" = None) -> list[WeeklyLine]:
     """Pack one bucket's net requirements into that bucket's weeks.
 
     Pure function. `weeks` is an already-resolved ascending list of week-start
@@ -893,12 +957,26 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
     ordered = sorted(payload, key=_sort_key)
     open_weeks = [i for i, wk in enumerate(per_week) if _week_can_host(wk)]
 
+    # A product's own minimum lot size, falling back to the factory-wide
+    # floor. The factory floor is bucket-wide -- it says how thinly the plant
+    # is willing to run at all, which is not a property of an individual
+    # week -- so the LARGEST configured floor across the open weeks is taken,
+    # and no week is ever asked to run below its own minimum.
+    factory_floors = [per_week[i].min_output_qty for i in open_weeks
+                      if per_week[i].min_output_qty is not None]
+    factory_floor = max(factory_floors) if factory_floors else None
+
+    def lot_of(code: str) -> Decimal | None:
+        if min_lots is not None and code in min_lots:
+            return min_lots[code]
+        return factory_floor
+
     if not open_weeks:
         # Nothing can be produced anywhere in this bucket. `_pack_tight`'s
         # per-week checks turn every item into an explicit gap; `_pack_spare`
         # has no slots to lay anything out in and would silently drop them.
         return _sorted_lines(_pack_tight(ordered, weeks, per_week, open_weeks,
-                                         preloaded=held))
+                                         preloaded=held, lot_of=lot_of))
 
     ref_cap = _reference_cap(per_week, open_weeks)
     needs = [_need_weeks(item.qty, ref_cap) for item in ordered]
@@ -915,22 +993,37 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
         plans = [
             _pack_tight(ordered, weeks, per_week, open_weeks,
                         allow_last_resort_split=split,
-                        prefer_fullest_start=fullest, preloaded=held)
+                        prefer_fullest_start=fullest, preloaded=held,
+                        lot_of=lot_of)
             for split in (False, True)
             for fullest in (False, True)
         ]
         lines = min(plans, key=_plan_shortfall)
     else:
-        # The floor is bucket-wide: it says how thinly the plant is willing
-        # to run at all, which is not a property of an individual week.
-        # Take the largest configured floor across the open weeks so no week
-        # is ever asked to run below its own minimum.
-        floors = [per_week[i].min_output_qty for i in open_weeks
-                  if per_week[i].min_output_qty is not None]
-        lines = _pack_spare(ordered, weeks, per_week, open_weeks, needs,
-                            max(floors) if floors else None)
+        lines = _pack_spare(ordered, weeks, per_week, open_weeks, needs, lot_of)
 
-    return _sorted_lines(lines)
+    return _sorted_lines(_flag_below_min_lot(lines, lot_of))
+
+
+def _flag_below_min_lot(lines: list[WeeklyLine],
+                        lot_of: "Callable[[str], Decimal | None]") -> list[WeeklyLine]:
+    """Mark every produced week that ends up under its product's lot size.
+
+    Applied once, at the end, over BOTH regimes: the tight path can be left
+    below the floor by a re-level that capacity refused, and the spare path
+    by `_spread_ceiling` (where `need_weeks` -- a physical minimum -- always
+    outranks the floor). One pass means the flag cannot disagree with the
+    quantities beside it.
+
+    Gap lines are never flagged: a shortfall is not a production run."""
+    flagged: list[WeeklyLine] = []
+    for line in lines:
+        lot = lot_of(line.material_code)
+        if not line.capacity_gap and line.qty > 0 and lot is not None and line.qty < lot:
+            flagged.append(replace(line, below_min_lot=True))
+        else:
+            flagged.append(line)
+    return flagged
 
 
 def _plan_shortfall(lines: list[WeeklyLine]) -> Decimal:
