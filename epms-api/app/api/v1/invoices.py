@@ -105,6 +105,67 @@ async def _require_invoice_match_access(db, user: dict, inv) -> None:
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
 
 
+def build_exception_task(inv, reason: str | None, actor_id: uuid.UUID | None) -> Task:
+    """Construct (but do not persist/commit/notify) the resolve_exception
+    AP-pool task for an invoice.
+
+    Pulled out of _sync_exception_task so the one-shot backfill script
+    (scripts/backfill_exception_tasks.py — invoices that reached
+    status='exception' before this feature existed and so never got a task)
+    can build the exact same task shape instead of a second hand-rolled copy
+    that would drift out of sync with the live path.
+    """
+    return Task(
+        type="resolve_exception", priority="normal",
+        document_type="invoice", document_id=inv.id,
+        document_number=inv.internal_ref,
+        # 角色池(无指派人)——与 review_match 同理,这样才能命中共享邮箱。
+        assigned_role="ap_clerk",
+        created_by=actor_id,
+        title=f"Resolve match exception — {inv.internal_ref}",
+        description=(
+            f"Invoice {inv.internal_ref} could not be matched within tolerance: "
+            f"{reason} Please resolve the exception or return "
+            f"the invoice to the supplier."
+        ),
+        vendor=inv.vendor_name, amount=inv.total_amount,
+    )
+
+
+async def _sync_exception_task(db, inv, result, actor_id: uuid.UUID) -> None:
+    """Open (or close) the resolve_exception AP task for an invoice, given the
+    outcome of a match/review action.
+
+    Whole-branch review (finding 3): this used to live inline in the direct
+    match_invoice() endpoint only. A delegate's over-tolerance match routes
+    through match_review status first (require_review gate) — when AP later
+    confirms it in the review panel, review_match() flips the status to
+    "exception" same as a direct match would, but nothing downstream ever
+    raised the task, so the delegate → AP-confirms → exception path (the
+    scenario this branch exists to serve) landed in exception silently. Both
+    call sites now share this helper so neither can drift out of sync again.
+    """
+    now_ts = datetime.now(timezone.utc)
+    existing_exc_task = (await db.execute(select(Task).where(
+        Task.type == "resolve_exception", Task.document_type == "invoice",
+        Task.document_id == inv.id, Task.is_completed.is_(False),
+    ))).scalar_one_or_none()
+    if result.status == "exception":
+        if existing_exc_task is None:
+            exc_task = build_exception_task(inv, result.exception_reason, actor_id)
+            db.add(exc_task)
+            await db.flush()
+            await db.refresh(exc_task)
+            # fire_and_forget_notify 的后台协程用**新 session** 按 id 读这条任务,
+            # 所以必须先提交,否则它读不到、静默 return(与 assign_match 同因同修)。
+            await db.commit()
+            fire_and_forget_notify(exc_task, db, extra_vars={"invoice_number": inv.internal_ref})
+    elif existing_exc_task is not None:
+        existing_exc_task.is_completed = True
+        existing_exc_task.completed_at = now_ts
+        existing_exc_task.completed_by = actor_id
+
+
 async def _on_invoice_matched(db, invoice) -> None:
     """发票 match 后,对**每一个**被这张发票买单的 PO 按是否达成 3-way 分流:
     - 已收货 → create_pa 任务(Requester)
@@ -287,6 +348,7 @@ async def list_invoices(
         page=page, page_size=page_size,
     )
     await _attach_match_assignees(db, items)
+    await invoice_crud.attach_claimed_receipts(db, items)
     return InvoiceListResponse(items=items, total=total)
 
 
@@ -316,11 +378,13 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
         caller_id = uuid.UUID(user["sub"])
         if await _has_open_match_task(db, caller_id, invoice_id):
             await _attach_match_assignees(db, [inv])
+            await invoice_crud.attach_claimed_receipts(db, [inv])
             return inv
         # Matcher retention: the person who performed the match retains detail visibility
         # even after their task is completed (you can see what you acted on).
         if inv.matched_by == caller_id:
             await _attach_match_assignees(db, [inv])
+            await invoice_crud.attach_claimed_receipts(db, [inv])
             return inv
         # An invoice matched to an agreement is part of that agreement's record,
         # and that record is gated on epms.agreement.read with no row scope —
@@ -331,10 +395,12 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
             db, scope["user_id"], scope["role"], "epms.agreement.read"
         ) and await is_agreement_visible(db, inv.agreement_id, scope):
             await _attach_match_assignees(db, [inv])
+            await invoice_crud.attach_claimed_receipts(db, [inv])
             return inv
         if not await invoice_crud.is_visible(db, inv, scope):
             raise HTTPException(status_code=404, detail="Invoice not found")
     await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
 
 
@@ -415,12 +481,10 @@ async def match_invoice(
             Task.document_id == inv.id, Task.assigned_user_id == caller_id,
             Task.is_completed.is_(False),
         ))).scalar_one_or_none()
-        reviewer_id = None
         if my_task is not None:
             my_task.is_completed = True
             my_task.completed_at = now_ts
             my_task.completed_by = caller_id
-            reviewer_id = my_task.created_by
 
         # Complete any OTHER open match_invoice tasks for this invoice (e.g. AP matched
         # directly while an assignee still had an open task — no orphans left behind).
@@ -466,8 +530,9 @@ async def match_invoice(
                     review_description = (
                         f"Invoice {inv.internal_ref} was matched to agreement "
                         f"{result.agreement_number} as a legacy settlement (no receipt "
-                        f"evidence): {result.legacy_settlement_reason}. Please review and "
-                        "approve or reject."
+                        f"evidence): {result.legacy_settlement_reason}. Please confirm the "
+                        "linkage is correct. Approval of the payment amount happens later, "
+                        "on the Payment Application approval chain."
                     )
                 elif result.schedule_id is not None:
                     # recurring (auto-claimed or an explicit req.schedule_id)
@@ -477,7 +542,8 @@ async def match_invoice(
                     review_description = (
                         f"Invoice {inv.internal_ref} was matched to agreement "
                         f"{result.agreement_number} against a billing schedule row. "
-                        "Please review and approve or reject."
+                        "Please confirm the linkage is correct. Approval of the payment "
+                        "amount happens later, on the Payment Application approval chain."
                     )
                 else:
                     # Review fix (Important #2 follow-up, Task 5 round 2):
@@ -513,7 +579,9 @@ async def match_invoice(
                             f"Invoice {inv.internal_ref} was matched to agreement "
                             f"{result.agreement_number}. No receipt evidence or "
                             "no-evidence declaration has been recorded for it yet. "
-                            "Please review and approve or reject."
+                            "Please confirm the linkage is correct. Approval of the "
+                            "payment amount happens later, on the Payment Application "
+                            "approval chain."
                         )
                     else:
                         review_description = (
@@ -521,28 +589,48 @@ async def match_invoice(
                             f"{result.agreement_number}, but no billing period could be "
                             "auto-claimed (none pending, or the amount is outside "
                             "tolerance). Please review and manually assign the billing "
-                            "period this invoice covers."
+                            "period this invoice covers. Approval of the payment amount "
+                            "happens later, on the Payment Application approval chain."
                         )
             else:
+                # Whole-branch review (finding 5): don't open with the money
+                # figure — that's what read as "approve this payment
+                # difference" and caused AP to refuse the task in the first
+                # place. Lead with the linkage-confirmation framing, same as
+                # every agreement-route description above; the variance is
+                # supporting detail, not the headline.
                 review_description = (
-                    f"Invoice {inv.internal_ref} was matched with a non-zero variance "
-                    f"({result.variance}). Please review and approve or reject."
+                    f"Please confirm invoice {inv.internal_ref} is linked to the correct "
+                    f"purchase order and goods receipt (variance {result.variance} vs PO "
+                    "reference). Approval of the payment amount happens later, on the "
+                    "Payment Application approval chain."
                 )
             review = Task(
                 type="review_match", priority="normal",
                 document_type="invoice", document_id=inv.id,
                 document_number=inv.internal_ref,
+                # 角色池,不钉个人:钉住 assigned_user_id 会让 notification.py
+                # 只发派单者一人,并跳过 AP 共享邮箱分支(它只在无指派人时才查)。
                 assigned_role="ap_clerk",
-                assigned_user_id=reviewer_id,
                 created_by=caller_id,
-                title=f"Review match variance on invoice {inv.internal_ref}",
+                title=f"Confirm invoice match — {inv.internal_ref}",
                 description=review_description,
                 vendor=inv.vendor_name, amount=inv.total_amount,
             )
             db.add(review)
             await db.flush()
             await db.refresh(review)
+            # fire_and_forget_notify 的后台协程用**新 session** 按 id 读这条任务,
+            # 所以必须先提交,否则它读不到、静默 return(与 assign_match 同因同修)。
+            await db.commit()
             fire_and_forget_notify(review, db, extra_vars={"invoice_number": inv.internal_ref})
+
+        # 超容差(exception)任务:开一条 AP 角色池任务;若发票重新匹配后
+        # 不再落在 exception(改判 matched/match_review),关掉遗留的开放任务
+        # —— 否则会留下一条指向"已不再是 exception"发票的僵尸任务。
+        # match_review() 复核落定 exception 时也要走这条路径,故抽成共享
+        # helper(见 finding 3)——两处都调用同一份逻辑,不会再各改各的。
+        await _sync_exception_task(db, inv, result, caller_id)
 
         if result.status == "matched":
             # A reference-only (fee-only) match produces zero InvoicePoAllocation
@@ -561,6 +649,7 @@ async def match_invoice(
         await finance_sync.sync_ap_invoice(db, result, token)
 
         await _attach_match_assignees(db, [result])
+        await invoice_crud.attach_claimed_receipts(db, [result])
         return result
     except (AgreementMatchInvalid, AllocationImbalance, LegacyMatchUnsupported, FeeOnlyLinkRequired) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -809,6 +898,7 @@ async def decline_match(
     await db.commit()
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
 
 
@@ -906,6 +996,7 @@ async def assign_match(
     await db.commit()
     fire_and_forget_notify(task, db, extra_vars={"invoice_number": inv.internal_ref})
     await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
 
 
@@ -939,6 +1030,13 @@ async def match_review(
         review_task.completed_at = datetime.now(timezone.utc)
         review_task.completed_by = reviewer_id
 
+    # Finding 3: an approve here can land the invoice in "exception" just like
+    # a direct match_invoice() call does (over-tolerance variance, confirmed
+    # by AP) — raise the same resolve_exception task, via the same helper
+    # match_invoice() uses, so the delegate → AP-confirms → exception path
+    # doesn't silently skip it. A no-op on reject (status goes to unmatched).
+    await _sync_exception_task(db, inv, result, reviewer_id)
+
     if body.action == "reject" and prev_assignee is not None:
         # Route-neutral wording: this task fires on ANY rejected match_review,
         # PO or agreement. "to PO" was accurate before the agreement route
@@ -967,6 +1065,7 @@ async def match_review(
         await _on_invoice_matched(db, result)
     await finance_sync.sync_ap_invoice(db, result, token)
     await _attach_match_assignees(db, [result])
+    await invoice_crud.attach_claimed_receipts(db, [result])
     return result
 
 
@@ -982,12 +1081,12 @@ async def delete_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     try:
         await finance_sync.sync_ap_invoice(db, inv, token, void=True)
-        # Complete all open match_invoice and review_match tasks before hard delete
-        # so no orphaned tasks reference a non-existent invoice.
+        # Complete all open match_invoice / review_match / resolve_exception tasks
+        # before hard delete so no orphaned tasks reference a non-existent invoice.
         caller_id = uuid.UUID(user["sub"])
         now_ts = datetime.now(timezone.utc)
         open_tasks = (await db.execute(select(Task).where(
-            Task.type.in_(["match_invoice", "review_match"]),
+            Task.type.in_(["match_invoice", "review_match", "resolve_exception"]),
             Task.document_type == "invoice",
             Task.document_id == invoice_id,
             Task.is_completed.is_(False),
@@ -1015,6 +1114,14 @@ async def resolve_exception(
         raise HTTPException(status_code=404, detail="Invoice not found")
     try:
         result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=uuid.UUID(user["sub"]))
+        exc_task = (await db.execute(select(Task).where(
+            Task.type == "resolve_exception", Task.document_type == "invoice",
+            Task.document_id == inv.id, Task.is_completed.is_(False),
+        ))).scalar_one_or_none()
+        if exc_task is not None:
+            exc_task.is_completed = True
+            exc_task.completed_at = datetime.now(timezone.utc)
+            exc_task.completed_by = uuid.UUID(user["sub"])
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
         return result

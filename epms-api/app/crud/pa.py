@@ -403,21 +403,6 @@ async def _create_task(db: AsyncSession, pa: PaymentApplication, step: int, work
     ))
 
 
-async def _create_process_pa_task(db: AsyncSession, pa: PaymentApplication) -> None:
-    db.add(Task(
-        type="process_pa",
-        priority="normal",
-        document_type="pa",
-        document_id=pa.id,
-        document_number=pa.pa_number,
-        assigned_role="ap_clerk",
-        title=f"Process Payment: {pa.pa_number} — {pa.title}",
-        description=f"PA {pa.pa_number} has been fully approved. Please process the payment and mark as processed.",
-        amount=pa.payment_amount,
-        vendor=pa.vendor_name,
-    ))
-
-
 async def _create_revise_task(db: AsyncSession, pa: PaymentApplication) -> None:
     db.add(Task(
         type="revise_pa",

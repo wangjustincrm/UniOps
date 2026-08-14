@@ -17,6 +17,7 @@ export type TaskType =
   | 'confirm_settlement'
   | 'review_match'
   | 'match_invoice'
+  | 'resolve_exception'
   | 'create_pa'
   | 'create_prepayment_pa'
   | 'approve_budget_plan'

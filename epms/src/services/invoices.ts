@@ -22,6 +22,20 @@ export type InvoiceStatus =
   | 'approved'
   | 'paid'
 
+// Task 8: one claimed receipt as returned on InvoiceResponse.claimed_receipts
+// (Task 5, backend-only until now) — mirrors ClaimedReceipt in
+// epms-api/app/schemas/invoice.py exactly.
+export interface ApiClaimedReceipt {
+  id: string
+  receipt_ref: string | null
+  receipt_date: string
+  receipt_type: string
+  // 可空,而且必须保持可空 —— delivery / service 两类凭证本就没有金额。
+  // 折成 0 会让下面的汇总把它算进去,凭空造出「差异 = 整张发票」的误报。
+  total_amount: string | null
+  vendor_name: string | null
+}
+
 export interface ApiInvoice {
   id: string
   internal_ref: string
@@ -45,6 +59,12 @@ export interface ApiInvoice {
   // JSONB array on the backend (Invoice.receipt_ids), null before any claim, never
   // an empty array (see crud/invoice.py: cleared to null on unclaim, never []).
   receipt_ids?: string[] | null
+  // Full receipt rows for the house-account route (Task 5 on the backend,
+  // Task 8 here) — everything InvoiceMatchVariancePanel's receipt branch and
+  // receiptSummary() need (ref/date/type/amount) without a second fetch keyed
+  // off receipt_ids. Null/absent for a PO-route or recurring/milestone
+  // invoice, and for a house_account invoice that hasn't claimed anything yet.
+  claimed_receipts?: ApiClaimedReceipt[] | null
   // Free-text explanation for why the claimed receipts' total doesn't line up
   // with the invoice total (submitted by MatchPanel.tsx, stored separately
   // from legacy_settlement_reason — see models/invoice.py:76-78).

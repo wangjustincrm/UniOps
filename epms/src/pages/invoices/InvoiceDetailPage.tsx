@@ -15,6 +15,7 @@ import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
+import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
@@ -119,6 +120,7 @@ export default function InvoiceDetailPage() {
   const [editing, setEditing] = useState(false)
   const [showAssignDialog, setShowAssignDialog] = useState(false)
   const [showMatchPanel, setShowMatchPanel] = useState(false)
+  const [showResolvePanel, setShowResolvePanel] = useState(false)
   const [reviewNote, setReviewNote] = useState('')
   const reviewMutation = useReviewMatch()
 
@@ -423,7 +425,7 @@ export default function InvoiceDetailPage() {
       {hasException && (
         <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 flex gap-3">
           <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
-          <div>
+          <div className="flex-1">
             <p className="text-sm font-semibold text-danger-700">
               Invoice variance: {inv.currency} {formatAmount(varianceAbs, inv.currency)} ({variancePctAbs.toFixed(1)}% over PO)
             </p>
@@ -435,7 +437,25 @@ export default function InvoiceDetailPage() {
               </p>
             )}
           </div>
+          {/* Whole-branch review (finding 2): the resolve_exception task's
+              deep link lands here (/invoices/{id}), but until now this page
+              only showed the exception read-only — AP had to know to go find
+              it on the list page's Exceptions tab instead. Same gate as that
+              tab's affordance: an AP role, on an invoice actually in
+              exception. */}
+          {isAp && !showResolvePanel && (
+            <Button
+              variant="secondary" size="sm"
+              className="self-start gap-1.5 border-warning-300 bg-warning-50 text-warning-700 hover:bg-warning-100"
+              onClick={() => setShowResolvePanel(true)}
+            >
+              Resolve
+            </Button>
+          )}
         </div>
+      )}
+      {hasException && isAp && showResolvePanel && (
+        <ResolveExceptionPanel inv={inv} onClose={() => setShowResolvePanel(false)} />
       )}
 
       <div className="flex gap-6 items-start">
@@ -455,13 +475,21 @@ export default function InvoiceDetailPage() {
           {/* ── Details tab ───────────────────────────────────────────────────── */}
           {activeTab === 'details' && !editing && (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {/* Match review panel — shown to AP roles when invoice is pending review */}
+              {/* Match review panel — shown to AP roles when invoice is pending review.
+                  Whole-branch review (finding 5): this is the fourth spot that named this
+                  step, and the one place that muted the sentence that actually answers AP's
+                  objection — it used to run last, below the money figure. Lead with it. */}
               {inv.status === 'match_review' && isAp && (
                 <div className="sm:col-span-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
-                  <p className="text-sm font-semibold text-primary-800">Match pending review</p>
+                  <p className="text-sm font-semibold text-primary-800">Confirm invoice match</p>
+                  <p className="text-xs text-neutral-500">
+                    This confirms the invoice is linked to the correct PO and goods receipt. It
+                    does not approve the payment amount — that happens later, on the Payment
+                    Application approval chain.
+                  </p>
                   <p className="text-xs text-neutral-600">
                     This invoice was matched with a variance of {formatAmount(Math.abs(Number(inv.variance ?? 0)), inv.currency)}
-                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Approve to finalize the match,
+                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Confirm to finalize the match,
                     or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
                   </p>
                   <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
@@ -478,7 +506,7 @@ export default function InvoiceDetailPage() {
                         { id: inv.id, action: 'approve', note: reviewNote || undefined },
                         { onSuccess: () => setReviewNote('') },
                       )}>
-                      Approve Match
+                      Confirm Match
                     </Button>
                     <Button size="sm" variant="secondary" disabled={reviewMutation.isPending || !reviewNote.trim()}
                       onClick={() => reviewMutation.mutate(

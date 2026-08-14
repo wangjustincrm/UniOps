@@ -167,6 +167,25 @@ class MatchReviewRequest(BaseModel):
     note: str | None = None
 
 
+class ClaimedReceipt(BaseModel):
+    """协议凭证的只读投影,随发票读权限(view_invoice 矩阵)返回。
+
+    存在的理由:GET /invoices/{id}/agreements/{aid}/receipts 的门禁是
+    _require_invoice_match_access(AP / 上传人 / 持 match 任务者),PA 审批人
+    全部 403;而且它只在 candidates_for_vendor 里找,已关闭的协议直接 404。
+    PA 差异面板的读者正是那批审批人,所以数据必须走发票自己的读权限下发。
+
+    total_amount 可空且**必须保持可空** —— delivery / service 两类凭证本就
+    没有金额(ag09 起放开),折成 0 会让前端把它算进汇总,凭空造出差异。
+    """
+    id: uuid.UUID
+    receipt_ref: str | None = None
+    receipt_date: date
+    receipt_type: str
+    total_amount: Decimal | None = None
+    vendor_name: str | None = None
+
+
 class InvoiceResponse(BaseModel):
     id: uuid.UUID
     internal_ref: str
@@ -198,6 +217,11 @@ class InvoiceResponse(BaseModel):
     # /invoices and /invoices/{id} response. Needed by useChainAttachments'
     # receipt lineage branch (epms/src/hooks/useChainAttachments.ts).
     receipt_ids: list | None = None
+    # Task 5: read-only projection of the receipts receipt_ids above points at
+    # (id, ref, date, type, amount, vendor_name) — see ClaimedReceipt's own
+    # docstring for why this has to ride on the invoice's own read permission
+    # instead of the narrower dedicated receipts route.
+    claimed_receipts: list[ClaimedReceipt] | None = None
     # Task 11 fix-round 1 (Important): free-text explanation for why the
     # claimed receipts' total doesn't line up with the invoice total
     # (MatchPanel.tsx submits it, crud/invoice.py:444 stores it,

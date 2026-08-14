@@ -108,7 +108,7 @@ async def test_claim_payment_splits_sales_tax_by_code(client, db_session):
     # "today" and query the current period — a fixed date only passes in the
     # month it was written (same rollover family as test_gl/test_ar).
     today = date.today()
-    r = await client.post("/finance/v1/payments/execute", headers=_h("ap_clerk"),
+    r = await client.post("/finance/v1/payments/execute", headers=_h("payment_officer"),
                           json={"doc_kind": "expense_claim", "doc_id": str(claim.id),
                                 "payment_date": today.isoformat()})
     assert r.status_code == 200, r.text

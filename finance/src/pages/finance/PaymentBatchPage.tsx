@@ -64,9 +64,11 @@ export default function PaymentBatchPage() {
   const [openBatch, setOpenBatch] = useState<string | null>(null)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
-  // Gate the Create/Execute controls on actual payment authority (ap_clerk /
-  // finance roles or a finance_bp / finance_manager assignment) — the same gate
-  // the create_batch / execute_batch endpoints enforce. NOT COA-manage.
+  // Gate the Create/Execute controls on actual payment authority: primary role
+  // in _PAY_ROLES, or an additional role in _PAY_ROLES_ASSIGNED — payment_officer
+  // / finance_manager / finance_bp (ap_clerk removed 2026-08-13, execution moved
+  // to payment_officer) — the same gate the create_batch / execute_batch
+  // endpoints enforce. NOT COA-manage.
   const { data: payPerm } = useQuery({
     queryKey: ['payments-can-pay'],
     queryFn: () => financeApi.get<{ can_pay: boolean }>('/payments/can-pay'),
