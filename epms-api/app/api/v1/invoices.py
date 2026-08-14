@@ -105,6 +105,33 @@ async def _require_invoice_match_access(db, user: dict, inv) -> None:
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
 
 
+def build_exception_task(inv, reason: str | None, actor_id: uuid.UUID | None) -> Task:
+    """Construct (but do not persist/commit/notify) the resolve_exception
+    AP-pool task for an invoice.
+
+    Pulled out of _sync_exception_task so the one-shot backfill script
+    (scripts/backfill_exception_tasks.py — invoices that reached
+    status='exception' before this feature existed and so never got a task)
+    can build the exact same task shape instead of a second hand-rolled copy
+    that would drift out of sync with the live path.
+    """
+    return Task(
+        type="resolve_exception", priority="normal",
+        document_type="invoice", document_id=inv.id,
+        document_number=inv.internal_ref,
+        # 角色池(无指派人)——与 review_match 同理,这样才能命中共享邮箱。
+        assigned_role="ap_clerk",
+        created_by=actor_id,
+        title=f"Resolve match exception — {inv.internal_ref}",
+        description=(
+            f"Invoice {inv.internal_ref} could not be matched within tolerance: "
+            f"{reason} Please resolve the exception or return "
+            f"the invoice to the supplier."
+        ),
+        vendor=inv.vendor_name, amount=inv.total_amount,
+    )
+
+
 async def _sync_exception_task(db, inv, result, actor_id: uuid.UUID) -> None:
     """Open (or close) the resolve_exception AP task for an invoice, given the
     outcome of a match/review action.
@@ -125,21 +152,7 @@ async def _sync_exception_task(db, inv, result, actor_id: uuid.UUID) -> None:
     ))).scalar_one_or_none()
     if result.status == "exception":
         if existing_exc_task is None:
-            exc_task = Task(
-                type="resolve_exception", priority="normal",
-                document_type="invoice", document_id=inv.id,
-                document_number=inv.internal_ref,
-                # 角色池(无指派人)——与 review_match 同理,这样才能命中共享邮箱。
-                assigned_role="ap_clerk",
-                created_by=actor_id,
-                title=f"Resolve match exception — {inv.internal_ref}",
-                description=(
-                    f"Invoice {inv.internal_ref} could not be matched within tolerance: "
-                    f"{result.exception_reason} Please resolve the exception or return "
-                    f"the invoice to the supplier."
-                ),
-                vendor=inv.vendor_name, amount=inv.total_amount,
-            )
+            exc_task = build_exception_task(inv, result.exception_reason, actor_id)
             db.add(exc_task)
             await db.flush()
             await db.refresh(exc_task)
