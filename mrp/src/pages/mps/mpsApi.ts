@@ -124,6 +124,11 @@ export interface MpsRun {
    *  reshape or relabel an existing run (design §5.4). Render this run's
    *  weeks with `week_label`, never by re-deriving from today's setting. */
   week_calendar_mode: string
+  /** Which weekday this run's weeks begin on (0=Monday .. 6=Sunday). Also a
+   *  generate-time snapshot: this factory plans Saturday-start weeks, and
+   *  switching the setting must not redraw the columns of a plan already
+   *  released. Never re-derive a week's day from today's setting. */
+  week_start_dow: number
   generated_by: string | null
   stats: MpsRunStats | null
 }

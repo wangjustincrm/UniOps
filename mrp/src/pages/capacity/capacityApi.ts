@@ -140,6 +140,25 @@ export const WEEK_CALENDAR_MODE_DESCRIPTION: Record<WeekCalendarMode, string> = 
   month_fixed: 'Weeks start on the 1st of each month and step by 7 days; weeks never straddle a month boundary, and the last "week" of a month may be a short 1–7 day remainder.',
 }
 
+/** 0=Monday .. 6=Sunday, matching Python's `date.weekday()` — the value
+ *  stored in `mrp_planning_params.week_start_dow`. This factory's week runs
+ *  Saturday to Friday, i.e. 5. */
+export type WeekStartDow = 0 | 1 | 2 | 3 | 4 | 5 | 6
+export const WEEK_START_DOWS: WeekStartDow[] = [0, 1, 2, 3, 4, 5, 6]
+export const WEEK_START_DOW_LABEL: Record<WeekStartDow, string> = {
+  0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday',
+  4: 'Friday', 5: 'Saturday', 6: 'Sunday',
+}
+
+/** `PUT /params/week_start_dow` answers with the saved value plus how many
+ *  capacity exceptions (maintenance weeks) were re-keyed onto the new grid —
+ *  they are stored by exact week-start date, so a grid change strands them
+ *  unless they move with it. */
+export interface WeekStartDowUpdateResult {
+  week_start_dow: number
+  exceptions_shifted: number
+}
+
 export const capacityApi = {
   list: () => api.get<CapacityRule[]>('/capacity/rules'),
 
@@ -160,4 +179,7 @@ export const capacityApi = {
   getParams: () => api.get<Record<string, unknown>>('/params'),
 
   setParam: (key: string, value: unknown) => api.put<Record<string, unknown>>(`/params/${key}`, { value }),
+
+  setWeekStartDow: (dow: WeekStartDow) =>
+    api.put<WeekStartDowUpdateResult>('/params/week_start_dow', { value: dow }),
 }
