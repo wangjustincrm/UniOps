@@ -53,8 +53,9 @@ function loadDisplayUnit(): DisplayUnit {
 
 /** A single ProductionMatrix Planned cell can aggregate more than one
  *  MpsLine (e.g. two different demand_months pre-built into the same
- *  plan_month) — see ProductionMatrix.tsx's `onAdjustCell` contract and
- *  Task 4's report. This picker lets the planner disambiguate which of the
+ *  plan week, or several weeks rolled into one collapsed month's summary
+ *  column) — see ProductionMatrix.tsx's `onAdjustCell` contract and Task
+ *  4's report. This picker lets the planner disambiguate which of the
  *  underlying lines they meant to adjust before the single-line
  *  AdjustDrawer opens. */
 function AdjustCellPicker({
@@ -228,16 +229,17 @@ export default function ProductionPlanPage() {
   // ── Generate / Recalculate ──────────────────────────────────────────────
   const [generating, setGenerating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
-  // Production Lead Time (mrp08): how many months earlier than a demand
-  // month the engine should try to schedule production — default 1 matches
-  // the backend's own default (mps.py's create_run()) when omitted.
-  const [leadMonths, setLeadMonths] = useState(1)
+  // Production Lead Time (mrp08, now WEEKS since the weekly rework): how
+  // many weeks earlier than a demand month's last week the engine should
+  // try to schedule production — default 4 matches the backend's own
+  // default (mps.py's DEFAULT_PRODUCTION_LEAD_WEEKS) when omitted.
+  const [leadWeeks, setLeadWeeks] = useState(4)
 
   async function handleGenerate() {
     if (!selectedVersionId) return
     setGenerating(true)
     try {
-      const result = await mpsApi.generate(selectedVersionId, { production_lead_months: leadMonths })
+      const result = await mpsApi.generate(selectedVersionId, { production_lead_weeks: leadWeeks })
       setRunId(result.id)
       toasts.success(`Generated ${result.run_no} — ${result.lines.length} line(s).`)
     } catch (err) {
@@ -437,16 +439,16 @@ export default function ProductionPlanPage() {
         <div className="flex flex-wrap items-center gap-2">
           {canExecute && (
             <>
-              <FormField label="Lead (months)" htmlFor="mps-lead-months">
+              <FormField label="Lead (weeks)" htmlFor="mps-lead-weeks">
                 <input
-                  id="mps-lead-months"
+                  id="mps-lead-weeks"
                   type="number"
                   min={0}
-                  max={12}
-                  value={leadMonths}
+                  max={52}
+                  value={leadWeeks}
                   onChange={(e) => {
                     const n = Number(e.target.value)
-                    setLeadMonths(Number.isFinite(n) ? Math.min(12, Math.max(0, Math.trunc(n))) : 0)
+                    setLeadWeeks(Number.isFinite(n) ? Math.min(52, Math.max(0, Math.trunc(n))) : 0)
                   }}
                   disabled={generating}
                   title="Applies when you Generate a new run; Recalculate keeps the run's lead."
@@ -561,6 +563,8 @@ export default function ProductionPlanPage() {
         <ProductionMatrix
           key={run.id}
           lines={run.lines}
+          horizonStartMonth={run.horizon_start_month}
+          horizonMonths={run.horizon_months}
           materialsByCode={materialsByCode}
           noBomCodes={noBomCodes}
           unitScale={displayUnit === 't' ? 1000 : 1}

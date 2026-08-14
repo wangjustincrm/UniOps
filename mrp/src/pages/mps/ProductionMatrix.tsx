@@ -1,12 +1,22 @@
-// ProductionMatrix — read-only product x plan-month matrix for the
-// Production Plan / MPS page (Production Plan Matrix Task 4). Reshapes the
-// run's flat `MpsLine[]` into rows = products (each with three sub-rows
-// Demand / Available / Planned), columns = distinct `plan_month`. This is a
-// bespoke, purpose-built display table — NOT the editable `MatrixGrid`
-// (@/components/MatrixGrid) that Sales Forecast uses: there is no
-// paste/undo/keyboard-nav here, only aggregation plus a click-to-adjust
-// affordance on Planned cells. T5 mounted this in ProductionPlanPage.tsx in
-// place of the old CapacityBars.tsx + MpsLineTable.tsx (both retired).
+// ProductionMatrix — read-only product x plan-WEEK matrix for the
+// Production Plan / MPS page, grouped under collapsible month headers
+// (weekly rework Task 9, design §5.1). Reshapes the run's flat `MpsLine[]`
+// into rows = products (each with three sub-rows Demand / Available /
+// Planned), columns = weeks (or one collapsed summary column per month the
+// planner hasn't expanded). This is a bespoke, purpose-built display
+// table — NOT the editable `MatrixGrid` (@/components/MatrixGrid) that
+// Sales Forecast uses: there is no paste/undo/keyboard-nav here, only
+// aggregation plus a click-to-adjust affordance on Planned cells.
+//
+// The column MODEL (which months/weeks exist, expand/collapse state) is
+// pure logic split out into weekColumns.ts (verified by
+// weekColumns.verify.ts, `npx tsx`) — this file only renders it.
+//
+// Two semantics this file must not get wrong (see mpsApi.ts's MpsLine for
+// the full doc): `is_prebuild` means the plan week's OWNING MONTH precedes
+// the demand's own bucket month, not "earlier than the target week" — for
+// "is this line early", read `weeks_early`. Demand and Available stay
+// MONTHLY (one value per product per month); only Planned is per-week.
 //
 // Sticky pattern ported verbatim from MatrixGrid.tsx's own header comment
 // (itself the Sales Forecast sticky fix): ONE `overflow-auto` container
@@ -16,13 +26,18 @@
 // two independent scroll containers, each becoming the "nearest scrolling
 // ancestor" for a different axis of position:sticky — breaking the sticky
 // thead/first-column's containing-block resolution. One container with both
-// axes explicit removes the ambiguity.
-import { useMemo } from 'react'
-import { Lock, AlertTriangle, Clock } from 'lucide-react'
+// axes explicit removes the ambiguity. The header is now TWO rows (month
+// row + week row) instead of one, but still ONE sticky unit: `<thead>`
+// itself carries `sticky top-0`, so both rows ride along together with no
+// separate top-offset math for row 2 — see the `<thead>` element's own
+// comment below for why.
+import { useMemo, useState } from 'react'
+import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight } from 'lucide-react'
 import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
 import type { MpsLine } from './mpsApi'
+import { buildWeekColumns, monthsInHorizon, defaultExpandedMonths, type Column, type WeekColumn, type WeekRef } from './weekColumns'
 
 // Sensible default in-container scroll cap for now — the brief notes the
 // parent may pass an explicit height later (mirroring SalesForecastPage's
@@ -32,10 +47,12 @@ const MAX_HEIGHT = 560
 
 // Product column / Metric column are both part of the single sticky-left
 // block (the brief's "sticky first column" plus a Metric column that must
-// stay legible while scrolling months horizontally). Fixed pixel widths so
+// stay legible while scrolling weeks horizontally). Fixed pixel widths so
 // the Metric column's `left` offset can be a matching Tailwind arbitrary
 // value below — see the header/body cells.
 const PRODUCT_COL_WIDTH = 176 // px, Tailwind w-44
+
+const WEEK_COL_MIN_WIDTH = 76 // px — narrower than the old month columns; a week's Planned value is usually a smaller number
 
 interface MatrixCell {
   demand: number
@@ -43,15 +60,15 @@ interface MatrixCell {
   planned: number
   gap: boolean
   locked: boolean
-  /** Production Lead Time (mrp08): true if any underlying line couldn't be
-   *  pushed back the run's full `production_lead_months` before its demand
-   *  month (clamped at "now"). Display-only marker on the Planned row —
-   *  gap (red) takes precedence when a cell is both. */
+  /** Production Lead Time (mrp08, now weeks): true if any underlying line
+   *  couldn't be pushed back the run's full `production_lead_weeks` before
+   *  its demand month (clamped at "now"). Display-only marker on the
+   *  Planned row — gap (red) takes precedence when a cell is both. */
   shortfall: boolean
   demandMonths: string[]
   /** The underlying MpsLine[] this cell aggregates — handed back verbatim
-   *  to onAdjustCell so the caller (AdjustDrawer, per T5) knows exactly
-   *  which lines a click on this cell refers to. */
+   *  to onAdjustCell so the caller (AdjustDrawer) knows exactly which
+   *  lines a click on this cell refers to. */
   cellLines: MpsLine[]
 }
 
@@ -59,12 +76,49 @@ function emptyCell(): MatrixCell {
   return { demand: 0, available: 0, planned: 0, gap: false, locked: false, shortfall: false, demandMonths: [], cellLines: [] }
 }
 
-function cellKey(materialCode: string, planMonth: string): string {
-  return `${materialCode}::${planMonth}`
+/** Aggregates `lines` into one MatrixCell per key from `keyFn` — the same
+ *  accumulation logic serves both the month-grain map (Demand/Available,
+ *  and Planned for a collapsed month's summary column) and the week-grain
+ *  map (Planned for an expanded month's week columns); only the grouping
+ *  key differs. */
+function aggregateLines(lines: MpsLine[], keyFn: (line: MpsLine) => string): Map<string, MatrixCell> {
+  const map = new Map<string, MatrixCell>()
+  for (const line of lines) {
+    const key = keyFn(line)
+    let cell = map.get(key)
+    if (!cell) {
+      cell = emptyCell()
+      map.set(key, cell)
+    }
+    cell.demand += Number(line.demand_forecast)
+    cell.available += Number(line.opening_stock)
+    cell.planned += Number(line.qty)
+    if (line.capacity_gap) cell.gap = true
+    if (line.locked_by_planner) cell.locked = true
+    if (line.lead_shortfall) cell.shortfall = true
+    if (!cell.demandMonths.includes(line.demand_month)) cell.demandMonths.push(line.demand_month)
+    cell.cellLines.push(line)
+  }
+  for (const cell of map.values()) cell.demandMonths.sort()
+  return map
+}
+
+function monthCellKey(materialCode: string, month: string): string {
+  return `${materialCode}::${month}`
+}
+
+function weekCellKey(materialCode: string, weekStart: string): string {
+  return `${materialCode}::${weekStart}`
 }
 
 interface ProductionMatrixProps {
   lines: MpsLine[]
+  /** The run's declared horizon (`horizon_start_month` / `horizon_months`
+   *  off MpsRun) — used ONLY to make sure a month with zero net demand
+   *  (and so zero lines) still gets a column; every column that actually
+   *  carries data comes from `lines` itself, never invented from this. */
+  horizonStartMonth: string
+  horizonMonths: number
   /** code -> MaterialOption, for the Product column's name (not part of
    *  MpsLineResponse itself — see mpsApi.ts / ProductionPlanPage.tsx for how
    *  this is built from mdm-api's materials master). A lookup miss falls
@@ -96,6 +150,8 @@ interface ProductionMatrixProps {
 
 export function ProductionMatrix({
   lines,
+  horizonStartMonth,
+  horizonMonths,
   materialsByCode,
   noBomCodes,
   unitScale: _unitScale,
@@ -108,38 +164,106 @@ export function ProductionMatrix({
     return codes.map((code) => ({ code, name: materialsByCode.get(code)?.name ?? code }))
   }, [lines, materialsByCode])
 
-  const planMonths = useMemo(
-    () => [...new Set(lines.map((l) => l.plan_month))].sort(),
+  // ── The known-weeks list handed to buildWeekColumns ─────────────────────
+  // Real weeks come straight off the lines (grouped by plan_week_month so a
+  // week is never mis-filed under the wrong month header — see
+  // MpsLine.plan_week_month's own doc on why that's NOT week_start.slice(0,7)).
+  // A month in the run's declared horizon that carries NO line at all (net
+  // demand nets to zero, and no other month's pre-build reaches it either)
+  // still needs a column — the brief's hard rule that an empty month must
+  // not silently skip the time axis — so it gets one synthetic placeholder
+  // WeekRef (the 1st of that month; cosmetic only, no cell ever keys off it
+  // besides the empty-column render).
+  const weekRefs = useMemo<WeekRef[]>(() => {
+    const byMonth = new Map<string, Map<string, string | undefined>>()
+    for (const line of lines) {
+      let weekMap = byMonth.get(line.plan_week_month)
+      if (!weekMap) {
+        weekMap = new Map()
+        byMonth.set(line.plan_week_month, weekMap)
+      }
+      if (!weekMap.has(line.plan_week_start)) weekMap.set(line.plan_week_start, line.week_label)
+    }
+
+    const horizonMonthList = monthsInHorizon(horizonStartMonth, horizonMonths)
+    const allMonths = new Set([...horizonMonthList, ...byMonth.keys()])
+
+    const refs: WeekRef[] = []
+    for (const month of [...allMonths].sort()) {
+      const weekMap = byMonth.get(month)
+      if (weekMap && weekMap.size > 0) {
+        for (const [week_start, label] of weekMap) refs.push({ week_start, month, label })
+      } else {
+        refs.push({ week_start: `${month}-01`, month })
+      }
+    }
+    return refs
+  }, [lines, horizonStartMonth, horizonMonths])
+
+  const allMonthsOrdered = useMemo(
+    () => [...new Set(weekRefs.map((w) => w.month))].sort(),
+    [weekRefs],
+  )
+
+  // Default expand set is seeded once per mount (ProductionPlanPage remounts
+  // this component with `key={run.id}` on every run switch, so this
+  // correctly re-seeds per run rather than carrying stale expand state
+  // across runs).
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => defaultExpandedMonths(allMonthsOrdered))
+
+  function toggleMonth(month: string) {
+    setExpandedMonths((prev) => {
+      const next = new Set(prev)
+      if (next.has(month)) next.delete(month)
+      else next.add(month)
+      return next
+    })
+  }
+
+  const columns = useMemo(() => buildWeekColumns(weekRefs, expandedMonths), [weekRefs, expandedMonths])
+
+  const orderedMonths = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const col of columns) {
+      if (!seen.has(col.month)) {
+        seen.add(col.month)
+        out.push(col.month)
+      }
+    }
+    return out
+  }, [columns])
+
+  const monthSpans = useMemo(() => {
+    const spans = new Map<string, number>()
+    for (const col of columns) spans.set(col.month, (spans.get(col.month) ?? 0) + 1)
+    return spans
+  }, [columns])
+
+  const monthCellMap = useMemo(
+    () => aggregateLines(lines, (l) => monthCellKey(l.material_code, l.plan_week_month)),
+    [lines],
+  )
+  const weekCellMap = useMemo(
+    () => aggregateLines(lines, (l) => weekCellKey(l.material_code, l.plan_week_start)),
     [lines],
   )
 
-  const cellMap = useMemo(() => {
-    const map = new Map<string, MatrixCell>()
-    for (const line of lines) {
-      const key = cellKey(line.material_code, line.plan_month)
-      let cell = map.get(key)
-      if (!cell) {
-        cell = emptyCell()
-        map.set(key, cell)
-      }
-      cell.demand += Number(line.demand_forecast)
-      cell.available += Number(line.opening_stock)
-      cell.planned += Number(line.qty)
-      if (line.capacity_gap) cell.gap = true
-      if (line.locked_by_planner) cell.locked = true
-      if (line.lead_shortfall) cell.shortfall = true
-      if (!cell.demandMonths.includes(line.demand_month)) cell.demandMonths.push(line.demand_month)
-      cell.cellLines.push(line)
-    }
-    for (const cell of map.values()) cell.demandMonths.sort()
-    return map
-  }, [lines])
-
-  function getCell(materialCode: string, planMonth: string): MatrixCell {
-    return cellMap.get(cellKey(materialCode, planMonth)) ?? emptyCell()
+  function getMonthCell(materialCode: string, month: string): MatrixCell {
+    return monthCellMap.get(monthCellKey(materialCode, month)) ?? emptyCell()
+  }
+  function getWeekCell(materialCode: string, weekStart: string): MatrixCell {
+    return weekCellMap.get(weekCellKey(materialCode, weekStart)) ?? emptyCell()
+  }
+  /** Planned cell for one column: a real week column reads the week-grain
+   *  map; a collapsed month's summary column reads the month-grain map
+   *  (the same aggregate Demand/Available use), matching the pre-week
+   *  monthly matrix's behaviour for a month the planner hasn't expanded. */
+  function getPlannedCell(materialCode: string, col: Column): MatrixCell {
+    return col.kind === 'week' ? getWeekCell(materialCode, col.week_start) : getMonthCell(materialCode, col.month)
   }
 
-  if (products.length === 0 || planMonths.length === 0) {
+  if (products.length === 0 || orderedMonths.length === 0) {
     return (
       <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 py-12 text-center">
         <p className="text-sm text-neutral-500">No plan lines yet — generate a run to see the matrix here.</p>
@@ -153,26 +277,62 @@ export function ProductionMatrix({
       style={{ maxHeight: MAX_HEIGHT, maxWidth: '100%' }}
     >
       <table className="min-w-full border-collapse text-xs">
+        {/* The WHOLE <thead> is the sticky-top unit (not each row/cell
+            individually) — same technique the pre-week single-row header
+            used (see this file's header comment): a `position: sticky`
+            table-header-group pins as one box, so both header rows ride
+            along together with no separate offset math needed for row 2.
+            Only cells that ALSO need HORIZONTAL pinning (Product/Metric)
+            get their own extra `sticky left-*` — a cell can be sticky on
+            one axis via its own rule while inheriting the other axis from
+            an ancestor's sticky box. */}
         <thead className="sticky top-0 z-20 bg-neutral-50">
           <tr>
             <th
+              rowSpan={2}
               className="sticky left-0 z-30 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600"
               style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
             >
               Product
             </th>
             <th
+              rowSpan={2}
               className="sticky z-30 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-2 text-left text-[11px] font-semibold text-neutral-600"
               style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
             >
               Metric
             </th>
-            {planMonths.map((month) => (
+            {orderedMonths.map((month) => {
+              const expanded = expandedMonths.has(month)
+              return (
+                <th
+                  key={month}
+                  colSpan={monthSpans.get(month) ?? 1}
+                  className="border-b border-r-2 border-r-neutral-300 bg-neutral-50 p-0 text-center text-[11px] font-semibold text-neutral-600"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleMonth(month)}
+                    aria-expanded={expanded}
+                    title={expanded ? 'Collapse this month' : 'Expand this month into weeks'}
+                    className="flex h-9 w-full items-center justify-center gap-1 px-2 hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                  >
+                    {expanded ? <ChevronDown aria-hidden className="h-3 w-3 shrink-0" /> : <ChevronRight aria-hidden className="h-3 w-3 shrink-0" />}
+                    {month}
+                  </button>
+                </th>
+              )
+            })}
+          </tr>
+          <tr>
+            {columns.map((col) => (
               <th
-                key={month}
-                className="border-b border-r border-neutral-200 px-2 py-2 text-right text-[11px] font-semibold text-neutral-600 min-w-24"
+                key={col.id}
+                className="h-7 border-b border-r border-neutral-200 bg-neutral-50 px-1.5 py-1 text-center text-[10px] font-medium text-neutral-500"
+                style={{ minWidth: WEEK_COL_MIN_WIDTH }}
+                title={col.kind === 'week' ? (col.label ?? col.week_start) : undefined}
               >
-                {month}
+                {col.kind === 'week' ? weekColumnShortLabel(col) : ''}
               </th>
             ))}
           </tr>
@@ -183,8 +343,11 @@ export function ProductionMatrix({
               key={product.code}
               product={product}
               noBom={!!noBomCodes?.has(product.code)}
-              planMonths={planMonths}
-              getCell={getCell}
+              columns={columns}
+              orderedMonths={orderedMonths}
+              monthSpans={monthSpans}
+              getMonthCell={getMonthCell}
+              getPlannedCell={getPlannedCell}
               formatValue={formatValue}
               onAdjustCell={onAdjustCell}
               readOnly={readOnly}
@@ -196,8 +359,18 @@ export function ProductionMatrix({
   )
 }
 
+/** Short header text for a week column: the part of the server's
+ *  `week_label` before ' · ' (e.g. 'Sep W4' or '2026-W40'), with the full
+ *  label (including the day range) as the hover tooltip via the caller's
+ *  `title`. A synthetic placeholder week (empty month) carries no label —
+ *  its column falls back to the bare date so it still reads as something
+ *  rather than blank. */
+function weekColumnShortLabel(col: WeekColumn): string {
+  if (col.label) return col.label.split(' · ')[0]
+  return col.week_start
+}
+
 type MetricRow = 'Demand' | 'Available' | 'Planned'
-const METRIC_ROWS: MetricRow[] = ['Demand', 'Available', 'Planned']
 
 // Demand/Available context values: a real 0 is rendered as muted as the "—"
 // no-data dash so the (many) zero cells recede instead of shouting.
@@ -218,113 +391,156 @@ function MetricValue({
 function ProductRows({
   product,
   noBom,
-  planMonths,
-  getCell,
+  columns,
+  orderedMonths,
+  monthSpans,
+  getMonthCell,
+  getPlannedCell,
   formatValue,
   onAdjustCell,
   readOnly,
 }: {
   product: { code: string; name: string }
   noBom: boolean
-  planMonths: string[]
-  getCell: (materialCode: string, planMonth: string) => MatrixCell
+  columns: Column[]
+  orderedMonths: string[]
+  monthSpans: Map<string, number>
+  getMonthCell: (materialCode: string, month: string) => MatrixCell
+  getPlannedCell: (materialCode: string, col: Column) => MatrixCell
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
 }) {
+  const productCell = (
+    <td
+      rowSpan={3}
+      className="sticky left-0 z-10 border-b border-r border-t-2 border-t-neutral-300 border-neutral-200 bg-white px-3 py-1.5 align-top text-left font-medium text-neutral-800"
+      style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
+    >
+      <span className="flex items-center gap-1.5">
+        <span className="truncate font-mono text-xs">{product.code}</span>
+        {noBom && (
+          // Badge (packages/shell) doesn't spread rest props onto its
+          // <span> — a `title` passed directly to it is silently
+          // dropped. Wrap it in a plain span instead (matches the old
+          // MpsLineTable.tsx convention).
+          <span title="No approved BOM yet — Phase 1C material calc will skip this product">
+            <Badge variant="warning">No BOM</Badge>
+          </span>
+        )}
+      </span>
+      {product.name !== product.code && (
+        <span className="block truncate text-[11px] font-normal text-neutral-400">{product.name}</span>
+      )}
+    </td>
+  )
+
+  function metricLabelCell(metric: MetricRow, borderTop: boolean) {
+    return (
+      <td
+        className={cn(
+          'sticky z-10 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-medium text-neutral-500',
+          borderTop && 'border-t-2 border-t-neutral-300',
+        )}
+        style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
+      >
+        {metric}
+      </td>
+    )
+  }
+
   return (
     <>
-      {METRIC_ROWS.map((metric, i) => (
-        <tr
-          key={metric}
-          className={cn(
-            'border-b border-neutral-100 last:border-0',
-            // Thicker rule between product groups (above each product's first row).
-            i === 0 && 'border-t-2 border-t-neutral-300',
-          )}
-        >
-          {i === 0 && (
-            <td
-              rowSpan={METRIC_ROWS.length}
-              className="sticky left-0 z-10 border-b border-r border-neutral-200 bg-white px-3 py-1.5 align-top text-left font-medium text-neutral-800"
-              style={{ width: PRODUCT_COL_WIDTH, minWidth: PRODUCT_COL_WIDTH }}
-            >
-              <span className="flex items-center gap-1.5">
-                <span className="truncate font-mono text-xs">{product.code}</span>
-                {noBom && (
-                  // Badge (packages/shell) doesn't spread rest props onto its
-                  // <span> — a `title` passed directly to it is silently
-                  // dropped. Wrap it in a plain span instead (matches the old
-                  // MpsLineTable.tsx convention).
-                  <span title="No approved BOM yet — Phase 1C material calc will skip this product">
-                    <Badge variant="warning">No BOM</Badge>
-                  </span>
-                )}
-              </span>
-              {product.name !== product.code && (
-                <span className="block truncate text-[11px] font-normal text-neutral-400">{product.name}</span>
-              )}
-            </td>
-          )}
-          <td
-            className="sticky z-10 border-b border-r border-neutral-200 bg-neutral-50 px-3 py-1.5 text-left text-[11px] font-medium text-neutral-500"
-            style={{ left: PRODUCT_COL_WIDTH, width: 90, minWidth: 90 }}
-          >
-            {metric}
-          </td>
-          {planMonths.map((month) => (
-            <MetricCell
-              key={month}
-              metric={metric}
-              cell={getCell(product.code, month)}
-              formatValue={formatValue}
-              onAdjustCell={onAdjustCell}
-              readOnly={readOnly}
-            />
-          ))}
-        </tr>
-      ))}
+      {/* Demand — monthly, spans + centres over that month's week columns
+          (or its single collapsed summary column). */}
+      <tr className="border-b border-neutral-100">
+        {productCell}
+        {metricLabelCell('Demand', true)}
+        {orderedMonths.map((month) => (
+          <MonthMetricCell
+            key={month}
+            metric="Demand"
+            span={monthSpans.get(month) ?? 1}
+            borderTop
+            cell={getMonthCell(product.code, month)}
+            formatValue={formatValue}
+          />
+        ))}
+      </tr>
+
+      {/* Available — monthly, same spanning rule as Demand. */}
+      <tr className="border-b border-neutral-100">
+        {metricLabelCell('Available', false)}
+        {orderedMonths.map((month) => (
+          <MonthMetricCell
+            key={month}
+            metric="Available"
+            span={monthSpans.get(month) ?? 1}
+            borderTop={false}
+            cell={getMonthCell(product.code, month)}
+            formatValue={formatValue}
+          />
+        ))}
+      </tr>
+
+      {/* Planned — the only per-week row: one cell per column, whether that
+          column is a real week or a collapsed month's summary. */}
+      <tr className="border-b-0">
+        {metricLabelCell('Planned', false)}
+        {columns.map((col) => (
+          <PlannedCell
+            key={col.id}
+            cell={getPlannedCell(product.code, col)}
+            formatValue={formatValue}
+            onAdjustCell={onAdjustCell}
+            readOnly={readOnly}
+          />
+        ))}
+      </tr>
     </>
   )
 }
 
-function MetricCell({
+function MonthMetricCell({
   metric,
+  span,
+  borderTop,
+  cell,
+  formatValue,
+}: {
+  metric: 'Demand' | 'Available'
+  span: number
+  borderTop: boolean
+  cell: MatrixCell
+  formatValue: (kg: number) => string
+}) {
+  const hasData = cell.cellLines.length > 0
+  const value = metric === 'Demand' ? cell.demand : cell.available
+  return (
+    <td
+      colSpan={span}
+      className={cn(
+        'h-10 border-b border-r border-neutral-100 bg-white px-2 text-center font-mono',
+        metric === 'Demand' ? 'text-neutral-700' : 'text-neutral-500',
+        borderTop && 'border-t-2 border-t-neutral-300',
+      )}
+    >
+      <MetricValue value={value} hasData={hasData} formatValue={formatValue} />
+    </td>
+  )
+}
+
+function PlannedCell({
   cell,
   formatValue,
   onAdjustCell,
   readOnly,
 }: {
-  metric: MetricRow
   cell: MatrixCell
   formatValue: (kg: number) => string
   onAdjustCell: (lines: MpsLine[]) => void
   readOnly: boolean
 }) {
-  const hasData = cell.cellLines.length > 0
-
-  // The three metric sub-rows get distinct subtle backgrounds so a planner
-  // can tell them apart at a glance while scrolling months horizontally —
-  // applied to every cell in the row (not just ones with data) so the row
-  // reads as a solid band. Planned's gap/shortfall highlighting below
-  // overrides this base tint on the cells that need it.
-  if (metric === 'Demand') {
-    return (
-      <td className="h-10 border-b border-r border-neutral-100 bg-white px-2 text-right font-mono text-neutral-700">
-        <MetricValue value={cell.demand} hasData={hasData} formatValue={formatValue} />
-      </td>
-    )
-  }
-
-  if (metric === 'Available') {
-    return (
-      <td className="h-10 border-b border-r border-neutral-100 bg-white px-2 text-right font-mono text-neutral-500">
-        <MetricValue value={cell.available} hasData={hasData} formatValue={formatValue} />
-      </td>
-    )
-  }
-
-  // Planned — the only clickable row, and the actionable output (bold).
   // "Has production" = a non-zero planned qty; a cell that merely has lines
   // but nets to zero output (e.g. fully covered by available stock) renders
   // as empty, same as a cell with no lines at all — neither is something a
