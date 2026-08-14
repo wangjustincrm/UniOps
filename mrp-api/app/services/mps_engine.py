@@ -174,11 +174,39 @@ trickiest function here and was deliberately deferred. Do not "discover"
 this again: it is a known, accepted trade.
 
 See `pack_bucket`'s own docstring for the two regimes and every tie-break.
+
+# Weekly pipeline (weekly-MPS Task 5)
+
+`generate_weekly_mps` is what drives `pack_bucket`: it applies the
+production lead time in WEEKS, buckets the lead-shifted demand by the
+owning month of its target week, packs each bucket, and overflows whatever
+does not fit backwards week by week -- across bucket boundaries -- with a
+shelf-life gate on every step. Whatever survives to the current week, or
+fails that gate, becomes an explicit `capacity_gap`; nothing is ever
+dropped. Its docstring carries the full pipeline, the reason a bucket's
+canvas starts at the target week rather than at the month's first week,
+and why two demand months of one material are merged before packing.
+
+The shelf-life gate (`_prebuild_allowed` + `_minus_months`) compares REAL
+calendar-day differences. Design §2.6 forbids "4.33 weeks per month" and
+"30 days per month" outright: three months ending 2026-05-01 is 89 days,
+not 90.93, and at a 1/3 safety margin that is the difference between
+allowing and refusing the week of 2026-03-02 -- one whole week of
+production either shipped or written off.
+
+`generate_mps` is now a transitional dispatcher over
+`generate_monthly_mps` (still used by `app/api/v1/mps.py`) and
+`generate_weekly_mps`; see its docstring. Task 7 retires it.
 """
-from collections.abc import Sequence
+from calendar import monthrange
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_DOWN, ROUND_FLOOR, ROUND_UP, Decimal
+
+from app.services.week_calendar import (
+    owning_month, shift_weeks, week_start_of, weeks_of_month,
+)
 
 
 @dataclass(frozen=True)
@@ -293,7 +321,7 @@ def _overflow_reason(month: str, material_code: str, qty: Decimal, month_load: _
 # ── Main entry point ─────────────────────────────────────────────────────────
 
 
-def generate_mps(
+def generate_monthly_mps(
     demands: list[DemandItem],
     limits: CapacityLimits,
     shelf_life_months: dict[str, int | None],
@@ -474,7 +502,14 @@ class WeeklyLine:
     demand_month: str
     plan_week_start: date
     qty: Decimal
+    # Filled in by `generate_weekly_mps`, not by `pack_bucket`: the owning
+    # month of `plan_week_start` depends on the week mode, and `pack_bucket`
+    # is deliberately mode-blind (it only ever receives a resolved list of
+    # week starts). `weeks_early` likewise needs the lead-shifted target
+    # week, which single-bucket packing never sees.
+    plan_week_month: str | None = None
     is_prebuild: bool = False
+    weeks_early: int = 0
     prebuild_reason: str | None = None
     shelf_life_ok: bool = True
     capacity_gap: bool = False
@@ -1170,3 +1205,478 @@ def _plan_shortfall(lines: list[WeeklyLine]) -> Decimal:
 def _sorted_lines(lines: list[WeeklyLine]) -> list[WeeklyLine]:
     return sorted(lines, key=lambda l: (l.plan_week_start, l.material_code,
                                         l.demand_month, l.capacity_gap))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Weekly pipeline (weekly-MPS Task 5)
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _month_first_day(month: str) -> date:
+    """First calendar day of a `'YYYY-MM'` month."""
+    return date(int(month[:4]), int(month[5:7]), 1)
+
+
+def _minus_months(anchor: date, months: int) -> date:
+    """`anchor` moved back `months` whole calendar months, with the day of
+    month clamped to the target month's length (31 Mar - 1 month = 28 or 29
+    Feb, never 2 or 3 Mar).
+
+    Deliberately NOT `anchor - timedelta(days=30 * months)`, and not
+    `4.33 * 7` days per month either: design §2.6 forbids approximating
+    months because the shelf-life gate below works at week resolution, and
+    over an 18-month horizon a 30- or 30.31-day month drifts by whole weeks.
+    """
+    total = anchor.year * 12 + (anchor.month - 1) - months
+    year, month0 = divmod(total, 12)
+    last_day = monthrange(year, month0 + 1)[1]
+    return date(year, month0 + 1, min(anchor.day, last_day))
+
+
+def _prebuild_allowed(plan_week_start: date, demand_month: str,
+                      shelf_life_months: int | None,
+                      safety_margin_fraction: Decimal) -> bool:
+    """Real calendar-day comparison, deliberately not 4.33 weeks/month.
+
+    Over an 18-month horizon the approximation drifts by whole weeks, which
+    is exactly the resolution this whole feature works at -- an off-by-one
+    week on a shelf-life gate is the difference between shippable stock and
+    a write-off. A worked divergence, measured rather than argued: three
+    months of shelf life ending at 2026-05-01 is 89 real days (February is
+    short), but 3 x 4.33 x 7 = 90.93 days. At a 1/3 safety margin that is
+    59 allowed days against the approximation's 60 -- and the ISO week
+    starting 2026-03-02 sits exactly 60 days before that demand month, so
+    the approximation would plan a whole week of production that the real
+    calendar says expires before it ships.
+
+    **The reference point is the demand month's FIRST day**, not its last,
+    which keeps this consistent with the month-based engine's
+    `prebuild_months <= floor(shelf_life * (1 - margin))`.
+
+    Unknown shelf life (`None`) can never be pre-built: fail safe. Callers
+    must therefore only consult this for weeks genuinely EARLIER than the
+    lead-shifted target week -- placing at (or after) the target is not a
+    pre-build and is never gated, exactly as the month-based engine treats
+    an offset of zero as always legal regardless of shelf life.
+    """
+    if shelf_life_months is None:
+        return False
+    demand_start = _month_first_day(demand_month)
+    horizon_days = (demand_start - _minus_months(demand_start, shelf_life_months)).days
+    allowed_days = int(Decimal(horizon_days) * (Decimal("1") - safety_margin_fraction))
+    return (demand_start - plan_week_start).days <= allowed_days
+
+
+def _peel(queue: list[list], amount: Decimal) -> list[tuple[str, Decimal]]:
+    """Take `amount` off the front of `queue` (`[demand_month, qty]` pairs
+    held in ASCENDING demand-month order), returning the slices consumed.
+
+    This is the whole of the "attribute a produced week back to demand
+    months" rule: the earliest demand month is satisfied first, so any
+    shortfall lands on the LATEST demand month. Deliberately not pro rata --
+    a planner who reads "October is short 50" acts differently from one who
+    reads "everything is 8% short"."""
+    taken: list[tuple[str, Decimal]] = []
+    while amount > 0 and queue:
+        demand_month, available = queue[0]
+        take = amount if amount < available else available
+        taken.append((demand_month, take))
+        amount -= take
+        if take == available:
+            queue.pop(0)
+        else:
+            queue[0][1] = available - take
+    return taken
+
+
+def _early_note(weeks_early: int, bucket_reason: str | None) -> str:
+    plural = "" if weeks_early == 1 else "s"
+    note = f"pre-built {weeks_early} week{plural} early"
+    return f"{note}: {bucket_reason}" if bucket_reason else note
+
+
+def _merge_same_slot(lines: list[WeeklyLine]) -> list[WeeklyLine]:
+    """Fold two lines describing the same slot into one.
+
+    The backward walk can land in a week that already holds the same
+    material for the same demand month (the packer left room there -- e.g.
+    `max_sku_count` blocked everyone else from using it). Two rows for one
+    material in one week read as two production runs; physically it is one.
+    Only identical slots merge: a real line and a `capacity_gap` line are
+    never folded together, because that would hide a shortfall inside a
+    production quantity."""
+    folded: dict[tuple, int] = {}
+    out: list[WeeklyLine] = []
+    for line in lines:
+        key = (line.material_code, line.demand_month, line.plan_week_start,
+               line.capacity_gap, line.is_prebuild, line.weeks_early,
+               line.shelf_life_ok, line.locked, line.lead_shortfall)
+        at = folded.get(key)
+        if at is None:
+            folded[key] = len(out)
+            out.append(line)
+        else:
+            seen = out[at]
+            out[at] = WeeklyLine(
+                material_code=seen.material_code, demand_month=seen.demand_month,
+                plan_week_start=seen.plan_week_start,
+                plan_week_month=seen.plan_week_month,
+                qty=_tidy(seen.qty + line.qty),
+                is_prebuild=seen.is_prebuild, weeks_early=seen.weeks_early,
+                prebuild_reason=seen.prebuild_reason or line.prebuild_reason,
+                shelf_life_ok=seen.shelf_life_ok, capacity_gap=seen.capacity_gap,
+                locked=seen.locked, lead_shortfall=seen.lead_shortfall)
+    return out
+
+
+def generate_weekly_mps(
+    demands: list[DemandItem],
+    limits_for_week: Callable[[date], CapacityLimits],
+    shelf_life_months: dict[str, int | None],
+    safety_margin_fraction: Decimal,
+    lead_weeks: int,
+    current_week: date,
+    mode: str,
+) -> list[WeeklyLine]:
+    """The weekly master production schedule, per design §2.0's six steps.
+
+    Pure function: no DB, no clock. `limits_for_week` is the caller's
+    already-bound resolver (Task 3's `resolve_limits_for_week` partial);
+    `current_week` is the "now" this run schedules from and is normalised to
+    its own week start, so a caller may pass any day of the current week.
+
+    ## The pipeline
+
+    1. **Net requirements** arrive as `DemandItem`s (material x demand
+       month), unchanged from the month-based engine.
+    2. **Lead shift.** `target_week = last week of the demand month -
+       lead_weeks`, clamped never to fall before `current_week`; the clamp
+       sets `lead_shortfall` on every line of that demand month.
+    3. **Bucket** by the OWNING MONTH of the target week -- `week_calendar`
+       decides ownership; this module never branches on `mode` itself.
+    4. **Pack** each bucket with `pack_bucket`.
+    5. **Overflow backwards**, week by week, across bucket boundaries if
+       need be, every step gated by `_prebuild_allowed`.
+    6. **Hitting the current week, or failing shelf life, is a
+       `capacity_gap`** -- demand is never silently dropped.
+
+    ## The bucket's canvas: the target week to the end of that month
+
+    A bucket's weeks are its month's weeks **from the earliest target week
+    in the bucket onward**. Earlier weeks are reachable only through step 5,
+    where the shelf-life gate applies. This is what makes `lead_weeks=0`
+    mean what design §2.6 says it means -- "not one step early": with no
+    lead the target is the demand month's last week, so that is the only
+    canvas week and everything before it is an explicit, gated pre-build.
+    Handing the whole month to `pack_bucket` instead would quietly place
+    production four weeks early with no shelf-life check at all.
+
+    In production this is not the degenerate one-week canvas it looks like:
+    with the default `lead_weeks=4` a bucket month typically receives two
+    demand months (one whose target is that month's first week, one whose
+    target is its last), so the canvas is the full month and P2/P3 levelling
+    applies exactly as `pack_bucket`'s golden case describes.
+
+    ## Same material, two demand months, one bucket: merged before packing
+
+    Lead-shifting routinely lands two demand months of one material in one
+    bucket, and `pack_bucket` guarantees contiguity per `BucketItem`, NOT
+    per material -- two non-contiguous runs of one product is precisely the
+    changeover cost P1 exists to prevent. So demand months are merged per
+    material before packing, and each produced week is attributed back
+    afterwards, earliest demand month first (see `_peel`). That attribution
+    order is also the shelf-life-optimal one: the earliest demand month has
+    the earliest reference date and therefore the least room to be
+    pre-built, and it is exactly the one handed the earliest weeks.
+
+    A merged item may therefore be placed earlier than the target of the
+    LATER demand month it partly serves. Such lines carry `weeks_early > 0`
+    and `is_prebuild`, and are shelf-life gated like any other pre-build; a
+    slice that fails the gate becomes a shortfall rather than a production
+    line (that week's capacity is then simply unused -- rare enough to
+    accept, and visible rather than silent).
+
+    ## What is NOT here
+
+    **Locked lines.** The month-based engine seeds them into its ledger;
+    `pack_bucket` is a pure function of `(items, weeks, limits)` with no
+    way to pre-seed a week, and giving it one was outside this task. Task 7
+    can express a locked plan with no engine change: drop the locked demand
+    from `demands`, subtract the locked quantity (and its SKU slot) inside
+    its own `limits_for_week` closure, and echo the locked `WeeklyLine`s
+    into the result with `locked=True`.
+    """
+    current = week_start_of(current_week, mode)
+
+    # `pack_bucket` drops non-positive quantities (a zero net requirement is
+    # nothing to produce, a negative one is upstream nonsense that must not
+    # become a negative production line); drop them here too, so they never
+    # reach the bucketing arithmetic either.
+    payload = [d for d in demands if d.qty > 0]
+    if not payload:
+        return []
+
+    # ② Lead shift, per demand month -- every item of a demand month shares
+    #    one target week, because the target depends only on the month.
+    targets: dict[str, date] = {}
+    clamped: dict[str, bool] = {}
+    for month in {d.demand_month for d in payload}:
+        standard = shift_weeks(weeks_of_month(month, mode)[-1], -lead_weeks, mode)
+        clamped[month] = standard < current
+        targets[month] = current if clamped[month] else standard
+
+    lines: list[WeeklyLine] = []
+
+    # ②b The lead shift itself can already outrun shelf life -- a one-month
+    #     shelf life against an eight-week lead means the product would be
+    #     out of date before the month it was made for even starts. The
+    #     month-based engine checks its lead-adjusted target the same way
+    #     (`test_shelf_life_shorter_than_lead_is_a_gap`), so this is not new
+    #     behaviour, only re-based onto weeks.
+    #
+    #     **Unknown shelf life is deliberately NOT checked here.** The lead
+    #     is a configured plant parameter, not a discretionary decision:
+    #     refusing to plan anything at all for a product whose ERP shelf-life
+    #     field happens to be empty would return an empty plan rather than a
+    #     visible one. Missing shelf life instead blocks every DISCRETIONARY
+    #     step -- no pre-build, ever, not one week (design §2.6's
+    #     `lead_weeks=0` case, and Task 7 reports these products in the run
+    #     summary so the blank field is visible rather than silent).
+    viable: list[DemandItem] = []
+    for item in payload:
+        target = targets[item.demand_month]
+        shelf_life = shelf_life_months.get(item.material_code)
+        if shelf_life is not None and not _prebuild_allowed(
+                target, item.demand_month, shelf_life, safety_margin_fraction):
+            lines.append(WeeklyLine(
+                material_code=item.material_code, demand_month=item.demand_month,
+                plan_week_start=target,
+                plan_week_month=owning_month(target, mode),
+                qty=_tidy(item.qty),
+                prebuild_reason=(
+                    f"the {lead_weeks}-week lead puts {item.demand_month} demand in the week "
+                    f"of {target.isoformat()}, earlier than {item.material_code}'s "
+                    f"{shelf_life}-month shelf life allows"),
+                shelf_life_ok=False, capacity_gap=True,
+                lead_shortfall=clamped[item.demand_month]))
+            continue
+        viable.append(item)
+
+    # ③ Bucket by the owning month of the target week.
+    buckets: dict[str, list[DemandItem]] = {}
+    for item in viable:
+        buckets.setdefault(owning_month(targets[item.demand_month], mode), []).append(item)
+
+    ledger: dict[date, _WeekLoad] = {}
+    # (bucket_month, canvas, material_code, demand_month, qty, bucket_reason)
+    overflow: list[tuple[str, list[date], str, str, Decimal, str | None]] = []
+
+    for bucket_month in sorted(buckets):
+        members = buckets[bucket_month]
+        floor_week = max(current, min(targets[d.demand_month] for d in members))
+        canvas = [w for w in weeks_of_month(bucket_month, mode) if w >= floor_week]
+        # Never empty: every member's target week is one of this month's own
+        # weeks and is >= floor_week by construction.
+        per_week = [limits_for_week(w) for w in canvas]
+
+        contributions: dict[str, list[list]] = {}
+        for item in sorted(members, key=lambda d: (d.material_code, d.demand_month)):
+            contributions.setdefault(item.material_code, []).append(
+                [item.demand_month, item.qty])
+
+        merged = [BucketItem(code, parts[0][0], sum((q for _, q in parts), Decimal("0")))
+                  for code, parts in sorted(contributions.items())]
+
+        # ④ Pack the bucket.
+        packed = pack_bucket(merged, canvas, per_week)
+        target_pos = {month: canvas.index(week) for month, week in targets.items()
+                      if week in canvas}
+
+        bucket_overflow: list[tuple] = []
+        for code, parts in sorted(contributions.items()):
+            queue = [list(part) for part in parts]       # ascending demand month
+            produced = sorted(
+                (l for l in packed if l.material_code == code and not l.capacity_gap),
+                key=lambda l: l.plan_week_start)
+            # Gap lines are pinned to a week and are NOT production; they
+            # never touch the ledger and never count towards a week's SKUs.
+            gaps = [l for l in packed if l.material_code == code and l.capacity_gap]
+
+            for line in produced:
+                here = canvas.index(line.plan_week_start)
+                for demand_month, take in _peel(queue, line.qty):
+                    early = max(0, target_pos[demand_month] - here)
+                    if early and not _prebuild_allowed(
+                            line.plan_week_start, demand_month,
+                            shelf_life_months.get(code), safety_margin_fraction):
+                        lines.append(WeeklyLine(
+                            material_code=code, demand_month=demand_month,
+                            plan_week_start=targets[demand_month],
+                            plan_week_month=owning_month(targets[demand_month], mode),
+                            qty=_tidy(take),
+                            prebuild_reason=(
+                                f"the only room left in bucket {bucket_month} is the week of "
+                                f"{line.plan_week_start.isoformat()}, which is earlier than "
+                                f"shelf life allows for {demand_month} demand"),
+                            shelf_life_ok=False, capacity_gap=True,
+                            lead_shortfall=clamped[demand_month]))
+                        continue
+                    lines.append(WeeklyLine(
+                        material_code=code, demand_month=demand_month,
+                        plan_week_start=line.plan_week_start,
+                        plan_week_month=owning_month(line.plan_week_start, mode),
+                        qty=_tidy(take),
+                        is_prebuild=early > 0, weeks_early=early,
+                        prebuild_reason=_early_note(early, line.prebuild_reason) if early else None,
+                        lead_shortfall=clamped[demand_month]))
+                    ledger.setdefault(line.plan_week_start, _WeekLoad()).commit(code, take)
+
+            for gap in gaps:
+                for demand_month, take in _peel(queue, gap.qty):
+                    bucket_overflow.append((bucket_month, canvas, code, demand_month,
+                                            take, gap.prebuild_reason))
+
+            if queue:
+                # `pack_bucket` conserves exactly (produced + gap == input),
+                # so the queue must be empty here. If it ever is not, some
+                # net requirement has gone missing -- the one failure mode
+                # this module refuses to have quietly.
+                raise RuntimeError(
+                    f"pack_bucket returned less than it was given for {code} in bucket "
+                    f"{bucket_month}: {queue} left unattributed")
+
+        overflow.extend(sorted(bucket_overflow, key=lambda o: (o[3], o[2])))
+
+    # ⑤ / ⑥ Cross-bucket pre-build. Every bucket is packed before any
+    #        overflow runs, so a bucket's own demand always outranks another
+    #        bucket's pre-build in its weeks; overflow is then resolved in
+    #        ascending bucket order, so earlier demand claims earlier weeks
+    #        first.
+    for bucket_month, canvas, code, demand_month, qty, bucket_reason in overflow:
+        target = targets[demand_month]
+        shelf_life = shelf_life_months.get(code)
+        # Ascending timeline, extended backwards one REAL week at a time.
+        # Never `week - timedelta(weeks=1)`: under `month_fixed` weeks are
+        # not all 7 days long, so only `shift_weeks` stays on the grid.
+        #
+        # The walk starts at the LAST canvas week, not at the target and not
+        # outside the bucket: a bucket that still has idle open weeks (which
+        # `pack_bucket` may deliberately leave -- its objective is unmet
+        # demand, not week occupancy) must have them offered to this
+        # quantity before any of it is called a shortfall. Reporting a
+        # shortfall a planner could fix by hand inside that very month is
+        # how a plan loses its reader.
+        timeline = list(canvas)
+        pos = timeline.index(target)
+        cursor = len(timeline) - 1
+        remaining = qty
+        blocked_by_shelf_life = False
+        stopper: date | None = None
+
+        while remaining > 0:
+            if cursor < 0:
+                timeline.insert(0, shift_weeks(timeline[0], -1, mode))
+                pos += 1
+                cursor = 0
+            week = timeline[cursor]
+            if week < current:
+                stopper = week
+                break
+            early = max(0, pos - cursor)
+            if early and not _prebuild_allowed(week, demand_month, shelf_life,
+                                               safety_margin_fraction):
+                # The gate is monotone in the week: everything earlier fails
+                # too, so stop rather than keep walking.
+                blocked_by_shelf_life = True
+                stopper = week
+                break
+            limits = limits_for_week(week)
+            if _week_can_host(limits):
+                load = ledger.setdefault(week, _WeekLoad())
+                if load.sku_room(code, limits):
+                    room = load.remaining(limits)
+                    take = remaining if room is None else min(remaining, room)
+                    if take > 0:
+                        load.commit(code, take)
+                        lines.append(WeeklyLine(
+                            material_code=code, demand_month=demand_month,
+                            plan_week_start=week,
+                            plan_week_month=owning_month(week, mode),
+                            qty=_tidy(take),
+                            is_prebuild=early > 0, weeks_early=early,
+                            prebuild_reason=(
+                                _early_note(early, bucket_reason) if early
+                                # Not early, so not a pre-build -- but it did
+                                # not land where the packer first put it, and
+                                # echoing the packer's "no week left" verbatim
+                                # onto a line that DID find a week reads as a
+                                # contradiction.
+                                else f"re-placed later in bucket {bucket_month}: {bucket_reason}"),
+                            lead_shortfall=clamped[demand_month]))
+                        remaining -= take
+            # A full or closed week is stepped over, not stopped at: this is
+            # a pre-build search (the month-based engine hops over full
+            # months the same way), not one of `pack_bucket`'s contiguous
+            # runs.
+            cursor -= 1
+
+        if remaining > 0:
+            # ⑥ Final shortfall: pinned to the target week -- where this
+            #    quantity was supposed to be made -- and never flagged as a
+            #    pre-build, because nothing moved.
+            if blocked_by_shelf_life and shelf_life is None:
+                why = (f"{code} has no shelf life on record, so it may never be "
+                       f"pre-built out of bucket {bucket_month}")
+            elif blocked_by_shelf_life:
+                why = (f"shelf life bars pre-building {demand_month} demand as early as "
+                       f"the week of {stopper.isoformat()}")
+            else:
+                # The only other way out of the walk: it reached the current
+                # week. In the earliest bucket of the horizon that is
+                # immediate -- there is no earlier bucket to pre-build into,
+                # so this gap is already final rather than provisional.
+                why = (f"pre-building stopped at the current week "
+                       f"{current.isoformat()}; there is no earlier week to use")
+            lines.append(WeeklyLine(
+                material_code=code, demand_month=demand_month,
+                plan_week_start=target,
+                plan_week_month=owning_month(target, mode),
+                qty=_tidy(remaining),
+                prebuild_reason=f"{bucket_reason}; {why}" if bucket_reason else why,
+                shelf_life_ok=not blocked_by_shelf_life,
+                capacity_gap=True,
+                lead_shortfall=clamped[demand_month]))
+
+    return _sorted_lines(_merge_same_slot(lines))
+
+
+def generate_mps(*args, **kwargs):
+    """Transitional dispatcher: month-based or week-based, chosen by keyword.
+
+    The weekly pipeline is `generate_weekly_mps`; the month-based engine
+    that `app/api/v1/mps.py` still calls is `generate_monthly_mps`. Both
+    keep their real names and their own signatures -- this shim exists only
+    so the two can coexist under the name every current caller already
+    uses, for as long as `app/api/v1/mps.py` is still on months. Task 7
+    moves that file onto weeks and retires this function with it.
+
+    Routing is by keyword, never by arity: `limits_for_week` / `lead_weeks`
+    / `current_week` / `mode` mean weekly; `limits` / `lead_months` /
+    `current_month` / `locked` mean monthly. Mixing them, or giving
+    neither, raises rather than guessing -- silently picking the wrong
+    engine would return a plausible-looking plan on the wrong calendar."""
+    weekly = {"limits_for_week", "lead_weeks", "current_week", "mode"} & kwargs.keys()
+    monthly = {"limits", "lead_months", "current_month", "locked"} & kwargs.keys()
+    if weekly and monthly:
+        raise TypeError(
+            f"generate_mps got both weekly {sorted(weekly)} and monthly "
+            f"{sorted(monthly)} keywords; call generate_weekly_mps or "
+            "generate_monthly_mps directly instead.")
+    if weekly:
+        return generate_weekly_mps(*args, **kwargs)
+    if monthly:
+        return generate_monthly_mps(*args, **kwargs)
+    raise TypeError(
+        "generate_mps cannot tell a weekly call from a monthly one without "
+        "keywords; pass lead_weeks=/current_week=/mode= for the weekly "
+        "pipeline, or lead_months=/current_month= for the month-based one.")

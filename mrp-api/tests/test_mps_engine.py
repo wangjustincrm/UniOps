@@ -19,7 +19,12 @@ from datetime import date
 from decimal import Decimal
 
 from app.services.mps_engine import (
-    BucketItem, CapacityLimits, DemandItem, PlannedLine, generate_mps, pack_bucket,
+    BucketItem, CapacityLimits, DemandItem, PlannedLine, generate_mps,
+    generate_weekly_mps, pack_bucket,
+)
+from app.services.mps_engine import _minus_months, _prebuild_allowed
+from app.services.week_calendar import (
+    owning_month, shift_weeks, week_start_of, weeks_of_month,
 )
 
 # Anchor used by pre-lead tests below: always <= every demand month they use,
@@ -1066,3 +1071,408 @@ def test_uniform_capacity_never_strands_an_open_week_beside_a_gap():
                 used = {l.plan_week_start for l in lines if not l.capacity_gap}
                 idle = [w for w in WEEKS if w not in used]
                 assert not idle, (cap, sku, case, _by_week(lines), idle)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Weekly pipeline (weekly-MPS Task 5): lead shift, bucketing, cross-bucket
+# pre-build, shelf-life gate
+# ══════════════════════════════════════════════════════════════════════════
+#
+# The first seven cases are verbatim from the Task 5 brief. Everything after
+# `TestWeeklyPipelineEdges` is regression cover for a decision this task had
+# to make that the brief left open (or that Task 4's handover flagged).
+
+
+def test_lead_zero_reproduces_no_shift():
+    """lead=0 时目标周就是需求月末周，一步都不许提前。"""
+    lines = generate_mps(
+        demands=[DemandItem("A", "2026-10", Decimal("30"))],
+        limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
+        shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
+        lead_weeks=0, current_week=date(2026, 8, 3), mode="iso_thursday",
+    )
+    assert {l.plan_week_start for l in lines} == {weeks_of_month("2026-10", "iso_thursday")[-1]}
+    assert all(l.weeks_early == 0 for l in lines)
+
+
+def test_lead_four_weeks_moves_the_target_back_four_weeks():
+    target = shift_weeks(weeks_of_month("2026-10", "iso_thursday")[-1], -4, "iso_thursday")
+    lines = generate_mps(
+        demands=[DemandItem("A", "2026-10", Decimal("30"))],
+        limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
+        shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
+        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday",
+    )
+    assert {l.plan_week_start for l in lines} == {target}
+
+
+def test_lead_clamped_to_current_week_flags_shortfall():
+    lines = generate_mps(
+        demands=[DemandItem("A", "2026-08", Decimal("30"))],
+        limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
+        shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
+        lead_weeks=12, current_week=date(2026, 8, 24), mode="iso_thursday",
+    )
+    assert all(l.plan_week_start >= date(2026, 8, 24) for l in lines)
+    assert any(l.lead_shortfall for l in lines)
+
+
+def test_weeks_early_counts_prebuild_only_not_the_lead_itself():
+    """lead 造成的提前不算 weeks_early，否则每行都写着"提前 4 周"，告警就废了。"""
+    lines = generate_mps(
+        demands=[DemandItem("A", "2026-10", Decimal("30"))],
+        limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
+        shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
+        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday",
+    )
+    assert all(l.weeks_early == 0 and not l.is_prebuild for l in lines)
+
+
+def test_overflow_moves_earlier_and_marks_prebuild():
+    """需求超过目标月总产能 → 向更早的周溢出，标 is_prebuild 与 weeks_early。"""
+    lines = generate_mps(
+        demands=[DemandItem("A", "2026-10", Decimal("300"))],
+        limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
+        shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
+        lead_weeks=0, current_week=date(2026, 6, 1), mode="iso_thursday",
+    )
+    assert sum(Decimal(str(l.qty)) for l in lines) == Decimal("300")
+    assert any(l.is_prebuild and l.weeks_early > 0 for l in lines)
+
+
+def test_shelf_life_uses_real_date_difference_not_4_33_weeks_per_month():
+    """保质期 3 个月、安全余量 1/3 → 允许提前 ≈ 61 天。
+    62 天前的那一周必须被判为不可用，而"3×4.33=13 周=91 天"的近似会放它过去。"""
+    lines = generate_mps(
+        demands=[DemandItem("A", "2026-10", Decimal("400"))],
+        limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
+        shelf_life_months={"A": 3}, safety_margin_fraction=Decimal("0.3333"),
+        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday",
+    )
+    demand_start = date(2026, 10, 1)
+    for l in lines:
+        if not l.capacity_gap:
+            assert (demand_start - l.plan_week_start).days <= 62, l
+
+
+def test_missing_shelf_life_means_never_movable():
+    lines = generate_mps(
+        demands=[DemandItem("A", "2026-10", Decimal("300"))],
+        limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
+        shelf_life_months={}, safety_margin_fraction=Decimal("0.3333"),
+        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday",
+    )
+    assert any(l.capacity_gap for l in lines)
+    assert all(not l.is_prebuild for l in lines)
+
+
+# ── Task 5's own decisions, each with a witness ─────────────────────────────
+
+_WEEKLY = "iso_thursday"
+
+
+def _cap(cap="40", min_out="20", sku=None):
+    """A `limits_for_week` that answers the same thing for every week."""
+    return lambda w: CapacityLimits(
+        sku, None if cap is None else Decimal(cap),
+        None if min_out is None else Decimal(min_out))
+
+
+def _run(demands, limits=None, shelf=None, margin="0.3333", lead=4,
+         now=date(2026, 8, 3), mode=_WEEKLY):
+    return generate_weekly_mps(
+        demands=demands, limits_for_week=limits or _cap(),
+        shelf_life_months={"A": 24, "B": 24, "C": 24} if shelf is None else shelf,
+        safety_margin_fraction=Decimal(margin), lead_weeks=lead,
+        current_week=now, mode=mode)
+
+
+def _total(lines):
+    return sum((Decimal(str(l.qty)) for l in lines), Decimal("0"))
+
+
+def test_minus_months_clamps_the_day_of_month():
+    """31 Mar minus one month is the end of February, not 2 or 3 March.
+
+    Rolling over would make the shelf-life horizon one to three days LONGER
+    than the calendar allows, in the direction that lets stale product
+    through."""
+    assert _minus_months(date(2026, 3, 31), 1) == date(2026, 2, 28)
+    assert _minus_months(date(2024, 3, 31), 1) == date(2024, 2, 29)   # leap
+    assert _minus_months(date(2026, 1, 31), 1) == date(2025, 12, 31)
+    assert _minus_months(date(2026, 1, 15), 13) == date(2024, 12, 15)
+    assert _minus_months(date(2026, 5, 1), 3) == date(2026, 2, 1)
+
+
+def test_shelf_life_rejects_a_week_the_4_33_approximation_would_admit():
+    """The reason design §2.6 bans "4.33 weeks per month", as a number.
+
+    Three months of shelf life ending 2026-05-01 is 89 REAL days -- February
+    is short -- while 3 x 4.33 x 7 is 90.93. At a 1/3 safety margin that is
+    59 allowed days against the approximation's 60, and the ISO week
+    starting 2026-03-02 sits at exactly 60. The approximation plans a whole
+    week of production that the calendar says expires before it ships."""
+    demand_start, week = date(2026, 5, 1), date(2026, 3, 2)
+    assert week.weekday() == 0 and (demand_start - week).days == 60
+
+    real_horizon = (demand_start - _minus_months(demand_start, 3)).days
+    approx_horizon = int(Decimal("3") * Decimal("4.33") * Decimal("7"))
+    assert (real_horizon, approx_horizon) == (89, 90)
+
+    margin = Decimal("0.3333")
+    assert int(Decimal(real_horizon) * (1 - margin)) == 59
+    assert int(Decimal(approx_horizon) * (1 - margin)) == 60      # lets 60 through
+
+    assert _prebuild_allowed(week, "2026-05", 3, margin) is False
+    assert _prebuild_allowed(date(2026, 3, 9), "2026-05", 3, margin) is True
+
+    # ...and end to end: nothing is ever planned into that week.
+    lines = _run([DemandItem("A", "2026-05", Decimal("400"))],
+                 shelf={"A": 3}, lead=0, now=date(2026, 1, 5))
+    assert _total(lines) == Decimal("400")
+    for l in lines:
+        if not l.capacity_gap:
+            assert (demand_start - l.plan_week_start).days <= 59, l
+    assert not any(l.plan_week_start == week and not l.capacity_gap for l in lines)
+
+
+def test_a_lead_longer_than_shelf_life_is_a_gap_before_anything_is_packed():
+    """The lead shift can outrun shelf life on its own -- the weekly form of
+    the month engine's `test_shelf_life_shorter_than_lead_is_a_gap`. A
+    one-month shelf life allows 20 days; an 8-week lead puts 2026-10 demand
+    in the week of 2026-08-31, 31 days out."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("30"))], shelf={"A": 1},
+                 lead=8, now=date(2026, 1, 5))
+    assert [(l.plan_week_start, l.capacity_gap, l.shelf_life_ok, l.is_prebuild)
+            for l in lines] == [(date(2026, 8, 31), True, False, False)]
+    assert "shelf life" in lines[0].prebuild_reason
+    # The same lead is fine once shelf life is long enough.
+    ok = _run([DemandItem("A", "2026-10", Decimal("30"))], shelf={"A": 24},
+              lead=8, now=date(2026, 1, 5))
+    assert not any(l.capacity_gap for l in ok)
+
+
+def test_two_demand_months_of_one_material_are_merged_into_one_run():
+    """`pack_bucket` guarantees contiguity per BucketItem, not per material,
+    and lead-shifting routinely puts two demand months of one material in
+    one bucket. Unmerged, A comes out as two runs with C wedged between --
+    two extra cleandowns, which is exactly what P1 exists to prevent."""
+    demands = [DemandItem("A", "2026-10", Decimal("60")),
+               DemandItem("C", "2026-10", Decimal("50")),
+               DemandItem("A", "2026-11", Decimal("40"))]
+    canvas = weeks_of_month("2026-10", _WEEKLY)
+    assert shift_weeks(weeks_of_month("2026-10", _WEEKLY)[-1], -4, _WEEKLY) == canvas[0]
+    assert owning_month(shift_weeks(weeks_of_month("2026-11", _WEEKLY)[-1], -4, _WEEKLY),
+                        _WEEKLY) == "2026-10"          # both land in one bucket
+
+    # What NOT merging would produce, straight from the packer.
+    unmerged = pack_bucket(
+        [BucketItem("A", "2026-10", Decimal("60")),
+         BucketItem("C", "2026-10", Decimal("50")),
+         BucketItem("A", "2026-11", Decimal("40"))],
+        canvas, CapacityLimits(None, Decimal("40"), Decimal("20")))
+    split = sorted({canvas.index(l.plan_week_start) for l in unmerged
+                    if l.material_code == "A" and not l.capacity_gap})
+    assert split != list(range(split[0], split[-1] + 1)), split   # two runs
+
+    lines = _run(demands)
+    for code in ("A", "C"):
+        weeks = sorted({canvas.index(l.plan_week_start) for l in lines
+                        if l.material_code == code and not l.capacity_gap})
+        assert weeks == list(range(weeks[0], weeks[-1] + 1)), (code, weeks)
+    for code, month, qty in (("A", "2026-10", "60"), ("A", "2026-11", "40"),
+                             ("C", "2026-10", "50")):
+        assert _total([l for l in lines if l.material_code == code
+                       and l.demand_month == month]) == Decimal(qty)
+
+
+def test_the_shortfall_lands_on_the_latest_demand_month_not_pro_rata():
+    """Earliest demand month satisfied first. "November is short 50" is
+    actionable; "everything is 20% short" is not.
+
+    Both demand months merge into the 2026-10 bucket (200 t of capacity
+    against 250 t of demand), and `current_week` is the bucket's own first
+    week, so the 50 t overflow has nowhere earlier to go and becomes a real
+    shortfall. Reverse the attribution order and the same 50 t lands on
+    October instead -- which is the point of pinning the order."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("100")),
+                  DemandItem("A", "2026-11", Decimal("150"))],
+                 now=date(2026, 9, 28))
+    assert _total(lines) == Decimal("250")
+    october = [l for l in lines if l.demand_month == "2026-10"]
+    assert not any(l.capacity_gap for l in october)
+    assert _total(october) == Decimal("100")
+    gaps = [l for l in lines if l.capacity_gap]
+    assert [(l.demand_month, Decimal(str(l.qty))) for l in gaps] == [
+        ("2026-11", Decimal("50"))]
+
+
+def test_the_earliest_bucket_has_nowhere_earlier_to_go():
+    """A bucket gap is provisional everywhere except at the start of the
+    horizon: pre-build only overflows BACKWARDS, so in the first bucket it
+    is already the final shortfall. It is a capacity shortfall, not a
+    shelf-life one."""
+    lines = _run([DemandItem("A", "2026-08", Decimal("100"))], lead=0,
+                 now=date(2026, 8, 24))
+    assert _total(lines) == Decimal("100")
+    assert all(l.plan_week_start == date(2026, 8, 24) for l in lines)
+    gap = [l for l in lines if l.capacity_gap]
+    assert len(gap) == 1 and Decimal(str(gap[0].qty)) == Decimal("60")
+    assert gap[0].shelf_life_ok is True and gap[0].is_prebuild is False
+    assert "current week" in gap[0].prebuild_reason
+
+
+def test_an_idle_week_in_the_same_bucket_is_used_before_reporting_a_shortfall():
+    """`pack_bucket` may deliberately leave an open week idle beside a gap
+    (its objective is unmet demand, not week occupancy -- Task 4 §修1/round
+    3). That idle week is still real capacity, and a planner who can see it
+    will not trust a plan that calls the same month short. So the backward
+    walk starts at the LAST week of the bucket, not outside it."""
+    caps = {date(2026, 8, 31): "20", date(2026, 9, 7): "5",
+            date(2026, 9, 14): "40", date(2026, 9, 21): "30"}
+    limits = lambda w: CapacityLimits(None, Decimal(caps.get(w, "0")), Decimal("1"))
+    canvas = weeks_of_month("2026-09", _WEEKLY)
+    assert shift_weeks(canvas[-1], -3, _WEEKLY) == canvas[0]      # full-month canvas
+
+    packed = pack_bucket([BucketItem("A", "2026-09", Decimal("35")),
+                          BucketItem("B", "2026-09", Decimal("40"))],
+                         canvas, [CapacityLimits(None, Decimal(caps[w]), Decimal("1"))
+                                  for w in canvas])
+    assert any(l.capacity_gap for l in packed)                    # packer gives up
+    assert date(2026, 9, 7) not in {l.plan_week_start for l in packed}   # ...idle
+
+    lines = _run([DemandItem("A", "2026-09", Decimal("35")),
+                  DemandItem("B", "2026-09", Decimal("40"))],
+                 limits=limits, lead=3, now=date(2026, 1, 5))
+    assert not any(l.capacity_gap for l in lines), [(str(l.plan_week_start), l.qty) for l in lines]
+    assert _total(lines) == Decimal("75")
+    assert (date(2026, 9, 7), Decimal("5")) in {
+        (l.plan_week_start, Decimal(str(l.qty))) for l in lines}
+
+
+def test_a_closed_week_is_stepped_over_by_the_backward_walk():
+    """A shutdown week is skipped, not stopped at: the walk is a pre-build
+    search (the month engine hops over full months the same way), not one of
+    `pack_bucket`'s contiguous runs."""
+    shut = date(2026, 10, 12)
+    limits = lambda w: CapacityLimits(
+        None, Decimal("0") if w == shut else Decimal("40"), Decimal("20"))
+    lines = _run([DemandItem("A", "2026-10", Decimal("150"))], limits=limits,
+                 lead=0, now=date(2026, 6, 1))
+    assert _total(lines) == Decimal("150")
+    assert not any(l.capacity_gap for l in lines)
+    assert shut not in {l.plan_week_start for l in lines}
+    assert date(2026, 10, 5) in {l.plan_week_start for l in lines}   # walked past it
+
+
+def test_month_fixed_mode_walks_the_real_week_grid():
+    """Weeks are not 7 days long under `month_fixed`, so the backward walk
+    goes through `shift_weeks`, never `date - timedelta(weeks=1)`."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("300"))], lead=0,
+                 now=date(2026, 6, 1), mode="month_fixed")
+    assert _total(lines) == Decimal("300")
+    assert not any(l.capacity_gap for l in lines)
+    for l in lines:
+        assert l.plan_week_start.day in (1, 8, 15, 22, 29), l
+        assert l.plan_week_month == owning_month(l.plan_week_start, "month_fixed")
+    # 2026-09-29 -> 2026-10-01 is a 2-day step; a timedelta walk would have
+    # produced 2026-09-24, which is not on the grid at all.
+    assert {date(2026, 9, 29), date(2026, 10, 1)} <= {l.plan_week_start for l in lines}
+
+
+def test_two_buckets_never_double_book_a_week():
+    """Every bucket is packed before any overflow runs, so a bucket's own
+    demand outranks another bucket's pre-build in its weeks; overflow then
+    resolves in ascending bucket order, so earlier demand claims the earlier
+    weeks first."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("120")),
+                  DemandItem("B", "2026-11", Decimal("300"))], lead=0,
+                 now=date(2026, 6, 1))
+    assert _total(lines) == Decimal("420")
+    per_week: dict = {}
+    for l in lines:
+        if not l.capacity_gap:
+            per_week[l.plan_week_start] = per_week.get(
+                l.plan_week_start, Decimal("0")) + Decimal(str(l.qty))
+    assert per_week and max(per_week.values()) <= Decimal("40")
+    # October's own demand kept the October weeks; B pre-built around it.
+    assert {l.material_code for l in lines
+            if l.plan_week_start in (date(2026, 10, 19), date(2026, 10, 26))} == {"A"}
+
+
+def test_nothing_is_lost_and_no_week_is_overfilled_across_the_pipeline():
+    """Conservation and the two hard ceilings, over every shape this task
+    changed: clamped leads, missing shelf life, shutdowns, multi-material
+    buckets, both non-default week modes."""
+    scenarios = [
+        ([DemandItem("A", "2026-10", Decimal("300"))], {"A": 24}, 0, date(2026, 6, 1)),
+        ([DemandItem("A", "2026-10", Decimal("300"))], {}, 0, date(2026, 1, 5)),
+        ([DemandItem("A", "2026-08", Decimal("500"))], {"A": 24}, 12, date(2026, 8, 24)),
+        ([DemandItem("A", "2026-10", Decimal("140")),
+          DemandItem("B", "2026-10", Decimal("95")),
+          DemandItem("A", "2026-11", Decimal("77"))], {"A": 24, "B": 6}, 4, date(2026, 7, 6)),
+        ([DemandItem("A", "2026-10", Decimal("400"))], {"A": 3}, 0, date(2026, 1, 5)),
+    ]
+    for mode in ("iso_thursday", "iso_first_day", "month_fixed"):
+        for demands, shelf, lead, now in scenarios:
+            lines = _run(demands, limits=_cap("40", "20", 2), shelf=shelf,
+                         lead=lead, now=now, mode=mode)
+            assert _total(lines) == _total(demands), (mode, lead, shelf)
+            per_week: dict = {}
+            for l in lines:
+                assert l.plan_week_month == owning_month(l.plan_week_start, mode)
+                if l.capacity_gap:
+                    continue
+                assert l.plan_week_start >= week_start_of(now, mode)
+                per_week.setdefault(l.plan_week_start, []).append(l)
+            for week, rows in per_week.items():
+                assert sum(Decimal(str(r.qty)) for r in rows) <= Decimal("40"), (mode, week)
+                assert len({r.material_code for r in rows}) <= 2, (mode, week)
+
+
+def test_lead_shortfall_marks_every_line_of_that_demand_month():
+    """The clamp is a property of the demand month, not of one line."""
+    lines = _run([DemandItem("A", "2026-08", Decimal("300")),
+                  DemandItem("B", "2026-12", Decimal("30"))],
+                 lead=12, now=date(2026, 8, 24))
+    august = [l for l in lines if l.demand_month == "2026-08"]
+    assert august and all(l.lead_shortfall for l in august)
+    december = [l for l in lines if l.demand_month == "2026-12"]
+    assert december and not any(l.lead_shortfall for l in december)
+    assert all(l.plan_week_start >= date(2026, 8, 24) for l in lines)
+
+
+def test_plan_week_month_is_the_owning_month_not_the_demand_month():
+    """A week that straddles a month boundary belongs to whichever month the
+    calendar module says -- 2026-09-28 is an OCTOBER week under
+    `iso_thursday`, and the plan must say so even though it is a September
+    date."""
+    lines = _run([DemandItem("A", "2026-10", Decimal("30"))], lead=4)
+    assert [(l.plan_week_start, l.plan_week_month) for l in lines] == [
+        (date(2026, 9, 28), "2026-10")]
+
+
+def test_non_positive_demand_is_dropped_and_no_demand_returns_nothing():
+    assert _run([]) == []
+    assert _run([DemandItem("A", "2026-10", Decimal("0")),
+                 DemandItem("B", "2026-10", Decimal("-5"))]) == []
+    kept = _run([DemandItem("A", "2026-10", Decimal("0")),
+                 DemandItem("B", "2026-10", Decimal("30"))])
+    assert {l.material_code for l in kept} == {"B"}
+
+
+def test_the_dispatcher_refuses_to_guess():
+    """`generate_mps` fronts two engines on two calendars while
+    `app/api/v1/mps.py` is still on months. Guessing wrong would return a
+    plausible-looking plan against the wrong one."""
+    import pytest
+    with pytest.raises(TypeError, match="both weekly"):
+        generate_mps(demands=[], limits_for_week=_cap(), lead_months=0)
+    with pytest.raises(TypeError, match="cannot tell"):
+        generate_mps([], _cap(), {}, Decimal("0.3333"))
+    # ...and each side still routes.
+    assert generate_mps(demands=[], limits_for_week=_cap(), shelf_life_months={},
+                        safety_margin_fraction=Decimal("0.3333"), lead_weeks=0,
+                        current_week=date(2026, 8, 3), mode=_WEEKLY) == []
+    assert generate_mps([], CapacityLimits(1, Decimal("1")), {}, Decimal("0"),
+                        lead_months=0, current_month="2026-01") == []
