@@ -1512,6 +1512,14 @@ def test_the_dispatcher_refuses_to_guess():
         generate_mps(demands=[], limits_for_week=_cap(), lead_months=0)
     with pytest.raises(TypeError, match="cannot tell"):
         generate_mps([], _cap(), {}, Decimal("0.3333"))
+    # `locked` is NOT a discriminator -- BOTH engines take it. Listing it as
+    # monthly-only made every weekly recalculate (the one shape that always
+    # carries locked lines) fail with "got both weekly and monthly keywords".
+    assert generate_mps(demands=[], limits_for_week=_cap(), shelf_life_months={},
+                        safety_margin_fraction=Decimal("0.3333"), lead_weeks=0,
+                        current_week=date(2026, 8, 3), mode=_WEEKLY,
+                        locked=[_locked("A", "2026-10", date(2026, 10, 5), "30")]
+                        ) == [_locked("A", "2026-10", date(2026, 10, 5), "30")]
     # ...and each side still routes.
     assert generate_mps(demands=[], limits_for_week=_cap(), shelf_life_months={},
                         safety_margin_fraction=Decimal("0.3333"), lead_weeks=0,
@@ -1799,3 +1807,51 @@ def test_a_gap_free_plan_flags_no_prebuild_when_nothing_crossed_a_bucket():
                                      l.demand_month) for l in flagged])
         # ...while the week distances are still recorded.
         assert any(l.weeks_early > 0 for l in lines), lead
+
+
+# ── Fix round 3 ─────────────────────────────────────────────────────────────
+
+
+def test_a_locked_shortfall_line_is_dropped_not_echoed():
+    """A locked line carrying `capacity_gap=True` is discarded on the way in.
+
+    Callers really do produce them -- the API layer rebuilds locked lines
+    from whatever the planner locked, `capacity_gap` flag and all. A
+    shortfall is not committed production, so it is already skipped when
+    seeding the ledger and when subtracting from demand; echoing it anyway
+    emitted the stale gap AND re-planned the same demand in full, so 100 t
+    of demand plus a 40 t locked gap came out as a 140 t plan.
+
+    Dropping is right and subtracting would be actively wrong: subtracting
+    turns "we could not make this" into "we no longer need this" and deletes
+    real demand for good. A gap is derived data -- this run recomputes it
+    from current demand and current capacity -- so a stale one is discarded
+    and the shortage has to prove itself again."""
+    stale = _locked("A", "2026-10", date(2026, 10, 5), "40", capacity_gap=True)
+    lines = _run([DemandItem("A", "2026-10", Decimal("100"))], locked=[stale])
+
+    assert _total(lines) == Decimal("100")          # not 140
+    assert stale not in lines
+    assert not any(l.locked for l in lines)
+    assert not any(l.capacity_gap for l in lines)   # capacity was ample; re-proved
+
+    # A real locked line alongside a stale gap: the real one still counts.
+    real = _locked("A", "2026-10", date(2026, 10, 5), "30")
+    mixed = _run([DemandItem("A", "2026-10", Decimal("100"))], locked=[real, stale])
+    assert _total(mixed) == Decimal("100")
+    assert real in mixed and stale not in mixed
+    assert _total([l for l in mixed if not l.locked]) == Decimal("70")
+
+
+def test_a_locked_shortfall_does_not_suppress_a_shortage_that_is_still_real():
+    """Discarding the stale gap must not lose the shortage -- if the demand
+    still does not fit, this run says so on its own evidence."""
+    only = date(2026, 10, 26)
+    limits = lambda w: CapacityLimits(None, Decimal("40") if w == only else Decimal("0"),
+                                      Decimal("20"))
+    stale = _locked("A", "2026-10", only, "60", capacity_gap=True)
+    lines = _run([DemandItem("A", "2026-10", Decimal("100"))], limits=limits,
+                 lead=0, locked=[stale])
+    assert _total(lines) == Decimal("100")
+    assert _total([l for l in lines if l.capacity_gap]) == Decimal("60")
+    assert not any(l.locked for l in lines)

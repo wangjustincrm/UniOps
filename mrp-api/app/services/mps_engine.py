@@ -8,8 +8,7 @@ weekly pipeline that supersedes it is `generate_weekly_mps` (see the
 
 `generate_monthly_mps` turns net requirements (`DemandItem`s, one per
 material x demand month) into a monthly master production schedule
-(`PlannedLine`s),
-subject to two per-month capacity ceilings (`CapacityLimits`: SKU count and
+(`PlannedLine`s), subject to two per-month capacity ceilings (`CapacityLimits`: SKU count and
 total output qty), a production lead time (`lead_months`) that shifts the
 default placement earlier than the demand month, and a shelf-life hard rule
 that bounds how many months early a product may be pre-built (measured from
@@ -189,9 +188,25 @@ owning month of its target week, packs each bucket, and overflows whatever
 does not fit backwards week by week -- across bucket boundaries -- with a
 shelf-life gate on every step. Whatever survives to the current week, or
 fails that gate, becomes an explicit `capacity_gap`; nothing is ever
-dropped. Its docstring carries the full pipeline, the reason a bucket's
-canvas starts at the target week rather than at the month's first week,
-and why two demand months of one material are merged before packing.
+dropped. Its docstring carries the full pipeline, why a bucket's canvas is
+its owning month's FULL 4/5 weeks (and what truncating it to start at the
+target week cost, which is why that was reverted), and why two demand
+months of one material are merged before packing.
+
+**What the whole-month canvas costs: just-in-time placement.** The packer
+lays out from the earliest open week, so with `lead_weeks=0` a single 30 t
+October demand lands in the FIRST week of its bucket (2026-09-28) where
+the earlier truncated canvas put it in the last (2026-10-26). That is
+exactly reproducible; the aggregate is not a single number, because it
+depends on the scenario mix -- two independent sweeps of 4,000 seeds put
+the rise in qty-weighted mean `weeks_early` at 1.388 -> 1.716 (review's
+mix) and 0.506 -> 1.049 (a narrower mix without shutdowns or unknown
+shelf life). Both agree on the direction and on roughly half a week.
+
+The extra holding time is bounded by the shelf-life gate and by the
+demand's own month, and it is what design §2.0 ④ asks for. But note that
+NO field warns on it: by the round-2 ruling `is_prebuild` is False by
+construction anywhere inside the bucket, so only `weeks_early` shows it.
 
 The shelf-life gate (`_prebuild_allowed` + `_minus_months`) compares REAL
 calendar-day differences, and applies to EVERY placed week earlier than
@@ -1312,10 +1327,18 @@ def _minus_months(anchor: date, months: int) -> date:
     `4.33 weeks/month` does NOT drift by a whole week over 18 months --
     measured across every anchor month in 2024-2028 for n = 1..18 the worst
     deviation is **4.42 days** (the cruder `30 days/month` does reach 10).
-    The ban stands on something better: a deviation only has to cross ONE
-    week boundary to matter, and in 2025-2027 there are **20 real ISO
-    Mondays** the approximation admits and the calendar refuses, clustered
-    at n = 1..3 because February is short. See `_prebuild_allowed`.
+    The ban stands on something better: **a deviation never has to reach a
+    whole week to cross a week boundary.** There are real ISO Mondays the
+    approximation admits and the real calendar refuses, clustered at
+    n = 1..3 because February is short. See `_prebuild_allowed` for a
+    worked one.
+
+    **Do not quote a count without the enumeration that produced it** -- it
+    is not a property of the calendar, it is a property of how many
+    anchors, horizons and margins you sweep. Same script, different sweeps:
+    8 over 2025-2027 at margin 1/3 alone; 20 over 2025-2027 across margins
+    {0, 0.1, 1/3, 0.5}; 22 over 2024-2028 across the same four. Spec §2.6
+    dropped its count for this reason (`18cd61c`).
     """
     total = anchor.year * 12 + (anchor.month - 1) - months
     year, month0 = divmod(total, 12)
@@ -1335,15 +1358,18 @@ def _prebuild_allowed(plan_week_start: date, demand_month: str,
     margin that is 59 allowed days against the approximation's 60 -- and the
     ISO week starting 2026-03-02 sits exactly 60 days before that demand
     month, so the approximation would plan a whole week of production that
-    the real calendar says expires before it ships. Twenty such ISO Mondays
-    exist in 2025-2027.
+    the real calendar says expires before it ships. That week is not the
+    only one; how many others there are depends entirely on how wide a
+    sweep you run, so `_minus_months` records the enumeration beside every
+    number rather than quoting a bare count.
 
-    **Reproducing that count requires one detail**: the margin must be
-    applied to the UNFLOORED approximate horizon --
-    `int(n * Decimal("4.33") * 7 * (1 - margin))`. Flooring the horizon
-    first (`int(n * 4.33 * 7)`, then the margin) yields only 10 of the 20,
-    because the two roundings sometimes cancel. The count is a property of
-    a specific wrong formula, not of "approximation" in the abstract.
+    **Two roundings, and the order matters.** The counts above apply the
+    margin to the UNFLOORED approximate horizon
+    (`int(n * Decimal("4.33") * 7 * (1 - margin))`). Flooring the horizon
+    first (`int(n * 4.33 * 7)`, then the margin) halves them -- 4 against 8,
+    10 against 20, 11 against 22 -- because the two roundings sometimes
+    cancel. Which is the point: these numbers describe one specific wrong
+    formula, not "approximation" in the abstract.
 
     **What the design first claimed, and what is actually true**: it said
     the approximation drifts by whole weeks over an 18-month horizon. For
@@ -1388,6 +1414,14 @@ def _placement_allowed(week: date, demand_month: str, shelf_life_months: int | N
       ERP shelf-life field is blank would return an empty plan instead of a
       visible one. Every DISCRETIONARY step is still refused: no pre-build,
       ever, not one week.
+
+      **This carries an obligation the engine cannot discharge alone.** A
+      product with no shelf life on record silently loses all of its
+      pre-build headroom, and from the outside that is indistinguishable
+      from ordinary capacity pressure. Whoever wires this up should surface
+      the set of materials whose shelf life came back empty alongside the
+      run. That is a RECOMMENDATION, not a claim about any existing task:
+      at the time of writing no downstream task had committed to it.
 
     Monotone in the week under both branches (an earlier week is never more
     legal than a later one), which is what lets the backward walk stop at
@@ -1575,13 +1609,28 @@ def generate_weekly_mps(
     """
     current = week_start_of(current_week, mode)
 
-    locked_lines = list(locked or [])
+    # A locked line carrying `capacity_gap=True` is DROPPED, not echoed.
+    # Callers do produce them: the API layer rebuilds locked lines from
+    # whatever the planner locked, `capacity_gap` flag and all.
+    #
+    # A shortfall is not committed production, so there is nothing to
+    # preserve -- and echoing one while the same demand is re-planned in
+    # full double-counts it (100 t of demand plus a stale 40 t gap line came
+    # out as a 140 t plan, breaking the conservation invariant this module
+    # raises `RuntimeError` elsewhere to protect).
+    #
+    # Subtracting it from demand instead would be far worse than either:
+    # that turns "we could not make this" into "we no longer need this" and
+    # deletes real demand permanently, hiding the shortage rather than
+    # re-reporting it. A gap is DERIVED data -- this run recomputes it from
+    # current demand and current capacity, which is the entire point of
+    # recalculating -- so the only correct thing to do with a stale one is
+    # to discard it and let the shortage prove itself again.
+    locked_lines = [line for line in (locked or []) if not line.capacity_gap]
     ledger: dict[date, _WeekLoad] = {}
     locked_by_week: dict[date, dict[str, Decimal]] = {}
     held_by_demand: dict[tuple[str, str], Decimal] = {}
     for line in locked_lines:
-        if line.capacity_gap:
-            continue                    # a shortfall is not committed production
         key = (line.material_code, line.demand_month)
         held_by_demand[key] = held_by_demand.get(key, Decimal("0")) + line.qty
         week = locked_by_week.setdefault(line.plan_week_start, {})
@@ -1844,11 +1893,16 @@ def generate_mps(*args, **kwargs):
 
     Routing is by keyword, never by arity: `limits_for_week` / `lead_weeks`
     / `current_week` / `mode` mean weekly; `limits` / `lead_months` /
-    `current_month` / `locked` mean monthly. Mixing them, or giving
-    neither, raises rather than guessing -- silently picking the wrong
-    engine would return a plausible-looking plan on the wrong calendar."""
+    `current_month` mean monthly. Mixing them, or giving neither, raises
+    rather than guessing -- silently picking the wrong engine would return
+    a plausible-looking plan on the wrong calendar.
+
+    **`locked` is NOT a discriminator**: both engines take it. Listing it as
+    a monthly-only keyword made every weekly call that passed locked lines
+    fail with "got both weekly and monthly keywords" -- the one shape a
+    recalculate always has."""
     weekly = {"limits_for_week", "lead_weeks", "current_week", "mode"} & kwargs.keys()
-    monthly = {"limits", "lead_months", "current_month", "locked"} & kwargs.keys()
+    monthly = {"limits", "lead_months", "current_month"} & kwargs.keys()
     if weekly and monthly:
         raise TypeError(
             f"generate_mps got both weekly {sorted(weekly)} and monthly "
