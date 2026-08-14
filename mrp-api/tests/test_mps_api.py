@@ -2266,3 +2266,102 @@ async def test_stats_report_the_surplus(client, db_session, admin_token, monkeyp
     assert Decimal(stats["total_surplus"]) == Decimal("400")
     # 300 的需求里只有 200 被结转吃掉，窗口末还剩 200 没人消化
     assert Decimal(stats["unconsumed_surplus"]) == Decimal("200")
+
+
+# ── 锁定区（时界）────────────────────────────────────────────────────────
+#
+# 「原料已到，不能再改计划了」——当月起 frozen_months 个月的计划原样照抄当前
+# 生效版，只重排自由区。
+
+
+@pytest.mark.anyio
+async def test_frozen_months_defaults_to_three_and_is_snapshotted(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(1)
+    version, _ = await _confirmed_version(db_session, start=start, months=6)
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    # 首次生成没有生效版可继承，也就没有「料已买」的月份 —— 实际冻结 0 个月，
+    # run 上记的就是实际值，读端点不会声称一个并未生效的锁定区。
+    assert run["frozen_months"] == 0
+    assert run["frozen_until_month"] is None
+
+
+@pytest.mark.anyio
+async def test_generating_after_a_release_copies_the_frozen_zone_verbatim(
+    client, db_session, admin_token, monkeypatch,
+):
+    """已发布计划在锁定区内的行必须原样出现在新计划里 —— 料都买了。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(1)
+    version, months = await _confirmed_version(db_session, start=start, months=6,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    first = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    released = await client.post(f"/api/v1/mps/runs/{first['id']}/confirm-release",
+                                 headers=headers)
+    assert released.status_code == 200, released.text
+    # 第一版没有可继承的生效版 → 它自己没有锁定区。第二版才有：当月起 3 个月。
+    frozen_until = _shift_month(datetime.now(timezone.utc).strftime("%Y-%m"), 2)
+    was_frozen = sorted(
+        (l["material_code"], l["plan_week_start"], l["qty"])
+        for l in released.json()["lines"] if l["plan_week_month"] <= frozen_until
+    )
+    assert was_frozen, "fixture guard: the first plan put nothing in the frozen zone"
+
+    second = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert second["frozen_months"] == 3
+    assert second["frozen_until_month"] == frozen_until
+    now_frozen = sorted(
+        (l["material_code"], l["plan_week_start"], l["qty"])
+        for l in second["lines"] if l["plan_week_month"] <= frozen_until
+    )
+    assert now_frozen == was_frozen
+
+
+@pytest.mark.anyio
+async def test_frozen_months_zero_plans_the_whole_horizon_from_scratch(
+    client, db_session, admin_token, monkeypatch,
+):
+    """0 = 全自由，等价于加锁定区之前的行为（回归锚点）。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    put = await client.put("/api/v1/params/frozen_months", json={"value": 0}, headers=headers)
+    assert put.status_code == 200, put.text
+
+    start = _future_month(1)
+    version, _ = await _confirmed_version(db_session, start=start, months=6)
+    await _factory_rule(client, headers)
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert run["frozen_months"] == 0
+    assert run["frozen_until_month"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad", [-1, 25, "3", 1.5, None, True])
+async def test_frozen_months_rejects_bad_values(client, admin_token, bad):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put("/api/v1/params/frozen_months", json={"value": bad}, headers=headers)
+    assert r.status_code == 422, r.text

@@ -111,11 +111,26 @@ def _validate_week_start_dow(value: Any) -> None:
         )
 
 
+def _validate_frozen_months(value: object) -> None:
+    """How many months from the current one are frozen -- their materials
+    are already bought, so their plan is copied forward untouched. 0 means
+    nothing is frozen. Capped at 24 because a frozen zone longer than the
+    planning horizon would freeze the entire plan permanently."""
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 24:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"frozen_months must be an integer 0..24, got {value!r}",
+        )
+
+
 _WEEK_START_DOW_KEY = "week_start_dow"
+FROZEN_MONTHS_KEY = "frozen_months"
+DEFAULT_FROZEN_MONTHS = 3
 
 _WRITABLE_PARAMS: dict[str, Callable[[Any], None]] = {
     "week_calendar_mode": _validate_week_calendar_mode,
     _WEEK_START_DOW_KEY: _validate_week_start_dow,
+    FROZEN_MONTHS_KEY: _validate_frozen_months,
 }
 
 

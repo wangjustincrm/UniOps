@@ -150,7 +150,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app.api.v1.net_requirement import _generate_months, _load_forecast_by_material
-from app.api.v1.params import get_param
+from app.api.v1.params import DEFAULT_FROZEN_MONTHS, FROZEN_MONTHS_KEY, get_param
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
 from app.models.demand import MrpDemand
@@ -296,6 +296,13 @@ class MpsRunResponse(BaseModel):
     # instead of the current planning parameter: a released plan keeps the
     # columns it was released with.
     week_start_dow: int = 0
+    # How many months were frozen when this run was generated, and the last
+    # month that covers. Frozen means "materials already purchased": those
+    # weeks are copied from the live released plan and cannot be replanned.
+    # Both are snapshots -- changing the setting must not silently unfreeze
+    # a plan somebody is already buying against.
+    frozen_months: int = 0
+    frozen_until_month: str | None = None
 
 
 class MpsRunDetailResponse(MpsRunResponse):
@@ -455,6 +462,52 @@ async def _build_demand_items(
                     material_code=material_code, demand_month=row.month, qty=row.net_requirement,
                 ))
     return demands
+
+
+async def _resolve_frozen_months(db: SessionDep) -> int:
+    """The frozen-zone length currently in force, for a run being generated
+    NOW. Every other endpoint reads it off the run."""
+    value = await get_param(db, FROZEN_MONTHS_KEY, DEFAULT_FROZEN_MONTHS)
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 24:
+        return DEFAULT_FROZEN_MONTHS
+    return value
+
+
+def _frozen_until(run: MrpMpsRun) -> str | None:
+    """Last month this run treats as frozen, or None when nothing is.
+
+    Derived from the run's own `created_at` and stored `frozen_months`, so
+    it is fixed for the life of the run: a plan generated in August with
+    three months frozen still says "through October" when it is reopened in
+    November. Anything else would quietly unfreeze weeks whose materials
+    have already been bought."""
+    if not run.frozen_months:
+        return None
+    return _shift_month(run.created_at.strftime("%Y-%m"), run.frozen_months - 1)
+
+
+def _shift_month(month: str, delta: int) -> str:
+    year, mon = (int(part) for part in month.split("-"))
+    index = year * 12 + (mon - 1) + delta
+    y, m0 = divmod(index, 12)
+    return f"{y:04d}-{m0 + 1:02d}"
+
+
+async def _live_released_run(db: SessionDep, horizon_start_month: str) -> MrpMpsRun | None:
+    """The plan currently in force, whose frozen months a new run inherits.
+
+    TODO(plan-versioning): "in force" is provisionally the most recently
+    released run. The production-plan version model (next round) introduces
+    an explicit default per horizon group and this must switch to it --
+    right now several runs can carry status='released' at once, which is
+    itself one of the bugs that work fixes.
+    """
+    return (await db.execute(
+        select(MrpMpsRun)
+        .where(MrpMpsRun.status == "released")
+        .order_by(MrpMpsRun.created_at.desc())
+        .limit(1)
+    )).scalars().first()
 
 
 async def _resolve_week_start_dow(db: SessionDep) -> int:
@@ -649,6 +702,8 @@ async def _run_detail_response(db: SessionDep, run: MrpMpsRun) -> MpsRunDetailRe
         production_lead_weeks=run.production_lead_weeks,
         week_calendar_mode=run.week_calendar_mode,
         week_start_dow=run.week_start_dow,
+        frozen_months=run.frozen_months,
+        frozen_until_month=_frozen_until(run),
         lines=[_line_response(l, run.week_calendar_mode, run.week_start_dow)
                for l in lines],
     )
@@ -800,8 +855,58 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     # afterwards -- this request included -- goes through `run.week_calendar_mode`.
     mode = await _resolve_week_mode(db)
     start_dow = await _resolve_week_start_dow(db)
-    current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
-                                 start_dow=start_dow)
+    today = datetime.now(timezone.utc).date()
+    current_week = week_start_of(today, mode, start_dow=start_dow)
+
+    # ── Frozen zone ────────────────────────────────────────────────────
+    # The first `frozen_months` months (this one included) have had their
+    # materials bought already, so their plan is inherited from the run
+    # currently in force and is not re-planned.
+    #
+    # It is implemented by moving the engine's own floor: `current_week`
+    # becomes the first week of the first LIQUID month, and the inherited
+    # lines go in as `locked`. The engine already refuses to place anything
+    # before `current_week` and already subtracts locked quantity from the
+    # demand it re-plans, so the frozen weeks are structurally unreachable
+    # rather than merely defended by a check somebody could forget. Demand
+    # for a frozen month that the inherited plan does NOT cover is clamped
+    # to the first liquid week and comes back flagged `lead_shortfall` --
+    # "this should already have been started", which is exactly what it is.
+    frozen_months = await _resolve_frozen_months(db)
+    frozen_until = (_shift_month(today.strftime("%Y-%m"), frozen_months - 1)
+                    if frozen_months else None)
+    frozen_weekly: list[WeeklyLine] = []
+    frozen_context: dict = {}
+    live = (await _live_released_run(db, version.horizon_start_month)
+            if frozen_until is not None else None)
+    if live is None:
+        # Nothing is in force yet, so nothing has been bought against a
+        # plan: the first run plans its whole horizon, frozen zone included.
+        # Freezing here would block production in the near months for no
+        # reason and hand the planner a plan that starts three months out.
+        frozen_until = None
+    if frozen_until is not None:
+        for l in await _load_lines(db, live.id):
+            if l.plan_week_month > frozen_until or l.capacity_gap or l.qty <= 0:
+                continue
+            frozen_weekly.append(WeeklyLine(
+                material_code=l.material_code, demand_month=l.demand_month,
+                plan_week_start=l.plan_week_start, plan_week_month=l.plan_week_month,
+                qty=l.qty, is_prebuild=l.is_prebuild, weeks_early=l.weeks_early,
+                prebuild_reason=l.prebuild_reason, shelf_life_ok=l.shelf_life_ok,
+                capacity_gap=False, locked=True, lead_shortfall=l.lead_shortfall,
+                surplus_qty=l.surplus_qty, carry_in_qty=l.carry_in_qty,
+                covered_by_carry=l.covered_by_carry,
+                late_production=l.late_production,
+                surplus_expiry_risk=l.surplus_expiry_risk,
+                below_min_lot=l.below_min_lot,
+            ))
+            frozen_context[(l.material_code, l.demand_month, l.plan_week_start)] = (
+                l.locked_by_planner, l.manual_adjusted)
+        liquid_month = _shift_month(frozen_until, 1)
+        liquid_start = weeks_of_month(liquid_month, mode, start_dow=start_dow)[0]
+        if liquid_start > current_week:
+            current_week = liquid_start
 
     intent_lines = await _load_intent_lines(db, version)
     intent_codes = frozenset(l.material_code for l in intent_lines)
@@ -819,7 +924,7 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     lines = generate_mps(
         demands, limits_for_week, shelf_life, safety_margin,
         lead_weeks=lead, current_week=current_week, mode=mode, start_dow=start_dow,
-        min_lots=min_lots,
+        min_lots=min_lots, locked=frozen_weekly or None,
     )
     # Snapshot the demand context (gross forecast + rolled-forward opening
     # stock) onto each line NOW, at generate time -- see
@@ -844,6 +949,10 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
         production_lead_weeks=lead,
         week_calendar_mode=mode,
         week_start_dow=start_dow,
+        # What was actually applied, not what the setting says: a first run
+        # has nothing in force to inherit, so nothing is frozen and the
+        # planner must be able to adjust those weeks.
+        frozen_months=frozen_months if frozen_until is not None else 0,
     )
     db.add(run)
     await db.flush()  # assign run.id for the lines' FK below
@@ -871,6 +980,16 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
             below_min_lot=line.below_min_lot,
         ))
 
+    # An inherited frozen line keeps the planner flags it was released with:
+    # it is the SAME committed production, not a fresh proposal, and losing
+    # a planner's lock on it would let the next recalculate move it.
+    if frozen_context:
+        for row in (await _load_lines(db, run.id)):
+            flags = frozen_context.get(
+                (row.material_code, row.demand_month, row.plan_week_start))
+            if flags is not None:
+                row.locked_by_planner, row.manual_adjusted = flags
+
     await db.commit()
     await db.refresh(run)
     return await _run_detail_response(db, run)
@@ -893,6 +1012,8 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
         production_lead_weeks=run.production_lead_weeks,
         week_calendar_mode=mode,
         week_start_dow=start_dow,
+        frozen_months=run.frozen_months,
+        frozen_until_month=_frozen_until(run),
         lines=[_line_response(l, mode, start_dow) for l in lines],
         capacity_occupancy=occupancy,
         week_grid=week_grid,
