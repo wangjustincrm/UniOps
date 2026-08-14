@@ -90,7 +90,17 @@ function initialForm(): FormState {
   return { week_start: '', constraint_type: 'max_output_qty', limit_value: '', reason: '' }
 }
 
-export function WeekExceptionsSection({ canWrite }: { canWrite: boolean }) {
+export function WeekExceptionsSection({
+  canWrite, notifySuccess, notifyError,
+}: {
+  canWrite: boolean
+  /** Round-1 review finding #4: Add/Deactivate must never fail silently —
+   *  wired to the page's `useToasts()`, same `notifySuccess`/`notifyError`
+   *  contract every drawer in this app already uses (AdjustDrawer,
+   *  RuleDrawer, WeekDrawer). */
+  notifySuccess: (message: string) => void
+  notifyError: (message: string) => void
+}) {
   const queryClient = useQueryClient()
 
   const exceptionsQuery = useQuery({
@@ -115,6 +125,7 @@ export function WeekExceptionsSection({ canWrite }: { canWrite: boolean }) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
+  const [deactivateError, setDeactivateError] = useState<string | null>(null)
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -177,25 +188,38 @@ export function WeekExceptionsSection({ canWrite }: { canWrite: boolean }) {
           reason: form.reason.trim(), is_active: true,
         })
       }
+      notifySuccess(`Saved week exception — ${formatDate(form.week_start)} · ${CONSTRAINT_TYPE_LABEL[form.constraint_type]}.`)
       setFormOpen(false)
       setForm(initialForm())
       await invalidate()
     } catch (err) {
-      setSubmitError(errMsg(err, 'Could not save this exception — please retry.'))
+      const msg = errMsg(err, 'Could not save this exception — please retry.')
+      setSubmitError(msg)
+      notifyError(msg)
     } finally {
       setSubmitting(false)
     }
   }
 
+  // Round-1 review finding #4: this used to `catch {}` with a comment
+  // claiming "nothing to roll back" — true for the ROW STATE (it does stay
+  // "Active"), but false for the PLANNER, who clicked Deactivate, saw
+  // nothing happen, and had no way to tell a failed request from a slow
+  // no-op. This codebase has already been bitten by exactly this class of
+  // silent failure once (attachment downloads failing with no signal — see
+  // project memory) — surfaced here the same way every other write path in
+  // this file does: inline `role="alert"` plus a toast.
   async function handleDeactivate(row: CapacityException) {
     setDeactivatingId(row.id)
+    setDeactivateError(null)
     try {
       await capacityApi.updateException(row.id, { is_active: false })
+      notifySuccess(`Deactivated week exception — ${formatDate(row.week_start)} · ${CONSTRAINT_TYPE_LABEL[row.constraint_type]}.`)
       await invalidate()
-    } catch {
-      // Deactivation failing leaves the row exactly as it was (still
-      // active) — nothing to roll back, the row list below re-renders from
-      // the still-current query data either way.
+    } catch (err) {
+      const msg = errMsg(err, 'Could not deactivate this exception — please retry.')
+      setDeactivateError(msg)
+      notifyError(msg)
     } finally {
       setDeactivatingId(null)
     }
@@ -217,6 +241,12 @@ export function WeekExceptionsSection({ canWrite }: { canWrite: boolean }) {
           </Button>
         )}
       </div>
+
+      {deactivateError && (
+        <p role="alert" className="mt-3 flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {deactivateError}
+        </p>
+      )}
 
       {exceptionsQuery.isError && (
         <p role="alert" className="mt-3 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">

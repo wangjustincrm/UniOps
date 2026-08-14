@@ -233,15 +233,27 @@ export default function ProductionPlanPage() {
     return s
   }, [runProductCodes, bomStatusQuery.data])
 
-  // Capacity exceptions — WeekDrawer's only source for "does this week
-  // already have a maintenance exception, and is it active" (its own
-  // read-before-write upsert rule, see capacityApi.ts's
-  // `findExistingException` doc: at most one exception row can ever exist
-  // per week+scope+constraint, so re-marking a week must PATCH that row,
-  // never POST a second one). ProductionMatrix's grey-tint/wrench signal
-  // does NOT come from this query — it reads the run's own live
-  // `capacity_occupancy` instead (see that component's header comment) —
-  // this is purely for the drawer's initial form state.
+  // Capacity exceptions — double duty since round 1's review fix:
+  //  (1) WeekDrawer's source for "does this week already have a maintenance
+  //      exception, and is it active" (its own read-before-write upsert
+  //      rule, see capacityApi.ts's `findExistingException` doc: at most
+  //      one exception row can ever exist per week+scope+constraint, so
+  //      re-marking a week must PATCH that row, never POST a second one).
+  //  (2) ProductionMatrix's grey-tint/wrench signal. Round 1: this used to
+  //      read `run.capacity_occupancy` instead — WRONG, because occupancy
+  //      is built from the run's own LINES (mrp-api's
+  //      `_compute_capacity_occupancy`) and a maintenance week has ZERO
+  //      lines by construction (`_week_can_host` closes it to all
+  //      placement) — so the tint vanished the instant a planner did the
+  //      one thing the WeekDrawer save toast tells them to do
+  //      (Recalculate), and stayed gone on reload. Exceptions describe what
+  //      is CONFIGURED, not what got PLACED, so they don't share that blind
+  //      spot. (The alternative — have the backend emit an occupancy row
+  //      for every week_grid entry regardless of lines — would work too,
+  //      but reshapes a response several other things already read
+  //      ["how full is this week"] for a display concern this file alone
+  //      has; reusing the query already on this page is the smaller,
+  //      better-scoped fix.)
   const exceptionsQuery = useQuery({
     queryKey: ['capacity-exceptions'],
     queryFn: () => capacityApi.listExceptions(),
@@ -251,6 +263,25 @@ export default function ProductionPlanPage() {
   function invalidateExceptions() {
     return queryClient.invalidateQueries({ queryKey: ['capacity-exceptions'] })
   }
+
+  // Maintenance = an ACTIVE max_output_qty exception whose value is exactly
+  // 0, factory-wide — matches WeekDrawer's own (now-fixed, round 1)
+  // `initialMaintenance` gate exactly, so the tint and the drawer's
+  // checkbox can never disagree about which weeks count. A non-zero active
+  // override (a legitimate de-rate, not a shutdown) is deliberately NOT
+  // included — see WeekDrawer.tsx's header comment on round 1 finding #2.
+  const maintenanceWeekStarts = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of exceptionsQuery.data ?? []) {
+      if (
+        e.is_active && e.scope_type === 'factory' && e.scope_ref === null &&
+        e.constraint_type === 'max_output_qty' && Number(e.limit_value) === 0
+      ) {
+        s.add(e.week_start)
+      }
+    }
+    return s
+  }, [exceptionsQuery.data])
 
   // ── Generate / Recalculate ──────────────────────────────────────────────
   const [generating, setGenerating] = useState(false)
@@ -595,12 +626,19 @@ export default function ProductionPlanPage() {
         </div>
       )}
 
+      {exceptionsQuery.isError && (
+        <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
+          {errMsg(exceptionsQuery.error, 'Could not load capacity exceptions — maintenance-week markers below may be incomplete.')}
+        </p>
+      )}
+
       {run && run.lines.length > 0 && (
         <ProductionMatrix
           key={run.id}
           lines={run.lines}
           weekGrid={run.week_grid}
-          capacityOccupancy={run.capacity_occupancy}
+          maintenanceWeekStarts={maintenanceWeekStarts}
+          maintenanceDataUnready={exceptionsQuery.isLoading || exceptionsQuery.isError}
           onOpenWeekDrawer={setWeekDrawerTarget}
           materialsByCode={materialsByCode}
           noBomCodes={noBomCodes}
@@ -640,10 +678,16 @@ export default function ProductionPlanPage() {
           existingException={findExistingException(exceptionsQuery.data ?? [], {
             week_start: weekDrawerTarget.week_start, scope_type: 'factory', scope_ref: null, constraint_type: 'max_output_qty',
           })}
+          existingExceptionLoading={exceptionsQuery.isLoading}
+          existingExceptionError={exceptionsQuery.isError ? errMsg(exceptionsQuery.error, 'Could not load this week\'s current exception state.') : null}
           canWrite={canWriteParams}
           onClose={() => setWeekDrawerTarget(null)}
           onSaved={() => { void invalidateRun(); void invalidateExceptions() }}
-          onRecalculate={() => { void handleRecalculate() }}
+          // Round 1 fix #5a: the toolbar's own Recalculate button already
+          // guards on isReleased (a released run 409s recalculate) — the
+          // toast's action button must match, or the planner gets an error
+          // toast for clicking exactly what this drawer told them to click.
+          onRecalculate={isReleased ? undefined : () => { void handleRecalculate() }}
           notifySuccess={toasts.success}
           notifyError={toasts.error}
         />

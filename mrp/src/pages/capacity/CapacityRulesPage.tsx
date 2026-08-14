@@ -134,7 +134,7 @@ export default function CapacityRulesPage() {
       )}
 
       <PlanningCalendarSection canWrite={canWrite} />
-      <WeekExceptionsSection canWrite={canWrite} />
+      <WeekExceptionsSection canWrite={canWrite} notifySuccess={toasts.success} notifyError={toasts.error} />
 
       {rulesQuery.isError && (
         <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">

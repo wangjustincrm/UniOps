@@ -53,7 +53,7 @@ import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight, Wrench } from 'l
 import { Badge } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
-import type { CapacityOccupancyWeek, MpsLine, WeekGridEntry } from './mpsApi'
+import type { MpsLine, WeekGridEntry } from './mpsApi'
 import { buildWeekColumns, buildWeekRefs, defaultExpandedMonths, type Column, type WeekColumn } from './weekColumns'
 
 // Sensible default in-container scroll cap for now — the brief notes the
@@ -61,6 +61,8 @@ import { buildWeekColumns, buildWeekRefs, defaultExpandedMonths, type Column, ty
 // measured-to-viewport `gridHeight`); until then this keeps the table
 // self-contained and scrollable without growing the page unboundedly.
 const MAX_HEIGHT = 560
+
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set()
 
 // Product column / Metric column are both part of the single sticky-left
 // block (the brief's "sticky first column" plus a Metric column that must
@@ -173,13 +175,32 @@ interface ProductionMatrixProps {
    *  week or a zero-net-demand month has zero lines by construction and
    *  would otherwise vanish from the axis. */
   weekGrid: WeekGridEntry[]
-  /** Live per-week occupancy (`GET /runs/{id}`'s `capacity_occupancy`) —
-   *  used ONLY to detect a maintenance week here (a week whose currently
-   *  effective `max_output_qty` is exactly 0), for the grey tint + wrench
-   *  icon on that week's header and Planned cell. Not used for anything
-   *  else in this file — the occupancy vs. limit comparison itself has no
-   *  display here yet. Optional: omitted, no week is ever tinted. */
-  capacityOccupancy?: CapacityOccupancyWeek[]
+  /** week_start values of every active `max_output_qty === 0` capacity
+   *  exception — i.e. every "maintenance week" — for the grey tint + wrench
+   *  icon on that week's header and Planned cell.
+   *
+   *  **Round-1 review fix: this must NOT be derived from
+   *  `capacity_occupancy`.** `_compute_capacity_occupancy`
+   *  (mrp-api/app/api/v1/mps.py) builds its per-week map from the run's OWN
+   *  LINES, and `_week_can_host` closes a `max_output_qty <= 0` week to all
+   *  placement — so a maintenance week has ZERO lines by construction
+   *  (mpsApi.ts's own `WeekGridEntry` doc already says this) and therefore
+   *  NO occupancy entry, the moment the planner does the one thing the
+   *  WeekDrawer save toast tells them to do (Recalculate). Occupancy cannot
+   *  see what the engine enforces, precisely because enforcement there
+   *  means "no lines to report". The exceptions list the page already
+   *  fetches (`capacity-exceptions` query) has no such blind spot — it says
+   *  what's CONFIGURED, not what got PLACED, so it stays true before AND
+   *  after every recalculate. Optional: omitted, no week is ever tinted. */
+  maintenanceWeekStarts?: ReadonlySet<string>
+  /** True while the page's own capacity-exceptions query hasn't resolved
+   *  yet, or came back an error — the tint is deliberately withheld rather
+   *  than shown, so a stale/absent read never draws a WRONG grey/wrench on
+   *  a week that may or may not actually be maintenance (same reasoning
+   *  WeekDrawer's own loading gate uses, see that file). Optional: treated
+   *  as `false` (i.e. `maintenanceWeekStarts` is trusted outright) when
+   *  omitted, for callers that don't have a query to report. */
+  maintenanceDataUnready?: boolean
   /** Fired when a WEEK column header is clicked (never for a collapsed
    *  month's summary column, which has no single week to attach a
    *  maintenance flag to) — opens WeekDrawer. Same click-to-open
@@ -219,7 +240,8 @@ interface ProductionMatrixProps {
 export function ProductionMatrix({
   lines,
   weekGrid,
-  capacityOccupancy,
+  maintenanceWeekStarts,
+  maintenanceDataUnready,
   onOpenWeekDrawer,
   materialsByCode,
   noBomCodes,
@@ -240,19 +262,12 @@ export function ProductionMatrix({
   // construction and week_grid already enumerates its real weeks anyway).
   const weekRefs = useMemo(() => buildWeekRefs(weekGrid), [weekGrid])
 
-  // A week is "maintenance" for display purposes when its CURRENTLY
-  // effective max_output_qty (capacity_occupancy is computed live on every
-  // GET, exceptions included — see mpsApi.ts's CapacityOccupancyWeek doc)
-  // is exactly 0, regardless of who set that or when. `null`/undefined
-  // means "no ceiling configured", the opposite of maintenance, so this
-  // must not fall back to loose falsiness — an explicit numeric-zero check.
-  const maintenanceWeeks = useMemo(() => {
-    const s = new Set<string>()
-    for (const w of capacityOccupancy ?? []) {
-      if (w.max_output_qty != null && Number(w.max_output_qty) === 0) s.add(w.week_start)
-    }
-    return s
-  }, [capacityOccupancy])
+  // See `maintenanceWeekStarts`'s own doc on the props interface above for
+  // why this reads the caller-supplied exceptions set rather than deriving
+  // anything from occupancy/lines itself. Withheld (empty) while the data
+  // isn't ready, rather than trusting a possibly-stale/absent set.
+  const maintenanceWeeks: ReadonlySet<string> =
+    maintenanceDataUnready ? EMPTY_STRING_SET : (maintenanceWeekStarts ?? EMPTY_STRING_SET)
 
   const weekGridByStart = useMemo(() => {
     const m = new Map<string, WeekGridEntry>()

@@ -120,12 +120,30 @@ export function AdjustDrawer({
   // an action that only 422s" discipline the lock checkbox already follows
   // elsewhere in this file.
   const canMerge = !line.capacity_gap
+  // Round-1 review fix #5b: Merge sends `{ plan_week_start, locked_by_planner }`
+  // only — it never reads the Quantity field. Before this guard, a planner
+  // who edited Quantity and then clicked Merge had that edit silently
+  // discarded (the PATCH used the line's ORIGINAL qty, and the drawer then
+  // swapped to the result panel where the qty field isn't shown again, so
+  // there was no way to notice). Disabling Merge while the field is dirty
+  // is simpler and safer than trying to fold an unsaved qty edit into a
+  // merge PATCH — save the qty change first, or merge first, but never both
+  // in one click.
+  const qtyDirty = qty !== line.qty
 
-  async function saveLine(body: Parameters<typeof mpsApi.adjustLine>[2], opts: { isWeekChange: boolean }) {
+  async function saveLine(
+    body: Parameters<typeof mpsApi.adjustLine>[2],
+    opts: { isWeekChange: boolean; action: 'moved' | 'merged' },
+  ) {
     const updated = await mpsApi.adjustLine(runId, line.id, body)
     if (opts.isWeekChange) {
       setSaveResult(updated)
-      notifySuccess(`Moved ${updated.material_code} to the week of ${updated.week_label} — shelf life OK.`)
+      const message = opts.action === 'merged'
+        ? `Merged ${updated.material_code} into the week of ${updated.week_label} — shelf life OK. ` +
+          'The matrix already shows the combined total (it aggregates by product + week); Recalculate ' +
+          'folds the two rows into one stored line so the merge survives future edits.'
+        : `Moved ${updated.material_code} to the week of ${updated.week_label} — shelf life OK.`
+      notifySuccess(message)
       onSaved()
     } else {
       const lockNote = body.locked_by_planner === undefined || body.locked_by_planner === line.locked_by_planner
@@ -147,7 +165,7 @@ export function AdjustDrawer({
     try {
       await saveLine(
         { qty: Number(qty), plan_week_start: weekStart, locked_by_planner: locked },
-        { isWeekChange: weekStart !== line.plan_week_start },
+        { isWeekChange: weekStart !== line.plan_week_start, action: 'moved' },
       )
     } catch (err) {
       const msg = errMsg(err, 'Could not save this adjustment — please retry.')
@@ -160,7 +178,7 @@ export function AdjustDrawer({
 
   async function handleMerge(direction: 'prev' | 'next') {
     const target = direction === 'prev' ? prevWeek : nextWeek
-    if (!target) return
+    if (!target || qtyDirty) return
     setMergingDirection(direction)
     setSubmitError(null)
     try {
@@ -178,7 +196,10 @@ export function AdjustDrawer({
       if (sibling && !sibling.locked_by_planner) {
         await mpsApi.adjustLine(runId, sibling.id, { locked_by_planner: true })
       }
-      await saveLine({ plan_week_start: target.week_start, locked_by_planner: true }, { isWeekChange: true })
+      await saveLine(
+        { plan_week_start: target.week_start, locked_by_planner: true },
+        { isWeekChange: true, action: 'merged' },
+      )
     } catch (err) {
       const msg = errMsg(err, 'Could not merge into that week — please retry.')
       setSubmitError(msg)
@@ -274,7 +295,7 @@ export function AdjustDrawer({
                   <Button
                     type="button" variant="secondary" size="sm" className="min-h-[44px] flex-1"
                     onClick={() => handleMerge('prev')}
-                    disabled={!canMerge || !prevWeek || submitting || mergingDirection !== null}
+                    disabled={!canMerge || !prevWeek || qtyDirty || submitting || mergingDirection !== null}
                   >
                     {mergingDirection === 'prev' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     &larr; Previous{prevWeek ? ` (${weekOptionLabel(prevWeek)})` : ''}
@@ -282,16 +303,20 @@ export function AdjustDrawer({
                   <Button
                     type="button" variant="secondary" size="sm" className="min-h-[44px] flex-1"
                     onClick={() => handleMerge('next')}
-                    disabled={!canMerge || !nextWeek || submitting || mergingDirection !== null}
+                    disabled={!canMerge || !nextWeek || qtyDirty || submitting || mergingDirection !== null}
                   >
                     {mergingDirection === 'next' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     Next{nextWeek ? ` (${weekOptionLabel(nextWeek)})` : ''} &rarr;
                   </Button>
                 </div>
                 <p className="mt-1 text-[11px] text-neutral-400">
-                  {canMerge
-                    ? 'Folds this line’s quantity into the neighbouring week and locks both lines — the two fold into one line on the next Recalculate.'
-                    : 'A capacity-gap line is unmet demand, not committed production, and cannot be merged.'}
+                  {!canMerge
+                    ? 'A capacity-gap line is unmet demand, not committed production, and cannot be merged.'
+                    : qtyDirty
+                      ? 'Save or discard your Quantity change first — Merge moves this line’s SAVED quantity and would silently drop an unsaved edit.'
+                      : 'Moves this line onto the neighbouring week and locks both lines — the matrix already shows the ' +
+                        'combined total right away (it aggregates by product + week); Recalculate is only needed to fold ' +
+                        'the two into one stored line so the merge survives future edits.'}
                 </p>
               </div>
 
