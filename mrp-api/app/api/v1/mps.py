@@ -303,6 +303,11 @@ class MpsRunResponse(BaseModel):
     # a plan somebody is already buying against.
     frozen_months: int = 0
     frozen_until_month: str | None = None
+    # Plan versioning (mrp12): `is_default` marks THE plan in force -- the
+    # one whose lines 1C purchases against and the one a new run inherits
+    # its frozen zone from. Globally exactly one.
+    is_default: bool = False
+    released_at: datetime | None = None
 
 
 class MpsRunDetailResponse(MpsRunResponse):
@@ -704,6 +709,8 @@ async def _run_detail_response(db: SessionDep, run: MrpMpsRun) -> MpsRunDetailRe
         week_start_dow=run.week_start_dow,
         frozen_months=run.frozen_months,
         frozen_until_month=_frozen_until(run),
+        is_default=run.is_default,
+        released_at=run.released_at,
         lines=[_line_response(l, run.week_calendar_mode, run.week_start_dow)
                for l in lines],
     )
@@ -1014,6 +1021,8 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
         week_start_dow=start_dow,
         frozen_months=run.frozen_months,
         frozen_until_month=_frozen_until(run),
+        is_default=run.is_default,
+        released_at=run.released_at,
         lines=[_line_response(l, mode, start_dow) for l in lines],
         capacity_occupancy=occupancy,
         week_grid=week_grid,
@@ -1330,26 +1339,29 @@ async def update_line(
     return _line_response(line, mode, start_dow)
 
 
-@router.post("/runs/{run_id}/confirm-release", response_model=MpsRunDetailResponse)
-async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
-    run = await _get_run_or_404(db, run_id)
-    _require_not_released(run)
-    lines = await _load_lines(db, run.id)
+async def publish_demands_from_run(db: SessionDep, run: MrpMpsRun) -> None:
+    """Make `run` the demand set 1C purchases against.
 
-    # Delete EVERY prior demand_type='mps' row, system-wide -- not scoped to
-    # this run's forecast_version_id. See module docstring for why: multiple
-    # forecast versions can be confirmed at once, but only one MPS lineage
-    # is ever meant to be live/released at a time (design §8). Scoping this
-    # delete to `run.forecast_version_id` would leave a prior release's rows
-    # behind forever whenever it was built off a different version_id, and
-    # silently double-count demand.
+    **The one implementation.** Both releasing a run and switching the plan
+    in force need exactly this, and a second copy that drifts from the first
+    means either double-counted demand or materials nobody buys -- the class
+    of silent failure this module keeps having to defend against. Does not
+    commit; the caller owns the transaction.
+
+    Deletes EVERY prior `demand_type='mps'` row, system-wide -- not scoped
+    to this run's `forecast_version_id`. Multiple forecast versions can be
+    confirmed at once, but only one MPS lineage is ever live (design §8);
+    scoping the delete would leave a prior release's rows behind forever
+    whenever it was built off a different version_id, and silently
+    double-count demand.
+    """
     await db.execute(delete(MrpDemand).where(MrpDemand.demand_type == "mps"))
 
-    for line in lines:
+    for line in await _load_lines(db, run.id):
         if line.capacity_gap:
             # Unmet-demand exception, not a booked production order -- never
             # materialized into mrp_demands (see module docstring). Still
-            # persisted as an MrpMpsLine above, so it stays visible.
+            # persisted as an MrpMpsLine, so it stays visible.
             continue
         if line.qty <= 0:
             # A month covered in full by an earlier batch's surplus. It
@@ -1365,7 +1377,74 @@ async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
             qty=line.qty,
         ))
 
+
+async def _default_run(db: SessionDep) -> MrpMpsRun | None:
+    """The plan currently in force, or None before anything is released."""
+    return (await db.execute(
+        select(MrpMpsRun).where(MrpMpsRun.is_default.is_(True))
+    )).scalars().first()
+
+
+async def _make_default(db: SessionDep, run: MrpMpsRun) -> None:
+    """Move the in-force marker onto `run` and rewrite the live demand.
+
+    The old marker is cleared and FLUSHED before the new one is set: the
+    partial unique index allows exactly one `is_default` row, so setting the
+    new one first would collide inside the transaction.
+
+    Every run in an older horizon group is superseded here, drafts included.
+    The plan group only moves forward, and a draft of an older group left
+    alive is a draft somebody could release later to walk it backwards.
+    """
+    for other in (await db.execute(
+        select(MrpMpsRun).where(MrpMpsRun.is_default.is_(True), MrpMpsRun.id != run.id)
+    )).scalars().all():
+        other.is_default = False
+    await db.flush()
+
+    for older in (await db.execute(
+        select(MrpMpsRun).where(
+            MrpMpsRun.horizon_start_month < run.horizon_start_month,
+            MrpMpsRun.status != "superseded",
+        )
+    )).scalars().all():
+        older.status = "superseded"
+
+    run.is_default = True
+    await publish_demands_from_run(db, run)
+
+
+@router.post("/runs/{run_id}/confirm-release", response_model=MpsRunDetailResponse)
+async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
+    run = await _get_run_or_404(db, run_id)
+
+    # Re-releasing the plan already in force is a no-op, not a 409: the
+    # caller asked for a state the system is already in, and the alternative
+    # (rejecting) makes a double-click look like a failure.
+    if run.is_default:
+        return await _run_detail_response(db, run)
+
+    _require_not_released(run)
+
+    current = await _default_run(db)
+    if current is not None and run.horizon_start_month < current.horizon_start_month:
+        # Releasing makes a run the plan in force, so releasing an older
+        # group's draft would walk the in-force group BACKWARDS -- exactly
+        # what "the group only moves forward" forbids. Without this check
+        # that rule would only exist in the UI.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"this plan covers {run.horizon_start_month}, which is older than the "
+                f"plan currently in force ({current.horizon_start_month}); the plan "
+                f"group only moves forward. Generate a new plan from the current "
+                f"horizon instead."
+            ),
+        )
+
     run.status = "released"
+    run.released_at = datetime.now(timezone.utc)
+    await _make_default(db, run)
     await db.commit()
     await db.refresh(run)
     return await _run_detail_response(db, run)
