@@ -15,7 +15,7 @@ import { api } from '@/lib/api'
 // (see that module's docstring) — kept in the type anyway so a value that
 // slips through some future path still narrows instead of falling to
 // `string`, and StatusBadge renders any unrecognized value neutrally.
-export type MpsRunStatus = 'draft' | 'confirmed' | 'released'
+export type MpsRunStatus = 'draft' | 'confirmed' | 'released' | 'superseded'
 
 /** One intent-product row (planned SKU with no ERP material code yet, see
  *  forecast/intentApi.ts) that generate()/recalculate() left out of `lines`
@@ -144,6 +144,13 @@ export interface MpsRun {
    *  refuses to adjust a line inside it; the matrix greys those columns. */
   frozen_months: number
   frozen_until_month: string | null
+  /** Plan versioning (mrp12). `is_default` marks THE plan in force — the one
+   *  purchasing works from, and the one a new plan inherits its frozen zone
+   *  from. Exactly one run has it. A `superseded` run belongs to a horizon
+   *  group a newer one has taken over: readable forever, never activatable
+   *  again, because its window is missing the newest month of demand. */
+  is_default: boolean
+  released_at: string | null
   generated_by: string | null
   stats: MpsRunStats | null
 }
@@ -209,7 +216,29 @@ export interface AdjustLineBody {
   locked_by_planner?: boolean
 }
 
+/** One row of the version picker — `GET /mps/runs`. Deliberately without
+ *  lines: the picker is navigation, and a run carries thousands of them. */
+export interface MpsRunSummary {
+  id: string
+  run_no: string
+  horizon_start_month: string
+  horizon_months: number
+  status: MpsRunStatus
+  is_default: boolean
+  released_at: string | null
+  created_at: string
+  stats: MpsRunStats | null
+}
+
 export const mpsApi = {
+  /** Newest horizon group first, newest version first within a group. */
+  list: () => api.get<MpsRunSummary[]>('/mps/runs'),
+
+  /** Make an already-released version of the CURRENT group the plan in
+   *  force. 422 for a draft, and for any run of another group — the plan
+   *  group only moves forward. */
+  setDefault: (runId: string) => api.post<MpsRunGet>(`/mps/runs/${runId}/set-default`, {}),
+
   /** Requires the forecast version to be status='confirmed' (409 otherwise
    *  — see mps.py's create_run()). Both `opts` fields are optional and
    *  independently omittable: `safety_margin_fraction` omitted falls back

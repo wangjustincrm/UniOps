@@ -8,6 +8,7 @@
 // header for the endpoint contracts and permission keys. Not wired into
 // nav/routes here — that's Task 7.
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Sparkles, AlertTriangle, Download, PackageCheck, X as XIcon } from 'lucide-react'
@@ -16,6 +17,7 @@ import { ApiError } from '@/lib/api'
 import { ToastStack } from '@/components/Toast'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { StatusBadge } from '@/components/StatusBadge'
+import { RunPicker, SetActiveButton } from './RunPicker'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
@@ -168,7 +170,38 @@ export default function ProductionPlanPage() {
   }, [confirmedVersions])
 
   // ── The active run ───────────────────────────────────────────────────────
-  const [runId, setRunId] = useState<string | null>(null)
+  //
+  // Which plan is on screen lives in the URL (`?run=<id>`), not in component
+  // state. Held in state it was lost on every refresh — including the plan
+  // that had just been released — and there was no way to link anyone to a
+  // specific version.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const runId = searchParams.get('run')
+
+  function selectRun(id: string) {
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params)
+      next.set('run', id)
+      return next
+    }, { replace: true })
+  }
+
+  const runsQuery = useQuery({
+    queryKey: ['mps-runs'],
+    queryFn: () => mpsApi.list(),
+  })
+  const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data])
+  const activeRun = useMemo(() => runs.find((r) => r.is_default) ?? null, [runs])
+  const selectedSummary = useMemo(
+    () => runs.find((r) => r.id === runId) ?? null, [runs, runId])
+
+  // No `?run=` yet: open the plan in force, else the newest run there is.
+  // An empty state is only correct when there are genuinely no runs.
+  useEffect(() => {
+    if (runId || runs.length === 0) return
+    selectRun((activeRun ?? runs[0]).id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, runs, activeRun])
 
   const runQuery = useQuery({
     queryKey: ['mps-run', runId],
@@ -176,7 +209,10 @@ export default function ProductionPlanPage() {
     enabled: !!runId,
   })
   const run = runQuery.data ?? null
-  const isReleased = run?.status === 'released'
+  const isReleased = run?.status === 'released' || run?.status === 'superseded'
+  // A superseded plan belongs to a horizon group a newer one has taken
+  // over. It stays readable forever, but nothing about it can change.
+  const isHistorical = run?.status === 'superseded'
 
   // Which confirmed outlook this run was generated from (Task 10, design
   // §8 "one active released plan"): confirmedVersions is the same list the
@@ -193,6 +229,25 @@ export default function ProductionPlanPage() {
 
   function invalidateRun() {
     return queryClient.invalidateQueries({ queryKey: ['mps-run', runId] })
+  }
+
+  const [activating, setActivating] = useState(false)
+  const [confirmActivate, setConfirmActivate] = useState(false)
+
+  async function handleSetActive() {
+    if (!runId) return
+    setActivating(true)
+    try {
+      await mpsApi.setDefault(runId)
+      await queryClient.invalidateQueries({ queryKey: ['mps-runs'] })
+      await invalidateRun()
+      toasts.success('This plan is now the one purchasing works from.')
+    } catch (err) {
+      toasts.error(errMsg(err, 'Could not switch the active plan — please retry.'))
+    } finally {
+      setActivating(false)
+      setConfirmActivate(false)
+    }
   }
 
   // Materials master, for the table's Product column (name is not part of
@@ -304,7 +359,7 @@ export default function ProductionPlanPage() {
     setGenerating(true)
     try {
       const result = await mpsApi.generate(selectedVersionId, { production_lead_weeks: leadWeeks })
-      setRunId(result.id)
+      selectRun(result.id)
       toasts.success(`Generated ${result.run_no} — ${result.lines.length} line(s).`)
     } catch (err) {
       toasts.error(errMsg(err, 'Could not generate the MPS run — please retry.'))
@@ -484,6 +539,23 @@ export default function ProductionPlanPage() {
           </FormField>
 
           <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-neutral-500">Version</span>
+            <RunPicker
+              runs={runs}
+              selectedId={runId}
+              onSelect={selectRun}
+              disabled={runsQuery.isLoading}
+            />
+            <SetActiveButton
+              run={selectedSummary}
+              activeGroup={activeRun?.horizon_start_month ?? null}
+              onActivate={() => setConfirmActivate(true)}
+              pending={activating}
+              disabled={!canExecute}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
             <span className="text-[11px] font-medium text-neutral-500">Unit</span>
             <div role="group" aria-label="Display unit" className="inline-flex overflow-hidden rounded-lg border border-neutral-200">
               <Button
@@ -637,6 +709,30 @@ export default function ProductionPlanPage() {
         <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-700">
           {errMsg(exceptionsQuery.error, 'Could not load capacity exceptions — maintenance-week markers below may be incomplete.')}
         </p>
+      )}
+
+      {isHistorical && (
+        <p
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600"
+        >
+          <AlertTriangle aria-hidden className="h-4 w-4 shrink-0" />
+          A newer plan group has taken over — this version is read-only. It stays here for
+          reference and cannot be made active again.
+        </p>
+      )}
+
+      {confirmActivate && (
+        <ConfirmDialog
+          title="Make this the active plan?"
+          confirmLabel="Set as active"
+          busy={activating}
+          onConfirm={() => { void handleSetActive() }}
+          onCancel={() => setConfirmActivate(false)}
+        >
+          This rewrites the demand purchasing works from, and the next plan will inherit
+          its frozen months from this version.
+        </ConfirmDialog>
       )}
 
       {run && run.lines.length > 0 && (
