@@ -295,11 +295,12 @@ async def test_get_record_includes_line_items(test_engine):
 
 
 @pytest.mark.asyncio
-async def test_edit_approval_state_reassigns_open_tasks(test_engine):
+async def test_edit_approval_state_reassigns_open_tasks(test_engine, monkeypatch):
     from app.models.user import User
     from app.models.pr import PurchaseRequest
     from app.models.task import Task
     from app.admin import service
+    from app.services import approval_client
 
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     creator = uuid.uuid4(); pr_id = uuid.uuid4(); done_id = uuid.uuid4()
@@ -318,19 +319,35 @@ async def test_edit_approval_state_reassigns_open_tasks(test_engine):
                     type="approve_pr", assigned_role="finance_bp", title="Done", is_completed=True))
         await db.commit()
 
+    # Contract change (2026-08-14): setting a step no longer edits the open task in
+    # place — it CLOSES the stale one and hands off to the approval engine to issue
+    # the task for the new step, because the engine derives the true step from any
+    # open approve task and would otherwise snap the new index straight back. The
+    # role override is applied by the route AFTER that resync (see
+    # test_admin_approval_state.py); at this layer it only comes back as intent.
+    async def _steps(doc_type, doc_id, bearer_token):
+        return [{"id": f"s{i}", "role": r, "label": r} for i, r in enumerate(
+            ["dept_manager", "finance_bp", "finance_manager"])]
+    monkeypatch.setattr(approval_client, "get_workflow_steps", _steps)
+
     async with factory() as db:
-        await service.edit_approval_state(db, "pr", pr_id,
-                                          {"approval_step_idx": 2, "assigned_role": "finance_manager"},
-                                          actor_id=creator, actor_email="admin@x.com")
+        result = await service.edit_approval_state(
+            db, "pr", pr_id, {"approval_step_idx": 2, "assigned_role": "finance_manager"},
+            actor_id=creator, actor_email="admin@x.com", bearer_token="t")
         await db.commit()
+    assert result["closed_stale_tasks"] == 1
+    assert result["resync_doc_type"] == "pr"
+    assert result["assigned_role"] == "finance_manager"    # handed to the route
+
     async with factory() as db:
         pr = (await db.execute(select(PurchaseRequest).where(PurchaseRequest.id == pr_id))).scalar_one()
         tasks = (await db.execute(select(Task).where(Task.document_id == pr_id))).scalars().all()
         assert pr.approval_step_idx == 2
-        open_t = [t for t in tasks if not t.is_completed]
+        assert [t for t in tasks if not t.is_completed] == []   # stale one closed
         done_t = [t for t in tasks if t.is_completed]
-        assert all(t.assigned_role == "finance_manager" for t in open_t)   # open reassigned
-        assert done_t[0].assigned_role == "finance_bp"                     # completed untouched
+        assert {t.assigned_role for t in done_t} == {"dept_manager", "finance_bp"}
+        original_done = next(t for t in done_t if t.id == done_id)
+        assert original_done.assigned_role == "finance_bp"      # already-completed untouched
 
 
 @pytest.mark.asyncio

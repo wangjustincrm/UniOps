@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, or_, select
@@ -13,10 +13,22 @@ from app.admin.recompute import recompute_header
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.models.admin_audit_log import AdminAuditLog
+from app.models.approval import ApprovalEvent
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.vendor import Vendor
+from app.services import approval_client
+
+# Entities whose documents run through the approval engine.
+APPROVAL_STATE_ENTITIES = ("pr", "po", "pa", "agreement")
+
+# Fallback engine doc_type when a document has no workflow history yet to read it from.
+_DEFAULT_DOC_TYPE = {"pr": "pr", "po": "po", "pa": "pa", "agreement": "agr"}
+
+# The engine only issues approve tasks for documents in these statuses
+# (approval-api engine._resync_document); anything else is terminal to it.
+_TASK_ISSUING_STATUSES = ("submitted", "in_review")
 
 
 def _spec(entity: str) -> EntitySpec:
@@ -246,38 +258,103 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     return after
 
 
+async def approval_doc_type(db: AsyncSession, entity: str, record_id: uuid.UUID) -> str:
+    """The engine doc_type for this document.
+
+    NOT simply the entity key. Direct PAs share the payment_applications table with
+    PO-based PAs but run a different, shorter chain under doc_type "pa_dir" — asking
+    the engine about "pa" would fetch the wrong workflow and stamp any new task with
+    a document_type the OA inbox never queries. The workflow history is the
+    authority on which chain a document is actually running; the entity default is
+    only for documents that have none yet.
+    """
+    for model in (Task, ApprovalEvent):
+        found = (await db.execute(
+            select(model.document_type).where(model.document_id == record_id).limit(1)
+        )).scalar_one_or_none()
+        if found:
+            return found
+    return _DEFAULT_DOC_TYPE[entity]
+
+
 async def edit_approval_state(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
-                              *, actor_id: uuid.UUID, actor_email: str) -> dict:
-    """Manually correct a document's live approval position: its approval_step_idx
-    and the assignment of its OPEN approve tasks. Does NOT re-run the engine, send
-    notifications, or touch completed tasks / approval_events."""
+                              *, actor_id: uuid.UUID, actor_email: str,
+                              bearer_token: str | None = None) -> dict:
+    """Manually correct a document's live approval position.
+
+    Setting `approval_step_idx` REBUILDS the approval task at that step (the caller
+    completes the rebuild by calling the engine's resync after the commit — see
+    `resync_doc_type` in the result). This used to only reassign tasks that already
+    existed, which meant a document with no open approve task got a new step number,
+    a detail page that rendered it, and still no approval button anywhere — the
+    approval UI is gated on the tasks table, not on approval_step_idx. Every one of
+    those ended in a hand-written script.
+
+    Two guards exist because the engine fails SILENTLY in both cases (it returns
+    None and the panel used to report success): a step past the end of the chain,
+    and a document in a status the engine will not issue tasks for.
+
+    Passing only `assigned_role` / `assigned_user_id` keeps the original behaviour:
+    reassign the open approve tasks, touch nothing else.
+    """
     spec = _spec(entity)
-    if entity not in ("pr", "po", "pa"):
+    if entity not in APPROVAL_STATE_ENTITIES:
         raise ValueError(f"'{entity}' has no approval state")
     row = await _load(db, spec, record_id)
-    before = {"approval_step_idx": getattr(row, "approval_step_idx", None)}
+    before = {"approval_step_idx": getattr(row, "approval_step_idx", None),
+              "status": getattr(row, "status", None)}
 
+    resync_doc_type: str | None = None
+    closed_stale = 0
     new_idx = patch.get("approval_step_idx")
     if new_idx is not None:
-        row.approval_step_idx = int(new_idx)
+        new_idx = int(new_idx)
+        # Status first: it is the cheaper check and needs no round trip.
+        status = getattr(row, "status", None)
+        if status not in _TASK_ISSUING_STATUSES:
+            raise ValueError(
+                f"Approval tasks are only issued for documents in "
+                f"{' or '.join(_TASK_ISSUING_STATUSES)} — this one is '{status}'. "
+                "Set the status on the Edit tab first, then set the step."
+            )
+        resync_doc_type = await approval_doc_type(db, entity, record_id)
+        steps = await approval_client.get_workflow_steps(
+            resync_doc_type, str(record_id), bearer_token)
+        if not 0 <= new_idx < len(steps):
+            chain = ", ".join(f"{i}={s.get('label') or s.get('role')}"
+                              for i, s in enumerate(steps))
+            raise ValueError(
+                f"Step {new_idx} is out of range for this document's "
+                f"{len(steps)}-step workflow. Valid steps: {chain}."
+            )
+        row.approval_step_idx = new_idx
+        # The engine derives the true step from any OPEN approve task in preference
+        # to the stored index (engine._resync_document), so leaving a stale one open
+        # makes the resync "realign" the admin's new step straight back to the old
+        # one. Close them so the index is the only signal left — the same thing the
+        # engine itself does before reissuing (_complete_tasks → _create_approve_task).
+        # Only approve% tasks: place_order / create_pa / process_pa are legitimate
+        # next-step work and must survive.
+        stale = (await db.execute(select(Task).where(
+            Task.document_id == record_id, Task.type.like("approve%"),
+            Task.is_completed.is_(False)))).scalars().all()
+        now = datetime.now(timezone.utc)
+        for t in stale:
+            t.is_completed = True
+            t.completed_at = now
+        closed_stale = len(stale)
 
     new_role = patch.get("assigned_role")
     new_user = patch.get("assigned_user_id")
     reassigned = 0
-    if new_role is not None or new_user is not None:
-        open_tasks = (await db.execute(select(Task).where(
-            Task.document_id == record_id, Task.type.like("approve%"),
-            Task.is_completed.is_(False)))).scalars().all()
-        for t in open_tasks:
-            if new_role is not None:
-                t.assigned_role = new_role
-            if new_user is not None:
-                t.assigned_user_id = uuid.UUID(str(new_user)) if new_user else None
-            reassigned += 1
+    if (new_role is not None or new_user is not None) and resync_doc_type is None:
+        reassigned = await apply_task_override(db, record_id, new_role, new_user)
 
     await db.flush()
     after = {"approval_step_idx": getattr(row, "approval_step_idx", None),
              "reassigned_open_tasks": reassigned,
+             "closed_stale_tasks": closed_stale,
+             "resync_doc_type": resync_doc_type,
              "assigned_role": new_role, "assigned_user_id": new_user}
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit_approval_state",
@@ -286,6 +363,35 @@ async def edit_approval_state(db: AsyncSession, entity: str, record_id: uuid.UUI
         before=before, after=after))
     await db.flush()
     return after
+
+
+async def count_open_approve_tasks(db: AsyncSession, record_id: uuid.UUID) -> int:
+    """Positive evidence for the panel: an approval button exists iff this is > 0."""
+    return int((await db.execute(
+        select(func.count()).select_from(Task).where(
+            Task.document_id == record_id, Task.type.like("approve%"),
+            Task.is_completed.is_(False))
+    )).scalar_one())
+
+
+async def apply_task_override(db: AsyncSession, record_id: uuid.UUID,
+                              role: str | None, user_id) -> int:
+    """Force the open approve tasks onto a specific role / user.
+
+    When a step change is in play this runs AFTER the engine has reissued the task,
+    not before: the pre-resync tasks are the stale ones being closed, so overriding
+    them there would write the admin's choice onto rows nobody will ever see.
+    """
+    open_tasks = (await db.execute(select(Task).where(
+        Task.document_id == record_id, Task.type.like("approve%"),
+        Task.is_completed.is_(False)))).scalars().all()
+    for t in open_tasks:
+        if role is not None:
+            t.assigned_role = role
+        if user_id is not None:
+            t.assigned_user_id = uuid.UUID(str(user_id)) if user_id else None
+    await db.flush()
+    return len(open_tasks)
 
 
 async def delete_preview(db: AsyncSession, entity: str, record_id: uuid.UUID) -> dict[str, int]:
