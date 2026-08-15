@@ -352,6 +352,29 @@ class MpsRunSummaryResponse(BaseModel):
     stats: dict | None
 
 
+class MpsDiffCell(BaseModel):
+    """One matrix cell whose planned quantity changed between two versions."""
+    material_code: str
+    plan_week_start: date
+    before: Decimal
+    after: Decimal
+    delta: Decimal
+
+
+class MpsDiffSummary(BaseModel):
+    products_changed: int
+    weeks_changed: int
+    total_delta: Decimal
+
+
+class MpsRunDiffResponse(BaseModel):
+    run_id: uuid.UUID
+    baseline_run_id: uuid.UUID | None
+    baseline_run_no: str | None
+    cells: list[MpsDiffCell]
+    summary: MpsDiffSummary
+
+
 class MpsRunGetResponse(MpsRunDetailResponse):
     # Computed on read, never stored -- always reflects the capacity rules
     # and week exceptions currently on file, not a snapshot from generation
@@ -1068,6 +1091,51 @@ async def set_default_run(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
     return await _run_get_response(db, run)
 
 
+@router.get("/runs/{run_id}/diff", response_model=MpsRunDiffResponse)
+async def diff_run(
+    run_id: uuid.UUID, db: SessionDep, _: ReportDep,
+    against: uuid.UUID | None = Query(default=None),
+):
+    """What changed between this plan and another version of it.
+
+    `against` defaults to the previous version of the same horizon group.
+    A run with nothing before it answers with `baseline_run_id: null` and no
+    cells -- the first version of a group genuinely has nothing to compare
+    against, and that is not an error to show a planner.
+
+    Read-only: nothing here writes, so comparing across groups is allowed
+    even though *switching* across groups is not.
+    """
+    run = await _get_run_or_404(db, run_id)
+
+    if against is None:
+        baseline = await _previous_version(db, run)
+    else:
+        baseline = await db.get(MrpMpsRun, against)
+        if baseline is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail="baseline run not found")
+
+    if baseline is None:
+        # Nothing to compare against. Diffing against an empty plan would
+        # light up every cell as "new" and drown the one thing this view
+        # exists for; a first version simply has no previous version.
+        cells, summary = [], {"products_changed": 0, "weeks_changed": 0,
+                              "total_delta": Decimal("0")}
+    else:
+        cells, summary = diff_cells(
+            await _load_lines(db, run.id),
+            await _load_lines(db, baseline.id),
+        )
+    return MpsRunDiffResponse(
+        run_id=run.id,
+        baseline_run_id=baseline.id if baseline else None,
+        baseline_run_no=baseline.run_no if baseline else None,
+        cells=[MpsDiffCell(**cell) for cell in cells],
+        summary=MpsDiffSummary(**summary),
+    )
+
+
 @router.get("/runs/{run_id}", response_model=MpsRunGetResponse)
 async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     run = await _get_run_or_404(db, run_id)
@@ -1452,6 +1520,74 @@ async def publish_demands_from_run(db: SessionDep, run: MrpMpsRun) -> None:
             demand_month=line.plan_week_month, plan_week_start=line.plan_week_start,
             qty=line.qty,
         ))
+
+
+def diff_cells(current, baseline) -> tuple[list[dict], dict]:
+    """Per-cell planned-quantity differences between two runs' lines.
+
+    Pure function, no DB. A "cell" is `(material_code, plan_week_start)` --
+    **the matrix cell the planner is looking at**. Diffing at demand-month
+    grain instead would produce differences that cannot be drawn on the grid
+    they are meant to annotate. Several lines routinely share a cell (a
+    levelled run serving two demand months), so quantities are summed before
+    comparing.
+
+    `capacity_gap` lines are excluded: a gap is unmet demand, not production.
+    Counting it would report a quantity that was never made as a decrease.
+
+    Cells present on only ONE side are reported with the missing side as 0.
+    The vanished ones matter most -- a product moved out of a week has no
+    line in the new plan at all, so anything that iterates the new plan's
+    rows alone would silently drop exactly the half a planner most needs to
+    see.
+    """
+    def totals(lines) -> dict:
+        out: dict[tuple, Decimal] = {}
+        for line in lines:
+            if line.capacity_gap:
+                continue
+            key = (line.material_code, line.plan_week_start)
+            out[key] = out.get(key, Decimal("0")) + line.qty
+        return out
+
+    after_totals, before_totals = totals(current), totals(baseline)
+
+    cells: list[dict] = []
+    for key in sorted(set(after_totals) | set(before_totals)):
+        before = before_totals.get(key, Decimal("0"))
+        after = after_totals.get(key, Decimal("0"))
+        if before == after:
+            continue
+        cells.append({
+            "material_code": key[0], "plan_week_start": key[1],
+            "before": before, "after": after, "delta": after - before,
+        })
+
+    summary = {
+        "products_changed": len({c["material_code"] for c in cells}),
+        "weeks_changed": len({c["plan_week_start"] for c in cells}),
+        "total_delta": sum((c["delta"] for c in cells), Decimal("0")),
+    }
+    return cells, summary
+
+
+async def _previous_version(db: SessionDep, run: MrpMpsRun) -> MrpMpsRun | None:
+    """The version of `run`'s own group that comes immediately before it.
+
+    Ordered exactly like `GET /runs` so "the previous version" means the row
+    directly under this one in the picker -- two different answers to the
+    same question would be worse than no default at all."""
+    group = (await db.execute(
+        select(MrpMpsRun)
+        .where(MrpMpsRun.horizon_start_month == run.horizon_start_month)
+        .order_by(sa_func.coalesce(MrpMpsRun.released_at, MrpMpsRun.created_at).desc(),
+                  MrpMpsRun.run_no.desc())
+    )).scalars().all()
+    ids = [r.id for r in group]
+    if run.id not in ids:
+        return None
+    position = ids.index(run.id)
+    return group[position + 1] if position + 1 < len(group) else None
 
 
 async def _default_run(db: SessionDep) -> MrpMpsRun | None:
