@@ -286,11 +286,18 @@ interface ProductionMatrixProps {
    *  is frozen. Those columns are greyed and their cells are not clickable:
    *  the materials are bought, and the API refuses to change them anyway. */
   frozenUntilMonth?: string | null
+  /** Per-cell changes against another version, keyed
+   *  `<material_code>::<plan_week_start>` (`weekCellKey`). Undefined when no
+   *  comparison is on. Cells that exist ONLY in the baseline are included:
+   *  a product moved out of a week has no line here, and dropping those
+   *  would hide half of what changed. */
+  diffByCell?: Map<string, { before: number; after: number; delta: number }>
 }
 
 export function ProductionMatrix({
   lines,
   frozenUntilMonth = null,
+  diffByCell,
   weekGrid,
   maintenanceWeekStarts,
   maintenanceDataUnready,
@@ -303,9 +310,17 @@ export function ProductionMatrix({
   readOnly,
 }: ProductionMatrixProps) {
   const products = useMemo(() => {
-    const codes = [...new Set(lines.map((l) => l.material_code))].sort()
-    return codes.map((code) => ({ code, name: materialsByCode.get(code)?.name ?? code }))
-  }, [lines, materialsByCode])
+    // Union with whatever the comparison mentions: a product that this
+    // version no longer makes has NO line here, so deriving the rows from
+    // `lines` alone would silently drop "this product was moved out
+    // entirely" — the change a planner most needs to see.
+    const codes = new Set(lines.map((l) => l.material_code))
+    if (diffByCell) {
+      for (const key of diffByCell.keys()) codes.add(key.split('::')[0])
+    }
+    return [...codes].sort()
+      .map((code) => ({ code, name: materialsByCode.get(code)?.name ?? code }))
+  }, [lines, materialsByCode, diffByCell])
 
   // The known-weeks list handed to buildWeekColumns — a straight,
   // non-filtering conversion of the run's own week_grid (see this file's
@@ -543,6 +558,7 @@ export function ProductionMatrix({
               onAdjustCell={onAdjustCell}
               readOnly={readOnly}
               frozenUntilMonth={frozenUntilMonth}
+              diffByCell={diffByCell}
             />
           ))}
         </tbody>
@@ -636,6 +652,7 @@ function ProductRows({
   onAdjustCell,
   readOnly,
   frozenUntilMonth,
+  diffByCell,
 }: {
   product: { code: string; name: string }
   noBom: boolean
@@ -655,6 +672,7 @@ function ProductRows({
   /** Last month of the run's frozen zone, or null — those columns are
    *  greyed and never clickable. */
   frozenUntilMonth: string | null
+  diffByCell?: Map<string, { before: number; after: number; delta: number }>
 }) {
   const productCell = (
     <td
@@ -745,6 +763,12 @@ function ProductRows({
             // a clickable cell that always errors is worse than no click.
             readOnly={readOnly || (!!frozenUntilMonth && col.month <= frozenUntilMonth)}
             isFrozen={!!frozenUntilMonth && col.month <= frozenUntilMonth}
+            // Only week columns carry a comparison: a collapsed month's
+            // summary column aggregates several weeks, and a single arrow
+            // on it would say "something in here moved" without saying what.
+            diff={col.kind === 'week'
+              ? diffByCell?.get(weekCellKey(product.code, col.week_start))
+              : undefined}
           />
         ))}
       </tr>
@@ -800,6 +824,8 @@ function PlannedCell({
   formatValue,
   onAdjustCell,
   readOnly,
+  isFrozen,
+  diff,
 }: {
   cell: MatrixCell
   /** True for a week column an active capacity exception CLOSES —
@@ -820,6 +846,9 @@ function PlannedCell({
   /** Inside the run's frozen zone — tinted like a maintenance week and
    *  never clickable. */
   isFrozen?: boolean
+  /** This cell's change against the compared version, when a comparison is
+   *  on and this cell actually moved. */
+  diff?: { before: number; after: number; delta: number }
 }) {
   // "Has production" = a non-zero REAL planned qty (aggregateLines now
   // excludes capacity_gap lines' qty from `planned` — review round 1).
@@ -834,7 +863,10 @@ function PlannedCell({
   const hasProduction = cell.planned > 0
   // A covered month has a real line (qty 0) and belongs on screen: it is
   // demand that was already made, not demand that does not exist.
-  const showCell = hasProduction || cell.gap || cell.covered
+  // A cell that exists only in the COMPARED version has no production here
+  // at all; it still has to render, because "this week is empty now and was
+  // not before" is the change worth seeing.
+  const showCell = hasProduction || cell.gap || cell.covered || !!diff
   const title = cell.demandMonths.length > 0 ? `For ${cell.demandMonths.join(', ')} demand` : undefined
   // Gap (red, unmet demand) takes precedence over shortfall (amber,
   // produced later than the requested lead but still met) when a cell is
@@ -863,7 +895,24 @@ function PlannedCell({
 
   if (!showCell) {
     return (
-      <td className={cn('h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-neutral-300', borderRClass, isMaintenance ? 'bg-neutral-200' : 'bg-success-50')}>—</td>
+      <td
+        title={isFrozen ? 'Frozen — materials for this month are already purchased' : undefined}
+        className={cn('h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-neutral-300', borderRClass, isMaintenance || isFrozen ? 'bg-neutral-200' : 'bg-success-50')}
+      >—</td>
+    )
+  }
+
+  if (!hasProduction && !cell.gap && !cell.covered && diff) {
+    return (
+      <td
+        title={`Was ${formatValue(diff.before)} in the compared version — nothing is planned here now`}
+        className={cn(
+          'h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-sm text-danger-500 line-through',
+          borderRClass, isMaintenance || isFrozen ? 'bg-neutral-200' : 'bg-success-50',
+        )}
+      >
+        {formatValue(diff.before)}
+      </td>
     )
   }
 
@@ -873,7 +922,7 @@ function PlannedCell({
         title={`Covered by an earlier minimum-lot batch${title ? ` (${title})` : ''}`}
         className={cn(
           'h-10 border-b border-b-neutral-100 px-2 text-right font-mono text-xs italic text-neutral-400',
-          borderRClass, isMaintenance ? 'bg-neutral-200' : 'bg-success-50',
+          borderRClass, isMaintenance || isFrozen ? 'bg-neutral-200' : 'bg-success-50',
         )}
       >
         covered
@@ -888,6 +937,15 @@ function PlannedCell({
       {showLate && <Clock aria-hidden className="h-3 w-3 shrink-0 text-warning-600" />}
       {formatValue(cell.planned)}
       {cell.locked && <Lock aria-hidden className="h-3 w-3 shrink-0 text-neutral-400" />}
+      {diff && (
+        <span
+          aria-hidden
+          className={cn('shrink-0 text-[10px] font-bold',
+            diff.delta > 0 ? 'text-success-600' : 'text-danger-600')}
+        >
+          {diff.delta > 0 ? '▲' : '▼'}
+        </span>
+      )}
     </span>
   )
 
@@ -908,7 +966,11 @@ function PlannedCell({
       : showLate
         ? 'Produced after the month that needed it — nothing earlier could hold a whole lot'
         : title
-  const cellTitle = [baseTitle, lotNote].filter(Boolean).join(' · ') || undefined
+  const diffNote = diff
+    ? `Was ${formatValue(diff.before)} → now ${formatValue(diff.after)} `
+      + `(${diff.delta > 0 ? '+' : ''}${formatValue(diff.delta)})`
+    : null
+  const cellTitle = [baseTitle, lotNote, diffNote].filter(Boolean).join(' · ') || undefined
 
   return (
     <td

@@ -231,6 +231,29 @@ export default function ProductionPlanPage() {
     return queryClient.invalidateQueries({ queryKey: ['mps-run', runId] })
   }
 
+  // ── Comparison ────────────────────────────────────────────────────────
+  // Off by default: most of the time a planner opens this page to read the
+  // plan, not to audit it. When on, the server picks the previous version
+  // of this run's own group unless one is named explicitly.
+  const [comparing, setComparing] = useState(false)
+  const diffQuery = useQuery({
+    queryKey: ['mps-diff', runId],
+    queryFn: () => mpsApi.diff(runId as string),
+    enabled: comparing && !!runId,
+  })
+  const diff = diffQuery.data ?? null
+
+  const diffByCell = useMemo(() => {
+    if (!comparing || !diff) return undefined
+    const map = new Map<string, { before: number; after: number; delta: number }>()
+    for (const cell of diff.cells) {
+      map.set(`${cell.material_code}::${cell.plan_week_start}`, {
+        before: Number(cell.before), after: Number(cell.after), delta: Number(cell.delta),
+      })
+    }
+    return map
+  }, [comparing, diff])
+
   const [activating, setActivating] = useState(false)
   const [confirmActivate, setConfirmActivate] = useState(false)
 
@@ -546,6 +569,18 @@ export default function ProductionPlanPage() {
               onSelect={selectRun}
               disabled={runsQuery.isLoading}
             />
+            <Button
+              type="button"
+              size="sm"
+              variant={comparing ? 'primary' : 'secondary'}
+              className="min-h-[44px]"
+              aria-pressed={comparing}
+              disabled={!runId}
+              title="Show what changed against the previous version of this plan"
+              onClick={() => setComparing((v) => !v)}
+            >
+              Compare
+            </Button>
             <SetActiveButton
               run={selectedSummary}
               activeGroup={activeRun?.horizon_start_month ?? null}
@@ -711,6 +746,32 @@ export default function ProductionPlanPage() {
         </p>
       )}
 
+      {comparing && diff && (
+        <p
+          role="status"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800"
+        >
+          {diff.baseline_run_no ? (
+            <>
+              <span className="font-medium">vs {diff.baseline_run_no}</span>
+              <span>·</span>
+              <span>
+                {diff.summary.products_changed} product(s) changed across{' '}
+                {diff.summary.weeks_changed} week(s)
+              </span>
+              <span>·</span>
+              <span className="font-mono">
+                net {Number(diff.summary.total_delta) > 0 ? '+' : ''}
+                {formatValue(Number(diff.summary.total_delta))}
+              </span>
+              {diff.cells.length === 0 && <span>· identical</span>}
+            </>
+          ) : (
+            <span>This is the first version of its horizon group — nothing to compare against.</span>
+          )}
+        </p>
+      )}
+
       {isHistorical && (
         <p
           role="status"
@@ -748,6 +809,8 @@ export default function ProductionPlanPage() {
           unitScale={displayUnit === 't' ? 1000 : 1}
           formatValue={formatValue}
           readOnly={isReleased || !canExecute}
+          frozenUntilMonth={run.frozen_until_month}
+          diffByCell={diffByCell}
           onAdjustCell={handleAdjustCell}
         />
       )}

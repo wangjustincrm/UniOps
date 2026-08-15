@@ -230,7 +230,37 @@ export interface MpsRunSummary {
   stats: MpsRunStats | null
 }
 
+/** One matrix cell whose planned quantity changed between two versions.
+ *  Decimals arrive as strings — wrap in Number() before arithmetic. */
+export interface MpsDiffCell {
+  material_code: string
+  plan_week_start: string
+  before: string
+  after: string
+  delta: string
+}
+
+export interface MpsRunDiff {
+  run_id: string
+  /** null when this version has nothing before it in its own group — a
+   *  first version genuinely has nothing to compare against, and the page
+   *  shows no overlay rather than lighting every cell up as new. */
+  baseline_run_id: string | null
+  baseline_run_no: string | null
+  cells: MpsDiffCell[]
+  summary: {
+    products_changed: number
+    weeks_changed: number
+    total_delta: string
+  }
+}
+
 export const mpsApi = {
+  /** What changed against another version. `against` defaults server-side
+   *  to the previous version of the same horizon group. */
+  diff: (runId: string, against?: string) =>
+    api.get<MpsRunDiff>(`/mps/runs/${runId}/diff${against ? `?against=${against}` : ''}`),
+
   /** Newest horizon group first, newest version first within a group. */
   list: () => api.get<MpsRunSummary[]>('/mps/runs'),
 
