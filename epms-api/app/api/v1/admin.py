@@ -92,18 +92,78 @@ async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: A
     return result
 
 
+@router.get("/{entity}/{record_id}/workflow-steps")
+async def workflow_steps(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
+                         token: BearerToken):
+    """The document's effective approval chain, so the panel can offer the real steps
+    instead of a free-text number box — typing a step past the end of the chain is
+    exactly how a document ends up with a step the engine silently refuses to act on."""
+    if entity not in service.APPROVAL_STATE_ENTITIES:
+        raise HTTPException(400, f"'{entity}' has no approval state")
+    doc_type = await service.approval_doc_type(db, entity, record_id)
+    try:
+        steps = await approval_client.get_workflow_steps(doc_type, str(record_id),
+                                                         bearer_token=token)
+    except Exception as e:
+        raise HTTPException(502, f"Approval Engine: {e}")
+    return {"doc_type": doc_type, "steps": steps,
+            "open_approve_tasks": await service.count_open_approve_tasks(db, record_id)}
+
+
 @router.patch("/{entity}/{record_id}/approval-state")
 async def edit_approval_state(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
+                              token: BearerToken,
                               patch: dict = Body(...)):
     actor_id, email = _actor(user)
     try:
         result = await service.edit_approval_state(db, entity, record_id, patch,
-                                                   actor_id=actor_id, actor_email=email)
+                                                   actor_id=actor_id, actor_email=email,
+                                                   bearer_token=token)
         await db.commit()
-        return result
     except ValueError as e:
         await db.rollback()
         raise HTTPException(400, str(e))
+    except (RuntimeError, LookupError) as e:
+        # Validating the step needs the engine's workflow for this document. If the
+        # engine is unreachable this must read as "I could not check", not as a
+        # generic 500 — nothing has been changed at this point.
+        await db.rollback()
+        raise HTTPException(502, f"Approval Engine: {e}")
+
+    # A step change is only half done here: the row now says step N and its stale
+    # approve tasks are closed, but nothing has ISSUED the task at step N — and the
+    # approval UI is gated on tasks, not on approval_step_idx. The engine does that,
+    # and it reads the shared DB, so it must run after the commit lands.
+    doc_type = result.pop("resync_doc_type", None)
+    if doc_type:
+        try:
+            engine = await approval_client.resync_document(doc_type, str(record_id),
+                                                           bearer_token=token)
+            summary = (engine or {}).get("resynced") or {}
+            actions = summary.get("actions") or []
+            result["routing_resync"] = "ok"
+            result["resync_actions"] = actions
+            result["final_step"] = summary.get("final_step")
+            # The engine reports an unresolvable assignee as a WARN string inside
+            # `actions` and creates no task. That is a silent failure unless someone
+            # looks at it, so flag it rather than letting the panel print "ok".
+            result["resync_warning"] = any(str(a).startswith("WARN") for a in actions)
+        except Exception as e:
+            # resync-document is system_admin-only and cross-service. The step change
+            # is already committed — report the gap instead of pretending it worked.
+            result["routing_resync"] = f"failed: {e}"
+            result["resync_actions"] = []
+            result["resync_warning"] = True
+
+        # Any explicit role/user override lands on the task the engine just issued.
+        role, uid = result.get("assigned_role"), result.get("assigned_user_id")
+        if role is not None or uid is not None:
+            result["reassigned_open_tasks"] = await service.apply_task_override(
+                db, record_id, role, uid)
+            await db.commit()
+
+    result["open_approve_tasks"] = await service.count_open_approve_tasks(db, record_id)
+    return result
 
 
 @router.delete("/{entity}/{record_id}")

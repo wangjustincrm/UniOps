@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import count_polymorphic, purge_workflow_refs
 from app.admin.fields import EntitySchema, FieldSpec, ChildSchema
-from app.crud.invoice import _release_agreement_evidence
+from app.crud.invoice import _recompute_consumed, _release_agreement_evidence
+from app.models.agreement import PurchaseAgreement
+from app.models.agreement_attachment import AgreementAttachment
+from app.models.agreement_receipt import AgreementReceipt
+from app.models.agreement_receipt_attachment import AgreementReceiptAttachment
+from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.approval import ApprovalEvent
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
@@ -79,8 +84,18 @@ async def _invoice_delete(db: AsyncSession, inv) -> dict[str, int]:
     # — it also releases any claimed agreement receipts (Task 4), for the
     # same reason on the house_account side.
     await _release_agreement_evidence(db, inv)
+    agreement_id = inv.agreement_id
     summary = await purge_workflow_refs(db, inv.id)
     await db.delete(inv)            # invoice has no child tables in epms
+    # consumed_amount is DERIVED from the invoice set (crud.invoice._recompute_consumed)
+    # and drives the NTE warning banner. crud.invoice.delete recomputes it on every
+    # hard delete for exactly that reason; this cascade never did, so deleting an
+    # agreement-matched invoice through Data Maintenance left the agreement
+    # permanently over-consumed by a row that no longer exists. Flush first — the
+    # sum must not still see the pending delete.
+    if agreement_id is not None:
+        await db.flush()
+        await _recompute_consumed(db, agreement_id)
     return _merge(summary, {"invoices": 1})
 
 
@@ -226,6 +241,139 @@ async def _pr_preview(db: AsyncSession, pr) -> dict[str, int]:
     for gr in await _children(db, GoodsReceipt, "pr_id", pr.id):
         _merge(summary, await _gr_preview(db, gr))
     return _merge(summary, await _wf_counts(db, pr.id))
+
+
+# ── Agreement Receipt (leaf) ────────────────────────────────────────────────
+
+async def _receipt_release_claim(db: AsyncSession, receipt) -> int:
+    """Drop a receipt out of the invoice that claims it.
+
+    invoices.receipt_ids and agreement_receipts.invoice_id are two halves of one
+    link with no FK between them (receipt_ids is a JSONB array), so nothing in the
+    schema keeps them consistent — the codebase has already been burned by exactly
+    that drift, which is why crud.invoice._release_agreement_evidence exists to own
+    the release from the invoice side. This is the mirror: the receipt is going
+    away, so the id must come out of the array. Leaving it behind points every
+    reader of that array (reconciliation totals, the receipts panel) at a row that
+    no longer exists.
+
+    Only the invoice this receipt actually names is touched, and only if the array
+    really lists it — the same defensive shape as the helper on the other side.
+    """
+    if receipt.invoice_id is None:
+        return 0
+    inv = (await db.execute(
+        select(Invoice).where(Invoice.id == receipt.invoice_id)
+    )).scalar_one_or_none()
+    if inv is None:
+        return 0
+    ids = [str(x) for x in (inv.receipt_ids or [])]
+    if str(receipt.id) not in ids:
+        return 0
+    remaining = [x for x in ids if x != str(receipt.id)]
+    inv.receipt_ids = remaining or None
+    if not remaining:
+        # The variance note describes a set of receipts that no longer exists.
+        inv.receipt_variance_reason = None
+    return 1
+
+
+async def _receipt_delete(db: AsyncSession, receipt) -> dict[str, int]:
+    summary: dict[str, int] = {}
+    released = await _receipt_release_claim(db, receipt)
+    if released:
+        summary["invoice_claims_released"] = released
+    att = await _count_children(db, AgreementReceiptAttachment, "receipt_id", receipt.id)
+    if att:
+        summary["agreement_receipt_attachments"] = att
+    _merge(summary, await purge_workflow_refs(db, receipt.id))
+    await db.delete(receipt)        # agreement_receipt_attachments cascade via FK
+    return _merge(summary, {"agreement_receipts": 1})
+
+
+async def _receipt_preview(db: AsyncSession, receipt) -> dict[str, int]:
+    summary: dict[str, int] = {"agreement_receipts": 1}
+    att = await _count_children(db, AgreementReceiptAttachment, "receipt_id", receipt.id)
+    if att:
+        summary["agreement_receipt_attachments"] = att
+    if receipt.invoice_id is not None:
+        summary["invoice_claims_released"] = 1
+    return _merge(summary, await _wf_counts(db, receipt.id))
+
+
+# ── Agreement (refuses while invoices / PAs reference it) ───────────────────
+
+async def _agreement_blockers(db: AsyncSession, agr) -> dict[str, int]:
+    """Downstream documents whose FK to the agreement is RESTRICT."""
+    out: dict[str, int] = {}
+    n = await _count_children(db, Invoice, "agreement_id", agr.id)
+    if n:
+        out["blocked_by_invoices"] = n
+    n = await _count_children(db, PaymentApplication, "agreement_id", agr.id)
+    if n:
+        out["blocked_by_payment_applications"] = n
+    return out
+
+
+async def _agreement_delete(db: AsyncSession, agr) -> dict[str, int]:
+    # User decision (2026-08-14): unlike PR/PO/GR this does NOT cascade into the
+    # documents below it. invoices.agreement_id and payment_applications.agreement_id
+    # are RESTRICT and those rows are real financial records — an admin removing a
+    # mis-keyed agreement should not silently take an invoice or a payment with it.
+    blockers = await _agreement_blockers(db, agr)
+    if blockers:
+        parts = []
+        if blockers.get("blocked_by_invoices"):
+            parts.append(f"{blockers['blocked_by_invoices']} invoice(s)")
+        if blockers.get("blocked_by_payment_applications"):
+            parts.append(f"{blockers['blocked_by_payment_applications']} payment application(s)")
+        raise ValueError(
+            f"Cannot delete: {' and '.join(parts)} still reference this agreement. "
+            "Delete those records first."
+        )
+
+    summary: dict[str, int] = {}
+    # Receipts go through the receipt handler rather than the DB's ondelete=CASCADE:
+    # the cascade would drop the rows without releasing the invoice claim, leaving
+    # dangling ids in invoices.receipt_ids. One handler, one口径.
+    for r in await _children(db, AgreementReceipt, "agreement_id", agr.id):
+        _merge(summary, await _receipt_delete(db, r))
+
+    # Same shape for schedule rows: an invoice can hold schedule_id without an
+    # agreement link surviving on it (a detach path that only cleared one side).
+    # The blocker check above makes this near-unreachable; it costs one UPDATE and
+    # removes the last way this delete can strand a pointer.
+    sched_ids = select(AgreementPaymentSchedule.id).where(
+        AgreementPaymentSchedule.agreement_id == agr.id)
+    await db.execute(
+        update(Invoice).where(Invoice.schedule_id.in_(sched_ids)).values(schedule_id=None))
+
+    sched = await _count_children(db, AgreementPaymentSchedule, "agreement_id", agr.id)
+    if sched:
+        summary["agreement_payment_schedule"] = sched
+    att = await _count_children(db, AgreementAttachment, "agreement_id", agr.id)
+    if att:
+        summary["agreement_attachments"] = att
+
+    _merge(summary, await purge_workflow_refs(db, agr.id))
+    await db.delete(agr)   # schedule + attachments cascade via FK
+    return _merge(summary, {"purchase_agreements": 1})
+
+
+async def _agreement_preview(db: AsyncSession, agr) -> dict[str, int]:
+    summary: dict[str, int] = {"purchase_agreements": 1}
+    for r in await _children(db, AgreementReceipt, "agreement_id", agr.id):
+        _merge(summary, await _receipt_preview(db, r))
+    sched = await _count_children(db, AgreementPaymentSchedule, "agreement_id", agr.id)
+    if sched:
+        summary["agreement_payment_schedule"] = sched
+    att = await _count_children(db, AgreementAttachment, "agreement_id", agr.id)
+    if att:
+        summary["agreement_attachments"] = att
+    _merge(summary, await _wf_counts(db, agr.id))
+    # Surfaced in the SAME preview the confirm dialog renders, so the admin sees why
+    # the delete will be refused before clicking it rather than after a 400.
+    return _merge(summary, await _agreement_blockers(db, agr))
 
 
 # ── Line-item child schemas ─────────────────────────────────────────────────
@@ -400,6 +548,96 @@ _PA_SCHEMA = EntitySchema(
     child=_PA_CHILD,
 )
 
+_AGREEMENT_SCHEMA = EntitySchema(
+    key="agreement", label="Purchase Agreement", number_field="number",
+    list_columns=["number", "title", "agreement_type", "status", "vendor_name",
+                  "valid_to", "created_at"],
+    search_fields=["number", "title", "vendor_name", "vendor_reference", "contract_no"],
+    order_by="created_at desc",
+    fields=[
+        FieldSpec("number", "string", False),
+        FieldSpec("title", "string", True),
+        FieldSpec("agreement_type", "enum", True,
+                  options=["house_account", "recurring", "milestone"]),
+        # Terminal state is "active", NOT "approved" (the agr workflow differs from
+        # pr/po/pa here); "returned" is produced by the engine's return action.
+        FieldSpec("status", "enum", True,
+                  options=["draft", "in_review", "returned", "active",
+                           "expired", "closed", "cancelled"]),
+        FieldSpec("contract_no", "string", True),
+        FieldSpec("contact_email", "string", True),
+        FieldSpec("vendor_id", "reference", True, label="Vendor", ref_source="vendors",
+                  ref_name_field="vendor_name"),
+        FieldSpec("vendor_name", "string", False),
+        FieldSpec("vendor_reference", "string", True, label="Vendor Reference (legacy PO no.)"),
+        FieldSpec("valid_from", "date", True),
+        FieldSpec("valid_to", "date", True),
+        FieldSpec("grace_days", "number", True),
+        FieldSpec("not_to_exceed", "decimal", True),
+        # Derived from the invoice set by crud.invoice._recompute_consumed — a typed
+        # value here is overwritten by the next invoice write.
+        FieldSpec("consumed_amount", "decimal", False),
+        FieldSpec("currency", "string", True),
+        FieldSpec("tax_code", "string", True),
+        FieldSpec("tax_rate", "decimal", True),
+        FieldSpec("department_id", "reference", True, label="Department",
+                  ref_source="departments"),
+        FieldSpec("budget_code", "string", True),
+        FieldSpec("cost_center_id", "reference", True, label="Cost Center",
+                  ref_source="cost_centers"),
+        FieldSpec("owner_id", "reference", True, label="Agreement Owner", ref_source="users"),
+        FieldSpec("created_by", "reference", True, label="Created By", ref_source="users"),
+        # recurring-only block
+        FieldSpec("recurring_type", "enum", True,
+                  options=["weekly", "monthly", "quarterly", "yearly"]),
+        FieldSpec("expected_invoice_day", "number", True),
+        FieldSpec("anchor_month", "number", True),
+        FieldSpec("schedule_start_date", "date", True),
+        FieldSpec("expected_amount_per_period", "decimal", True),
+        FieldSpec("tolerance_pct", "decimal", True),
+        FieldSpec("overdue_after_days", "number", True),
+        FieldSpec("notes", "string", True),
+        FieldSpec("created_at", "datetime", False),
+        FieldSpec("approval_step_idx", "number", False),   # → approval-state panel
+    ],
+)
+
+_AGREEMENT_RECEIPT_SCHEMA = EntitySchema(
+    key="agreement_receipt", label="Agreement Receipt", number_field="receipt_ref",
+    list_columns=["receipt_ref", "receipt_type", "receipt_date", "vendor_name",
+                  "total_amount", "status", "created_at"],
+    search_fields=["receipt_ref", "vendor_name"], order_by="created_at desc",
+    fields=[
+        # Which agreement owns it and which invoice claims it are both maintained by
+        # the match flow; hand-editing either desyncs invoices.receipt_ids from
+        # agreement_receipts.invoice_id. Delete + re-record instead.
+        FieldSpec("agreement_id", "uuid", False),
+        FieldSpec("invoice_id", "uuid", False),
+        FieldSpec("receipt_type", "enum", True,
+                  options=["counter_slip", "delivery", "service"]),
+        FieldSpec("receipt_date", "date", True),
+        FieldSpec("receipt_ref", "string", True, label="Receipt Reference"),
+        FieldSpec("vendor_id", "reference", True, label="Merchant on the slip",
+                  ref_source="vendors", ref_name_field="vendor_name"),
+        FieldSpec("vendor_name", "string", False),
+        # Nullable on purpose for delivery/service receipts — those carry no amounts
+        # at all, and 0 would be read as a zero-dollar receipt during reconciliation.
+        FieldSpec("amount", "decimal", True),
+        FieldSpec("tax_amount", "decimal", True),
+        FieldSpec("total_amount", "decimal", True),
+        FieldSpec("status", "enum", True,
+                  options=["pending_ap_review", "open", "reconciled", "voided", "rejected"]),
+        FieldSpec("received_by", "reference", True, label="Handed in by", ref_source="users"),
+        FieldSpec("missing_receipt_reason", "string", True),
+        FieldSpec("ap_reviewed_by", "reference", True, label="AP Reviewer", ref_source="users"),
+        FieldSpec("ap_reviewed_at", "datetime", True),
+        FieldSpec("notes", "string", True),
+        FieldSpec("created_by", "reference", True, label="Recorded By", ref_source="users"),
+        FieldSpec("created_at", "datetime", False),
+    ],
+)
+
+
 # ── Task Inbox (delete-only) ────────────────────────────────────────────────────
 # A single task row. Delete removes ONLY this task by its own id — NOT by
 # document_id (that would wrongly purge sibling tasks for the same document).
@@ -434,5 +672,9 @@ REGISTRY: dict[str, EntitySpec] = {
     "gr": EntitySpec(_GR_SCHEMA, GoodsReceipt, "epms", _gr_preview, _gr_delete),
     "invoice": EntitySpec(_INVOICE_SCHEMA, Invoice, "epms", _invoice_preview, _invoice_delete),
     "pa": EntitySpec(_PA_SCHEMA, PaymentApplication, "epms", _pa_preview, _pa_delete),
+    "agreement": EntitySpec(_AGREEMENT_SCHEMA, PurchaseAgreement, "epms",
+                            _agreement_preview, _agreement_delete),
+    "agreement_receipt": EntitySpec(_AGREEMENT_RECEIPT_SCHEMA, AgreementReceipt, "epms",
+                                    _receipt_preview, _receipt_delete),
     "task": EntitySpec(_TASK_SCHEMA, Task, "epms", _task_preview, _task_delete),
 }
