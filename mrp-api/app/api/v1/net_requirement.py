@@ -111,7 +111,21 @@ async def _load_forecast_by_material(
 ) -> dict[str, dict[str, Decimal]]:
     month_index = set(months)
     lines = (await db.execute(
-        select(ForecastLine).where(ForecastLine.version_id == version_id)
+        select(ForecastLine).where(
+            ForecastLine.version_id == version_id,
+            # ★ Intent products are excluded here, not just upstream in the
+            # MPS. An intent product is a name with no ERP material code, so
+            # a net requirement for one is a purchase suggestion for a
+            # product that does not exist -- which is precisely what Phase
+            # 1C would generate the moment it starts reading this endpoint.
+            # It was invisible until now only because nothing consumed it.
+            #
+            # Filtered on the frozen `is_intent` COLUMN, never re-derived
+            # from the code prefix: the prefix is the criterion at freeze
+            # time only, and a snapshot must stay correct after its code is
+            # bound to a real material (see mps.py's _load_intent_lines).
+            ForecastLine.is_intent.is_(False),
+        )
     )).scalars().all()
     by_material: dict[str, dict[str, Decimal]] = {}
     for line in lines:

@@ -32,6 +32,7 @@ from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.models.params import MrpPlanningParam
 from app.services.capacity import ExceptionShiftConflict, shift_capacity_exceptions
+from app.services.loss_rate import PACKAGING_LOSS_RATE_KEY, RAW_MATERIAL_LOSS_RATE_KEY
 from app.services.week_calendar import WEEK_MODES
 
 router = APIRouter(prefix="/params", tags=["params"])
@@ -123,6 +124,29 @@ def _validate_frozen_months(value: object) -> None:
         )
 
 
+def _validate_loss_rate(value: object) -> None:
+    """A fraction in [0, 1] -- 0.02 means 2%.
+
+    The upper bound is 1.0 on purpose: a value above it almost always means
+    somebody typed a percentage where a fraction belongs, and that mistake
+    multiplies every purchase requirement by several times. Negative is
+    refused because under-buying stops a line.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"loss rate must be a number between 0 and 1 (0.02 = 2%), got {value!r}",
+        )
+    if not 0 <= float(value) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"loss rate must be between 0 and 1 (0.02 = 2%), got {value!r}. "
+                f"A value above 1 is usually a percentage entered as a fraction."
+            ),
+        )
+
+
 _WEEK_START_DOW_KEY = "week_start_dow"
 FROZEN_MONTHS_KEY = "frozen_months"
 DEFAULT_FROZEN_MONTHS = 3
@@ -131,6 +155,11 @@ _WRITABLE_PARAMS: dict[str, Callable[[Any], None]] = {
     "week_calendar_mode": _validate_week_calendar_mode,
     _WEEK_START_DOW_KEY: _validate_week_start_dow,
     FROZEN_MONTHS_KEY: _validate_frozen_months,
+    # Phase 1C: loss is applied at MRP time, not written into BOMs. See
+    # app/services/loss_rate.py -- in particular why the packaging rate
+    # starts at 0 and must stay there until NC's packaging BOMs are exact.
+    RAW_MATERIAL_LOSS_RATE_KEY: _validate_loss_rate,
+    PACKAGING_LOSS_RATE_KEY: _validate_loss_rate,
 }
 
 
