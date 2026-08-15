@@ -154,6 +154,9 @@ export const epmsApi = {
 async function mdmRequest<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await authFetch(`${MDM_BASE}${path}`, opts)
   if (!res.ok) throw await toApiError(res)
+  // A DELETE answers 204 with no body; parsing it as JSON throws on what was
+  // actually a success.
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 
@@ -161,6 +164,10 @@ async function mdmRequest<T>(path: string, opts: { method?: string; body?: unkno
  *  where-used/sync — see pages/bom/bomApi.ts). Mounted under /mdm/v1, unlike
  *  mrp-api's /api/v1 — pass the full `/mdm/v1/...` path. */
 export const mdmApi = {
-  get:  <T>(path: string)                => mdmRequest<T>(path),
-  post: <T>(path: string, body?: unknown) => mdmRequest<T>(path, { method: 'POST', body }),
+  get:   <T>(path: string)                 => mdmRequest<T>(path),
+  post:  <T>(path: string, body?: unknown) => mdmRequest<T>(path, { method: 'POST', body }),
+  // Supply parameters (material_suppliers) are edited from the MRP module,
+  // so the mdm client needs the write verbs the BOM/material reads never did.
+  patch: <T>(path: string, body?: unknown) => mdmRequest<T>(path, { method: 'PATCH', body }),
+  del:   <T>(path: string)                 => mdmRequest<T>(path, { method: 'DELETE' }),
 }
