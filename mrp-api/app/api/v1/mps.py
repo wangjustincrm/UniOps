@@ -147,7 +147,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func as sa_func, select
 
 from app.api.v1.net_requirement import _generate_months, _load_forecast_by_material
 from app.api.v1.params import DEFAULT_FROZEN_MONTHS, FROZEN_MONTHS_KEY, get_param
@@ -338,6 +338,20 @@ class WeekGridEntry(BaseModel):
     label: str
 
 
+class MpsRunSummaryResponse(BaseModel):
+    """One row of the version picker. **No lines**: the picker is
+    navigation, and a run carries thousands of them."""
+    id: uuid.UUID
+    run_no: str
+    horizon_start_month: str
+    horizon_months: int
+    status: str
+    is_default: bool
+    released_at: datetime | None
+    created_at: datetime
+    stats: dict | None
+
+
 class MpsRunGetResponse(MpsRunDetailResponse):
     # Computed on read, never stored -- always reflects the capacity rules
     # and week exceptions currently on file, not a snapshot from generation
@@ -496,23 +510,6 @@ def _shift_month(month: str, delta: int) -> str:
     index = year * 12 + (mon - 1) + delta
     y, m0 = divmod(index, 12)
     return f"{y:04d}-{m0 + 1:02d}"
-
-
-async def _live_released_run(db: SessionDep, horizon_start_month: str) -> MrpMpsRun | None:
-    """The plan currently in force, whose frozen months a new run inherits.
-
-    TODO(plan-versioning): "in force" is provisionally the most recently
-    released run. The production-plan version model (next round) introduces
-    an explicit default per horizon group and this must switch to it --
-    right now several runs can carry status='released' at once, which is
-    itself one of the bugs that work fixes.
-    """
-    return (await db.execute(
-        select(MrpMpsRun)
-        .where(MrpMpsRun.status == "released")
-        .order_by(MrpMpsRun.created_at.desc())
-        .limit(1)
-    )).scalars().first()
 
 
 async def _resolve_week_start_dow(db: SessionDep) -> int:
@@ -884,8 +881,11 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
                     if frozen_months else None)
     frozen_weekly: list[WeeklyLine] = []
     frozen_context: dict = {}
-    live = (await _live_released_run(db, version.horizon_start_month)
-            if frozen_until is not None else None)
+    # The plan in force -- not "the most recently released run". Switching
+    # the active version back to an earlier one of the same group is meant
+    # to change what the next plan inherits; reading the newest release
+    # instead would quietly ignore the switch.
+    live = await _default_run(db) if frozen_until is not None else None
     if live is None:
         # Nothing is in force yet, so nothing has been bought against a
         # plan: the first run plans its whole horizon, frozen zone included.
@@ -1002,9 +1002,85 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     return await _run_detail_response(db, run)
 
 
+@router.get("/runs", response_model=list[MpsRunSummaryResponse])
+async def list_runs(db: SessionDep, _: ReportDep):
+    """Every plan run, newest horizon group first and newest version first
+    within a group.
+
+    **Declared before `/runs/{run_id}`**: FastAPI matches routes in
+    declaration order, so the parameterised route would otherwise swallow
+    the literal path and try to parse "runs" as a UUID.
+
+    Ordered by `COALESCE(released_at, created_at)` so an unreleased draft
+    sorts by when it was generated -- a draft with a NULL release time must
+    not sink to the bottom of its own group, which is where the planner
+    looks for the work in progress.
+    """
+    rows = (await db.execute(
+        select(MrpMpsRun).order_by(
+            MrpMpsRun.horizon_start_month.desc(),
+            sa_func.coalesce(MrpMpsRun.released_at, MrpMpsRun.created_at).desc(),
+        )
+    )).scalars().all()
+    return rows
+
+
+@router.post("/runs/{run_id}/set-default", response_model=MpsRunGetResponse)
+async def set_default_run(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
+    """Make an already-released run of the CURRENT group the plan in force.
+
+    Switching replays that run's stored lines -- it does not recalculate, so
+    a plan switched back to is exactly the plan that was released, even if
+    the forecast and the capacity rules have moved since.
+
+    Two refusals, both 422:
+    - a draft is not switchable (nothing was ever published from it);
+    - a run from an older horizon group is not switchable, because that
+      group's 18-month window is missing the newest month of demand and
+      making it live would leave a month of materials unbought.
+    """
+    run = await _get_run_or_404(db, run_id)
+    if run.is_default:
+        return await _run_get_response(db, run)
+
+    if run.status not in ("released", "superseded"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"run {run.run_no} is '{run.status}'; only a released plan can be "
+                   f"made active. Release it instead.",
+        )
+
+    current = await _default_run(db)
+    if current is not None and run.horizon_start_month != current.horizon_start_month:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"plan {run.run_no} covers {run.horizon_start_month}, and the plan in "
+                f"force covers {current.horizon_start_month}; the plan group only "
+                f"moves forward. Versions can be switched within a group, never "
+                f"across one."
+            ),
+        )
+
+    await _make_default(db, run)
+    await db.commit()
+    await db.refresh(run)
+    return await _run_get_response(db, run)
+
+
 @router.get("/runs/{run_id}", response_model=MpsRunGetResponse)
 async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     run = await _get_run_or_404(db, run_id)
+    return await _run_get_response(db, run)
+
+
+async def _run_get_response(db: SessionDep, run: MrpMpsRun) -> "MpsRunGetResponse":
+    """The full run payload (lines + occupancy + week grid).
+
+    Shared by `GET /runs/{id}` and `set-default`: after switching the plan in
+    force the caller wants to look at the version it just activated, and
+    handing back a different shape than the one the page already renders
+    would mean the frontend needs two code paths for the same object."""
     lines = await _load_lines(db, run.id)
     # The run's OWN mode, never the current parameter (module docstring).
     mode = run.week_calendar_mode

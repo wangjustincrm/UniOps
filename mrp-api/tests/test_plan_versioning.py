@@ -206,3 +206,119 @@ async def test_the_first_release_needs_no_group_comparison(
     assert released.status_code == 200, released.text
     assert released.json()["is_default"] is True
     assert released.json()["released_at"] is not None
+
+
+# ── 列表 / 切换生效版 / 锁定区跟随 ────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_run_list_is_newest_group_first_and_carries_no_lines(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    await _run_for(client, db_session, headers, start=_future_month(1))
+    await _run_for(client, db_session, headers, start=_future_month(2))
+
+    r = await client.get("/api/v1/mps/runs", headers=headers)
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert len(rows) == 2
+    months = [row["horizon_start_month"] for row in rows]
+    assert months == sorted(months, reverse=True)
+    # 列表是导航用的：带上几千行会把版本选择器拖垮
+    assert all("lines" not in row for row in rows)
+    assert all({"status", "is_default", "released_at"} <= set(row) for row in rows)
+
+
+@pytest.mark.anyio
+async def test_switching_within_a_group_replays_that_version_for_purchasing(
+    client, db_session, admin_token, monkeypatch,
+):
+    """切回同组旧版 = 采购拿到的就是那一版的行，逐行比对，不只看行数。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    month = _future_month(1)
+
+    v1 = await _run_for(client, db_session, headers, start=month, qty="100")
+    await client.post(f"/api/v1/mps/runs/{v1['id']}/confirm-release", headers=headers)
+    v1_rows = await _demand_rows(db_session)
+
+    v2 = await _run_for(client, db_session, headers, start=month, qty="150")
+    await client.post(f"/api/v1/mps/runs/{v2['id']}/confirm-release", headers=headers)
+    assert await _demand_rows(db_session) != v1_rows, (
+        "fixture guard: the two versions must differ, or the switch proves nothing")
+
+    back = await client.post(f"/api/v1/mps/runs/{v1['id']}/set-default", headers=headers)
+    assert back.status_code == 200, back.text
+    assert back.json()["is_default"] is True
+    assert await _demand_rows(db_session) == v1_rows
+    assert (await _get(client, headers, v2["id"]))["is_default"] is False
+
+
+@pytest.mark.anyio
+async def test_switching_across_groups_is_refused_and_changes_nothing(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+
+    old = await _run_for(client, db_session, headers, start=_future_month(1))
+    await client.post(f"/api/v1/mps/runs/{old['id']}/confirm-release", headers=headers)
+    new = await _run_for(client, db_session, headers, start=_future_month(2))
+    await client.post(f"/api/v1/mps/runs/{new['id']}/confirm-release", headers=headers)
+    before = await _demand_rows(db_session)
+
+    r = await client.post(f"/api/v1/mps/runs/{old['id']}/set-default", headers=headers)
+    assert r.status_code == 422, r.text
+    assert "only moves forward" in r.text
+    assert await _demand_rows(db_session) == before
+    assert (await _get(client, headers, new["id"]))["is_default"] is True
+
+
+@pytest.mark.anyio
+async def test_a_draft_cannot_be_made_active(client, db_session, admin_token, monkeypatch):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    draft = await _run_for(client, db_session, headers, start=_future_month(1))
+
+    r = await client.post(f"/api/v1/mps/runs/{draft['id']}/set-default", headers=headers)
+    assert r.status_code == 422, r.text
+    assert "released" in r.text.lower()
+
+
+@pytest.mark.anyio
+async def test_the_frozen_zone_follows_the_plan_in_force(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★上一轮那条 TODO 的差别所在：切回 v1 后新建计划，锁定区继承的必须是
+    v1 的行，而不是「最近一次 released」的 v2。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    month = _future_month(1)
+
+    # 两版都在任何发布之前生成 —— 否则第二版会照抄第一版的锁定区，两版在
+    # 锁定区内一模一样，这条测试就什么也证明不了（第一次写就踩了这个坑）。
+    v1 = await _run_for(client, db_session, headers, start=month, qty="100")
+    v2 = await _run_for(client, db_session, headers, start=month, qty="150")
+    await client.post(f"/api/v1/mps/runs/{v1['id']}/confirm-release", headers=headers)
+    await client.post(f"/api/v1/mps/runs/{v2['id']}/confirm-release", headers=headers)
+    await client.post(f"/api/v1/mps/runs/{v1['id']}/set-default", headers=headers)
+
+    fresh = await _run_for(client, db_session, headers, start=month, qty="150")
+    frozen_until = fresh["frozen_until_month"]
+    assert frozen_until is not None, "fixture guard: nothing was frozen"
+
+    def _frozen_of(run):
+        return sorted((l["material_code"], l["plan_week_start"], l["qty"])
+                      for l in run["lines"] if l["plan_week_month"] <= frozen_until)
+
+    v1_full, v2_full = await _get(client, headers, v1["id"]), await _get(client, headers, v2["id"])
+    assert _frozen_of(v1_full) != _frozen_of(v2_full), (
+        "fixture guard: the two versions must differ inside the frozen zone")
+    assert _frozen_of(fresh) == _frozen_of(v1_full)
