@@ -12,8 +12,11 @@ DDL lives in `alembic/versions/mrp04_capacity_mps_demand.py` alongside
 `app/models/demand.py`) — don't rename that migration.
 """
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, CHAR, Date, ForeignKey, Numeric, SmallInteger, String, Text
+from sqlalchemy import (
+    Boolean, CHAR, Date, DateTime, ForeignKey, Numeric, SmallInteger, String, Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -54,6 +57,19 @@ class MrpMpsRun(Base, UUIDPrimaryKey, TimestampMixin):
     # this run was generated (materials already purchased, plan copied
     # verbatim from the live released run). 0 means nothing was frozen.
     frozen_months: Mapped[int] = mapped_column(SmallInteger, default=3, server_default="3")
+    # Plan versioning (mrp12). `is_default` marks THE plan in force —
+    # globally exactly one, guaranteed by the partial unique index
+    # `uq_mrp_mps_runs_single_default`, not by application care. It is the
+    # run whose lines are in `mrp_demands` (what 1C purchases against) and
+    # the one a new run inherits its frozen zone from.
+    #
+    # Runs are grouped by `horizon_start_month`, and the group only ever
+    # moves forward: releasing a run in a newer group supersedes every run
+    # in older ones. Within the group of the default, other released runs
+    # stay switchable.
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # When this run was published. NULL for anything never released.
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MrpMpsLine(Base, UUIDPrimaryKey, TimestampMixin):
