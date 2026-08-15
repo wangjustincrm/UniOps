@@ -20,10 +20,11 @@
 // autosave instead of refetching/remounting the grid).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Check, Eye, Lightbulb, Link2, Loader2, Lock, Sparkles, X } from 'lucide-react'
+import { AlertCircle, Check, Eye, Lightbulb, Link2, Loader2, Lock, Sparkles, Trash2, X } from 'lucide-react'
 import { Button, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { cellKey, parseCellKey } from '@/components/matrixGrid/pasteLogic'
 import type { CellValueMap } from '@/components/matrixGrid/history'
 import { ToastStack } from '@/components/Toast'
@@ -204,6 +205,25 @@ export default function SalesForecastPage() {
   // replaced instance is still mounted. See handleConfirmBind.
   const [addIntentOpen, setAddIntentOpen] = useState(false)
   const [bindTarget, setBindTarget] = useState<IntentProduct | null>(null)
+  const [dropTarget, setDropTarget] = useState<IntentProduct | null>(null)
+  const [dropBusy, setDropBusy] = useState(false)
+
+  async function handleConfirmDrop() {
+    if (!dropTarget) return
+    setDropBusy(true)
+    try {
+      await intentApi.drop(dropTarget.id)
+      await queryClient.invalidateQueries({ queryKey: ['intent-products'] })
+      toasts.success(`Dropped "${dropTarget.name}".`)
+      setDropTarget(null)
+    } catch (err) {
+      // The backend 409s a bound intent product with a human sentence —
+      // surfaced verbatim, the same contract bind follows.
+      toasts.error(err instanceof ApiError ? err.message : 'Could not drop this planned product.')
+    } finally {
+      setDropBusy(false)
+    }
+  }
   const [bindBusy, setBindBusy] = useState(false)
   const [bindError, setBindError] = useState<string | null>(null)
   // Bumped after every successful bind — folded into `gridKey` below so a
@@ -1194,6 +1214,27 @@ export default function SalesForecastPage() {
                       </button>
                     </span>
                   )}
+                  {intent && (
+                    // Until now the backend had a drop endpoint with no
+                    // caller at all, so an intent product created under the
+                    // wrong name stayed on this grid forever. Same
+                    // disabled-button tooltip workaround as Bind above.
+                    <span title={bindBlocked ? 'Waiting for autosave to finish' : 'Drop this planned product'}>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); if (!bindBlocked) setDropTarget(intent) }}
+                        disabled={bindBlocked}
+                        aria-label={`Drop ${row.label} — a planned product that was never bound`}
+                        className={
+                          bindBlocked
+                            ? 'shrink-0 cursor-not-allowed text-neutral-300'
+                            : 'shrink-0 text-neutral-400 hover:text-danger-600'
+                        }
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  )}
                   {showRemove && (
                     <button
                       type="button"
@@ -1299,6 +1340,21 @@ export default function SalesForecastPage() {
           onClose={() => { setBindTarget(null); setBindError(null) }}
           onConfirm={(materialCode) => { void handleConfirmBind(materialCode) }}
         />
+      )}
+
+      {dropTarget && (
+        <ConfirmDialog
+          title={`Drop "${dropTarget.name}"?`}
+          confirmLabel="Drop"
+          danger
+          busy={dropBusy}
+          onCancel={() => setDropTarget(null)}
+          onConfirm={() => { void handleConfirmDrop() }}
+        >
+          This planned product was never bound to a material code. Its forecast quantities
+          stay in the grid until you clear them — dropping only retires the placeholder so
+          it stops being offered.
+        </ConfirmDialog>
       )}
 
       {viewingVersion && (

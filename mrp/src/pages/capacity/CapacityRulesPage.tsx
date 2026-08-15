@@ -23,6 +23,7 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { capacityApi, SCOPE_TYPE_LABEL, CONSTRAINT_TYPE_LABEL, type CapacityRule } from './capacityApi'
 import { RuleDrawer } from './RuleDrawer'
 import { PlanningCalendarSection } from './PlanningCalendarSection'
+import { LossRatesSection } from './LossRatesSection'
 import { WeekExceptionsSection } from './WeekExceptionsSection'
 
 // design §7's docstring at the schema level (migration `mrp10b`): every
@@ -134,6 +135,8 @@ export default function CapacityRulesPage() {
       )}
 
       <PlanningCalendarSection canWrite={canWrite} />
+
+      <LossRatesSection canWrite={canWrite} />
       <WeekExceptionsSection canWrite={canWrite} notifySuccess={toasts.success} notifyError={toasts.error} />
 
       {rulesQuery.isError && (

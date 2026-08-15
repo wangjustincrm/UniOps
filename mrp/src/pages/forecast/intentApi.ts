@@ -67,4 +67,10 @@ export const intentApi = {
    *  verbatim, not swallow it into a generic message. */
   bind: (id: string, materialCode: string) =>
     api.post<IntentBindResult>(`/intent-products/${id}/bind`, { material_code: materialCode }),
+
+  /** Abandon a planned product that was never bound. 409s once it has been
+   *  bound — at that point its forecast rows belong to a real material and
+   *  dropping the placeholder would say nothing about them. Surface that
+   *  409's sentence verbatim, like bind's. */
+  drop: (id: string) => api.post<IntentProduct>(`/intent-products/${id}/drop`, {}),
 }
