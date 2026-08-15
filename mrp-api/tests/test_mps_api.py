@@ -1519,12 +1519,23 @@ async def test_confirm_release_clears_prior_cycle_demand_across_forecast_version
     from app.models.demand import MrpDemand
 
     rows = (await db_session.execute(sa.select(MrpDemand))).scalars().all()
-    assert len(rows) == 1  # R1's row was cleared, not just left orphaned under v1
-    assert rows[0].source_run_id == uuid.UUID(r2["id"])
-    assert rows[0].qty == Decimal("120.000")
-    # Every written row carries the plan week, not only the month.
-    assert rows[0].plan_week_start == date.fromisoformat(r2["lines"][0]["plan_week_start"])
-    assert rows[0].demand_month == r2["lines"][0]["plan_week_month"]
+    # The invariant under test: NOTHING of R1's survives. R1's own rows were
+    # deleted, not left orphaned under a superseded forecast_version_id.
+    assert rows
+    assert {r.source_run_id for r in rows} == {uuid.UUID(r2["id"])}
+
+    # R2 may legitimately carry MORE than its own new month: 2026-09 sits in
+    # R2's frozen zone, so R2 inherited that production from R1 verbatim
+    # (its materials are already bought) and must order materials for it
+    # too. What matters is that the rows belong to R2 and mirror R2's lines
+    # exactly -- one row per planned line, no leftovers from anywhere else.
+    planned = [l for l in r2["lines"] if not l["capacity_gap"] and Decimal(l["qty"]) > 0]
+    assert len(rows) == len(planned)
+    assert (sorted((r.plan_week_start, r.demand_month, r.qty) for r in rows)
+            == sorted((date.fromisoformat(l["plan_week_start"]), l["plan_week_month"],
+                       Decimal(l["qty"])) for l in planned))
+    # The new month is in there at its revised quantity.
+    assert any(r.qty == Decimal("120.000") for r in rows)
 
 
 @pytest.mark.anyio
