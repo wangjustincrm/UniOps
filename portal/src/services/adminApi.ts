@@ -33,6 +33,26 @@ export interface EntitySchema {
 
 export interface RefHit { id: string; label: string }
 
+export interface WorkflowStep { id: string; role: string; label: string }
+export interface WorkflowSteps {
+  doc_type: string
+  steps: WorkflowStep[]
+  open_approve_tasks: number
+}
+
+export interface ApprovalStateResult {
+  approval_step_idx: number | null
+  reassigned_open_tasks?: number
+  closed_stale_tasks?: number
+  /** Present only when a step change triggered an engine resync. */
+  routing_resync?: string
+  resync_actions?: string[]
+  resync_warning?: boolean
+  final_step?: number | null
+  /** The number that decides whether an approval button exists at all. */
+  open_approve_tasks: number
+}
+
 export interface ListResult { items: Record<string, unknown>[]; total: number }
 export type CascadeSummary = Record<string, number>
 
@@ -111,7 +131,9 @@ export const adminApi = {
     request<Record<string, unknown>>(system, 'PATCH',
       `/admin/${entity}/${id}${qs({ regenerate_po_number: opts?.regeneratePoNumber ? 1 : 0 })}`, patch),
   editApprovalState: (system: string, entity: string, id: string, patch: Record<string, unknown>) =>
-    request<Record<string, unknown>>(system, 'PATCH', `/admin/${entity}/${id}/approval-state`, patch),
+    request<ApprovalStateResult>(system, 'PATCH', `/admin/${entity}/${id}/approval-state`, patch),
+  workflowSteps: (system: string, entity: string, id: string) =>
+    request<WorkflowSteps>(system, 'GET', `/admin/${entity}/${id}/workflow-steps`),
   preview: (system: string, entity: string, id: string) =>
     request<{ preview: boolean; cascade: CascadeSummary }>(system, 'DELETE', `/admin/${entity}/${id}?preview=1`)
       .then((r) => r.cascade),
