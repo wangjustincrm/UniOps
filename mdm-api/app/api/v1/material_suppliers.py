@@ -120,6 +120,120 @@ async def create_material_supplier(
     return row
 
 
+class MaterialSupplierBulkRow(BaseModel):
+    """One pasted row. Everything but the natural key is optional: a planner
+    filling in lead times should not have to restate an MOQ they are not
+    changing."""
+    material_code: str
+    partner_code: str
+    lead_time_days: int | None = None
+    moq: Decimal | None = None
+    order_multiple: Decimal | None = None
+    is_primary: bool = False
+    price_ref: Decimal | None = None
+    notes: str | None = None
+
+
+class MaterialSupplierBulkBody(BaseModel):
+    rows: list[MaterialSupplierBulkRow]
+
+
+class MaterialSupplierBulkError(BaseModel):
+    """1-based row number as the planner sees it in the paste box, plus a
+    sentence they can act on."""
+    row: int
+    material_code: str
+    partner_code: str
+    message: str
+
+
+class MaterialSupplierBulkResult(BaseModel):
+    created: int
+    updated: int
+    errors: list[MaterialSupplierBulkError]
+
+
+@router.post("/bulk", response_model=MaterialSupplierBulkResult)
+async def bulk_upsert_material_suppliers(
+    body: MaterialSupplierBulkBody,
+    db: AsyncSession = Depends(get_db),
+    _: WriteDep = None,
+):
+    """Upsert supply parameters by their natural key, row by row.
+
+    Supply parameters arrive as a spreadsheet from purchasing. Posting them
+    one at a time means hundreds of round trips and, worse, a half-applied
+    paste when one row is wrong. Here each row is committed on its own and a
+    bad row is REPORTED rather than rolling the batch back: the other rows
+    are correct, the planner typed them, and making them retype everything
+    to fix one typo is how people go back to keeping the data in Excel.
+
+    Declared before `/{row_id}` so the literal path is not parsed as a UUID.
+    """
+    created = updated = 0
+    errors: list[MaterialSupplierBulkError] = []
+
+    for index, row in enumerate(body.rows, start=1):
+        material_code = (row.material_code or "").strip()
+        partner_code = (row.partner_code or "").strip()
+
+        def _fail(message: str) -> None:
+            errors.append(MaterialSupplierBulkError(
+                row=index, material_code=material_code,
+                partner_code=partner_code, message=message,
+            ))
+
+        if not material_code or not partner_code:
+            _fail("material code and supplier code are both required")
+            continue
+        if row.lead_time_days is not None and row.lead_time_days < 0:
+            _fail("lead time cannot be negative")
+            continue
+        if row.moq is not None and row.moq < 0:
+            _fail("minimum order quantity cannot be negative")
+            continue
+        if row.order_multiple is not None and row.order_multiple <= 0:
+            _fail("order multiple must be greater than 0")
+            continue
+
+        existing = (await db.execute(
+            select(MaterialSupplier).where(
+                MaterialSupplier.material_code == material_code,
+                MaterialSupplier.partner_code == partner_code,
+            )
+        )).scalars().first()
+
+        values = row.model_dump(exclude={"material_code", "partner_code"})
+        try:
+            if existing is None:
+                db.add(MaterialSupplier(
+                    material_code=material_code, partner_code=partner_code, **values))
+                await db.commit()
+                created += 1
+            else:
+                # Only what the row actually carries: a blank cell means
+                # "leave it alone", not "clear it". `is_primary` is the
+                # exception -- it is a checkbox with no blank state, so a
+                # False in the paste really does mean not primary.
+                for field, value in values.items():
+                    if value is not None or field == "is_primary":
+                        setattr(existing, field, value)
+                await db.commit()
+                updated += 1
+        except IntegrityError:
+            await db.rollback()
+            # The partial unique index allows one primary supplier per
+            # material. Hitting it is a data question only a human can
+            # settle, so it comes back as a readable row error rather than
+            # a 500 that loses the whole paste.
+            _fail(
+                f"{material_code} already has a different primary supplier; "
+                f"clear that one first or paste this row without the primary flag"
+            )
+
+    return MaterialSupplierBulkResult(created=created, updated=updated, errors=errors)
+
+
 @router.patch("/{row_id}", response_model=MaterialSupplierResponse)
 async def update_material_supplier(
     row_id: uuid.UUID,

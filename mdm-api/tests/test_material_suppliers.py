@@ -154,3 +154,65 @@ async def test_delete_removes_row(client: AsyncClient, db_session):
     # deleting again -> 404
     again = await client.delete(f"/mdm/v1/material-suppliers/{row_id}")
     assert again.status_code == 404
+
+
+# ── 批量录入（供 MRP 的 Supply Parameters 页粘贴 Excel）────────────────────
+#
+# 采购手上的提前期/起订量是一张 Excel。逐行调 POST 意味着 200 次往返和一半
+# 成功一半失败的中间态；批量入口按自然键 (material_code, partner_code) upsert，
+# 并逐行报错 —— 一行写错不该让另外 199 行白填。
+
+
+@pytest.mark.anyio
+async def test_bulk_creates_and_updates_by_natural_key(client):
+    first = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0001", "partner_code": "SUP-A", "lead_time_days": 30},
+        {"material_code": "CR0002", "partner_code": "SUP-B", "lead_time_days": 45, "moq": "500"},
+    ]})
+    assert first.status_code == 200, first.text
+    assert first.json()["created"] == 2
+    assert first.json()["updated"] == 0
+
+    again = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0001", "partner_code": "SUP-A", "lead_time_days": 21},
+    ]})
+    assert again.status_code == 200, again.text
+    assert again.json()["updated"] == 1
+    assert again.json()["created"] == 0
+
+    rows = (await client.get("/mdm/v1/material-suppliers?material_code=CR0001")).json()["items"]
+    assert rows[0]["lead_time_days"] == 21
+
+
+@pytest.mark.anyio
+async def test_a_bad_row_is_reported_without_losing_the_good_ones(client):
+    r = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0010", "partner_code": "SUP-A", "lead_time_days": 30},
+        {"material_code": "", "partner_code": "SUP-B", "lead_time_days": 10},
+        {"material_code": "CR0011", "partner_code": "SUP-C", "lead_time_days": -5},
+    ]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] == 1
+    assert [e["row"] for e in body["errors"]] == [2, 3]
+    assert any("lead time" in e["message"].lower() for e in body["errors"])
+
+    # 好行确实落库了，不是「报错就整批回滚」
+    kept = (await client.get("/mdm/v1/material-suppliers?material_code=CR0010")).json()["items"]
+    assert len(kept) == 1
+
+
+@pytest.mark.anyio
+async def test_a_second_primary_for_one_material_is_a_row_error_not_a_500(client):
+    """★每个物料最多一个主供应商由部分唯一索引保证 —— 粘贴里撞上它必须是
+    可读的行级错误，而不是把整批打成 500。"""
+    await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0020", "partner_code": "SUP-A", "is_primary": True},
+    ]})
+
+    r = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0020", "partner_code": "SUP-B", "is_primary": True},
+    ]})
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] == 0
+    assert any("primary" in e["message"].lower() for e in r.json()["errors"])
