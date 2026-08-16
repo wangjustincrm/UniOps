@@ -181,3 +181,127 @@ def test_an_order_date_already_in_the_past_is_flagged():
     )
     assert orders[0].order_date < date(2026, 9, 1)
     assert orders[0].order_date_passed is True
+
+
+# ── 端点：生成 / 回看 / 标状态 ────────────────────────────────────────────
+#
+# mdm-api 的两个调用打桩：这一层要验的是接线与持久化，BOM 展开本身在上面
+# 的纯函数用例里已经钉死了。
+
+import uuid as _uuid                                                    # noqa: E402
+from datetime import datetime, timezone                                 # noqa: E402
+
+from app.api.v1 import purchase as purchase_module                      # noqa: E402
+from app.services import purchase_service                               # noqa: E402
+from app.models.demand import MrpDemand                                 # noqa: E402
+from app.models.mps import MrpMpsRun                                    # noqa: E402
+
+
+async def _plan_in_force(db_session, *, product="S0093", week=W1, qty="100"):
+    run = MrpMpsRun(
+        run_no=f"MPS-{_uuid.uuid4().hex[:6].upper()}",
+        forecast_version_id=_uuid.uuid4(), horizon_start_month="2026-09",
+        horizon_months=18, status="released", safety_margin_fraction=0,
+        is_default=True, released_at=datetime.now(timezone.utc),
+    )
+    db_session.add(run)
+    await db_session.flush()
+    db_session.add(MrpDemand(
+        source_run_id=run.id, demand_type="mps", material_code=product,
+        demand_month="2026-09", plan_week_start=week, qty=Decimal(qty)))
+    await db_session.commit()
+    return run
+
+
+def _stub_mdm(monkeypatch, *, adjacency, supply):
+    async def _adjacency(token, product_codes, on_date):
+        return adjacency
+
+    async def _supply(token):
+        return supply
+
+    monkeypatch.setattr(purchase_service, "fetch_bom_adjacency", _adjacency)
+    monkeypatch.setattr(purchase_service, "fetch_supply_params", _supply)
+
+
+@pytest.mark.anyio
+async def test_generating_a_run_stores_the_suggestions(
+    client, db_session, admin_token, monkeypatch,
+):
+    await _plan_in_force(db_session)
+    _stub_mdm(monkeypatch,
+              adjacency={"S0093": [("CR0001", Decimal("2"))]},
+              supply={"CR0001": SupplyParams(partner_code="SUP-A", lead_time_days=7)})
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.post("/api/v1/purchase/runs", headers=headers)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["run_no"].startswith("PUR-")
+    assert len(body["lines"]) == 1
+    line = body["lines"][0]
+    assert line["material_code"] == "CR0001"
+    assert Decimal(line["suggested_qty"]) == Decimal("200")     # 100 x 2，无损耗无库存
+    assert line["partner_code"] == "SUP-A"
+    assert line["status"] == "pending"
+
+    # 回看的是存下来的那一份，不是重算
+    again = await client.get(f"/api/v1/purchase/runs/{body['id']}", headers=headers)
+    assert again.status_code == 200
+    assert again.json()["lines"] == body["lines"]
+
+
+@pytest.mark.anyio
+async def test_generating_without_a_plan_in_force_is_409(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★没有生效计划时返回空 run 会被读成「不用买」，而事实是「还没有计划」。"""
+    _stub_mdm(monkeypatch, adjacency={}, supply={})
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.post("/api/v1/purchase/runs", headers=headers)
+    assert r.status_code == 409, r.text
+    assert "no production plan" in r.text.lower()
+
+
+@pytest.mark.anyio
+async def test_the_run_snapshots_the_loss_rates_it_used(
+    client, db_session, admin_token, monkeypatch,
+):
+    await _plan_in_force(db_session)
+    _stub_mdm(monkeypatch,
+              adjacency={"S0093": [("CR0001", Decimal("1"))]},
+              supply={"CR0001": SupplyParams(partner_code="SUP-A", lead_time_days=7)})
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.put("/api/v1/params/raw_material_loss_rate", json={"value": 0.02},
+                     headers=headers)
+
+    body = (await client.post("/api/v1/purchase/runs", headers=headers)).json()
+    assert Decimal(body["raw_material_loss_rate"]) == Decimal("0.02")
+    assert Decimal(body["lines"][0]["suggested_qty"]) == Decimal("102")
+
+    # 之后改设置，旧 run 的记载不许跟着变
+    await client.put("/api/v1/params/raw_material_loss_rate", json={"value": 0.10},
+                     headers=headers)
+    after = (await client.get(f"/api/v1/purchase/runs/{body['id']}", headers=headers)).json()
+    assert Decimal(after["raw_material_loss_rate"]) == Decimal("0.02")
+    assert Decimal(after["lines"][0]["suggested_qty"]) == Decimal("102")
+
+
+@pytest.mark.anyio
+async def test_a_line_can_be_marked_ordered(client, db_session, admin_token, monkeypatch):
+    await _plan_in_force(db_session)
+    _stub_mdm(monkeypatch,
+              adjacency={"S0093": [("CR0001", Decimal("1"))]},
+              supply={"CR0001": SupplyParams(partner_code="SUP-A", lead_time_days=7)})
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    run = (await client.post("/api/v1/purchase/runs", headers=headers)).json()
+    line_id = run["lines"][0]["id"]
+
+    ok = await client.patch(f"/api/v1/purchase/runs/{run['id']}/lines/{line_id}",
+                            json={"status": "ordered"}, headers=headers)
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["status"] == "ordered"
+
+    bad = await client.patch(f"/api/v1/purchase/runs/{run['id']}/lines/{line_id}",
+                             json={"status": "done"}, headers=headers)
+    assert bad.status_code == 422
