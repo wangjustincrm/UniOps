@@ -64,15 +64,26 @@ def _flatten_tree(node: dict, into: dict[str, list[tuple[str, Decimal]]]) -> Non
         _flatten_tree(child, into)
 
 
-async def fetch_bom_adjacency(token: str, product_codes: list[str],
-                              on_date: date) -> dict[str, list[tuple[str, Decimal]]]:
+async def fetch_bom_adjacency(
+    token: str, product_codes: list[str], on_date: date,
+) -> tuple[dict[str, list[tuple[str, Decimal]]], list[str]]:
     """One explosion request per finished product, flattened and merged.
 
-    A product whose explosion fails or has no BOM simply contributes
-    nothing; the engine then reports it as `missing_bom` rather than this
-    layer deciding what an absent BOM means.
+    Returns the adjacency map AND the products whose request FAILED --
+    which is a different thing from a product that has no BOM, and the
+    difference matters enough to have caught this function out once already:
+    the query parameters were wrong, every request 422'd, the failures were
+    swallowed as "no BOM", and the run came back reporting that all six
+    products in the plan lacked a bill of materials. A plan that quietly
+    needs no materials is the most dangerous answer this service can give,
+    so a request that did not succeed is now carried out to the caller and
+    counted in the run's stats.
+
+    `product` / `date` are mdm-api's actual query parameter names — verified
+    against its OpenAPI schema, not guessed.
     """
     adjacency: dict[str, list[tuple[str, Decimal]]] = {}
+    failed: list[str] = []
     async with httpx.AsyncClient(
         base_url=f"{settings.MDM_API_URL}/mdm/v1",
         headers={"Authorization": f"Bearer {token}"},
@@ -82,17 +93,16 @@ async def fetch_bom_adjacency(token: str, product_codes: list[str],
             try:
                 response = await client.get(
                     "/boms/explode",
-                    params={"product_material_code": code, "on_date": on_date.isoformat()},
+                    params={"product": code, "date": on_date.isoformat()},
                 )
-                if response.status_code != 200:
-                    continue
-                _flatten_tree(response.json(), adjacency)
             except httpx.HTTPError:
-                # mdm-api being unreachable must not silently produce a plan
-                # with no materials in it; the caller counts the products it
-                # asked for against the ones that came back (see `stats`).
+                failed.append(code)
                 continue
-    return adjacency
+            if response.status_code != 200:
+                failed.append(code)
+                continue
+            _flatten_tree(response.json(), adjacency)
+    return adjacency, failed
 
 
 async def fetch_supply_params(token: str) -> dict[str, SupplyParams]:
@@ -152,7 +162,7 @@ async def compute_suggestions(
     rates = await resolve_loss_rates(db)
 
     earliest = min((week for _, week, _ in demands), default=today)
-    adjacency = await fetch_bom_adjacency(token, products, earliest)
+    adjacency, bom_fetch_failed = await fetch_bom_adjacency(token, products, earliest)
 
     exploded = explode_demands(demands, lambda code: adjacency.get(code, []), rates)
     on_hand: dict[str, Decimal] = {}
@@ -167,6 +177,10 @@ async def compute_suggestions(
     stats = {
         "products_in_plan": len(products),
         "products_without_bom": len({l.material_code for l in exploded if l.missing_bom}),
+        # Distinct from the above on purpose: "this product has no bill of
+        # materials" is a data gap somebody can fix, while "we could not ask"
+        # means the numbers below are incomplete and must not be acted on.
+        "bom_fetch_failed": len(bom_fetch_failed),
         "components": len({l.material_code for l in netted}),
         "lines": len(suggestions),
         "supplier_missing": sum(1 for s in suggestions if s.supplier_missing),

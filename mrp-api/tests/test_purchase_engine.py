@@ -215,7 +215,7 @@ async def _plan_in_force(db_session, *, product="S0093", week=W1, qty="100"):
 
 def _stub_mdm(monkeypatch, *, adjacency, supply):
     async def _adjacency(token, product_codes, on_date):
-        return adjacency
+        return adjacency, []
 
     async def _supply(token):
         return supply
@@ -337,3 +337,29 @@ async def test_the_export_carries_every_suggestion_and_its_warnings(
     assert len(body_rows) == len(run["lines"])
     # 告警是文字列，不是颜色 —— 表格会被筛选、转发、粘进别的表，颜色都留不下
     assert any("no supplier" in (r[-1] or "") for r in body_rows)
+
+
+@pytest.mark.anyio
+async def test_a_failed_bom_fetch_is_not_reported_as_a_missing_bom(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★真踩过：explode 的查询参数名写错 → 每个请求 422 → 被吞成「这个产品
+    没有 BOM」→ run 报告「计划里 6 个成品全都没有 BOM、0 行建议」。
+
+    「问不到」和「确实没有 BOM」必须分开：后者是能补的数据缺口，前者说明
+    下面的数字不完整、不能拿去下单。"""
+    await _plan_in_force(db_session)
+
+    async def _all_requests_fail(token, product_codes, on_date):
+        return {}, list(product_codes)
+
+    async def _no_supply(token):
+        return {}
+
+    monkeypatch.setattr(purchase_service, "fetch_bom_adjacency", _all_requests_fail)
+    monkeypatch.setattr(purchase_service, "fetch_supply_params", _no_supply)
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    run = (await client.post("/api/v1/purchase/runs", headers=headers)).json()
+    assert run["stats"]["bom_fetch_failed"] == 1
+    assert run["lines"] == []
