@@ -6,7 +6,7 @@ import { mrpRoutes } from '@/app/routes'
 import {
   TrendingUp, PackageSearch, Network, ArrowLeft, Menu,
   ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
-  SlidersHorizontal, CalendarRange, Truck } from 'lucide-react'
+  SlidersHorizontal, CalendarRange, Truck, ShoppingCart } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
@@ -35,6 +35,7 @@ const NAV = [
   { label: 'Capacity Rules',      href: '/capacity-rules',      icon: SlidersHorizontal },
   { label: 'Production Plan',     href: '/production-plan',     icon: CalendarRange    },
   { label: 'Supply Parameters',   href: '/supply-parameters',   icon: Truck            },
+  { label: 'Purchase Suggestions', href: '/purchase-suggestions', icon: ShoppingCart     },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
