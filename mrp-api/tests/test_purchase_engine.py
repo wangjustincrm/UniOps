@@ -305,3 +305,35 @@ async def test_a_line_can_be_marked_ordered(client, db_session, admin_token, mon
     bad = await client.patch(f"/api/v1/purchase/runs/{run['id']}/lines/{line_id}",
                              json={"status": "done"}, headers=headers)
     assert bad.status_code == 422
+
+
+@pytest.mark.anyio
+async def test_the_export_carries_every_suggestion_and_its_warnings(
+    client, db_session, admin_token, monkeypatch,
+):
+    """采购是拿着表格去下单的 —— 屏幕上有、导出里没有，等于没有。"""
+    import io as _io
+
+    import openpyxl
+
+    await _plan_in_force(db_session)
+    _stub_mdm(monkeypatch,
+              adjacency={"S0093": [("CR0001", Decimal("1"))]},
+              supply={})                     # 没有供应商 → 该行必须带告警
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    run = (await client.post("/api/v1/purchase/runs", headers=headers)).json()
+
+    r = await client.get(f"/api/v1/purchase/runs/{run['id']}/export", headers=headers)
+    assert r.status_code == 200, r.text
+    assert "spreadsheetml" in r.headers["content-type"]
+    assert run["run_no"] in r.headers["content-disposition"]
+
+    sheet = openpyxl.load_workbook(_io.BytesIO(r.content)).active
+    header = [c.value for c in sheet[1]]
+    assert header[0] == "Order by" and "Attention" in header
+
+    body_rows = [[c.value for c in row] for row in sheet.iter_rows(min_row=2)
+                 if row[2].value]
+    assert len(body_rows) == len(run["lines"])
+    # 告警是文字列，不是颜色 —— 表格会被筛选、转发、粘进别的表，颜色都留不下
+    assert any("no supplier" in (r[-1] or "") for r in body_rows)

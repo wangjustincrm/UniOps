@@ -74,4 +74,6 @@ export const purchaseApi = {
   create: () => api.post<PurchaseRun>('/purchase/runs', {}),
   setStatus: (runId: string, lineId: string, status: PurchaseLineStatus) =>
     api.patch<PurchaseLine>(`/purchase/runs/${runId}/lines/${lineId}`, { status }),
+  /** xlsx for purchasing — the server names the file. */
+  exportRun: (runId: string) => api.getBlobWithFilename(`/purchase/runs/${runId}/export`),
 }

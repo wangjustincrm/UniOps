@@ -16,7 +16,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
@@ -25,6 +25,7 @@ from app.core.deps import BearerToken, SessionDep
 from app.models.mps import MrpMpsRun
 from app.models.purchase import MrpPurchaseLine, MrpPurchaseRun
 from app.services.numbering import next_timestamped_no
+from app.services.purchase_export import build_purchase_workbook
 from app.services.purchase_service import compute_suggestions
 
 router = APIRouter(prefix="/purchase", tags=["purchase"])
@@ -36,6 +37,9 @@ _LINE_STATUSES = ("pending", "ordered", "ignored")
 
 # Distinct from the MPS run key (see app/services/numbering.py).
 _PURCHASE_RUN_NO_LOCK_KEY = 0x4D525031
+
+_XLSX_MEDIA_TYPE = ("application/vnd.openxmlformats-officedocument"
+                    ".spreadsheetml.sheet")
 
 
 class PurchaseLineResponse(BaseModel):
@@ -176,6 +180,22 @@ async def create_purchase_run(db: SessionDep, payload: WriteDep, token: BearerTo
 async def get_purchase_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     run = await _get_run_or_404(db, run_id)
     return _run_response(run, await _load_lines(db, run.id))
+
+
+@router.get("/runs/{run_id}/export")
+async def export_purchase_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
+    """The suggestions as xlsx, ordered by order date.
+
+    Buyers work from a spreadsheet; a screen they have to transcribe is a
+    screen they stop opening."""
+    run = await _get_run_or_404(db, run_id)
+    content = build_purchase_workbook(run, await _load_lines(db, run.id))
+    filename = f"purchase-suggestions-{run.run_no}.xlsx"
+    return Response(
+        content=content,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.patch("/runs/{run_id}/lines/{line_id}", response_model=PurchaseLineResponse)

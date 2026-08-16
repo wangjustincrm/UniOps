@@ -11,9 +11,10 @@
 // starts trusting the quantities.
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, CalendarClock, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'lucide-react'
 import { Badge, Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
+import { saveBlob } from '@/pages/forecast/forecastApi'
 import { cn } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
@@ -74,6 +75,16 @@ export default function PurchaseSuggestionsPage() {
     onError: (err) => toasts.error(errMsg(err, 'Could not update this line.')),
   })
 
+  async function handleExport() {
+    if (!activeId) return
+    try {
+      const { blob, filename } = await purchaseApi.exportRun(activeId)
+      saveBlob(blob, filename, 'purchase-suggestions.xlsx')
+    } catch (err) {
+      toasts.error(errMsg(err, 'Could not export this calculation.'))
+    }
+  }
+
   const lines = useMemo(() => {
     const all = run?.lines ?? []
     return hideDone ? all.filter((l) => l.status === 'pending') : all
@@ -106,6 +117,12 @@ export default function PurchaseSuggestionsPage() {
                 </option>
               ))}
             </select>
+          )}
+          {run && (
+            <Button type="button" size="sm" variant="secondary" className="min-h-[44px]"
+              onClick={() => { void handleExport() }}>
+              <Download className="h-3.5 w-3.5" /> Export
+            </Button>
           )}
           {canExecute && (
             <Button type="button" size="sm" className="min-h-[44px]"
