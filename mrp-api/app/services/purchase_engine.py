@@ -94,6 +94,13 @@ def explode_demands(
     product with `[(component_code, qty_per_unit), ...]` — **already per
     unit**, see this module's docstring.
 
+    **Only leaves become requirements.** A component with a bill of materials
+    of its own is made, not bought, so it contributes nothing to buy and
+    merely passes its quantity down. A node the explosion could not descend
+    into (the source truncated the tree at its own depth limit) arrives here
+    with no children and is therefore treated as a leaf — over-stating one
+    purchase beats silently losing everything underneath it.
+
     Each component is inflated by the rate for its own category as it is
     produced, so a sub-component is inflated once (by its own rate), never
     by its parent's as well.
@@ -110,16 +117,31 @@ def explode_demands(
             return
         for component_code, per_unit in components:
             base = quantity * per_unit
+            sub_components = bom_lookup(component_code) if depth < max_depth else []
+            if sub_components:
+                # ★ This component has a bill of materials of its own, so the
+                # plant MAKES it — it is an output of production, not
+                # something anybody buys. It contributes no purchase
+                # requirement; it only passes the quantity down to what it is
+                # made from.
+                #
+                # The rule is "does it have a BOM", never the code prefix:
+                # S0093 -> CW0001 -> CS0026 -> CR0059 -> CR0010 is a real
+                # cascade in this plant, and CR0059 carries a raw-material
+                # prefix while being manufactured. A prefix rule would have
+                # put it on the shopping list.
+                #
+                # Children explode off the BASE quantity, not an inflated
+                # one: each level's loss belongs to that level's own
+                # component, and compounding it down the tree inflates deep
+                # components several times over (the plant's rule, 2026-08-04).
+                _walk(component_code, week, base, depth + 1)
+                continue
+
             rate = applicable_loss_rate(component_code, rates)
             inflated = inflate_for_loss(base, rate)
             key = (component_code, week)
             totals[key] = totals.get(key, Decimal("0")) + inflated
-            if depth < max_depth:
-                # Children are exploded off the BASE quantity, not the
-                # inflated one: each level's loss belongs to that level's
-                # own component, and multiplying it down the tree inflates
-                # deep components several times over.
-                _walk(component_code, week, base, depth + 1)
 
     for product_code, week, quantity in demands:
         if not bom_lookup(product_code):

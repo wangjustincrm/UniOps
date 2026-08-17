@@ -49,7 +49,7 @@ def test_each_component_takes_the_rate_for_its_own_category():
 
 
 def test_multi_level_explosion_does_not_compound_ancestor_rates():
-    """半成品粉 CS 用原料率；它下面的 CR 也用原料率 —— 一次，不是两次。"""
+    """叶子按自身类别加一次损耗；祖先层的率不累乘下来。"""
     lines = explode_demands(
         [("S0093", W1, Decimal("100"))],
         _bom({
@@ -59,9 +59,31 @@ def test_multi_level_explosion_does_not_compound_ancestor_rates():
         rates={"raw": Decimal("0.10"), "packaging": Decimal("0")},
     )
     by_code = {l.material_code: l.qty for l in lines}
-    assert by_code["CS0026"] == Decimal("110")           # 100 x 1.1
     # 若累乘祖先层会得到 110 x 0.27 x 1.1 = 32.67 —— 那是错的
     assert by_code["CR0024"] == Decimal("29.7")          # (100 x 0.27) x 1.1
+
+
+def test_a_component_that_is_made_never_becomes_a_purchase_requirement():
+    """★工厂的真实级联：S0093 → CW0001 → CS0026 → CR0059 → CR0010。
+    中间那三个都自己有 BOM，是生产出来的产出物，不该出现在采购需求里 ——
+    ★注意 CR0059 顶着原辅料的前缀却是自制的，所以判据只能是「有没有 BOM」，
+    绝不能用代码前缀。"""
+    lines = explode_demands(
+        [("S0093", W1, Decimal("100"))],
+        _bom({
+            "S0093": [("CW0001", Decimal("1")), ("CP0115", Decimal("1.45"))],
+            "CW0001": [("CS0026", Decimal("1"))],
+            "CS0026": [("CR0059", Decimal("2")), ("CR0024", Decimal("0.27"))],
+            "CR0059": [("CR0010", Decimal("1"))],
+        }),
+        rates={"raw": Decimal("0"), "packaging": Decimal("0")},
+    )
+    codes = {l.material_code for l in lines if not l.missing_bom}
+    assert codes == {"CR0010", "CR0024", "CP0115"}       # 只有叶子
+    assert "CW0001" not in codes and "CS0026" not in codes and "CR0059" not in codes
+    by_code = {l.material_code: l.qty for l in lines}
+    assert by_code["CR0010"] == Decimal("200")           # 100 x 1 x 1 x 2 x 1
+    assert by_code["CR0024"] == Decimal("27")            # 100 x 1 x 1 x 0.27
 
 
 def test_a_product_with_no_bom_is_reported_not_silently_dropped():
