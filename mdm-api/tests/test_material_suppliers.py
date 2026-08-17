@@ -216,3 +216,42 @@ async def test_a_second_primary_for_one_material_is_a_row_error_not_a_500(client
     assert r.status_code == 200, r.text
     assert r.json()["created"] == 0
     assert any("primary" in e["message"].lower() for e in r.json()["errors"])
+
+
+@pytest.mark.anyio
+async def test_a_row_can_be_re_sourced_to_another_supplier(client: AsyncClient):
+    """换供应商是常规业务事件（重新寻源），不该逼用户删了重建。"""
+    created = (await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9001", "partner_code": "SUP-OLD",
+        "lead_time_days": 30, "is_primary": True,
+    })).json()
+
+    r = await client.patch(f"/mdm/v1/material-suppliers/{created['id']}",
+                           json={"partner_code": "SUP-NEW", "lead_time_days": 45})
+    assert r.status_code == 200, r.text
+    assert r.json()["partner_code"] == "SUP-NEW"
+    assert r.json()["lead_time_days"] == 45
+    assert r.json()["material_code"] == "CR9001"      # 物料不动
+
+
+@pytest.mark.anyio
+async def test_re_sourcing_onto_an_existing_pair_is_409(client: AsyncClient):
+    """目标组合已存在 → 可读的 409，而不是唯一约束打成 500。"""
+    a = (await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9002", "partner_code": "SUP-A"})).json()
+    await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9002", "partner_code": "SUP-B"})
+
+    r = await client.patch(f"/mdm/v1/material-suppliers/{a['id']}",
+                           json={"partner_code": "SUP-B"})
+    assert r.status_code == 409, r.text
+    assert "CR9002" in r.text and "SUP-B" in r.text
+
+
+@pytest.mark.anyio
+async def test_a_blank_supplier_is_refused(client: AsyncClient):
+    created = (await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9003", "partner_code": "SUP-A"})).json()
+    r = await client.patch(f"/mdm/v1/material-suppliers/{created['id']}",
+                           json={"partner_code": "   "})
+    assert r.status_code == 422, r.text

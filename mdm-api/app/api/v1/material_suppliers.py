@@ -40,6 +40,12 @@ class MaterialSupplierCreate(BaseModel):
 
 
 class MaterialSupplierUpdate(BaseModel):
+    # Re-sourcing a material to a different supplier is an ordinary event, so
+    # `partner_code` is editable. `material_code` is NOT: the row's other
+    # values are quantities in THAT material's unit (1000 KGM of lactose says
+    # nothing about a tin can counted in pieces), so moving a row to another
+    # material would silently carry meaningless numbers across.
+    partner_code: str | None = None
     lead_time_days: int | None = None
     moq: Decimal | None = None
     order_multiple: Decimal | None = None
@@ -246,8 +252,14 @@ async def update_material_supplier(
     )).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=404, detail="material_suppliers row not found")
-    for k, v in body.model_dump(exclude_unset=True).items():
-        setattr(row, k, v)
+    updates = body.model_dump(exclude_unset=True)
+    if "partner_code" in updates and not (updates["partner_code"] or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="supplier code cannot be blank",
+        )
+    for k, v in updates.items():
+        setattr(row, k, v.strip() if k == "partner_code" and isinstance(v, str) else v)
     # Capture BEFORE flush: after a flush raises, the session's transaction
     # is left in a state that requires rollback before any further ORM
     # attribute access — reading `row.material_code`/`row.partner_code` in
@@ -255,9 +267,14 @@ async def update_material_supplier(
     # expired attribute load) against that dead transaction and raise
     # PendingRollbackError instead of cleanly returning 409. This path was
     # previously unreachable (the old, unfiltered material_code+partner_code
-    # unique constraint could never be hit by a PATCH, which doesn't touch
-    # either field) — the new partial `is_primary` index (migration 0013)
-    # makes it reachable, so it needs to actually work now.
+    # unique constraint could never be hit by a PATCH, which didn't touch
+    # either field) — the partial `is_primary` index (migration 0013) made it
+    # reachable, and a PATCH that re-sources the row to another supplier can
+    # now collide with the material+partner pair itself. Both land here.
+    #
+    # The codes are read AFTER the assignments above on purpose: the pair
+    # reported back is the one that actually collided, not the one the row
+    # used to hold.
     material_code, partner_code = row.material_code, row.partner_code
     try:
         await db.flush()

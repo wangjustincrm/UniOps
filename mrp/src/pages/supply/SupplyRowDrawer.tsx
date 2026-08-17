@@ -5,6 +5,13 @@
 // for nobody — the purchase suggestion then reports "no supplier" for a
 // material somebody believes they configured.
 //
+// The MATERIAL is fixed once a row exists, the SUPPLIER is not. Re-sourcing
+// a material to another supplier is an ordinary event; moving a row to
+// another material is not, because every quantity on it is expressed in the
+// first material's unit — 1000 KGM of lactose says nothing about a tin can
+// counted in pieces, and carrying those numbers across silently would be
+// worse than making somebody retype them.
+//
 // ★ The material picker runs with `finishedGoodsOnly={false}` on purpose.
 // Supply parameters are for what gets BOUGHT — raw materials (CR),
 // packaging (CP), semi-finished powder (CW/CS) — none of which are finished
@@ -39,11 +46,19 @@ function initialState(row: MaterialSupplier | null): FormState {
     material_code: row.material_code,
     partner_code: row.partner_code,
     lead_time_days: row.lead_time_days === null ? '' : String(row.lead_time_days),
-    moq: row.moq ?? '',
-    order_multiple: row.order_multiple ?? '',
+    // Numeric(18,4) arrives as '1000.0000'; four decimals in a box somebody
+    // is about to retype is noise they have to delete first.
+    moq: trimZeros(row.moq),
+    order_multiple: trimZeros(row.order_multiple),
     is_primary: row.is_primary,
     notes: row.notes ?? '',
   }
+}
+
+function trimZeros(value: string | null): string {
+  if (value === null) return ''
+  const n = Number(value)
+  return Number.isFinite(n) ? String(n) : value
 }
 
 function optionalNumber(raw: string): string | null {
@@ -108,13 +123,11 @@ export function SupplyRowDrawer({
         notes: form.notes.trim() || null,
       }
       if (isEdit && row) {
-        // The natural key is not editable: changing which material or
-        // supplier a row is about makes it a different row, and silently
-        // moving it would lose whatever the old pair was configured with.
-        // Both pickers are locked in edit mode to say so.
+        // The material is not editable (see this file's header); the supplier
+        // is, so it stays in the payload. A 409 comes back when the target
+        // material/supplier pair already exists, worded by the API.
         const updates = { ...body }
         delete (updates as Partial<BulkRow>).material_code
-        delete (updates as Partial<BulkRow>).partner_code
         await supplyApi.update(row.id, updates)
       } else {
         await supplyApi.create(body)
@@ -170,20 +183,27 @@ export function SupplyRowDrawer({
           </FormField>
 
           <FormField label="Supplier" required htmlFor="supply-partner"
-            hint={isEdit
-              ? 'Fixed — add a separate row for another supplier.'
-              : supplierName ?? undefined}>
-            {isEdit ? (
-              <Input id="supply-partner" value={form.partner_code} disabled />
-            ) : (
-              <SupplierPicker
-                value={form.partner_code}
-                onSelect={(p) => { set('partner_code', p.code); setSupplierName(p.name) }}
-                onClear={() => { set('partner_code', ''); setSupplierName(null) }}
-                disabled={saving}
-              />
-            )}
+            hint={supplierName ?? undefined}>
+            <SupplierPicker
+              value={form.partner_code}
+              onSelect={(p) => { set('partner_code', p.code); setSupplierName(p.name) }}
+              onClear={() => { set('partner_code', ''); setSupplierName(null) }}
+              disabled={saving}
+            />
           </FormField>
+
+          {isEdit && form.partner_code !== row?.partner_code && (
+            // Changing supplier is allowed, but the terms below were agreed
+            // with the old one. Saving them unread would hand purchasing a
+            // lead time nobody negotiated.
+            <p className="flex items-start gap-1.5 rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+              <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Re-sourcing from <strong>{row?.partner_code}</strong>. The lead time and order
+                sizing below were agreed with that supplier — check they still apply.
+              </span>
+            </p>
+          )}
 
           <FormField label="Lead time (days)" htmlFor="supply-lead"
             hint="Days from placing the order to receiving it. Purchase suggestions work backwards from this; left blank, the suggestion says so rather than guessing.">
