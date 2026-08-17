@@ -56,6 +56,7 @@ export function RemittanceStatusBadge({ status }: { status: RemittanceStatus }) 
 
 const BLOCK_REASON_LABEL: Record<string, string> = {
   missing_email: 'Missing email',
+  invalid_email: 'Invalid email address — fix it on the vendor record',
   missing_invoice_no: 'Missing invoice number',
 }
 

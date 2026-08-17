@@ -1,5 +1,6 @@
 """Remittance advice — notification log, grouping, sending."""
 import uuid
+from email.utils import getaddresses
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
@@ -1572,3 +1573,122 @@ async def test_selection_endpoints_require_payment_authority(client, db_session)
     r2 = await client.post("/finance/v1/payments/remittance/selection/send",
                            json={"payment_ids": []}, headers=_h("requester"))
     assert r2.status_code == 403
+
+# ── Recipient-address normalization (2026-08-17 prod incident) ───────────────
+#
+# Sangers Inc's remittance advice failed with
+# `SMTPRecipientRefused(501, '5.1.3 Bad recipient address syntax', '')` because
+# the vendor's remittance_email held TWO addresses joined by a semicolon.
+# A semicolon is not an RFC 5322 separator, so Python's address parser does not
+# salvage the good addresses — it collapses the whole header into ONE EMPTY
+# recipient, the empty recipient is the only one, every recipient is therefore
+# refused, and aiosmtplib raises. The fix is to normalize before the address
+# ever reaches the SMTP layer, and to refuse locally (with a block reason the
+# operator can read) when it cannot be normalized.
+
+async def test_semicolon_separated_vendor_email_is_normalized_for_smtp(db_session):
+    bp = await _vendor(db_session, remit="kyle@sangers.test; rob@sangers.test")
+    inv = await _invoice(db_session, "VINV-101")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.email == "kyle@sangers.test, rob@sangers.test"
+    assert g.block_reasons == []
+    # The assertion that actually reproduces the incident: the value we hand
+    # to the To header must survive the same parser aiosmtplib uses to build
+    # its RCPT TO list, with no empty recipient in it.
+    assert [a for _, a in getaddresses([g.email])] == [
+        "kyle@sangers.test", "rob@sangers.test"]
+
+
+async def test_trailing_separator_in_vendor_email_is_dropped(db_session):
+    bp = await _vendor(db_session, remit="a@x.test, b@x.test,")
+    inv = await _invoice(db_session, "VINV-102")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.email == "a@x.test, b@x.test"
+    assert "" not in [a for _, a in getaddresses([g.email])]
+
+
+async def test_malformed_vendor_email_blocks_group_instead_of_reaching_smtp(db_session):
+    bp = await _vendor(db_session, remit="a@x.test, not-an-email")
+    inv = await _invoice(db_session, "VINV-103")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert rem.BLOCK_INVALID_EMAIL in g.block_reasons
+    # Distinct from "no address at all" — the operator must be told the
+    # address is unusable, not that it is absent.
+    assert rem.BLOCK_MISSING_EMAIL not in g.block_reasons
+
+
+async def test_malformed_employee_email_blocks_group(db_session):
+    emp_id = uuid.uuid4()
+    db_session.add(User(id=emp_id, email="jane@crm.test; jim@crm.test",
+                        full_name="Jane Doe"))
+    claim = ExpenseClaim(claim_number="EXP-101", claim_type="EXP", status="approved",
+                         employee_id=emp_id, employee_name="Jane Doe", currency="CAD",
+                         total_amount=Decimal("20.00"), tax_amount=Decimal("0"),
+                         net_amount=Decimal("20.00"))
+    db_session.add(claim)
+    await db_session.flush()
+    rec = PaymentRecord(
+        doc_kind="expense_claim", doc_id=claim.id, doc_number=claim.claim_number,
+        payment_date=date(2026, 7, 22), payment_method="bank_transfer",
+        amount=Decimal("20.00"), currency="CAD", recorded_by=uuid.uuid4(),
+        status="completed",
+    )
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.email == "jane@crm.test, jim@crm.test"
+    assert g.block_reasons == []
+
+
+async def test_semicolon_separated_cc_is_normalized_not_silently_dropped(db_session):
+    # The CC address goes into its own header, parsed separately from To, so a
+    # malformed CC does NOT fail the send — the payee is accepted, only the
+    # empty CC recipient is refused, and aiosmtplib raises only when EVERY
+    # recipient is refused. The finance copy would just never arrive, with a
+    # "sent" row in the log to say it did. Normalize it for the same reason
+    # the payee address is normalized.
+    db_session.add(CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test",
+        "cc_email": "finance@crm.test; ap@crm.test"}))
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_port=587,"
+        " po_smtp_use_tls=true"))
+
+    s = await rc.load(db_session)
+    assert s.cc_email == "finance@crm.test, ap@crm.test"
+    assert "" not in [a for _, a in getaddresses([s.cc_email])]
+
+
+async def test_unusable_cc_is_dropped_rather_than_breaking_the_header(db_session):
+    db_session.add(CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test", "cc_email": "not-an-email"}))
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_port=587,"
+        " po_smtp_use_tls=true"))
+
+    s = await rc.load(db_session)
+    assert s.cc_email is None
