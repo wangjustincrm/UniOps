@@ -247,6 +247,12 @@ export interface MpsRunDiff {
    *  shows no overlay rather than lighting every cell up as new. */
   baseline_run_id: string | null
   baseline_run_no: string | null
+  /** Which baseline was used: 'active' (the plan in force), 'previous' (what
+   *  this plan replaced — shown when the open plan IS the one in force),
+   *  'explicit' (a named one), or null when there was nothing to compare
+   *  against. Named on screen, because "against the live plan" and "against
+   *  the version this replaced" are not interchangeable statements. */
+  baseline_kind: 'active' | 'previous' | 'explicit' | null
   cells: MpsDiffCell[]
   summary: {
     products_changed: number

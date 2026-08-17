@@ -778,6 +778,11 @@ export default function ProductionPlanPage() {
           {diff.baseline_run_no ? (
             <>
               <span className="font-medium">vs {diff.baseline_run_no}</span>
+              <span className="rounded bg-primary-100 px-1.5 py-0.5">
+                {diff.baseline_kind === 'active' ? 'the plan in force'
+                  : diff.baseline_kind === 'previous' ? 'the version this replaced'
+                    : 'chosen version'}
+              </span>
               <span>·</span>
               <span>
                 {diff.summary.products_changed} product(s) changed across{' '}
@@ -791,7 +796,7 @@ export default function ProductionPlanPage() {
               {diff.cells.length === 0 && <span>· identical</span>}
             </>
           ) : (
-            <span>This is the first version of its horizon group — nothing to compare against.</span>
+            <span>Nothing to compare against — this is the only plan on file.</span>
           )}
         </p>
       )}

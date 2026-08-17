@@ -371,6 +371,11 @@ class MpsRunDiffResponse(BaseModel):
     run_id: uuid.UUID
     baseline_run_id: uuid.UUID | None
     baseline_run_no: str | None
+    # "active" | "previous" | "explicit" | None — which baseline was used, so
+    # the screen can name it rather than leaving the reader to guess whether
+    # they are looking at a comparison against the live plan or against
+    # whatever came before this one.
+    baseline_kind: str | None = None
     cells: list[MpsDiffCell]
     summary: MpsDiffSummary
 
@@ -1108,13 +1113,15 @@ async def diff_run(
     """
     run = await _get_run_or_404(db, run_id)
 
+    baseline_kind: str | None = None
     if against is None:
-        baseline = await _previous_version(db, run)
+        baseline, baseline_kind = await _diff_baseline(db, run)
     else:
         baseline = await db.get(MrpMpsRun, against)
         if baseline is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                 detail="baseline run not found")
+        baseline_kind = "explicit"
 
     if baseline is None:
         # Nothing to compare against. Diffing against an empty plan would
@@ -1131,6 +1138,7 @@ async def diff_run(
         run_id=run.id,
         baseline_run_id=baseline.id if baseline else None,
         baseline_run_no=baseline.run_no if baseline else None,
+        baseline_kind=baseline_kind,
         cells=[MpsDiffCell(**cell) for cell in cells],
         summary=MpsDiffSummary(**summary),
     )
@@ -1588,6 +1596,31 @@ async def _previous_version(db: SessionDep, run: MrpMpsRun) -> MrpMpsRun | None:
         return None
     position = ids.index(run.id)
     return group[position + 1] if position + 1 < len(group) else None
+
+
+async def _diff_baseline(db: SessionDep, run: MrpMpsRun) -> tuple[MrpMpsRun | None, str | None]:
+    """What `run` is compared against, and which KIND of baseline that is.
+
+    **The plan in force**, unless `run` is itself the plan in force, in which
+    case the version it replaced.
+
+    The first rule tried was "the previous version in this run's own group",
+    and a planner took one look and asked the question that killed it: with
+    two versions where the newer one is active, selecting the older one gives
+    it no previous version at all, and selecting the active one compares it
+    against the other -- so "the previous version" means something different
+    depending on which row you are standing on, and nothing at all on the
+    oldest row. "Against what is live" is the same question from every row.
+
+    The kind travels back with the baseline because the two answers deserve
+    different sentences on screen: "against the live plan" and "against the
+    version this one replaced" are not interchangeable.
+    """
+    active = await _default_run(db)
+    if active is not None and active.id != run.id:
+        return active, "active"
+    previous = await _previous_version(db, run)
+    return (previous, "previous") if previous is not None else (None, None)
 
 
 async def _default_run(db: SessionDep) -> MrpMpsRun | None:

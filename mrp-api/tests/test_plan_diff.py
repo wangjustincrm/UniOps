@@ -105,9 +105,10 @@ async def _run_for(client, db_session, headers, *, start, qty="100"):
 
 
 @pytest.mark.anyio
-async def test_diff_defaults_to_the_previous_version_of_the_same_group(
+async def test_with_no_plan_in_force_the_baseline_falls_back_to_the_previous_version(
     client, db_session, admin_token, monkeypatch,
 ):
+    """两版都还是草稿、没有生效版 —— 此时「上一版」是唯一说得通的基准。"""
     monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
     headers = {"Authorization": f"Bearer {admin_token}"}
     await _factory_rule(client, headers)
@@ -176,3 +177,88 @@ async def test_an_unknown_baseline_is_404(client, db_session, admin_token, monke
     r = await client.get(f"/api/v1/mps/runs/{run['id']}/diff?against={_uuid.uuid4()}",
                          headers=headers)
     assert r.status_code == 404, r.text
+
+
+# ── 基准 = 当前生效版（用户 2026-08-17 拍板改的）────────────────────────
+#
+# 原来的默认是「同组上一版」，被这个问题问倒了：两版、新的那版是 Active ——
+# 选旧那版，它根本没有上一版；选 Active 那版，上一版又是另一版。
+# 「上一版」的含义随站在哪一行而变，最老那行还没有答案。改成跟生效版比，
+# 每一行的答案都一样清楚。
+
+
+@pytest.mark.anyio
+async def test_diff_compares_against_the_plan_in_force(
+    client, db_session, admin_token, monkeypatch,
+):
+    """选一个非生效的已发布版 → 基准是 Active 那版，且明确标出 kind。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    month = _future_month(1)
+
+    older = await _run_for(client, db_session, headers, start=month, qty="100")
+    newer = await _run_for(client, db_session, headers, start=month, qty="150")
+    # 两版都发布，后发布的成为 Active
+    await client.post(f"/api/v1/mps/runs/{older['id']}/confirm-release", headers=headers)
+    await client.post(f"/api/v1/mps/runs/{newer['id']}/confirm-release", headers=headers)
+
+    body = (await client.get(f"/api/v1/mps/runs/{older['id']}/diff",
+                             headers=headers)).json()
+    assert body["baseline_run_id"] == newer["id"]      # ← Active，不是「上一版」
+    assert body["baseline_kind"] == "active"
+
+
+@pytest.mark.anyio
+async def test_the_active_plan_is_compared_against_the_one_it_replaced(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★打开的就是生效版时不能没有答案 —— 跟它取代的那一版比。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    month = _future_month(1)
+
+    older = await _run_for(client, db_session, headers, start=month, qty="100")
+    newer = await _run_for(client, db_session, headers, start=month, qty="150")
+    await client.post(f"/api/v1/mps/runs/{older['id']}/confirm-release", headers=headers)
+    await client.post(f"/api/v1/mps/runs/{newer['id']}/confirm-release", headers=headers)
+
+    body = (await client.get(f"/api/v1/mps/runs/{newer['id']}/diff",
+                             headers=headers)).json()
+    assert body["baseline_run_id"] == older["id"]
+    assert body["baseline_kind"] == "previous"
+
+
+@pytest.mark.anyio
+async def test_the_only_plan_in_force_has_nothing_to_compare_against(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    only = await _run_for(client, db_session, headers, start=_future_month(1))
+    await client.post(f"/api/v1/mps/runs/{only['id']}/confirm-release", headers=headers)
+
+    body = (await client.get(f"/api/v1/mps/runs/{only['id']}/diff",
+                             headers=headers)).json()
+    assert body["baseline_run_id"] is None
+    assert body["baseline_kind"] is None
+    assert body["cells"] == []
+
+
+@pytest.mark.anyio
+async def test_an_explicit_baseline_is_reported_as_such(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await _factory_rule(client, headers)
+    month = _future_month(1)
+    a = await _run_for(client, db_session, headers, start=month, qty="100")
+    b = await _run_for(client, db_session, headers, start=month, qty="150")
+
+    body = (await client.get(f"/api/v1/mps/runs/{b['id']}/diff?against={a['id']}",
+                             headers=headers)).json()
+    assert body["baseline_run_id"] == a["id"]
+    assert body["baseline_kind"] == "explicit"
