@@ -1574,6 +1574,7 @@ async def test_selection_endpoints_require_payment_authority(client, db_session)
                            json={"payment_ids": []}, headers=_h("requester"))
     assert r2.status_code == 403
 
+
 # ── Recipient-address normalization (2026-08-17 prod incident) ───────────────
 #
 # Sangers Inc's remittance advice failed with
@@ -1662,6 +1663,54 @@ async def test_malformed_employee_email_blocks_group(db_session):
     assert g.block_reasons == []
 
 
+# ── Who may send remittance advice ──────────────────────────────────────────
+#
+# The 2026-08-13 SoD split removed ap_clerk from payment EXECUTION
+# (tests/test_payment_authority.py::test_ap_clerk_can_no_longer_execute_payments
+# is the guard for that, and must stay green). Remittance advice is not an act
+# of paying — the money has already moved — it is AP telling the payee about a
+# payment that is already recorded. Gating it on payment authority meant the
+# only way to let AP send it was to hand them the authority to move money,
+# which would undo the split. So the send surface gets its own role set.
+
+async def test_ap_clerk_may_preview_remittance_without_payment_authority(client, db_session):
+    batch = PaymentBatch(batch_number="BP-AC1", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/payments/batches/{batch.id}/remittance/preview",
+                         headers=_h("ap_clerk"))
+    assert r.status_code == 200
+
+
+async def test_ap_clerk_may_send_remittance_without_payment_authority(client, db_session):
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-201")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json={}, headers=_h("ap_clerk"))
+    assert r.status_code == 200
+    assert r.json()["sent"] == 1
+    assert m.await_count == 1
+
+
+async def test_remittance_send_still_refuses_a_role_with_no_finance_standing(client, db_session):
+    await _configured(db_session)
+    r = await client.post("/finance/v1/payments/remittance/selection/send",
+                          json={"payment_ids": []}, headers=_h("requester"))
+    assert r.status_code == 403
+
+
 async def test_semicolon_separated_cc_is_normalized_not_silently_dropped(db_session):
     # The CC address goes into its own header, parsed separately from To, so a
     # malformed CC does NOT fail the send — the payee is accepted, only the
@@ -1692,3 +1741,44 @@ async def test_unusable_cc_is_dropped_rather_than_breaking_the_header(db_session
 
     s = await rc.load(db_session)
     assert s.cc_email is None
+
+
+async def test_ap_clerk_as_an_additional_role_may_send_remittance(client, db_session):
+    """AP Clerk held as an ADDITIONAL role (identity user_roles), not the JWT's
+    primary role — which is how these roles are actually expected to be held in
+    production (see test_payment_authority.py::
+    test_payment_officer_works_as_an_additional_role). The primary-role branch
+    alone would leave that operator at 403."""
+    user_id = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'ap_clerk')"),
+        {"u": str(user_id)})
+    batch = PaymentBatch(batch_number="BP-AC2", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+
+    token = jwt.encode({"sub": str(user_id), "role": "requester",
+                        "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                       settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    r = await client.get(f"/finance/v1/payments/batches/{batch.id}/remittance/preview",
+                         headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+
+async def test_system_admin_as_an_additional_role_may_not_send_remittance(client, db_session):
+    """Mirrors test_payment_authority.py::test_system_admin_as_additional_role_is_denied
+    — system_admin is a PRIMARY-role grant only, and deriving _SEND_ROLES_ASSIGNED
+    from _SEND_ROLES must not quietly reintroduce it."""
+    user_id = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'system_admin')"),
+        {"u": str(user_id)})
+    token = jwt.encode({"sub": str(user_id), "role": "requester",
+                        "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                       settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    r = await client.post("/finance/v1/payments/remittance/selection/preview",
+                          json={"payment_ids": []},
+                          headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
