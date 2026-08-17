@@ -13,7 +13,7 @@
 // the data stays in the spreadsheet forever.
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ClipboardPaste, Loader2, Pencil, Plus, Star, Trash2 } from 'lucide-react'
+import { AlertTriangle, ClipboardPaste, Loader2, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react'
 import { Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -52,10 +52,25 @@ export default function SupplyParametersPage() {
   // null = closed; { row: null } = adding; { row } = editing that row.
   const [drawer, setDrawer] = useState<{ row: MaterialSupplier | null } | null>(null)
 
+  const [query, setQuery] = useState('')
+
   const listQuery = useQuery({
     queryKey: ['material-suppliers'],
-    queryFn: () => supplyApi.list(),
+    queryFn: () => supplyApi.listAll(),
   })
+
+  // Supplier names, so the list says who "001" is and the search box matches
+  // the name people actually use when they talk about a supplier.
+  const supplierNamesQuery = useQuery({
+    queryKey: ['supplier-names'],
+    queryFn: () => supplyApi.supplierNames(),
+  })
+  // Memoised: a fresh Map on every render would re-run the filter below on
+  // every keystroke's re-render, not just when something actually changed.
+  const supplierNames = useMemo(
+    () => supplierNamesQuery.data ?? new Map<string, string>(),
+    [supplierNamesQuery.data],
+  )
 
   // The material master, for the unit each quantity is expressed in. "MOQ
   // 1000" is unreadable without it — kilograms and cans are both plausible
@@ -69,16 +84,40 @@ export default function SupplyParametersPage() {
     for (const mat of materialsQuery.data ?? []) m.set(mat.code, mat.base_uom)
     return m
   }, [materialsQuery.data])
-  const rows = useMemo(() => listQuery.data?.items ?? [], [listQuery.data])
 
-  const missingLeadTime = rows.filter((r) => r.lead_time_days === null).length
+  const materialNameByCode = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const mat of materialsQuery.data ?? []) m.set(mat.code, mat.name ?? '')
+    return m
+  }, [materialsQuery.data])
+  const allRows = useMemo(() => listQuery.data ?? [], [listQuery.data])
+
+  // Matches material code, material name, supplier code and supplier name —
+  // people look a row up by whichever of the four they happen to have.
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (!needle) return allRows
+    return allRows.filter((r) => {
+      const haystack = [
+        r.material_code,
+        materialNameByCode.get(r.material_code) ?? '',
+        r.partner_code,
+        supplierNames.get(r.partner_code) ?? '',
+      ].join(' ').toLowerCase()
+      return haystack.includes(needle)
+    })
+  }, [allRows, query, materialNameByCode, supplierNames])
+
+  // Counted over EVERY row, not the filtered view: "3 rows have no lead time"
+  // must not change because somebody typed in the search box.
+  const missingLeadTime = allRows.filter((r) => r.lead_time_days === null).length
   const materialsWithoutPrimary = useMemo(() => {
     const byMaterial = new Map<string, boolean>()
-    for (const r of rows) {
+    for (const r of allRows) {
       byMaterial.set(r.material_code, (byMaterial.get(r.material_code) ?? false) || r.is_primary)
     }
     return [...byMaterial.values()].filter((hasPrimary) => !hasPrimary).length
-  }, [rows])
+  }, [allRows])
 
   const bulkMutation = useMutation({
     mutationFn: async (text: string) => {
@@ -150,6 +189,30 @@ export default function SupplyParametersPage() {
         </p>
       )}
 
+      <div className="flex items-center gap-2">
+        <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 sm:max-w-md">
+          <Search aria-hidden className="h-4 w-4 shrink-0 text-neutral-400" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search material or supplier — code or name…"
+            aria-label="Search supply parameters"
+            className="w-full text-sm focus:outline-none"
+          />
+          {query && (
+            <button type="button" onClick={() => setQuery('')} aria-label="Clear search"
+              className="shrink-0 text-neutral-400 hover:text-neutral-700">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        <span className="text-xs text-neutral-500">
+          {query
+            ? `${rows.length} of ${allRows.length} row(s)`
+            : `${allRows.length} row(s)`}
+        </span>
+      </div>
+
       <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
         <table className="min-w-full text-sm">
           <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
@@ -169,13 +232,22 @@ export default function SupplyParametersPage() {
             )}
             {!listQuery.isLoading && rows.length === 0 && (
               <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
-                No supply parameters yet — paste them from your spreadsheet to get started.
+                {allRows.length === 0
+                  ? 'No supply parameters yet — add a row, or paste them from your spreadsheet.'
+                  : `Nothing matches "${query}".`}
               </td></tr>
             )}
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-neutral-100">
                 <td className="px-3 py-2 font-mono text-xs">{row.material_code}</td>
-                <td className="px-3 py-2 font-mono text-xs">{row.partner_code}</td>
+                <td className="px-3 py-2 text-xs">
+                  <span className="font-mono">{row.partner_code}</span>
+                  {supplierNames.get(row.partner_code) && (
+                    <span className="ml-1.5 text-neutral-500">
+                      {supplierNames.get(row.partner_code)}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-mono">
                   {row.lead_time_days === null
                     ? <span className="text-danger-600">missing</span>

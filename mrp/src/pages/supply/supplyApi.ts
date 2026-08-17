@@ -51,6 +51,39 @@ export interface BulkResult {
 }
 
 export const supplyApi = {
+  /** Every row, paged through. The screen filters client-side, and filtering
+   *  only the first page would quietly hide rows that match — a search box
+   *  that misses is worse than none. */
+  listAll: async (): Promise<MaterialSupplier[]> => {
+    const pageSize = 500
+    const all: MaterialSupplier[] = []
+    let page = 1
+    for (;;) {
+      const res = await mdmApi.get<MaterialSupplierList>(
+        `/mdm/v1/material-suppliers?page=${page}&page_size=${pageSize}`)
+      all.push(...res.items)
+      if (res.items.length === 0 || all.length >= res.total) break
+      page++
+    }
+    return all
+  },
+
+  /** Supplier code -> name, so the list can show who "001" is and the search
+   *  box can match on the name people actually know. */
+  supplierNames: async (): Promise<Map<string, string>> => {
+    const pageSize = 500
+    const names = new Map<string, string>()
+    let page = 1
+    for (;;) {
+      const res = await mdmApi.get<{ items: { code: string; name: string }[]; total: number }>(
+        `/mdm/v1/partners?role=supplier&page=${page}&page_size=${pageSize}`)
+      for (const p of res.items) names.set(p.code, p.name)
+      if (res.items.length === 0 || names.size >= res.total) break
+      page++
+    }
+    return names
+  },
+
   list: (page = 1, pageSize = 200) =>
     mdmApi.get<MaterialSupplierList>(
       `/mdm/v1/material-suppliers?page=${page}&page_size=${pageSize}`),
