@@ -57,9 +57,29 @@ export interface GridResponse {
   grand_total: string
 }
 
+export interface ListVersionsOptions {
+  /** Filter to one status, e.g. 'confirmed'. Applied in the database. */
+  status?: ForecastVersionStatus
+  /** Case-insensitive substring of version number, anchor month or note. */
+  search?: string
+}
+
 export const forecastApi = {
-  listVersions: (page = 1, pageSize = 100) =>
-    api.get<ForecastVersionListResponse>(`/forecast/versions?page=${page}&page_size=${pageSize}`),
+  /** Newest first. `status`/`search` are applied BEFORE paging server-side,
+   *  so `total` describes the filtered set and every page comes back full —
+   *  filtering the items of a page client-side instead gives short pages and
+   *  a count of rows that are never shown. */
+  listVersions: (page = 1, pageSize = 100, opts: ListVersionsOptions = {}) => {
+    const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+    if (opts.status) params.set('status', opts.status)
+    if (opts.search?.trim()) params.set('search', opts.search.trim())
+    return api.get<ForecastVersionListResponse>(`/forecast/versions?${params}`)
+  },
+
+  /** Discard an outlook snapshot and its lines. Rejected with 409 (message
+   *  naming the run) while a production plan was generated from it. */
+  deleteVersion: (versionId: string) =>
+    api.delete<void>(`/forecast/versions/${versionId}`),
 
   getGrid: (versionId: string) =>
     api.get<GridResponse>(`/forecast/versions/${versionId}/grid`),

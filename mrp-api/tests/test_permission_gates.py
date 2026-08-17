@@ -70,6 +70,20 @@ async def test_demand_write_gate_403s_non_permitted_role(client, non_admin_token
 
 
 @pytest.mark.anyio
+async def test_delete_forecast_version_gate_403s_non_permitted_role(client, non_admin_token, monkeypatch):
+    """DELETE /forecast/versions/{id} is the one WRITE in forecast.py, and it
+    is gated on mrp.demand.write rather than the read key every other
+    endpoint in that module uses -- exactly the kind of per-endpoint key this
+    file exists to pin. Reached before the 404, so no fixture row is needed."""
+    import uuid
+
+    _deny_everything(monkeypatch)
+    headers = {"Authorization": f"Bearer {non_admin_token}"}
+    r = await client.delete(f"/api/v1/forecast/versions/{uuid.uuid4()}", headers=headers)
+    assert r.status_code == 403
+
+
+@pytest.mark.anyio
 async def test_consignment_read_gate_403s_non_permitted_role(client, non_admin_token, monkeypatch):
     _deny_everything(monkeypatch)
     headers = {"Authorization": f"Bearer {non_admin_token}"}

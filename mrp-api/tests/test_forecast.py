@@ -183,3 +183,118 @@ async def test_grid_months_generated_from_stored_horizon(client, db_session, adm
     v = await _make_version(db_session, "2026-11", horizon_months=3)
     grid = (await client.get(f"/api/v1/forecast/versions/{v.id}/grid", headers=headers)).json()
     assert grid["months"] == ["2026-11", "2026-12", "2027-01"]
+
+
+# ── list filtering (Outlooks panel: search + status, applied in the DB) ──
+
+
+@pytest.mark.anyio
+async def test_search_matches_version_number(client, db_session, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    wanted = await _make_version(db_session, "2026-09")
+    await _make_version(db_session, "2026-10")
+
+    fragment = wanted.version_no.split("-")[-1]
+    r = await client.get("/api/v1/forecast/versions",
+                         params={"search": fragment}, headers=headers)
+    body = r.json()
+    assert r.status_code == 200
+    assert [i["version_no"] for i in body["items"]] == [wanted.version_no]
+    # The total describes the FILTERED set, not the table: a pager built on
+    # an unfiltered total offers pages that come back empty.
+    assert body["total"] == 1
+
+
+@pytest.mark.anyio
+async def test_search_matches_anchor_month_written_with_its_dash(client, db_session, admin_token):
+    """The anchor is searchable in its own right because it is spelled
+    differently from the version number: `FCV-202608-081718` carries `202608`
+    while the anchor column carries `2026-08`, and a planner types whichever
+    of the two columns they are reading."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    anchored = await _make_version(db_session, "2026-09")
+    anchored.source_anchor_month = "2026-08"
+    other = await _make_version(db_session, "2026-09")
+    other.source_anchor_month = "2026-12"
+    await db_session.commit()
+
+    r = await client.get("/api/v1/forecast/versions",
+                         params={"search": "2026-08"}, headers=headers)
+    body = r.json()
+    assert r.status_code == 200
+    assert [i["id"] for i in body["items"]] == [str(anchored.id)]
+
+
+@pytest.mark.anyio
+async def test_status_filter_is_applied_before_paging(client, db_session, admin_token):
+    """A caller that pages first and filters afterwards gets pages of uneven
+    size and a count of rows it never shows."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for _ in range(3):
+        confirmed = await _make_version(db_session, "2026-09")
+        confirmed.status = "confirmed"
+    for _ in range(2):
+        await _make_version(db_session, "2026-09")  # left draft
+    await db_session.commit()
+
+    r = await client.get("/api/v1/forecast/versions",
+                         params={"status": "confirmed", "page": 1, "page_size": 2},
+                         headers=headers)
+    body = r.json()
+    assert r.status_code == 200
+    assert body["total"] == 3                       # confirmed only, not 5
+    assert len(body["items"]) == 2                  # a full page, not 2-of-5-minus-drafts
+    assert {i["status"] for i in body["items"]} == {"confirmed"}
+
+
+# ── delete ───────────────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_delete_removes_the_version_and_its_lines(client, db_session, admin_token):
+    from sqlalchemy import func, select
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version = await _make_version(db_session, "2026-09")
+    await _make_line(db_session, version.id, "CF0001", "2026-09", Decimal("100"))
+
+    r = await client.delete(f"/api/v1/forecast/versions/{version.id}", headers=headers)
+    assert r.status_code == 204
+
+    assert await db_session.get(ForecastVersion, version.id) is None
+    remaining = (await db_session.execute(
+        select(func.count()).select_from(ForecastLine)
+        .where(ForecastLine.version_id == version.id)
+    )).scalar_one()
+    assert remaining == 0, "lines must go with the version (DB cascade)"
+
+
+@pytest.mark.anyio
+async def test_delete_refused_while_a_plan_was_generated_from_it(client, db_session, admin_token):
+    """`mrp_mps_runs.forecast_version_id` has no foreign key, so nothing in
+    the database stops this: the run would keep pointing at an id that
+    resolves to nothing and its "generated from" provenance would silently
+    go blank."""
+    from app.models.mps import MrpMpsRun
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    version = await _make_version(db_session, "2026-09")
+    db_session.add(MrpMpsRun(
+        run_no="MPS-20260917-0001",
+        forecast_version_id=version.id,
+        horizon_start_month="2026-09",
+    ))
+    await db_session.commit()
+
+    r = await client.delete(f"/api/v1/forecast/versions/{version.id}", headers=headers)
+    assert r.status_code == 409
+    # Named, not merely refused — "it is in use" leaves the planner hunting.
+    assert "MPS-20260917-0001" in r.json()["detail"]
+    assert await db_session.get(ForecastVersion, version.id) is not None
+
+
+@pytest.mark.anyio
+async def test_delete_unknown_version_is_404(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.delete(f"/api/v1/forecast/versions/{uuid.uuid4()}", headers=headers)
+    assert r.status_code == 404

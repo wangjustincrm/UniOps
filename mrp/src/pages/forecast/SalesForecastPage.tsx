@@ -20,7 +20,7 @@
 // autosave instead of refetching/remounting the grid).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Check, Eye, Lightbulb, Link2, Loader2, Lock, Sparkles, Trash2, X } from 'lucide-react'
+import { AlertCircle, Check, Lightbulb, Link2, Loader2, Lock, Sparkles, Trash2, X } from 'lucide-react'
 import { Button, Badge } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
@@ -33,10 +33,11 @@ import { usePermissions } from '@/hooks/usePermissions'
 import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
 import { seriesApi, type GridResponse } from './seriesApi'
-import { forecastApi, type ForecastVersion } from './forecastApi'
+import type { ForecastVersion } from './forecastApi'
 import { intentApi, isIntentCode, type IntentProduct } from './intentApi'
 import { GenerateOutlookModal } from './GenerateOutlookModal'
 import { OutlookViewerModal } from './OutlookViewerModal'
+import { OutlooksPanel, invalidateOutlookLists } from './OutlooksPanel'
 import { CellHistoryPopover } from './CellHistoryPopover'
 import { AddIntentProductModal } from './AddIntentProductModal'
 import { BindIntentModal } from './BindIntentModal'
@@ -75,15 +76,6 @@ function loadDisplayUnit(): DisplayUnit {
 
 function formatTonnes(kg: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(kg / 1000)
-}
-
-/** Outlooks panel's "Created" column — a full local date+time, since two
- *  outlooks generated the same day (e.g. a redo) are otherwise indistinguishable. */
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 /** 'YYYY-MM' for the current month, in the browser's local time — no date lib. */
@@ -305,30 +297,6 @@ export default function SalesForecastPage() {
     staleTime: Infinity,
     refetchOnReconnect: false,
   })
-
-  // Confirmed forecast versions ("outlooks") — deliberately the SAME query
-  // key ProductionPlanPage.tsx uses for its forecast-version picker
-  // (['forecast-versions']) rather than a page-local key, so the one
-  // invalidateQueries call in handleGenerateOutlook below refreshes both
-  // this panel and Production Plan's picker together (they're two views of
-  // the same underlying list). ProductionPlanPage lives in a keep-alive
-  // multi-tab shell (react-router v7 keep-alive — every visited tab's
-  // component stays mounted, see reference_react_router_v7_keepalive), so
-  // without a shared, invalidated key its query would otherwise never
-  // refetch on its own after this page generates a new outlook.
-  const outlooksQuery = useQuery({
-    queryKey: ['forecast-versions'],
-    queryFn: () => forecastApi.listVersions(1, 100),
-    enabled: canViewOutlooks,
-  })
-  const confirmedOutlooks = useMemo(() => {
-    const items = (outlooksQuery.data?.items ?? []).filter((v) => v.status === 'confirmed')
-    // Defensive newest-first sort — the endpoint already returns created_at
-    // desc, but this panel is the one place that ordering would be visibly
-    // wrong if that ever changed (same defensiveness as
-    // CellHistoryPopover's changed_at sort).
-    return [...items].sort((a, b) => b.created_at.localeCompare(a.created_at))
-  }, [outlooksQuery.data])
 
   // Active intent products — keyed by their placeholder INTENT-xxxxxxxx
   // code for O(1) per-row lookup (name override, badge, Bind action). No
@@ -964,15 +932,13 @@ export default function SalesForecastPage() {
     try {
       const created = await seriesApi.generateOutlook(anchorMonth, horizonMonths)
       setOutlookOpen(false)
-      // Refresh the shared ['forecast-versions'] cache — this page's
-      // Outlooks panel AND ProductionPlanPage's forecast-version picker both
-      // read that exact key (see outlooksQuery above). Production Plan's
-      // <select> otherwise never learns about `created` on its own: the
-      // multi-tab keep-alive shell keeps that page's component (and its
-      // query) mounted indefinitely once visited, so without an explicit
-      // invalidation the newly confirmed outlook would silently never show
-      // up in its picker until a hard reload.
-      await queryClient.invalidateQueries({ queryKey: ['forecast-versions'] })
+      // Refresh BOTH views of the outlook list — this page's Outlooks
+      // panel (its own paged key) and ProductionPlanPage's forecast-version
+      // picker (['forecast-versions']). See invalidateOutlookLists: the
+      // picker otherwise never learns about `created` on its own, because
+      // the multi-tab keep-alive shell keeps that page's component and its
+      // query mounted indefinitely once visited.
+      await invalidateOutlookLists(queryClient)
       toasts.success(`Outlook ${created.version_no} generated — run it from Production Plan when ready.`)
     } catch (err) {
       setOutlookError(errMsg(err, 'Could not generate the outlook.'))
@@ -1253,62 +1219,16 @@ export default function SalesForecastPage() {
         </div>
       )}
 
-      {/* Outlooks panel (follow-up #2) — confirmed ForecastVersion
-          snapshots this page (or another planner) has generated, newest
-          first, with a read-only viewer per row. See outlooksQuery above for
-          why this deliberately shares the ['forecast-versions'] query key
-          with ProductionPlanPage's picker. */}
+      {/* Outlooks panel — confirmed ForecastVersion snapshots, paged,
+          searchable, deletable. See OutlooksPanel.tsx for why it keeps its
+          own query key instead of the shared ['forecast-versions'] one. */}
       {canViewOutlooks && (
-        <div className="rounded-lg border border-neutral-200 bg-white p-3">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-neutral-900">Outlooks</h2>
-            {!outlooksQuery.isLoading && (
-              <span className="text-[11px] text-neutral-400">
-                {confirmedOutlooks.length} confirmed
-              </span>
-            )}
-          </div>
-          {outlooksQuery.isLoading ? (
-            <p role="status" className="py-4 text-center text-xs text-neutral-400">Loading outlooks…</p>
-          ) : outlooksQuery.isError ? (
-            <p role="alert" className="rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
-              {errMsg(outlooksQuery.error, 'Could not load outlooks.')}
-            </p>
-          ) : confirmedOutlooks.length === 0 ? (
-            <p className="py-4 text-center text-xs text-neutral-400">
-              No outlooks generated yet — use Generate Outlook above to freeze one for Production Plan.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-xs">
-                <thead>
-                  <tr className="border-b border-neutral-100 text-left text-[11px] font-semibold text-neutral-500">
-                    <th className="px-2 py-1.5">Version</th>
-                    <th className="px-2 py-1.5">Anchor</th>
-                    <th className="px-2 py-1.5">Horizon</th>
-                    <th className="px-2 py-1.5">Created</th>
-                    <th className="px-2 py-1.5" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {confirmedOutlooks.map((v) => (
-                    <tr key={v.id} className="border-b border-neutral-50 last:border-0">
-                      <td className="px-2 py-1.5 font-medium text-neutral-800">{v.version_no}</td>
-                      <td className="px-2 py-1.5 text-neutral-600">{v.source_anchor_month ?? '—'}</td>
-                      <td className="px-2 py-1.5 text-neutral-600">{v.horizon_months} mo</td>
-                      <td className="px-2 py-1.5 text-neutral-500">{formatDateTime(v.created_at)}</td>
-                      <td className="px-2 py-1.5 text-right">
-                        <Button type="button" size="sm" variant="secondary" onClick={() => setViewingVersion(v)}>
-                          <Eye className="h-3.5 w-3.5" /> View
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <OutlooksPanel
+          canWrite={canWriteForecast}
+          onView={setViewingVersion}
+          notifySuccess={toasts.success}
+          notifyError={toasts.error}
+        />
       )}
 
       {outlookOpen && (
