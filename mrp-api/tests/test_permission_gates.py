@@ -142,3 +142,23 @@ async def test_intent_product_write_gate_403s_non_permitted_role(client, non_adm
         "/api/v1/intent-products", json={"name": "Should Not Be Created"}, headers=headers,
     )
     assert r.status_code == 403
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("path", [
+    "/api/v1/inventory/aging",
+    "/api/v1/inventory/materials",
+    "/api/v1/inventory/materials/CR0025/open-po-lines",
+])
+async def test_inventory_read_gate_403s_non_permitted_role(
+    client, non_admin_token, monkeypatch, path,
+):
+    """The Inventory endpoints added 2026-08-17. /inventory/lots is covered
+    above; these three are separate route handlers, and a gate is only proven
+    on the handler it decorates -- one of them silently ungated would expose
+    the whole stock and on-order picture to any authenticated user.
+    """
+    _deny_everything(monkeypatch)
+    headers = {"Authorization": f"Bearer {non_admin_token}"}
+    r = await client.get(path, headers=headers)
+    assert r.status_code == 403
