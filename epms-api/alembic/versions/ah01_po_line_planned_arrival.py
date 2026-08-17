@@ -26,14 +26,20 @@ distinguishable from a real date. Existing NC lines are filled by running the
 sync's own `full` mode, which updates rather than inserts — that is why the
 sync's UPDATE path has to carry this column too, not just its INSERT.
 
-Revision ID: ah01_po_line_planned_arrival_date
+The revision id is shortened from the column name it describes because
+`alembic_version.version_num` is varchar(32): a longer id passes every local
+check and then fails at the final UPDATE, after the DDL has already run.
+Transactional DDL rolls it back, so the failure is safe -- but keep ids under
+32 characters.
+
+Revision ID: ah01_po_line_planned_arrival
 Revises: ag09_receipt_amounts_nullable
 Create Date: 2026-08-17
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "ah01_po_line_planned_arrival_date"
+revision = "ah01_po_line_planned_arrival"
 down_revision = "ag09_receipt_amounts_nullable"
 branch_labels = None
 depends_on = None
