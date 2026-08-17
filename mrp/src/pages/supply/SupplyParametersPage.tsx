@@ -189,6 +189,18 @@ export default function SupplyParametersPage() {
         </p>
       )}
 
+      {supplierNamesQuery.isError && (
+        // Without this the failure is invisible: names simply do not appear,
+        // which reads as "these suppliers have no names on file" rather than
+        // "the lookup failed". That is exactly how a wrong page size went
+        // unnoticed.
+        <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+          <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          Could not load supplier names — codes are shown on their own, and searching by
+          supplier name will not match.
+        </p>
+      )}
+
       <div className="flex items-center gap-2">
         <div className="flex h-11 flex-1 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 sm:max-w-md">
           <Search aria-hidden className="h-4 w-4 shrink-0 text-neutral-400" />

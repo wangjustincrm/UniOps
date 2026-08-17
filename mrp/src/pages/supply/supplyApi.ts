@@ -71,7 +71,11 @@ export const supplyApi = {
   /** Supplier code -> name, so the list can show who "001" is and the search
    *  box can match on the name people actually know. */
   supplierNames: async (): Promise<Map<string, string>> => {
-    const pageSize = 500
+    // 200, not 500: the partners endpoint caps page_size at 200 and answers
+    // 422 above it — which failed the whole lookup and left EVERY supplier
+    // nameless, with nothing on screen saying why. The material-suppliers
+    // endpoint allows 500; the two limits differ and cannot be assumed.
+    const pageSize = 200
     const names = new Map<string, string>()
     let page = 1
     for (;;) {
