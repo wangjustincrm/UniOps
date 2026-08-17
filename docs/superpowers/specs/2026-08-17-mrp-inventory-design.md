@@ -87,6 +87,48 @@ still owing — what is left is **87 lines across 71 materials, 902,779 in
 transit**, and **0 of them carry a header `expected_delivery`**. Those 87 are
 the 161 open type-1 lines above minus the 74 open `nc_milk` ones.
 
+### ★ Raw milk is excluded by CLASS, and the classification was already there
+
+Amended mid-implementation on the user's instruction: **NC material base class
+`0101 Raw Milk` is never counted in stock or on-order figures.** This replaces
+the `nc_milk` PO-status rule as the *business* definition — that rule only
+governed purchase orders, so it could not keep raw milk out of an inventory
+view, and a raw-milk PO raised natively in UniOps would have slipped past it
+entirely. Both rules ship: the class is the definition, the status remains an
+arithmetic guard against the negative remainders above.
+
+NC's `BD_MARBASCLASS` holds 28 materials in `0101`, including `CR0059
+Pasteurized Milk` — which carries an ordinary raw-material code prefix while
+being manufactured. That single row is why the rule must be by class: a prefix
+rule is wrong in both directions.
+
+UniOps had no column for it, but the value was already present, unpromoted:
+every `erp_materials.raw_payload` carries `accounting_group` /
+`accounting_group_name`, on **2,573 of 2,573** rows, with a distribution
+matching NC's own tree. So the change is mirror columns plus master columns,
+**backfilled in the migration from the JSON** — no ERP re-sync needed. The one
+material NC has and the mirror does not, `CR0014 Cow Cream`, exists nowhere in
+UniOps at all.
+
+Applied to today's data the rule changes **no number**: the WMS mirror holds no
+raw-milk lots (it goes by tanker straight into production) and the 87 open
+lines contain none. It is encoded precisely because it currently does not
+matter — the alternative is discovering it does, later, in a number nobody
+double-checks.
+
+### ★ The band a lot is in, and the rows in that band, must be one definition
+
+Found while writing the screen: the frontend originally rebuilt each band's
+date window from the day counts, and was off by one at **three of the five
+boundaries** — `expired` dropped anything expiring today, `30_to_60` dropped
+anything on exactly day 30. The symptom is silent: a card reads 92, the table
+under it shows 91, and nothing reports an error.
+
+`bucket_bounds()` now derives the windows from the same `_THRESHOLDS` that
+`bucket_for()` classifies with, `GET /inventory/lots` takes the band by name,
+and a property test asserts the two agree on every day across a 560-day sweep
+and that the bands tile with no gap and no overlap.
+
 ### ★ The expected arrival date exists in NC and our sync drops it
 
 `purchase_orders.expected_delivery` is populated on **0** of the 161 open
