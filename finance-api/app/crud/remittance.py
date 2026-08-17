@@ -5,6 +5,7 @@ code path: a scope resolves to a set of records, records group into payees.
 Block reasons are computed live on every call — never cached — so filling in
 a vendor email or attaching an invoice number unblocks Send immediately.
 """
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import date
@@ -23,7 +24,38 @@ from app.models.remittance import (
 )
 
 BLOCK_MISSING_EMAIL = "missing_email"
+BLOCK_INVALID_EMAIL = "invalid_email"
 BLOCK_MISSING_INVOICE_NO = "missing_invoice_no"
+
+# One payee field can legitimately hold several addresses — AP has always
+# used it that way. It must reach the To header as an RFC 5322 address-list,
+# i.e. COMMA-separated: a semicolon (Outlook's separator, and what an
+# operator naturally types) makes Python's parser collapse the entire header
+# into a single EMPTY recipient rather than salvaging the good addresses, so
+# every recipient is refused and the send dies with
+# `501 5.1.3 Bad recipient address syntax` — see the 2026-08-17 Sangers Inc
+# incident. Normalizing here, at the one place every send path passes
+# through, also covers the ~700 vendor rows that predate the Vendor form's
+# list support (epms/src/lib/emailList.ts — keep the two in sync).
+_ONE_ADDRESS = re.compile(r"^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$")
+
+
+def normalize_recipients(raw: str) -> tuple[str, bool]:
+    """(address-list for the To header, usable?).
+
+    Blank in → blank out with ok=True: "no address" is reported separately as
+    BLOCK_MISSING_EMAIL, and conflating the two would tell the operator an
+    address is missing when in fact it is present but unusable. An
+    unnormalizable value is returned unchanged so the panel shows what is
+    actually stored against the payee.
+    """
+    parts = [p.strip() for p in re.split(r"[,;]", raw) if p.strip()]
+    if not parts:
+        return "", True
+    if not all(_ONE_ADDRESS.match(p) for p in parts):
+        return raw.strip(), False
+    return ", ".join(parts), True
+
 
 _VENDOR_KINDS = ("pa", "pa_dir")
 COMPLETED = "completed"
@@ -52,6 +84,16 @@ class PayeeGroup:
     total: Decimal = Decimal("0")
     block_reasons: list[str] = field(default_factory=list)
     payment_record_ids: list[uuid.UUID] = field(default_factory=list)
+
+
+def _apply_email_rules(g: PayeeGroup) -> None:
+    """Normalize a payee's address list, or block the payee if it cannot be."""
+    normalized, ok = normalize_recipients(g.email)
+    g.email = normalized
+    if not normalized:
+        g.block_reasons.append(BLOCK_MISSING_EMAIL)
+    elif not ok:
+        g.block_reasons.append(BLOCK_INVALID_EMAIL)
 
 
 async def resolve_scope(db: AsyncSession, scope_kind: str,
@@ -208,8 +250,7 @@ async def _vendor_groups(db: AsyncSession,
         g.payment_record_ids.append(r.id)
 
     for g in out.values():
-        if not g.email:
-            g.block_reasons.append(BLOCK_MISSING_EMAIL)
+        _apply_email_rules(g)
         # A vendor cannot reconcile a line without its own invoice number, so
         # a missing one blocks the payee rather than rendering a placeholder.
         # This applies to every vendor line, Direct PAs included.
@@ -254,6 +295,5 @@ async def _employee_groups(db: AsyncSession,
         g.payment_record_ids.append(r.id)
 
     for g in out.values():
-        if not g.email:
-            g.block_reasons.append(BLOCK_MISSING_EMAIL)
+        _apply_email_rules(g)
     return list(out.values())
