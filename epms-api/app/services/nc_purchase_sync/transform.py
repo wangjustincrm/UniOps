@@ -1,5 +1,6 @@
 """Pure mapping: NC raw rows -> EPMS PO/GR upsert payloads."""
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 
 # NC supplier-code aliases: NC has dirty duplicate supplier records for the same
@@ -18,6 +19,31 @@ _RAW_MATERIAL_TRANTYPE = "21-Cxx-CRM01"
 
 def _num(v):
     return Decimal(str(v)) if v is not None else Decimal("0")
+
+
+def _planned_arrival(raw: str | None) -> date | None:
+    """NCSC.PO_ORDER_B.DPLANARRVDATE -> a plain date.
+
+    The column is CHAR holding 'YYYY-MM-DD HH24:MI:SS'. Only the date half is
+    the planned arrival; the time is whenever somebody last set the value, and
+    carries no business meaning. Verified against the ERP's own PO list screen:
+    PO-001-2510-04 shows 2026-02-02 and stores '2026-02-02 10:01:25'.
+
+    ★ Parsed by SLICING the first 10 characters, deliberately. Nothing here
+    builds a datetime and nothing converts a timezone: a date-only value put
+    through a UTC conversion lands a day early or late -- and on Dec 31, in the
+    wrong year. That bug has already shipped across this codebase once.
+
+    Anything unparseable becomes None rather than a guess: NULL means "the ERP
+    did not state an arrival date", which readers must be able to tell apart
+    from a real one.
+    """
+    if not raw or not str(raw).strip():
+        return None
+    try:
+        return date.fromisoformat(str(raw).strip()[:10])
+    except ValueError:
+        return None
 
 
 def _derive_status_and_note(order: dict, pay: dict) -> tuple:
@@ -132,6 +158,11 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
             "qty": _num(ln["nastnum"]), "unit": uom.get(ln["castunitid"], "EA"),
             "unit_price": _num(ln["norigtaxprice"]), "line_total": _num(ln["norigtaxmny"]),
             "received_qty": recv.get(ln["pk_order_b"], Decimal("0")),
+            # The ERP's own planned arrival date for this line. Populated on
+            # 4,890 of 4,890 approved NC order lines, and the only source of an
+            # arrival date UniOps has: the hand-entered header field is empty
+            # on every open raw-material PO.
+            "planned_arrival_date": _planned_arrival(ln.get("dplanarrvdate")),
             "sort_order": int(ln["crowno"]) if str(ln.get("crowno") or "").isdigit() else 0,
         })
 

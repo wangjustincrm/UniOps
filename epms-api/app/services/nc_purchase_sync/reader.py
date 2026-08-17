@@ -112,6 +112,11 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             cur.execute(
                 "select pk_order_b, pk_order, crowno, pk_material, vvendinventoryname, "
                 "castunitid, nastnum, norigtaxprice, ntaxrate, ctaxcodeid, norigtaxmny, norigmny, ntax, "
+                # dplanarrvdate = 计划到货日期, the date NC's PO list shows as
+                # "Delivery Date". CHAR 'YYYY-MM-DD HH24:MI:SS'; the transform
+                # keeps only the date half. Line level, not header -- NC lets
+                # each line differ and real orders do.
+                "dplanarrvdate, "
                 "bpayclose, binvoiceclose "
                 f"from NCSC.PO_ORDER_B where pk_order in ({ph})", b)
             lcols = [c[0].lower() for c in cur.description]
