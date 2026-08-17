@@ -189,6 +189,14 @@ export default function SupplyParametersPage() {
         </p>
       )}
 
+      {materialsQuery.isError && (
+        <p role="alert" className="flex items-center gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+          <AlertTriangle aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          Could not load the material master — material names and the units on the quantities
+          below are missing, and searching by material name will not match.
+        </p>
+      )}
+
       {supplierNamesQuery.isError && (
         // Without this the failure is invisible: names simply do not appear,
         // which reads as "these suppliers have no names on file" rather than
@@ -251,7 +259,14 @@ export default function SupplyParametersPage() {
             )}
             {rows.map((row) => (
               <tr key={row.id} className="border-t border-neutral-100">
-                <td className="px-3 py-2 font-mono text-xs">{row.material_code}</td>
+                <td className="px-3 py-2 text-xs">
+                  <span className="font-mono">{row.material_code}</span>
+                  {materialNameByCode.get(row.material_code) && (
+                    <span className="ml-1.5 text-neutral-500">
+                      {materialNameByCode.get(row.material_code)}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-xs">
                   <span className="font-mono">{row.partner_code}</span>
                   {supplierNames.get(row.partner_code) && (
