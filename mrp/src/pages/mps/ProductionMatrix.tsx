@@ -342,6 +342,33 @@ export function ProductionMatrix({
     return m
   }, [weekGrid])
 
+  /** Months that contain at least one changed cell, with the count.
+   *
+   *  Months start COLLAPSED, so without this a planner has to expand all 18
+   *  of them one at a time to find out where anything moved -- which is the
+   *  work the comparison exists to remove. The month header says it before
+   *  anything is expanded.
+   *
+   *  Keyed off the run's own week grid rather than parsing the week-start
+   *  date, so a week that belongs to a neighbouring month under the ISO
+   *  rules is counted in the month the plan actually files it under. */
+  const diffCountByMonth = useMemo(() => {
+    const counts = new Map<string, number>()
+    if (!diffByCell) return counts
+    for (const key of diffByCell.keys()) {
+      const weekStart = key.slice(key.indexOf('::') + 2)
+      // The grid is the authority on which month owns a week (ISO weeks can
+      // belong to a neighbouring month). A change whose week is not in THIS
+      // run's grid — the baseline planned something in a week this plan has
+      // no column for — falls back to the date's own month rather than being
+      // dropped: a change nobody can see is worse than one filed a month off.
+      // The summary bar still carries the authoritative totals from the API.
+      const month = weekGridByStart.get(weekStart)?.week_month ?? weekStart.slice(0, 7)
+      counts.set(month, (counts.get(month) ?? 0) + 1)
+    }
+    return counts
+  }, [diffByCell, weekGridByStart])
+
   const allMonthsOrdered = useMemo(
     () => [...new Set(weekRefs.map((w) => w.month))].sort(),
     [weekRefs],
@@ -486,21 +513,47 @@ export function ProductionMatrix({
             </th>
             {orderedMonths.map((month) => {
               const expanded = expandedMonths.has(month)
+              const changed = diffCountByMonth.get(month) ?? 0
               return (
                 <th
                   key={month}
                   colSpan={monthSpans.get(month) ?? 1}
-                  className="border-b border-r-2 border-r-neutral-300 bg-neutral-50 p-0 text-center text-[11px] font-semibold text-neutral-600"
+                  className={cn(
+                    'border-b border-r-2 border-r-neutral-300 p-0 text-center text-[11px] font-semibold',
+                    // A changed month is called out on the header itself, so
+                    // "where did anything move" is answerable with every
+                    // month still collapsed.
+                    changed > 0
+                      ? 'bg-primary-100 text-primary-900'
+                      : 'bg-neutral-50 text-neutral-600',
+                  )}
                 >
                   <button
                     type="button"
                     onClick={() => toggleMonth(month)}
                     aria-expanded={expanded}
-                    title={expanded ? 'Collapse this month' : 'Expand this month into weeks'}
-                    className="flex h-9 w-full items-center justify-center gap-1 px-2 hover:bg-neutral-100 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                    title={changed > 0
+                      ? `${changed} change(s) against the compared version — `
+                        + (expanded ? 'collapse this month' : 'expand to see which weeks')
+                      : expanded ? 'Collapse this month' : 'Expand this month into weeks'}
+                    className={cn(
+                      'flex h-9 w-full items-center justify-center gap-1 px-2 focus:outline-none focus:ring-1 focus:ring-primary-500',
+                      changed > 0 ? 'hover:bg-primary-200' : 'hover:bg-neutral-100',
+                    )}
                   >
                     {expanded ? <ChevronDown aria-hidden className="h-3 w-3 shrink-0" /> : <ChevronRight aria-hidden className="h-3 w-3 shrink-0" />}
                     {month}
+                    {changed > 0 && (
+                      // The count, not just a dot: "12 cells moved" and "one
+                      // cell moved" are different situations and a planner
+                      // decides which month to open on exactly that.
+                      <span
+                        aria-label={`${changed} changed cell(s)`}
+                        className="rounded-full bg-primary-600 px-1.5 text-[10px] font-bold leading-4 text-white"
+                      >
+                        {changed}
+                      </span>
+                    )}
                   </button>
                 </th>
               )
