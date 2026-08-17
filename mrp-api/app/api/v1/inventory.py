@@ -51,6 +51,7 @@ from app.services.in_transit import (
 from app.services.inventory_aging import (
     AGING_BUCKETS,
     BUCKET_LABELS,
+    bucket_bounds,
     bucket_for,
     days_until,
     summarise,
@@ -209,6 +210,8 @@ def _apply_lot_filters(
     search: str | None,
     expiring_before: date | None,
     expiring_after: date | None,
+    aging_bucket: str | None,
+    today: date,
     with_expiry_only: bool,
 ) -> Select:
     """Every filter, applied in the database before any page is cut."""
@@ -236,6 +239,18 @@ def _apply_lot_filters(
         stmt = stmt.where(WmsInventoryLot.expiry_date < expiring_before)
     if expiring_after:
         stmt = stmt.where(WmsInventoryLot.expiry_date > expiring_after)
+    if aging_bucket:
+        # Resolved from the SAME thresholds `bucket_for` uses, so the count on
+        # a band and the rows behind it can never disagree. A caller that
+        # rebuilt these windows from the day counts would be off by one at
+        # three of the five boundaries -- lots that show in the total and in no
+        # table anywhere.
+        lower, upper = bucket_bounds(aging_bucket, today)
+        stmt = stmt.where(WmsInventoryLot.expiry_date.is_not(None))
+        if lower is not None:
+            stmt = stmt.where(WmsInventoryLot.expiry_date >= lower)
+        if upper is not None:
+            stmt = stmt.where(WmsInventoryLot.expiry_date < upper)
     if with_expiry_only:
         stmt = stmt.where(WmsInventoryLot.expiry_date.is_not(None))
     return stmt
@@ -259,6 +274,9 @@ async def list_lots(
         description="Case-insensitive substring of material code, material name, lot number or supplier batch"),
     expiring_before: date | None = Query(default=None),
     expiring_after: date | None = Query(default=None),
+    aging_bucket: Literal["expired", "under_30", "30_to_60", "60_to_180", "over_180"] | None = Query(
+        default=None,
+        description="Restrict to one shelf-life band, resolved server-side from the same thresholds the summary uses"),
     sort: Literal["material_code", "lot_no", "expiry_date", "qty", "inbound_date"] = "material_code",
     descending: bool = False,
     page: int = Query(default=1, ge=1),
@@ -270,7 +288,7 @@ async def list_lots(
         material_code=material_code, mapped_status=mapped_status,
         warehouse_id=warehouse_id, erp_class_code=erp_class_code, search=search,
         expiring_before=expiring_before, expiring_after=expiring_after,
-        with_expiry_only=False,
+        aging_bucket=aging_bucket, today=today, with_expiry_only=False,
     )
 
     count_stmt = _apply_lot_filters(
@@ -320,7 +338,8 @@ async def aging_summary(
         _lots_joined_to_materials(),
         material_code=None, mapped_status=None, warehouse_id=warehouse_id,
         erp_class_code=erp_class_code, search=None,
-        expiring_before=None, expiring_after=None, with_expiry_only=False,
+        expiring_before=None, expiring_after=None,
+        aging_bucket=None, today=today, with_expiry_only=False,
     )
     lots = [lot for lot, _material in (await db.execute(stmt)).all()]
     summary = summarise(lots, today)

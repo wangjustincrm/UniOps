@@ -120,6 +120,35 @@ def summarise(lots: Iterable[HasExpiry], today: date) -> AgingSummary:
     return summary
 
 
+def bucket_bounds(bucket: str, today: date) -> tuple[date | None, date | None]:
+    """The half-open date range of a bucket, as `(from_inclusive, to_exclusive)`.
+
+    Exists so a CALLER can filter rows to a band without restating the
+    thresholds. The frontend used to rebuild these windows from the day counts
+    and was off by one in three of the five bands — `expired` dropped anything
+    expiring today, `30_to_60` dropped anything expiring on exactly day 30, and
+    those lots then appeared in the count on the card and in no table anywhere.
+    Deriving them here, from `_THRESHOLDS`, makes that class of bug impossible
+    rather than merely fixed.
+
+    `None` means unbounded on that side.
+    """
+    if bucket == "expired":
+        # `bucket_for` calls expiry <= today expired, so the exclusive upper
+        # bound is TOMORROW, not today.
+        return None, today + timedelta(days=1)
+    # The first non-expired band starts the day after today (today itself is
+    # expired); every later band starts exactly where the previous one ended.
+    start = 1
+    for name, days in _THRESHOLDS:
+        if name == bucket:
+            return today + timedelta(days=start), today + timedelta(days=days)
+        start = days
+    if bucket == "over_180":
+        return today + timedelta(days=start), None
+    raise ValueError(f"unknown aging bucket: {bucket!r}")
+
+
 def days_until(expiry: date | None, today: date) -> int | None:
     """Days of shelf life left; negative once it is past. None without a date.
 

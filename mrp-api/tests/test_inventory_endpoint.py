@@ -360,3 +360,64 @@ async def test_open_po_lines_drill_down_matches_the_figure(client, db_session, a
     assert Decimal(lines[0]["remaining"]) == Decimal("600")
     assert lines[0]["expected_arrival"] == "2026-09-01"
     assert lines[0]["arrival_is_from_header"] is False
+
+
+@pytest.mark.anyio
+async def test_lots_can_be_filtered_to_one_aging_band(client, db_session, admin_token):
+    """★ The band is sent by NAME and resolved server-side from the same
+    thresholds the summary counts with.
+
+    The alternative -- the caller rebuilding the date window from the day
+    counts -- was off by one at three of the five boundaries when it was
+    written that way, and the symptom is silent: a card says 92, the table
+    under it shows 91, and nothing reports an error. The three lots below sit
+    exactly on the boundaries that were wrong.
+    """
+    await _lot(db_session, "CR0025", "TODAY", expiry=TODAY)                      # expired
+    await _lot(db_session, "CR0025", "DAY-29", expiry=TODAY + timedelta(days=29))  # under_30
+    await _lot(db_session, "CR0025", "DAY-30", expiry=TODAY + timedelta(days=30))  # 30_to_60
+    await _lot(db_session, "CR0025", "DAY-60", expiry=TODAY + timedelta(days=60))  # 60_to_180
+    await _lot(db_session, "CR0025", "DAY-180", expiry=TODAY + timedelta(days=180))  # over_180
+    await _lot(db_session, "CR0025", "NO-DATE", expiry=None)                     # no band
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    for band, expected in [
+        ("expired", ["TODAY"]),
+        ("under_30", ["DAY-29"]),
+        ("30_to_60", ["DAY-30"]),
+        ("60_to_180", ["DAY-60"]),
+        ("over_180", ["DAY-180"]),
+    ]:
+        r = await client.get("/api/v1/inventory/lots",
+                             params={"aging_bucket": band}, headers=headers)
+        assert r.status_code == 200, (band, r.text)
+        assert [i["lot_no"] for i in r.json()["items"]] == expected, band
+
+
+@pytest.mark.anyio
+async def test_every_lot_appears_in_exactly_one_band(client, db_session, admin_token):
+    """The bands must tile: summing the five filtered totals has to equal the
+    number of lots that have an expiry date. A gap loses lots silently and an
+    overlap counts them twice, and both look fine one band at a time."""
+    for days in (-400, -1, 0, 1, 15, 29, 30, 45, 59, 60, 100, 179, 180, 500):
+        await _lot(db_session, "CR0025", f"D{days}", expiry=TODAY + timedelta(days=days))
+    await _lot(db_session, "CR0025", "NONE", expiry=None)
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    counted = 0
+    for band in ("expired", "under_30", "30_to_60", "60_to_180", "over_180"):
+        r = await client.get("/api/v1/inventory/lots",
+                             params={"aging_bucket": band, "page_size": 100},
+                             headers=headers)
+        counted += r.json()["total"]
+    assert counted == 14, "14 dated lots must appear in exactly one band each"
+
+
+@pytest.mark.anyio
+async def test_an_unknown_aging_band_is_rejected(client, db_session, admin_token):
+    """Not silently ignored -- that would return every lot while the screen
+    believes it is showing one band."""
+    r = await client.get("/api/v1/inventory/lots",
+                         params={"aging_bucket": "under_45"},
+                         headers={AUTH: f"Bearer {admin_token}"})
+    assert r.status_code == 422

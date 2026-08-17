@@ -9,6 +9,7 @@ from typing import NamedTuple
 
 from app.services.inventory_aging import (
     AGING_BUCKETS,
+    bucket_bounds,
     bucket_for,
     days_until,
     summarise,
@@ -145,3 +146,50 @@ def test_days_until_goes_negative_once_it_is_past():
     assert days_until(TODAY, TODAY) == 0
     assert days_until(_in(-90), TODAY) == -90
     assert days_until(None, TODAY) is None
+
+
+# ── bucket_bounds: the same thresholds, seen from the other side ─────────
+
+
+def test_bounds_and_bucket_for_agree_on_every_day():
+    """★ The property that matters: for any expiry date, the band `bucket_for`
+    assigns it to must be the band whose bounds contain it.
+
+    Filtering rows to a band and counting rows in a band are two code paths
+    over one definition, and when they drift the symptom is silent — a card
+    says "92 expired", the table below it shows 91, and nothing anywhere
+    reports an error. The frontend originally rebuilt these windows from the
+    day counts and was off by one in three of the five bands.
+    """
+    for offset in range(-60, 500):
+        day = _in(offset)
+        band = bucket_for(day, TODAY)
+        assert band is not None
+        lower, upper = bucket_bounds(band, TODAY)
+        assert lower is None or day >= lower, (offset, band, lower)
+        assert upper is None or day < upper, (offset, band, upper)
+
+
+def test_bounds_tile_the_line_without_gaps_or_overlaps():
+    """Each band starts exactly where the previous one ends. A gap loses lots
+    silently; an overlap counts them twice."""
+    ordered = [bucket_bounds(name, TODAY) for name in AGING_BUCKETS]
+    assert ordered[0][0] is None, "the expired band is unbounded below"
+    assert ordered[-1][1] is None, "the over-180 band is unbounded above"
+    for (_, upper), (lower, _) in zip(ordered, ordered[1:]):
+        assert upper == lower, f"{upper} does not meet {lower}"
+
+
+def test_expired_bounds_include_a_lot_expiring_today():
+    """The boundary the frontend got wrong first: `expired` is expiry <= today,
+    so its exclusive upper bound is TOMORROW."""
+    _lower, upper = bucket_bounds("expired", TODAY)
+    assert upper == _in(1)
+
+
+def test_unknown_bucket_is_rejected_rather_than_silently_unbounded():
+    """Returning (None, None) for a typo would quietly match every lot."""
+    import pytest
+
+    with pytest.raises(ValueError):
+        bucket_bounds("under_45", TODAY)

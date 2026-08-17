@@ -1,6 +1,7 @@
 import type { RouteDef } from '@uniops/shell'
 import SalesForecastPage from '@/pages/forecast/SalesForecastPage'
 import ConsignmentStockPage from '@/pages/consignment/ConsignmentStockPage'
+import InventoryPage from '@/pages/inventory/InventoryPage'
 import BomExplorerPage from '@/pages/bom/BomExplorerPage'
 import CapacityRulesPage from '@/pages/capacity/CapacityRulesPage'
 import ProductionPlanPage from '@/pages/mps/ProductionPlanPage'
@@ -12,6 +13,7 @@ import PurchaseSuggestionsPage from '@/pages/purchase/PurchaseSuggestionsPage'
 export const mrpRoutes: RouteDef[] = [
   { path: '/forecast', element: <SalesForecastPage />, tab: { title: 'Sales Forecast', icon: 'TrendingUp', keyStrategy: 'static', pinned: true } },
   { path: '/consignment-stock', element: <ConsignmentStockPage />, tab: { title: 'Consignment Stock', icon: 'PackageSearch', keyStrategy: 'static' } },
+  { path: '/inventory', element: <InventoryPage />, tab: { title: 'Inventory', icon: 'Boxes', keyStrategy: 'static' } },
   { path: '/bom-explorer', element: <BomExplorerPage />, tab: { title: 'BOM Explorer', icon: 'Network', keyStrategy: 'static' } },
   { path: '/capacity-rules', element: <CapacityRulesPage />, tab: { title: 'Capacity Rules', icon: 'SlidersHorizontal', keyStrategy: 'static' } },
   { path: '/production-plan', element: <ProductionPlanPage />, tab: { title: 'Production Plan', icon: 'CalendarRange', keyStrategy: 'static' } },

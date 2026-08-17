@@ -6,7 +6,7 @@ import { mrpRoutes } from '@/app/routes'
 import {
   TrendingUp, PackageSearch, Network, ArrowLeft, Menu,
   ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
-  SlidersHorizontal, CalendarRange, Truck, ShoppingCart } from 'lucide-react'
+  SlidersHorizontal, CalendarRange, Truck, ShoppingCart, Boxes } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
@@ -31,6 +31,7 @@ function getStoredSession(): { token: string | null; user: { id?: string; full_n
 const NAV = [
   { label: 'Sales Forecast',      href: '/forecast',            icon: TrendingUp       },
   { label: 'Consignment Stock',   href: '/consignment-stock',   icon: PackageSearch    },
+  { label: 'Inventory',           href: '/inventory',           icon: Boxes            },
   { label: 'BOM Explorer',        href: '/bom-explorer',        icon: Network          },
   { label: 'Capacity Rules',      href: '/capacity-rules',      icon: SlidersHorizontal },
   { label: 'Production Plan',     href: '/production-plan',     icon: CalendarRange    },
