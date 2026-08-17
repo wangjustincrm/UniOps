@@ -13,7 +13,7 @@
 // the data stays in the spreadsheet forever.
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ClipboardPaste, Loader2, Star, Trash2 } from 'lucide-react'
+import { AlertTriangle, ClipboardPaste, Loader2, Pencil, Plus, Star, Trash2 } from 'lucide-react'
 import { Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -21,6 +21,16 @@ import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
 import { supplyApi, parsePaste, type MaterialSupplier, type BulkResult } from './supplyApi'
+import { SupplyRowDrawer } from './SupplyRowDrawer'
+
+/** Numeric(18,4) comes back as '1000.0000'. Four decimal places on an order
+ *  quantity is noise, and noise in a column people scan is a column they stop
+ *  reading. */
+function trimZeros(value: string | null): string {
+  if (value === null) return '—'
+  const n = Number(value)
+  return Number.isFinite(n) ? String(n) : value
+}
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
@@ -38,6 +48,8 @@ export default function SupplyParametersPage() {
   const [pasteText, setPasteText] = useState('')
   const [result, setResult] = useState<BulkResult | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<MaterialSupplier | null>(null)
+  // null = closed; { row: null } = adding; { row } = editing that row.
+  const [drawer, setDrawer] = useState<{ row: MaterialSupplier | null } | null>(null)
 
   const listQuery = useQuery({
     queryKey: ['material-suppliers'],
@@ -95,10 +107,16 @@ export default function SupplyParametersPage() {
           </p>
         </div>
         {canWrite && (
-          <Button type="button" size="sm" className="min-h-[44px]"
-            onClick={() => { setResult(null); setPasteOpen(true) }}>
-            <ClipboardPaste className="h-3.5 w-3.5" /> Paste from Excel
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" size="sm" className="min-h-[44px]"
+              onClick={() => setDrawer({ row: null })}>
+              <Plus className="h-3.5 w-3.5" /> Add row
+            </Button>
+            <Button type="button" size="sm" variant="secondary" className="min-h-[44px]"
+              onClick={() => { setResult(null); setPasteOpen(true) }}>
+              <ClipboardPaste className="h-3.5 w-3.5" /> Paste from Excel
+            </Button>
+          </div>
         )}
       </header>
 
@@ -149,18 +167,27 @@ export default function SupplyParametersPage() {
                     ? <span className="text-danger-600">missing</span>
                     : `${row.lead_time_days} d`}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">{row.moq ?? '—'}</td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">{row.order_multiple ?? '—'}</td>
+                <td className="px-3 py-2 text-right font-mono text-neutral-600">{trimZeros(row.moq)}</td>
+                <td className="px-3 py-2 text-right font-mono text-neutral-600">{trimZeros(row.order_multiple)}</td>
                 <td className="px-3 py-2 text-center">
                   {row.is_primary && <Star aria-label="Primary supplier" className="mx-auto h-3.5 w-3.5 text-warning-500" />}
                 </td>
                 <td className="px-3 py-2 text-right">
                   {canWrite && (
-                    <button type="button" onClick={() => setDeleteTarget(row)}
-                      aria-label={`Remove ${row.material_code} / ${row.partner_code}`}
-                      className="text-neutral-400 hover:text-danger-600">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    <span className="inline-flex items-center gap-2">
+                      <button type="button" onClick={() => setDrawer({ row })}
+                        aria-label={`Edit ${row.material_code} / ${row.partner_code}`}
+                        title="Edit"
+                        className="text-neutral-400 hover:text-primary-600">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button type="button" onClick={() => setDeleteTarget(row)}
+                        aria-label={`Remove ${row.material_code} / ${row.partner_code}`}
+                        title="Remove"
+                        className="text-neutral-400 hover:text-danger-600">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
                   )}
                 </td>
               </tr>
@@ -168,6 +195,19 @@ export default function SupplyParametersPage() {
           </tbody>
         </table>
       </div>
+
+      {drawer && (
+        <SupplyRowDrawer
+          row={drawer.row}
+          onClose={() => setDrawer(null)}
+          onSaved={async (message) => {
+            setDrawer(null)
+            await queryClient.invalidateQueries({ queryKey: ['material-suppliers'] })
+            toasts.success(message)
+          }}
+          notifyError={(message) => toasts.error(message)}
+        />
+      )}
 
       {pasteOpen && (
         <ConfirmDialog
