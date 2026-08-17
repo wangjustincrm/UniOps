@@ -63,6 +63,11 @@ export function SupplyRowDrawer({
   const [form, setForm] = useState<FormState>(() => initialState(row))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // The picked material's own unit, and the supplier's name. Both are
+  // display-only, and both answer a question the form could not otherwise
+  // answer: "MOQ 100 — of what?" and "001 — who is that?"
+  const [uom, setUom] = useState<string | null>(row ? null : null)
+  const [supplierName, setSupplierName] = useState<string | null>(null)
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -148,25 +153,33 @@ export function SupplyRowDrawer({
             ) : (
               <MaterialPicker
                 value={form.material_code}
-                onSelect={(m) => set('material_code', m.code)}
-                onClear={() => set('material_code', '')}
+                onSelect={(m) => { set('material_code', m.code); setUom(m.base_uom ?? null) }}
+                onClear={() => { set('material_code', ''); setUom(null) }}
                 disabled={saving}
                 // Bought items are never finished goods — see this file's note.
                 finishedGoodsOnly={false}
+                // Raw materials and packaging only — a semi-finished powder
+                // or an air-sampling point is never bought from a supplier.
+                purchasedOnly
                 placeholder="Search materials…"
+                // Above this drawer (z-[90]); the picker's page-level default
+                // would open the panel behind it.
+                panelZClass="z-[96]"
               />
             )}
           </FormField>
 
           <FormField label="Supplier" required htmlFor="supply-partner"
-            hint={isEdit ? 'Fixed — add a separate row for another supplier.' : undefined}>
+            hint={isEdit
+              ? 'Fixed — add a separate row for another supplier.'
+              : supplierName ?? undefined}>
             {isEdit ? (
               <Input id="supply-partner" value={form.partner_code} disabled />
             ) : (
               <SupplierPicker
                 value={form.partner_code}
-                onSelect={(p) => set('partner_code', p.code)}
-                onClear={() => set('partner_code', '')}
+                onSelect={(p) => { set('partner_code', p.code); setSupplierName(p.name) }}
+                onClear={() => { set('partner_code', ''); setSupplierName(null) }}
                 disabled={saving}
               />
             )}
@@ -178,16 +191,28 @@ export function SupplyRowDrawer({
               onChange={(e) => set('lead_time_days', e.target.value)} disabled={saving} />
           </FormField>
 
-          <FormField label="Minimum order quantity" htmlFor="supply-moq"
-            hint="A requirement below this is raised to it, and the suggestion shows how much was added.">
-            <Input id="supply-moq" inputMode="decimal" value={form.moq}
-              onChange={(e) => set('moq', e.target.value)} disabled={saving} />
+          <FormField label={`Minimum order quantity${uom ? ` (${uom})` : ''}`} htmlFor="supply-moq"
+            hint={'A requirement below this is raised to it, and the suggestion shows how much was added.'
+              + (uom
+                ? ` In this material's own unit: ${uom}.`
+                : " The unit is the material's own — pick the material to see which.")}>
+            <div className="flex items-center gap-2">
+              <Input id="supply-moq" inputMode="decimal" value={form.moq}
+                onChange={(e) => set('moq', e.target.value)} disabled={saving} />
+              {uom && <span className="shrink-0 text-sm text-neutral-500">{uom}</span>}
+            </div>
           </FormField>
 
-          <FormField label="Order multiple" htmlFor="supply-multiple"
-            hint="Quantities are rounded up to a multiple of this, after the minimum is applied.">
-            <Input id="supply-multiple" inputMode="decimal" value={form.order_multiple}
-              onChange={(e) => set('order_multiple', e.target.value)} disabled={saving} />
+          <FormField label={`Order multiple${uom ? ` (${uom})` : ''}`} htmlFor="supply-multiple"
+            hint={'The supplier only ships in whole steps of this size — a pallet, a drum, '
+              + 'a carton. A quantity is rounded UP to the next step after the minimum has '
+              + 'been applied, so with a 100 minimum and a 50 step, a need of 130 is ordered '
+              + 'as 150. Leave blank if any quantity can be ordered.'}>
+            <div className="flex items-center gap-2">
+              <Input id="supply-multiple" inputMode="decimal" value={form.order_multiple}
+                onChange={(e) => set('order_multiple', e.target.value)} disabled={saving} />
+              {uom && <span className="shrink-0 text-sm text-neutral-500">{uom}</span>}
+            </div>
           </FormField>
 
           <label className="flex items-start gap-2 text-sm text-neutral-700">

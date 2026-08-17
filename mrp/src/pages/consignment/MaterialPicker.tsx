@@ -18,7 +18,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, X as XIcon, Package } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { isFinishedGood, materialsApi, type MaterialOption } from '@/lib/materials'
+import { isFinishedGood, materialsApi, type MaterialOption, isPurchased } from '@/lib/materials'
 
 // Render cap for the UNBOUNDED (component / all-materials) mode only: an
 // empty/broad query there spans the whole ~2600-row master, too many <button>s
@@ -29,7 +29,7 @@ const MAX_RENDERED = 200
 
 export function MaterialPicker({
   value, onSelect, onClear, hasError, disabled, placeholder = 'Search products…',
-  finishedGoodsOnly = true,
+  finishedGoodsOnly = true, purchasedOnly = false, panelZClass = 'z-[80]',
 }: {
   /** Selected material code, or '' for none. */
   value: string
@@ -41,6 +41,17 @@ export function MaterialPicker({
    *  Explorer's where-used mode reuses this picker for "component" rather
    *  than "product" ('Search components…'). */
   placeholder?: string
+  /** Stacking order for the dropdown panel, which is portalled to
+   *  `document.body` and therefore competes with whatever else is open.
+   *  Defaults to the page-level `z-[80]`; a caller INSIDE an overlay must
+   *  raise it above that overlay or the panel opens behind it and the picker
+   *  looks like it simply does not respond to clicks — which is exactly what
+   *  happened when the supply-parameters drawer (z-[90]) first used it. */
+  panelZClass?: string
+  /** Offer only what the plant BUYS (raw materials and packaging) — for
+   *  screens about purchasing, where a semi-finished item or an air-sampling
+   *  point is never the answer. Ignored when `finishedGoodsOnly` is set. */
+  purchasedOnly?: boolean
   /** Restrict options to finished goods (see materials.ts isFinishedGood:
    *  CF and S-digit codes). Default true: this picker is product-oriented
    *  everywhere except BOM Explorer's where-used mode, which reverse-looks-up
@@ -84,13 +95,17 @@ export function MaterialPicker({
 
   const results = useMemo(() => {
     if (!allMaterials) return [] as MaterialOption[]
-    const pool = finishedGoodsOnly ? allMaterials.filter(isFinishedGood) : allMaterials
+    const pool = finishedGoodsOnly
+      ? allMaterials.filter(isFinishedGood)
+      : purchasedOnly
+        ? allMaterials.filter(isPurchased)
+        : allMaterials
     const term = q.trim().toLowerCase()
     if (!term) return pool
     return pool.filter(
       (m) => m.code.toLowerCase().includes(term) || (m.name?.toLowerCase().includes(term) ?? false),
     )
-  }, [allMaterials, finishedGoodsOnly, q])
+  }, [allMaterials, finishedGoodsOnly, purchasedOnly, q])
 
   // Finished-goods mode is bounded (~130) — show them all so the planner can
   // scroll the full product list without typing. Only the unbounded component
@@ -158,7 +173,7 @@ export function MaterialPicker({
           role="listbox"
           aria-label="Products"
           style={{ position: 'fixed', top: rect.top, left: rect.left, width: rect.width }}
-          className="z-[80] flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg"
+          className={`${panelZClass} flex flex-col overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg`}
         >
           <div className="border-b border-neutral-100 p-2">
             <div className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-2">

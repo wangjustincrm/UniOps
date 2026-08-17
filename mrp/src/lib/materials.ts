@@ -44,6 +44,23 @@ export const FINISHED_GOODS_MES_TYPE = '3'
 // reworked to read the ERP DB directly.
 export const FINISHED_GOODS_EXCLUDED_CODES = new Set(['CF00AF', 'CF00WT'])
 
+/** Prefixes of the things this plant BUYS: raw and auxiliary materials, and
+ *  packaging. Same split the requirement maths already uses for loss rates
+ *  (`CP*` takes the packaging rate, everything else the raw one), so the two
+ *  cannot drift apart.
+ *
+ *  ★ Deliberately NOT `erp_item_type`. That field is not a purchased/made
+ *  classifier in this data: Lactose (CR0025) sits in type 0 alongside 130
+ *  air-sampling points and equipment locations, while type 1 holds
+ *  semi-finished powder. Filtering by type would offer a picker full of
+ *  sampling points and hide the raw materials. */
+export const PURCHASED_CODE_PREFIXES = ['CR', 'CP'] as const
+
+export function isPurchased(m: Pick<MaterialOption, 'code'>): boolean {
+  const code = m.code.toUpperCase()
+  return PURCHASED_CODE_PREFIXES.some((p) => code.startsWith(p))
+}
+
 export function isFinishedGood(m: Pick<MaterialOption, 'code' | 'erp_item_type'>): boolean {
   return m.erp_item_type === FINISHED_GOODS_MES_TYPE && !FINISHED_GOODS_EXCLUDED_CODES.has(m.code)
 }

@@ -20,6 +20,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
+import { materialsApi } from '@/lib/materials'
 import { supplyApi, parsePaste, type MaterialSupplier, type BulkResult } from './supplyApi'
 import { SupplyRowDrawer } from './SupplyRowDrawer'
 
@@ -55,6 +56,19 @@ export default function SupplyParametersPage() {
     queryKey: ['material-suppliers'],
     queryFn: () => supplyApi.list(),
   })
+
+  // The material master, for the unit each quantity is expressed in. "MOQ
+  // 1000" is unreadable without it — kilograms and cans are both plausible
+  // and the difference is three orders of magnitude.
+  const materialsQuery = useQuery({
+    queryKey: ['materials-all'],
+    queryFn: () => materialsApi.listAll(),
+  })
+  const uomByCode = useMemo(() => {
+    const m = new Map<string, string | null>()
+    for (const mat of materialsQuery.data ?? []) m.set(mat.code, mat.base_uom)
+    return m
+  }, [materialsQuery.data])
   const rows = useMemo(() => listQuery.data?.items ?? [], [listQuery.data])
 
   const missingLeadTime = rows.filter((r) => r.lead_time_days === null).length
@@ -167,8 +181,22 @@ export default function SupplyParametersPage() {
                     ? <span className="text-danger-600">missing</span>
                     : `${row.lead_time_days} d`}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">{trimZeros(row.moq)}</td>
-                <td className="px-3 py-2 text-right font-mono text-neutral-600">{trimZeros(row.order_multiple)}</td>
+                <td className="px-3 py-2 text-right font-mono text-neutral-600">
+                  {trimZeros(row.moq)}
+                  {row.moq !== null && uomByCode.get(row.material_code) && (
+                    <span className="ml-1 text-xs text-neutral-400">
+                      {uomByCode.get(row.material_code)}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-neutral-600">
+                  {trimZeros(row.order_multiple)}
+                  {row.order_multiple !== null && uomByCode.get(row.material_code) && (
+                    <span className="ml-1 text-xs text-neutral-400">
+                      {uomByCode.get(row.material_code)}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-center">
                   {row.is_primary && <Star aria-label="Primary supplier" className="mx-auto h-3.5 w-3.5 text-warning-500" />}
                 </td>
