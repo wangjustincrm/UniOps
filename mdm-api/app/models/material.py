@@ -25,6 +25,14 @@ class Material(Base, UUIDPrimaryKey, TimestampMixin):
     shelf_life_months: Mapped[int | None] = mapped_column(Integer)  # ERP exp
     procurement_type: Mapped[str] = mapped_column(String(20), default="purchase")  # purchase/manufacture
     product_family: Mapped[str | None] = mapped_column(String(100))  # ERP part_PRODUCT_FAMILY
+    # ERP/NC material classification (accounting_group / 物料基本分类).
+    # '0101' = Raw Milk, which MRP excludes from stock and on-order figures --
+    # raw milk is delivered by tanker straight into production, never
+    # warehoused as lots, and its NC receipts do not reconcile against PO
+    # quantities. Classify by THIS, never by code prefix: CR0059 "Pasteurized
+    # Milk" is 0101 while carrying an ordinary raw-material prefix.
+    erp_class_code: Mapped[str | None] = mapped_column(String(20), index=True)
+    erp_class_name: Mapped[str | None] = mapped_column(String(100))
     factory_code: Mapped[str | None] = mapped_column(String(50))
     erp_id: Mapped[str | None] = mapped_column(String(50), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

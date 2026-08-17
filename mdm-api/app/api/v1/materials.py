@@ -37,6 +37,12 @@ class MaterialResponse(BaseModel):
     product_family: str | None
     factory_code: str | None
     erp_id: str | None
+    # ERP/NC material classification (物料基本分类). '0101' = Raw Milk, which
+    # MRP excludes from every stock and on-order figure. Exposed because
+    # classifying by code prefix is wrong here: CR0059 "Pasteurized Milk" is
+    # 0101 while carrying an ordinary raw-material prefix.
+    erp_class_code: str | None
+    erp_class_name: str | None
     is_active: bool
 
     model_config = {"from_attributes": True}
