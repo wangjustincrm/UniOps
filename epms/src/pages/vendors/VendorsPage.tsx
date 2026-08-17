@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { formatDate } from '@/lib/utils'
 import { downloadCsv } from '@/lib/api'
+import { normalizeEmailList } from '@/lib/emailList'
 import { useVendors, useCreateVendor, useUpdateVendor, useImportVendors } from '@/hooks/useVendors'
 import type { VendorImportResult } from '@/hooks/useVendors'
 import type { ApiVendor, CreateVendorBody, UpdateVendorBody } from '@/services/vendors'
@@ -196,11 +197,11 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-neutral-700">Contact Email</label>
           <input
-            type="email"
+            type="text"
             className={inputCls(errors.contactEmail)}
             value={form.contactEmail}
             onChange={(e) => set('contactEmail', e.target.value)}
-            placeholder="jane@vendor.com"
+            placeholder="jane@vendor.com, ap@vendor.com"
           />
           {errors.contactEmail && <p className="text-xs text-danger-600">{errors.contactEmail}</p>}
         </div>
@@ -209,15 +210,16 @@ function VendorForm({ form, onChange, onSave, onCancel, title, errors, categorie
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-medium text-neutral-700">Remittance Email</label>
           <input
-            type="email"
+            type="text"
             className={inputCls(errors.remittanceEmail)}
             value={form.remittanceEmail}
             onChange={(e) => set('remittanceEmail', e.target.value)}
-            placeholder="ap@vendor.com"
+            placeholder="ap@vendor.com, remit@vendor.com"
           />
           <p className="text-xs text-neutral-400">
-            Where remittance advice is sent. Defaults to the contact email if left blank —
-            if both are blank, remittance advice cannot be sent for this vendor.
+            Where remittance advice is sent. Separate several addresses with a comma.
+            Defaults to the contact email if left blank — if both are blank, remittance
+            advice cannot be sent for this vendor.
           </p>
           {errors.remittanceEmail && <p className="text-xs text-danger-600">{errors.remittanceEmail}</p>}
         </div>
@@ -423,10 +425,10 @@ export default function VendorsPage() {
     if (!f.code.trim()) e.code = 'Required'
     if (!f.name.trim()) e.name = 'Required'
     if (!f.category.trim()) e.category = 'Required'
-    if (f.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.contactEmail)) {
+    if (!normalizeEmailList(f.contactEmail).valid) {
       e.contactEmail = 'Invalid email address'
     }
-    if (f.remittanceEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(f.remittanceEmail)) {
+    if (!normalizeEmailList(f.remittanceEmail).valid) {
       e.remittanceEmail = 'Invalid email address'
     }
     setFormErrors(e)
@@ -462,8 +464,8 @@ export default function VendorsPage() {
         name: formData.name.trim(),
         category: formData.category.trim(),
         contact_name: formData.contactName.trim(),
-        contact_email: formData.contactEmail.trim(),
-        remittance_email: formData.remittanceEmail.trim(),
+        contact_email: normalizeEmailList(formData.contactEmail).normalized,
+        remittance_email: normalizeEmailList(formData.remittanceEmail).normalized,
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
         payment_terms: formData.paymentTerms,
@@ -484,8 +486,8 @@ export default function VendorsPage() {
         name: formData.name.trim(),
         category: formData.category.trim(),
         contact_name: formData.contactName.trim(),
-        contact_email: formData.contactEmail.trim(),
-        remittance_email: formData.remittanceEmail.trim(),
+        contact_email: normalizeEmailList(formData.contactEmail).normalized,
+        remittance_email: normalizeEmailList(formData.remittanceEmail).normalized,
         phone: formData.phone.trim() || undefined,
         address: formData.address.trim() || undefined,
         payment_terms: formData.paymentTerms,
