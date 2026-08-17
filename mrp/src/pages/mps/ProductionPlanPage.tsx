@@ -231,6 +231,22 @@ export default function ProductionPlanPage() {
     return queryClient.invalidateQueries({ queryKey: ['mps-run', runId] })
   }
 
+  /** Refresh the open run AND the version list.
+   *
+   *  Anything that creates a run or changes its status must call this, not
+   *  `invalidateRun` alone: the list is what the version picker renders, and
+   *  leaving it stale showed a planner who had just generated two plans an
+   *  empty picker saying "Select a plan" — the runs existed, the API
+   *  returned them, and the page was still holding the answer it got at
+   *  mount. A release also flips other runs to superseded, so the list is
+   *  wrong after that too, not just longer. */
+  function invalidateRunAndList() {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['mps-run', runId] }),
+      queryClient.invalidateQueries({ queryKey: ['mps-runs'] }),
+    ])
+  }
+
   // ── Comparison ────────────────────────────────────────────────────────
   // Off by default: most of the time a planner opens this page to read the
   // plan, not to audit it. When on, the server picks the previous version
@@ -383,6 +399,7 @@ export default function ProductionPlanPage() {
     try {
       const result = await mpsApi.generate(selectedVersionId, { production_lead_weeks: leadWeeks })
       selectRun(result.id)
+      await queryClient.invalidateQueries({ queryKey: ['mps-runs'] })
       toasts.success(`Generated ${result.run_no} — ${result.lines.length} line(s).`)
     } catch (err) {
       toasts.error(errMsg(err, 'Could not generate the MPS run — please retry.'))
@@ -397,7 +414,7 @@ export default function ProductionPlanPage() {
     try {
       const result = await mpsApi.recalculate(runId)
       toasts.success(`Recalculated ${result.run_no} — ${result.lines.length} line(s).`)
-      await invalidateRun()
+      await invalidateRunAndList()
     } catch (err) {
       toasts.error(errMsg(err, 'Could not recalculate this run — please retry.'))
     } finally {
@@ -514,7 +531,7 @@ export default function ProductionPlanPage() {
       const result = await mpsApi.confirmRelease(runId)
       toasts.success(`Released ${result.run_no} — demand written to the MRP requirements table.`)
       setReleaseConfirmOpen(false)
-      await invalidateRun()
+      await invalidateRunAndList()
     } catch (err) {
       toasts.error(errMsg(err, 'Could not release this run — please retry.'))
     } finally {
@@ -569,6 +586,13 @@ export default function ProductionPlanPage() {
               onSelect={selectRun}
               disabled={runsQuery.isLoading}
             />
+            {/* An empty picker and a failed request look identical — which is
+                how a stale list read as "no plans exist". Say which it is. */}
+            {runsQuery.isError && (
+              <span role="alert" className="text-xs text-danger-600">
+                Could not load the version list — retry or reload.
+              </span>
+            )}
             <Button
               type="button"
               size="sm"
