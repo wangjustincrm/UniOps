@@ -27,6 +27,17 @@ function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
+/** " (18 days ago)" — how late, not just that it is late. A date on its own
+ *  makes the reader do the subtraction, and the answer decides whether this
+ *  is a phone call or a shrug. */
+function daysAgo(isoDate: string): string {
+  const then = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(then.getTime())) return ''
+  const days = Math.round((Date.now() - then.getTime()) / 86400000)
+  if (days <= 0) return ''
+  return ` (${days} day${days === 1 ? '' : 's'} ago)`
+}
+
 function fmt(value: string): string {
   const n = Number(value)
   return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 3 }) : value
@@ -206,10 +217,18 @@ export default function PurchaseSuggestionsPage() {
             {lines.map((line) => (
               <tr key={line.id} className={cn('border-t border-neutral-100',
                 line.order_date_passed && 'bg-danger-50/40')}>
-                <td className="px-3 py-2 font-mono text-xs">
+                <td className="px-3 py-2 font-mono text-xs"
+                  title={line.order_date_passed
+                    ? `Overdue — this should have been ordered on ${line.order_date}`
+                      + `${daysAgo(line.order_date)}. Ordered now, it arrives after it is `
+                      + `needed in the week of ${line.need_week}.`
+                    : `Order by ${line.order_date} to have it for the week of ${line.need_week}.`}>
                   <span className="flex items-center gap-1">
                     {line.order_date_passed && (
-                      <CalendarClock aria-hidden className="h-3 w-3 shrink-0 text-danger-600" />
+                      // Not aria-hidden: for a screen reader this icon is the
+                      // only thing saying the row is late.
+                      <CalendarClock aria-label="Overdue" role="img"
+                        className="h-3 w-3 shrink-0 text-danger-600" />
                     )}
                     {line.order_date}
                   </span>
@@ -260,6 +279,27 @@ export default function PurchaseSuggestionsPage() {
           </tbody>
         </table>
       </div>
+
+      {run && lines.length > 0 && (
+        // A legend, not just tooltips: a tooltip only helps somebody who
+        // already suspects the mark means something, and a red icon on a
+        // purchase list is exactly the kind of thing people learn to ignore
+        // rather than hover over.
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-neutral-500">
+          <span className="flex items-center gap-1">
+            <CalendarClock aria-hidden className="h-3 w-3 text-danger-600" />
+            Order date has passed — ordering now arrives late
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-warning-600">▲</span>
+            Quantity raised to reach the supplier&apos;s minimum order
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="text-danger-600">none / ?</span>
+            No supplier / no lead time on file — set them in Supply Parameters
+          </span>
+        </div>
+      )}
 
       {run && Number(run.raw_material_loss_rate) === 0 && Number(run.packaging_loss_rate) === 0 && (
         <p className="flex items-start gap-1.5 text-xs text-neutral-500">
