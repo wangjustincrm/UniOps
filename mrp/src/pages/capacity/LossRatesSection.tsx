@@ -21,11 +21,13 @@ const RAW_KEY = 'raw_material_loss_rate'
 const PACKAGING_KEY = 'packaging_loss_rate'
 
 function asPercent(value: unknown): string {
-  const n = typeof value === 'number' ? value : 0
   // Stored as a fraction (0.02 = 2%) because that is what the requirement
   // maths multiplies by; shown as a percent because that is how a plant
-  // talks about loss.
-  return String(Math.round(n * 10000) / 100)
+  // talks about loss. `undefined` (not loaded, or never set) is NOT 0 — a
+  // field that shows 0 before the answer arrives states something the
+  // system does not know yet.
+  if (typeof value !== 'number') return ''
+  return String(Math.round(value * 10000) / 100)
 }
 
 function errMsg(err: unknown, fallback: string): string {
@@ -54,7 +56,15 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
     onSuccess: async (_, { key, percent }) => {
       setError(null)
       setNote(`Saved — ${key === RAW_KEY ? 'raw material' : 'packaging'} loss rate is now ${percent}%.`)
-      setDraft((d) => ({ ...d, [key]: '' }))
+      // DELETE the draft key rather than blanking it. `draft[key] ?? current[key]`
+      // only falls back on null/undefined, so an empty string won a saved
+      // value and left the box blank forever — the setting looked unset and
+      // there was no way to see what it actually was.
+      setDraft((d) => {
+        const next = { ...d }
+        delete next[key]
+        return next
+      })
       await queryClient.invalidateQueries({ queryKey: ['mrp-params'] })
     },
     onError: (err) => {
@@ -77,7 +87,8 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
 
   function field(key: string, label: string, hint: string) {
     const value = draft[key] ?? current[key]
-    const dirty = draft[key] !== undefined && draft[key] !== '' && draft[key] !== current[key]
+    const dirty = draft[key] !== undefined && draft[key].trim() !== ''
+      && draft[key].trim() !== current[key]
     return (
       <div key={key} className="flex flex-col gap-1">
         <label htmlFor={key} className="text-sm font-medium text-neutral-800">{label}</label>
@@ -102,7 +113,20 @@ export function LossRatesSection({ canWrite }: { canWrite: boolean }) {
             </Button>
           )}
         </div>
-        <p className="text-xs text-neutral-500">{hint}</p>
+        <p className="text-xs text-neutral-500">
+          {/* The saved value, stated separately from the input. While
+              somebody is typing, the box shows their draft — and without
+              this line there is nothing on screen saying what the setting
+              actually IS. */}
+          <span className="font-medium text-neutral-700">
+            {paramsQuery.isLoading
+              ? 'Loading current value…'
+              : current[key] === ''
+                ? 'Not set — treated as 0%'
+                : `Currently ${current[key]}%`}
+          </span>
+          {' · '}{hint}
+        </p>
       </div>
     )
   }
