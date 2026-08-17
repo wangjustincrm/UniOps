@@ -388,21 +388,23 @@ async def record_payment(
     # the posting event.
     try:
         # credit_ids is deliberately NOT passed, so finance-api applies its
-        # automatic FIFO vendor-credit default (Phase B). OA DOES have a
-        # confirmation dialog for this action — ProcessPaymentModal
+        # automatic FIFO vendor-credit default (Phase B).
+        #
+        # OA's confirmation dialog for this action — ProcessPaymentModal
         # (oa/src/components/ProcessPaymentModal.tsx, rendered from
-        # oa/src/pages/pa/PaDetailPage.tsx) — but it still shows the gross
-        # `payment_amount` next to "Confirm Payment", the same gap EPMS's PA
-        # detail Process dialog had before this wave (epms/src/pages/pa/
-        # PaDetailPage.tsx). It has not yet been given the netting preview
-        # (GET /vendor-credits/suggest) or per-credit deselection that dialog
-        # now has. Offering the choice here without that preview would be a
-        # blind toggle over money; the automatic default at least matches what
-        # the vendor is actually owed, and the netting is explained on the
-        # remittance advice and in
-        # GET /finance/v1/vendor-credits/{id}/applications. Giving
-        # ProcessPaymentModal the same treatment as EPMS is tracked as
-        # follow-up work; add the parameter here only together with it.
+        # oa/src/pages/pa/PaDetailPage.tsx) — shows the gross `payment_amount`
+        # next to "Confirm Payment", so an operator here confirms a figure that
+        # is not the cash actually sent. EPMS's PA detail dialog had the same
+        # gap and was fixed; this one was NOT, deliberately: the OA Direct-PA
+        # feature is slated for removal (product decision, 2026-08-07), so it
+        # is not getting the netting preview or per-credit deselection.
+        #
+        # Do not "finish" this by wiring credit_ids through — without a preview
+        # that would be a blind toggle over money. If the removal is ever
+        # cancelled, give ProcessPaymentModal the same treatment EPMS's dialog
+        # got and add the parameter together with it. Until then the netting is
+        # explained on the remittance advice and in
+        # GET /finance/v1/vendor-credits/{id}/applications.
         await finance_client.execute_payment(
             doc_kind="pa_dir" if pa.po_id is None else "pa",
             doc_id=pa_id, bearer_token=token,
