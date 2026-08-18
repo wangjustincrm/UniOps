@@ -69,6 +69,36 @@ export interface InventoryBatch {
   supplier_code: string | null
 }
 
+/** One place a batch physically sits.
+ *
+ *  The grain is (location, handling unit): STAGECANADA holds 15 pallets of one
+ *  lot, 700 each, told apart by nothing but their trace id, so collapsing to
+ *  location alone would report one 10,500 pallet that does not exist. */
+export interface BatchLocation {
+  location_id: string
+  /** The warehouse's zone for this location — the only human-meaningful thing
+   *  its master carries (there is no name or description column). */
+  zone_id: string | null
+  /** The handling unit. Null where the warehouse recorded none. */
+  trace_id: string | null
+  qty: string
+  qty_allocated: string
+  qty_onhold: string
+  /** These belong to the LOT in this location, which is why they live here
+   *  rather than on the batch row: a batch spanning two production runs has
+   *  two answers and a summary row can only show one. */
+  production_date: string | null
+  inbound_date: string | null
+  expiry_date: string | null
+  days_to_expiry: number | null
+  quality_status: string | null
+  quality_status_label: string | null
+  mapped_status: string
+  /** For tracing a row back into Flux when somebody has to go look at the
+   *  physical pallet. Not displayed. */
+  lot_no: string
+}
+
 export interface InventoryBatchList {
   items: InventoryBatch[]
   total: number
@@ -228,6 +258,16 @@ export const inventoryApi = {
    *  `listLots` below is the raw per-WMS-lot mirror and no screen uses it. */
   listBatches: (page: number, pageSize: number, filters: BatchFilters = {}) =>
     api.get<InventoryBatchList>(`/inventory/batches?${params(page, pageSize, { ...filters })}`),
+
+  /** Where one batch sits. `supplierBatch` null means the batch of stock that
+   *  carries no supplier batch — a real row on the list, not an absence. */
+  batchLocations: (materialCode: string, supplierBatch: string | null,
+                   warehouseId?: string) => {
+    const q = new URLSearchParams({ material_code: materialCode })
+    if (supplierBatch !== null) q.set('supplier_batch', supplierBatch)
+    if (warehouseId) q.set('warehouse_id', warehouseId)
+    return api.get<BatchLocation[]>(`/inventory/batches/locations?${q}`)
+  },
 
   listLots: (page: number, pageSize: number, filters: LotFilters = {}) =>
     api.get<InventoryLotList>(`/inventory/lots?${params(page, pageSize, { ...filters })}`),

@@ -11,6 +11,9 @@ on-order half, EPMS's purchase orders:
   carries and what somebody quotes on the phone. Grouping rather than merely
   hiding the column is not cosmetic — 2,143 of the 3,532 lots are visually
   identical to another lot once it is removed.
+- `GET /inventory/batches/locations` — where one batch physically sits, for
+  the expander under a batch row. A lot can occupy several locations (one is
+  spread over 28), so this is a genuine second grain, not a column.
 - `GET /inventory/lots` — the raw mirror, one row per WMS lot. Left in place
   for anyone who needs it; no screen uses it.
 - `GET /inventory/aging` — shelf life bucketed at 180 / 60 / 30 days, plus what
@@ -51,6 +54,7 @@ from app.core.deps import SessionDep
 from app.models.epms_mirror import MdmMaterial
 from app.models.status_mapping import MrpStatusMapping
 from app.models.wms_inventory import WmsInventoryLot
+from app.models.wms_lot_location import WmsLotLocation
 from app.services.in_transit import (
     RAW_MILK_CLASS_CODE,
     in_transit_by_material,
@@ -122,6 +126,41 @@ class WmsInventoryLotListResponse(BaseModel):
     #: against, so a screen cannot silently disagree with the server about
     #: what "today" is.
     as_of: date
+
+
+class BatchLocationResponse(BaseModel):
+    """One place a batch physically sits.
+
+    The grain is (location, handling unit): `STAGECANADA` holds 15 pallets of
+    one lot, 700 each, distinguished by nothing but their trace id, so
+    collapsing to location alone would report one 10,500 pallet that does not
+    exist.
+    """
+    location_id: str
+    #: From the warehouse's location master — the only human-meaningful thing
+    #: it carries (there is no name or description column). Null when the
+    #: location is not in the master, which does not stop it holding stock.
+    zone_id: str | None
+    #: The handling unit at that location. Null where the warehouse recorded
+    #: none — the source writes '*', which is mapped here rather than shown.
+    trace_id: str | None
+    qty: Decimal
+    qty_allocated: Decimal
+    qty_onhold: Decimal
+    #: The dates belong to the LOT sitting in this location, which is why they
+    #: are here rather than on the batch summary: a batch spanning two
+    #: production runs has two different answers and the summary row can only
+    #: show one.
+    production_date: date | None
+    inbound_date: date | None
+    expiry_date: date | None
+    days_to_expiry: int | None
+    quality_status: str | None
+    quality_status_label: str | None
+    mapped_status: str
+    #: Present so a row can be traced back into Flux when somebody has to go
+    #: and look at the physical pallet. Not shown by default.
+    lot_no: str
 
 
 class AgingBucket(BaseModel):
@@ -540,6 +579,73 @@ async def list_batches(
 
     return {"items": items, "total": total, "page": page,
             "page_size": page_size, "as_of": today, "total_lots": total_lots}
+
+
+@router.get("/batches/locations", response_model=list[BatchLocationResponse])
+async def batch_locations(
+    db: SessionDep,
+    _: ReadDep,
+    material_code: str = Query(description="The batch's material"),
+    supplier_batch: str | None = Query(
+        default=None,
+        description="The supplier batch. Omit for the batch of stock that has none — 92 lots carry no supplier batch, and they are a real row on the list."),
+    warehouse_id: str | None = Query(default=None),
+):
+    """Where one supplier batch physically sits, fullest location first.
+
+    Sorted by quantity rather than by location code because the question behind
+    the click is "where is most of it", and a code sort would put a 10 kg
+    remnant above a full pallet.
+    """
+    today = date.today()
+    stmt = (
+        select(WmsLotLocation, WmsInventoryLot)
+        .join(
+            WmsInventoryLot,
+            (WmsInventoryLot.warehouse_id == WmsLotLocation.warehouse_id)
+            & (WmsInventoryLot.material_code == WmsLotLocation.material_code)
+            & (WmsInventoryLot.lot_no == WmsLotLocation.lot_no),
+        )
+        .where(
+            WmsLotLocation.material_code == material_code,
+            # `is_(None)` rather than `== None`: SQL equality against NULL is
+            # never true, so the 92 lots with no supplier batch would return an
+            # empty expander that reads as "we do not know where this is".
+            WmsInventoryLot.supplier_batch.is_(None) if supplier_batch is None
+            else WmsInventoryLot.supplier_batch == supplier_batch,
+        )
+        .order_by(WmsLotLocation.qty.desc(), WmsLotLocation.location_id)
+    )
+    if warehouse_id:
+        stmt = stmt.where(WmsLotLocation.warehouse_id == warehouse_id)
+
+    labels = {
+        code: description
+        for code, description in (await db.execute(
+            select(MrpStatusMapping.wms_code, MrpStatusMapping.description))).all()
+    }
+
+    return [
+        BatchLocationResponse(
+            location_id=location.location_id,
+            zone_id=location.zone_id,
+            # '*' is the source's way of writing "none"; null renders as a
+            # dash instead of as a character nobody can interpret.
+            trace_id=None if location.trace_id == "*" else location.trace_id,
+            qty=location.qty,
+            qty_allocated=location.qty_allocated,
+            qty_onhold=location.qty_onhold,
+            production_date=lot.production_date,
+            inbound_date=lot.inbound_date,
+            expiry_date=lot.expiry_date,
+            days_to_expiry=days_until(lot.expiry_date, today),
+            quality_status=lot.wms_status,
+            quality_status_label=labels.get(lot.wms_status, lot.wms_status),
+            mapped_status=lot.mapped_status,
+            lot_no=lot.lot_no,
+        )
+        for location, lot in (await db.execute(stmt)).all()
+    ]
 
 
 @router.get("/aging", response_model=AgingSummaryResponse)

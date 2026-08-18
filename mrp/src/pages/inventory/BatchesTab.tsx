@@ -15,7 +15,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
-  AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Search, X,
+  AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MapPin,
+  Search, X,
 } from 'lucide-react'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -34,8 +35,12 @@ const SORTABLE = [
   // production order wants to read this.
   { key: 'production_date', label: 'Produced' },
   { key: 'expiry_date', label: 'Expiry' },
-  { key: 'inbound_date', label: 'Received' },
 ] as const
+
+// `inbound_date` is deliberately NOT a column here any more: a batch's lots
+// arrive on different days, so one date on the summary row describes only part
+// of the quantity. It lives on the location rows in the expander, where each
+// one belongs to exactly one lot and the date is unambiguous.
 
 type SortKey = typeof SORTABLE[number]['key']
 
@@ -71,6 +76,87 @@ function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
+/** Where one batch physically sits — the expander under a batch row.
+ *
+ *  The WMS lot number is what the warehouse system calls a pile of stock; the
+ *  LOCATION is what somebody standing in the warehouse needs. A lot can occupy
+ *  several (one packaging lot is spread over 28), so this is a genuine second
+ *  level rather than a column that would not have fitted. */
+function BatchLocations({
+  materialCode, supplierBatch, uom,
+}: {
+  materialCode: string
+  supplierBatch: string | null
+  uom: string | null
+}) {
+  const query = useQuery({
+    queryKey: ['batch-locations', materialCode, supplierBatch],
+    queryFn: () => inventoryApi.batchLocations(materialCode, supplierBatch),
+  })
+
+  if (query.isLoading) {
+    return <p className="px-3 py-2 text-xs text-neutral-400">Loading locations…</p>
+  }
+  if (query.isError) {
+    return (
+      <p role="alert" className="flex items-start gap-1.5 px-3 py-2 text-xs text-danger-700">
+        <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        {errMsg(query.error, 'Could not load where this batch is stored.')}
+      </p>
+    )
+  }
+  const rows = query.data ?? []
+  if (rows.length === 0) {
+    // Distinct from an error, and distinct from zero stock: the batch exists,
+    // the warehouse just has not told us where it is.
+    return (
+      <p className="px-3 py-2 text-xs text-neutral-400">
+        No location recorded for this batch.
+      </p>
+    )
+  }
+
+  return (
+    <table className="min-w-full text-xs">
+      <thead className="text-[11px] uppercase tracking-wide text-neutral-400">
+        <tr>
+          <th className="px-3 py-1.5 text-left">Location</th>
+          <th className="px-3 py-1.5 text-left">Zone</th>
+          <th className="px-3 py-1.5 text-left">Tracking ID</th>
+          <th className="px-3 py-1.5 text-right">Qty</th>
+          <th className="px-3 py-1.5 text-left">Produced</th>
+          <th className="px-3 py-1.5 text-left">Received</th>
+          <th className="px-3 py-1.5 text-left">Expiry</th>
+          <th className="px-3 py-1.5 text-left">Quality</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={`${row.location_id}|${row.trace_id ?? ''}|${row.lot_no}`}
+            className="border-t border-neutral-100">
+            <td className="px-3 py-1.5">
+              <span className="inline-flex items-center gap-1 font-mono">
+                <MapPin aria-hidden className="h-3 w-3 text-neutral-400" />
+                {row.location_id}
+              </span>
+            </td>
+            <td className="px-3 py-1.5 text-neutral-500">{row.zone_id ?? '—'}</td>
+            <td className="px-3 py-1.5 font-mono text-neutral-500">{row.trace_id ?? '—'}</td>
+            <td className="px-3 py-1.5 text-right font-mono font-medium">
+              {qty(row.qty)}
+              {uom && <span className="ml-1 font-sans text-neutral-400">{uom}</span>}
+            </td>
+            <td className="px-3 py-1.5 text-neutral-600">{formatDateOnly(row.production_date)}</td>
+            <td className="px-3 py-1.5 text-neutral-600">{formatDateOnly(row.inbound_date)}</td>
+            <td className="px-3 py-1.5 text-neutral-600">{formatDateOnly(row.expiry_date)}</td>
+            <td className="px-3 py-1.5 text-neutral-600">{row.quality_status_label ?? '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
@@ -78,6 +164,7 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
   const [page, setPage] = useState(1)
   const [sort, setSort] = useState<SortKey>('expiry_date')
   const [descending, setDescending] = useState(false)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   // Debounced: the box drives a server-side query, and one request per
   // keystroke would have the table flickering through half-typed answers.
@@ -194,19 +281,20 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
           </thead>
           <tbody>
             {batchQuery.isLoading && (
-              <tr><td colSpan={10} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
             )}
             {!batchQuery.isLoading && items.length === 0 && !batchQuery.isError && (
-              <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-neutral-400">
+              <tr><td colSpan={9} className="px-3 py-8 text-center text-sm text-neutral-400">
                 {search
                   ? `Nothing matches "${search}".`
                   : 'No stock for these filters.'}
               </td></tr>
             )}
-            {items.map((lot) => (
-              <tr
-                key={`${lot.warehouse_id}|${lot.material_code}|${lot.supplier_batch ?? ''}`}
-                className={cn(
+            {items.map((lot) => {
+              const key = `${lot.warehouse_id}|${lot.material_code}|${lot.supplier_batch ?? ''}`
+              const isOpen = expanded === key
+              return [
+              <tr key={key} className={cn(
                 'border-t border-neutral-100',
                 lot.aging_bucket === 'expired' && 'bg-danger-50/40',
               )}>
@@ -216,12 +304,22 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
                     <span className="ml-1.5 text-xs text-neutral-500">{lot.material_name}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs">
-                  {lot.supplier_batch ?? (
-                    // Not blank: 92 lots genuinely carry no supplier batch, and
-                    // an empty cell reads as a rendering fault.
-                    <span className="font-sans text-neutral-400">no supplier batch</span>
-                  )}
+                <td className="px-3 py-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isOpen ? null : key)}
+                    aria-expanded={isOpen}
+                    className="inline-flex items-center gap-1 font-mono hover:text-primary-700 hover:underline"
+                    title="Show where this batch is stored"
+                  >
+                    {lot.supplier_batch ?? (
+                      // Not blank: some lots genuinely carry no supplier batch,
+                      // and an empty cell reads as a rendering fault.
+                      <span className="font-sans text-neutral-400">no supplier batch</span>
+                    )}
+                    {isOpen ? <ChevronUp aria-hidden className="h-3 w-3 shrink-0" />
+                            : <ChevronDown aria-hidden className="h-3 w-3 shrink-0" />}
+                  </button>
                 </td>
                 <td className="px-3 py-2 text-right font-mono">
                   {qty(lot.qty)}
@@ -250,7 +348,6 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
                     >+</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-xs text-neutral-500">{formatDateOnly(lot.inbound_date)}</td>
                 <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{lot.lots}</td>
                 <td className="px-3 py-2">
                   {lot.aging_bucket === null ? (
@@ -295,8 +392,20 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
                     {lot.mapped_status}
                   </span>
                 </td>
-              </tr>
-            ))}
+              </tr>,
+              isOpen && (
+                <tr key={`${key}-locations`} className="border-t border-neutral-100 bg-neutral-50/60">
+                  <td colSpan={9} className="p-0">
+                    <BatchLocations
+                      materialCode={lot.material_code}
+                      supplierBatch={lot.supplier_batch}
+                      uom={lot.base_uom}
+                    />
+                  </td>
+                </tr>
+              ),
+              ]
+            })}
           </tbody>
         </table>
       </div>

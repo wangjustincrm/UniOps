@@ -149,6 +149,8 @@ async def test_intent_product_write_gate_403s_non_permitted_role(client, non_adm
     "/api/v1/inventory/aging",
     "/api/v1/inventory/materials",
     "/api/v1/inventory/materials/CR0025/open-po-lines",
+    "/api/v1/inventory/batches",
+    "/api/v1/inventory/batches/locations?material_code=CR0025",
 ])
 async def test_inventory_read_gate_403s_non_permitted_role(
     client, non_admin_token, monkeypatch, path,

@@ -18,6 +18,7 @@ FAKE_ROWS = [
 @pytest.mark.anyio
 async def test_list_lots_echoes_page_and_page_size(client, db_session, admin_token, monkeypatch):
     monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
     await service.run_wms_sync(db_session)
 
     resp = await client.get(
@@ -784,3 +785,123 @@ async def test_batches_can_be_sorted_by_production_date(client, db_session, admi
                              params={"sort": "production_date"},
                              headers={AUTH: f"Bearer {admin_token}"})).json()
     assert [i["supplier_batch"] for i in body["items"]] == ["OLD", "NEW"]
+
+
+# ── /inventory/batches/locations — where a batch physically sits ─────────
+
+from app.models.wms_lot_location import WmsLotLocation
+
+
+async def _location(db, code, lot_no, location_id, qty="100", *,
+                    trace="T1", zone="LIHG", warehouse="CANADA"):
+    db.add(WmsLotLocation(
+        warehouse_id=warehouse, material_code=code, lot_no=lot_no,
+        location_id=location_id, trace_id=trace, zone_id=zone,
+        qty=Decimal(qty), qty_allocated=Decimal("0"), qty_onhold=Decimal("0"),
+        sync_batch_id="test",
+    ))
+    await db.commit()
+
+
+@pytest.mark.anyio
+async def test_locations_of_a_batch_sum_to_the_batch(client, db_session, admin_token):
+    """★ The number on the row and the rows behind it must agree. Verified
+    against the live warehouse too: CR0025's batch 11/27/2025 is 28,978.43 kg
+    over 30 locations and the locations sum to 28,978.4300 exactly."""
+    await _lot(db_session, "CR0025", "L1", "600", supplier_batch="SB-1")
+    await _lot(db_session, "CR0025", "L2", "400", supplier_batch="SB-1")
+    await _location(db_session, "CR0025", "L1", "11030511", "600")
+    await _location(db_session, "CR0025", "L2", "11030512", "400")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    batch = (await client.get("/api/v1/inventory/batches",
+                              headers=headers)).json()["items"][0]
+    locations = (await client.get("/api/v1/inventory/batches/locations",
+                                  params={"material_code": "CR0025",
+                                          "supplier_batch": "SB-1"},
+                                  headers=headers)).json()
+    assert len(locations) == 2
+    assert (sum(Decimal(x["qty"]) for x in locations) == Decimal(batch["qty"]))
+
+
+@pytest.mark.anyio
+async def test_one_lot_can_sit_in_several_locations(client, db_session, admin_token):
+    """25 lots in the live warehouse do, and one packaging lot is spread over
+    28. This is why location could not be a column on the lot."""
+    await _lot(db_session, "CR0025", "L1", "975", supplier_batch="SB-1")
+    await _location(db_session, "CR0025", "L1", "11010345", "950")
+    await _location(db_session, "CR0025", "L1", "DM01", "25", trace="*", zone="WOD")
+
+    rows = (await client.get("/api/v1/inventory/batches/locations",
+                             params={"material_code": "CR0025", "supplier_batch": "SB-1"},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert [r["location_id"] for r in rows] == ["11010345", "DM01"], "fullest first"
+    assert sum(Decimal(r["qty"]) for r in rows) == Decimal("975")
+
+
+@pytest.mark.anyio
+async def test_a_star_trace_id_is_reported_as_nothing(client, db_session, admin_token):
+    """The source writes '*' for "no handling unit" on 122 rows. Passing that
+    through would print a character nobody can interpret."""
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1")
+    await _location(db_session, "CR0025", "L1", "DM01", trace="*")
+
+    row = (await client.get("/api/v1/inventory/batches/locations",
+                            params={"material_code": "CR0025", "supplier_batch": "SB-1"},
+                            headers={AUTH: f"Bearer {admin_token}"})).json()[0]
+    assert row["trace_id"] is None
+
+
+@pytest.mark.anyio
+async def test_locations_of_the_batch_with_no_supplier_batch(client, db_session, admin_token):
+    """★ `supplier_batch IS NULL`, not `= NULL`. SQL equality against NULL is
+    never true, so the batch of stock carrying no supplier batch would return an
+    empty expander — which reads as "we do not know where this is" rather than
+    "you asked the wrong way"."""
+    await _lot(db_session, "CR0025", "L1", "50", supplier_batch=None)
+    await _location(db_session, "CR0025", "L1", "03030406", "50")
+
+    rows = (await client.get("/api/v1/inventory/batches/locations",
+                             params={"material_code": "CR0025"},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert [r["location_id"] for r in rows] == ["03030406"]
+
+
+@pytest.mark.anyio
+async def test_location_rows_carry_the_lots_own_dates(client, db_session, admin_token):
+    """Received and produced live here, not on the batch row: a batch's lots
+    arrive on different days and one date up top would describe only part of
+    the quantity. Down here each row belongs to exactly one lot."""
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1",
+               production=date(2026, 4, 2), expiry=TODAY + timedelta(days=100))
+    await _location(db_session, "CR0025", "L1", "11010344", zone="LIHG")
+
+    row = (await client.get("/api/v1/inventory/batches/locations",
+                            params={"material_code": "CR0025", "supplier_batch": "SB-1"},
+                            headers={AUTH: f"Bearer {admin_token}"})).json()[0]
+    assert row["production_date"] == "2026-04-02"
+    assert row["zone_id"] == "LIHG"
+    assert row["days_to_expiry"] == 100
+
+
+@pytest.mark.anyio
+async def test_a_batch_with_no_location_rows_is_empty_not_an_error(
+    client, db_session, admin_token,
+):
+    """Distinct from a failure and from zero stock: the batch exists, the
+    warehouse simply has not said where it is."""
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1")
+    rows = (await client.get("/api/v1/inventory/batches/locations",
+                             params={"material_code": "CR0025", "supplier_batch": "SB-1"},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert rows == []
+
+
+@pytest.mark.anyio
+async def test_inbound_date_is_no_longer_on_the_batch_row(client, db_session, admin_token):
+    """It moved into the expander on purpose — see the test above."""
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1")
+    row = (await client.get("/api/v1/inventory/batches",
+                            headers={AUTH: f"Bearer {admin_token}"})).json()["items"][0]
+    assert "inbound_date" in row, "still returned for anyone who wants it"
+    assert "lot_no" not in row, "the internal lot number stays out of the list"
