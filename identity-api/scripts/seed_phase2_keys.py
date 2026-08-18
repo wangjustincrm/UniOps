@@ -24,6 +24,12 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     "finance.coa.manage":    ("finance", "Manage Chart of Accounts", 110),
     "finance.period.close":  ("finance", "Close Periods",           111),
     "finance.jv.post":       ("finance", "Post Journal Vouchers",   112),
+    # Budget Dashboard DATA SCOPE (orthogonal to view_budget_dashboard, which
+    # only decides whether the page is reachable). Registered by identity
+    # 0010_budget_view_scope_perms; budget-api/finance-api's budget_scope.py
+    # admits callers on these two keys and fails closed without either.
+    "finance.budget.view_all":  ("finance", "Full Access Budget View",          113),
+    "finance.budget.view_dept": ("finance", "Department-Related Budget View",   114),
     "budget.catalog.write":  ("budget",  "Edit Budget Catalog",     120),
     "budget.plan.write":     ("budget",  "Edit Budget Plans",       121),
     "budget.opening.write":  ("budget",  "Edit Opening Balances",   122),
@@ -47,6 +53,18 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     "finance.coa.manage":   ("system_admin", "finance_manager"),
     "finance.period.close": ("system_admin", "finance_manager"),
     "finance.jv.post":      ("system_admin", "finance_manager", "finance_bp"),
+    # The two halves of 0010_budget_view_scope_perms' grants. That migration
+    # seeds view_dept with a NOT IN over role_defs, so it also covers
+    # admin-created custom roles AND payment_officer (added later, by migration
+    # 0008); this script lists only the seed_authz built-ins, because
+    # role_permissions.role_code FKs to role_defs and this script has to be
+    # safe against a role_defs that predates those rows.
+    "finance.budget.view_all":  ("gm", "finance_manager", "ap_clerk", "system_admin",
+                                 "finance_bp", "auditor", "cfo"),
+    "finance.budget.view_dept": ("requester", "dept_admin", "dept_manager", "supervisor",
+                                 "director", "opm", "procurement_officer",
+                                 "procurement_manager", "warehouse_staff",
+                                 "vendor_manager", "erp_pa_officer"),
     "budget.catalog.write": ("system_admin", "finance_manager", "finance_bp"),
     "budget.plan.write":    ("system_admin", "finance_manager", "finance_bp", "dept_manager"),
     # literal tuple is ("finance_manager","finance_bp") — system_admin passes via short-circuit

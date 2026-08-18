@@ -42,11 +42,20 @@ async def test_defaults_match_the_replaced_role_sets(db_session):
         assert got == set(roles), f"{key}: {got} != {set(roles)}"
 
 
+# Keys that are NOT retired require_roles gates and therefore carry no
+# "system_admin was short-circuited in" history. finance.budget.view_dept is a
+# DATA-SCOPE key: system_admin holds its counterpart finance.budget.view_all
+# (company-wide), and granting the department-scoped key as well would claim
+# the admin is limited to their own department. uniops_authz short-circuits
+# system_admin on every key regardless.
+_NOT_GATE_KEYS = frozenset({"finance.budget.view_dept"})
+
+
 async def test_system_admin_granted_on_every_phase2_key(db_session):
     """require_roles short-circuits system_admin, so every replaced gate admitted
     it — including _OPENING_WRITE_ROLES, whose literal tuple omits it."""
     await seed_phase2_keys(db_session)
-    for key in PHASE2_KEYS:
+    for key in set(PHASE2_KEYS) - _NOT_GATE_KEYS:
         n = (await db_session.execute(sa.text(
             "SELECT count(*) FROM role_permissions "
             "WHERE permission_key = :k AND role_code = 'system_admin'"),
