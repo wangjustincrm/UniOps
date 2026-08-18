@@ -217,28 +217,54 @@ def _format_date_range(start: date, end: date) -> str:
     )
 
 
-def week_label(week_start: date, mode: str, *, start_dow: int = 0) -> str:
-    """Human-readable label, e.g. ``'2026-W32 · Aug 3-9'`` or
-    ``'Aug W2 · Aug 8-14'`` (dash is an en dash).
+def week_of_year(week_start: date, *, start_dow: int = 0) -> tuple[int, int]:
+    """``(year, week number)`` for a week, whatever weekday it starts on.
 
-    **ISO week numbers are Monday-based**, so they are printed only when the
-    week actually starts on a Monday. On any other start day that number
-    would name a different week than the one being labelled, so a
-    within-month ordinal (``'Aug W3'``, the same shape `month_fixed`
-    already uses) is shown instead."""
+    Taken from the ISO week of the week's **fourth day** — the same anchor
+    `owning_month` uses to decide which month a week belongs to, so a plan
+    cannot say a week is in September while numbering it as an August one.
+
+    ISO numbering is Monday-based, so a Saturday-start week cannot simply be
+    asked for its own ISO number: `week_start.isocalendar()` would name the
+    Monday-based week that *contains that Saturday*, which is a different seven
+    days from the one being labelled. Anchoring on the fourth day fixes that,
+    because the fourth day is always in the majority half of the week.
+
+    Two properties, both pinned by tests:
+
+    - **On a Monday start this is exactly ISO.** The fourth day is the
+      Thursday, and a Monday-start week's ISO number is defined by its
+      Thursday — so nothing about existing Monday-based labelling changes.
+    - **Across a Saturday-start year the numbers are unique and consecutive**
+      (52 weeks, 52 numbers, no jumps in 2026), because consecutive weeks'
+      anchors are exactly seven days apart.
+    """
+    _validate_start_dow(start_dow)
+    anchor = week_start + timedelta(days=3)
+    iso_year, iso_week, _ = anchor.isocalendar()
+    return iso_year, iso_week
+
+
+def week_label(week_start: date, mode: str, *, start_dow: int = 0) -> str:
+    """Human-readable label, e.g. ``'2026-W32 · Aug 3-9'`` (dash is an en dash).
+
+    The week number is the YEAR's, not the month's: planning, the factory floor
+    and the ERP all talk in week numbers that run 1..52, and a label reading
+    "Sep W1" forces everyone to translate. See `week_of_year` for how it is
+    derived on a week that does not start on a Monday.
+
+    `month_fixed` keeps a within-month ordinal, because under that mode a
+    "week" is a fixed slice of one month rather than a real seven-day
+    calendar week — numbering those across a year would invent a sequence the
+    calendar does not have."""
     _validate_mode(mode)
     _validate_start_dow(start_dow)
     week_end = week_start + timedelta(days=6)
     date_range = _format_date_range(week_start, week_end)
 
-    if mode in _ISO_MODES and start_dow == 0:
-        iso_year, iso_week, _ = week_start.isocalendar()
-        return f"{iso_year}-W{iso_week:02d} · {date_range}"
-
     if mode in _ISO_MODES:
-        month_str = owning_month(week_start, mode, start_dow=start_dow)
-        ordinal = weeks_of_month(month_str, mode, start_dow=start_dow).index(week_start) + 1
-        return f"{_short_month(month_str)} W{ordinal} · {date_range}"
+        iso_year, iso_week = week_of_year(week_start, start_dow=start_dow)
+        return f"{iso_year}-W{iso_week:02d} · {date_range}"
 
     month_str = week_start.strftime("%Y-%m")
     ordinal = weeks_of_month(month_str, "month_fixed").index(week_start) + 1
