@@ -30,6 +30,9 @@ const SORTABLE = [
   { key: 'material_code', label: 'Material' },
   { key: 'supplier_batch', label: 'Supplier batch' },
   { key: 'qty', label: 'Qty' },
+  // Sortable because oldest-produced-first is how anybody consuming stock in
+  // production order wants to read this.
+  { key: 'production_date', label: 'Produced' },
   { key: 'expiry_date', label: 'Expiry' },
   { key: 'inbound_date', label: 'Received' },
 ] as const
@@ -51,6 +54,17 @@ const STATUS_STYLE: Record<string, string> = {
   available: 'bg-success-50 text-success-700 border-success-200',
   hold: 'bg-warning-50 text-warning-800 border-warning-200',
   expired: 'bg-danger-50 text-danger-700 border-danger-200',
+  mixed: 'bg-neutral-100 text-neutral-700 border-neutral-300',
+}
+
+/** The WAREHOUSE's own quality status (Flux QLT_STS), shown ALONGSIDE the
+ *  derived one rather than instead of it: 278 lots are "Release" in the
+ *  warehouse and expired by date, and one column cannot say which is which. */
+const QUALITY_STYLE: Record<string, string> = {
+  Release: 'bg-success-50 text-success-700 border-success-200',
+  Block: 'bg-danger-50 text-danger-700 border-danger-200',
+  'Under Inspection': 'bg-warning-50 text-warning-800 border-warning-200',
+  Mixed: 'bg-neutral-100 text-neutral-700 border-neutral-300',
 }
 
 function errMsg(err: unknown, fallback: string): string {
@@ -174,15 +188,16 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
               ))}
               <th className="px-3 py-2 text-right">Lots</th>
               <th className="px-3 py-2 text-left">Shelf life</th>
+              <th className="px-3 py-2 text-left">Quality</th>
               <th className="px-3 py-2 text-left">Status</th>
             </tr>
           </thead>
           <tbody>
             {batchQuery.isLoading && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
             )}
             {!batchQuery.isLoading && items.length === 0 && !batchQuery.isError && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-neutral-400">
+              <tr><td colSpan={10} className="px-3 py-8 text-center text-sm text-neutral-400">
                 {search
                   ? `Nothing matches "${search}".`
                   : 'No stock for these filters.'}
@@ -208,7 +223,21 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
                     <span className="font-sans text-neutral-400">no supplier batch</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono">{qty(lot.qty)}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {qty(lot.qty)}
+                  {lot.base_uom && (
+                    <span className="ml-1 font-sans text-xs text-neutral-400">{lot.base_uom}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-xs text-neutral-600">
+                  {formatDateOnly(lot.production_date)}
+                  {lot.production_spans_dates && (
+                    <span
+                      className="ml-1 cursor-help text-neutral-400"
+                      title="This batch's lots have different production dates — the earliest is shown"
+                    >+</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-xs text-neutral-600">
                   {formatDateOnly(lot.expiry_date)}
                   {lot.expiry_spans_dates && (
@@ -242,10 +271,27 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  <span className={cn(
-                    'rounded-full border px-2 py-0.5 text-[11px] font-medium',
-                    STATUS_STYLE[lot.mapped_status] ?? 'bg-neutral-50 text-neutral-600 border-neutral-200',
-                  )}>
+                  {lot.quality_status_label && (
+                    <span
+                      className={cn(
+                        'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                        QUALITY_STYLE[lot.quality_status_label]
+                          ?? 'bg-neutral-50 text-neutral-600 border-neutral-200',
+                      )}
+                      title={`Warehouse quality status — Flux QLT_STS ${lot.quality_status}`}
+                    >
+                      {lot.quality_status_label}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={cn(
+                      'rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                      STATUS_STYLE[lot.mapped_status] ?? 'bg-neutral-50 text-neutral-600 border-neutral-200',
+                    )}
+                    title="Warehouse status with shelf life applied — what planning uses"
+                  >
                     {lot.mapped_status}
                   </span>
                 </td>

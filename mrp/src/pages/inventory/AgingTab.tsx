@@ -158,16 +158,18 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
               <th className="px-3 py-2 text-left">Supplier batch</th>
               <th className="px-3 py-2 text-right">Qty</th>
               <th className="px-3 py-2 text-right">Lots</th>
+              <th className="px-3 py-2 text-left">Produced</th>
               <th className="px-3 py-2 text-left">Expiry</th>
               <th className="px-3 py-2 text-right">Days</th>
+              <th className="px-3 py-2 text-left">Quality</th>
             </tr>
           </thead>
           <tbody>
             {lotsQuery.isLoading && (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
             )}
             {!lotsQuery.isLoading && items.length === 0 && !lotsQuery.isError && (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-neutral-400">
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-neutral-400">
                 Nothing in this band.
               </td></tr>
             )}
@@ -187,8 +189,16 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
                     <span className="font-sans text-neutral-400">no supplier batch</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono">{qty(lot.qty)}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {qty(lot.qty)}
+                  {lot.base_uom && (
+                    <span className="ml-1 font-sans text-xs text-neutral-400">{lot.base_uom}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{lot.lots}</td>
+                <td className="px-3 py-2 text-xs text-neutral-600">
+                  {formatDateOnly(lot.production_date)}
+                </td>
                 <td className="px-3 py-2 text-xs text-neutral-600">
                   {formatDateOnly(lot.expiry_date)}
                   {lot.expiry_spans_dates && (
@@ -205,6 +215,9 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
                     && 'text-warning-700',
                 )}>
                   {lot.days_to_expiry ?? '—'}
+                </td>
+                <td className="px-3 py-2 text-xs text-neutral-600">
+                  {lot.quality_status_label ?? '—'}
                 </td>
               </tr>
             ))}

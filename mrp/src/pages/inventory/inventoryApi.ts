@@ -32,6 +32,9 @@ export interface InventoryBatch {
   warehouse_id: string
   material_code: string
   material_name: string | null
+  /** The material's own unit. Quantities are meaningless without it: 1,000 of
+   *  a raw ingredient is kilograms, 1,000 of a can is pieces. */
+  base_uom: string | null
   /** Null for stock the warehouse recorded without one — 92 lots today. */
   supplier_batch: string | null
   qty: string
@@ -50,7 +53,18 @@ export interface InventoryBatch {
   inbound_date: string | null
   days_to_expiry: number | null
   aging_bucket: AgingBucketKey | null
-  /** The lots' shared status, or 'mixed' when they disagree (27 batches do). */
+  /** When the batch was produced — the earliest among its lots. */
+  production_date: string | null
+  /** True when the batch's lots do not share one production date (29 of 877). */
+  production_spans_dates: boolean
+  /** The WAREHOUSE's quality status: Flux QLT_STS 02 Release / 01 Block /
+   *  04 Under Inspection, or 'mixed'. ★ Distinct from `mapped_status`, which
+   *  folds expiry in on top — 278 lots are Release in the warehouse and
+   *  expired by date, and one column cannot say which is which. */
+  quality_status: string | null
+  quality_status_label: string | null
+  /** available | hold | expired | mixed — the warehouse status with expiry
+   *  applied, which is what planning consumes. */
   mapped_status: string
   supplier_code: string | null
 }
@@ -174,7 +188,8 @@ export interface BatchFilters {
   expiring_before?: string
   expiring_after?: string
   aging_bucket?: AgingBucketKey
-  sort?: 'material_code' | 'supplier_batch' | 'expiry_date' | 'qty' | 'inbound_date'
+  sort?: 'material_code' | 'supplier_batch' | 'production_date' | 'expiry_date'
+    | 'qty' | 'inbound_date'
   descending?: boolean
 }
 

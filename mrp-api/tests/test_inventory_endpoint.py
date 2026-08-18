@@ -50,13 +50,37 @@ AUTH = "Authorization"
 
 
 async def _lot(db, code, lot_no, qty="100", *, expiry=None, status="available",
-               onhold="0", allocated="0", supplier_batch=None, warehouse="CANADA"):
+               onhold="0", allocated="0", supplier_batch=None, warehouse="CANADA",
+               production=None, wms_status="02"):
     db.add(WmsInventoryLot(
         warehouse_id=warehouse, material_code=code, lot_no=lot_no,
         qty=Decimal(qty), qty_allocated=Decimal(allocated), qty_onhold=Decimal(onhold),
-        wms_status="02", mapped_status=status, expiry_date=expiry,
+        wms_status=wms_status, mapped_status=status, expiry_date=expiry,
+        production_date=production,
         supplier_batch=supplier_batch, sync_batch_id="test",
     ))
+    await db.commit()
+
+
+async def _status_mapping(db, wms_code, mapped_status, description):
+    """The warehouse's QLT_STS dictionary, which turns '02' into 'Release'.
+
+    Upserts rather than inserts: 01/02/04 are SEEDED BY A MIGRATION, so a plain
+    insert collides. Tests state the mapping they rely on anyway, so that
+    reading one does not require knowing what the migration happened to seed.
+    """
+    import sqlalchemy as sa
+
+    from app.models.status_mapping import MrpStatusMapping
+
+    existing = (await db.execute(sa.select(MrpStatusMapping).where(
+        MrpStatusMapping.wms_code == wms_code))).scalar_one_or_none()
+    if existing is None:
+        db.add(MrpStatusMapping(wms_code=wms_code, mapped_status=mapped_status,
+                                description=description))
+    else:
+        existing.mapped_status = mapped_status
+        existing.description = description
     await db.commit()
 
 
@@ -638,3 +662,125 @@ async def test_aging_reports_batches_without_an_expiry_date_too(
                              headers={AUTH: f"Bearer {admin_token}"})).json()
     assert body["no_expiry_lots"] == 2
     assert body["no_expiry_batches"] == 1
+
+
+# ── production date, quality status, UOM (2026-08-18) ────────────────────
+
+
+@pytest.mark.anyio
+async def test_batch_carries_the_material_unit(client, db_session, admin_token):
+    """"1,000" means kilograms for a raw ingredient and pieces for a can. A
+    quantity column with no unit is three orders of magnitude of ambiguity."""
+    await _material(db_session, "CR0025", "Lactose", uom="KGM")
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1")
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert body["items"][0]["base_uom"] == "KGM"
+
+
+@pytest.mark.anyio
+async def test_batch_production_date_is_the_earliest_and_flags_a_span(
+    client, db_session, admin_token,
+):
+    """29 of the plant's 877 batches carry more than one production date."""
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1",
+               production=date(2026, 3, 1))
+    await _lot(db_session, "CR0025", "L2", supplier_batch="SB-1",
+               production=date(2026, 3, 5))
+    await _lot(db_session, "CR0031", "L3", supplier_batch="SB-2",
+               production=date(2026, 4, 1))
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    spanning = next(i for i in body["items"] if i["material_code"] == "CR0025")
+    single = next(i for i in body["items"] if i["material_code"] == "CR0031")
+    assert spanning["production_date"] == "2026-03-01"
+    assert spanning["production_spans_dates"] is True
+    assert single["production_date"] == "2026-04-01"
+    assert single["production_spans_dates"] is False
+
+
+@pytest.mark.anyio
+async def test_quality_status_is_the_warehouses_own_and_is_labelled(
+    client, db_session, admin_token,
+):
+    """★ Flux's QLT_STS is NOT our mapped_status. 278 lots are '02 Release' in
+    the warehouse and expired by date; a screen showing only the derived status
+    cannot say whether QA blocked something or the calendar did.
+
+    The label comes from mrp_status_mapping, so the screen reads "Release"
+    rather than "02".
+    """
+    await _status_mapping(db_session, "02", "available", "Release")
+    await _status_mapping(db_session, "01", "hold", "Block")
+    await _lot(db_session, "CR0025", "L1", supplier_batch="OK",
+               wms_status="02", status="available")
+    await _lot(db_session, "CR0031", "L2", supplier_batch="BLOCKED",
+               wms_status="01", status="hold")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    ok = next(i for i in body["items"] if i["supplier_batch"] == "OK")
+    blocked = next(i for i in body["items"] if i["supplier_batch"] == "BLOCKED")
+    assert ok["quality_status"] == "02"
+    assert ok["quality_status_label"] == "Release"
+    assert blocked["quality_status_label"] == "Block"
+
+
+@pytest.mark.anyio
+async def test_released_but_expired_reports_both_states(client, db_session, admin_token):
+    """The case that makes two columns necessary rather than one: the warehouse
+    still says Release, the calendar says expired, and both are true."""
+    await _status_mapping(db_session, "02", "available", "Release")
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1",
+               wms_status="02", status="expired", expiry=TODAY - timedelta(days=30))
+
+    row = (await client.get("/api/v1/inventory/batches",
+                            headers={AUTH: f"Bearer {admin_token}"})).json()["items"][0]
+    assert row["quality_status_label"] == "Release"
+    assert row["mapped_status"] == "expired"
+
+
+@pytest.mark.anyio
+async def test_a_batch_whose_lots_disagree_on_quality_says_mixed(
+    client, db_session, admin_token,
+):
+    """29 batches have lots in different QA states. Showing whichever sorted
+    first would hide that part of the batch is blocked."""
+    await _status_mapping(db_session, "02", "available", "Release")
+    await _status_mapping(db_session, "01", "hold", "Block")
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1", wms_status="02")
+    await _lot(db_session, "CR0025", "L2", supplier_batch="SB-1", wms_status="01")
+
+    row = (await client.get("/api/v1/inventory/batches",
+                            headers={AUTH: f"Bearer {admin_token}"})).json()["items"][0]
+    assert row["quality_status"] == "mixed"
+    assert row["quality_status_label"] == "Mixed"
+
+
+@pytest.mark.anyio
+async def test_an_unmapped_quality_code_shows_the_code_not_a_blank(
+    client, db_session, admin_token,
+):
+    """A status nobody can read still beats a status nobody can see: if the
+    warehouse adds a QLT_STS value we have not mapped, the cell shows the raw
+    code rather than going empty and reading as "no status"."""
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1", wms_status="09")
+    row = (await client.get("/api/v1/inventory/batches",
+                            headers={AUTH: f"Bearer {admin_token}"})).json()["items"][0]
+    assert row["quality_status"] == "09"
+    assert row["quality_status_label"] == "09"
+
+
+@pytest.mark.anyio
+async def test_batches_can_be_sorted_by_production_date(client, db_session, admin_token):
+    """Oldest-produced-first is how stock gets consumed in production order."""
+    await _lot(db_session, "CR0025", "L1", supplier_batch="NEW",
+               production=date(2026, 6, 1))
+    await _lot(db_session, "CR0025", "L2", supplier_batch="OLD",
+               production=date(2024, 1, 1))
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             params={"sort": "production_date"},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert [i["supplier_batch"] for i in body["items"]] == ["OLD", "NEW"]

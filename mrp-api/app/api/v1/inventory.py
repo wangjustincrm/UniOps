@@ -49,6 +49,7 @@ from sqlalchemy import Select, case, func, or_, select
 from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.models.epms_mirror import MdmMaterial
+from app.models.status_mapping import MrpStatusMapping
 from app.models.wms_inventory import WmsInventoryLot
 from app.services.in_transit import (
     RAW_MILK_CLASS_CODE,
@@ -344,6 +345,9 @@ class InventoryBatchResponse(BaseModel):
     warehouse_id: str
     material_code: str
     material_name: str | None = None
+    #: The material's own unit — quantities here are meaningless without it:
+    #: 1,000 of a raw ingredient is kilograms and 1,000 of a can is pieces.
+    base_uom: str | None = None
     #: None for stock the warehouse recorded without one (92 lots today).
     supplier_batch: str | None
     qty: Decimal
@@ -362,7 +366,21 @@ class InventoryBatchResponse(BaseModel):
     inbound_date: date | None
     days_to_expiry: int | None = None
     aging_bucket: str | None = None
-    #: The lots' shared status, or "mixed" when they disagree (27 batches do).
+    #: When the batch was produced — the earliest among its lots. Half the
+    #: mirror has none (packaging is not produced in batches with dates); raw
+    #: ingredients have it on every lot.
+    production_date: date | None = None
+    #: True when the batch's lots do not share one production date (29 of 877).
+    production_spans_dates: bool = False
+    #: The WAREHOUSE's quality status — raw QLT_STS from Flux: 02 Release,
+    #: 01 Block, 04 Under Inspection — or "mixed" when the batch's lots
+    #: disagree (29 of 877). Distinct from `mapped_status` below, which folds
+    #: expiry in on top: 278 lots are Release in the warehouse and expired by
+    #: date, and a screen showing only one of the two cannot say which.
+    quality_status: str | None = None
+    quality_status_label: str | None = None
+    #: available | hold | expired | mixed — the warehouse status with expiry
+    #: applied, which is what planning consumes.
     mapped_status: str
     supplier_code: str | None = None
 
@@ -397,7 +415,7 @@ async def list_batches(
     aging_bucket: Literal["expired", "under_30", "30_to_60", "60_to_180", "over_180"] | None = Query(
         default=None,
         description="Restrict to one shelf-life band, resolved server-side from the same thresholds the summary uses"),
-    sort: Literal["material_code", "supplier_batch", "expiry_date", "qty", "inbound_date"] = "expiry_date",
+    sort: Literal["material_code", "supplier_batch", "production_date", "expiry_date", "qty", "inbound_date"] = "expiry_date",
     descending: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
@@ -446,6 +464,14 @@ async def list_batches(
               func.min(WmsInventoryLot.mapped_status)),
              else_="mixed"),
         func.min(WmsInventoryLot.supplier_code),
+        func.min(MdmMaterial.base_uom),
+        func.min(WmsInventoryLot.production_date),
+        func.max(WmsInventoryLot.production_date),
+        # Same "mixed" rule as the derived status: picking one would hide that
+        # part of the batch is blocked or still under inspection.
+        case((func.count(func.distinct(WmsInventoryLot.wms_status)) == 1,
+              func.min(WmsInventoryLot.wms_status)),
+             else_="mixed"),
     ).outerjoin(MdmMaterial, MdmMaterial.code == WmsInventoryLot.material_code)
     base = _apply_lot_filters(base, **filters).group_by(*grouping)
 
@@ -459,6 +485,7 @@ async def list_batches(
     order_column = {
         "material_code": WmsInventoryLot.material_code,
         "supplier_batch": WmsInventoryLot.supplier_batch,
+        "production_date": func.min(WmsInventoryLot.production_date),
         "expiry_date": func.min(WmsInventoryLot.expiry_date),
         "qty": func.sum(WmsInventoryLot.qty),
         "inbound_date": func.min(WmsInventoryLot.inbound_date),
@@ -471,14 +498,24 @@ async def list_batches(
         WmsInventoryLot.material_code, WmsInventoryLot.supplier_batch,
     ).offset((page - 1) * page_size).limit(page_size)
 
+    # The warehouse's own quality-status dictionary (three rows), so the screen
+    # shows "Release" rather than "02". Loaded once per request, never per row.
+    labels = {
+        code: description
+        for code, description in (await db.execute(
+            select(MrpStatusMapping.wms_code, MrpStatusMapping.description))).all()
+    }
+
     items = []
     for (warehouse, code, batch, name, qty_, allocated, onhold, lot_count,
-         expiry_min, expiry_max, inbound, status, supplier_code) in (
+         expiry_min, expiry_max, inbound, status, supplier_code,
+         base_uom, produced_min, produced_max, quality) in (
             await db.execute(stmt)).all():
         items.append(InventoryBatchResponse(
             warehouse_id=warehouse,
             material_code=code,
             material_name=name,
+            base_uom=base_uom,
             supplier_batch=batch,
             qty=qty_,
             qty_allocated=allocated,
@@ -489,6 +526,14 @@ async def list_batches(
             inbound_date=inbound,
             days_to_expiry=days_until(expiry_min, today),
             aging_bucket=bucket_for(expiry_min, today),
+            production_date=produced_min,
+            production_spans_dates=(
+                produced_min is not None and produced_min != produced_max),
+            quality_status=quality,
+            # An unknown code shows as the code itself rather than as blank:
+            # a status nobody can read still beats a status nobody can see.
+            quality_status_label=(
+                "Mixed" if quality == "mixed" else labels.get(quality, quality)),
             mapped_status=status,
             supplier_code=supplier_code,
         ))
