@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import count_polymorphic, purge_workflow_refs
 from app.admin.fields import EntitySchema, FieldSpec, ChildSchema
+from app.crud.gr import resync_po_received_qty
 from app.crud.invoice import _recompute_consumed, _release_agreement_evidence
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_attachment import AgreementAttachment
@@ -174,12 +175,22 @@ async def _pa_preview(db: AsyncSession, pa) -> dict[str, int]:
 
 # ── GR (blocked by Invoice.gr_id) ───────────────────────────────────────────────
 
-async def _gr_delete(db: AsyncSession, gr) -> dict[str, int]:
+async def _gr_delete(db: AsyncSession, gr, *, resync_po: bool = True) -> dict[str, int]:
     summary: dict[str, int] = {}
+    po_id, gr_id = gr.po_id, gr.id
     for inv in await _children(db, Invoice, "gr_id", gr.id):
         _merge(summary, await _invoice_delete(db, inv))
     _merge(summary, await purge_workflow_refs(db, gr.id))
     await db.delete(gr)             # gr_line_items + gr_attachment cascade via FK
+    if resync_po:
+        # po_line_items.received_qty only ever accumulated, so without this the PO
+        # keeps crediting itself for goods this receipt brought: the outstanding
+        # quantity a replacement GR needs stays eaten, and a PO left at
+        # fully_received can never accept one (api/v1/gr.py gates on the status).
+        await db.flush()            # let the GR's lines leave before recomputing
+        changed = await resync_po_received_qty(db, po_id, exclude_gr_ids=(gr_id,))
+        if changed:
+            _merge(summary, {"po_lines_received_qty_resynced": changed})
     return _merge(summary, {"goods_receipts": 1})
 
 
@@ -199,7 +210,9 @@ async def _po_delete(db: AsyncSession, po) -> dict[str, int]:
     for pa in await _children(db, PaymentApplication, "po_id", po.id):
         _merge(summary, await _pa_delete(db, pa))
     for gr in await _children(db, GoodsReceipt, "po_id", po.id):
-        _merge(summary, await _gr_delete(db, gr))
+        # The PO and its lines are going away with this cascade — there is nothing
+        # left to give the quantities back to.
+        _merge(summary, await _gr_delete(db, gr, resync_po=False))
     # Clear the originating PR's back-reference so it does not dangle.
     for pr in await _children(db, PurchaseRequest, "po_id", po.id):
         pr.po_id = None
@@ -403,6 +416,11 @@ _PO_CHILD = ChildSchema(
         FieldSpec("unit", "string", True),
         FieldSpec("unit_price", "decimal", True),
         FieldSpec("line_total", "decimal", False),
+        # Editable as the escape hatch for POs whose received_qty drifted before
+        # deleting a GR gave it back. Any later GR delete or status change on this
+        # PO recomputes from the receipts and overwrites a hand-entered value —
+        # the GRs are the record of what arrived, this is only a repair tool.
+        FieldSpec("received_qty", "decimal", True, label="Received Qty"),
         FieldSpec("notes", "string", True),
         FieldSpec("sort_order", "number", True),
     ],
