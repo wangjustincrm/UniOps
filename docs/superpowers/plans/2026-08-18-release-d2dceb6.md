@@ -1,9 +1,15 @@
-# 发布 `718dd44` — MRP Inventory / 采购建议 / 计划版本 / 最小批量
+# 发布 `d2dceb6` — MRP Inventory / 采购建议 / 计划版本 / 最小批量
 
 上一个生产版本 `179c865`。本次只增加 MRP 这一条线的改动 —— `179c865` 上那四个别人的合并**已经在生产上**，不会被重新引入。
 
 **7 个迁移**：`mrp11`–`mrp15`、epms `ah01`、mdm `0017`。
-**17 个镜像**全部以 `718dd44` 构建并推送（清单以 `config --services` 实时输出为准）。
+**17 个镜像**已构建并推送，registry 侧已逐个反查确认 `:d2dceb6` 全部存在。
+
+（镜像实际构建于 `718dd44`；`d2dceb6` 只多了这份发布文档、不含任何服务代码，
+两个标签指向同一份镜像，都已推送。）
+
+七个前端镜像烤入的域名与当前生产版本 `179c865` **逐字节相同**，已 diff 确认 ——
+那个裸 `http://localhost` 两版都有，是既有债，不是本次引入。
 
 ---
 
@@ -14,7 +20,7 @@
 ```bash
 cd /opt/uniops
 sudo git pull origin main
-git log --oneline -1        # 应显示 718dd44
+git log --oneline -1        # 应显示 d2dceb6
 ```
 
 ### 2. 先备份数据库
@@ -47,7 +53,7 @@ sudo docker run --rm --network host -e PGPASSWORD="$DB_PASSWORD" postgres:16 \
 ### 4. 改 TAG 并拉镜像
 
 ```bash
-sudo sed -i "s/^TAG=.*/TAG=718dd44/" .env
+sudo sed -i "s/^TAG=.*/TAG=d2dceb6/" .env
 grep '^TAG=' .env                                   # 确认改到了
 sudo docker compose -f docker-compose.prod.yml pull  # ★ pull 千万别带 --profile edge
 ```
