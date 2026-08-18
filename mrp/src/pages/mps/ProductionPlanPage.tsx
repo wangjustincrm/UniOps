@@ -27,6 +27,7 @@ import { capacityApi, findExistingException } from '@/pages/capacity/capacityApi
 import { closesWeek, findSkuClosure } from '@/pages/capacity/closedWeek'
 import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
 import { ProductionMatrix } from './ProductionMatrix'
+import { PlanningRulesPanel } from './PlanningRulesPanel'
 import { AdjustDrawer } from './AdjustDrawer'
 import { WeekDrawer } from './WeekDrawer'
 
@@ -825,7 +826,14 @@ export default function ProductionPlanPage() {
         </ConfirmDialog>
       )}
 
+      {/* The matrix and the rules it was laid out under, side by side. The
+          panel sits HERE rather than at page level so the header, pickers and
+          alerts above keep the full width -- and so the rules are beside the
+          thing they explain. The matrix scrolls horizontally inside its own
+          container, so giving up 18rem costs a scroll, not a column. */}
       {run && run.lines.length > 0 && (
+        <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
         <ProductionMatrix
           key={run.id}
           lines={run.lines}
@@ -842,6 +850,9 @@ export default function ProductionPlanPage() {
           diffByCell={diffByCell}
           onAdjustCell={handleAdjustCell}
         />
+        </div>
+        <PlanningRulesPanel run={run} />
+        </div>
       )}
 
       {pickerLines && (
