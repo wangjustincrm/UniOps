@@ -421,3 +421,220 @@ async def test_an_unknown_aging_band_is_rejected(client, db_session, admin_token
                          params={"aging_bucket": "under_45"},
                          headers={AUTH: f"Bearer {admin_token}"})
     assert r.status_code == 422
+
+
+# ── /inventory/batches — grouped by supplier batch ───────────────────────
+#
+# The list the screen shows. `lot_no` is Flux's internal identifier and is
+# never displayed; the supplier batch is the unit the plant works in.
+
+
+@pytest.mark.anyio
+async def test_batches_group_many_lots_into_one_row(client, db_session, admin_token):
+    """★ Why this endpoint exists. CP0080's "Old Wooden Racking Pallet" is one
+    supplier batch spread over 192 WMS lots; 2,143 of the plant's 3,532 lots
+    are visually identical to another lot once the internal number is removed.
+    Hiding the column without grouping gives page after page of repeated rows.
+    """
+    await _material(db_session, "CP0080", "Wooden Pallet", erp_class="02")
+    for i in range(5):
+        await _lot(db_session, "CP0080", f"WMS-{i}", "10", supplier_batch="OLD PALLET")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert body["total"] == 1, "five lots of one supplier batch are one row"
+    assert body["total_lots"] == 5, "and the lot count is still reported"
+    row = body["items"][0]
+    assert row["supplier_batch"] == "OLD PALLET"
+    assert row["lots"] == 5
+    assert Decimal(row["qty"]) == Decimal("50")
+    assert "lot_no" not in row, "the internal WMS lot must not be exposed here"
+
+
+@pytest.mark.anyio
+async def test_the_same_supplier_batch_on_two_materials_stays_two_rows(
+    client, db_session, admin_token,
+):
+    """Supplier batch numbers belong to the supplier, not to us, and two
+    products can share one. Identity is the material AND the batch."""
+    await _material(db_session, "CR0025", "Lactose")
+    await _material(db_session, "CR0031", "Whey")
+    await _lot(db_session, "CR0025", "L1", supplier_batch="SAME-42")
+    await _lot(db_session, "CR0031", "L2", supplier_batch="SAME-42")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert body["total"] == 2
+
+
+@pytest.mark.anyio
+async def test_a_batch_with_no_supplier_batch_is_its_own_row_per_material(
+    client, db_session, admin_token,
+):
+    """92 lots carry no supplier batch. They group per material rather than
+    collapsing into one meaningless plant-wide row."""
+    await _lot(db_session, "CR0025", "L1", "10", supplier_batch=None)
+    await _lot(db_session, "CR0025", "L2", "20", supplier_batch=None)
+    await _lot(db_session, "CR0031", "L3", "5", supplier_batch=None)
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert body["total"] == 2
+    row = next(i for i in body["items"] if i["material_code"] == "CR0025")
+    assert row["supplier_batch"] is None
+    assert row["lots"] == 2
+    assert Decimal(row["qty"]) == Decimal("30")
+
+
+@pytest.mark.anyio
+async def test_batch_expiry_is_the_earliest_and_says_when_it_spans_dates(
+    client, db_session, admin_token,
+):
+    """42 of the plant's 877 batches carry more than one expiry date. The row
+    shows the EARLIEST -- when the batch starts going out of date, the date
+    somebody has to act on -- and flags that it is not the whole story, rather
+    than quietly describing only part of the quantity."""
+    await _lot(db_session, "CR0025", "L1", "10",
+               expiry=TODAY + timedelta(days=10), supplier_batch="SB-1")
+    await _lot(db_session, "CR0025", "L2", "90",
+               expiry=TODAY + timedelta(days=300), supplier_batch="SB-1")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    row = body["items"][0]
+    assert row["expiry_date"] == (TODAY + timedelta(days=10)).isoformat()
+    assert row["expiry_spans_dates"] is True
+    assert row["days_to_expiry"] == 10
+    assert row["aging_bucket"] == "under_30"
+
+
+@pytest.mark.anyio
+async def test_a_batch_whose_lots_disagree_on_status_says_mixed(
+    client, db_session, admin_token,
+):
+    """27 batches have lots in different states. Picking the first would hide
+    that part of the batch is on hold."""
+    await _lot(db_session, "CR0025", "L1", "10", supplier_batch="SB-1", status="available")
+    await _lot(db_session, "CR0025", "L2", "10", supplier_batch="SB-1", status="hold")
+    await _lot(db_session, "CR0031", "L3", "10", supplier_batch="SB-2", status="available")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    mixed = next(i for i in body["items"] if i["material_code"] == "CR0025")
+    clean = next(i for i in body["items"] if i["material_code"] == "CR0031")
+    assert mixed["mapped_status"] == "mixed"
+    assert clean["mapped_status"] == "available"
+
+
+@pytest.mark.anyio
+async def test_batches_are_filtered_before_grouping_not_after(
+    client, db_session, admin_token,
+):
+    """A batch straddling two bands genuinely has stock in each, and each band
+    must report only the quantity that is actually in it. Filtering after
+    grouping would put the whole 100 in whichever band the batch was assigned."""
+    await _lot(db_session, "CR0025", "L1", "10",
+               expiry=TODAY - timedelta(days=1), supplier_batch="SB-1")
+    await _lot(db_session, "CR0025", "L2", "90",
+               expiry=TODAY + timedelta(days=300), supplier_batch="SB-1")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    expired = (await client.get("/api/v1/inventory/batches",
+                                params={"aging_bucket": "expired"}, headers=headers)).json()
+    later = (await client.get("/api/v1/inventory/batches",
+                              params={"aging_bucket": "over_180"}, headers=headers)).json()
+    assert Decimal(expired["items"][0]["qty"]) == Decimal("10")
+    assert expired["items"][0]["lots"] == 1
+    assert Decimal(later["items"][0]["qty"]) == Decimal("90")
+
+
+@pytest.mark.anyio
+async def test_batches_search_still_matches_the_internal_lot_number(
+    client, db_session, admin_token,
+):
+    """The WMS lot is not displayed, but somebody reading a Flux screen may
+    still paste one. Matching it costs nothing and finding nothing would be
+    worse."""
+    await _lot(db_session, "CR0025", "HGC1995762", supplier_batch="SB-1")
+    body = (await client.get("/api/v1/inventory/batches",
+                             params={"search": "HGC1995762"},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert body["total"] == 1
+    assert body["items"][0]["supplier_batch"] == "SB-1"
+
+
+@pytest.mark.anyio
+async def test_batches_total_counts_batches_not_lots(client, db_session, admin_token):
+    """The trap in grouping: count(*) over an ungrouped query counts lots, and
+    the pager would then offer pages that do not exist."""
+    for i in range(7):
+        await _lot(db_session, "CR0025", f"L{i}", supplier_batch="ONE")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             params={"page_size": 5},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert body["total"] == 1
+    assert body["total_lots"] == 7
+    assert len(body["items"]) == 1
+
+
+@pytest.mark.anyio
+async def test_batches_paging_does_not_repeat_a_row(client, db_session, admin_token):
+    for i in range(10):
+        await _lot(db_session, "CR0025", f"L{i}", supplier_batch=f"SB-{i:02d}")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    seen = []
+    for page in (1, 2):
+        r = await client.get("/api/v1/inventory/batches",
+                             params={"page": page, "page_size": 5}, headers=headers)
+        seen += [i["supplier_batch"] for i in r.json()["items"]]
+    assert len(set(seen)) == 10, f"pages overlapped: {sorted(seen)}"
+
+
+@pytest.mark.anyio
+async def test_raw_milk_batches_are_never_listed(client, db_session, admin_token):
+    await _material(db_session, "CR0059", "Pasteurized Milk", erp_class="0101")
+    await _lot(db_session, "CR0059", "L1", supplier_batch="MILK-1")
+    await _material(db_session, "CR0025", "Lactose")
+    await _lot(db_session, "CR0025", "L2", supplier_batch="KEEP")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert [i["supplier_batch"] for i in body["items"]] == ["KEEP"]
+
+
+@pytest.mark.anyio
+async def test_aging_cards_count_batches_so_they_match_the_table(
+    client, db_session, admin_token,
+):
+    """★ The card and the rows beneath it must be the same unit. Three lots of
+    one supplier batch are ONE row, and a card reading 3 above a table of 1 is
+    a discrepancy nobody can explain and nothing reports."""
+    for i in range(3):
+        await _lot(db_session, "CR0025", f"L{i}", "10",
+                   expiry=TODAY - timedelta(days=1), supplier_batch="SB-1")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    aging = (await client.get("/api/v1/inventory/aging", headers=headers)).json()
+    expired = next(b for b in aging["buckets"] if b["key"] == "expired")
+    listed = (await client.get("/api/v1/inventory/batches",
+                               params={"aging_bucket": "expired"}, headers=headers)).json()
+
+    assert expired["lots"] == 3
+    assert expired["batches"] == 1
+    assert expired["batches"] == listed["total"], "card and table must agree"
+
+
+@pytest.mark.anyio
+async def test_aging_reports_batches_without_an_expiry_date_too(
+    client, db_session, admin_token,
+):
+    await _material(db_session, "CP0133", "Can 400g", erp_class="02")
+    await _lot(db_session, "CP0133", "L1", "10", expiry=None, supplier_batch="PALLET")
+    await _lot(db_session, "CP0133", "L2", "10", expiry=None, supplier_batch="PALLET")
+
+    body = (await client.get("/api/v1/inventory/aging",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert body["no_expiry_lots"] == 2
+    assert body["no_expiry_batches"] == 1

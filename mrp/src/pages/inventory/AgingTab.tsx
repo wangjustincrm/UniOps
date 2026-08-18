@@ -4,9 +4,13 @@
 // "92 lots expired" is one click from "which 92".
 //
 // Expired and under-30 are selected on arrival, because those are the two bands
-// that require somebody to do something today. The other three are one click
-// away and deliberately not pre-selected: a screen that opens showing 543 lots
-// is a screen nobody reads.
+// that require somebody to do something today.
+//
+// ★ The cards count SUPPLIER BATCHES, not WMS lots, because that is what the
+// table below them lists. 3,532 lots are only 877 batches and one batch can
+// hold 192 of them, so a card counting lots over a table of batches would be a
+// discrepancy nobody could explain and nothing would report. The lot count is
+// still shown, underneath, as the secondary figure it is.
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ChevronLeft, ChevronRight, Info } from 'lucide-react'
@@ -70,8 +74,8 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
   }), [erpClassCode, selected])
 
   const lotsQuery = useQuery({
-    queryKey: ['inventory-aging-lots', page, lotFilters],
-    queryFn: () => inventoryApi.listLots(page, PAGE_SIZE, lotFilters),
+    queryKey: ['inventory-aging-batches', page, lotFilters],
+    queryFn: () => inventoryApi.listBatches(page, PAGE_SIZE, lotFilters),
     placeholderData: keepPreviousData,
   })
 
@@ -109,11 +113,16 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
                 {bucket?.label ?? key}
               </div>
               <div className="mt-1 text-xl font-semibold tabular-nums text-neutral-900">
-                {agingQuery.isLoading ? '—' : (bucket?.lots ?? 0).toLocaleString('en-US')}
-                <span className="ml-1 text-xs font-normal text-neutral-500">lots</span>
+                {agingQuery.isLoading ? '—' : (bucket?.batches ?? 0).toLocaleString('en-US')}
+                <span className="ml-1 text-xs font-normal text-neutral-500">batches</span>
               </div>
               <div className="text-xs tabular-nums text-neutral-500">
                 {agingQuery.isLoading ? '' : qty(bucket?.qty ?? '0')}
+                {!agingQuery.isLoading && (
+                  <span className="text-neutral-400">
+                    {' · '}{(bucket?.lots ?? 0).toLocaleString('en-US')} lots
+                  </span>
+                )}
               </div>
             </button>
           )
@@ -126,8 +135,9 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
         <p className="flex items-start gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
           <Info aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400" />
           <span>
-            {agingQuery.data.no_expiry_lots.toLocaleString('en-US')} lot(s)
-            ({qty(agingQuery.data.no_expiry_qty)}) have no expiry date and are not
+            {agingQuery.data.no_expiry_batches.toLocaleString('en-US')} batch(es)
+            ({agingQuery.data.no_expiry_lots.toLocaleString('en-US')} lots,
+            {' '}{qty(agingQuery.data.no_expiry_qty)}) have no expiry date and are not
             in any band — packaging and hardware do not expire.
           </span>
         </p>
@@ -136,7 +146,7 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
       {lotsQuery.isError && (
         <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {errMsg(lotsQuery.error, 'Could not load the lots in this band.')}
+          {errMsg(lotsQuery.error, 'Could not load the stock in this band.')}
         </p>
       )}
 
@@ -145,16 +155,16 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
           <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
             <tr>
               <th className="px-3 py-2 text-left">Material</th>
-              <th className="px-3 py-2 text-left">Lot</th>
+              <th className="px-3 py-2 text-left">Supplier batch</th>
               <th className="px-3 py-2 text-right">Qty</th>
+              <th className="px-3 py-2 text-right">Lots</th>
               <th className="px-3 py-2 text-left">Expiry</th>
               <th className="px-3 py-2 text-right">Days</th>
-              <th className="px-3 py-2 text-left">Supplier batch</th>
             </tr>
           </thead>
           <tbody>
             {lotsQuery.isLoading && (
-              <tr><td colSpan={6} className="px-3 py-8 text-center text-neutral-400">Loading lots…</td></tr>
+              <tr><td colSpan={6} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
             )}
             {!lotsQuery.isLoading && items.length === 0 && !lotsQuery.isError && (
               <tr><td colSpan={6} className="px-3 py-8 text-center text-sm text-neutral-400">
@@ -162,16 +172,32 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
               </td></tr>
             )}
             {items.map((lot) => (
-              <tr key={lot.id} className="border-t border-neutral-100">
+              <tr
+                key={`${lot.warehouse_id}|${lot.material_code}|${lot.supplier_batch ?? ''}`}
+                className="border-t border-neutral-100"
+              >
                 <td className="px-3 py-2">
                   <span className="font-mono text-xs">{lot.material_code}</span>
                   {lot.material_name && (
                     <span className="ml-1.5 text-xs text-neutral-500">{lot.material_name}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs">{lot.lot_no}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {lot.supplier_batch ?? (
+                    <span className="font-sans text-neutral-400">no supplier batch</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-mono">{qty(lot.qty)}</td>
-                <td className="px-3 py-2 text-xs text-neutral-600">{formatDateOnly(lot.expiry_date)}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{lot.lots}</td>
+                <td className="px-3 py-2 text-xs text-neutral-600">
+                  {formatDateOnly(lot.expiry_date)}
+                  {lot.expiry_spans_dates && (
+                    <span
+                      className="ml-1 cursor-help text-neutral-400"
+                      title="This batch's lots have different expiry dates — the earliest is shown"
+                    >+</span>
+                  )}
+                </td>
                 <td className={cn(
                   'px-3 py-2 text-right font-mono text-xs',
                   lot.days_to_expiry !== null && lot.days_to_expiry < 0 && 'text-danger-600',
@@ -179,9 +205,6 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
                     && 'text-warning-700',
                 )}>
                   {lot.days_to_expiry ?? '—'}
-                </td>
-                <td className="px-3 py-2 font-mono text-[11px] text-neutral-500">
-                  {lot.supplier_batch || '—'}
                 </td>
               </tr>
             ))}
@@ -191,7 +214,7 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
 
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-neutral-500">
-          {total.toLocaleString('en-US')} lot(s) in this band
+          {total.toLocaleString('en-US')} batch(es) in this band
           {asOf && <> · as of {formatDateOnly(asOf)}</>}
         </span>
         <div className="flex items-center gap-1">

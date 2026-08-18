@@ -5,7 +5,14 @@ Three reads over the WMS lot mirror (`wms_inventory_lots`, a full-extract
 snapshot replaced on every sync) joined to mdm's material master and, for the
 on-order half, EPMS's purchase orders:
 
-- `GET /inventory/lots` — browse and search individual lots.
+- `GET /inventory/batches` — stock grouped by SUPPLIER BATCH. What the screen
+  shows: `lot_no` is Flux's internal identifier and means nothing outside the
+  warehouse system, while the supplier batch is what a certificate of analysis
+  carries and what somebody quotes on the phone. Grouping rather than merely
+  hiding the column is not cosmetic — 2,143 of the 3,532 lots are visually
+  identical to another lot once it is removed.
+- `GET /inventory/lots` — the raw mirror, one row per WMS lot. Left in place
+  for anyone who needs it; no screen uses it.
 - `GET /inventory/aging` — shelf life bucketed at 180 / 60 / 30 days, plus what
   has already expired.
 - `GET /inventory/materials` — one row per material: on hand, available, on
@@ -119,7 +126,13 @@ class WmsInventoryLotListResponse(BaseModel):
 class AgingBucket(BaseModel):
     key: str
     label: str
+    #: WMS lots. Kept because it is the physical count, but the screen leads
+    #: with `batches` -- that is the unit the list below it shows.
     lots: int
+    #: Distinct supplier batches. 3,532 lots are only 877 batches, and one
+    #: batch can hold 192 of them, so a card counting lots over a table
+    #: listing batches is a discrepancy nobody can explain.
+    batches: int
     qty: Decimal
 
 
@@ -129,6 +142,7 @@ class AgingSummaryResponse(BaseModel):
     #: Lots with no expiry date: excluded from every bucket, reported here.
     #: Mostly packaging, which does not expire.
     no_expiry_lots: int
+    no_expiry_batches: int
     no_expiry_qty: Decimal
     #: Echoes the filter, so a screen can say what it is showing.
     erp_class_code: str | None
@@ -319,6 +333,170 @@ async def list_lots(
             "page_size": page_size, "as_of": today}
 
 
+class InventoryBatchResponse(BaseModel):
+    """One SUPPLIER BATCH of one material in one warehouse.
+
+    This, not the WMS lot, is the unit the plant works in: `lot_no` is Flux's
+    internal identifier and means nothing outside the warehouse system, while
+    the supplier batch is what appears on the certificate of analysis and what
+    somebody quotes on the phone.
+    """
+    warehouse_id: str
+    material_code: str
+    material_name: str | None = None
+    #: None for stock the warehouse recorded without one (92 lots today).
+    supplier_batch: str | None
+    qty: Decimal
+    qty_allocated: Decimal
+    qty_onhold: Decimal
+    #: How many WMS lots make up this batch. One supplier batch can be split
+    #: across a great many — CP0080's "Old Wooden Racking Pallet" is 192.
+    lots: int
+    #: The EARLIEST expiry among this batch's lots: when it starts going out of
+    #: date, which is the date somebody has to act on.
+    expiry_date: date | None
+    #: True when the batch's lots do not all share one expiry date (42 of the
+    #: plant's 877 batches). Surfaced rather than averaged away — the single
+    #: date above would otherwise quietly describe only part of the quantity.
+    expiry_spans_dates: bool = False
+    inbound_date: date | None
+    days_to_expiry: int | None = None
+    aging_bucket: str | None = None
+    #: The lots' shared status, or "mixed" when they disagree (27 batches do).
+    mapped_status: str
+    supplier_code: str | None = None
+
+
+class InventoryBatchListResponse(BaseModel):
+    items: list[InventoryBatchResponse]
+    total: int
+    page: int
+    page_size: int
+    as_of: date
+    #: WMS lots behind the batches on this page — so the screen can say
+    #: "128 batches (543 lots)" instead of leaving a reader to wonder where the
+    #: lot count went.
+    total_lots: int
+
+
+@router.get("/batches", response_model=InventoryBatchListResponse)
+async def list_batches(
+    db: SessionDep,
+    _: ReadDep,
+    material_code: str | None = Query(default=None, description="Exact material code"),
+    mapped_status: str | None = Query(default=None, description="available | hold | expired"),
+    warehouse_id: str | None = Query(default=None),
+    erp_class_code: str | None = Query(
+        default=None,
+        description="ERP material class, e.g. 0102 Raw Ingredient, 02 Packaging Material"),
+    search: str | None = Query(
+        default=None,
+        description="Case-insensitive substring of material code, material name, supplier batch — or the internal WMS lot number, which is matched but never displayed"),
+    expiring_before: date | None = Query(default=None),
+    expiring_after: date | None = Query(default=None),
+    aging_bucket: Literal["expired", "under_30", "30_to_60", "60_to_180", "over_180"] | None = Query(
+        default=None,
+        description="Restrict to one shelf-life band, resolved server-side from the same thresholds the summary uses"),
+    sort: Literal["material_code", "supplier_batch", "expiry_date", "qty", "inbound_date"] = "expiry_date",
+    descending: bool = False,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=500),
+):
+    """Stock grouped by supplier batch — the list the Inventory screen shows.
+
+    `GET /inventory/lots` still returns one row per WMS lot and is left alone
+    for anyone who needs the raw mirror. This endpoint exists because that view
+    is unreadable to a planner: **2,143 of the 3,532 lots are visually
+    identical to another lot** once the internal lot number is removed, and one
+    supplier batch can span 192 of them. Hiding the column without grouping
+    would have produced page after page of repeated rows.
+
+    Filters are applied to LOTS first and the survivors are then grouped, so
+    `aging_bucket` selects the lots in a band and reports the batches they
+    belong to — a batch whose lots carry different expiry dates appears in each
+    band it genuinely has stock in, counted only for the lots that are there.
+    """
+    today = date.today()
+    filters = dict(
+        material_code=material_code, mapped_status=mapped_status,
+        warehouse_id=warehouse_id, erp_class_code=erp_class_code, search=search,
+        expiring_before=expiring_before, expiring_after=expiring_after,
+        aging_bucket=aging_bucket, today=today, with_expiry_only=False,
+    )
+
+    grouping = (
+        WmsInventoryLot.warehouse_id,
+        WmsInventoryLot.material_code,
+        WmsInventoryLot.supplier_batch,
+    )
+
+    base = select(
+        *grouping,
+        func.min(MdmMaterial.name),
+        func.sum(WmsInventoryLot.qty),
+        func.sum(WmsInventoryLot.qty_allocated),
+        func.sum(WmsInventoryLot.qty_onhold),
+        func.count(),
+        func.min(WmsInventoryLot.expiry_date),
+        func.max(WmsInventoryLot.expiry_date),
+        func.min(WmsInventoryLot.inbound_date),
+        # One status when the batch agrees with itself, "mixed" when it does
+        # not. Picking the first would hide that part of a batch is on hold.
+        case((func.count(func.distinct(WmsInventoryLot.mapped_status)) == 1,
+              func.min(WmsInventoryLot.mapped_status)),
+             else_="mixed"),
+        func.min(WmsInventoryLot.supplier_code),
+    ).outerjoin(MdmMaterial, MdmMaterial.code == WmsInventoryLot.material_code)
+    base = _apply_lot_filters(base, **filters).group_by(*grouping)
+
+    # count(*) over the grouped set — a plain count would count LOTS.
+    grouped = base.subquery()
+    total = (await db.execute(
+        select(func.count()).select_from(grouped))).scalar_one()
+    total_lots = (await db.execute(
+        select(func.coalesce(func.sum(grouped.c[7]), 0)).select_from(grouped))).scalar_one()
+
+    order_column = {
+        "material_code": WmsInventoryLot.material_code,
+        "supplier_batch": WmsInventoryLot.supplier_batch,
+        "expiry_date": func.min(WmsInventoryLot.expiry_date),
+        "qty": func.sum(WmsInventoryLot.qty),
+        "inbound_date": func.min(WmsInventoryLot.inbound_date),
+    }[sort]
+    stmt = base.order_by(
+        order_column.desc() if descending else order_column,
+        # A stable tiebreak: without it two batches sorting equal can swap
+        # between queries and a row appears on two pages while another appears
+        # on none.
+        WmsInventoryLot.material_code, WmsInventoryLot.supplier_batch,
+    ).offset((page - 1) * page_size).limit(page_size)
+
+    items = []
+    for (warehouse, code, batch, name, qty_, allocated, onhold, lot_count,
+         expiry_min, expiry_max, inbound, status, supplier_code) in (
+            await db.execute(stmt)).all():
+        items.append(InventoryBatchResponse(
+            warehouse_id=warehouse,
+            material_code=code,
+            material_name=name,
+            supplier_batch=batch,
+            qty=qty_,
+            qty_allocated=allocated,
+            qty_onhold=onhold,
+            lots=lot_count,
+            expiry_date=expiry_min,
+            expiry_spans_dates=expiry_min != expiry_max,
+            inbound_date=inbound,
+            days_to_expiry=days_until(expiry_min, today),
+            aging_bucket=bucket_for(expiry_min, today),
+            mapped_status=status,
+            supplier_code=supplier_code,
+        ))
+
+    return {"items": items, "total": total, "page": page,
+            "page_size": page_size, "as_of": today, "total_lots": total_lots}
+
+
 @router.get("/aging", response_model=AgingSummaryResponse)
 async def aging_summary(
     db: SessionDep,
@@ -350,10 +528,13 @@ async def aging_summary(
         # reads as "not computed" rather than "empty".
         "buckets": [
             {"key": key, "label": BUCKET_LABELS[key],
-             "lots": summary.buckets[key].lots, "qty": summary.buckets[key].qty}
+             "lots": summary.buckets[key].lots,
+             "batches": summary.buckets[key].batches,
+             "qty": summary.buckets[key].qty}
             for key in AGING_BUCKETS
         ],
         "no_expiry_lots": summary.no_expiry_lots,
+        "no_expiry_batches": summary.no_expiry_batches,
         "no_expiry_qty": summary.no_expiry_qty,
         "erp_class_code": erp_class_code,
     }

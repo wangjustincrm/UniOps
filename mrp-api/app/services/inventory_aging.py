@@ -54,7 +54,9 @@ BUCKET_LABELS: dict[str, str] = {
 class HasExpiry(Protocol):
     """What `summarise` needs off a lot — satisfied by `WmsInventoryLot` as it
     is, so the endpoint hands its ORM rows straight in."""
+    warehouse_id: str
     material_code: str
+    supplier_batch: str | None
     expiry_date: date | None
     qty: Decimal
 
@@ -79,6 +81,12 @@ def bucket_for(expiry: date | None, today: date) -> str | None:
 class BucketTotal:
     lots: int = 0
     qty: Decimal = Decimal("0")
+    #: Distinct supplier batches. The screen lists BATCHES, not WMS lots, so
+    #: this is the number that has to match the row count under the card —
+    #: 3,532 lots are only 877 batches, and one supplier batch can hold 192 of
+    #: them (CP0080). A card counting lots over a table listing batches is a
+    #: discrepancy nobody can explain and nothing reports.
+    batches: int = 0
 
 
 @dataclass
@@ -88,6 +96,7 @@ class AgingSummary:
     #: Lots with no expiry date — reported alongside, never bucketed.
     no_expiry_lots: int = 0
     no_expiry_qty: Decimal = Decimal("0")
+    no_expiry_batches: int = 0
 
     @property
     def total_lots(self) -> int:
@@ -103,20 +112,34 @@ def summarise(lots: Iterable[HasExpiry], today: date) -> AgingSummary:
     computed".
     """
     counts: dict[str, list] = {name: [0, Decimal("0")] for name in AGING_BUCKETS}
+    batches: dict[str, set] = {name: set() for name in AGING_BUCKETS}
+    no_expiry_batches: set = set()
     summary = AgingSummary()
 
     for lot in lots:
+        # Batch identity, matching the grouping the list endpoint uses. A NULL
+        # supplier batch is its own group per material rather than being lumped
+        # with every other unbatched lot in the plant.
+        key = (lot.warehouse_id, lot.material_code, lot.supplier_batch)
         bucket = bucket_for(lot.expiry_date, today)
         if bucket is None:
             summary.no_expiry_lots += 1
             summary.no_expiry_qty += lot.qty
+            no_expiry_batches.add(key)
             continue
         counts[bucket][0] += 1
         counts[bucket][1] += lot.qty
+        # Bucketed FIRST, then grouped: a supplier batch whose lots carry
+        # different expiry dates (42 of the 877 do) genuinely straddles two
+        # bands, and belongs in both — counted only for the lots that are
+        # actually in each.
+        batches[bucket].add(key)
 
     summary.buckets = {
-        name: BucketTotal(lots=lots_, qty=qty) for name, (lots_, qty) in counts.items()
+        name: BucketTotal(lots=lots_, qty=qty, batches=len(batches[name]))
+        for name, (lots_, qty) in counts.items()
     }
+    summary.no_expiry_batches = len(no_expiry_batches)
     return summary
 
 

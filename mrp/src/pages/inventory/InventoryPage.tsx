@@ -1,4 +1,4 @@
-// Inventory — one page, three tabs: Lots, Aging, Materials.
+// Inventory — one page, three tabs: Batches, Aging, Materials.
 //
 // One nav entry rather than three, because the three answer the same question
 // at different resolutions ("what have we got") and a planner moves between
@@ -7,18 +7,18 @@
 // like unrelated pages and quietly changes what the numbers mean.
 //
 // The active tab is in the URL (`?tab=aging`) so a tab is linkable and the
-// multi-tab shell restores the right one instead of always reopening on Lots.
+// multi-tab shell restores the right one instead of always reopening on Batches.
 import { useSearchParams } from 'react-router-dom'
 import { Boxes, CalendarClock, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MATERIAL_CLASSES } from './inventoryApi'
-import { LotsTab } from './LotsTab'
+import { BatchesTab } from './BatchesTab'
 import { AgingTab } from './AgingTab'
 import { MaterialsTab } from './MaterialsTab'
 
 const TABS = [
-  { key: 'lots', label: 'Lots', icon: Layers,
-    hint: 'Search individual lots by material, lot number or supplier batch' },
+  { key: 'batches', label: 'Batches', icon: Layers,
+    hint: 'Stock by supplier batch — search by material, name or batch number' },
   { key: 'aging', label: 'Aging', icon: CalendarClock,
     hint: 'Shelf life at 180 / 60 / 30 days, and what has already expired' },
   { key: 'materials', label: 'Materials', icon: Boxes,
@@ -30,7 +30,7 @@ type TabKey = typeof TABS[number]['key']
 export default function InventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const raw = searchParams.get('tab')
-  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'lots'
+  const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'batches'
   // Default to raw ingredients: it is the class with shelf life that anybody
   // acts on. Packaging does not expire and finished goods are somebody else's
   // screen — but both stay one click away rather than being hidden.
@@ -100,7 +100,7 @@ export default function InventoryPage() {
         ))}
       </div>
 
-      {tab === 'lots' && <LotsTab erpClassCode={erpClass} />}
+      {tab === 'batches' && <BatchesTab erpClassCode={erpClass} />}
       {tab === 'aging' && <AgingTab erpClassCode={erpClass} />}
       {tab === 'materials' && <MaterialsTab erpClassCode={erpClass} />}
     </div>

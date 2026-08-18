@@ -1,4 +1,17 @@
-// Inventory → Lots. Search and browse individual WMS lots.
+// Inventory → Batches. Stock grouped by SUPPLIER BATCH.
+//
+// ★ The WMS lot number is not a column. It is Flux's internal identifier and
+// means nothing outside the warehouse system; the plant identifies stock by the
+// supplier's batch — what the certificate of analysis carries and what somebody
+// quotes on the phone.
+//
+// Grouping, not merely hiding the column: 2,143 of the plant's 3,532 lots are
+// visually identical to another lot once the internal number is gone, and one
+// supplier batch can span 192 of them (CP0080, "Old Wooden Racking Pallet").
+// Dropping the column alone would have produced pages of repeated rows.
+//
+// The lot number is still searchable — somebody reading a Flux screen may paste
+// one, and finding nothing would be worse than a match they cannot see.
 import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
@@ -8,14 +21,14 @@ import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
   formatDateOnly, inventoryApi, qty,
-  type AgingBucketKey, type LotFilters,
+  type AgingBucketKey, type BatchFilters,
 } from './inventoryApi'
 
 const PAGE_SIZE = 25
 
 const SORTABLE = [
   { key: 'material_code', label: 'Material' },
-  { key: 'lot_no', label: 'Lot' },
+  { key: 'supplier_batch', label: 'Supplier batch' },
   { key: 'qty', label: 'Qty' },
   { key: 'expiry_date', label: 'Expiry' },
   { key: 'inbound_date', label: 'Received' },
@@ -44,7 +57,7 @@ function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
-export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
+export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -61,7 +74,7 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
 
   useEffect(() => { setPage(1) }, [erpClassCode, status, sort, descending])
 
-  const filters: LotFilters = useMemo(() => ({
+  const filters: BatchFilters = useMemo(() => ({
     search: search || undefined,
     mapped_status: status || undefined,
     erp_class_code: erpClassCode || undefined,
@@ -69,14 +82,15 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
     descending,
   }), [search, status, erpClassCode, sort, descending])
 
-  const lotsQuery = useQuery({
-    queryKey: ['inventory-lots', page, filters],
-    queryFn: () => inventoryApi.listLots(page, PAGE_SIZE, filters),
+  const batchQuery = useQuery({
+    queryKey: ['inventory-batches', page, filters],
+    queryFn: () => inventoryApi.listBatches(page, PAGE_SIZE, filters),
     placeholderData: keepPreviousData,
   })
 
-  const items = lotsQuery.data?.items ?? []
-  const total = lotsQuery.data?.total ?? 0
+  const items = batchQuery.data?.items ?? []
+  const total = batchQuery.data?.total ?? 0
+  const totalLots = batchQuery.data?.total_lots ?? 0
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
   const to = Math.min(page * PAGE_SIZE, total)
@@ -94,8 +108,8 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
           <input
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search material, name, lot number or supplier batch…"
-            aria-label="Search inventory lots"
+            placeholder="Search material, name or supplier batch…"
+            aria-label="Search inventory stock"
             className="w-full text-sm focus:outline-none"
           />
           {searchInput && (
@@ -122,18 +136,19 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
         </label>
 
         <span className="text-xs text-neutral-500">
-          {search || status || erpClassCode
-            ? `${total.toLocaleString('en-US')} matching lot(s)`
-            : `${total.toLocaleString('en-US')} lot(s)`}
+          {/* Both numbers, because both are true: somebody who knows the
+              warehouse holds 543 lots would otherwise think rows went missing. */}
+          {total.toLocaleString('en-US')} batch(es)
+          <span className="text-neutral-400"> · {totalLots.toLocaleString('en-US')} lot(s)</span>
         </span>
       </div>
 
-      {lotsQuery.isError && (
+      {batchQuery.isError && (
         // An empty table and a failed request must never look the same — the
         // single most repeated bug in this project.
         <p role="alert" className="flex items-start gap-1.5 rounded-md border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
           <AlertTriangle aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {errMsg(lotsQuery.error, 'Could not load inventory lots.')}
+          {errMsg(batchQuery.error, 'Could not load inventory.')}
         </p>
       )}
 
@@ -157,24 +172,26 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
                   </button>
                 </th>
               ))}
+              <th className="px-3 py-2 text-right">Lots</th>
               <th className="px-3 py-2 text-left">Shelf life</th>
               <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-left">Supplier batch</th>
             </tr>
           </thead>
           <tbody>
-            {lotsQuery.isLoading && (
-              <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">Loading lots…</td></tr>
+            {batchQuery.isLoading && (
+              <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">Loading stock…</td></tr>
             )}
-            {!lotsQuery.isLoading && items.length === 0 && !lotsQuery.isError && (
+            {!batchQuery.isLoading && items.length === 0 && !batchQuery.isError && (
               <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-neutral-400">
                 {search
                   ? `Nothing matches "${search}".`
-                  : 'No lots for these filters.'}
+                  : 'No stock for these filters.'}
               </td></tr>
             )}
             {items.map((lot) => (
-              <tr key={lot.id} className={cn(
+              <tr
+                key={`${lot.warehouse_id}|${lot.material_code}|${lot.supplier_batch ?? ''}`}
+                className={cn(
                 'border-t border-neutral-100',
                 lot.aging_bucket === 'expired' && 'bg-danger-50/40',
               )}>
@@ -184,10 +201,28 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
                     <span className="ml-1.5 text-xs text-neutral-500">{lot.material_name}</span>
                   )}
                 </td>
-                <td className="px-3 py-2 font-mono text-xs">{lot.lot_no}</td>
+                <td className="px-3 py-2 font-mono text-xs">
+                  {lot.supplier_batch ?? (
+                    // Not blank: 92 lots genuinely carry no supplier batch, and
+                    // an empty cell reads as a rendering fault.
+                    <span className="font-sans text-neutral-400">no supplier batch</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right font-mono">{qty(lot.qty)}</td>
-                <td className="px-3 py-2 text-xs text-neutral-600">{formatDateOnly(lot.expiry_date)}</td>
+                <td className="px-3 py-2 text-xs text-neutral-600">
+                  {formatDateOnly(lot.expiry_date)}
+                  {lot.expiry_spans_dates && (
+                    // The batch's lots do not share one date, so the date shown
+                    // describes only part of the quantity. Saying so beats
+                    // presenting the earliest as if it were the whole batch.
+                    <span
+                      className="ml-1 cursor-help text-neutral-400"
+                      title="This batch's lots have different expiry dates — the earliest is shown"
+                    >+</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-xs text-neutral-500">{formatDateOnly(lot.inbound_date)}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{lot.lots}</td>
                 <td className="px-3 py-2">
                   {lot.aging_bucket === null ? (
                     // Not a band, and not rendered as one. Packaging has no
@@ -214,9 +249,6 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
                     {lot.mapped_status}
                   </span>
                 </td>
-                <td className="px-3 py-2 font-mono text-[11px] text-neutral-500">
-                  {lot.supplier_batch || '—'}
-                </td>
               </tr>
             ))}
           </tbody>
@@ -226,17 +258,17 @@ export function LotsTab({ erpClassCode }: { erpClassCode: string }) {
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-neutral-500">
           {from}–{to} of {total.toLocaleString('en-US')}
-          {lotsQuery.data && <> · as of {formatDateOnly(lotsQuery.data.as_of)}</>}
+          {batchQuery.data && <> · as of {formatDateOnly(batchQuery.data.as_of)}</>}
         </span>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page <= 1 || lotsQuery.isFetching} aria-label="Previous page"
+            disabled={page <= 1 || batchQuery.isFetching} aria-label="Previous page"
             className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronLeft className="h-4 w-4" />
           </button>
           <span className="text-[11px] text-neutral-500">Page {page} of {pageCount}</span>
           <button type="button" onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-            disabled={page >= pageCount || lotsQuery.isFetching} aria-label="Next page"
+            disabled={page >= pageCount || batchQuery.isFetching} aria-label="Next page"
             className="rounded p-1.5 text-neutral-500 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40">
             <ChevronRight className="h-4 w-4" />
           </button>

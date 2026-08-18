@@ -20,6 +20,52 @@ export const AGING_BUCKET_ORDER: AgingBucketKey[] = [
   'expired', 'under_30', '30_to_60', '60_to_180', 'over_180',
 ]
 
+/** One supplier batch of one material in one warehouse — the unit this screen
+ *  works in.
+ *
+ *  ★ There is deliberately no `lot_no`. Flux's internal lot number means
+ *  nothing outside the warehouse system, and the plant identifies stock by the
+ *  supplier's batch: what the certificate of analysis carries and what people
+ *  quote on the phone. It is still SEARCHABLE (somebody reading a Flux screen
+ *  may paste one) — just never displayed. */
+export interface InventoryBatch {
+  warehouse_id: string
+  material_code: string
+  material_name: string | null
+  /** Null for stock the warehouse recorded without one — 92 lots today. */
+  supplier_batch: string | null
+  qty: string
+  qty_allocated: string
+  qty_onhold: string
+  /** How many WMS lots make up this batch. One can hold a great many: CP0080's
+   *  "Old Wooden Racking Pallet" is 192. */
+  lots: number
+  /** The EARLIEST expiry among the batch's lots — when it starts going out of
+   *  date, which is the date somebody acts on. */
+  expiry_date: string | null
+  /** True when the batch's lots do not share one expiry date (42 of 877).
+   *  Shown rather than averaged away: the single date above would otherwise
+   *  quietly describe only part of the quantity. */
+  expiry_spans_dates: boolean
+  inbound_date: string | null
+  days_to_expiry: number | null
+  aging_bucket: AgingBucketKey | null
+  /** The lots' shared status, or 'mixed' when they disagree (27 batches do). */
+  mapped_status: string
+  supplier_code: string | null
+}
+
+export interface InventoryBatchList {
+  items: InventoryBatch[]
+  total: number
+  page: number
+  page_size: number
+  as_of: string
+  /** WMS lots behind the batches — so the screen can say "128 batches
+   *  (543 lots)" rather than leaving a reader to wonder where they went. */
+  total_lots: number
+}
+
 export interface InventoryLot {
   id: string
   warehouse_id: string
@@ -59,7 +105,10 @@ export interface InventoryLotList {
 export interface AgingBucket {
   key: AgingBucketKey
   label: string
+  /** WMS lots — the physical count. Secondary: the list below the cards is
+   *  batches, so `batches` is the number that has to match its row count. */
   lots: number
+  batches: number
   qty: string
 }
 
@@ -69,6 +118,7 @@ export interface AgingSummary {
    *  computed" rather than "nothing here". */
   buckets: AgingBucket[]
   no_expiry_lots: number
+  no_expiry_batches: number
   no_expiry_qty: string
   erp_class_code: string | null
 }
@@ -115,6 +165,19 @@ export interface OpenPoLine {
   arrival_is_from_header: boolean
 }
 
+export interface BatchFilters {
+  search?: string
+  material_code?: string
+  mapped_status?: string
+  warehouse_id?: string
+  erp_class_code?: string
+  expiring_before?: string
+  expiring_after?: string
+  aging_bucket?: AgingBucketKey
+  sort?: 'material_code' | 'supplier_batch' | 'expiry_date' | 'qty' | 'inbound_date'
+  descending?: boolean
+}
+
 export interface LotFilters {
   search?: string
   material_code?: string
@@ -146,6 +209,11 @@ function params(page: number, pageSize: number, filters: Record<string, unknown>
 }
 
 export const inventoryApi = {
+  /** Stock grouped by supplier batch — what every list on this screen shows.
+   *  `listLots` below is the raw per-WMS-lot mirror and no screen uses it. */
+  listBatches: (page: number, pageSize: number, filters: BatchFilters = {}) =>
+    api.get<InventoryBatchList>(`/inventory/batches?${params(page, pageSize, { ...filters })}`),
+
   listLots: (page: number, pageSize: number, filters: LotFilters = {}) =>
     api.get<InventoryLotList>(`/inventory/lots?${params(page, pageSize, { ...filters })}`),
 

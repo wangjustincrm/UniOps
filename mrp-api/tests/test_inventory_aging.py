@@ -19,13 +19,29 @@ TODAY = date(2026, 8, 17)
 
 
 class _Lot(NamedTuple):
+    warehouse_id: str
     material_code: str
+    supplier_batch: str | None
     expiry_date: date | None
     qty: Decimal
 
 
-def _lot(code: str, expiry: date | None, qty: str) -> _Lot:
-    return _Lot(code, expiry, Decimal(qty))
+#: "not specified" — distinct from None, which is a real value here (a lot with
+#: no supplier batch at all, of which there are 92). Using None as the sentinel
+#: silently gave every unbatched lot its own generated batch, so a test asserting
+#: they group together got 3 where it wanted 2.
+_UNSET = object()
+
+_seq = iter(range(1, 10_000))
+
+
+def _lot(code: str, expiry: date | None, qty: str, batch=_UNSET) -> _Lot:
+    """`batch` defaults to a unique value per call, so tests that do not care
+    about grouping get one batch per lot; the ones that do pin it explicitly,
+    including pinning it to None."""
+    return _Lot("CANADA", code,
+                f"B-{next(_seq)}" if batch is _UNSET else batch,
+                expiry, Decimal(qty))
 
 
 def _in(days: int) -> date:
@@ -193,3 +209,74 @@ def test_unknown_bucket_is_rejected_rather_than_silently_unbounded():
 
     with pytest.raises(ValueError):
         bucket_bounds("under_45", TODAY)
+
+
+# ── batches, which is what the screen actually lists ─────────────────────
+
+
+def test_batches_are_counted_not_just_lots():
+    """The list shows one row per SUPPLIER BATCH, not per WMS lot: 3,532 lots
+    in the mirror are only 877 batches, and one batch can hold 192 of them
+    (CP0080, "Old Wooden Racking Pallet"). A card counting lots above a table
+    listing batches is a discrepancy nobody can explain."""
+    lots = [
+        _lot("CR0025", _in(-5), "10", batch="SB-1"),
+        _lot("CR0025", _in(-4), "20", batch="SB-1"),
+        _lot("CR0025", _in(-3), "30", batch="SB-1"),
+        _lot("CR0025", _in(-2), "40", batch="SB-2"),
+    ]
+    summary = summarise(lots, TODAY)
+    assert summary.buckets["expired"].lots == 4
+    assert summary.buckets["expired"].batches == 2
+    assert summary.buckets["expired"].qty == Decimal("100")
+
+
+def test_the_same_batch_of_two_materials_counts_twice():
+    """Supplier batch numbers are not unique across materials — they are the
+    supplier's, and two products can share one. The identity is the material
+    AND the batch."""
+    lots = [
+        _lot("CR0025", _in(-1), "1", batch="SAME"),
+        _lot("CR0031", _in(-1), "1", batch="SAME"),
+    ]
+    assert summarise(lots, TODAY).buckets["expired"].batches == 2
+
+
+def test_a_batch_straddling_two_bands_is_counted_in_both():
+    """42 of the 877 batches carry more than one expiry date. Such a batch
+    genuinely has stock in two bands, and each band counts only the lots that
+    are actually in it — folding it into one band would misstate both."""
+    lots = [
+        _lot("CR0025", _in(-1), "10", batch="SB-1"),    # expired
+        _lot("CR0025", _in(200), "90", batch="SB-1"),   # over_180
+    ]
+    summary = summarise(lots, TODAY)
+    assert summary.buckets["expired"].batches == 1
+    assert summary.buckets["expired"].qty == Decimal("10")
+    assert summary.buckets["over_180"].batches == 1
+    assert summary.buckets["over_180"].qty == Decimal("90")
+
+
+def test_lots_with_no_supplier_batch_group_per_material_not_all_together():
+    """92 lots carry no supplier batch. Lumping them into one row across the
+    whole plant would report a single meaningless "(none)" batch; per material
+    is the smallest honest grouping."""
+    lots = [
+        _lot("CR0025", _in(-1), "1", batch=None),
+        _lot("CR0025", _in(-1), "1", batch=None),
+        _lot("CR0031", _in(-1), "1", batch=None),
+    ]
+    summary = summarise(lots, TODAY)
+    assert summary.buckets["expired"].lots == 3
+    assert summary.buckets["expired"].batches == 2
+
+
+def test_no_expiry_batches_are_counted_too():
+    lots = [
+        _lot("CP0133", None, "100", batch="PALLET"),
+        _lot("CP0133", None, "100", batch="PALLET"),
+        _lot("CP0133", None, "100", batch="OTHER"),
+    ]
+    summary = summarise(lots, TODAY)
+    assert summary.no_expiry_lots == 3
+    assert summary.no_expiry_batches == 2
