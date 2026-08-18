@@ -24,6 +24,7 @@ import {
   formatDateOnly, inventoryApi, qty,
   type AgingBucketKey, type BatchFilters,
 } from './inventoryApi'
+import { InventorySummary } from './InventorySummary'
 
 const PAGE_SIZE = 25
 
@@ -165,6 +166,11 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
   const [sort, setSort] = useState<SortKey>('expiry_date')
   const [descending, setDescending] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
+  // Set by clicking the "expiring soon" tile. Held as the exact window the
+  // server used rather than as a flag, so the rows shown are the same set the
+  // tile counted rather than a window rebuilt here.
+  const [expiringWindow, setExpiringWindow] =
+    useState<{ after: string; before: string } | null>(null)
 
   // Debounced: the box drives a server-side query, and one request per
   // keystroke would have the table flickering through half-typed answers.
@@ -173,15 +179,17 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  useEffect(() => { setPage(1) }, [erpClassCode, status, sort, descending])
+  useEffect(() => { setPage(1) }, [erpClassCode, status, sort, descending, expiringWindow])
 
   const filters: BatchFilters = useMemo(() => ({
     search: search || undefined,
     mapped_status: status || undefined,
     erp_class_code: erpClassCode || undefined,
+    expiring_after: expiringWindow?.after,
+    expiring_before: expiringWindow?.before,
     sort,
     descending,
-  }), [search, status, erpClassCode, sort, descending])
+  }), [search, status, erpClassCode, sort, descending, expiringWindow])
 
   const batchQuery = useQuery({
     queryKey: ['inventory-batches', page, filters],
@@ -203,6 +211,15 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <InventorySummary
+        summary={batchQuery.data?.summary ?? []}
+        asOf={batchQuery.data?.as_of}
+        warningDays={batchQuery.data?.expiry_warning_days ?? 90}
+        isLoading={batchQuery.isLoading}
+        expiringFilterActive={expiringWindow !== null}
+        onToggleExpiring={setExpiringWindow}
+      />
+
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex h-10 flex-1 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 sm:max-w-md">
           <Search aria-hidden className="h-4 w-4 shrink-0 text-neutral-400" />

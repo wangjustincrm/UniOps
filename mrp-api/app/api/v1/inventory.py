@@ -41,7 +41,7 @@ Availability keeps the definition Phase 1 already uses:
 (WMS status 02/Release and not expired).
 """
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Literal
 
@@ -72,6 +72,17 @@ from app.services.inventory_aging import (
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
+
+#: The shelf-life horizon the summary warns on, asked for separately from the
+#: aging bands (which are 30 / 60 / 180). Kept as a named constant so the
+#: number on the screen and the number in the query cannot drift apart.
+EXPIRY_WARNING_DAYS = 90
+
+#: The warehouse's own "blocked" quality status (Flux QLT_STS 01 = Block).
+#: NOT the same as our derived `hold`, which also covers 04 Under Inspection —
+#: a summary that conflated them would report material as blocked when QA has
+#: merely not finished looking at it.
+BLOCKED_QUALITY_CODE = "01"
 
 #: Columns `GET /inventory/lots` may be sorted by. A whitelist, not a
 #: pass-through: `sort` reaches SQL, and an unvalidated one is an injection.
@@ -424,6 +435,34 @@ class InventoryBatchResponse(BaseModel):
     supplier_code: str | None = None
 
 
+class InventorySummaryLine(BaseModel):
+    """Totals for one unit of measure over everything the current filters match.
+
+    ★ One line PER UNIT, deliberately. The warehouse holds kilograms, pieces,
+    each, rolls and centipoise, and packaging alone spans five of them — adding
+    them together produces a number that describes nothing. Raw ingredients are
+    all KGM, so the common view still shows a single line and reads like a plain
+    total.
+
+    The figures OVERLAP and are not a partition of the total: a blocked lot can
+    also be expired, and an expiring one is still available today. They answer
+    "how much of this is in that state", not "how does the total split".
+    """
+    uom: str | None
+    total_qty: Decimal
+    #: qty - qty_onhold over lots whose mapped_status is `available` — the same
+    #: definition the Materials tab and the planning engine use.
+    available_qty: Decimal
+    expired_qty: Decimal
+    #: The WAREHOUSE's block (QLT_STS 01), not our derived hold.
+    blocked_qty: Decimal
+    #: Not yet expired, but within the warning horizon.
+    expiring_soon_qty: Decimal
+    expiring_soon_batches: int
+    batches: int
+    lots: int
+
+
 class InventoryBatchListResponse(BaseModel):
     items: list[InventoryBatchResponse]
     total: int
@@ -434,6 +473,15 @@ class InventoryBatchListResponse(BaseModel):
     #: "128 batches (543 lots)" instead of leaving a reader to wonder where the
     #: lot count went.
     total_lots: int
+    #: Totals over EVERY row the filters match, not just this page — and
+    #: returned in the SAME response as the rows, not from a second endpoint.
+    #: Two endpoints taking the same filters drift; one response cannot, and
+    #: a headline disagreeing with the table under it is a discrepancy nobody
+    #: can explain and nothing reports.
+    summary: list[InventorySummaryLine]
+    #: The horizon `expiring_soon_*` used, so the screen labels itself from the
+    #: server rather than hardcoding a number that could fall out of step.
+    expiry_warning_days: int
 
 
 @router.get("/batches", response_model=InventoryBatchListResponse)
@@ -521,6 +569,49 @@ async def list_batches(
     total_lots = (await db.execute(
         select(func.coalesce(func.sum(grouped.c[7]), 0)).select_from(grouped))).scalar_one()
 
+    # Totals over the whole filtered set, computed from the same filters as the
+    # rows above. Grouped by unit because summing across units is meaningless.
+    warn_before = today + timedelta(days=EXPIRY_WARNING_DAYS)
+    expiring_soon = (
+        WmsInventoryLot.expiry_date.is_not(None)
+        & (WmsInventoryLot.expiry_date > today)
+        & (WmsInventoryLot.expiry_date < warn_before)
+    )
+    batch_key = func.concat(
+        WmsInventoryLot.warehouse_id, "|", WmsInventoryLot.material_code, "|",
+        func.coalesce(WmsInventoryLot.supplier_batch, ""))
+    summary_stmt = _apply_lot_filters(
+        select(
+            MdmMaterial.base_uom,
+            func.sum(WmsInventoryLot.qty),
+            func.sum(case(
+                (WmsInventoryLot.mapped_status == "available",
+                 WmsInventoryLot.qty - WmsInventoryLot.qty_onhold), else_=0)),
+            func.sum(case(
+                (WmsInventoryLot.mapped_status == "expired", WmsInventoryLot.qty),
+                else_=0)),
+            func.sum(case(
+                (WmsInventoryLot.wms_status == BLOCKED_QUALITY_CODE,
+                 WmsInventoryLot.qty), else_=0)),
+            func.sum(case((expiring_soon, WmsInventoryLot.qty), else_=0)),
+            func.count(func.distinct(case((expiring_soon, batch_key)))),
+            func.count(func.distinct(batch_key)),
+            func.count(),
+        ).outerjoin(MdmMaterial, MdmMaterial.code == WmsInventoryLot.material_code),
+        **filters,
+    ).group_by(MdmMaterial.base_uom).order_by(func.sum(WmsInventoryLot.qty).desc())
+
+    summary = [
+        InventorySummaryLine(
+            uom=uom, total_qty=total_qty, available_qty=available,
+            expired_qty=expired, blocked_qty=blocked,
+            expiring_soon_qty=soon_qty, expiring_soon_batches=soon_batches,
+            batches=batches, lots=lots,
+        )
+        for (uom, total_qty, available, expired, blocked, soon_qty,
+             soon_batches, batches, lots) in (await db.execute(summary_stmt)).all()
+    ]
+
     order_column = {
         "material_code": WmsInventoryLot.material_code,
         "supplier_batch": WmsInventoryLot.supplier_batch,
@@ -578,7 +669,8 @@ async def list_batches(
         ))
 
     return {"items": items, "total": total, "page": page,
-            "page_size": page_size, "as_of": today, "total_lots": total_lots}
+            "page_size": page_size, "as_of": today, "total_lots": total_lots,
+            "summary": summary, "expiry_warning_days": EXPIRY_WARNING_DAYS}
 
 
 @router.get("/batches/locations", response_model=list[BatchLocationResponse])

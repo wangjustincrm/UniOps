@@ -99,6 +99,29 @@ export interface BatchLocation {
   lot_no: string
 }
 
+/** Totals for one unit of measure over everything the filters match.
+ *
+ *  ★ One line PER UNIT. The warehouse holds kilograms, pieces, each, rolls and
+ *  centipoise, and packaging alone spans five of them — adding them produces a
+ *  number that describes nothing. Raw ingredients are all KGM, so the default
+ *  view is a single line.
+ *
+ *  The figures OVERLAP and are not a partition of the total: expired stock is
+ *  usually blocked too, and stock expiring soon is still available today. */
+export interface InventorySummaryLine {
+  uom: string | null
+  total_qty: string
+  available_qty: string
+  expired_qty: string
+  /** The WAREHOUSE's block (QLT_STS 01), not our derived hold — material under
+   *  inspection is not blocked. */
+  blocked_qty: string
+  expiring_soon_qty: string
+  expiring_soon_batches: number
+  batches: number
+  lots: number
+}
+
 export interface InventoryBatchList {
   items: InventoryBatch[]
   total: number
@@ -108,6 +131,12 @@ export interface InventoryBatchList {
   /** WMS lots behind the batches — so the screen can say "128 batches
    *  (543 lots)" rather than leaving a reader to wonder where they went. */
   total_lots: number
+  /** Over EVERY matching row, not just this page, and in the SAME response as
+   *  the rows — two endpoints taking the same filters drift apart. */
+  summary: InventorySummaryLine[]
+  /** The horizon the server warned on, so the label cannot fall out of step
+   *  with the query behind it. */
+  expiry_warning_days: number
 }
 
 export interface InventoryLot {

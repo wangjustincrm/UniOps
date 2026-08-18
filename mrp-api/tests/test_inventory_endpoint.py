@@ -905,3 +905,167 @@ async def test_inbound_date_is_no_longer_on_the_batch_row(client, db_session, ad
                             headers={AUTH: f"Bearer {admin_token}"})).json()["items"][0]
     assert "inbound_date" in row, "still returned for anyone who wants it"
     assert "lot_no" not in row, "the internal lot number stays out of the list"
+
+
+# ── the summary strip (2026-08-18) ───────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_summary_totals_the_filtered_set_not_the_page(
+    client, db_session, admin_token,
+):
+    """It summarises what the filters match, over every row — not the 25 on
+    screen. A dashboard that silently described one page would be wrong by
+    exactly the amount nobody can see."""
+    await _material(db_session, "CR0025", "Lactose", uom="KGM")
+    for i in range(30):
+        await _lot(db_session, "CR0025", f"L{i}", "100", supplier_batch=f"SB-{i:02d}")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             params={"page_size": 5},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert len(body["items"]) == 5
+    line = body["summary"][0]
+    assert Decimal(line["total_qty"]) == Decimal("3000")
+    assert line["batches"] == 30
+    assert line["lots"] == 30
+
+
+@pytest.mark.anyio
+async def test_summary_follows_the_search(client, db_session, admin_token):
+    """Scoped to the search results, as asked: the block answers "what am I
+    looking at", not "what is in the warehouse"."""
+    await _material(db_session, "CR0025", "Lactose")
+    await _material(db_session, "CR0031", "Whey Powder")
+    await _lot(db_session, "CR0025", "L1", "100", supplier_batch="A")
+    await _lot(db_session, "CR0031", "L2", "900", supplier_batch="B")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             params={"search": "lactose"},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert Decimal(body["summary"][0]["total_qty"]) == Decimal("100")
+
+
+@pytest.mark.anyio
+async def test_summary_is_one_line_per_unit_and_never_adds_them_up(
+    client, db_session, admin_token,
+):
+    """★ Packaging spans five units in the real warehouse (EA, KGM, PIECES,
+    ROLL, cPs). One combined number would describe nothing at all."""
+    await _material(db_session, "CP0133", "Can", uom="PIECES")
+    await _material(db_session, "CP0140", "Film", uom="KGM")
+    await _lot(db_session, "CP0133", "L1", "1000", supplier_batch="A")
+    await _lot(db_session, "CP0140", "L2", "25", supplier_batch="B")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    by_uom = {s["uom"]: s for s in body["summary"]}
+    assert set(by_uom) == {"PIECES", "KGM"}
+    assert Decimal(by_uom["PIECES"]["total_qty"]) == Decimal("1000")
+    assert Decimal(by_uom["KGM"]["total_qty"]) == Decimal("25")
+
+
+@pytest.mark.anyio
+async def test_summary_reports_stock_whose_material_has_no_unit(
+    client, db_session, admin_token,
+):
+    """495 lots belong to materials the master has no row for. Dropping them
+    would make the total quietly smaller than the table below it."""
+    await _lot(db_session, "MYSTERY", "L1", "42", supplier_batch="A")
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    line = body["summary"][0]
+    assert line["uom"] is None
+    assert Decimal(line["total_qty"]) == Decimal("42")
+
+
+@pytest.mark.anyio
+async def test_blocked_is_the_warehouses_block_not_our_hold(
+    client, db_session, admin_token,
+):
+    """★ QLT_STS 01 (Block) only. Our derived `hold` also covers 04 Under
+    Inspection, and counting that as blocked would report material as stopped
+    when QA has merely not finished looking at it."""
+    await _material(db_session, "CR0025", "Lactose")
+    await _lot(db_session, "CR0025", "L1", "100", supplier_batch="A",
+               wms_status="01", status="hold")
+    await _lot(db_session, "CR0025", "L2", "500", supplier_batch="B",
+               wms_status="04", status="hold")
+
+    line = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()["summary"][0]
+    assert Decimal(line["blocked_qty"]) == Decimal("100"), "04 is not blocked"
+    assert Decimal(line["total_qty"]) == Decimal("600")
+
+
+@pytest.mark.anyio
+async def test_available_uses_the_same_definition_as_everywhere_else(
+    client, db_session, admin_token,
+):
+    """qty - qty_onhold over lots that are actually available — so this block,
+    the Materials tab and the planning engine cannot disagree about how much
+    can be used."""
+    await _material(db_session, "CR0025", "Lactose")
+    await _lot(db_session, "CR0025", "OK", "100", onhold="10",
+               status="available", supplier_batch="A")
+    await _lot(db_session, "CR0025", "HELD", "50", status="hold", supplier_batch="B")
+
+    line = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()["summary"][0]
+    assert Decimal(line["available_qty"]) == Decimal("90")
+
+
+@pytest.mark.anyio
+async def test_expiring_soon_excludes_what_has_already_expired(
+    client, db_session, admin_token,
+):
+    """A warning counts what you can still act on. Something 90 days gone is
+    not "expiring soon", it is expired, and it has its own figure."""
+    await _material(db_session, "CR0025", "Lactose")
+    await _lot(db_session, "CR0025", "GONE", "100", supplier_batch="A",
+               expiry=TODAY - timedelta(days=5), status="expired")
+    await _lot(db_session, "CR0025", "SOON", "7", supplier_batch="B",
+               expiry=TODAY + timedelta(days=40))
+    await _lot(db_session, "CR0025", "LATER", "999", supplier_batch="C",
+               expiry=TODAY + timedelta(days=200))
+
+    line = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()["summary"][0]
+    assert Decimal(line["expiring_soon_qty"]) == Decimal("7")
+    assert line["expiring_soon_batches"] == 1
+    assert Decimal(line["expired_qty"]) == Decimal("100")
+
+
+@pytest.mark.anyio
+async def test_the_expiring_tile_and_the_rows_it_filters_to_are_the_same_set(
+    client, db_session, admin_token,
+):
+    """★ The one that matters. Clicking the tile filters with
+    `expiring_after = as_of` and `expiring_before = as_of + N`, and the count on
+    the tile came from `expiry > today AND expiry < today + N`. Both API bounds
+    are exclusive, so the two must agree exactly — including at the boundaries,
+    which is where every version of this bug has lived on this page.
+    """
+    await _material(db_session, "CR0025", "Lactose")
+    for label, days in [("YESTERDAY", -1), ("TODAY", 0), ("TOMORROW", 1),
+                        ("DAY-89", 89), ("DAY-90", 90), ("DAY-91", 91)]:
+        await _lot(db_session, "CR0025", label, "10", supplier_batch=label,
+                   expiry=TODAY + timedelta(days=days),
+                   status="expired" if days <= 0 else "available")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    body = (await client.get("/api/v1/inventory/batches", headers=headers)).json()
+    line = body["summary"][0]
+    horizon = body["expiry_warning_days"]
+    assert horizon == 90
+
+    filtered = (await client.get(
+        "/api/v1/inventory/batches",
+        params={"expiring_after": body["as_of"],
+                "expiring_before": (TODAY + timedelta(days=horizon)).isoformat()},
+        headers=headers)).json()
+
+    assert line["expiring_soon_batches"] == filtered["total"], "tile and rows must agree"
+    assert sorted(i["supplier_batch"] for i in filtered["items"]) == [
+        "DAY-89", "TOMORROW"], "today is expired, day 90 is beyond the horizon"
+    assert Decimal(line["expiring_soon_qty"]) == Decimal("20")
