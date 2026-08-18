@@ -17,6 +17,28 @@ def _d(s):
         return None
 
 
+def transform_lot_location(raw: dict) -> dict:
+    """`INV_LOT_LOC_ID` row -> `wms_lot_locations` payload.
+
+    `trace_id` keeps the source's `'*'` verbatim (122 rows carry it, meaning
+    "no handling unit") rather than being normalised to NULL here: it is part
+    of the table's unique key, and NULLs do not collide in a Postgres unique
+    constraint, so normalising at this layer would quietly stop the key from
+    catching a real duplicate. The API maps it for display instead.
+    """
+    return {
+        "warehouse_id": raw["warehouseid"],
+        "material_code": raw["sku"],
+        "lot_no": raw["lotnum"],
+        "location_id": raw["locationid"],
+        "trace_id": raw["traceid"],
+        "zone_id": raw.get("zoneid"),
+        "qty": raw["qty"],
+        "qty_allocated": raw.get("qtyallocated") or 0,
+        "qty_onhold": raw.get("qtyonhold") or 0,
+    }
+
+
 def transform_lot(raw: dict, mapping: dict[str, str], today: date) -> dict:
     """`mapping` is wms_code -> mapped_status ('01'->'hold', '02'->'available',
     '04'->'hold', ...). Unknown/blank codes default to 'hold' (fail safe: an
@@ -29,6 +51,10 @@ def transform_lot(raw: dict, mapping: dict[str, str], today: date) -> dict:
         status = "expired"
     return {
         "warehouse_id": raw["warehouseid"], "material_code": raw["sku"], "lot_no": raw["lotnum"],
+        # The warehouse's unit, carried alongside its quantity. None when the
+        # warehouse has no packaging row for the SKU -- which must read as
+        # "not stated", never fall back to the ERP's unit for a WMS number.
+        "uom": raw.get("uom"),
         "qty": raw["qty"], "qty_allocated": raw.get("qtyallocated") or 0,
         "qty_onhold": raw.get("qtyonhold") or 0,
         "wms_status": raw.get("lotatt08"), "mapped_status": status,

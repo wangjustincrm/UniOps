@@ -5,7 +5,11 @@ mrp_sync_state bookkeeping on success/failure.
 from decimal import Decimal
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import func, select
+
+from app.models.wms_inventory import WmsInventoryLot
+from app.models.wms_lot_location import WmsLotLocation
 
 FAKE_ROWS = [
     {
@@ -14,6 +18,7 @@ FAKE_ROWS = [
         "lotatt01": "2025-01-03", "lotatt02": "2027-01-02", "lotatt03": "2025-01-20",
         "lotatt05": "20250103 291041001", "lotatt08": "02", "lotatt13": "0000131",
         "lotatt14": "CASN2502100006*189", "edittime": None,
+        "uom": "KG",
     },
     {
         "warehouseid": "CANADA", "sku": "CP0100", "lotnum": "HGC1976999",
@@ -32,6 +37,7 @@ async def test_wms_sync_snapshot_idempotent(db_session, monkeypatch):
     from app.models.sync_state import MrpSyncState
 
     monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
 
     r1 = await service.run_wms_sync(db_session)
     assert r1["lots"] == 2
@@ -61,6 +67,7 @@ async def test_wms_sync_maps_status_from_db_table(db_session, monkeypatch):
     from app.models.wms_inventory import WmsInventoryLot
 
     monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
     await service.run_wms_sync(db_session)
 
     lot_release = (await db_session.execute(
@@ -94,6 +101,7 @@ async def test_wms_sync_expiry_cutoff_is_utc(db_session, monkeypatch):
     from app.services.wms_sync import service
 
     monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
 
     seen_tzs: list = []
     real_now = real_datetime.now
@@ -127,10 +135,12 @@ async def test_wms_sync_refuses_to_replace_snapshot_with_empty_extract(db_sessio
     from app.services.wms_sync import service
 
     monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
     first = await service.run_wms_sync(db_session)
     assert first["lots"] == 2
 
     monkeypatch.setattr(service, "fetch_inventory", lambda: [])
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
     second = await service.run_wms_sync(db_session)
     assert second.get("skipped") is True
     assert second["lots"] == 2  # reports the KEPT count, not 0
@@ -153,6 +163,7 @@ async def test_wms_sync_records_last_error_on_failure(db_session, monkeypatch):
         raise RuntimeError("WMS connection refused")
 
     monkeypatch.setattr(service, "fetch_inventory", _boom)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
 
     with pytest.raises(RuntimeError, match="WMS connection refused"):
         await service.run_wms_sync(db_session)
@@ -160,3 +171,102 @@ async def test_wms_sync_records_last_error_on_failure(db_session, monkeypatch):
     state = await db_session.get(MrpSyncState, "wms")
     assert state.status == "failed"
     assert "WMS connection refused" in state.last_error
+
+
+# ── lot locations, synced alongside the lots (2026-08-18) ────────────────
+
+FAKE_LOCATIONS = [
+    {"warehouseid": "CANADA", "sku": "CF0086", "lotnum": "HGC1976532",
+     "locationid": "11010345", "traceid": "00000002603",
+     "qty": 400, "qtyallocated": 0, "qtyonhold": 0, "zoneid": "LIHG"},
+    {"warehouseid": "CANADA", "sku": "CF0086", "lotnum": "HGC1976532",
+     "locationid": "DM01", "traceid": "*",
+     "qty": 20, "qtyallocated": 0, "qtyonhold": 0, "zoneid": "WOD"},
+]
+
+
+@pytest.mark.anyio
+async def test_sync_mirrors_lot_locations(db_session, monkeypatch):
+    """A lot really does sit in several places — one packaging lot in the live
+    warehouse is spread over 28 — so this is its own grain, not a column."""
+    from app.services.wms_sync import service
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: FAKE_LOCATIONS)
+
+    result = await service.run_wms_sync(db_session)
+    assert result["lots"] == len(FAKE_ROWS)
+    assert result["locations"] == 2
+
+    rows = (await db_session.execute(
+        sa.select(WmsLotLocation).order_by(WmsLotLocation.location_id))).scalars().all()
+    assert [r.location_id for r in rows] == ["11010345", "DM01"]
+    assert [r.zone_id for r in rows] == ["LIHG", "WOD"]
+    # '*' is stored verbatim: it is part of the unique key, and NULLs do not
+    # collide in a Postgres unique constraint, so normalising here would stop
+    # the key catching a real duplicate. The API maps it for display.
+    assert rows[1].trace_id == "*"
+
+
+@pytest.mark.anyio
+async def test_lot_locations_share_the_lots_sync_batch_id(db_session, monkeypatch):
+    """★ Both tables are written in ONE transaction with ONE batch id. If they
+    could drift apart, a lot would show stock sitting nowhere, or a location
+    would hold a lot that no longer exists — and nothing would report it."""
+    from app.services.wms_sync import service
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: FAKE_LOCATIONS)
+    await service.run_wms_sync(db_session)
+
+    lot_batches = set((await db_session.execute(
+        sa.select(WmsInventoryLot.sync_batch_id))).scalars())
+    loc_batches = set((await db_session.execute(
+        sa.select(WmsLotLocation.sync_batch_id))).scalars())
+    assert lot_batches == loc_batches
+    assert len(lot_batches) == 1
+
+
+@pytest.mark.anyio
+async def test_a_second_sync_replaces_locations_rather_than_appending(
+    db_session, monkeypatch,
+):
+    """Snapshot semantics, same as the lots: stock that has moved must not
+    linger in its old location."""
+    from app.services.wms_sync import service
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: FAKE_LOCATIONS)
+    await service.run_wms_sync(db_session)
+
+    moved = [{**FAKE_LOCATIONS[0], "locationid": "99999999"}]
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: moved)
+    await service.run_wms_sync(db_session)
+
+    rows = (await db_session.execute(
+        sa.select(WmsLotLocation.location_id))).scalars().all()
+    assert rows == ["99999999"], "the old locations must be gone, not merged"
+
+
+@pytest.mark.anyio
+async def test_an_empty_lot_extract_leaves_locations_alone_too(db_session, monkeypatch):
+    """The empty-extract guard refuses to replace a real snapshot with nothing.
+    It has to cover locations as well, or a WMS hiccup would empty the location
+    table while the lots survived — every batch would then report that its stock
+    is stored nowhere.
+    """
+    from app.services.wms_sync import service
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: FAKE_LOCATIONS)
+    await service.run_wms_sync(db_session)
+
+
+    monkeypatch.setattr(service, "fetch_inventory", lambda: [])
+    monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
+    result = await service.run_wms_sync(db_session)
+    assert result.get("skipped") is True
+
+    kept = (await db_session.execute(
+        sa.select(sa.func.count()).select_from(WmsLotLocation))).scalar_one()
+    assert kept == 2, "the previous location snapshot must survive"

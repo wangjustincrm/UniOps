@@ -15,7 +15,7 @@ import { api } from '@/lib/api'
 // (see that module's docstring) — kept in the type anyway so a value that
 // slips through some future path still narrows instead of falling to
 // `string`, and StatusBadge renders any unrecognized value neutrally.
-export type MpsRunStatus = 'draft' | 'confirmed' | 'released'
+export type MpsRunStatus = 'draft' | 'confirmed' | 'released' | 'superseded'
 
 /** One intent-product row (planned SKU with no ERP material code yet, see
  *  forecast/intentApi.ts) that generate()/recalculate() left out of `lines`
@@ -103,6 +103,14 @@ export interface MpsLine {
   locked_by_planner: boolean
   manual_adjusted: boolean
   status: string
+  // Minimum lot size (mrp11) — see MpsLineLotFields below for what each
+  // one means. Decimals arrive as strings; wrap in Number().
+  surplus_qty: string
+  carry_in_qty: string
+  covered_by_carry: boolean
+  late_production: boolean
+  surplus_expiry_risk: boolean
+  below_min_lot: boolean
 }
 
 export interface MpsRun {
@@ -124,6 +132,25 @@ export interface MpsRun {
    *  reshape or relabel an existing run (design §5.4). Render this run's
    *  weeks with `week_label`, never by re-deriving from today's setting. */
   week_calendar_mode: string
+  /** Which weekday this run's weeks begin on (0=Monday .. 6=Sunday). Also a
+   *  generate-time snapshot: this factory plans Saturday-start weeks, and
+   *  switching the setting must not redraw the columns of a plan already
+   *  released. Never re-derive a week's day from today's setting. */
+  week_start_dow: number
+  /** Frozen zone: months whose materials are already purchased, inherited
+   *  from the plan in force and not re-planned. `frozen_months` is what was
+   *  actually applied (0 for a first run, which has nothing to inherit) and
+   *  `frozen_until_month` is the last month it covers, or null. The API
+   *  refuses to adjust a line inside it; the matrix greys those columns. */
+  frozen_months: number
+  frozen_until_month: string | null
+  /** Plan versioning (mrp12). `is_default` marks THE plan in force — the one
+   *  purchasing works from, and the one a new plan inherits its frozen zone
+   *  from. Exactly one run has it. A `superseded` run belongs to a horizon
+   *  group a newer one has taken over: readable forever, never activatable
+   *  again, because its window is missing the newest month of demand. */
+  is_default: boolean
+  released_at: string | null
   generated_by: string | null
   stats: MpsRunStats | null
 }
@@ -189,7 +216,65 @@ export interface AdjustLineBody {
   locked_by_planner?: boolean
 }
 
+/** One row of the version picker — `GET /mps/runs`. Deliberately without
+ *  lines: the picker is navigation, and a run carries thousands of them. */
+export interface MpsRunSummary {
+  id: string
+  run_no: string
+  horizon_start_month: string
+  horizon_months: number
+  status: MpsRunStatus
+  is_default: boolean
+  released_at: string | null
+  created_at: string
+  stats: MpsRunStats | null
+}
+
+/** One matrix cell whose planned quantity changed between two versions.
+ *  Decimals arrive as strings — wrap in Number() before arithmetic. */
+export interface MpsDiffCell {
+  material_code: string
+  plan_week_start: string
+  before: string
+  after: string
+  delta: string
+}
+
+export interface MpsRunDiff {
+  run_id: string
+  /** null when this version has nothing before it in its own group — a
+   *  first version genuinely has nothing to compare against, and the page
+   *  shows no overlay rather than lighting every cell up as new. */
+  baseline_run_id: string | null
+  baseline_run_no: string | null
+  /** Which baseline was used: 'active' (the plan in force), 'previous' (what
+   *  this plan replaced — shown when the open plan IS the one in force),
+   *  'explicit' (a named one), or null when there was nothing to compare
+   *  against. Named on screen, because "against the live plan" and "against
+   *  the version this replaced" are not interchangeable statements. */
+  baseline_kind: 'active' | 'previous' | 'explicit' | null
+  cells: MpsDiffCell[]
+  summary: {
+    products_changed: number
+    weeks_changed: number
+    total_delta: string
+  }
+}
+
 export const mpsApi = {
+  /** What changed against another version. `against` defaults server-side
+   *  to the previous version of the same horizon group. */
+  diff: (runId: string, against?: string) =>
+    api.get<MpsRunDiff>(`/mps/runs/${runId}/diff${against ? `?against=${against}` : ''}`),
+
+  /** Newest horizon group first, newest version first within a group. */
+  list: () => api.get<MpsRunSummary[]>('/mps/runs'),
+
+  /** Make an already-released version of the CURRENT group the plan in
+   *  force. 422 for a draft, and for any run of another group — the plan
+   *  group only moves forward. */
+  setDefault: (runId: string) => api.post<MpsRunGet>(`/mps/runs/${runId}/set-default`, {}),
+
   /** Requires the forecast version to be status='confirmed' (409 otherwise
    *  — see mps.py's create_run()). Both `opts` fields are optional and
    *  independently omittable: `safety_margin_fraction` omitted falls back

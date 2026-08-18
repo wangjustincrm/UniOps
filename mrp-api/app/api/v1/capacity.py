@@ -177,6 +177,76 @@ async def _get_exception_or_404(db: SessionDep, exception_id: uuid.UUID) -> MrpC
 
 _KNOWN_CONSTRAINT_TYPES = ("max_output_qty", "max_sku_count", "min_output_qty")
 
+# `product` joined the list when minimum lot sizes became per-product. The
+# other two have always been schema-level allowances with no resolver behind
+# them; they stay accepted so nothing that was storable stops being storable.
+_KNOWN_SCOPE_TYPES = ("factory", "product", "product_family", "line")
+
+
+def _validate_scope(scope_type: str, scope_ref: str | None) -> None:
+    """422 on an unknown scope, and on a `product` rule with no material
+    code: `resolve_min_lots` keys products by `scope_ref`, so a null one
+    resolves for nobody -- a rule that looks saved and does nothing, the
+    same silent failure `_validate_constraint_type` exists to prevent."""
+    if scope_type not in _KNOWN_SCOPE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"unknown scope_type {scope_type!r}; must be one of {_KNOWN_SCOPE_TYPES}",
+        )
+    if scope_type == "product" and not (scope_ref or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a product-scoped rule needs scope_ref set to the material code",
+        )
+
+
+async def _validate_product_min_lot(
+    db: SessionDep,
+    *,
+    scope_type: str,
+    constraint_type: str,
+    limit_value: Decimal,
+    effective_from: date,
+    effective_to: date | None,
+    is_active: bool,
+) -> None:
+    """Reject (422) a product minimum lot size larger than the FACTORY
+    weekly ceiling active over the same window.
+
+    `_validate_min_max` only ever compares within one scope, and products
+    have no max of their own, so without this a 50 t lot could be filed
+    against a 40 t week: no week could ever host it whole, and every month
+    of that product would fall through to "produce late and warn". The rule
+    is wrong at write time, so it is refused at write time.
+
+    The engine still has to cope at run time (a factory rule can shrink
+    afterwards, or a shutdown week can drop below the lot) -- it does, by
+    letting capacity win and flagging the line."""
+    if scope_type != "product" or constraint_type != "min_output_qty" or not is_active:
+        return
+
+    stmt = select(MrpCapacityRule).where(
+        MrpCapacityRule.scope_type == "factory",
+        MrpCapacityRule.scope_ref.is_(None),
+        MrpCapacityRule.constraint_type == "max_output_qty",
+        MrpCapacityRule.is_active.is_(True),
+    )
+    this_to = effective_to or date.max
+    for other in (await db.execute(stmt)).scalars().all():
+        other_to = other.effective_to or date.max
+        if not (effective_from <= other_to and other.effective_from <= this_to):
+            continue
+        if limit_value > other.limit_value:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"minimum lot size {limit_value} exceeds the factory max_output_qty "
+                    f"{other.limit_value} for the weeks they overlap "
+                    f"({other.effective_from}–{other.effective_to or 'open-ended'}); no "
+                    f"single week could ever produce this lot"
+                ),
+            )
+
 
 def _validate_constraint_type(constraint_type: str) -> None:
     """422 (never a silent no-op) on any `constraint_type` outside the
@@ -261,6 +331,12 @@ async def list_rules(db: SessionDep, _: ReadDep):
 @router.post("/rules", response_model=CapacityRuleResponse, status_code=status.HTTP_201_CREATED)
 async def create_rule(body: CapacityRuleCreate, db: SessionDep, _: WriteDep):
     _validate_constraint_type(body.constraint_type)
+    _validate_scope(body.scope_type, body.scope_ref)
+    await _validate_product_min_lot(
+        db, scope_type=body.scope_type, constraint_type=body.constraint_type,
+        limit_value=body.limit_value, effective_from=body.effective_from,
+        effective_to=body.effective_to, is_active=body.is_active,
+    )
     await _validate_min_max(
         db, scope_type=body.scope_type, scope_ref=body.scope_ref,
         constraint_type=body.constraint_type, limit_value=body.limit_value,
@@ -280,6 +356,17 @@ async def update_rule(rule_id: uuid.UUID, body: CapacityRuleUpdate, db: SessionD
     updates = body.model_dump(exclude_unset=True)
     if "constraint_type" in updates:
         _validate_constraint_type(updates["constraint_type"])
+    _validate_scope(updates.get("scope_type", row.scope_type),
+                    updates.get("scope_ref", row.scope_ref))
+    await _validate_product_min_lot(
+        db,
+        scope_type=updates.get("scope_type", row.scope_type),
+        constraint_type=updates.get("constraint_type", row.constraint_type),
+        limit_value=updates.get("limit_value", row.limit_value),
+        effective_from=updates.get("effective_from", row.effective_from),
+        effective_to=updates.get("effective_to", row.effective_to),
+        is_active=updates.get("is_active", row.is_active),
+    )
     await _validate_min_max(
         db,
         scope_type=updates.get("scope_type", row.scope_type),

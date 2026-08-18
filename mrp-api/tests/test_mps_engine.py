@@ -14,7 +14,7 @@ life), the lead shift and its clamp, the multi-hop skip over full periods,
 locked lines consuming capacity, and gap vs. shelf-life-gap all have weekly
 equivalents below -- on real dates, which is the entire point of the rework.
 """
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from app.services.mps_engine import (
@@ -647,8 +647,12 @@ def _fixed_policy_plan(items, per_week, split, fullest, weeks=None):
         return E._pack_tight(ordered, weeks, per_week, open_weeks, split, fullest)
     floors = [per_week[i].min_output_qty for i in open_weeks
               if per_week[i].min_output_qty is not None]
+    floor = max(floors) if floors else None
+    # `_pack_spare` now takes the per-product resolver `pack_bucket` builds,
+    # not one bucket-wide number; with no product rules it is the factory
+    # floor for every code, which is exactly what this helper used to pass.
     return E._pack_spare(ordered, weeks, per_week, open_weeks, needs,
-                         max(floors) if floors else None)
+                         lambda _code: floor)
 
 
 def _unmet(lines):
@@ -845,7 +849,7 @@ def test_lead_zero_reproduces_no_shift():
         demands=[DemandItem("A", "2026-10", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 8, 3), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 8, 3), mode="iso_thursday", start_dow=0,
     )
     assert lines
     assert {l.plan_week_month for l in lines} == {"2026-10"}
@@ -861,7 +865,7 @@ def test_lead_four_weeks_moves_the_target_back_four_weeks():
         demands=[DemandItem("A", "2026-10", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday",
+        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday", start_dow=0,
     )
     assert {l.plan_week_start for l in lines} == {target}
 
@@ -871,7 +875,7 @@ def test_lead_clamped_to_current_week_flags_shortfall():
         demands=[DemandItem("A", "2026-08", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=12, current_week=date(2026, 8, 24), mode="iso_thursday",
+        lead_weeks=12, current_week=date(2026, 8, 24), mode="iso_thursday", start_dow=0,
     )
     assert all(l.plan_week_start >= date(2026, 8, 24) for l in lines)
     assert any(l.lead_shortfall for l in lines)
@@ -883,7 +887,7 @@ def test_weeks_early_counts_prebuild_only_not_the_lead_itself():
         demands=[DemandItem("A", "2026-10", Decimal("30"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday",
+        lead_weeks=4, current_week=date(2026, 8, 3), mode="iso_thursday", start_dow=0,
     )
     assert all(l.weeks_early == 0 and not l.is_prebuild for l in lines)
 
@@ -894,7 +898,7 @@ def test_overflow_moves_earlier_and_marks_prebuild():
         demands=[DemandItem("A", "2026-10", Decimal("300"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 24}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 6, 1), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 6, 1), mode="iso_thursday", start_dow=0,
     )
     assert sum(Decimal(str(l.qty)) for l in lines) == Decimal("300")
     assert any(l.is_prebuild and l.weeks_early > 0 for l in lines)
@@ -907,7 +911,7 @@ def test_shelf_life_uses_real_date_difference_not_4_33_weeks_per_month():
         demands=[DemandItem("A", "2026-10", Decimal("400"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={"A": 3}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday", start_dow=0,
     )
     demand_start = date(2026, 10, 1)
     for l in lines:
@@ -920,7 +924,7 @@ def test_missing_shelf_life_means_never_movable():
         demands=[DemandItem("A", "2026-10", Decimal("300"))],
         limits_for_week=lambda w: CapacityLimits(None, Decimal("40"), Decimal("20")),
         shelf_life_months={}, safety_margin_fraction=Decimal("0.3333"),
-        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday",
+        lead_weeks=0, current_week=date(2026, 1, 5), mode="iso_thursday", start_dow=0,
     )
     assert any(l.capacity_gap for l in lines)
     assert all(not l.is_prebuild for l in lines)
@@ -939,12 +943,15 @@ def _cap(cap="40", min_out="20", sku=None):
 
 
 def _run(demands, limits=None, shelf=None, margin="0.3333", lead=4,
-         now=date(2026, 8, 3), mode=_WEEKLY, locked=None):
+         now=date(2026, 8, 3), mode=_WEEKLY, dow=0, locked=None):
+    # dow=0 (Monday) is what every pre-mrp11 run was planned on, so the
+    # existing expectations stay exactly as they were; the Saturday-start
+    # grid gets its own tests rather than silently re-baselining these.
     return generate_mps(
         demands=demands, limits_for_week=limits or _cap(),
         shelf_life_months={"A": 24, "B": 24, "C": 24} if shelf is None else shelf,
         safety_margin_fraction=Decimal(margin), lead_weeks=lead,
-        current_week=now, mode=mode, locked=locked)
+        current_week=now, mode=mode, start_dow=dow, locked=locked)
 
 
 def _total(lines):
@@ -1386,10 +1393,15 @@ def test_locked_production_books_capacity_so_it_is_not_double_planned():
     held = _locked("A", "2026-10", only, "40")
     lines = _run([DemandItem("A", "2026-10", Decimal("55"))], limits=limits,
                  lead=0, locked=[held])
-    assert _total(lines) == Decimal("55")
+    # 55 demanded, 40 already locked, 15 left to plan -- and 15 is under the
+    # 20 t minimum lot, so the remainder rounds up to a whole 20 t batch
+    # (5 t of surplus). The point of the test is unchanged: none of it may be
+    # planned on top of the locked week, which is full.
+    assert _total(lines) == Decimal("60")
+    assert sum(l.surplus_qty for l in lines) == Decimal("5")
     assert sum(Decimal(str(l.qty)) for l in lines
                if l.plan_week_start == only and not l.capacity_gap) == Decimal("40")
-    assert _total([l for l in lines if l.capacity_gap]) == Decimal("15")
+    assert _total([l for l in lines if l.capacity_gap]) == Decimal("20")
 
 
 def test_a_product_joins_its_own_locked_week_without_a_second_sku_slot():
@@ -1616,3 +1628,257 @@ def test_a_locked_shortfall_does_not_suppress_a_shortage_that_is_still_real():
     assert _total(lines) == Decimal("100")
     assert _total([l for l in lines if l.capacity_gap]) == Decimal("60")
     assert not any(l.locked for l in lines)
+
+
+# ── 约束 G：产品×周 的产量要么 0，要么 ≥ 该产品的最小批量 ──────────────────
+#
+# 「开一次工最少产这么多，再低就是烧能源」。原来的 min_output_qty 只是
+# `_spread_ceiling` 里「别摊太薄」的软下限；现在它同时是开工下限，且按产品配。
+
+
+def _lot_weeks(n=3, first=date(2026, 9, 5)):
+    return [first + timedelta(days=7 * i) for i in range(n)]
+
+
+def test_golden_case_is_unchanged_by_minimum_lot_sizes():
+    """黄金用例是全套排产规则的锚点：加了最小批量后答案一个字都不许变。"""
+    weeks = _lot_weeks(4)
+    items = [BucketItem("A", "2026-09", Decimal("60")), BucketItem("B", "2026-09", Decimal("20")),
+             BucketItem("C", "2026-09", Decimal("30")), BucketItem("D", "2026-09", Decimal("30"))]
+    limits = CapacityLimits(None, Decimal("40"), min_output_qty=Decimal("20"))
+    lots = {c: Decimal("20") for c in "ABCD"}
+
+    without = {(l.material_code, l.plan_week_start): l.qty
+               for l in pack_bucket(items, weeks, limits)}
+    with_lots = {(l.material_code, l.plan_week_start): l.qty
+                 for l in pack_bucket(items, weeks, limits, min_lots=lots)}
+    assert with_lots == without
+    assert with_lots == {
+        ("A", weeks[0]): Decimal("40"), ("A", weeks[1]): Decimal("20"),
+        ("B", weeks[1]): Decimal("20"), ("C", weeks[2]): Decimal("30"),
+        ("D", weeks[3]): Decimal("30"),
+    }
+
+
+# A(90) 需要 3 周、B(5) 需要 1 周，而开放周只有 3 —— sum(need) > 周数，落在
+# **紧张体制**（`_pack_tight`，逐周填满）。富余体制本来就会均分，证明不了尾槽。
+_TIGHT_ITEMS = [BucketItem("A", "2026-09", Decimal("90")),
+                BucketItem("B", "2026-09", Decimal("5"))]
+
+
+def test_tight_regime_relevels_a_tail_below_the_lot_size():
+    """紧张体制下 90 / 周产能 40 / 批量 20 → 30+30+30，不留 10 吨的尾巴。"""
+    weeks = _lot_weeks(3)
+    lines = pack_bucket(_TIGHT_ITEMS, weeks, CapacityLimits(None, Decimal("40")),
+                        min_lots={"A": Decimal("20")})
+    a = sorted(l.qty for l in lines if l.material_code == "A" and not l.capacity_gap)
+    assert a == [Decimal("30")] * 3
+    assert not any(l.below_min_lot for l in lines if l.material_code == "A")
+
+
+def test_without_a_lot_size_the_tail_is_left_alone():
+    """没配批量就没有下限 —— 保持原来的贴边装箱，证明上一条不是巧合。"""
+    weeks = _lot_weeks(3)
+    lines = pack_bucket(_TIGHT_ITEMS, weeks, CapacityLimits(None, Decimal("40")))
+    a = sorted(l.qty for l in lines if l.material_code == "A" and not l.capacity_gap)
+    assert a == [Decimal("10"), Decimal("40"), Decimal("40")]
+
+
+def test_capacity_wins_when_no_week_can_reach_the_lot_size():
+    """21 / 周产能 20 / 批量 20：一周装不下 21，两周必然都低于下限。
+    照排并标 below_min_lot，**绝不**为了凑下限顶到 40（凭空多产近一倍）。"""
+    weeks = _lot_weeks(2)
+    lines = pack_bucket([BucketItem("A", "2026-09", Decimal("21"))], weeks,
+                        CapacityLimits(None, Decimal("20")),
+                        min_lots={"A": Decimal("20")})
+    produced = [l for l in lines if not l.capacity_gap]
+    assert sum(l.qty for l in produced) == Decimal("21")
+    assert all(l.below_min_lot for l in produced)
+    assert sorted(l.qty for l in produced) == [Decimal("10.5"), Decimal("10.5")]
+
+
+def test_a_product_lot_size_overrides_the_factory_floor():
+    """全厂下限 10 允许摊 4 周；产品自己的 40 只允许摊 2 周。"""
+    weeks = _lot_weeks(4)
+    limits = CapacityLimits(None, Decimal("100"), min_output_qty=Decimal("10"))
+    lines = [l for l in pack_bucket([BucketItem("A", "2026-09", Decimal("80"))], weeks, limits,
+                                    min_lots={"A": Decimal("40")}) if l.qty > 0]
+    assert len(lines) == 2
+    assert all(l.qty == Decimal("40") for l in lines)
+
+
+def test_a_product_without_its_own_rule_falls_back_to_the_factory_floor():
+    weeks = _lot_weeks(4)
+    limits = CapacityLimits(None, Decimal("100"), min_output_qty=Decimal("40"))
+    lines = [l for l in pack_bucket([BucketItem("B", "2026-09", Decimal("80"))], weeks, limits,
+                                    min_lots={"A": Decimal("10")}) if l.qty > 0]
+    assert len(lines) == 2          # B 用全厂的 40，不是 A 的 10
+
+
+# ── 顶批量与三段落位搜索 ─────────────────────────────────────────────────
+#
+# 用户定的规则：某月需求不足最小批量时，一律顶到最小批量（多产的抵后续月）。
+# 顶起来的那一批**整批落一周，不许拆**；本月周内放不下就往前一个月找，前面也
+# 没有才往后排并报警，全窗口都塞不下才算缺口。
+
+
+def _fill(code: str, weeks: list, qty="40", demand_month="2026-09"):
+    """Locked production that occupies whole weeks — the engine books locked
+    lines into the ledger before scheduling, so this is how a test says
+    'these weeks are already full'."""
+    return [WeeklyLine(material_code=code, demand_month=demand_month,
+                       plan_week_start=w, qty=Decimal(qty)) for w in weeks]
+
+
+def test_a_month_below_the_lot_size_is_rounded_up_to_it():
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 28))
+    produced = [l for l in lines if not l.capacity_gap and l.qty > 0]
+    assert len(produced) == 1, produced
+    assert produced[0].qty == Decimal("20")           # 顶到最小批量
+    assert produced[0].surplus_qty == Decimal("15")   # 其中 15 是超产
+    assert produced[0].late_production is False
+
+
+def test_the_rounded_lot_is_never_split_across_weeks():
+    """拆开就又低于下限了 —— 顶批量的意义就没了。"""
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 28))
+    produced = [l for l in lines if not l.capacity_gap and l.qty > 0]
+    assert len({l.plan_week_start for l in produced}) == 1
+
+
+def test_a_full_month_pushes_the_lot_backwards_before_anything_else():
+    """当月周被占满 → 往前一个月找空档（提前生产），不是往后。"""
+    october = weeks_of_month("2026-10", _WEEKLY)
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 1), locked=_fill("Z", october, demand_month="2026-10"))
+    placed = [l for l in lines if l.material_code == "A" and not l.capacity_gap]
+    assert len(placed) == 1
+    assert placed[0].qty == Decimal("20")
+    assert placed[0].plan_week_start < october[0]      # 落在 10 月之前
+    assert placed[0].late_production is False
+
+
+def test_only_when_earlier_weeks_are_gone_does_the_lot_go_late_and_say_so():
+    """前面全满才往后排，并且必须标 late_production（会缺货，要报警）。"""
+    september = weeks_of_month("2026-09", _WEEKLY)
+    october = weeks_of_month("2026-10", _WEEKLY)
+    blocked = _fill("Z", september + october, demand_month="2026-10")
+    lines = _run([DemandItem("A", "2026-10", Decimal("5")),
+                  DemandItem("A", "2026-12", Decimal("100"))],
+                 lead=0, now=date(2026, 9, 1), locked=blocked)
+    late = [l for l in lines if l.material_code == "A" and l.demand_month == "2026-10"
+            and not l.capacity_gap]
+    assert len(late) == 1, late
+    assert late[0].qty == Decimal("20")
+    assert late[0].plan_week_start > october[-1]        # 排到了 10 月之后
+    assert late[0].late_production is True
+
+
+def test_a_lot_that_fits_nowhere_at_all_is_still_a_capacity_gap():
+    """全窗口塞不下才是缺口 —— 需求绝不静默消失。"""
+    september = weeks_of_month("2026-09", _WEEKLY)
+    october = weeks_of_month("2026-10", _WEEKLY)
+    blocked = _fill("Z", september + october, demand_month="2026-10")
+    lines = _run([DemandItem("A", "2026-10", Decimal("5"))], lead=0,
+                 now=date(2026, 9, 1), locked=blocked)
+    gaps = [l for l in lines if l.material_code == "A" and l.capacity_gap]
+    assert gaps, [(l.material_code, l.qty, l.capacity_gap) for l in lines]
+
+
+# ── 超产结转、covered 行、保质期警告 ──────────────────────────────────────
+#
+# 顶批量多产的部分不会凭空消失：它作为库存自动抵减后续月份的需求（用户定的
+# 「顶到 20 并扣后续，不拉不凑」）。被抵完的月份仍要产出一条 qty=0 的行，
+# 否则那个产品那个月在矩阵里整个消失，计划员看到的是「这月没需求」。
+
+
+def test_surplus_covers_the_following_months_and_only_one_run_is_opened():
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11", "2026-12")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+
+    produced = [l for l in lines if l.qty > 0 and not l.capacity_gap]
+    assert len(produced) == 1, [(l.demand_month, l.qty) for l in produced]
+    assert produced[0].qty == Decimal("20")
+    assert produced[0].surplus_qty == Decimal("15")
+
+    covered = sorted((l.demand_month, l.carry_in_qty) for l in lines if l.covered_by_carry)
+    assert covered == [("2026-11", Decimal("5")), ("2026-12", Decimal("5"))]
+
+
+def test_covered_rows_carry_no_quantity_and_book_no_capacity():
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+    covered = [l for l in lines if l.covered_by_carry]
+    assert covered
+    assert all(l.qty == Decimal("0") for l in covered)
+    assert all(not l.capacity_gap for l in covered)
+    assert all(l.plan_week_start is not None for l in covered)
+
+
+def test_a_covered_month_still_appears_so_the_planner_can_see_it():
+    """★没有这条，被抵完的月份一条 line 都没有 → 矩阵里那个格子整个消失。"""
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+    assert {l.demand_month for l in lines} == {"2026-10", "2026-11"}
+
+
+def test_conservation_holds_once_the_surplus_is_counted():
+    demands = [DemandItem("A", m, Decimal("5")) for m in ("2026-10", "2026-11", "2026-12")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28))
+    produced = sum((l.qty for l in lines if not l.capacity_gap), Decimal("0"))
+    gap = sum((l.qty for l in lines if l.capacity_gap), Decimal("0"))
+    surplus = sum((l.surplus_qty for l in lines), Decimal("0"))
+    carried = sum((l.carry_in_qty for l in lines), Decimal("0"))
+    assert produced + gap == sum(d.qty for d in demands) + surplus - carried
+
+
+def test_surplus_that_outlives_its_shelf_life_is_flagged_but_still_planned():
+    """A 每月只要 1 吨，批量 20 → 多产的 19 吨要 19 个月才吃完，而保质期只有 6
+    个月。按用户的决定：照顶，只标警告，不拦。"""
+    demands = [DemandItem("A", f"2026-{m:02d}", Decimal("1")) for m in (10, 11, 12)]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28), shelf={"A": 6})
+    produced = [l for l in lines if l.qty > 0 and not l.capacity_gap]
+    assert len(produced) == 1
+    assert produced[0].qty == Decimal("20")            # 照顶
+    assert produced[0].surplus_expiry_risk is True     # 只警告
+
+
+def test_surplus_consumed_well_within_shelf_life_is_not_flagged():
+    demands = [DemandItem("A", m, Decimal("10")) for m in ("2026-10", "2026-11")]
+    lines = _run(demands, lead=0, now=date(2026, 9, 28), shelf={"A": 24})
+    produced = [l for l in lines if l.qty > 0 and not l.capacity_gap]
+    assert any(l.surplus_qty > 0 for l in produced)
+    assert not any(l.surplus_expiry_risk for l in produced)
+
+
+def test_merging_two_lines_on_one_slot_keeps_the_lot_size_bookkeeping():
+    """★`_merge_same_slot` 曾是逐字段重建 —— 每加一个新字段，合并时就被静默
+    丢掉。这条钉住超产/结转/标记在折叠后仍在。"""
+    from app.services.mps_engine import _merge_same_slot
+
+    week = date(2026, 10, 5)
+    a = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                   qty=Decimal("12"), surplus_qty=Decimal("7"),
+                   carry_in_qty=Decimal("3"), below_min_lot=True)
+    b = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                   qty=Decimal("8"), surplus_qty=Decimal("1"),
+                   surplus_expiry_risk=True)
+    merged = _merge_same_slot([a, b])
+    assert len(merged) == 1
+    assert merged[0].qty == Decimal("20")
+    assert merged[0].surplus_qty == Decimal("8")
+    assert merged[0].carry_in_qty == Decimal("3")
+    assert merged[0].below_min_lot is True
+    assert merged[0].surplus_expiry_risk is True
+
+
+def test_a_covered_row_is_never_folded_into_a_production_line():
+    week = date(2026, 10, 5)
+    covered = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                         qty=Decimal("0"), carry_in_qty=Decimal("5"), covered_by_carry=True)
+    real = WeeklyLine(material_code="A", demand_month="2026-10", plan_week_start=week,
+                      qty=Decimal("20"))
+    from app.services.mps_engine import _merge_same_slot
+    assert len(_merge_same_slot([covered, real])) == 2

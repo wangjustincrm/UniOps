@@ -122,7 +122,7 @@ case over 18 months); it does not need to.
 """
 from calendar import monthrange
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import ROUND_DOWN, ROUND_UP, Decimal
 
@@ -214,6 +214,34 @@ class WeeklyLine:
     capacity_gap: bool = False
     locked: bool = False
     lead_shortfall: bool = False
+    # This week runs BELOW the product's minimum lot size, because weekly
+    # capacity cannot reach the lot in a single week (21 t of demand, a 20 t
+    # week and a 20 t lot: two weeks of 10.5 is the only way to make it at
+    # all). Capacity wins over the floor -- the alternative, rounding up to
+    # two whole lots, invents nearly double the demand. This is the ONE
+    # sanctioned exception to "produce 0 or at least a lot".
+    below_min_lot: bool = False
+    # How much of `qty` exceeds the net requirement because the batch was
+    # rounded up to the product's minimum lot size. Real production: it is
+    # released to 1C and its materials get purchased. It also offsets later
+    # months' requirements (see `generate_mps`'s carry).
+    surplus_qty: Decimal = Decimal("0")
+    # Scheduled in a week LATER than the demand month, because neither that
+    # month nor any earlier week could host a whole lot. The goods arrive
+    # after they were needed -- amber, not red: it is still better than not
+    # producing at all, but a planner has to see it.
+    late_production: bool = False
+    # How much of this demand month was already covered by an earlier
+    # month's minimum-lot surplus. A month covered IN FULL still gets a line
+    # -- qty 0, `covered_by_carry` set -- because the plan matrix is built
+    # from lines: with no line at all, that product/month cell vanishes and
+    # reads as "no demand" rather than "already made".
+    carry_in_qty: Decimal = Decimal("0")
+    covered_by_carry: bool = False
+    # The surplus on this line will sit in stock longer than its shelf life
+    # allows before later demand consumes it. Warned about, never blocked:
+    # the plant chose to round up.
+    surplus_expiry_risk: bool = False
 
 
 # `mrp_mps_lines.qty` is Numeric(18, 3); level a run to the same resolution
@@ -491,7 +519,8 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
                 per_week: list[CapacityLimits], open_weeks: list[int],
                 allow_last_resort_split: bool = False,
                 prefer_fullest_start: bool = False,
-                preloaded: list[dict[str, Decimal]] | None = None) -> list[WeeklyLine]:
+                preloaded: list[dict[str, Decimal]] | None = None,
+                lot_of: "Callable[[str], Decimal | None] | None" = None) -> list[WeeklyLine]:
     """Tight regime: the bucket is over-full, so pack, do not spread.
 
     Two policy switches, because neither choice is universally right and
@@ -507,10 +536,16 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
     conservative baseline and is always one of the evaluated candidates, so
     the chosen plan can never leave more demand unmet than it would.
 
-    `min_output_qty` deliberately plays NO part here. There is no slack to
-    thin anything into, and honouring a floor would only push a product into
-    an extra week it does not need -- manufacturing a capacity gap out of
-    nothing. The floor is a spreading limit, never a placement rule.
+    The lot size never pushes a product into an EXTRA week here -- there is
+    no slack to spread into, and doing so would manufacture a capacity gap
+    out of nothing. What it does do is even out the tail: filling weeks to
+    the brim leaves the remainder in the last one (90 t at a 40 t cap gives
+    40+40+10), and a 10 t run costs the same changeover and cleandown as a
+    30 t one. `_relevel_run` re-levels that run over the weeks it already
+    occupies -- same weeks, same total, no gap -- so 90 t comes out
+    30+30+30. When even levelling cannot reach the lot (weekly capacity is
+    simply too small), the run is left levelled and flagged
+    `below_min_lot`; capacity wins.
 
     Only weeks in `open_weeks` are placement targets; closed weeks (a
     maintenance shutdown, say) are stepped over, including in the middle of
@@ -593,6 +628,7 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
 
         remaining = qty
         last_used: int | None = None
+        placed: list[tuple[int, int]] = []      # (index into `lines`, week index)
         if start is not None:
             for i in open_weeks[open_weeks.index(start):]:
                 if remaining <= 0:
@@ -605,9 +641,13 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
                 if take <= 0:
                     break
                 load.commit(code, take)
+                placed.append((len(lines), i))
                 lines.append(_line(item, weeks[i], take))
                 remaining -= take
                 last_used = i
+
+        _relevel_run(lines, placed, loads, per_week, code,
+                     lot_of(code) if lot_of else None)
 
         if remaining > 0:
             # Never silently drop demand: what did not fit surfaces as an
@@ -634,9 +674,51 @@ def _pack_tight(ordered: list[BucketItem], weeks: list[date],
     return lines
 
 
+def _relevel_run(lines: list[WeeklyLine], placed: list[tuple[int, int]],
+                 loads: list["_WeekLoad"], per_week: list[CapacityLimits],
+                 code: str, lot: Decimal | None) -> None:
+    """Even out one product's just-placed run so no week sits below `lot`.
+
+    Same weeks, same total, so nothing is added to or taken from the bucket:
+    a re-level can never turn met demand into a shortfall, and the
+    shortfall-ranked choice between packing policies is unaffected.
+
+    The span is never shortened. Dropping a week would mean removing the
+    product from that week's SKU set, and `_WeekLoad` tracks a set of codes
+    with one running total -- it cannot tell whether some OTHER item of the
+    same material also occupies that week (two demand months of one product
+    routinely land in one bucket). Levelling in place needs no such
+    accounting.
+
+    Leaves the run untouched when levelling would breach a week's own
+    ceiling, which heterogeneous per-week capacity allows: an uneven run
+    that fits beats an even one that does not.
+    """
+    if lot is None or len(placed) < 2:
+        return
+    quantities = [lines[li].qty for li, _ in placed]
+    if all(q >= lot for q in quantities):
+        return
+
+    total = sum(quantities, Decimal("0"))
+    chunks = _level(total, len(placed))
+    for pos, (_, week_index) in enumerate(placed):
+        ceiling = per_week[week_index].max_output_qty
+        if ceiling is None:
+            continue
+        others = loads[week_index].qty - quantities[pos]
+        if others + chunks[pos] > ceiling:
+            return
+
+    for pos, (line_index, week_index) in enumerate(placed):
+        loads[week_index].qty += chunks[pos] - quantities[pos]
+        lines[line_index] = replace(lines[line_index], qty=_tidy(chunks[pos]))
+
+
 def _pack_spare(ordered: list[BucketItem], weeks: list[date],
                 per_week: list[CapacityLimits], open_weeks: list[int],
-                needs: list[int], min_out: Decimal | None) -> list[WeeklyLine]:
+                needs: list[int],
+                lot_of: "Callable[[str], Decimal | None]") -> list[WeeklyLine]:
     """Spare regime: more open weeks than the demand strictly needs.
 
     Every product starts at its physical minimum `need_weeks` and may grow
@@ -661,7 +743,9 @@ def _pack_spare(ordered: list[BucketItem], weeks: list[date],
     # the two entries collide and the layout loop could then run off the end
     # of `open_weeks`.
     assigned = list(needs)
-    ceilings = [_spread_ceiling(item.qty, needs[pos], min_out, slot_count)
+    # Per PRODUCT, not per factory: the floor is "what is worth opening the
+    # line for", and that differs by product.
+    ceilings = [_spread_ceiling(item.qty, needs[pos], lot_of(item.material_code), slot_count)
                 for pos, item in enumerate(ordered)]
 
     spare = slot_count - sum(assigned)
@@ -731,7 +815,8 @@ def _normalize_preload(preloaded: "Sequence[dict[str, Decimal]] | None",
 
 def pack_bucket(items: list[BucketItem], weeks: list[date],
                 limits: "CapacityLimits | Sequence[CapacityLimits]",
-                preloaded: "Sequence[dict[str, Decimal]] | None" = None) -> list[WeeklyLine]:
+                preloaded: "Sequence[dict[str, Decimal]] | None" = None,
+                min_lots: "dict[str, Decimal] | None" = None) -> list[WeeklyLine]:
     """Pack one bucket's net requirements into that bucket's weeks.
 
     Pure function. `weeks` is an already-resolved ascending list of week-start
@@ -893,12 +978,26 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
     ordered = sorted(payload, key=_sort_key)
     open_weeks = [i for i, wk in enumerate(per_week) if _week_can_host(wk)]
 
+    # A product's own minimum lot size, falling back to the factory-wide
+    # floor. The factory floor is bucket-wide -- it says how thinly the plant
+    # is willing to run at all, which is not a property of an individual
+    # week -- so the LARGEST configured floor across the open weeks is taken,
+    # and no week is ever asked to run below its own minimum.
+    factory_floors = [per_week[i].min_output_qty for i in open_weeks
+                      if per_week[i].min_output_qty is not None]
+    factory_floor = max(factory_floors) if factory_floors else None
+
+    def lot_of(code: str) -> Decimal | None:
+        if min_lots is not None and code in min_lots:
+            return min_lots[code]
+        return factory_floor
+
     if not open_weeks:
         # Nothing can be produced anywhere in this bucket. `_pack_tight`'s
         # per-week checks turn every item into an explicit gap; `_pack_spare`
         # has no slots to lay anything out in and would silently drop them.
         return _sorted_lines(_pack_tight(ordered, weeks, per_week, open_weeks,
-                                         preloaded=held))
+                                         preloaded=held, lot_of=lot_of))
 
     ref_cap = _reference_cap(per_week, open_weeks)
     needs = [_need_weeks(item.qty, ref_cap) for item in ordered]
@@ -915,22 +1014,37 @@ def pack_bucket(items: list[BucketItem], weeks: list[date],
         plans = [
             _pack_tight(ordered, weeks, per_week, open_weeks,
                         allow_last_resort_split=split,
-                        prefer_fullest_start=fullest, preloaded=held)
+                        prefer_fullest_start=fullest, preloaded=held,
+                        lot_of=lot_of)
             for split in (False, True)
             for fullest in (False, True)
         ]
         lines = min(plans, key=_plan_shortfall)
     else:
-        # The floor is bucket-wide: it says how thinly the plant is willing
-        # to run at all, which is not a property of an individual week.
-        # Take the largest configured floor across the open weeks so no week
-        # is ever asked to run below its own minimum.
-        floors = [per_week[i].min_output_qty for i in open_weeks
-                  if per_week[i].min_output_qty is not None]
-        lines = _pack_spare(ordered, weeks, per_week, open_weeks, needs,
-                            max(floors) if floors else None)
+        lines = _pack_spare(ordered, weeks, per_week, open_weeks, needs, lot_of)
 
-    return _sorted_lines(lines)
+    return _sorted_lines(_flag_below_min_lot(lines, lot_of))
+
+
+def _flag_below_min_lot(lines: list[WeeklyLine],
+                        lot_of: "Callable[[str], Decimal | None]") -> list[WeeklyLine]:
+    """Mark every produced week that ends up under its product's lot size.
+
+    Applied once, at the end, over BOTH regimes: the tight path can be left
+    below the floor by a re-level that capacity refused, and the spare path
+    by `_spread_ceiling` (where `need_weeks` -- a physical minimum -- always
+    outranks the floor). One pass means the flag cannot disagree with the
+    quantities beside it.
+
+    Gap lines are never flagged: a shortfall is not a production run."""
+    flagged: list[WeeklyLine] = []
+    for line in lines:
+        lot = lot_of(line.material_code)
+        if not line.capacity_gap and line.qty > 0 and lot is not None and line.qty < lot:
+            flagged.append(replace(line, below_min_lot=True))
+        else:
+            flagged.append(line)
+    return flagged
 
 
 def _plan_shortfall(lines: list[WeeklyLine]) -> Decimal:
@@ -999,6 +1113,60 @@ def _minus_months(anchor: date, months: int) -> date:
     year, month0 = divmod(total, 12)
     last_day = monthrange(year, month0 + 1)[1]
     return date(year, month0 + 1, min(anchor.day, last_day))
+
+
+def _flag_surplus_expiry(
+    lines: list[WeeklyLine], demand_by_code: dict[str, dict[str, Decimal]],
+    shelf_life_months: dict[str, int | None], safety_margin_fraction: Decimal,
+) -> list[WeeklyLine]:
+    """Flag surplus that will still be in stock past its shelf life.
+
+    Rounding up to a lot size is never blocked by this -- the plant decided
+    a whole batch is worth making -- but a planner has to see when the
+    batch outlives its own demand. The allowance is the same
+    `shelf_life x (1 - safety margin)` the pre-build gate uses, so the two
+    do not disagree about how long product keeps.
+
+    No shelf life on record counts as a risk: an unknown cannot be shown to
+    survive, and silence here is what lets stale product through."""
+    flagged: list[WeeklyLine] = []
+    for line in lines:
+        if line.surplus_qty <= 0:
+            flagged.append(line)
+            continue
+        shelf = shelf_life_months.get(line.material_code)
+        months = _months_to_consume(demand_by_code.get(line.material_code, {}),
+                                    line.demand_month, line.surplus_qty)
+        if shelf is None or months is None:
+            at_risk = True
+        else:
+            allowance = int(Decimal(shelf) * (Decimal("1") - safety_margin_fraction))
+            at_risk = months > allowance
+        flagged.append(replace(line, surplus_expiry_risk=at_risk) if at_risk else line)
+    return flagged
+
+
+def _month_distance(earlier: str, later: str) -> int:
+    """Whole months from `'YYYY-MM'` to `'YYYY-MM'`; negative if reversed."""
+    ey, em = (int(part) for part in earlier.split("-"))
+    ly, lm = (int(part) for part in later.split("-"))
+    return (ly - ey) * 12 + (lm - em)
+
+
+def _months_to_consume(demand_by_month: dict[str, Decimal], from_month: str,
+                       surplus: Decimal) -> int | None:
+    """How many months of later demand it takes to eat `surplus`, or None if
+    the horizon never does.
+
+    Months are walked in order and their FULL requirement is drawn down --
+    the surplus is what the carry offsets first, so this mirrors exactly
+    what `generate_mps` does with it."""
+    remaining = surplus
+    for month in sorted(m for m in demand_by_month if m > from_month):
+        remaining -= demand_by_month[month]
+        if remaining <= 0:
+            return _month_distance(from_month, month)
+    return None
 
 
 def _prebuild_allowed(plan_week_start: date, demand_month: str,
@@ -1136,22 +1304,31 @@ def _merge_same_slot(lines: list[WeeklyLine]) -> list[WeeklyLine]:
     for line in lines:
         key = (line.material_code, line.demand_month, line.plan_week_start,
                line.capacity_gap, line.is_prebuild, line.weeks_early,
-               line.shelf_life_ok, line.locked, line.lead_shortfall)
+               line.shelf_life_ok, line.locked, line.lead_shortfall,
+               # A zero-qty "covered by stock" row and a late run are
+               # different statements about a slot; folding either into a
+               # normal production line would erase what it says.
+               line.covered_by_carry, line.late_production)
         at = folded.get(key)
         if at is None:
             folded[key] = len(out)
             out.append(line)
         else:
             seen = out[at]
-            out[at] = WeeklyLine(
-                material_code=seen.material_code, demand_month=seen.demand_month,
-                plan_week_start=seen.plan_week_start,
-                plan_week_month=seen.plan_week_month,
+            # `replace`, never a field-by-field rebuild: this function used to
+            # list every field explicitly, so each new field added to
+            # WeeklyLine was silently dropped the moment two lines merged.
+            out[at] = replace(
+                seen,
                 qty=_tidy(seen.qty + line.qty),
-                is_prebuild=seen.is_prebuild, weeks_early=seen.weeks_early,
+                surplus_qty=_tidy(seen.surplus_qty + line.surplus_qty),
+                # Stamped once per (material, demand month), so at most one
+                # side carries it and the sum is that one value.
+                carry_in_qty=_tidy(seen.carry_in_qty + line.carry_in_qty),
                 prebuild_reason=seen.prebuild_reason or line.prebuild_reason,
-                shelf_life_ok=seen.shelf_life_ok, capacity_gap=seen.capacity_gap,
-                locked=seen.locked, lead_shortfall=seen.lead_shortfall)
+                below_min_lot=seen.below_min_lot or line.below_min_lot,
+                surplus_expiry_risk=seen.surplus_expiry_risk or line.surplus_expiry_risk,
+            )
     return out
 
 
@@ -1163,7 +1340,9 @@ def generate_mps(
     lead_weeks: int,
     current_week: date,
     mode: str,
+    start_dow: int,
     locked: list[WeeklyLine] | None = None,
+    min_lots: dict[str, Decimal] | None = None,
 ) -> list[WeeklyLine]:
     """The weekly master production schedule, per design §2.0's six steps.
 
@@ -1171,6 +1350,10 @@ def generate_mps(
     already-bound resolver (Task 3's `resolve_limits_for_week` partial);
     `current_week` is the "now" this run schedules from and is normalised to
     its own week start, so a caller may pass any day of the current week.
+    `start_dow` says which weekday a week begins on (0=Monday .. 6=Sunday);
+    it has no default on purpose -- callers must pass the RUN's stored
+    `week_start_dow`, never the current planning parameter, or a released
+    plan would silently re-bucket itself onto a different grid.
 
     ## The pipeline
 
@@ -1246,6 +1429,24 @@ def generate_mps(
     reported a shortfall against an empty target week, which a planner would
     escalate or expedite against.
 
+    ## Minimum lot sizes
+
+    `min_lots` maps material code to the quantity below which opening the
+    line is not worth the changeover. A bucket whose whole requirement for a
+    product falls under that lot is **rounded up to it** -- the plant would
+    rather make a full batch now and draw on it later than run the line for
+    a token quantity. The excess is recorded as `surplus_qty`.
+
+    A rounded batch is placed **whole, in one week**: splitting it puts both
+    halves back under the lot, which is the thing being avoided. If no week
+    of its own bucket can host it, the batch is not produced there -- it goes
+    to the same backward walk pre-builds use, and if that fails, forward
+    (`late_production`). Only when the entire horizon has no room for it does
+    it become a `capacity_gap`.
+
+    Products with no entry fall back to the factory-wide `min_output_qty` of
+    their bucket, and a product with neither has no floor at all.
+
     ## Locked lines
 
     `locked` is production a planner has already committed. Each line is
@@ -1262,7 +1463,7 @@ def generate_mps(
     be part locked and part open, and dropping the key entirely would
     silently delete the open remainder.
     """
-    current = week_start_of(current_week, mode)
+    current = week_start_of(current_week, mode, start_dow=start_dow)
 
     # A locked line carrying `capacity_gap=True` is DROPPED, not echoed.
     # Callers do produce them: the API layer rebuilds locked lines from
@@ -1330,7 +1531,8 @@ def generate_mps(
     targets: dict[str, date] = {}
     clamped: dict[str, bool] = {}
     for month in {d.demand_month for d in payload}:
-        standard = shift_weeks(weeks_of_month(month, mode)[-1], -lead_weeks, mode)
+        standard = shift_weeks(weeks_of_month(month, mode, start_dow=start_dow)[-1],
+                               -lead_weeks, mode, start_dow=start_dow)
         clamped[month] = standard < current
         targets[month] = current if clamped[month] else standard
 
@@ -1350,10 +1552,63 @@ def generate_mps(
     # ③ Bucket by the owning month of the target week.
     buckets: dict[str, list[DemandItem]] = {}
     for item in payload:
-        buckets.setdefault(owning_month(targets[item.demand_month], mode), []).append(item)
+        buckets.setdefault(
+            owning_month(targets[item.demand_month], mode, start_dow=start_dow),
+            []).append(item)
 
-    # (bucket_month, canvas, material_code, demand_month, qty, bucket_reason)
-    overflow: list[tuple[str, list[date], str, str, Decimal, str | None]] = []
+    # The last week production may be scheduled into at all: the final week
+    # of the latest bucket month. The forward walk (below) stops here rather
+    # than running off into weeks no capacity was ever resolved for.
+    horizon_end = max(weeks_of_month(bm, mode, start_dow=start_dow)[-1]
+                      for bm in buckets)
+
+    # (bucket_month, canvas, material_code, demand_month, qty, bucket_reason,
+    #  whole_only)
+    overflow: list[tuple[str, list[date], str, str, Decimal, str | None, bool]] = []
+
+    # Minimum-lot surplus awaiting attribution, keyed by (code, the demand
+    # month it was booked against). Stamped onto whichever line ends up
+    # carrying that slice, wherever the search finally places it.
+    surplus_pending: dict[tuple[str, str], Decimal] = {}
+
+    # Surplus already produced and not yet consumed, per material. Buckets
+    # are walked in ascending month order, so a batch rounded up in an early
+    # bucket is on the shelf by the time a later one is planned and its
+    # requirement is reduced accordingly -- the plant does not make the same
+    # goods twice. Demand is never pulled FORWARD to fill a batch (the
+    # planner's explicit choice): surplus only ever offsets what comes after
+    # it.
+    carry: dict[str, Decimal] = {}
+    carry_in_pending: dict[tuple[str, str], Decimal] = {}
+
+    # Pre-carry requirement per material and month, for the shelf-life
+    # estimate below: how long the surplus must survive is a question about
+    # the demand it will eventually serve.
+    demand_by_code: dict[str, dict[str, Decimal]] = {}
+    for item in payload:
+        demand_by_code.setdefault(item.material_code, {})[item.demand_month] = (
+            demand_by_code.get(item.material_code, {}).get(item.demand_month, Decimal("0"))
+            + item.qty)
+
+    def _take_carry_in(code: str, demand_month: str) -> Decimal:
+        """Whatever stock covered part of this month, stamped on the first
+        line emitted for it -- the matrix reads Available per (product,
+        month), so one line carrying it is right and repeating it on every
+        line of a levelled run would multiply it."""
+        return carry_in_pending.pop((code, demand_month), Decimal("0"))
+
+    def _take_surplus(code: str, demand_month: str, qty: Decimal) -> Decimal:
+        key = (code, demand_month)
+        pending = surplus_pending.get(key)
+        if not pending:
+            return Decimal("0")
+        taken = pending if pending <= qty else qty
+        remainder = pending - taken
+        if remainder > 0:
+            surplus_pending[key] = remainder
+        else:
+            surplus_pending.pop(key, None)
+        return taken
 
     for bucket_month in sorted(buckets):
         members = buckets[bucket_month]
@@ -1361,20 +1616,77 @@ def generate_mps(
         # P2 levelling and P3 one-product-per-week have somewhere to operate.
         # Only the past is excluded. Never empty: every member's target week
         # is one of this month's own weeks and is >= `current`.
-        canvas = [w for w in weeks_of_month(bucket_month, mode) if w >= current]
+        canvas = [w for w in weeks_of_month(bucket_month, mode, start_dow=start_dow)
+                  if w >= current]
         per_week = [limits_for_week(w) for w in canvas]
         preloaded = [locked_by_week.get(w, {}) for w in canvas]
 
         contributions: dict[str, list[list]] = {}
         for item in sorted(members, key=lambda d: (d.material_code, d.demand_month)):
+            qty = item.qty
+            available = carry.get(item.material_code, Decimal("0"))
+            if available > 0:
+                covered = available if available < qty else qty
+                carry[item.material_code] = available - covered
+                qty -= covered
+                key = (item.material_code, item.demand_month)
+                carry_in_pending[key] = carry_in_pending.get(key, Decimal("0")) + covered
+                if qty <= 0:
+                    # Fully covered by stock already made. Emit a zero-qty
+                    # line so the month stays visible; it books no capacity
+                    # and is never released as demand.
+                    target = targets[item.demand_month]
+                    lines.append(WeeklyLine(
+                        material_code=item.material_code,
+                        demand_month=item.demand_month,
+                        plan_week_start=target,
+                        plan_week_month=owning_month(target, mode, start_dow=start_dow),
+                        qty=Decimal("0"),
+                        carry_in_qty=carry_in_pending.pop(key),
+                        covered_by_carry=True,
+                        lead_shortfall=clamped[item.demand_month]))
+                    continue
             contributions.setdefault(item.material_code, []).append(
-                [item.demand_month, item.qty])
+                [item.demand_month, qty])
 
-        merged = [BucketItem(code, parts[0][0], sum((q for _, q in parts), Decimal("0")))
-                  for code, parts in sorted(contributions.items())]
+        if not contributions:
+            continue        # every member of this bucket was covered by stock
+
+        # The floor a product falls back to in THIS bucket when it has no
+        # rule of its own -- the same resolution `pack_bucket` performs, kept
+        # in step deliberately: rounding up to one number and packing against
+        # another would produce batches the packer then re-levels away.
+        open_here = [i for i, wk in enumerate(per_week) if _week_can_host(wk)]
+        bucket_floors = [per_week[i].min_output_qty for i in open_here
+                         if per_week[i].min_output_qty is not None]
+        bucket_floor = max(bucket_floors) if bucket_floors else None
+
+        def _lot_for(code: str) -> Decimal | None:
+            if min_lots is not None and code in min_lots:
+                return min_lots[code]
+            return bucket_floor
+
+        merged = []
+        rounded_codes: set[str] = set()
+        for code, parts in sorted(contributions.items()):
+            total = sum((q for _, q in parts), Decimal("0"))
+            lot = _lot_for(code)
+            if lot is not None and Decimal("0") < total < lot:
+                # Round up to a whole batch. The excess is booked against the
+                # LATEST demand month in this bucket: it is made together
+                # with that month's own quantity and, being surplus, is what
+                # later months draw on first.
+                surplus = lot - total
+                parts[-1][1] += surplus
+                surplus_pending[(code, parts[-1][0])] = surplus
+                carry[code] = carry.get(code, Decimal("0")) + surplus
+                rounded_codes.add(code)
+                total = lot
+            merged.append(BucketItem(code, parts[0][0], total))
 
         # ④ Pack the bucket.
-        packed = pack_bucket(merged, canvas, per_week, preloaded=preloaded)
+        packed = pack_bucket(merged, canvas, per_week, preloaded=preloaded,
+                             min_lots=min_lots)
         target_pos = {month: canvas.index(week) for month, week in targets.items()
                       if week in canvas}
 
@@ -1407,13 +1719,18 @@ def generate_mps(
                         bucket_overflow.append((
                             bucket_month, canvas, code, demand_month, take,
                             f"the week of {line.plan_week_start.isoformat()} is earlier "
-                            f"than shelf life allows for {demand_month} demand"))
+                            f"than shelf life allows for {demand_month} demand",
+                            code in rounded_codes))
                         continue
                     lines.append(WeeklyLine(
                         material_code=code, demand_month=demand_month,
                         plan_week_start=line.plan_week_start,
-                        plan_week_month=owning_month(line.plan_week_start, mode),
+                        plan_week_month=owning_month(line.plan_week_start, mode,
+                                                     start_dow=start_dow),
                         qty=_tidy(take),
+                        surplus_qty=_take_surplus(code, demand_month, take),
+                        below_min_lot=line.below_min_lot,
+                        carry_in_qty=_take_carry_in(code, demand_month),
                         # Inside the demand's OWN bucket month, so never a
                         # pre-build however early in the month it sits --
                         # spreading across the month is levelling, which is
@@ -1429,7 +1746,8 @@ def generate_mps(
             for gap in gaps:
                 for demand_month, take in _peel(queue, gap.qty):
                     bucket_overflow.append((bucket_month, canvas, code, demand_month,
-                                            take, gap.prebuild_reason))
+                                            take, gap.prebuild_reason,
+                                            code in rounded_codes))
 
             if queue:
                 # `pack_bucket` conserves exactly (produced + gap == input),
@@ -1447,7 +1765,7 @@ def generate_mps(
     #        bucket's pre-build in its weeks; overflow is then resolved in
     #        ascending bucket order, so earlier demand claims earlier weeks
     #        first.
-    for bucket_month, canvas, code, demand_month, qty, bucket_reason in overflow:
+    for bucket_month, canvas, code, demand_month, qty, bucket_reason, whole_only in overflow:
         target = targets[demand_month]
         shelf_life = shelf_life_months.get(code)
         # Ascending timeline, extended backwards one REAL week at a time.
@@ -1470,7 +1788,7 @@ def generate_mps(
 
         while remaining > 0:
             if cursor < 0:
-                timeline.insert(0, shift_weeks(timeline[0], -1, mode))
+                timeline.insert(0, shift_weeks(timeline[0], -1, mode, start_dow=start_dow))
                 pos += 1
                 cursor = 0
             week = timeline[cursor]
@@ -1491,9 +1809,14 @@ def generate_mps(
                 if load.sku_room(code, limits):
                     room = load.remaining(limits)
                     take = remaining if room is None else min(remaining, room)
+                    if whole_only and take < remaining:
+                        # A rounded batch placed in pieces puts every piece
+                        # back under the lot size -- the very thing rounding
+                        # up exists to avoid. Skip this week entirely.
+                        take = Decimal("0")
                     if take > 0:
                         load.commit(code, take)
-                        week_month = owning_month(week, mode)
+                        week_month = owning_month(week, mode, start_dow=start_dow)
                         crossed = week_month < bucket_month
                         lines.append(WeeklyLine(
                             material_code=code, demand_month=demand_month,
@@ -1501,6 +1824,8 @@ def generate_mps(
                             plan_week_month=week_month,
                             qty=_tidy(take),
                             is_prebuild=crossed, weeks_early=early,
+                            surplus_qty=_take_surplus(code, demand_month, take),
+                            carry_in_qty=_take_carry_in(code, demand_month),
                             prebuild_reason=(
                                 _early_note(early, bucket_reason) if crossed
                                 # Still inside the demand's own bucket month:
@@ -1516,6 +1841,42 @@ def generate_mps(
             # months the same way), not one of `pack_bucket`'s contiguous
             # runs.
             cursor -= 1
+
+        if remaining > 0:
+            # Nothing earlier could take it. Producing LATE is worse than
+            # producing on time and far better than not producing at all, so
+            # walk forward from the end of the bucket to the end of the
+            # horizon before calling this a shortfall. No shelf-life gate
+            # applies going this way: later production is fresher, not
+            # staler, when the demand month is already behind it.
+            week = shift_weeks(canvas[-1], 1, mode, start_dow=start_dow)
+            while remaining > 0 and week <= horizon_end:
+                limits = limits_for_week(week)
+                if _week_can_host(limits):
+                    load = ledger.setdefault(week, _WeekLoad())
+                    if load.sku_room(code, limits):
+                        room = load.remaining(limits)
+                        take = remaining if room is None else min(remaining, room)
+                        if whole_only and take < remaining:
+                            take = Decimal("0")
+                        if take > 0:
+                            load.commit(code, take)
+                            lines.append(WeeklyLine(
+                                material_code=code, demand_month=demand_month,
+                                plan_week_start=week,
+                                plan_week_month=owning_month(week, mode,
+                                                             start_dow=start_dow),
+                                qty=_tidy(take),
+                                surplus_qty=_take_surplus(code, demand_month, take),
+                                carry_in_qty=_take_carry_in(code, demand_month),
+                                late_production=True,
+                                prebuild_reason=(
+                                    f"no week on or before {demand_month} could host this "
+                                    f"production, so it is scheduled late"
+                                    + (f": {bucket_reason}" if bucket_reason else "")),
+                                lead_shortfall=clamped[demand_month]))
+                            remaining -= take
+                week = shift_weeks(week, 1, mode, start_dow=start_dow)
 
         if remaining > 0:
             # ⑥ Final shortfall: pinned to the target week -- where this
@@ -1534,14 +1895,19 @@ def generate_mps(
                 # so this gap is already final rather than provisional.
                 why = (f"pre-building stopped at the current week "
                        f"{current.isoformat()}; there is no earlier week to use")
+            why += (f", and no week up to {horizon_end.isoformat()} could host it either")
             lines.append(WeeklyLine(
                 material_code=code, demand_month=demand_month,
                 plan_week_start=target,
-                plan_week_month=owning_month(target, mode),
+                plan_week_month=owning_month(target, mode, start_dow=start_dow),
                 qty=_tidy(remaining),
+                surplus_qty=_take_surplus(code, demand_month, remaining),
+                carry_in_qty=_take_carry_in(code, demand_month),
                 prebuild_reason=f"{bucket_reason}; {why}" if bucket_reason else why,
                 shelf_life_ok=not blocked_by_shelf_life,
                 capacity_gap=True,
                 lead_shortfall=clamped[demand_month]))
 
-    return _sorted_lines(_merge_same_slot(lines))
+    return _sorted_lines(_merge_same_slot(
+        _flag_surplus_expiry(lines, demand_by_code, shelf_life_months,
+                             safety_margin_fraction)))

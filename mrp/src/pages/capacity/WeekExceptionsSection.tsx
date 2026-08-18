@@ -42,7 +42,7 @@ import { Button, Input, FormField } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
 import {
-  capacityApi, CONSTRAINT_TYPE_LABEL, findExistingException,
+  capacityApi, WEEK_START_DOW_LABEL, type WeekStartDow, CONSTRAINT_TYPE_LABEL, findExistingException,
   type CapacityConstraintType, type CapacityException, type WeekCalendarMode,
 } from './capacityApi'
 
@@ -63,14 +63,26 @@ function isWeekCalendarMode(v: unknown): v is WeekCalendarMode {
  *  belongs to. `dateStr` is a plain 'YYYY-MM-DD'; parsed as UTC midnight so
  *  the day-of-week/day-of-month read is never off by one across the
  *  caller's local timezone. */
-function looksLikeWeekStart(dateStr: string, mode: WeekCalendarMode): boolean {
+function looksLikeWeekStart(
+  dateStr: string, mode: WeekCalendarMode, startDow: WeekStartDow,
+): boolean {
   const d = new Date(`${dateStr}T00:00:00Z`)
   if (Number.isNaN(d.getTime())) return false
   if (mode === 'month_fixed') {
     const day = d.getUTCDate()
     return day === 1 || day === 8 || day === 15 || day === 22 || day === 29
   }
-  return d.getUTCDay() === 1 // Monday — both ISO modes share this boundary, see week_calendar.py
+  // Both ISO modes share the same boundary, and that boundary is whatever
+  // `week_start_dow` says — hardcoding Monday here meant that once the
+  // factory switched to Saturday-start weeks, NO date the planner could
+  // type was accepted and maintenance weeks became unenterable.
+  return d.getUTCDay() === jsWeekday(startDow)
+}
+
+/** Python's `date.weekday()` (0=Monday..6=Sunday, what `week_start_dow`
+ *  stores) to JavaScript's `getUTCDay()` (0=Sunday..6=Saturday). */
+function jsWeekday(startDow: WeekStartDow): number {
+  return (startDow + 1) % 7
 }
 
 interface FormErrors {
@@ -115,6 +127,9 @@ export function WeekExceptionsSection({
   // Same cache the Planning Calendar section reads — react-query dedupes
   // the request, this just needs the mode for the alignment check above.
   const paramsQuery = useQuery({ queryKey: ['mrp-params'], queryFn: () => capacityApi.getParams() })
+  const rawDow = paramsQuery.data?.week_start_dow
+  const startDow: WeekStartDow = (typeof rawDow === 'number' && Number.isInteger(rawDow)
+    && rawDow >= 0 && rawDow <= 6) ? rawDow as WeekStartDow : 0
   const mode: WeekCalendarMode = isWeekCalendarMode(paramsQuery.data?.week_calendar_mode)
     ? paramsQuery.data!.week_calendar_mode as WeekCalendarMode
     : 'iso_thursday'
@@ -136,10 +151,10 @@ export function WeekExceptionsSection({
 
   function validateWeekStart(v: string): string | undefined {
     if (!v) return 'Select a week start date.'
-    if (!looksLikeWeekStart(v, mode)) {
+    if (!looksLikeWeekStart(v, mode, startDow)) {
       return mode === 'month_fixed'
         ? 'Must be the 1st, 8th, 15th, 22nd or 29th of a month under Month Fixed mode.'
-        : 'Must be a Monday under the current ISO week mode.'
+        : `Must be a ${WEEK_START_DOW_LABEL[startDow]} — weeks currently start on ${WEEK_START_DOW_LABEL[startDow]}.`
     }
     return undefined
   }

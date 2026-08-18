@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     admin_sync, capacity, consignment, forecast, health, intent, inventory, mps,
-    net_requirement, params, series,
+    net_requirement, params, purchase, series,
 )
 
 api_router = APIRouter()
@@ -17,3 +17,4 @@ api_router.include_router(mps.router)
 api_router.include_router(series.router)
 api_router.include_router(intent.router)
 api_router.include_router(params.router)
+api_router.include_router(purchase.router)

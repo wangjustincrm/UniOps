@@ -38,8 +38,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.status_mapping import MrpStatusMapping
 from app.models.sync_state import MrpSyncState
 from app.models.wms_inventory import WmsInventoryLot
-from app.services.wms_sync.reader import fetch_inventory, wms_configured  # noqa: F401 (re-exported)
-from app.services.wms_sync.transform import transform_lot
+from app.models.wms_lot_location import WmsLotLocation
+from app.services.wms_sync.reader import (  # noqa: F401 (re-exported)
+    fetch_inventory,
+    fetch_lot_locations,
+    wms_configured,
+)
+from app.services.wms_sync.transform import transform_lot, transform_lot_location
 
 _SOURCE = "wms"
 _PG_MAX_PARAMS = 32767  # asyncpg's hard per-statement bind-parameter limit
@@ -86,6 +91,12 @@ async def run_wms_sync(db: AsyncSession) -> dict:
         # fetch_nc_bom() wrapping (modern equivalent of epms-api/app/api/v1/
         # nc_purchase_sync.py's run_in_executor(None, ...)).
         raw_rows = await asyncio.to_thread(fetch_inventory)
+        # Locations come from a second extract, read in the same run and
+        # written in the same transaction, so the two can never describe
+        # different moments -- a lot present in one and absent from the other
+        # would show stock sitting nowhere, or a location holding a lot that
+        # no longer exists.
+        raw_locations = await asyncio.to_thread(fetch_lot_locations)
         mapping = await _load_mapping(db)
         # UTC, not container-local time — which lots flip to 'expired' must
         # not depend on the host/container TZ (see transform_lot's expiry
@@ -94,6 +105,7 @@ async def run_wms_sync(db: AsyncSession) -> dict:
         batch_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
 
         rows = [transform_lot(raw, mapping, today) for raw in raw_rows]
+        location_rows = [transform_lot_location(raw) for raw in raw_locations]
 
         if not rows:
             # Refuse to replace a real snapshot with an empty one. A
@@ -120,8 +132,11 @@ async def run_wms_sync(db: AsyncSession) -> dict:
 
         for row in rows:
             row["sync_batch_id"] = batch_id
+        for row in location_rows:
+            row["sync_batch_id"] = batch_id
 
         await db.execute(delete(WmsInventoryLot))
+        await db.execute(delete(WmsLotLocation))
 
         if rows:
             n_cols = len(rows[0])
@@ -130,9 +145,21 @@ async def run_wms_sync(db: AsyncSession) -> dict:
                 batch = rows[i:i + chunk_size]
                 await db.execute(insert(WmsInventoryLot).values(batch))
 
+        if location_rows:
+            n_cols = len(location_rows[0])
+            chunk_size = max(1, (_PG_MAX_PARAMS // 2) // n_cols)
+            for i in range(0, len(location_rows), chunk_size):
+                await db.execute(
+                    insert(WmsLotLocation).values(location_rows[i:i + chunk_size]))
+
         synced_at = await _write_sync_state(db, status="success", row_count=len(rows), last_error=None)
         await db.commit()
-        return {"lots": len(rows), "synced_at": synced_at.isoformat()}
+        # row_count on mrp_sync_state stays the LOT count: it is what the
+        # empty-extract guard compares against and what every existing reader
+        # means by "how much stock is mirrored". Locations are reported
+        # alongside rather than folded in.
+        return {"lots": len(rows), "locations": len(location_rows),
+                "synced_at": synced_at.isoformat()}
     except Exception as exc:
         await db.rollback()
         await _write_sync_state(db, status="failed", row_count=0, last_error=str(exc))

@@ -28,8 +28,130 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.capacity import MrpCapacityException, MrpCapacityRule
 from app.services.mps_engine import CapacityLimits
+from app.services.week_calendar import week_start_of
 
 _OUTPUT_QTY_AND_SKU_TYPES = ("max_sku_count", "max_output_qty", "min_output_qty")
+
+
+PRODUCT_SCOPE = "product"
+
+
+async def resolve_min_lots(db: AsyncSession, week_start: date) -> dict[str, Decimal]:
+    """Per-product minimum lot sizes in force during `week_start`.
+
+    "Minimum lot size" is the business rule *open the line at all and you
+    make at least this much* — running less burns a changeover and a
+    cleandown to produce a token quantity. It differs per product (pack
+    size, recipe, line speed), which is why it is a `scope_type='product'`
+    rule keyed by `scope_ref=<material_code>` rather than the one
+    factory-wide number.
+
+    Only products with their OWN rule appear here. Everything else falls
+    back to `resolve_default_min_lot` (the factory-wide `min_output_qty`),
+    and a product with neither has no floor at all — the pre-existing
+    behaviour, so an unconfigured factory plans exactly as it does today.
+
+    Deliberately NOT folded into `resolve_limits_for_week`: that resolver
+    returns per-week ceilings scoped strictly to `scope_type='factory' AND
+    scope_ref IS NULL`, a filter its partial unique index depends on.
+    Product rows would break that guarantee.
+    """
+    rows = (await db.execute(
+        select(MrpCapacityRule)
+        .where(
+            MrpCapacityRule.scope_type == PRODUCT_SCOPE,
+            MrpCapacityRule.scope_ref.is_not(None),
+            MrpCapacityRule.constraint_type == "min_output_qty",
+            MrpCapacityRule.is_active.is_(True),
+            MrpCapacityRule.effective_from <= week_start,
+        )
+        .order_by(MrpCapacityRule.id)
+    )).scalars().all()
+    lots: dict[str, Decimal] = {}
+    for rule in rows:
+        if rule.effective_to is not None and rule.effective_to < week_start:
+            continue
+        # Last one wins, ordered by id -- the same deterministic tie-break
+        # `_factory_rules_active_on` uses for overlapping factory rules.
+        lots[rule.scope_ref] = rule.limit_value
+    return lots
+
+
+async def resolve_default_min_lot(db: AsyncSession, week_start: date) -> Decimal | None:
+    """The factory-wide `min_output_qty` in force during `week_start`, i.e.
+    the floor for products with no rule of their own. `None` means no floor
+    is configured and the engine may spread output as thin as capacity
+    allows (the behaviour before minimum lot sizes existed)."""
+    for rule in await _factory_rules_active_on(db, week_start):
+        if rule.constraint_type == "min_output_qty":
+            return rule.limit_value
+    return None
+
+
+class ExceptionShiftConflict(Exception):
+    """Two exceptions would land on the same week after a grid change.
+
+    Carries the colliding week-start dates so the caller can name them; the
+    shift writes nothing when this is raised."""
+
+    def __init__(self, weeks: list[date]):
+        self.weeks = weeks
+        super().__init__(
+            "capacity exceptions would collide on "
+            + ", ".join(w.isoformat() for w in weeks)
+        )
+
+
+async def shift_capacity_exceptions(
+    db: AsyncSession, *, mode: str, old_dow: int, new_dow: int
+) -> int:
+    """Move every capacity exception onto the week grid `new_dow` produces.
+
+    Exceptions (a maintenance shutdown, typically) are keyed by
+    `week_start`. Changing the week start day shifts the entire grid, so a
+    row keyed to a Monday no longer equals any week the planner is looking
+    at — `resolve_limits_for_week` matches on an exact date, so the shutdown
+    **silently stops applying** and the plan quietly schedules production
+    into a week the plant is closed. Each row therefore moves to the
+    new-grid week that CONTAINS its old start date.
+
+    Raises `ExceptionShiftConflict` — writing nothing — when two rows would
+    end up on the same `(week_start, scope_type, scope_ref,
+    constraint_type)`. Silently dropping one of them is exactly the failure
+    this function exists to prevent, and the table's unique constraints
+    would reject the write anyway; refusing up front lets the caller name
+    the weeks a human has to reconcile.
+
+    Does not commit: the caller owns the transaction, so the parameter
+    write and this shift land together or not at all.
+    """
+    if old_dow == new_dow:
+        return 0
+
+    rows = (await db.execute(select(MrpCapacityException))).scalars().all()
+    targets: dict[int, date] = {}
+    for row in rows:
+        # `week_start_of` is mode-aware: under `month_fixed` the grid does
+        # not depend on the start day at all, so nothing moves.
+        targets[id(row)] = week_start_of(row.week_start, mode, start_dow=new_dow)
+
+    seen: dict[tuple, int] = {}
+    collisions: set[date] = set()
+    for row in rows:
+        key = (targets[id(row)], row.scope_type, row.scope_ref, row.constraint_type)
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] > 1:
+            collisions.add(targets[id(row)])
+    if collisions:
+        raise ExceptionShiftConflict(sorted(collisions))
+
+    moved = 0
+    for row in rows:
+        target = targets[id(row)]
+        if target != row.week_start:
+            row.week_start = target
+            moved += 1
+    return moved
 
 
 async def _factory_rules_active_on(db: AsyncSession, on_date: date) -> list[MrpCapacityRule]:

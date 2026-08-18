@@ -12,8 +12,11 @@ DDL lives in `alembic/versions/mrp04_capacity_mps_demand.py` alongside
 `app/models/demand.py`) — don't rename that migration.
 """
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Boolean, CHAR, Date, ForeignKey, Numeric, String, Text
+from sqlalchemy import (
+    Boolean, CHAR, Date, DateTime, ForeignKey, Numeric, SmallInteger, String, Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,6 +44,32 @@ class MrpMpsRun(Base, UUIDPrimaryKey, TimestampMixin):
     # mrp_planning_params' default so a run not overriding it still records
     # what it was generated under.
     week_calendar_mode: Mapped[str] = mapped_column(String(20), default="iso_thursday", server_default="iso_thursday")
+    # Minimum-lot/week-start/frozen-zone task (mrp11). Both are SNAPSHOTS:
+    # every read path (get, recalculate, adjust, export) must use the run's
+    # own value, never the current planning parameter — otherwise changing
+    # a setting silently redraws the week grid of plans already released.
+    #
+    # week_start_dow: which weekday this run's weeks begin on (0=Monday ..
+    # 6=Sunday; this factory plans Saturday-start weeks). Default 0 is what
+    # every pre-mrp11 run was planned on.
+    week_start_dow: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    # frozen_months: how many months from the current one were frozen when
+    # this run was generated (materials already purchased, plan copied
+    # verbatim from the live released run). 0 means nothing was frozen.
+    frozen_months: Mapped[int] = mapped_column(SmallInteger, default=3, server_default="3")
+    # Plan versioning (mrp12). `is_default` marks THE plan in force —
+    # globally exactly one, guaranteed by the partial unique index
+    # `uq_mrp_mps_runs_single_default`, not by application care. It is the
+    # run whose lines are in `mrp_demands` (what 1C purchases against) and
+    # the one a new run inherits its frozen zone from.
+    #
+    # Runs are grouped by `horizon_start_month`, and the group only ever
+    # moves forward: releasing a run in a newer group supersedes every run
+    # in older ones. Within the group of the default, other released runs
+    # stay switchable.
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # When this run was published. NULL for anything never released.
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MrpMpsLine(Base, UUIDPrimaryKey, TimestampMixin):
@@ -81,3 +110,31 @@ class MrpMpsLine(Base, UUIDPrimaryKey, TimestampMixin):
     # lead-time bookkeeping above (lead_shortfall stays as-is; this is
     # additive detail once the engine is working in weeks).
     weeks_early: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Minimum lot size (mrp11). Unlike the two snapshot columns on the run,
+    # these are engine OUTPUT — recalculating a run recomputes them.
+    #
+    # surplus_qty: how much of this line's qty exceeds the net requirement
+    # because the batch was rounded up to the product's minimum lot size
+    # ("opening the line at all costs this much energy"). It is real
+    # production: it is released to mrp_demands and its materials must be
+    # purchased.
+    surplus_qty: Mapped[object] = mapped_column(Numeric(18, 3), default=0, server_default="0")
+    # carry_in_qty: how much of THIS demand month was already covered by an
+    # earlier month's surplus. A month covered in full still gets a line
+    # (qty=0, covered_by_carry=True) so the planner can see the demand and
+    # where it went — without it the product/month vanishes from the matrix,
+    # which reads as "no demand" rather than "already made".
+    carry_in_qty: Mapped[object] = mapped_column(Numeric(18, 3), default=0, server_default="0")
+    covered_by_carry: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # late_production: placed in a week LATER than its demand month, because
+    # neither the demand month nor any earlier week could host a whole
+    # minimum lot. Amber: the goods arrive after they were needed.
+    late_production: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # surplus_expiry_risk: the rounded-up surplus will sit in stock longer
+    # than its shelf life allows. Warned about, never blocked — the plant
+    # chose to round up anyway.
+    surplus_expiry_risk: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # below_min_lot: weekly capacity is too small to reach the lot size in a
+    # single week, so capacity won and this week runs below the floor. The
+    # one sanctioned exception to the minimum-lot rule.
+    below_min_lot: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

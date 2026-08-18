@@ -40,6 +40,7 @@ from decimal import Decimal
 
 import openpyxl
 import pytest
+import sqlalchemy as sa
 
 from app.api.v1 import mps as mps_module
 from app.models.forecast import ForecastLine, ForecastVersion
@@ -1518,12 +1519,23 @@ async def test_confirm_release_clears_prior_cycle_demand_across_forecast_version
     from app.models.demand import MrpDemand
 
     rows = (await db_session.execute(sa.select(MrpDemand))).scalars().all()
-    assert len(rows) == 1  # R1's row was cleared, not just left orphaned under v1
-    assert rows[0].source_run_id == uuid.UUID(r2["id"])
-    assert rows[0].qty == Decimal("120.000")
-    # Every written row carries the plan week, not only the month.
-    assert rows[0].plan_week_start == date.fromisoformat(r2["lines"][0]["plan_week_start"])
-    assert rows[0].demand_month == r2["lines"][0]["plan_week_month"]
+    # The invariant under test: NOTHING of R1's survives. R1's own rows were
+    # deleted, not left orphaned under a superseded forecast_version_id.
+    assert rows
+    assert {r.source_run_id for r in rows} == {uuid.UUID(r2["id"])}
+
+    # R2 may legitimately carry MORE than its own new month: 2026-09 sits in
+    # R2's frozen zone, so R2 inherited that production from R1 verbatim
+    # (its materials are already bought) and must order materials for it
+    # too. What matters is that the rows belong to R2 and mirror R2's lines
+    # exactly -- one row per planned line, no leftovers from anywhere else.
+    planned = [l for l in r2["lines"] if not l["capacity_gap"] and Decimal(l["qty"]) > 0]
+    assert len(rows) == len(planned)
+    assert (sorted((r.plan_week_start, r.demand_month, r.qty) for r in rows)
+            == sorted((date.fromisoformat(l["plan_week_start"]), l["plan_week_month"],
+                       Decimal(l["qty"])) for l in planned))
+    # The new month is in there at its revised quantity.
+    assert any(r.qty == Decimal("120.000") for r in rows)
 
 
 @pytest.mark.anyio
@@ -1930,6 +1942,7 @@ def test_export_dedups_demand_across_two_straddled_month_columns():
             plan_week_start=week, plan_week_month=month,
             qty=Decimal(qty), demand_forecast=Decimal("120"),
             opening_stock=Decimal("0"), capacity_gap=gap,
+            carry_in_qty=Decimal("0"),
         )
 
     lines = [
@@ -1945,7 +1958,7 @@ def test_export_dedups_demand_across_two_straddled_month_columns():
     ]
     run = SimpleNamespace(
         run_no="MPS-TEST-0001", horizon_start_month="2026-08", horizon_months=2,
-        week_calendar_mode=mode,
+        week_calendar_mode=mode, week_start_dow=0,
     )
 
     content = mps_export.build_mps_matrix_workbook(run, lines, "kg", {})
@@ -2024,6 +2037,7 @@ def test_week_grid_and_export_columns_are_the_same_list():
             plan_week_start=week, plan_week_month=month,
             qty=Decimal("10"), demand_forecast=Decimal("10"),
             opening_stock=Decimal("0"), capacity_gap=False,
+            carry_in_qty=Decimal("0"),
         )
 
     # Horizon is Aug-Sep; the pre-build line drags June in, so the span must
@@ -2032,11 +2046,11 @@ def test_week_grid_and_export_columns_are_the_same_list():
     # side that merely sorted the touched months would skip them.
     run = SimpleNamespace(
         run_no="MPS-PARITY-0001", horizon_start_month="2026-08", horizon_months=2,
-        week_calendar_mode=mode,
+        week_calendar_mode=mode, week_start_dow=0,
     )
     lines = [line(prebuild_week, "2026-06"), line(inside_week, "2026-09")]
 
-    grid = mps_module._compute_week_grid(run, lines, mode)
+    grid = mps_module._compute_week_grid(run, lines, mode, run.week_start_dow)
     assert {e.week_month for e in grid} == {"2026-06", "2026-07", "2026-08", "2026-09"}, (
         "fixture guard: the span must cover a month outside the horizon AND "
         "months that are neither in the horizon nor touched by a line, or "
@@ -2072,12 +2086,13 @@ def test_export_excludes_capacity_gap_qty_from_planned():
             plan_week_start=week, plan_week_month="2026-08",
             qty=Decimal(qty), demand_forecast=Decimal("100"),
             opening_stock=Decimal("0"), capacity_gap=gap,
+            carry_in_qty=Decimal("0"),
         )
 
     lines = [line("30", gap=False), line("70", gap=True)]
     run = SimpleNamespace(
         run_no="MPS-TEST-0002", horizon_start_month="2026-08", horizon_months=1,
-        week_calendar_mode=mode,
+        week_calendar_mode=mode, week_start_dow=0,
     )
 
     content = mps_export.build_mps_matrix_workbook(run, lines, "kg", {})
@@ -2089,3 +2104,316 @@ def test_export_excludes_capacity_gap_qty_from_planned():
     assert rows["Planned"][col] == 30.0  # the gap's 70 must NOT be in here
     assert rows["Gap"][col] == 70.0
     assert rows["Demand"][col] == 100.0  # dedup unaffected by the gap flag
+
+
+# ── The run's week START DAY is a snapshot too ───────────────────────────
+
+
+@pytest.mark.anyio
+async def test_run_snapshots_the_week_start_day_in_force_at_generate_time(
+    client, db_session, admin_token, monkeypatch,
+):
+    """工厂的周是周六→周五。设成 5 之后生成的 run，每条计划行都必须落在周六，
+    并把 5 记在 run 上（回放要用）。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    put = await client.put("/api/v1/params/week_start_dow", json={"value": 5}, headers=headers)
+    assert put.status_code == 200, put.text
+
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert run["week_start_dow"] == 5
+    assert run["lines"], "fixture guard: a run with no lines proves nothing"
+    for line in run["lines"]:
+        week = date.fromisoformat(line["plan_week_start"])
+        assert week.weekday() == 5, (line["plan_week_start"], line["week_label"])
+    for entry in run.get("week_grid", []):
+        assert date.fromisoformat(entry["week_start"]).weekday() == 5
+
+
+@pytest.mark.anyio
+async def test_changing_the_week_start_day_does_not_reshape_an_existing_run(
+    client, db_session, admin_token, monkeypatch,
+):
+    """已存在的计划必须留在它自己的网格上 —— 否则改个设置就会把已发布计划的
+    周列整体重画。见证是周几本身，不只是回显的数字。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=1, monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert run["week_start_dow"] == 0
+    original_weeks = sorted(l["plan_week_start"] for l in run["lines"])
+    original_labels = sorted(l["week_label"] for l in run["lines"])
+    assert all(date.fromisoformat(w).weekday() == 0 for w in original_weeks)
+
+    put = await client.put("/api/v1/params/week_start_dow", json={"value": 5}, headers=headers)
+    assert put.status_code == 200, put.text
+
+    body = (await client.get(f"/api/v1/mps/runs/{run['id']}", headers=headers)).json()
+    assert body["week_start_dow"] == 0
+    assert sorted(l["plan_week_start"] for l in body["lines"]) == original_weeks
+    assert sorted(l["week_label"] for l in body["lines"]) == original_labels
+    assert all(date.fromisoformat(e["week_start"]).weekday() == 0 for e in body["week_grid"])
+
+    recalced = (await client.post(
+        f"/api/v1/mps/runs/{run['id']}/recalculate", headers=headers)).json()
+    assert recalced["week_start_dow"] == 0
+    assert all(date.fromisoformat(l["plan_week_start"]).weekday() == 0
+               for l in recalced["lines"])
+
+    # 而新 run 确实吃到新设置 —— 否则上面的断言在「PUT 什么也没干」时也会通过。
+    fresh = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert fresh["week_start_dow"] == 5
+    assert all(date.fromisoformat(l["plan_week_start"]).weekday() == 5
+               for l in fresh["lines"])
+
+
+# ── 最小批量：持久化、发布口径、摘要 ──────────────────────────────────────
+
+
+async def _product_lot(client, headers, material="S0093", lot="500"):
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": material,
+        "constraint_type": "min_output_qty", "limit_value": lot, "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.anyio
+async def test_lot_size_fields_are_persisted_and_returned(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=3,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+    await _product_lot(client, headers, lot="500")
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+
+    produced = [l for l in run["lines"] if Decimal(l["qty"]) > 0 and not l["capacity_gap"]]
+    assert len(produced) == 1, [(l["demand_month"], l["qty"]) for l in run["lines"]]
+    assert Decimal(produced[0]["qty"]) == Decimal("500")          # 100 顶到 500
+    assert Decimal(produced[0]["surplus_qty"]) == Decimal("400")
+
+    covered = [l for l in run["lines"] if l["covered_by_carry"]]
+    assert len(covered) == 2                                       # 后两个月被抵完
+    assert all(Decimal(l["qty"]) == 0 for l in covered)
+    assert sum(Decimal(l["carry_in_qty"]) for l in covered) == Decimal("200")
+
+
+@pytest.mark.anyio
+async def test_release_writes_the_actual_production_quantity(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★喂给 1C 的必须是实际产量（含超产），否则原料按净需求买 = 少买。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=3,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+    await _product_lot(client, headers, lot="500")
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    released = await client.post(f"/api/v1/mps/runs/{run['id']}/confirm-release",
+                                 headers=headers)
+    assert released.status_code == 200, released.text
+
+    rows = (await db_session.execute(
+        sa.text("SELECT qty FROM mrp_demands WHERE demand_type = 'mps'")
+    )).scalars().all()
+    assert rows, "release wrote no demand at all"
+    assert sum(Decimal(str(q)) for q in rows) == Decimal("500")     # 实际产量，不是净需求 300
+    assert all(Decimal(str(q)) > 0 for q in rows), "covered months must not be released"
+
+
+@pytest.mark.anyio
+async def test_stats_report_the_surplus(client, db_session, admin_token, monkeypatch):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(3)
+    version, months = await _confirmed_version(db_session, start=start, months=3,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+    await _product_lot(client, headers, lot="500")
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    stats = run["stats"]
+    assert Decimal(stats["total_surplus"]) == Decimal("400")
+    # 300 的需求里只有 200 被结转吃掉，窗口末还剩 200 没人消化
+    assert Decimal(stats["unconsumed_surplus"]) == Decimal("200")
+
+
+# ── 锁定区（时界）────────────────────────────────────────────────────────
+#
+# 「原料已到，不能再改计划了」——当月起 frozen_months 个月的计划原样照抄当前
+# 生效版，只重排自由区。
+
+
+@pytest.mark.anyio
+async def test_frozen_months_defaults_to_three_and_is_snapshotted(
+    client, db_session, admin_token, monkeypatch,
+):
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(1)
+    version, _ = await _confirmed_version(db_session, start=start, months=6)
+    await _factory_rule(client, headers)
+
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    # 首次生成没有生效版可继承，也就没有「料已买」的月份 —— 实际冻结 0 个月，
+    # run 上记的就是实际值，读端点不会声称一个并未生效的锁定区。
+    assert run["frozen_months"] == 0
+    assert run["frozen_until_month"] is None
+
+
+@pytest.mark.anyio
+async def test_generating_after_a_release_copies_the_frozen_zone_verbatim(
+    client, db_session, admin_token, monkeypatch,
+):
+    """已发布计划在锁定区内的行必须原样出现在新计划里 —— 料都买了。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(1)
+    version, months = await _confirmed_version(db_session, start=start, months=6,
+                                               monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    first = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    released = await client.post(f"/api/v1/mps/runs/{first['id']}/confirm-release",
+                                 headers=headers)
+    assert released.status_code == 200, released.text
+    # 第一版没有可继承的生效版 → 它自己没有锁定区。第二版才有：当月起 3 个月。
+    frozen_until = _shift_month(datetime.now(timezone.utc).strftime("%Y-%m"), 2)
+    was_frozen = sorted(
+        (l["material_code"], l["plan_week_start"], l["qty"])
+        for l in released.json()["lines"] if l["plan_week_month"] <= frozen_until
+    )
+    assert was_frozen, "fixture guard: the first plan put nothing in the frozen zone"
+
+    second = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert second["frozen_months"] == 3
+    assert second["frozen_until_month"] == frozen_until
+    now_frozen = sorted(
+        (l["material_code"], l["plan_week_start"], l["qty"])
+        for l in second["lines"] if l["plan_week_month"] <= frozen_until
+    )
+    assert now_frozen == was_frozen
+
+
+@pytest.mark.anyio
+async def test_frozen_months_zero_plans_the_whole_horizon_from_scratch(
+    client, db_session, admin_token, monkeypatch,
+):
+    """0 = 全自由，等价于加锁定区之前的行为（回归锚点）。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    put = await client.put("/api/v1/params/frozen_months", json={"value": 0}, headers=headers)
+    assert put.status_code == 200, put.text
+
+    start = _future_month(1)
+    version, _ = await _confirmed_version(db_session, start=start, months=6)
+    await _factory_rule(client, headers)
+    run = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    assert run["frozen_months"] == 0
+    assert run["frozen_until_month"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("bad", [-1, 25, "3", 1.5, None, True])
+async def test_frozen_months_rejects_bad_values(client, admin_token, bad):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.put("/api/v1/params/frozen_months", json={"value": bad}, headers=headers)
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.anyio
+async def test_adjusting_a_frozen_line_is_refused_by_the_api(
+    client, db_session, admin_token, monkeypatch,
+):
+    """★只靠前端灰掉是挡不住的 —— 后端必须自己拒。"""
+    monkeypatch.setattr(mps_module, "resolve_shelf_life", _no_shelf_life)
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    start = _future_month(1)
+    version, _ = await _confirmed_version(db_session, start=start, months=6,
+                                          monthly_qty="100")
+    await _factory_rule(client, headers)
+
+    first = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    await client.post(f"/api/v1/mps/runs/{first['id']}/confirm-release", headers=headers)
+
+    second = (await client.post(
+        "/api/v1/mps/runs",
+        json={"forecast_version_id": version["id"], "production_lead_weeks": 0},
+        headers=headers,
+    )).json()
+    frozen_until = second["frozen_until_month"]
+    frozen_line = next(l for l in second["lines"] if l["plan_week_month"] <= frozen_until)
+    liquid_line = next(l for l in second["lines"] if l["plan_week_month"] > frozen_until)
+
+    blocked = await client.patch(
+        f"/api/v1/mps/runs/{second['id']}/lines/{frozen_line['id']}",
+        json={"qty": "1"}, headers=headers)
+    assert blocked.status_code == 422, blocked.text
+    assert "frozen" in blocked.text.lower()
+
+    # 自由区照常可改 —— 否则上面那条在「所有 adjust 都坏了」时也会通过
+    allowed = await client.patch(
+        f"/api/v1/mps/runs/{second['id']}/lines/{liquid_line['id']}",
+        json={"qty": "1"}, headers=headers)
+    assert allowed.status_code == 200, allowed.text

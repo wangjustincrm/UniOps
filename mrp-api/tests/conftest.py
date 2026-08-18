@@ -67,6 +67,31 @@ def _migrate():
         cwd=root, env=env, check=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
+    _create_foreign_tables()
+
+
+def _create_foreign_tables() -> None:
+    """Create the tables OTHER services own, for tests only.
+
+    In production `purchase_orders`, `po_line_items` and `materials` already
+    exist — every UniOps service shares one database and epms-api/mdm-api
+    migrate them. mrp-api's alembic chain deliberately does not
+    (app/models/epms_mirror.py explains why they sit on their own declarative
+    Base), so a freshly migrated `mrp_test` has no such tables and anything
+    reading them fails to collect.
+
+    ★ This is a TEST-ONLY convenience and it is NOT a schema contract: these
+    tables are created from mrp-api's own mirror definitions, so a test built on
+    them can never notice that EPMS renamed a column. The contract is asserted
+    in the owning services instead — epms-api/tests/test_mrp_consumed_columns.py
+    and mdm-api/tests/test_mrp_consumed_columns.py — where a rename fails in the
+    suite of whoever performs it.
+    """
+    from app.models.epms_mirror import EpmsMirrorBase
+
+    eng = sa.create_engine(SYNC_URL)
+    EpmsMirrorBase.metadata.create_all(eng)
+    eng.dispose()
 
 
 @pytest.fixture(scope="session")

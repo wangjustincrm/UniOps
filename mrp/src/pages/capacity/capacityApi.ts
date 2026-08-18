@@ -12,7 +12,7 @@
 // call site, never trusted as a number in this file.
 import { api } from '@/lib/api'
 
-export type CapacityScopeType = 'factory' | 'product_family' | 'line'
+export type CapacityScopeType = 'factory' | 'product' | 'product_family' | 'line'
 export type CapacityConstraintType = 'max_sku_count' | 'max_output_qty' | 'min_output_qty'
 
 export interface CapacityRule {
@@ -50,6 +50,10 @@ export type CapacityRuleUpdateBody = CapacityRuleBody
 // so both stay in sync with one source of truth instead of two ad hoc maps.
 export const SCOPE_TYPE_LABEL: Record<CapacityScopeType, string> = {
   factory: 'Factory',
+  // A product-scoped rule carries the material code in `scope_ref`. It is
+  // the scope minimum lot sizes actually use: "how much is worth opening
+  // the line for" differs per product.
+  product: 'Product',
   product_family: 'Product Family',
   line: 'Line',
 }
@@ -63,7 +67,11 @@ export const SCOPE_TYPE_LABEL: Record<CapacityScopeType, string> = {
 export const CONSTRAINT_TYPE_LABEL: Record<CapacityConstraintType, string> = {
   max_sku_count: 'Max SKUs / week',
   max_output_qty: 'Max output / week',
-  min_output_qty: 'Min output / week',
+  // Renamed from 'Min output / week' when the value became a real
+  // constraint rather than a spreading hint: it is now the quantity below
+  // which the line is not opened at all, and a week-flavoured label
+  // suggested a weekly target instead.
+  min_output_qty: 'Minimum lot size',
 }
 
 export interface CapacityException {
@@ -140,6 +148,25 @@ export const WEEK_CALENDAR_MODE_DESCRIPTION: Record<WeekCalendarMode, string> = 
   month_fixed: 'Weeks start on the 1st of each month and step by 7 days; weeks never straddle a month boundary, and the last "week" of a month may be a short 1–7 day remainder.',
 }
 
+/** 0=Monday .. 6=Sunday, matching Python's `date.weekday()` — the value
+ *  stored in `mrp_planning_params.week_start_dow`. This factory's week runs
+ *  Saturday to Friday, i.e. 5. */
+export type WeekStartDow = 0 | 1 | 2 | 3 | 4 | 5 | 6
+export const WEEK_START_DOWS: WeekStartDow[] = [0, 1, 2, 3, 4, 5, 6]
+export const WEEK_START_DOW_LABEL: Record<WeekStartDow, string> = {
+  0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday',
+  4: 'Friday', 5: 'Saturday', 6: 'Sunday',
+}
+
+/** `PUT /params/week_start_dow` answers with the saved value plus how many
+ *  capacity exceptions (maintenance weeks) were re-keyed onto the new grid —
+ *  they are stored by exact week-start date, so a grid change strands them
+ *  unless they move with it. */
+export interface WeekStartDowUpdateResult {
+  week_start_dow: number
+  exceptions_shifted: number
+}
+
 export const capacityApi = {
   list: () => api.get<CapacityRule[]>('/capacity/rules'),
 
@@ -160,4 +187,7 @@ export const capacityApi = {
   getParams: () => api.get<Record<string, unknown>>('/params'),
 
   setParam: (key: string, value: unknown) => api.put<Record<string, unknown>>(`/params/${key}`, { value }),
+
+  setWeekStartDow: (dow: WeekStartDow) =>
+    api.put<WeekStartDowUpdateResult>('/params/week_start_dow', { value: dow }),
 }

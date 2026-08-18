@@ -154,3 +154,104 @@ async def test_delete_removes_row(client: AsyncClient, db_session):
     # deleting again -> 404
     again = await client.delete(f"/mdm/v1/material-suppliers/{row_id}")
     assert again.status_code == 404
+
+
+# ── 批量录入（供 MRP 的 Supply Parameters 页粘贴 Excel）────────────────────
+#
+# 采购手上的提前期/起订量是一张 Excel。逐行调 POST 意味着 200 次往返和一半
+# 成功一半失败的中间态；批量入口按自然键 (material_code, partner_code) upsert，
+# 并逐行报错 —— 一行写错不该让另外 199 行白填。
+
+
+@pytest.mark.anyio
+async def test_bulk_creates_and_updates_by_natural_key(client):
+    first = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0001", "partner_code": "SUP-A", "lead_time_days": 30},
+        {"material_code": "CR0002", "partner_code": "SUP-B", "lead_time_days": 45, "moq": "500"},
+    ]})
+    assert first.status_code == 200, first.text
+    assert first.json()["created"] == 2
+    assert first.json()["updated"] == 0
+
+    again = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0001", "partner_code": "SUP-A", "lead_time_days": 21},
+    ]})
+    assert again.status_code == 200, again.text
+    assert again.json()["updated"] == 1
+    assert again.json()["created"] == 0
+
+    rows = (await client.get("/mdm/v1/material-suppliers?material_code=CR0001")).json()["items"]
+    assert rows[0]["lead_time_days"] == 21
+
+
+@pytest.mark.anyio
+async def test_a_bad_row_is_reported_without_losing_the_good_ones(client):
+    r = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0010", "partner_code": "SUP-A", "lead_time_days": 30},
+        {"material_code": "", "partner_code": "SUP-B", "lead_time_days": 10},
+        {"material_code": "CR0011", "partner_code": "SUP-C", "lead_time_days": -5},
+    ]})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["created"] == 1
+    assert [e["row"] for e in body["errors"]] == [2, 3]
+    assert any("lead time" in e["message"].lower() for e in body["errors"])
+
+    # 好行确实落库了，不是「报错就整批回滚」
+    kept = (await client.get("/mdm/v1/material-suppliers?material_code=CR0010")).json()["items"]
+    assert len(kept) == 1
+
+
+@pytest.mark.anyio
+async def test_a_second_primary_for_one_material_is_a_row_error_not_a_500(client):
+    """★每个物料最多一个主供应商由部分唯一索引保证 —— 粘贴里撞上它必须是
+    可读的行级错误，而不是把整批打成 500。"""
+    await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0020", "partner_code": "SUP-A", "is_primary": True},
+    ]})
+
+    r = await client.post("/mdm/v1/material-suppliers/bulk", json={"rows": [
+        {"material_code": "CR0020", "partner_code": "SUP-B", "is_primary": True},
+    ]})
+    assert r.status_code == 200, r.text
+    assert r.json()["created"] == 0
+    assert any("primary" in e["message"].lower() for e in r.json()["errors"])
+
+
+@pytest.mark.anyio
+async def test_a_row_can_be_re_sourced_to_another_supplier(client: AsyncClient):
+    """换供应商是常规业务事件（重新寻源），不该逼用户删了重建。"""
+    created = (await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9001", "partner_code": "SUP-OLD",
+        "lead_time_days": 30, "is_primary": True,
+    })).json()
+
+    r = await client.patch(f"/mdm/v1/material-suppliers/{created['id']}",
+                           json={"partner_code": "SUP-NEW", "lead_time_days": 45})
+    assert r.status_code == 200, r.text
+    assert r.json()["partner_code"] == "SUP-NEW"
+    assert r.json()["lead_time_days"] == 45
+    assert r.json()["material_code"] == "CR9001"      # 物料不动
+
+
+@pytest.mark.anyio
+async def test_re_sourcing_onto_an_existing_pair_is_409(client: AsyncClient):
+    """目标组合已存在 → 可读的 409，而不是唯一约束打成 500。"""
+    a = (await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9002", "partner_code": "SUP-A"})).json()
+    await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9002", "partner_code": "SUP-B"})
+
+    r = await client.patch(f"/mdm/v1/material-suppliers/{a['id']}",
+                           json={"partner_code": "SUP-B"})
+    assert r.status_code == 409, r.text
+    assert "CR9002" in r.text and "SUP-B" in r.text
+
+
+@pytest.mark.anyio
+async def test_a_blank_supplier_is_refused(client: AsyncClient):
+    created = (await client.post("/mdm/v1/material-suppliers", json={
+        "material_code": "CR9003", "partner_code": "SUP-A"})).json()
+    r = await client.patch(f"/mdm/v1/material-suppliers/{created['id']}",
+                           json={"partner_code": "   "})
+    assert r.status_code == 422, r.text

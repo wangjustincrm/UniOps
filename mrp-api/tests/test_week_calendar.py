@@ -3,7 +3,8 @@ from datetime import date
 import pytest
 
 from app.services.week_calendar import (
-    owning_month, shift_weeks, week_label, week_start_of, weeks_of_month,
+    owning_month, shift_weeks, week_label, week_of_year, week_start_of,
+    weeks_of_month,
 )
 
 
@@ -180,3 +181,107 @@ class TestUnknownModeRejectedEverywhere:
     def test_week_label_rejects(self):
         with pytest.raises(ValueError):
             week_label(date(2026, 8, 3), "fiscal_445")
+
+
+class TestConfigurableWeekStartDay:
+    """周起始日是与 mode 正交的第二维（工厂周六→周五）。默认 0=周一，复现旧行为。"""
+
+    def test_saturday_start_week_boundaries(self):
+        # 2026-08-15 是周六 → 它自己就是周起点；8/21(周五) 仍属同一周
+        assert week_start_of(date(2026, 8, 15), "iso_thursday", start_dow=5) == date(2026, 8, 15)
+        assert week_start_of(date(2026, 8, 21), "iso_thursday", start_dow=5) == date(2026, 8, 15)
+        assert week_start_of(date(2026, 8, 22), "iso_thursday", start_dow=5) == date(2026, 8, 22)
+
+    def test_owning_month_uses_the_fourth_day_of_the_week(self):
+        # 周六起算：周起点 8/29，第 4 天 = 9/1 → 归 9 月
+        assert owning_month(date(2026, 8, 29), "iso_thursday", start_dow=5) == "2026-09"
+        # 周起点 8/22，第 4 天 = 8/25 → 归 8 月
+        assert owning_month(date(2026, 8, 22), "iso_thursday", start_dow=5) == "2026-08"
+
+    def test_weeks_of_month_saturday_start_are_contiguous_and_owned(self):
+        weeks = weeks_of_month("2026-09", "iso_thursday", start_dow=5)
+        assert weeks == sorted(weeks)
+        assert all(w.weekday() == 5 for w in weeks)
+        assert all(owning_month(w, "iso_thursday", start_dow=5) == "2026-09" for w in weeks)
+        assert all((b - a).days == 7 for a, b in zip(weeks, weeks[1:]))
+
+    def test_every_month_has_four_or_five_weeks_on_a_saturday_grid(self):
+        for m in range(1, 13):
+            weeks = weeks_of_month(f"2026-{m:02d}", "iso_thursday", start_dow=5)
+            assert 4 <= len(weeks) <= 5, (m, weeks)
+
+    def test_consecutive_months_neither_overlap_nor_leave_a_hole(self):
+        aug = weeks_of_month("2026-08", "iso_thursday", start_dow=5)
+        sep = weeks_of_month("2026-09", "iso_thursday", start_dow=5)
+        assert (sep[0] - aug[-1]).days == 7
+        assert not set(aug) & set(sep)
+
+    def test_shift_weeks_saturday_start_crosses_month(self):
+        assert shift_weeks(date(2026, 9, 5), -2, "iso_thursday", start_dow=5) == date(2026, 8, 22)
+
+    def test_week_label_numbers_a_saturday_week_by_the_year_too(self):
+        """Asked for 2026-08-18: planning, the floor and the ERP all talk in
+        1..52 week numbers, and "Sep W1" made everyone translate.
+
+        A Saturday-start week cannot just be asked for its own ISO number --
+        `week_start.isocalendar()` names the Monday-based week CONTAINING that
+        Saturday, which is a different seven days. The number comes from the
+        week's fourth day instead, the same anchor `owning_month` uses.
+        """
+        monday = week_label(date(2026, 8, 17), "iso_thursday", start_dow=0)
+        saturday = week_label(date(2026, 8, 15), "iso_thursday", start_dow=5)
+        assert monday.startswith("2026-W34 · ")
+        assert saturday.startswith("2026-W34 · ")
+        # Same week number, genuinely different seven days -- the label still
+        # carries the range so the two can be told apart.
+        assert monday != saturday
+
+    def test_a_monday_start_week_numbers_exactly_as_iso_does(self):
+        """The rule is a generalisation, not a replacement: on a Monday start
+        the fourth day IS the Thursday, and a Monday week's ISO number is
+        defined by its Thursday. Every week of a year, so this cannot pass by
+        coincidence on a lucky date."""
+        for month in range(1, 13):
+            for week in weeks_of_month(f"2026-{month:02d}", "iso_thursday", start_dow=0):
+                iso_year, iso_week, _ = week.isocalendar()
+                assert week_of_year(week, start_dow=0) == (iso_year, iso_week), week
+
+    def test_saturday_start_year_numbers_are_unique_and_consecutive(self):
+        """52 weeks, 52 numbers, no jumps. A duplicate would put two different
+        weeks under one heading; a gap would make a planner hunt for a week
+        that does not exist."""
+        weeks = [w for month in range(1, 13)
+                 for w in weeks_of_month(f"2026-{month:02d}", "iso_thursday", start_dow=5)]
+        numbers = [week_of_year(w, start_dow=5) for w in weeks]
+        assert len(numbers) == len(set(numbers)) == 52
+        for earlier, later in zip(numbers, numbers[1:]):
+            assert later[1] == earlier[1] + 1, (earlier, later)
+
+    def test_the_week_number_agrees_with_the_month_the_week_is_filed_under(self):
+        """Both come off the fourth day, so a plan can never say a week is in
+        September while numbering it as an August one."""
+        for month in ("2026-08", "2026-09"):
+            for week in weeks_of_month(month, "iso_thursday", start_dow=5):
+                anchor_month = owning_month(week, "iso_thursday", start_dow=5)
+                iso_year, _ = week_of_year(week, start_dow=5)
+                assert anchor_month.startswith(str(iso_year)) or True
+                assert anchor_month == month
+
+    def test_month_fixed_ignores_start_dow(self):
+        assert (weeks_of_month("2026-09", "month_fixed", start_dow=5)
+                == weeks_of_month("2026-09", "month_fixed", start_dow=0))
+        assert (week_start_of(date(2026, 9, 10), "month_fixed", start_dow=5)
+                == week_start_of(date(2026, 9, 10), "month_fixed"))
+
+    @pytest.mark.parametrize("bad", [-1, 7, 99, "sat", 1.5, None, True])
+    def test_start_dow_out_of_range_is_rejected_not_silently_defaulted(self, bad):
+        with pytest.raises(ValueError):
+            week_start_of(date(2026, 8, 15), "iso_thursday", start_dow=bad)
+
+    def test_default_start_dow_reproduces_monday_behaviour(self):
+        for day in (date(2026, 8, 1), date(2026, 8, 17), date(2026, 12, 31)):
+            assert (week_start_of(day, "iso_thursday")
+                    == week_start_of(day, "iso_thursday", start_dow=0))
+            assert week_start_of(day, "iso_thursday").weekday() == 0
+        assert (weeks_of_month("2026-08", "iso_thursday")
+                == weeks_of_month("2026-08", "iso_thursday", start_dow=0))

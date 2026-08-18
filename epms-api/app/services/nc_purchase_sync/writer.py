@@ -141,19 +141,24 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
         row = cur.fetchone()
         if row:
             lid = row[0]
+            # planned_arrival_date is on the UPDATE too, not just the INSERT:
+            # every NC line already exists, so an insert-only column would stay
+            # null forever on exactly the rows the feature is for.
             cur.execute("update po_line_items set description=%s,material_id=%s,qty=%s,unit=%s,"
-                        "unit_price=%s,line_total=%s,received_qty=%s,sort_order=%s where id=%s",
+                        "unit_price=%s,line_total=%s,received_qty=%s,"
+                        "planned_arrival_date=%s,sort_order=%s where id=%s",
                         (ln["description"], ln["material_id"], ln["qty"], ln["unit"],
-                         ln["unit_price"], ln["line_total"], ln["received_qty"], ln["sort_order"], lid))
+                         ln["unit_price"], ln["line_total"], ln["received_qty"],
+                         ln["planned_arrival_date"], ln["sort_order"], lid))
         else:
             lid = uuid.uuid4()
             cur.execute(
                 "insert into po_line_items (id,po_id,description,material_id,qty,unit,unit_price,"
-                "line_total,received_qty,sort_order,nc_source_pk) "
-                "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "line_total,received_qty,planned_arrival_date,sort_order,nc_source_pk) "
+                "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (lid, pid, ln["description"], ln["material_id"], ln["qty"], ln["unit"],
-                 ln["unit_price"], ln["line_total"], ln["received_qty"], ln["sort_order"],
-                 ln["nc_source_pk"]))
+                 ln["unit_price"], ln["line_total"], ln["received_qty"],
+                 ln["planned_arrival_date"], ln["sort_order"], ln["nc_source_pk"]))
         po_line_id_by_ncpk[ln["nc_source_pk"]] = lid
         counts["po_lines_upserted"] += 1
 

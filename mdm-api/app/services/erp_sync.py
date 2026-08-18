@@ -89,6 +89,8 @@ def _map_material(rec: dict) -> dict:
         "item_mes_type": _to_str(_lookup(rec, "itemMESType", "itemmestype")),
         "exp": _to_int(_lookup(rec, "exp")),
         "part_product_family": _to_str(_lookup(rec, "part_PRODUCT_FAMILY", "part_product_family")),
+        "accounting_group": _to_str(_lookup(rec, "accounting_GROUP", "accounting_group")),
+        "accounting_group_name": _to_str(_lookup(rec, "accounting_GROUP_NAME", "accounting_group_name")),
         "raw_payload": rec,
         "erp_rowversion": _parse_dt(_lookup(rec, "rowversion", "modifiedtime")),
     }

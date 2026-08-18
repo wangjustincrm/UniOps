@@ -138,6 +138,12 @@ class _LineLike(Protocol):
     demand_forecast: Decimal
     opening_stock: Decimal
     capacity_gap: bool
+    # Minimum lot size (mrp11): how much of this month was already covered
+    # by an earlier batch's surplus. It is part of what is AVAILABLE to the
+    # month, so the sheet must add it the same way the on-screen matrix
+    # does -- the two are mirrored implementations and a divergence here
+    # shows up as an export that contradicts the screen.
+    carry_in_qty: Decimal
 
 
 def _scaled(value: Decimal, unit: str) -> float:
@@ -214,6 +220,9 @@ def build_mps_matrix_workbook(
     """
     lines = list(lines)
     mode = run.week_calendar_mode
+    # The run's OWN grid, never the current parameter: an exported plan must
+    # have the same columns it had when it was released.
+    start_dow = run.week_start_dow
 
     horizon_months = _generate_months(run.horizon_start_month, run.horizon_months)
     touched_months = {line.plan_week_month for line in lines}
@@ -225,7 +234,8 @@ def build_mps_matrix_workbook(
     # (see week_calendar.py's docstring), so `week_start` is a safe unique
     # key across the whole grid.
     week_grid: list[tuple[str, date]] = [
-        (month, w) for month in span_months for w in weeks_of_month(month, mode)
+        (month, w) for month in span_months
+        for w in weeks_of_month(month, mode, start_dow=start_dow)
     ]
 
     # Each month's column span, 1-indexed and inclusive, derived from the
@@ -265,7 +275,8 @@ def build_mps_matrix_workbook(
         if line.demand_month not in seen:
             seen.add(line.demand_month)
             demand[month_key] = demand.get(month_key, Decimal("0")) + line.demand_forecast
-            available[month_key] = available.get(month_key, Decimal("0")) + line.opening_stock
+            available[month_key] = (available.get(month_key, Decimal("0"))
+                                    + line.opening_stock + line.carry_in_qty)
 
     wb = Workbook()
     ws = wb.active
@@ -279,7 +290,8 @@ def build_mps_matrix_workbook(
     # Row 2 (week labels), then row 1 (month grouping merged across that
     # month's own week columns) from the shared `month_columns` span.
     for offset, (_month, w) in enumerate(week_grid):
-        ws.cell(row=2, column=_FIRST_DATA_COLUMN + offset, value=week_label(w, mode))
+        ws.cell(row=2, column=_FIRST_DATA_COLUMN + offset,
+                value=week_label(w, mode, start_dow=start_dow))
     for month, (start_col, end_col) in month_columns.items():
         cell = ws.cell(row=1, column=start_col, value=month)
         cell.alignment = _SPANNED

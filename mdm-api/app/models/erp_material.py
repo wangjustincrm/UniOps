@@ -23,6 +23,15 @@ class ErpMaterial(UUIDPrimaryKey, TimestampMixin, Base):
     # these columns just surface them without a JSONB lookup on every sync.
     exp: Mapped[int | None] = mapped_column(Integer, nullable=True)
     part_product_family: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # ERP material classification, the same tree NC calls 物料基本分类
+    # (BD_MARBASCLASS): 0101 Raw Milk, 0102 Raw Ingredient, 02 Packaging,
+    # 03 Standardized Milk, 04 Storage Silo Powder, 05 Finished Products,
+    # 06 Chemical, 07 Mechanical, 08 Laboratory, 98 Fee, 99 Test.
+    # Present on every payload (2,573/2,573) and promoted to
+    # materials.erp_class_code by material_sync. MRP excludes 0101 from every
+    # stock and on-order figure.
+    accounting_group: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    accounting_group_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
     erp_rowversion: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

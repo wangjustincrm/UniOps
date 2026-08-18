@@ -147,17 +147,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func as sa_func, select
 
 from app.api.v1.net_requirement import _generate_months, _load_forecast_by_material
-from app.api.v1.params import get_param
+from app.api.v1.params import DEFAULT_FROZEN_MONTHS, FROZEN_MONTHS_KEY, get_param
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
 from app.models.demand import MrpDemand
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.models.mps import MrpMpsLine, MrpMpsRun
 from app.services import mps_export
-from app.services.capacity import resolve_limits_for_week
+from app.services.capacity import resolve_limits_for_week, resolve_min_lots
 from app.services.mdm_client import resolve_material_names, resolve_shelf_life
 from app.services.mps_engine import (
     CapacityLimits, DemandItem, WeeklyLine, _placement_allowed, generate_mps,
@@ -259,6 +259,18 @@ class MpsLineResponse(BaseModel):
     # defaulting NULL (pre-mrp07 lines) to 0 -- never a live recompute.
     demand_forecast: Decimal = Decimal("0")
     opening_stock: Decimal = Decimal("0")
+    # Minimum lot size (mrp11). `surplus_qty` is the part of `qty` that
+    # exceeds the net requirement because the batch was rounded up to a whole
+    # lot -- real production, released to 1C and purchased for.
+    # `carry_in_qty` is how much of this month was already covered by an
+    # earlier month's surplus; a month covered in FULL comes back as a
+    # qty-0 line with `covered_by_carry`, so the matrix can still show it.
+    surplus_qty: Decimal = Decimal("0")
+    carry_in_qty: Decimal = Decimal("0")
+    covered_by_carry: bool = False
+    late_production: bool = False
+    surplus_expiry_risk: bool = False
+    below_min_lot: bool = False
     # True when the run's production_lead_weeks called for production to
     # have already started (the target week was clamped to the current
     # week) -- see mps_engine.generate_mps's pipeline docstring, step 2.
@@ -280,6 +292,22 @@ class MpsRunResponse(BaseModel):
     # the calendar it was generated under".
     production_lead_weeks: int
     week_calendar_mode: str
+    # The week grid this run was planned on (0=Monday .. 6=Sunday). Read it
+    # instead of the current planning parameter: a released plan keeps the
+    # columns it was released with.
+    week_start_dow: int = 0
+    # How many months were frozen when this run was generated, and the last
+    # month that covers. Frozen means "materials already purchased": those
+    # weeks are copied from the live released plan and cannot be replanned.
+    # Both are snapshots -- changing the setting must not silently unfreeze
+    # a plan somebody is already buying against.
+    frozen_months: int = 0
+    frozen_until_month: str | None = None
+    # Plan versioning (mrp12): `is_default` marks THE plan in force -- the
+    # one whose lines 1C purchases against and the one a new run inherits
+    # its frozen zone from. Globally exactly one.
+    is_default: bool = False
+    released_at: datetime | None = None
 
 
 class MpsRunDetailResponse(MpsRunResponse):
@@ -308,6 +336,48 @@ class WeekGridEntry(BaseModel):
     week_start: date
     week_month: str
     label: str
+
+
+class MpsRunSummaryResponse(BaseModel):
+    """One row of the version picker. **No lines**: the picker is
+    navigation, and a run carries thousands of them."""
+    id: uuid.UUID
+    run_no: str
+    horizon_start_month: str
+    horizon_months: int
+    status: str
+    is_default: bool
+    released_at: datetime | None
+    created_at: datetime
+    stats: dict | None
+
+
+class MpsDiffCell(BaseModel):
+    """One matrix cell whose planned quantity changed between two versions."""
+    material_code: str
+    plan_week_start: date
+    before: Decimal
+    after: Decimal
+    delta: Decimal
+
+
+class MpsDiffSummary(BaseModel):
+    products_changed: int
+    weeks_changed: int
+    total_delta: Decimal
+
+
+class MpsRunDiffResponse(BaseModel):
+    run_id: uuid.UUID
+    baseline_run_id: uuid.UUID | None
+    baseline_run_no: str | None
+    # "active" | "previous" | "explicit" | None — which baseline was used, so
+    # the screen can name it rather than leaving the reader to guess whether
+    # they are looking at a comparison against the live plan or against
+    # whatever came before this one.
+    baseline_kind: str | None = None
+    cells: list[MpsDiffCell]
+    summary: MpsDiffSummary
 
 
 class MpsRunGetResponse(MpsRunDetailResponse):
@@ -441,6 +511,44 @@ async def _build_demand_items(
     return demands
 
 
+async def _resolve_frozen_months(db: SessionDep) -> int:
+    """The frozen-zone length currently in force, for a run being generated
+    NOW. Every other endpoint reads it off the run."""
+    value = await get_param(db, FROZEN_MONTHS_KEY, DEFAULT_FROZEN_MONTHS)
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 24:
+        return DEFAULT_FROZEN_MONTHS
+    return value
+
+
+def _frozen_until(run: MrpMpsRun) -> str | None:
+    """Last month this run treats as frozen, or None when nothing is.
+
+    Derived from the run's own `created_at` and stored `frozen_months`, so
+    it is fixed for the life of the run: a plan generated in August with
+    three months frozen still says "through October" when it is reopened in
+    November. Anything else would quietly unfreeze weeks whose materials
+    have already been bought."""
+    if not run.frozen_months:
+        return None
+    return _shift_month(run.created_at.strftime("%Y-%m"), run.frozen_months - 1)
+
+
+def _shift_month(month: str, delta: int) -> str:
+    year, mon = (int(part) for part in month.split("-"))
+    index = year * 12 + (mon - 1) + delta
+    y, m0 = divmod(index, 12)
+    return f"{y:04d}-{m0 + 1:02d}"
+
+
+async def _resolve_week_start_dow(db: SessionDep) -> int:
+    """The factory-wide week start day currently in force, for a run being
+    generated NOW. Every other endpoint reads it off the RUN instead, the
+    same rule `_resolve_week_mode` follows: the grid a released plan was
+    drawn on must not move when somebody edits a setting."""
+    value = await get_param(db, "week_start_dow", 0)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 async def _resolve_week_mode(db: SessionDep) -> str:
     """The factory-wide week definition currently in force, for a run being
     generated NOW. Every other endpoint reads the mode off the RUN instead
@@ -465,7 +573,8 @@ def _month_span(first: str, last: str) -> list[str]:
     return [f"{i // 12:04d}-{i % 12 + 1:02d}" for i in range(start, end + 1)]
 
 
-def _planning_weeks(current: date, demand_months: list[str], mode: str) -> list[date]:
+def _planning_weeks(current: date, demand_months: list[str], mode: str,
+                    start_dow: int) -> list[date]:
     """Every week `generate_mps` can possibly ask `limits_for_week` about.
 
     The engine only ever touches weeks `>= current_week` (a bucket canvas is
@@ -482,12 +591,13 @@ def _planning_weeks(current: date, demand_months: list[str], mode: str) -> list[
     owned by month M can START in M-1, which is exactly why this iterates
     `weeks_of_month` per month rather than stepping days.
     """
-    here = owning_month(current, mode)
+    here = owning_month(current, mode, start_dow=start_dow)
     first = min([here] + demand_months)
     last = max([here] + demand_months)
     weeks: set[date] = set()
     for month in _month_span(first, last):
-        weeks.update(w for w in weeks_of_month(month, mode) if w >= current)
+        weeks.update(w for w in weeks_of_month(month, mode, start_dow=start_dow)
+                     if w >= current)
     return sorted(weeks)
 
 
@@ -517,16 +627,18 @@ async def _week_limits_lookup(
     return _for_week
 
 
-def _target_week(demand_month: str, lead_weeks: int, current: date, mode: str) -> date:
+def _target_week(demand_month: str, lead_weeks: int, current: date, mode: str,
+                 start_dow: int) -> date:
     """`generate_mps`'s step 2, for one demand month: the last week of the
     demand month shifted back `lead_weeks`, never before `current`. Kept in
     step with the engine deliberately -- `update_line` needs the same target
     to recompute `weeks_early` for a hand-moved line."""
-    standard = shift_weeks(weeks_of_month(demand_month, mode)[-1], -lead_weeks, mode)
+    standard = shift_weeks(weeks_of_month(demand_month, mode, start_dow=start_dow)[-1],
+                           -lead_weeks, mode, start_dow=start_dow)
     return current if standard < current else standard
 
 
-def _weeks_between(earlier: date, later: date, mode: str) -> int:
+def _weeks_between(earlier: date, later: date, mode: str, start_dow: int) -> int:
     """Whole week steps from `earlier` up to `later` on this mode's grid; 0
     if `earlier` is not before `later`. Walks with `shift_weeks` rather than
     dividing a day difference by 7 -- under `month_fixed` a week is 1-7 days
@@ -536,7 +648,7 @@ def _weeks_between(earlier: date, later: date, mode: str) -> int:
     steps = 0
     week = earlier
     while week < later:
-        week = shift_weeks(week, 1, mode)
+        week = shift_weeks(week, 1, mode, start_dow=start_dow)
         steps += 1
         if steps > 5000:  # pragma: no cover -- off-grid input would never terminate
             raise RuntimeError(
@@ -573,7 +685,19 @@ def _compute_stats(lines: list[WeeklyLine]) -> dict:
         # asking "how early is this line" must read `weeks_early` instead.
         "prebuild_count": sum(1 for l in lines if l.is_prebuild),
         "capacity_gap_count": sum(1 for l in lines if l.capacity_gap),
+        # Minimum lot size (mrp11): how much this plan makes over and above
+        # the net requirement because batches were rounded up, and how much
+        # of that the horizon never consumes -- stock the plant is left
+        # holding when the plan runs out. Serialised as strings; Decimal
+        # goes over the wire as a string everywhere in this codebase.
+        "total_surplus": str(_tidy_total(l.surplus_qty for l in lines)),
+        "unconsumed_surplus": str(_tidy_total(l.surplus_qty for l in lines)
+                                  - _tidy_total(l.carry_in_qty for l in lines)),
     }
+
+
+def _tidy_total(values) -> Decimal:
+    return sum(values, Decimal("0"))
 
 
 async def _no_shelf_life_stats(
@@ -607,7 +731,13 @@ async def _run_detail_response(db: SessionDep, run: MrpMpsRun) -> MpsRunDetailRe
         generated_by=run.generated_by, stats=run.stats,
         production_lead_weeks=run.production_lead_weeks,
         week_calendar_mode=run.week_calendar_mode,
-        lines=[_line_response(l, run.week_calendar_mode) for l in lines],
+        week_start_dow=run.week_start_dow,
+        frozen_months=run.frozen_months,
+        frozen_until_month=_frozen_until(run),
+        is_default=run.is_default,
+        released_at=run.released_at,
+        lines=[_line_response(l, run.week_calendar_mode, run.week_start_dow)
+               for l in lines],
     )
 
 
@@ -636,7 +766,7 @@ async def _build_demand_context(db: SessionDep, version: ForecastVersion) -> dic
     return ctx
 
 
-def _line_response(line: MrpMpsLine, mode: str) -> MpsLineResponse:
+def _line_response(line: MrpMpsLine, mode: str, start_dow: int) -> MpsLineResponse:
     """Reads the frozen demand-context snapshot straight off the line
     (`MrpMpsLine.demand_forecast`/`opening_stock`, written once at
     generate/recalculate time -- see `_build_demand_context`'s docstring).
@@ -650,7 +780,7 @@ def _line_response(line: MrpMpsLine, mode: str) -> MpsLineResponse:
     return MpsLineResponse(
         id=line.id, material_code=line.material_code, demand_month=line.demand_month,
         plan_week_start=line.plan_week_start, plan_week_month=line.plan_week_month,
-        week_label=week_label(line.plan_week_start, mode),
+        week_label=week_label(line.plan_week_start, mode, start_dow=start_dow),
         weeks_early=line.weeks_early,
         qty=line.qty, is_prebuild=line.is_prebuild,
         prebuild_reason=line.prebuild_reason, shelf_life_ok=line.shelf_life_ok,
@@ -659,11 +789,17 @@ def _line_response(line: MrpMpsLine, mode: str) -> MpsLineResponse:
         demand_forecast=line.demand_forecast if line.demand_forecast is not None else Decimal("0"),
         opening_stock=line.opening_stock if line.opening_stock is not None else Decimal("0"),
         lead_shortfall=line.lead_shortfall,
+        surplus_qty=line.surplus_qty,
+        carry_in_qty=line.carry_in_qty,
+        covered_by_carry=line.covered_by_carry,
+        late_production=line.late_production,
+        surplus_expiry_risk=line.surplus_expiry_risk,
+        below_min_lot=line.below_min_lot,
     )
 
 
 def _compute_week_grid(
-    run: MrpMpsRun, lines: list[MrpMpsLine], mode: str,
+    run: MrpMpsRun, lines: list[MrpMpsLine], mode: str, start_dow: int,
 ) -> list[WeekGridEntry]:
     """Every week column this run's matrix (frontend) and xlsx export should
     show — mirrors `app/services/mps_export.py::build_mps_matrix_workbook`'s
@@ -690,13 +826,14 @@ def _compute_week_grid(
     all_months = set(horizon_months) | touched_months
     span_months = _month_span(min(all_months), max(all_months)) if all_months else []
     return [
-        WeekGridEntry(week_start=w, week_month=month, label=week_label(w, mode))
-        for month in span_months for w in weeks_of_month(month, mode)
+        WeekGridEntry(week_start=w, week_month=month,
+                      label=week_label(w, mode, start_dow=start_dow))
+        for month in span_months for w in weeks_of_month(month, mode, start_dow=start_dow)
     ]
 
 
 async def _compute_capacity_occupancy(
-    db: SessionDep, lines: list[MrpMpsLine], mode: str,
+    db: SessionDep, lines: list[MrpMpsLine], mode: str, start_dow: int,
 ) -> list[CapacityOccupancyWeek]:
     """Used qty/SKU count per PLAN WEEK vs. the limits effective for that
     week (standing rules plus that week's exceptions), re-resolved fresh on
@@ -720,8 +857,8 @@ async def _compute_capacity_occupancy(
         skus, qty = by_week[week]
         limits = await resolve_limits_for_week(db, week)
         occupancy.append(CapacityOccupancyWeek(
-            week_start=week, week_month=owning_month(week, mode),
-            week_label=week_label(week, mode),
+            week_start=week, week_month=owning_month(week, mode, start_dow=start_dow),
+            week_label=week_label(week, mode, start_dow=start_dow),
             used_sku_count=len(skus), used_qty=qty,
             max_sku_count=limits.max_sku_count, max_output_qty=limits.max_output_qty,
         ))
@@ -749,19 +886,80 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     # The ONE place the current planning parameter is read. Everything
     # afterwards -- this request included -- goes through `run.week_calendar_mode`.
     mode = await _resolve_week_mode(db)
-    current_week = week_start_of(datetime.now(timezone.utc).date(), mode)
+    start_dow = await _resolve_week_start_dow(db)
+    today = datetime.now(timezone.utc).date()
+    current_week = week_start_of(today, mode, start_dow=start_dow)
+
+    # ── Frozen zone ────────────────────────────────────────────────────
+    # The first `frozen_months` months (this one included) have had their
+    # materials bought already, so their plan is inherited from the run
+    # currently in force and is not re-planned.
+    #
+    # It is implemented by moving the engine's own floor: `current_week`
+    # becomes the first week of the first LIQUID month, and the inherited
+    # lines go in as `locked`. The engine already refuses to place anything
+    # before `current_week` and already subtracts locked quantity from the
+    # demand it re-plans, so the frozen weeks are structurally unreachable
+    # rather than merely defended by a check somebody could forget. Demand
+    # for a frozen month that the inherited plan does NOT cover is clamped
+    # to the first liquid week and comes back flagged `lead_shortfall` --
+    # "this should already have been started", which is exactly what it is.
+    frozen_months = await _resolve_frozen_months(db)
+    frozen_until = (_shift_month(today.strftime("%Y-%m"), frozen_months - 1)
+                    if frozen_months else None)
+    frozen_weekly: list[WeeklyLine] = []
+    frozen_context: dict = {}
+    # The plan in force -- not "the most recently released run". Switching
+    # the active version back to an earlier one of the same group is meant
+    # to change what the next plan inherits; reading the newest release
+    # instead would quietly ignore the switch.
+    live = await _default_run(db) if frozen_until is not None else None
+    if live is None:
+        # Nothing is in force yet, so nothing has been bought against a
+        # plan: the first run plans its whole horizon, frozen zone included.
+        # Freezing here would block production in the near months for no
+        # reason and hand the planner a plan that starts three months out.
+        frozen_until = None
+    if frozen_until is not None:
+        for l in await _load_lines(db, live.id):
+            if l.plan_week_month > frozen_until or l.capacity_gap or l.qty <= 0:
+                continue
+            frozen_weekly.append(WeeklyLine(
+                material_code=l.material_code, demand_month=l.demand_month,
+                plan_week_start=l.plan_week_start, plan_week_month=l.plan_week_month,
+                qty=l.qty, is_prebuild=l.is_prebuild, weeks_early=l.weeks_early,
+                prebuild_reason=l.prebuild_reason, shelf_life_ok=l.shelf_life_ok,
+                capacity_gap=False, locked=True, lead_shortfall=l.lead_shortfall,
+                surplus_qty=l.surplus_qty, carry_in_qty=l.carry_in_qty,
+                covered_by_carry=l.covered_by_carry,
+                late_production=l.late_production,
+                surplus_expiry_risk=l.surplus_expiry_risk,
+                below_min_lot=l.below_min_lot,
+            ))
+            frozen_context[(l.material_code, l.demand_month, l.plan_week_start)] = (
+                l.locked_by_planner, l.manual_adjusted)
+        liquid_month = _shift_month(frozen_until, 1)
+        liquid_start = weeks_of_month(liquid_month, mode, start_dow=start_dow)[0]
+        if liquid_start > current_week:
+            current_week = liquid_start
 
     intent_lines = await _load_intent_lines(db, version)
     intent_codes = frozenset(l.material_code for l in intent_lines)
 
     demands = await _build_demand_items(db, version, intent_codes)
     limits_for_week = await _week_limits_lookup(db, _planning_weeks(
-        current_week, _generate_months(version.horizon_start_month, version.horizon_months), mode,
+        current_week, _generate_months(version.horizon_start_month, version.horizon_months),
+        mode, start_dow,
     ))
     shelf_life = await resolve_shelf_life(token)
+    # Resolved from the CURRENT rules, like capacity itself: a recalculation
+    # is meant to reflect today's plant, and only the calendar and lead time
+    # are snapshots.
+    min_lots = await resolve_min_lots(db, current_week)
     lines = generate_mps(
         demands, limits_for_week, shelf_life, safety_margin,
-        lead_weeks=lead, current_week=current_week, mode=mode,
+        lead_weeks=lead, current_week=current_week, mode=mode, start_dow=start_dow,
+        min_lots=min_lots, locked=frozen_weekly or None,
     )
     # Snapshot the demand context (gross forecast + rolled-forward opening
     # stock) onto each line NOW, at generate time -- see
@@ -785,6 +983,11 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
         stats=stats,
         production_lead_weeks=lead,
         week_calendar_mode=mode,
+        week_start_dow=start_dow,
+        # What was actually applied, not what the setting says: a first run
+        # has nothing in force to inherit, so nothing is frozen and the
+        # planner must be able to adjust those weeks.
+        frozen_months=frozen_months if frozen_until is not None else 0,
     )
     db.add(run)
     await db.flush()  # assign run.id for the lines' FK below
@@ -805,21 +1008,161 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
             capacity_gap=line.capacity_gap, locked_by_planner=False, manual_adjusted=False,
             demand_forecast=demand_forecast, opening_stock=opening_stock,
             lead_shortfall=line.lead_shortfall,
+            surplus_qty=line.surplus_qty, carry_in_qty=line.carry_in_qty,
+            covered_by_carry=line.covered_by_carry,
+            late_production=line.late_production,
+            surplus_expiry_risk=line.surplus_expiry_risk,
+            below_min_lot=line.below_min_lot,
         ))
+
+    # An inherited frozen line keeps the planner flags it was released with:
+    # it is the SAME committed production, not a fresh proposal, and losing
+    # a planner's lock on it would let the next recalculate move it.
+    if frozen_context:
+        for row in (await _load_lines(db, run.id)):
+            flags = frozen_context.get(
+                (row.material_code, row.demand_month, row.plan_week_start))
+            if flags is not None:
+                row.locked_by_planner, row.manual_adjusted = flags
 
     await db.commit()
     await db.refresh(run)
     return await _run_detail_response(db, run)
 
 
+@router.get("/runs", response_model=list[MpsRunSummaryResponse])
+async def list_runs(db: SessionDep, _: ReportDep):
+    """Every plan run, newest horizon group first and newest version first
+    within a group.
+
+    **Declared before `/runs/{run_id}`**: FastAPI matches routes in
+    declaration order, so the parameterised route would otherwise swallow
+    the literal path and try to parse "runs" as a UUID.
+
+    Ordered by `COALESCE(released_at, created_at)` so an unreleased draft
+    sorts by when it was generated -- a draft with a NULL release time must
+    not sink to the bottom of its own group, which is where the planner
+    looks for the work in progress.
+    """
+    rows = (await db.execute(
+        select(MrpMpsRun).order_by(
+            MrpMpsRun.horizon_start_month.desc(),
+            sa_func.coalesce(MrpMpsRun.released_at, MrpMpsRun.created_at).desc(),
+        )
+    )).scalars().all()
+    return rows
+
+
+@router.post("/runs/{run_id}/set-default", response_model=MpsRunGetResponse)
+async def set_default_run(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
+    """Make an already-released run of the CURRENT group the plan in force.
+
+    Switching replays that run's stored lines -- it does not recalculate, so
+    a plan switched back to is exactly the plan that was released, even if
+    the forecast and the capacity rules have moved since.
+
+    Two refusals, both 422:
+    - a draft is not switchable (nothing was ever published from it);
+    - a run from an older horizon group is not switchable, because that
+      group's 18-month window is missing the newest month of demand and
+      making it live would leave a month of materials unbought.
+    """
+    run = await _get_run_or_404(db, run_id)
+    if run.is_default:
+        return await _run_get_response(db, run)
+
+    if run.status not in ("released", "superseded"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"run {run.run_no} is '{run.status}'; only a released plan can be "
+                   f"made active. Release it instead.",
+        )
+
+    current = await _default_run(db)
+    if current is not None and run.horizon_start_month != current.horizon_start_month:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"plan {run.run_no} covers {run.horizon_start_month}, and the plan in "
+                f"force covers {current.horizon_start_month}; the plan group only "
+                f"moves forward. Versions can be switched within a group, never "
+                f"across one."
+            ),
+        )
+
+    await _make_default(db, run)
+    await db.commit()
+    await db.refresh(run)
+    return await _run_get_response(db, run)
+
+
+@router.get("/runs/{run_id}/diff", response_model=MpsRunDiffResponse)
+async def diff_run(
+    run_id: uuid.UUID, db: SessionDep, _: ReportDep,
+    against: uuid.UUID | None = Query(default=None),
+):
+    """What changed between this plan and another version of it.
+
+    `against` defaults to the previous version of the same horizon group.
+    A run with nothing before it answers with `baseline_run_id: null` and no
+    cells -- the first version of a group genuinely has nothing to compare
+    against, and that is not an error to show a planner.
+
+    Read-only: nothing here writes, so comparing across groups is allowed
+    even though *switching* across groups is not.
+    """
+    run = await _get_run_or_404(db, run_id)
+
+    baseline_kind: str | None = None
+    if against is None:
+        baseline, baseline_kind = await _diff_baseline(db, run)
+    else:
+        baseline = await db.get(MrpMpsRun, against)
+        if baseline is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail="baseline run not found")
+        baseline_kind = "explicit"
+
+    if baseline is None:
+        # Nothing to compare against. Diffing against an empty plan would
+        # light up every cell as "new" and drown the one thing this view
+        # exists for; a first version simply has no previous version.
+        cells, summary = [], {"products_changed": 0, "weeks_changed": 0,
+                              "total_delta": Decimal("0")}
+    else:
+        cells, summary = diff_cells(
+            await _load_lines(db, run.id),
+            await _load_lines(db, baseline.id),
+        )
+    return MpsRunDiffResponse(
+        run_id=run.id,
+        baseline_run_id=baseline.id if baseline else None,
+        baseline_run_no=baseline.run_no if baseline else None,
+        baseline_kind=baseline_kind,
+        cells=[MpsDiffCell(**cell) for cell in cells],
+        summary=MpsDiffSummary(**summary),
+    )
+
+
 @router.get("/runs/{run_id}", response_model=MpsRunGetResponse)
 async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
     run = await _get_run_or_404(db, run_id)
+    return await _run_get_response(db, run)
+
+
+async def _run_get_response(db: SessionDep, run: MrpMpsRun) -> "MpsRunGetResponse":
+    """The full run payload (lines + occupancy + week grid).
+
+    Shared by `GET /runs/{id}` and `set-default`: after switching the plan in
+    force the caller wants to look at the version it just activated, and
+    handing back a different shape than the one the page already renders
+    would mean the frontend needs two code paths for the same object."""
     lines = await _load_lines(db, run.id)
     # The run's OWN mode, never the current parameter (module docstring).
     mode = run.week_calendar_mode
-    occupancy = await _compute_capacity_occupancy(db, lines, mode)
-    week_grid = _compute_week_grid(run, lines, mode)
+    start_dow = run.week_start_dow
+    occupancy = await _compute_capacity_occupancy(db, lines, mode, start_dow)
+    week_grid = _compute_week_grid(run, lines, mode, start_dow)
     return MpsRunGetResponse(
         id=run.id, run_no=run.run_no, forecast_version_id=run.forecast_version_id,
         horizon_start_month=run.horizon_start_month, horizon_months=run.horizon_months,
@@ -827,7 +1170,12 @@ async def get_run(run_id: uuid.UUID, db: SessionDep, _: ReportDep):
         generated_by=run.generated_by, stats=run.stats,
         production_lead_weeks=run.production_lead_weeks,
         week_calendar_mode=mode,
-        lines=[_line_response(l, mode) for l in lines],
+        week_start_dow=start_dow,
+        frozen_months=run.frozen_months,
+        frozen_until_month=_frozen_until(run),
+        is_default=run.is_default,
+        released_at=run.released_at,
+        lines=[_line_response(l, mode, start_dow) for l in lines],
         capacity_occupancy=occupancy,
         week_grid=week_grid,
     )
@@ -856,7 +1204,8 @@ async def export_run(
     row falls back to its bare material_code, never a broken export."""
     run = await _get_run_or_404(db, run_id)
     lines = await _load_lines(db, run.id)
-    line_responses = [_line_response(l, run.week_calendar_mode) for l in lines]
+    line_responses = [_line_response(l, run.week_calendar_mode, run.week_start_dow)
+                      for l in lines]
 
     codes = {l.material_code for l in line_responses}
     names = await resolve_material_names(token) if codes else {}
@@ -879,8 +1228,10 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     # The run's OWN calendar and lead, never the current planning parameter
     # or a fresh default -- see this module's docstring.
     mode = run.week_calendar_mode
+    start_dow = run.week_start_dow
     lead = run.production_lead_weeks
-    current_week = week_start_of(datetime.now(timezone.utc).date(), mode)
+    current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
+                                 start_dow=start_dow)
 
     existing_lines = await _load_lines(db, run.id)
     locked_existing = [l for l in existing_lines if l.locked_by_planner]
@@ -933,13 +1284,15 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     # month's demand the planner did not lock.
     demands = await _build_demand_items(db, version, intent_codes)
     limits_for_week = await _week_limits_lookup(db, _planning_weeks(
-        current_week, _generate_months(version.horizon_start_month, version.horizon_months), mode,
+        current_week, _generate_months(version.horizon_start_month, version.horizon_months),
+        mode, start_dow,
     ))
     shelf_life = await resolve_shelf_life(token)
+    min_lots = await resolve_min_lots(db, current_week)
     lines = generate_mps(
         demands, limits_for_week, shelf_life, run.safety_margin_fraction,
-        lead_weeks=lead, current_week=current_week, mode=mode,
-        locked=locked_weekly,
+        lead_weeks=lead, current_week=current_week, mode=mode, start_dow=start_dow,
+        locked=locked_weekly, min_lots=min_lots,
     )
     # Snapshot the demand context for the newly (re)placed, non-locked lines
     # -- same write-time contract as create_run.
@@ -970,6 +1323,11 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
             manual_adjusted=manual_adjusted,
             demand_forecast=demand_forecast, opening_stock=opening_stock,
             lead_shortfall=line.lead_shortfall,
+            surplus_qty=line.surplus_qty, carry_in_qty=line.carry_in_qty,
+            covered_by_carry=line.covered_by_carry,
+            late_production=line.late_production,
+            surplus_expiry_risk=line.surplus_expiry_risk,
+            below_min_lot=line.below_min_lot,
         ))
     stats = _compute_stats(lines)
     stats["skipped_intent"] = _skipped_intent_stats(intent_lines)
@@ -1022,6 +1380,21 @@ async def update_line(
     _require_not_released(run)
     line = await _get_line_or_404(db, run_id, line_id)
     mode = run.week_calendar_mode
+    start_dow = run.week_start_dow
+
+    # The frozen zone is not a UI convention: its materials are already
+    # bought, so the API refuses to change it whatever the caller is. A
+    # greyed-out cell stops a click, not a request.
+    frozen_until = _frozen_until(run)
+    if frozen_until is not None and line.plan_week_month <= frozen_until:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"the week of {line.plan_week_start.isoformat()} is inside this run's "
+                f"frozen zone (through {frozen_until}); its materials are already "
+                f"purchased and the plan cannot be changed"
+            ),
+        )
 
     changed = False
     if body.qty is not None and body.qty != line.qty:
@@ -1029,13 +1402,14 @@ async def update_line(
         changed = True
     if body.plan_week_start is not None and body.plan_week_start != line.plan_week_start:
         week = body.plan_week_start
-        if week_start_of(week, mode) != week:
+        if week_start_of(week, mode, start_dow=start_dow) != week:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"{week.isoformat()} is not the start of a week under this run's "
                        f"'{mode}' calendar",
             )
-        current_week = week_start_of(datetime.now(timezone.utc).date(), mode)
+        current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
+                                     start_dow=start_dow)
         if week < current_week:
             # A past week is not a place production can happen, and the
             # engine's canvas says so: every bucket is `[w for w in
@@ -1054,8 +1428,9 @@ async def update_line(
                        "a past week -- it would consume the demand without occupying any "
                        "week's capacity",
             )
-        target = _target_week(line.demand_month, run.production_lead_weeks, current_week, mode)
-        weeks_early = _weeks_between(week, target, mode)
+        target = _target_week(line.demand_month, run.production_lead_weeks, current_week,
+                              mode, start_dow)
+        weeks_early = _weeks_between(week, target, mode, start_dow)
         shelf_life = await resolve_shelf_life(token)
         if not _placement_allowed(
             week, line.demand_month, shelf_life.get(line.material_code),
@@ -1069,12 +1444,13 @@ async def update_line(
             )
         moved_from = line.plan_week_start
         line.plan_week_start = week
-        line.plan_week_month = owning_month(week, mode)
+        line.plan_week_month = owning_month(week, mode, start_dow=start_dow)
         line.weeks_early = weeks_early
         # Same definition the engine uses: a pre-build is production pulled
         # into an earlier MONTH than the demand's own bucket. Moving within
         # the bucket is levelling, however early in it the new week sits.
-        line.is_prebuild = line.plan_week_month < owning_month(target, mode)
+        line.is_prebuild = line.plan_week_month < owning_month(target, mode,
+                                                              start_dow=start_dow)
         if not line.capacity_gap:
             # `prebuild_reason` explains an EVENT, so it has to move with the
             # line. Left alone, a hand-move either produced `is_prebuild=True`
@@ -1112,29 +1488,37 @@ async def update_line(
 
     await db.commit()
     await db.refresh(line)
-    return _line_response(line, mode)
+    return _line_response(line, mode, start_dow)
 
 
-@router.post("/runs/{run_id}/confirm-release", response_model=MpsRunDetailResponse)
-async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
-    run = await _get_run_or_404(db, run_id)
-    _require_not_released(run)
-    lines = await _load_lines(db, run.id)
+async def publish_demands_from_run(db: SessionDep, run: MrpMpsRun) -> None:
+    """Make `run` the demand set 1C purchases against.
 
-    # Delete EVERY prior demand_type='mps' row, system-wide -- not scoped to
-    # this run's forecast_version_id. See module docstring for why: multiple
-    # forecast versions can be confirmed at once, but only one MPS lineage
-    # is ever meant to be live/released at a time (design §8). Scoping this
-    # delete to `run.forecast_version_id` would leave a prior release's rows
-    # behind forever whenever it was built off a different version_id, and
-    # silently double-count demand.
+    **The one implementation.** Both releasing a run and switching the plan
+    in force need exactly this, and a second copy that drifts from the first
+    means either double-counted demand or materials nobody buys -- the class
+    of silent failure this module keeps having to defend against. Does not
+    commit; the caller owns the transaction.
+
+    Deletes EVERY prior `demand_type='mps'` row, system-wide -- not scoped
+    to this run's `forecast_version_id`. Multiple forecast versions can be
+    confirmed at once, but only one MPS lineage is ever live (design §8);
+    scoping the delete would leave a prior release's rows behind forever
+    whenever it was built off a different version_id, and silently
+    double-count demand.
+    """
     await db.execute(delete(MrpDemand).where(MrpDemand.demand_type == "mps"))
 
-    for line in lines:
+    for line in await _load_lines(db, run.id):
         if line.capacity_gap:
             # Unmet-demand exception, not a booked production order -- never
             # materialized into mrp_demands (see module docstring). Still
-            # persisted as an MrpMpsLine above, so it stays visible.
+            # persisted as an MrpMpsLine, so it stays visible.
+            continue
+        if line.qty <= 0:
+            # A month covered in full by an earlier batch's surplus. It
+            # exists so the matrix can show the month; there is nothing to
+            # produce, so there is nothing for 1C to buy materials for.
             continue
         db.add(MrpDemand(
             source_run_id=run.id, demand_type="mps", material_code=line.material_code,
@@ -1145,7 +1529,167 @@ async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
             qty=line.qty,
         ))
 
+
+def diff_cells(current, baseline) -> tuple[list[dict], dict]:
+    """Per-cell planned-quantity differences between two runs' lines.
+
+    Pure function, no DB. A "cell" is `(material_code, plan_week_start)` --
+    **the matrix cell the planner is looking at**. Diffing at demand-month
+    grain instead would produce differences that cannot be drawn on the grid
+    they are meant to annotate. Several lines routinely share a cell (a
+    levelled run serving two demand months), so quantities are summed before
+    comparing.
+
+    `capacity_gap` lines are excluded: a gap is unmet demand, not production.
+    Counting it would report a quantity that was never made as a decrease.
+
+    Cells present on only ONE side are reported with the missing side as 0.
+    The vanished ones matter most -- a product moved out of a week has no
+    line in the new plan at all, so anything that iterates the new plan's
+    rows alone would silently drop exactly the half a planner most needs to
+    see.
+    """
+    def totals(lines) -> dict:
+        out: dict[tuple, Decimal] = {}
+        for line in lines:
+            if line.capacity_gap:
+                continue
+            key = (line.material_code, line.plan_week_start)
+            out[key] = out.get(key, Decimal("0")) + line.qty
+        return out
+
+    after_totals, before_totals = totals(current), totals(baseline)
+
+    cells: list[dict] = []
+    for key in sorted(set(after_totals) | set(before_totals)):
+        before = before_totals.get(key, Decimal("0"))
+        after = after_totals.get(key, Decimal("0"))
+        if before == after:
+            continue
+        cells.append({
+            "material_code": key[0], "plan_week_start": key[1],
+            "before": before, "after": after, "delta": after - before,
+        })
+
+    summary = {
+        "products_changed": len({c["material_code"] for c in cells}),
+        "weeks_changed": len({c["plan_week_start"] for c in cells}),
+        "total_delta": sum((c["delta"] for c in cells), Decimal("0")),
+    }
+    return cells, summary
+
+
+async def _previous_version(db: SessionDep, run: MrpMpsRun) -> MrpMpsRun | None:
+    """The version of `run`'s own group that comes immediately before it.
+
+    Ordered exactly like `GET /runs` so "the previous version" means the row
+    directly under this one in the picker -- two different answers to the
+    same question would be worse than no default at all."""
+    group = (await db.execute(
+        select(MrpMpsRun)
+        .where(MrpMpsRun.horizon_start_month == run.horizon_start_month)
+        .order_by(sa_func.coalesce(MrpMpsRun.released_at, MrpMpsRun.created_at).desc(),
+                  MrpMpsRun.run_no.desc())
+    )).scalars().all()
+    ids = [r.id for r in group]
+    if run.id not in ids:
+        return None
+    position = ids.index(run.id)
+    return group[position + 1] if position + 1 < len(group) else None
+
+
+async def _diff_baseline(db: SessionDep, run: MrpMpsRun) -> tuple[MrpMpsRun | None, str | None]:
+    """What `run` is compared against, and which KIND of baseline that is.
+
+    **The plan in force**, unless `run` is itself the plan in force, in which
+    case the version it replaced.
+
+    The first rule tried was "the previous version in this run's own group",
+    and a planner took one look and asked the question that killed it: with
+    two versions where the newer one is active, selecting the older one gives
+    it no previous version at all, and selecting the active one compares it
+    against the other -- so "the previous version" means something different
+    depending on which row you are standing on, and nothing at all on the
+    oldest row. "Against what is live" is the same question from every row.
+
+    The kind travels back with the baseline because the two answers deserve
+    different sentences on screen: "against the live plan" and "against the
+    version this one replaced" are not interchangeable.
+    """
+    active = await _default_run(db)
+    if active is not None and active.id != run.id:
+        return active, "active"
+    previous = await _previous_version(db, run)
+    return (previous, "previous") if previous is not None else (None, None)
+
+
+async def _default_run(db: SessionDep) -> MrpMpsRun | None:
+    """The plan currently in force, or None before anything is released."""
+    return (await db.execute(
+        select(MrpMpsRun).where(MrpMpsRun.is_default.is_(True))
+    )).scalars().first()
+
+
+async def _make_default(db: SessionDep, run: MrpMpsRun) -> None:
+    """Move the in-force marker onto `run` and rewrite the live demand.
+
+    The old marker is cleared and FLUSHED before the new one is set: the
+    partial unique index allows exactly one `is_default` row, so setting the
+    new one first would collide inside the transaction.
+
+    Every run in an older horizon group is superseded here, drafts included.
+    The plan group only moves forward, and a draft of an older group left
+    alive is a draft somebody could release later to walk it backwards.
+    """
+    for other in (await db.execute(
+        select(MrpMpsRun).where(MrpMpsRun.is_default.is_(True), MrpMpsRun.id != run.id)
+    )).scalars().all():
+        other.is_default = False
+    await db.flush()
+
+    for older in (await db.execute(
+        select(MrpMpsRun).where(
+            MrpMpsRun.horizon_start_month < run.horizon_start_month,
+            MrpMpsRun.status != "superseded",
+        )
+    )).scalars().all():
+        older.status = "superseded"
+
+    run.is_default = True
+    await publish_demands_from_run(db, run)
+
+
+@router.post("/runs/{run_id}/confirm-release", response_model=MpsRunDetailResponse)
+async def confirm_release(run_id: uuid.UUID, db: SessionDep, _: ConfirmDep):
+    run = await _get_run_or_404(db, run_id)
+
+    # Re-releasing the plan already in force is a no-op, not a 409: the
+    # caller asked for a state the system is already in, and the alternative
+    # (rejecting) makes a double-click look like a failure.
+    if run.is_default:
+        return await _run_detail_response(db, run)
+
+    _require_not_released(run)
+
+    current = await _default_run(db)
+    if current is not None and run.horizon_start_month < current.horizon_start_month:
+        # Releasing makes a run the plan in force, so releasing an older
+        # group's draft would walk the in-force group BACKWARDS -- exactly
+        # what "the group only moves forward" forbids. Without this check
+        # that rule would only exist in the UI.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"this plan covers {run.horizon_start_month}, which is older than the "
+                f"plan currently in force ({current.horizon_start_month}); the plan "
+                f"group only moves forward. Generate a new plan from the current "
+                f"horizon instead."
+            ),
+        )
+
     run.status = "released"
+    run.released_at = datetime.now(timezone.utc)
+    await _make_default(db, run)
     await db.commit()
     await db.refresh(run)
     return await _run_detail_response(db, run)

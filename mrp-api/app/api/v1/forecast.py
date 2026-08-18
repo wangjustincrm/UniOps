@@ -24,7 +24,10 @@ degrade to `name: None` for every row (today's pre-lookup behavior) rather
 than 5xx-ing or hanging — the grid/export's actual numbers never depend on
 mdm-api, so a name-lookup failure must never take the whole read down.
 
-All endpoints here are reads, gated `mrp.report.view`.
+Reads here are gated `mrp.report.view`. The one write is
+`DELETE /versions/{id}` (gated `mrp.demand.write`, the permission that
+freezes an outlook in the first place) — discarding a snapshot, refused
+while an MPS run was generated from it. See that endpoint's docstring.
 """
 import uuid
 from datetime import datetime
@@ -34,11 +37,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
 from app.models.forecast import ForecastLine, ForecastVersion
+from app.models.mps import MrpMpsRun
 from app.services import forecast_io
 from app.services.mdm_client import resolve_material_names
 
@@ -47,6 +51,11 @@ router = APIRouter(prefix="/forecast", tags=["forecast"])
 _XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
+# Deleting an outlook is gated on the SAME permission that freezes one
+# (POST /series/outlook) — whoever may create a snapshot may discard one, and
+# nobody else. Splitting them would leave planners generating outlooks they
+# cannot clean up.
+WriteDep = Annotated[dict, Depends(require_permission("mrp.demand.write"))]
 
 
 def _generate_months(start_month: str, count: int) -> list[str]:
@@ -140,14 +149,80 @@ async def list_versions(
     _: ReadDep,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
+    search: str | None = Query(default=None, description="Case-insensitive substring of version number, anchor month or note"),
+    status_: str | None = Query(default=None, alias="status", description="Filter to one status, e.g. confirmed"),
 ):
-    count_stmt = select(func.count()).select_from(ForecastVersion)
-    total = (await db.execute(count_stmt)).scalar_one()
+    """Newest first, with optional filtering.
 
+    `status` and `search` are applied IN THE DATABASE, before paging, on
+    purpose: a caller that pages and then filters client-side gets pages of
+    uneven size and a total that counts rows it never shows — "17 confirmed"
+    over a page holding 6 of them.
+
+    `search` matches the version number, the anchor month and the note. The
+    anchor is worth matching separately because the two are written
+    differently: the version number carries `202608` and the anchor column
+    carries `2026-08`, and a planner types whichever they are looking at.
+    """
+    filters = []
+    if status_:
+        filters.append(ForecastVersion.status == status_)
+    if search and search.strip():
+        needle = f"%{search.strip()}%"
+        filters.append(or_(
+            ForecastVersion.version_no.ilike(needle),
+            ForecastVersion.source_anchor_month.ilike(needle),
+            ForecastVersion.note.ilike(needle),
+        ))
+
+    count_stmt = select(func.count()).select_from(ForecastVersion)
     stmt = select(ForecastVersion).order_by(ForecastVersion.created_at.desc())
+    for condition in filters:
+        count_stmt = count_stmt.where(condition)
+        stmt = stmt.where(condition)
+
+    total = (await db.execute(count_stmt)).scalar_one()
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     items = (await db.execute(stmt)).scalars().all()
     return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.delete("/versions/{version_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_version(version_id: uuid.UUID, db: SessionDep, _: WriteDep):
+    """Discard an outlook snapshot. Its lines go with it (DB cascade).
+
+    **Refused while any production plan run was generated from it.**
+    `mrp_mps_runs.forecast_version_id` is a plain UUID column with no foreign
+    key, so the database would not stop this: the run would keep pointing at
+    an id that resolves to nothing, and Production Plan's "generated from"
+    label — the only record of what a released plan was based on — would go
+    blank with no way to recover it. A planner clearing out test outlooks has
+    no reason to expect that, so it is refused by name rather than allowed
+    quietly.
+
+    The series itself (`mrp_demand_series`) is untouched: an outlook is a
+    frozen copy of it, never its owner.
+    """
+    version = await _get_version_or_404(db, version_id)
+
+    run_nos = (await db.execute(
+        select(MrpMpsRun.run_no)
+        .where(MrpMpsRun.forecast_version_id == version_id)
+        .order_by(MrpMpsRun.created_at.desc())
+        .limit(5)
+    )).scalars().all()
+    if run_nos:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{version.version_no} cannot be deleted — production plan "
+                f"{', '.join(run_nos)} was generated from it."
+            ),
+        )
+
+    await db.delete(version)
+    await db.commit()
+    return None
 
 
 @router.get("/versions/{version_id}/grid", response_model=GridResponse)

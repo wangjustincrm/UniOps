@@ -25,6 +25,7 @@ from app.models.material import Material
 _ERP_FIELDS = (
     "name", "spec", "base_uom", "erp_item_type", "erp_id",
     "shelf_life_months", "product_family",
+    "erp_class_code", "erp_class_name",
 )
 
 
@@ -35,6 +36,7 @@ def _from_erp(row: ErpMaterial) -> dict:
     规格 dim_quality -> spec；计量单位 unit_meas -> base_uom；
     ERP物料类型原值 item_mes_type -> erp_item_type；
     保质期月数 exp -> shelf_life_months；产品族 part_product_family -> product_family；
+    物料基本分类 accounting_group -> erp_class_code（名称 -> erp_class_name）；
     erp_id = erp_part_no (the only natural ERP identifier the mirror carries;
     mirrors the vendors erp_id dedup pattern).
     """
@@ -47,6 +49,8 @@ def _from_erp(row: ErpMaterial) -> dict:
         "erp_id": row.erp_part_no,
         "shelf_life_months": row.exp,
         "product_family": row.part_product_family,
+        "erp_class_code": row.accounting_group,
+        "erp_class_name": row.accounting_group_name,
     }
 
 

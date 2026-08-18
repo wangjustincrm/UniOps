@@ -8,6 +8,7 @@
 // header for the endpoint contracts and permission keys. Not wired into
 // nav/routes here — that's Task 7.
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Sparkles, AlertTriangle, Download, PackageCheck, X as XIcon } from 'lucide-react'
@@ -16,6 +17,7 @@ import { ApiError } from '@/lib/api'
 import { ToastStack } from '@/components/Toast'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { StatusBadge } from '@/components/StatusBadge'
+import { RunPicker, SetActiveButton } from './RunPicker'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
 import { materialsApi, type MaterialOption } from '@/lib/materials'
@@ -25,6 +27,7 @@ import { capacityApi, findExistingException } from '@/pages/capacity/capacityApi
 import { closesWeek, findSkuClosure } from '@/pages/capacity/closedWeek'
 import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
 import { ProductionMatrix } from './ProductionMatrix'
+import { PlanningRulesPanel } from './PlanningRulesPanel'
 import { AdjustDrawer } from './AdjustDrawer'
 import { WeekDrawer } from './WeekDrawer'
 
@@ -168,7 +171,38 @@ export default function ProductionPlanPage() {
   }, [confirmedVersions])
 
   // ── The active run ───────────────────────────────────────────────────────
-  const [runId, setRunId] = useState<string | null>(null)
+  //
+  // Which plan is on screen lives in the URL (`?run=<id>`), not in component
+  // state. Held in state it was lost on every refresh — including the plan
+  // that had just been released — and there was no way to link anyone to a
+  // specific version.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const runId = searchParams.get('run')
+
+  function selectRun(id: string) {
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params)
+      next.set('run', id)
+      return next
+    }, { replace: true })
+  }
+
+  const runsQuery = useQuery({
+    queryKey: ['mps-runs'],
+    queryFn: () => mpsApi.list(),
+  })
+  const runs = useMemo(() => runsQuery.data ?? [], [runsQuery.data])
+  const activeRun = useMemo(() => runs.find((r) => r.is_default) ?? null, [runs])
+  const selectedSummary = useMemo(
+    () => runs.find((r) => r.id === runId) ?? null, [runs, runId])
+
+  // No `?run=` yet: open the plan in force, else the newest run there is.
+  // An empty state is only correct when there are genuinely no runs.
+  useEffect(() => {
+    if (runId || runs.length === 0) return
+    selectRun((activeRun ?? runs[0]).id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, runs, activeRun])
 
   const runQuery = useQuery({
     queryKey: ['mps-run', runId],
@@ -176,7 +210,10 @@ export default function ProductionPlanPage() {
     enabled: !!runId,
   })
   const run = runQuery.data ?? null
-  const isReleased = run?.status === 'released'
+  const isReleased = run?.status === 'released' || run?.status === 'superseded'
+  // A superseded plan belongs to a horizon group a newer one has taken
+  // over. It stays readable forever, but nothing about it can change.
+  const isHistorical = run?.status === 'superseded'
 
   // Which confirmed outlook this run was generated from (Task 10, design
   // §8 "one active released plan"): confirmedVersions is the same list the
@@ -193,6 +230,64 @@ export default function ProductionPlanPage() {
 
   function invalidateRun() {
     return queryClient.invalidateQueries({ queryKey: ['mps-run', runId] })
+  }
+
+  /** Refresh the open run AND the version list.
+   *
+   *  Anything that creates a run or changes its status must call this, not
+   *  `invalidateRun` alone: the list is what the version picker renders, and
+   *  leaving it stale showed a planner who had just generated two plans an
+   *  empty picker saying "Select a plan" — the runs existed, the API
+   *  returned them, and the page was still holding the answer it got at
+   *  mount. A release also flips other runs to superseded, so the list is
+   *  wrong after that too, not just longer. */
+  function invalidateRunAndList() {
+    return Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['mps-run', runId] }),
+      queryClient.invalidateQueries({ queryKey: ['mps-runs'] }),
+    ])
+  }
+
+  // ── Comparison ────────────────────────────────────────────────────────
+  // Off by default: most of the time a planner opens this page to read the
+  // plan, not to audit it. When on, the server picks the previous version
+  // of this run's own group unless one is named explicitly.
+  const [comparing, setComparing] = useState(false)
+  const diffQuery = useQuery({
+    queryKey: ['mps-diff', runId],
+    queryFn: () => mpsApi.diff(runId as string),
+    enabled: comparing && !!runId,
+  })
+  const diff = diffQuery.data ?? null
+
+  const diffByCell = useMemo(() => {
+    if (!comparing || !diff) return undefined
+    const map = new Map<string, { before: number; after: number; delta: number }>()
+    for (const cell of diff.cells) {
+      map.set(`${cell.material_code}::${cell.plan_week_start}`, {
+        before: Number(cell.before), after: Number(cell.after), delta: Number(cell.delta),
+      })
+    }
+    return map
+  }, [comparing, diff])
+
+  const [activating, setActivating] = useState(false)
+  const [confirmActivate, setConfirmActivate] = useState(false)
+
+  async function handleSetActive() {
+    if (!runId) return
+    setActivating(true)
+    try {
+      await mpsApi.setDefault(runId)
+      await queryClient.invalidateQueries({ queryKey: ['mps-runs'] })
+      await invalidateRun()
+      toasts.success('This plan is now the one purchasing works from.')
+    } catch (err) {
+      toasts.error(errMsg(err, 'Could not switch the active plan — please retry.'))
+    } finally {
+      setActivating(false)
+      setConfirmActivate(false)
+    }
   }
 
   // Materials master, for the table's Product column (name is not part of
@@ -304,7 +399,8 @@ export default function ProductionPlanPage() {
     setGenerating(true)
     try {
       const result = await mpsApi.generate(selectedVersionId, { production_lead_weeks: leadWeeks })
-      setRunId(result.id)
+      selectRun(result.id)
+      await queryClient.invalidateQueries({ queryKey: ['mps-runs'] })
       toasts.success(`Generated ${result.run_no} — ${result.lines.length} line(s).`)
     } catch (err) {
       toasts.error(errMsg(err, 'Could not generate the MPS run — please retry.'))
@@ -319,7 +415,7 @@ export default function ProductionPlanPage() {
     try {
       const result = await mpsApi.recalculate(runId)
       toasts.success(`Recalculated ${result.run_no} — ${result.lines.length} line(s).`)
-      await invalidateRun()
+      await invalidateRunAndList()
     } catch (err) {
       toasts.error(errMsg(err, 'Could not recalculate this run — please retry.'))
     } finally {
@@ -436,7 +532,7 @@ export default function ProductionPlanPage() {
       const result = await mpsApi.confirmRelease(runId)
       toasts.success(`Released ${result.run_no} — demand written to the MRP requirements table.`)
       setReleaseConfirmOpen(false)
-      await invalidateRun()
+      await invalidateRunAndList()
     } catch (err) {
       toasts.error(errMsg(err, 'Could not release this run — please retry.'))
     } finally {
@@ -482,6 +578,42 @@ export default function ProductionPlanPage() {
               ))}
             </select>
           </FormField>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-neutral-500">Version</span>
+            <RunPicker
+              runs={runs}
+              selectedId={runId}
+              onSelect={selectRun}
+              disabled={runsQuery.isLoading}
+            />
+            {/* An empty picker and a failed request look identical — which is
+                how a stale list read as "no plans exist". Say which it is. */}
+            {runsQuery.isError && (
+              <span role="alert" className="text-xs text-danger-600">
+                Could not load the version list — retry or reload.
+              </span>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant={comparing ? 'primary' : 'secondary'}
+              className="min-h-[44px]"
+              aria-pressed={comparing}
+              disabled={!runId}
+              title="Show what changed against the previous version of this plan"
+              onClick={() => setComparing((v) => !v)}
+            >
+              Compare
+            </Button>
+            <SetActiveButton
+              run={selectedSummary}
+              activeGroup={activeRun?.horizon_start_month ?? null}
+              onActivate={() => setConfirmActivate(true)}
+              pending={activating}
+              disabled={!canExecute}
+            />
+          </div>
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-medium text-neutral-500">Unit</span>
@@ -639,7 +771,69 @@ export default function ProductionPlanPage() {
         </p>
       )}
 
+      {comparing && diff && (
+        <p
+          role="status"
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-800"
+        >
+          {diff.baseline_run_no ? (
+            <>
+              <span className="font-medium">vs {diff.baseline_run_no}</span>
+              <span className="rounded bg-primary-100 px-1.5 py-0.5">
+                {diff.baseline_kind === 'active' ? 'the plan in force'
+                  : diff.baseline_kind === 'previous' ? 'the version this replaced'
+                    : 'chosen version'}
+              </span>
+              <span>·</span>
+              <span>
+                {diff.summary.products_changed} product(s) changed across{' '}
+                {diff.summary.weeks_changed} week(s)
+              </span>
+              <span>·</span>
+              <span className="font-mono">
+                net {Number(diff.summary.total_delta) > 0 ? '+' : ''}
+                {formatValue(Number(diff.summary.total_delta))}
+              </span>
+              {diff.cells.length === 0 && <span>· identical</span>}
+            </>
+          ) : (
+            <span>Nothing to compare against — this is the only plan on file.</span>
+          )}
+        </p>
+      )}
+
+      {isHistorical && (
+        <p
+          role="status"
+          className="flex items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600"
+        >
+          <AlertTriangle aria-hidden className="h-4 w-4 shrink-0" />
+          A newer plan group has taken over — this version is read-only. It stays here for
+          reference and cannot be made active again.
+        </p>
+      )}
+
+      {confirmActivate && (
+        <ConfirmDialog
+          title="Make this the active plan?"
+          confirmLabel="Set as active"
+          busy={activating}
+          onConfirm={() => { void handleSetActive() }}
+          onCancel={() => setConfirmActivate(false)}
+        >
+          This rewrites the demand purchasing works from, and the next plan will inherit
+          its frozen months from this version.
+        </ConfirmDialog>
+      )}
+
+      {/* The matrix and the rules it was laid out under, side by side. The
+          panel sits HERE rather than at page level so the header, pickers and
+          alerts above keep the full width -- and so the rules are beside the
+          thing they explain. The matrix scrolls horizontally inside its own
+          container, so giving up 18rem costs a scroll, not a column. */}
       {run && run.lines.length > 0 && (
+        <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
         <ProductionMatrix
           key={run.id}
           lines={run.lines}
@@ -652,8 +846,13 @@ export default function ProductionPlanPage() {
           unitScale={displayUnit === 't' ? 1000 : 1}
           formatValue={formatValue}
           readOnly={isReleased || !canExecute}
+          frozenUntilMonth={run.frozen_until_month}
+          diffByCell={diffByCell}
           onAdjustCell={handleAdjustCell}
         />
+        </div>
+        <PlanningRulesPanel run={run} />
+        </div>
       )}
 
       {pickerLines && (
