@@ -12,6 +12,7 @@ from app.admin.po_number import regenerate_and_cascade
 from app.admin.recompute import recompute_header
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
+from app.crud.gr import resync_po_received_qty, sync_po_receipt_status
 from app.models.admin_audit_log import AdminAuditLog
 from app.models.approval import ApprovalEvent
 from app.models.po import PurchaseOrder
@@ -228,8 +229,22 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
                 routing_requester_changed = True
         else:
             setattr(row, key, _coerce(spec.schema.field_type(key), value))
+    received_qty_resynced = 0
     if line_items is not None:
         await _apply_line_items(db, spec, row, line_items)
+        if entity == "po":
+            # received_qty is hand-editable on PO lines; the PO's receipt status is
+            # derived from it, so a corrected quantity has to drag the status with
+            # it or the PO advertises a receipt state its own lines contradict.
+            await sync_po_receipt_status(db, row.id)
+    if entity == "gr" and before.get("status") != getattr(row, "status", None):
+        # Editing a GR here can move it into or out of crud.gr.COUNTED_GR_STATUSES,
+        # but the accumulator that originally added its quantities to the PO only
+        # runs on the GR workflow actions and never again. Without this, cancelling
+        # a confirmed GR leaves the PO crediting itself for goods the GR no longer
+        # claims — the same hole as deleting one.
+        await db.flush()
+        received_qty_resynced = await resync_po_received_qty(db, row.po_id)
 
     cascade = None
     if entity == "po" and regenerate_po_number:
@@ -245,6 +260,8 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
     after = _serialize(spec, row)
     if line_items is not None:
         after["_line_items_count"] = len(line_items)
+    if received_qty_resynced:
+        after["po_lines_received_qty_resynced"] = received_qty_resynced
     after["_routing_requester_changed"] = routing_requester_changed
     db.add(AdminAuditLog(
         actor_id=actor_id, actor_email=actor_email, action="edit", system=spec.system,

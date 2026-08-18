@@ -321,6 +321,103 @@ async def action(
 
 # ── PO received_qty sync ───────────────────────────────────────────────────────
 
+#: GR statuses whose quantities are already counted in ``po_line_items.received_qty``.
+#: These are exactly the statuses reachable through a call to
+#: ``_update_po_received_qty`` — ``collected`` and ``confirmed`` from the collect /
+#: confirm / auto-complete paths, plus ``discrepancy``, which is only reachable
+#: *from* ``collected`` and so inherits an already-counted quantity. Everything
+#: else (``pending_ack``, ``collection_pending``, ``cancelled``, ``rejected``)
+#: never contributed and must not be given back.
+COUNTED_GR_STATUSES = ("collected", "confirmed", "discrepancy")
+
+
+def _po_receipt_status(po_status: str, lines) -> str | None:
+    """The receipt status these lines imply, or None to leave the PO's status alone.
+
+    Only the three receipt-tracking statuses are ours to move; ``draft`` /
+    ``approved`` / ``closed`` / ``cancelled`` / ``nc_milk`` mean something a
+    quantity change has no business overriding.
+    """
+    if po_status not in ("issued", "partially_received", "fully_received") or not lines:
+        return None
+    if all(line.received_qty >= line.qty for line in lines):
+        return "fully_received"
+    if any(line.received_qty > 0 for line in lines):
+        return "partially_received"
+    return "issued"
+
+
+async def sync_po_receipt_status(db: AsyncSession, po_id: uuid.UUID | None) -> None:
+    """Point the PO's status at what its line quantities now say — in both directions.
+
+    Receipts can be taken away as well as recorded (Data Maintenance deletes a GR,
+    an admin corrects a received_qty by hand), so a PO that no longer has all its
+    goods must be able to fall back out of ``fully_received``.
+    """
+    if po_id is None:
+        return
+    po = (await db.execute(
+        select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one_or_none()
+    if po is None:
+        return
+    lines = (await db.execute(
+        select(PoLineItem).where(PoLineItem.po_id == po.id))).scalars().all()
+    new_status = _po_receipt_status(po.status, lines)
+    if new_status is not None:
+        po.status = new_status
+
+
+async def resync_po_received_qty(
+    db: AsyncSession, po_id: uuid.UUID | None, *,
+    exclude_gr_ids: "tuple[uuid.UUID, ...] | set[uuid.UUID]" = (),
+) -> int:
+    """Recompute every PO line's ``received_qty`` from the GRs that still count.
+
+    ``_update_po_received_qty`` only ever adds, so any path that takes a receipt
+    away — deleting a GR, flipping one to cancelled — would otherwise leave the PO
+    claiming goods it does not have: the outstanding quantity a follow-up GR needs
+    is eaten, and the PO is pinned at ``fully_received`` forever.
+
+    This recomputes from the surviving GR lines rather than subtracting the
+    departing one. Subtraction is only correct if every historical addition was;
+    a recompute is idempotent and self-healing, so a PO that has already drifted
+    is repaired the next time anything touches it. It also stays consistent with
+    the NC mirror, whose ``received_qty`` is by construction the same sum of the
+    same arrival quantities.
+
+    Returns the number of PO lines whose value actually moved.
+    """
+    if po_id is None:
+        return 0
+    po_lines = (await db.execute(
+        select(PoLineItem).where(PoLineItem.po_id == po_id))).scalars().all()
+    if not po_lines:
+        return 0
+
+    stmt = (
+        select(GrLineItem.po_line_id,
+               func.sum(func.coalesce(GrLineItem.actual_qty, GrLineItem.qty_received)))
+        .join(GoodsReceipt, GoodsReceipt.id == GrLineItem.gr_id)
+        .where(GoodsReceipt.po_id == po_id,
+               GoodsReceipt.status.in_(COUNTED_GR_STATUSES),
+               GrLineItem.po_line_id.is_not(None))
+        .group_by(GrLineItem.po_line_id)
+    )
+    if exclude_gr_ids:
+        stmt = stmt.where(GoodsReceipt.id.not_in(tuple(exclude_gr_ids)))
+    totals = {row[0]: row[1] or Decimal("0") for row in (await db.execute(stmt)).all()}
+
+    changed = 0
+    for po_line in po_lines:
+        fresh = totals.get(po_line.id, Decimal("0"))
+        if po_line.received_qty != fresh:
+            po_line.received_qty = fresh
+            changed += 1
+
+    await sync_po_receipt_status(db, po_id)
+    return changed
+
+
 async def _update_po_received_qty(
     db: AsyncSession, gr: GoodsReceipt, lines: list[GrLineItem] | None = None,
 ) -> None:
@@ -339,30 +436,7 @@ async def _update_po_received_qty(
             effective_qty = gr_line.actual_qty if gr_line.actual_qty is not None else gr_line.qty_received
             po_line.received_qty = po_line.received_qty + effective_qty
 
-    # Re-fetch the PO and all its lines to decide on the PO receipt status
-    if gr.po_id is None:
-        return
-    po_result = await db.execute(
-        select(PurchaseOrder).where(PurchaseOrder.id == gr.po_id)
-    )
-    po = po_result.scalar_one_or_none()
-    if po is None or po.status not in ("issued", "partially_received", "fully_received"):
-        return
-
-    lines_result = await db.execute(
-        select(PoLineItem).where(PoLineItem.po_id == po.id)
-    )
-    lines = lines_result.scalars().all()
-    if not lines:
-        return
-
-    all_received = all(line.received_qty >= line.qty for line in lines)
-    any_received = any(line.received_qty > 0 for line in lines)
-
-    if all_received:
-        po.status = "fully_received"
-    elif any_received:
-        po.status = "partially_received"
+    await sync_po_receipt_status(db, gr.po_id)
 
 
 # ── Task helpers ───────────────────────────────────────────────────────────────
