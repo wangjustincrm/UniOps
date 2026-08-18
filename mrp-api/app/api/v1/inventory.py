@@ -32,6 +32,12 @@ raw-milk lots — it arrives by tanker straight into production — so the stock
 half of the rule changes nothing yet, which is exactly why it is encoded rather
 than left to the fact that it currently does not matter.
 
+**Byproducts are excluded unless asked for.** CF00AF (Animal Feed) and CF00WT
+(Waste Powder) are filed as finished goods and swamp them — see
+`BYPRODUCT_CODES`. Every endpoint here takes `include_byproducts`, which the
+screen exposes as a switch, so their absence is always a visible choice rather
+than a silent one.
+
 **Filtering and paging happen in the database, in that order.** Filtering a page
 after it has been cut gives pages of uneven length and a total that counts rows
 it never shows.
@@ -77,6 +83,24 @@ ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
 #: aging bands (which are 30 / 60 / 180). Kept as a named constant so the
 #: number on the screen and the number in the query cannot drift apart.
 EXPIRY_WARNING_DAYS = 90
+
+#: Byproducts that the ERP files as finished goods (class 05, MES type 3) but
+#: which are not sellable product: CF00AF = Animal Feed, CF00WT = Waste Powder.
+#:
+#: Excluded by default because they DOMINATE the class they sit in — CF00AF
+#: alone is 80,394 kg over 478 lots, 45% of all finished-goods stock by quantity
+#: and 68% of its lots, more than every real product put together. A planner
+#: looking at finished goods is looking at what can be shipped, and leaving
+#: these in means the totals describe the feed pile.
+#:
+#: ★ By CODE, because nothing else distinguishes them. The ERP-synced master is
+#: thin: `item_type`, `product_family` and `procurement_type` are NULL or a
+#: constant, and `erp_item_type` says 3 (finished good) for these exactly as it
+#: does for real product. Same reasoning as
+#: mrp/src/lib/materials.ts's FINISHED_GOODS_EXCLUDED_CODES, which this mirrors
+#: — if the ERP import is ever reworked to carry richer attributes, these are
+#: the two places to revisit.
+BYPRODUCT_CODES = ("CF00AF", "CF00WT")
 
 #: The warehouse's own "blocked" quality status (Flux QLT_STS 01 = Block).
 #: NOT the same as our derived `hold`, which also covers 04 Under Inspection —
@@ -278,9 +302,12 @@ def _apply_lot_filters(
     aging_bucket: str | None,
     today: date,
     with_expiry_only: bool,
+    include_byproducts: bool = False,
 ) -> Select:
     """Every filter, applied in the database before any page is cut."""
     stmt = stmt.where(_not_raw_milk())
+    if not include_byproducts:
+        stmt = stmt.where(WmsInventoryLot.material_code.not_in(BYPRODUCT_CODES))
     if material_code:
         stmt = stmt.where(WmsInventoryLot.material_code == material_code)
     if mapped_status:
@@ -344,6 +371,9 @@ async def list_lots(
     ] | None = Query(
         default=None,
         description="Restrict to one shelf-life band, resolved server-side from the same thresholds the summary uses"),
+    include_byproducts: bool = Query(
+        default=False,
+        description="Include CF00AF Animal Feed and CF00WT Waste Powder"),
     sort: Literal["material_code", "lot_no", "expiry_date", "qty", "inbound_date"] = "material_code",
     descending: bool = False,
     page: int = Query(default=1, ge=1),
@@ -356,6 +386,7 @@ async def list_lots(
         warehouse_id=warehouse_id, erp_class_code=erp_class_code, search=search,
         expiring_before=expiring_before, expiring_after=expiring_after,
         aging_bucket=aging_bucket, today=today, with_expiry_only=False,
+        include_byproducts=include_byproducts,
     )
 
     count_stmt = _apply_lot_filters(
@@ -509,6 +540,9 @@ async def list_batches(
     ] | None = Query(
         default=None,
         description="Restrict to one shelf-life band, resolved server-side from the same thresholds the summary uses"),
+    include_byproducts: bool = Query(
+        default=False,
+        description="Include CF00AF Animal Feed and CF00WT Waste Powder, which the ERP files as finished goods but which are not sellable product"),
     sort: Literal["material_code", "supplier_batch", "production_date", "expiry_date", "qty", "inbound_date"] = "expiry_date",
     descending: bool = False,
     page: int = Query(default=1, ge=1),
@@ -534,6 +568,7 @@ async def list_batches(
         warehouse_id=warehouse_id, erp_class_code=erp_class_code, search=search,
         expiring_before=expiring_before, expiring_after=expiring_after,
         aging_bucket=aging_bucket, today=today, with_expiry_only=False,
+        include_byproducts=include_byproducts,
     )
 
     grouping = (
@@ -757,6 +792,9 @@ async def aging_summary(
         default=None,
         description="Restrict to one material class, e.g. 0102 Raw Ingredient"),
     warehouse_id: str | None = Query(default=None),
+    include_byproducts: bool = Query(
+        default=False,
+        description="Include CF00AF Animal Feed and CF00WT Waste Powder"),
 ):
     """Shelf life bucketed at 180 / 60 / 30 days, with expired as its own band.
 
@@ -770,6 +808,7 @@ async def aging_summary(
         erp_class_code=erp_class_code, search=None,
         expiring_before=None, expiring_after=None,
         aging_bucket=None, today=today, with_expiry_only=False,
+        include_byproducts=include_byproducts,
     )
     lots = [lot for lot, _material in (await db.execute(stmt)).all()]
     summary = summarise(lots, today)
@@ -800,6 +839,9 @@ async def material_stock(
     erp_class_code: str | None = Query(default=None),
     only_with_stock: bool = Query(
         default=False, description="Hide materials with neither stock nor open orders"),
+    include_byproducts: bool = Query(
+        default=False,
+        description="Include CF00AF Animal Feed and CF00WT Waste Powder"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
 ):
@@ -842,6 +884,9 @@ async def material_stock(
         .where(_not_raw_milk())
         .group_by(WmsInventoryLot.material_code)
     )
+    if not include_byproducts:
+        stock_stmt = stock_stmt.where(
+            WmsInventoryLot.material_code.not_in(BYPRODUCT_CODES))
     stock = {
         code: dict(on_hand=on_hand, allocated=allocated, on_hold=on_hold,
                    available=available, expired_qty=expired, next_expiry=next_expiry,
@@ -860,6 +905,10 @@ async def material_stock(
 
     rows: list[MaterialStockResponse] = []
     for code in sorted(codes):
+        # Also drop them from the on-order side, so a byproduct cannot reappear
+        # through a purchase order the ERP happened to raise for it.
+        if not include_byproducts and code in BYPRODUCT_CODES:
+            continue
         material = materials.get(code)
         if material is not None and material.erp_class_code == RAW_MILK_CLASS_CODE:
             continue

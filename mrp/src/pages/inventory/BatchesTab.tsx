@@ -159,7 +159,12 @@ function BatchLocations({
   )
 }
 
-export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
+export function BatchesTab({
+  erpClassCode, includeByproducts,
+}: {
+  erpClassCode: string
+  includeByproducts: boolean
+}) {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
@@ -180,17 +185,21 @@ export function BatchesTab({ erpClassCode }: { erpClassCode: string }) {
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  useEffect(() => { setPage(1) }, [erpClassCode, status, sort, descending, expiringWindow])
+  useEffect(() => {
+    setPage(1)
+  }, [erpClassCode, status, sort, descending, expiringWindow, includeByproducts])
 
   const filters: BatchFilters = useMemo(() => ({
     search: search || undefined,
     mapped_status: status || undefined,
     erp_class_code: erpClassCode || undefined,
+    include_byproducts: includeByproducts,
     expiring_after: expiringWindow?.after,
     expiring_before: expiringWindow?.before,
     sort,
     descending,
-  }), [search, status, erpClassCode, sort, descending, expiringWindow])
+  }), [search, status, erpClassCode, sort, descending, expiringWindow,
+       includeByproducts])
 
   const batchQuery = useQuery({
     queryKey: ['inventory-batches', page, filters],

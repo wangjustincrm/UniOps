@@ -98,7 +98,12 @@ function OpenPoLines({ materialCode }: { materialCode: string }) {
   )
 }
 
-export function MaterialsTab({ erpClassCode }: { erpClassCode: string }) {
+export function MaterialsTab({
+  erpClassCode, includeByproducts,
+}: {
+  erpClassCode: string
+  includeByproducts: boolean
+}) {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [onlyWithStock, setOnlyWithStock] = useState(false)
@@ -110,13 +115,16 @@ export function MaterialsTab({ erpClassCode }: { erpClassCode: string }) {
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  useEffect(() => { setPage(1); setExpanded(null) }, [erpClassCode, onlyWithStock])
+  useEffect(() => {
+    setPage(1); setExpanded(null)
+  }, [erpClassCode, onlyWithStock, includeByproducts])
 
   const filters = useMemo(() => ({
     search: search || undefined,
     erp_class_code: erpClassCode || undefined,
     only_with_stock: onlyWithStock,
-  }), [search, erpClassCode, onlyWithStock])
+    include_byproducts: includeByproducts,
+  }), [search, erpClassCode, onlyWithStock, includeByproducts])
 
   const query = useQuery({
     queryKey: ['inventory-materials', page, filters],

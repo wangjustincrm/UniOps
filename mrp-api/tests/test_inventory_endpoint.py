@@ -1117,3 +1117,134 @@ async def test_the_expiring_tile_and_the_rows_it_filters_to_are_the_same_set(
     assert sorted(i["supplier_batch"] for i in filtered["items"]) == [
         "DAY-89", "TOMORROW"], "today is expired, day 90 is beyond the horizon"
     assert Decimal(line["expiring_soon_qty"]) == Decimal("20")
+
+
+# ── byproducts filed as finished goods (2026-08-18) ──────────────────────
+#
+# CF00AF Animal Feed and CF00WT Waste Powder carry the ERP's finished-goods
+# class and MES type, and CF00AF alone is 80,394 kg over 478 lots -- 45% of all
+# finished-goods stock by quantity and 68% of its lots, more than every real
+# product put together.
+
+
+@pytest.mark.anyio
+async def test_byproducts_are_excluded_from_batches_by_default(
+    client, db_session, admin_token,
+):
+    """A planner looking at finished goods is looking at what can be shipped."""
+    await _material(db_session, "CF00AF", "Animal Feed", erp_class="05")
+    await _material(db_session, "CF00WT", "Waste Powder", erp_class="05")
+    await _material(db_session, "S0093", "Infant Formula", erp_class="05")
+    await _lot(db_session, "CF00AF", "L1", "80000", supplier_batch="FEED")
+    await _lot(db_session, "CF00WT", "L2", "180", supplier_batch="WASTE")
+    await _lot(db_session, "S0093", "L3", "3000", supplier_batch="REAL")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    body = (await client.get("/api/v1/inventory/batches",
+                             params={"erp_class_code": "05"}, headers=headers)).json()
+    assert [i["material_code"] for i in body["items"]] == ["S0093"]
+    assert Decimal(body["summary"][0]["total_qty"]) == Decimal("3000"), (
+        "the summary must exclude them too, or the total describes the feed pile")
+
+
+@pytest.mark.anyio
+async def test_the_switch_brings_them_back(client, db_session, admin_token):
+    """Excluded by default, never hidden without a way to show them."""
+    await _material(db_session, "CF00AF", "Animal Feed", erp_class="05")
+    await _material(db_session, "S0093", "Infant Formula", erp_class="05")
+    await _lot(db_session, "CF00AF", "L1", "80000", supplier_batch="FEED")
+    await _lot(db_session, "S0093", "L3", "3000", supplier_batch="REAL")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             params={"erp_class_code": "05", "include_byproducts": "true"},
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert sorted(i["material_code"] for i in body["items"]) == ["CF00AF", "S0093"]
+    assert Decimal(body["summary"][0]["total_qty"]) == Decimal("83000")
+
+
+@pytest.mark.anyio
+async def test_byproducts_are_excluded_from_aging_too(client, db_session, admin_token):
+    """★ Every tab, not just the list. 478 feed lots in the shelf-life bands
+    would bury the products that actually need attention."""
+    await _material(db_session, "CF00AF", "Animal Feed", erp_class="05")
+    await _material(db_session, "S0093", "Infant Formula", erp_class="05")
+    await _lot(db_session, "CF00AF", "L1", "80000", supplier_batch="FEED",
+               expiry=TODAY - timedelta(days=5), status="expired")
+    await _lot(db_session, "S0093", "L2", "3000", supplier_batch="REAL",
+               expiry=TODAY - timedelta(days=5), status="expired")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    off = (await client.get("/api/v1/inventory/aging",
+                            params={"erp_class_code": "05"}, headers=headers)).json()
+    on = (await client.get("/api/v1/inventory/aging",
+                           params={"erp_class_code": "05", "include_byproducts": "true"},
+                           headers=headers)).json()
+    expired_off = next(b for b in off["buckets"] if b["key"] == "expired")
+    expired_on = next(b for b in on["buckets"] if b["key"] == "expired")
+    assert Decimal(expired_off["qty"]) == Decimal("3000")
+    assert Decimal(expired_on["qty"]) == Decimal("83000")
+
+
+@pytest.mark.anyio
+async def test_byproducts_are_excluded_from_the_materials_tab_too(
+    client, db_session, admin_token,
+):
+    await _material(db_session, "CF00AF", "Animal Feed", erp_class="05")
+    await _material(db_session, "S0093", "Infant Formula", erp_class="05")
+    await _lot(db_session, "CF00AF", "L1", "80000", supplier_batch="FEED")
+    await _lot(db_session, "S0093", "L2", "3000", supplier_batch="REAL")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    off = (await client.get("/api/v1/inventory/materials",
+                            params={"erp_class_code": "05"}, headers=headers)).json()
+    on = (await client.get("/api/v1/inventory/materials",
+                           params={"erp_class_code": "05", "include_byproducts": "true"},
+                           headers=headers)).json()
+    assert [i["material_code"] for i in off["items"]] == ["S0093"]
+    assert sorted(i["material_code"] for i in on["items"]) == ["CF00AF", "S0093"]
+
+
+@pytest.mark.anyio
+async def test_a_byproduct_on_order_cannot_slip_back_in(client, db_session, admin_token):
+    """The Materials tab is a union of stock AND open orders, so the exclusion
+    has to cover both sides — otherwise a purchase order the ERP happened to
+    raise for waste powder would put the row back."""
+    await _material(db_session, "CF00AF", "Animal Feed", erp_class="05")
+    await _open_po(db_session, "CF00AF", "500", "0")
+
+    body = (await client.get("/api/v1/inventory/materials",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert [i["material_code"] for i in body["items"]] == []
+
+
+@pytest.mark.anyio
+async def test_byproducts_are_excluded_from_all_classes_not_just_05(
+    client, db_session, admin_token,
+):
+    """They are class-05 materials, so an unfiltered view would show them too.
+    The switch is offered on "All classes" for exactly that reason — the screen
+    must never remove rows with no visible way to bring them back."""
+    await _material(db_session, "CF00AF", "Animal Feed", erp_class="05")
+    await _material(db_session, "CR0025", "Lactose", erp_class="0102")
+    await _lot(db_session, "CF00AF", "L1", "80000", supplier_batch="FEED")
+    await _lot(db_session, "CR0025", "L2", "100", supplier_batch="RAW")
+
+    headers = {AUTH: f"Bearer {admin_token}"}
+    off = (await client.get("/api/v1/inventory/batches", headers=headers)).json()
+    on = (await client.get("/api/v1/inventory/batches",
+                           params={"include_byproducts": "true"}, headers=headers)).json()
+    assert [i["material_code"] for i in off["items"]] == ["CR0025"]
+    assert len(on["items"]) == 2
+
+
+@pytest.mark.anyio
+async def test_excluding_byproducts_does_not_touch_other_classes(
+    client, db_session, admin_token,
+):
+    """The rule is two codes, not a pattern: no other CF material is affected."""
+    await _material(db_session, "CF0086", "Real Powder", erp_class="05")
+    await _lot(db_session, "CF0086", "L1", "500", supplier_batch="KEEP")
+
+    body = (await client.get("/api/v1/inventory/batches",
+                             headers={AUTH: f"Bearer {admin_token}"})).json()
+    assert [i["material_code"] for i in body["items"]] == ["CF0086"]

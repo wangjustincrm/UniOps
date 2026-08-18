@@ -248,6 +248,11 @@ export interface BatchFilters {
   expiring_before?: string
   expiring_after?: string
   aging_bucket?: AgingBucketKey
+  /** CF00AF Animal Feed and CF00WT Waste Powder — filed as finished goods but
+   *  not sellable product, and excluded unless asked for. CF00AF alone is 45%
+   *  of finished-goods stock by quantity, so leaving them in means the totals
+   *  describe the feed pile. */
+  include_byproducts?: boolean
   sort?: 'material_code' | 'supplier_batch' | 'production_date' | 'expiry_date'
     | 'qty' | 'inbound_date'
   descending?: boolean
@@ -302,17 +307,20 @@ export const inventoryApi = {
   listLots: (page: number, pageSize: number, filters: LotFilters = {}) =>
     api.get<InventoryLotList>(`/inventory/lots?${params(page, pageSize, { ...filters })}`),
 
-  aging: (opts: { erp_class_code?: string; warehouse_id?: string } = {}) => {
+  aging: (opts: { erp_class_code?: string; warehouse_id?: string
+                  include_byproducts?: boolean } = {}) => {
     const q = new URLSearchParams()
     if (opts.erp_class_code) q.set('erp_class_code', opts.erp_class_code)
     if (opts.warehouse_id) q.set('warehouse_id', opts.warehouse_id)
+    if (opts.include_byproducts) q.set('include_byproducts', 'true')
     const suffix = q.toString()
     return api.get<AgingSummary>(`/inventory/aging${suffix ? `?${suffix}` : ''}`)
   },
 
   listMaterials: (
     page: number, pageSize: number,
-    filters: { search?: string; erp_class_code?: string; only_with_stock?: boolean } = {},
+    filters: { search?: string; erp_class_code?: string; only_with_stock?: boolean
+               include_byproducts?: boolean } = {},
   ) => api.get<MaterialStockList>(`/inventory/materials?${params(page, pageSize, { ...filters })}`),
 
   openPoLines: (materialCode: string) =>

@@ -57,15 +57,23 @@ function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
-export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
+export function AgingTab({
+  erpClassCode, includeByproducts,
+}: {
+  erpClassCode: string
+  includeByproducts: boolean
+}) {
   const [selected, setSelected] = useState<AgingBucketKey>('expired')
   const [page, setPage] = useState(1)
 
-  useEffect(() => { setPage(1) }, [selected, erpClassCode])
+  useEffect(() => { setPage(1) }, [selected, erpClassCode, includeByproducts])
 
   const agingQuery = useQuery({
-    queryKey: ['inventory-aging', erpClassCode],
-    queryFn: () => inventoryApi.aging({ erp_class_code: erpClassCode || undefined }),
+    queryKey: ['inventory-aging', erpClassCode, includeByproducts],
+    queryFn: () => inventoryApi.aging({
+      erp_class_code: erpClassCode || undefined,
+      include_byproducts: includeByproducts,
+    }),
   })
 
   const asOf = agingQuery.data?.as_of
@@ -76,9 +84,10 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
   // implementations of it.
   const lotFilters = useMemo(() => ({
     erp_class_code: erpClassCode || undefined,
+    include_byproducts: includeByproducts,
     aging_bucket: selected,
     sort: 'expiry_date' as const,
-  }), [erpClassCode, selected])
+  }), [erpClassCode, selected, includeByproducts])
 
   const lotsQuery = useQuery({
     queryKey: ['inventory-aging-batches', page, lotFilters],
