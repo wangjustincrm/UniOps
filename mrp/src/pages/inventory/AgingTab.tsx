@@ -36,7 +36,14 @@ const CARD_STYLE: Record<AgingBucketKey, { idle: string; active: string }> = {
     idle: 'border-neutral-200 bg-white hover:bg-neutral-50',
     active: 'border-primary-500 bg-primary-50 ring-1 ring-primary-500',
   },
-  '60_to_180': {
+  // 60-90 shares the 30-60 treatment rather than the neutral one: within the
+  // 90-day warning horizon the summary uses, so it is still something to plan
+  // around, not just something to know.
+  '60_to_90': {
+    idle: 'border-neutral-200 bg-white hover:bg-neutral-50',
+    active: 'border-primary-500 bg-primary-50 ring-1 ring-primary-500',
+  },
+  '90_to_180': {
     idle: 'border-neutral-200 bg-white hover:bg-neutral-50',
     active: 'border-primary-500 bg-primary-50 ring-1 ring-primary-500',
   },
@@ -94,7 +101,7 @@ export function AgingTab({ erpClassCode }: { erpClassCode: string }) {
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {AGING_BUCKET_ORDER.map((key) => {
           const bucket = byKey.get(key)
           const active = selected === key

@@ -339,7 +339,9 @@ async def list_lots(
         description="Case-insensitive substring of material code, material name, lot number or supplier batch"),
     expiring_before: date | None = Query(default=None),
     expiring_after: date | None = Query(default=None),
-    aging_bucket: Literal["expired", "under_30", "30_to_60", "60_to_180", "over_180"] | None = Query(
+    aging_bucket: Literal[
+        "expired", "under_30", "30_to_60", "60_to_90", "90_to_180", "over_180",
+    ] | None = Query(
         default=None,
         description="Restrict to one shelf-life band, resolved server-side from the same thresholds the summary uses"),
     sort: Literal["material_code", "lot_no", "expiry_date", "qty", "inbound_date"] = "material_code",
@@ -502,7 +504,9 @@ async def list_batches(
         description="Case-insensitive substring of material code, material name, supplier batch — or the internal WMS lot number, which is matched but never displayed"),
     expiring_before: date | None = Query(default=None),
     expiring_after: date | None = Query(default=None),
-    aging_bucket: Literal["expired", "under_30", "30_to_60", "60_to_180", "over_180"] | None = Query(
+    aging_bucket: Literal[
+        "expired", "under_30", "30_to_60", "60_to_90", "90_to_180", "over_180",
+    ] | None = Query(
         default=None,
         description="Restrict to one shelf-life band, resolved server-side from the same thresholds the summary uses"),
     sort: Literal["material_code", "supplier_batch", "production_date", "expiry_date", "qty", "inbound_date"] = "expiry_date",

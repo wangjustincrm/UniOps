@@ -65,8 +65,10 @@ def test_every_threshold_at_exactly_the_day_it_names():
     assert bucket_for(_in(29), TODAY) == "under_30"
     assert bucket_for(_in(30), TODAY) == "30_to_60"
     assert bucket_for(_in(59), TODAY) == "30_to_60"
-    assert bucket_for(_in(60), TODAY) == "60_to_180"
-    assert bucket_for(_in(179), TODAY) == "60_to_180"
+    assert bucket_for(_in(60), TODAY) == "60_to_90"
+    assert bucket_for(_in(89), TODAY) == "60_to_90"
+    assert bucket_for(_in(90), TODAY) == "90_to_180"
+    assert bucket_for(_in(179), TODAY) == "90_to_180"
     assert bucket_for(_in(180), TODAY) == "over_180"
     assert bucket_for(_in(3650), TODAY) == "over_180"
 
@@ -115,6 +117,7 @@ def test_summary_counts_lots_and_quantities_per_bucket():
         _lot("CR0031", _in(10), "7"),
         _lot("CR0031", _in(200), "1000"),
     ], TODAY)
+    assert summary.buckets["60_to_90"].lots == 0
     assert summary.buckets["expired"].lots == 2
     assert summary.buckets["expired"].qty == Decimal("150")
     assert summary.buckets["under_30"].lots == 1
@@ -138,7 +141,8 @@ def test_summary_accounts_for_every_lot_it_was_given():
     """Nothing may be silently swallowed: bucketed plus excluded equals input."""
     lots = [
         _lot("A", _in(-1), "1"), _lot("B", _in(15), "1"), _lot("C", _in(45), "1"),
-        _lot("D", _in(90), "1"), _lot("E", _in(400), "1"), _lot("F", None, "1"),
+        _lot("D", _in(75), "1"), _lot("E", _in(120), "1"),
+        _lot("F", _in(400), "1"), _lot("G", None, "1"),
     ]
     assert summarise(lots, TODAY).total_lots == len(lots)
 
@@ -280,3 +284,32 @@ def test_no_expiry_batches_are_counted_too():
     summary = summarise(lots, TODAY)
     assert summary.no_expiry_lots == 3
     assert summary.no_expiry_batches == 2
+
+
+def test_the_three_soonest_bands_are_exactly_the_ninety_day_warning():
+    """★ The bands and the summary's 90-day tile must describe the same window.
+
+    `under_30 + 30_to_60 + 60_to_90` is `(today, today+90)`, which is precisely
+    what the summary counts as "expiring soon". Splitting 60-90 out of the old
+    60-180 band was what made them line up, and this pins it: the two are
+    derived from the same thresholds, so a future change to one has to move the
+    other or fail here.
+    """
+    soon = ("under_30", "30_to_60", "60_to_90")
+    lower, _ = bucket_bounds(soon[0], TODAY)
+    _, upper = bucket_bounds(soon[-1], TODAY)
+    assert lower == _in(1), "the window opens the day after today, since today is expired"
+    assert upper == _in(90), "and closes at exactly the 90-day horizon"
+
+    # And the three tile without a gap between them.
+    for earlier, later in zip(soon, soon[1:]):
+        assert bucket_bounds(earlier, TODAY)[1] == bucket_bounds(later, TODAY)[0]
+
+
+def test_the_new_band_splits_the_old_one_without_losing_anything():
+    """60_to_90 and 90_to_180 together cover exactly what 60_to_180 covered, so
+    nothing moved out of the shelf-life picture when the band was split."""
+    lower, _ = bucket_bounds("60_to_90", TODAY)
+    _, upper = bucket_bounds("90_to_180", TODAY)
+    assert lower == _in(60)
+    assert upper == _in(180)

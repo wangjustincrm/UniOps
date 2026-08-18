@@ -11,13 +11,14 @@
 // matched everything.
 import { api } from '@/lib/api'
 
-export type AgingBucketKey = 'expired' | 'under_30' | '30_to_60' | '60_to_180' | 'over_180'
+export type AgingBucketKey = 'expired' | 'under_30' | '30_to_60' | '60_to_90'
+  | '90_to_180' | 'over_180'
 
 /** Order matters: most urgent first, and the screen renders them in this
  *  order without re-sorting. Mirrors AGING_BUCKETS in
  *  mrp-api/app/services/inventory_aging.py. */
 export const AGING_BUCKET_ORDER: AgingBucketKey[] = [
-  'expired', 'under_30', '30_to_60', '60_to_180', 'over_180',
+  'expired', 'under_30', '30_to_60', '60_to_90', '90_to_180', 'over_180',
 ]
 
 /** One supplier batch of one material in one warehouse — the unit this screen

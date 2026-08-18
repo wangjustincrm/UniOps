@@ -7,10 +7,11 @@ never shows them — the single most useful thing this screen has to say on the
 day it ships.
 
 **Buckets are half-open**: `[today, +30)` is `under_30`, `[+30, +60)` is
-`30_to_60`, `[+60, +180)` is `60_to_180`, `+180` and beyond is `over_180`. So no
-lot can land in two buckets and none can land in none. A lot expiring **today**
-is expired: its shelf life ran out at the start of the day, and a screen that
-calls it "usable for 0 more days" invites somebody to use it.
+`30_to_60`, `[+60, +90)` is `60_to_90`, `[+90, +180)` is `90_to_180`, and `+180`
+and beyond is `over_180`. So no lot can land in two buckets and none can land in
+none. A lot expiring **today** is expired: its shelf life ran out at the start
+of the day, and a screen that calls it "usable for 0 more days" invites somebody
+to use it.
 
 **A lot with no expiry date gets no bucket at all.** 2,053 of the mirror's 3,532
 lots have none — 1,640 of them packaging, which does not expire. Calling those
@@ -31,13 +32,25 @@ from typing import Iterable, Protocol
 #: Bucket keys, in the order a planner reads them: most urgent first. Callers
 #: return every one of these even when empty — a missing key on the wire reads
 #: as "no data" rather than "nothing in this band".
-AGING_BUCKETS: tuple[str, ...] = ("expired", "under_30", "30_to_60", "60_to_180", "over_180")
+AGING_BUCKETS: tuple[str, ...] = (
+    "expired", "under_30", "30_to_60", "60_to_90", "90_to_180", "over_180",
+)
 
 #: Upper bound (exclusive) of each non-expired bucket, in days from today.
+#: ★ The single definition. `bucket_for` classifies from it and
+#: `bucket_bounds` derives the filter windows from it, so a band added here
+#: propagates to the counting, the filtering and the API's accepted values
+#: without any of them being able to disagree — which is the whole reason the
+#: two were unified after the frontend rebuilt these windows itself and was
+#: off by one at three of five boundaries.
 _THRESHOLDS: tuple[tuple[str, int], ...] = (
     ("under_30", 30),
     ("30_to_60", 60),
-    ("60_to_180", 180),
+    # 60-90 split out on request, 2026-08-18. It also makes the bands line up
+    # with the summary's 90-day warning: under_30 + 30_to_60 + 60_to_90 is
+    # exactly the window that tile counts.
+    ("60_to_90", 90),
+    ("90_to_180", 180),
 )
 
 #: Human labels, so the API and the screen cannot drift into describing the
@@ -46,7 +59,8 @@ BUCKET_LABELS: dict[str, str] = {
     "expired": "Expired",
     "under_30": "Under 30 days",
     "30_to_60": "30 to 60 days",
-    "60_to_180": "60 to 180 days",
+    "60_to_90": "60 to 90 days",
+    "90_to_180": "90 to 180 days",
     "over_180": "Over 180 days",
 }
 

@@ -52,7 +52,8 @@ const BUCKET_STYLE: Record<AgingBucketKey, string> = {
   expired: 'bg-danger-50 text-danger-700 border-danger-200',
   under_30: 'bg-warning-50 text-warning-800 border-warning-200',
   '30_to_60': 'bg-neutral-50 text-neutral-600 border-neutral-200',
-  '60_to_180': 'bg-neutral-50 text-neutral-600 border-neutral-200',
+  '60_to_90': 'bg-neutral-50 text-neutral-600 border-neutral-200',
+  '90_to_180': 'bg-neutral-50 text-neutral-600 border-neutral-200',
   over_180: 'bg-neutral-50 text-neutral-500 border-neutral-200',
 }
 

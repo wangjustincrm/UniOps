@@ -237,7 +237,8 @@ async def test_aging_returns_every_bucket_even_when_empty(client, db_session, ad
     r = await client.get("/api/v1/inventory/aging",
                          headers={AUTH: f"Bearer {admin_token}"})
     keys = [b["key"] for b in r.json()["buckets"]]
-    assert keys == ["expired", "under_30", "30_to_60", "60_to_180", "over_180"]
+    assert keys == ["expired", "under_30", "30_to_60", "60_to_90", "90_to_180",
+                    "over_180"]
     assert all("label" in b for b in r.json()["buckets"])
 
 
@@ -401,7 +402,8 @@ async def test_lots_can_be_filtered_to_one_aging_band(client, db_session, admin_
     await _lot(db_session, "CR0025", "TODAY", expiry=TODAY)                      # expired
     await _lot(db_session, "CR0025", "DAY-29", expiry=TODAY + timedelta(days=29))  # under_30
     await _lot(db_session, "CR0025", "DAY-30", expiry=TODAY + timedelta(days=30))  # 30_to_60
-    await _lot(db_session, "CR0025", "DAY-60", expiry=TODAY + timedelta(days=60))  # 60_to_180
+    await _lot(db_session, "CR0025", "DAY-60", expiry=TODAY + timedelta(days=60))  # 60_to_90
+    await _lot(db_session, "CR0025", "DAY-90", expiry=TODAY + timedelta(days=90))  # 90_to_180
     await _lot(db_session, "CR0025", "DAY-180", expiry=TODAY + timedelta(days=180))  # over_180
     await _lot(db_session, "CR0025", "NO-DATE", expiry=None)                     # no band
 
@@ -410,7 +412,8 @@ async def test_lots_can_be_filtered_to_one_aging_band(client, db_session, admin_
         ("expired", ["TODAY"]),
         ("under_30", ["DAY-29"]),
         ("30_to_60", ["DAY-30"]),
-        ("60_to_180", ["DAY-60"]),
+        ("60_to_90", ["DAY-60"]),
+        ("90_to_180", ["DAY-90"]),
         ("over_180", ["DAY-180"]),
     ]:
         r = await client.get("/api/v1/inventory/lots",
@@ -430,7 +433,8 @@ async def test_every_lot_appears_in_exactly_one_band(client, db_session, admin_t
 
     headers = {AUTH: f"Bearer {admin_token}"}
     counted = 0
-    for band in ("expired", "under_30", "30_to_60", "60_to_180", "over_180"):
+    for band in ("expired", "under_30", "30_to_60", "60_to_90", "90_to_180",
+                 "over_180"):
         r = await client.get("/api/v1/inventory/lots",
                              params={"aging_bucket": band, "page_size": 100},
                              headers=headers)
