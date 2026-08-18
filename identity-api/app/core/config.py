@@ -13,6 +13,10 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "postgresql+asyncpg://epms:epms_dev@localhost:5432/epms"
 
+    # Approval Engine (server-to-server only — no browser subdomain). Used to
+    # re-sync in-flight approvals when a role change re-routes them.
+    APPROVAL_ENGINE_URL: str = "http://localhost:8003/approval/v1"
+
     JWT_SECRET_KEY: str  # required — no default (fail-closed; set via env/.env)
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480

@@ -252,3 +252,23 @@ async def test_me_permissions_ignores_forward_mock_entirely(finance_client, auth
     r = await finance_client.get("/api/v1/config/me/permissions")
     assert r.status_code == 200
     fwd.assert_not_awaited()
+
+
+# ── Role-change resync outcome must reach the caller ──────────────────────────
+#
+# identity now answers PUT /authz/users/{id}/roles with 200 + {"routing_resync":
+# ...} — the outcome of re-pointing in-flight approvals at the new role holder
+# (prod incident 2026-08-18). This proxy is the only path Portal Admin has to
+# that endpoint, so swallowing the body would make a failed resync invisible
+# exactly where an admin could act on it.
+
+async def test_put_user_roles_passes_the_resync_outcome_back(admin_client, monkeypatch):
+    async def _fake_forward(method, path, token, json=None):
+        return 200, {"routing_resync": "failed: approval-api down"}
+
+    monkeypatch.setattr(config_api, "_forward_identity", _fake_forward)
+    r = await admin_client.put(f"/api/v1/config/users/{uuid.uuid4()}/roles",
+                               json={"primary": "requester", "additional": []})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["routing_resync"] == "failed: approval-api down"

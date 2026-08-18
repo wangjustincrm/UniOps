@@ -1,6 +1,7 @@
 """User management endpoints (system_admin only)."""
 import csv
 import io
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
@@ -9,6 +10,7 @@ import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, File, status
 from fastapi.responses import Response
 from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import INITIAL_PASSWORD
 from app.core.deps import CurrentUserPayload, SessionDep, require_roles
@@ -31,7 +33,10 @@ from app.schemas.user import (
     ErpImportCreated,
     ErpImportError,
 )
+from app.services import approval_client
 from app.services.mdm_client import MdmClient
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -385,11 +390,47 @@ async def get_user(user_id: uuid.UUID, db: SessionDep, _: AdminDep):
     return items[0]
 
 
+# Fields whose value decides WHICH person the approval engine pins a
+# department-scoped approve task to (_get_dept_manager_id / _resolve_supervisor).
+# Editing any of them strands the in-flight tasks that were pinned to the old
+# answer, so the edit has to re-sync them.
+_ROUTING_FIELDS = ("role", "department_id", "is_active", "supervisor_id")
+
+
+def _routing_snapshot(user: User) -> tuple:
+    return tuple(getattr(user, f) for f in _ROUTING_FIELDS)
+
+
+async def _resync_inflight_approvals(db: AsyncSession, authorization: str | None) -> str:
+    """Commit the user edit, then ask the approval engine to hand in-flight
+    approvals to whoever the new state resolves to.
+
+    The commit is not optional: approval-api reads the SHARED database over its
+    own connection, so a resync fired before this request's transaction lands
+    would re-resolve against the pre-edit user and change nothing. Best-effort
+    after that — the edit is the primary operation and must survive an
+    approval-api outage; the caller reports the outcome instead.
+    """
+    await db.commit()
+    try:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            raise RuntimeError("no bearer token on the request")
+        result = await approval_client.resync_inflight(
+            bearer_token=authorization.split(None, 1)[1])
+        # `resynced` is the engine's per-document detail LIST, not a count.
+        return f"ok: {len(result.get('resynced') or [])} document(s) re-synced"
+    except Exception as e:
+        _log.warning("user edit committed but in-flight approval resync failed: %s", e)
+        return f"failed: {e}"
+
+
 @router.patch("/{user_id}", response_model=UserAdminResponse)
-async def update_user(user_id: uuid.UUID, body: UserUpdate, db: SessionDep, _: AdminDep):
+async def update_user(user_id: uuid.UUID, body: UserUpdate, db: SessionDep, _: AdminDep,
+                      authorization: str | None = Header(default=None)):
     user = await user_crud.get_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    routing_before = _routing_snapshot(user)
 
     if body.role is not None:
         if body.role not in VALID_ROLES:
@@ -450,16 +491,26 @@ async def update_user(user_id: uuid.UUID, body: UserUpdate, db: SessionDep, _: A
     await db.flush()
     await db.refresh(user)
     items = await _with_dept_names(db, [user])
-    return items[0]
+    item = items[0]
+
+    if _routing_snapshot(user) != routing_before:
+        item.routing_resync = await _resync_inflight_approvals(db, authorization)
+    return item
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(user_id: uuid.UUID, db: SessionDep, _: AdminDep):
+async def delete_user(user_id: uuid.UUID, db: SessionDep, _: AdminDep,
+                      authorization: str | None = Header(default=None)):
     user = await user_crud.get_by_id(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    was_active = user.is_active
     user.is_active = False
     await db.flush()
+    # A deactivated approver can no longer be resolved by the engine — their
+    # pinned approve tasks have to be handed over (204: log-only, no body).
+    if was_active:
+        await _resync_inflight_approvals(db, authorization)
 
 
 def _extract_bearer(authorization: str | None) -> str:

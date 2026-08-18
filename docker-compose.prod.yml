@@ -163,6 +163,11 @@ services:
       SERVICE_NAME: identity-api
       PORT: "8009"
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # Approval Engine — identity re-syncs in-flight approvals here after a
+      # PRIMARY role change (department-scoped approve tasks are pinned to a
+      # specific person, so they would otherwise stay with the previous
+      # holder). Missing/wrong value = silent "failed:" in the response.
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
     ports: ["8009:8009"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8009
     healthcheck:

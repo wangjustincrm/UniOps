@@ -215,6 +215,11 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_NAME: identity-api
       PORT: "8009"
+      # Approval Engine — identity re-syncs in-flight approvals here after a
+      # PRIMARY role change (department-scoped approve tasks are pinned to a
+      # specific person, so they would otherwise stay with the previous
+      # holder). Missing/wrong value = silent "failed:" in the response.
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
     depends_on:
       redis:

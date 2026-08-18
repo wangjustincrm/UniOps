@@ -112,7 +112,7 @@ async def test_put_user_roles_transactional(seeded, db_session):
     async with _client() as c:
         r = await c.put(f"{BASE}/authz/users/{uid}/roles",
                         json={"primary": "auditor", "additional": ["cfo", "vendor_manager"]})
-        assert r.status_code == 204
+        assert r.status_code == 200
         r2 = await c.put(f"{BASE}/authz/users/{uid}/roles",
                          json={"primary": "nosuch", "additional": []})
         assert r2.status_code == 422
@@ -139,7 +139,7 @@ async def test_post_role_singleton_conflicts(seeded, db_session):
     async with _client() as c:
         r1 = await c.put(f"{BASE}/authz/users/{a}/roles",
                          json={"primary": "requester", "additional": ["gm"]})
-        assert r1.status_code == 204
+        assert r1.status_code == 200
         # second user cannot also hold gm
         r2 = await c.put(f"{BASE}/authz/users/{b}/roles",
                          json={"primary": "requester", "additional": ["gm"]})
@@ -148,9 +148,9 @@ async def test_post_role_singleton_conflicts(seeded, db_session):
         assert r2.json()["detail"]["conflict"]["held_by"] == str(a)
         # finance_bp is NOT a singleton — both may hold it
         assert (await c.put(f"{BASE}/authz/users/{a}/roles",
-                            json={"primary": "requester", "additional": ["finance_bp"]})).status_code == 204
+                            json={"primary": "requester", "additional": ["finance_bp"]})).status_code == 200
         assert (await c.put(f"{BASE}/authz/users/{b}/roles",
-                            json={"primary": "requester", "additional": ["finance_bp"]})).status_code == 204
+                            json={"primary": "requester", "additional": ["finance_bp"]})).status_code == 200
 
 
 async def test_post_role_singleton_checks_primary_role_too(seeded, db_session):
@@ -186,6 +186,6 @@ async def test_setting_own_post_again_is_idempotent(seeded, db_session):
     await db_session.commit()
     async with _client() as c:
         assert (await c.put(f"{BASE}/authz/users/{a}/roles",
-                            json={"primary": "requester", "additional": ["gm"]})).status_code == 204
+                            json={"primary": "requester", "additional": ["gm"]})).status_code == 200
         assert (await c.put(f"{BASE}/authz/users/{a}/roles",
-                            json={"primary": "requester", "additional": ["gm", "finance_bp"]})).status_code == 204
+                            json={"primary": "requester", "additional": ["gm", "finance_bp"]})).status_code == 200

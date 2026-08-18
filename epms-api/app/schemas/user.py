@@ -65,6 +65,9 @@ class UserAdminResponse(BaseModel):
     must_change_password: bool = False
     erp_person_code: str | None = None
     erp_imported: bool = False
+    # Set only by PATCH /users/{id} when the edit touched approval routing:
+    # "ok: N document(s) re-synced" / "failed: <reason>". None = not attempted.
+    routing_resync: str | None = None
 
 
 class UserListResponse(BaseModel):
