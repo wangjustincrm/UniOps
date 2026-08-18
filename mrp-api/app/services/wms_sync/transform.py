@@ -51,6 +51,10 @@ def transform_lot(raw: dict, mapping: dict[str, str], today: date) -> dict:
         status = "expired"
     return {
         "warehouse_id": raw["warehouseid"], "material_code": raw["sku"], "lot_no": raw["lotnum"],
+        # The warehouse's unit, carried alongside its quantity. None when the
+        # warehouse has no packaging row for the SKU -- which must read as
+        # "not stated", never fall back to the ERP's unit for a WMS number.
+        "uom": raw.get("uom"),
         "qty": raw["qty"], "qty_allocated": raw.get("qtyallocated") or 0,
         "qty_onhold": raw.get("qtyonhold") or 0,
         "wms_status": raw.get("lotatt08"), "mapped_status": status,

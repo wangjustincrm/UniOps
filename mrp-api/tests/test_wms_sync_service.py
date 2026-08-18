@@ -18,6 +18,7 @@ FAKE_ROWS = [
         "lotatt01": "2025-01-03", "lotatt02": "2027-01-02", "lotatt03": "2025-01-20",
         "lotatt05": "20250103 291041001", "lotatt08": "02", "lotatt13": "0000131",
         "lotatt14": "CASN2502100006*189", "edittime": None,
+        "uom": "KG",
     },
     {
         "warehouseid": "CANADA", "sku": "CP0100", "lotnum": "HGC1976999",

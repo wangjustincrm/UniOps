@@ -52,9 +52,9 @@ AUTH = "Authorization"
 
 async def _lot(db, code, lot_no, qty="100", *, expiry=None, status="available",
                onhold="0", allocated="0", supplier_batch=None, warehouse="CANADA",
-               production=None, wms_status="02"):
+               production=None, wms_status="02", uom="KG"):
     db.add(WmsInventoryLot(
-        warehouse_id=warehouse, material_code=code, lot_no=lot_no,
+        warehouse_id=warehouse, material_code=code, lot_no=lot_no, uom=uom,
         qty=Decimal(qty), qty_allocated=Decimal(allocated), qty_onhold=Decimal(onhold),
         wms_status=wms_status, mapped_status=status, expiry_date=expiry,
         production_date=production,
@@ -669,14 +669,60 @@ async def test_aging_reports_batches_without_an_expiry_date_too(
 
 
 @pytest.mark.anyio
-async def test_batch_carries_the_material_unit(client, db_session, admin_token):
-    """"1,000" means kilograms for a raw ingredient and pieces for a can. A
-    quantity column with no unit is three orders of magnitude of ambiguity."""
-    await _material(db_session, "CR0025", "Lactose", uom="KGM")
-    await _lot(db_session, "CR0025", "L1", supplier_batch="SB-1")
+async def test_the_unit_comes_from_the_warehouse_not_from_the_erp(
+    client, db_session, admin_token,
+):
+    """★ Reported 2026-08-18: S0093 showed as PIECES because that is the ERP's
+    unit, while the warehouse holds it in KG. Every quantity on this screen is
+    the warehouse's, so the unit has to be the warehouse's too — the ERP counts
+    finished goods in the units they are SOLD in and the warehouse weighs what
+    it STORES. 237 lots across 16 materials disagreed exactly this way.
+    """
+    await _material(db_session, "S0093", "Infant Formula FG", uom="PIECES")
+    await _lot(db_session, "S0093", "HGC1993989", "2.8",
+               supplier_batch="25E347125110391", uom="KG")
+
     body = (await client.get("/api/v1/inventory/batches",
                              headers={AUTH: f"Bearer {admin_token}"})).json()
-    assert body["items"][0]["base_uom"] == "KGM"
+    row = body["items"][0]
+    assert row["base_uom"] == "KG", "the ERP's PIECES must not reach this screen"
+    assert Decimal(row["qty"]) == Decimal("2.8")
+
+
+@pytest.mark.anyio
+async def test_quantities_are_not_rounded_on_the_wire(client, db_session, admin_token):
+    """The other half of the same report: 2.8 was rendered as "3". The API must
+    hand over what the warehouse holds, to the stored precision."""
+    await _lot(db_session, "S0093", "L1", "2.8", supplier_batch="SB-1")
+    row = (await client.get("/api/v1/inventory/batches",
+                            headers={AUTH: f"Bearer {admin_token}"})).json()["items"][0]
+    assert Decimal(row["qty"]) == Decimal("2.8")
+
+
+@pytest.mark.anyio
+async def test_a_batch_whose_lots_disagree_on_unit_says_mixed(
+    client, db_session, admin_token,
+):
+    """Rather than picking one and mislabelling half the quantity."""
+    await _lot(db_session, "CR0025", "L1", "10", supplier_batch="SB-1", uom="KG")
+    await _lot(db_session, "CR0025", "L2", "10", supplier_batch="SB-1", uom="PIECES")
+
+    row = (await client.get("/api/v1/inventory/batches",
+                            headers={AUTH: f"Bearer {admin_token}"})).json()["items"][0]
+    assert row["base_uom"] == "mixed"
+
+
+@pytest.mark.anyio
+async def test_the_summary_groups_by_the_warehouses_unit(client, db_session, admin_token):
+    """The block sums per unit, and it must be the same unit the rows show —
+    grouping by the ERP's would put KG stock under a PIECES heading."""
+    await _material(db_session, "S0093", "Infant Formula FG", uom="PIECES")
+    await _lot(db_session, "S0093", "L1", "2.8", supplier_batch="A", uom="KG")
+
+    summary = (await client.get("/api/v1/inventory/batches",
+                                headers={AUTH: f"Bearer {admin_token}"})).json()["summary"]
+    assert [x["uom"] for x in summary] == ["KG"]
+    assert Decimal(summary[0]["total_qty"]) == Decimal("2.8")
 
 
 @pytest.mark.anyio
@@ -952,26 +998,24 @@ async def test_summary_is_one_line_per_unit_and_never_adds_them_up(
 ):
     """★ Packaging spans five units in the real warehouse (EA, KGM, PIECES,
     ROLL, cPs). One combined number would describe nothing at all."""
-    await _material(db_session, "CP0133", "Can", uom="PIECES")
-    await _material(db_session, "CP0140", "Film", uom="KGM")
-    await _lot(db_session, "CP0133", "L1", "1000", supplier_batch="A")
-    await _lot(db_session, "CP0140", "L2", "25", supplier_batch="B")
+    await _lot(db_session, "CP0133", "L1", "1000", supplier_batch="A", uom="PIECES")
+    await _lot(db_session, "CP0140", "L2", "25", supplier_batch="B", uom="KG")
 
     body = (await client.get("/api/v1/inventory/batches",
                              headers={AUTH: f"Bearer {admin_token}"})).json()
     by_uom = {s["uom"]: s for s in body["summary"]}
-    assert set(by_uom) == {"PIECES", "KGM"}
+    assert set(by_uom) == {"PIECES", "KG"}
     assert Decimal(by_uom["PIECES"]["total_qty"]) == Decimal("1000")
-    assert Decimal(by_uom["KGM"]["total_qty"]) == Decimal("25")
+    assert Decimal(by_uom["KG"]["total_qty"]) == Decimal("25")
 
 
 @pytest.mark.anyio
 async def test_summary_reports_stock_whose_material_has_no_unit(
     client, db_session, admin_token,
 ):
-    """495 lots belong to materials the master has no row for. Dropping them
+    """A lot the warehouse has no packaging row for gets no unit. Dropping it
     would make the total quietly smaller than the table below it."""
-    await _lot(db_session, "MYSTERY", "L1", "42", supplier_batch="A")
+    await _lot(db_session, "MYSTERY", "L1", "42", supplier_batch="A", uom=None)
     body = (await client.get("/api/v1/inventory/batches",
                              headers={AUTH: f"Bearer {admin_token}"})).json()
     line = body["summary"][0]

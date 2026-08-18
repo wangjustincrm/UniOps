@@ -337,29 +337,6 @@ export const MATERIAL_CLASSES: { code: string; label: string }[] = [
   { code: '08', label: 'Laboratory' },
 ]
 
-/** Quantities are Decimal-as-string on the wire. One place converts them, so
- *  a column cannot quietly start rendering "1000.0000". */
-export function qty(value: string | null | undefined, fractionDigits = 0): string {
-  if (value === null || value === undefined) return '—'
-  const n = Number(value)
-  if (!Number.isFinite(n)) return value
-  return n.toLocaleString('en-US', {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  })
-}
-
-/** ★ Date-ONLY values (expiry, arrival, inbound) must never go through
- *  `new Date(...)`: in this timezone that parses as UTC midnight and renders
- *  as the previous day — across a year boundary, the previous YEAR. These
- *  arrive as 'YYYY-MM-DD' and are formatted by slicing, never by parsing. */
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-export function formatDateOnly(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
-  const month = MONTHS[Number(m) - 1]
-  if (!month || !y || !d) return iso
-  return `${month} ${Number(d)}, ${y}`
-}
+// Pure display formatters live in ./format so they can be exercised without
+// dragging the API client in. Re-exported so call sites keep one import.
+export { qty, formatDateOnly } from './format'

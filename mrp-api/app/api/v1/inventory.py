@@ -395,8 +395,11 @@ class InventoryBatchResponse(BaseModel):
     warehouse_id: str
     material_code: str
     material_name: str | None = None
-    #: The material's own unit — quantities here are meaningless without it:
-    #: 1,000 of a raw ingredient is kilograms and 1,000 of a can is pieces.
+    #: The unit the WAREHOUSE measures this in, carried on its own lots.
+    #: ★ NOT the ERP's unit for the material: the ERP counts S0093 in PIECES
+    #: because that is how it is sold, the warehouse weighs it in KG because
+    #: that is how it is stored, and every quantity on this screen is the
+    #: warehouse's. "mixed" if one batch's lots somehow disagree.
     base_uom: str | None = None
     #: None for stock the warehouse recorded without one (92 lots today).
     supplier_batch: str | None
@@ -551,7 +554,9 @@ async def list_batches(
               func.min(WmsInventoryLot.mapped_status)),
              else_="mixed"),
         func.min(WmsInventoryLot.supplier_code),
-        func.min(MdmMaterial.base_uom),
+        case((func.count(func.distinct(WmsInventoryLot.uom)) == 1,
+              func.min(WmsInventoryLot.uom)),
+             else_="mixed"),
         func.min(WmsInventoryLot.production_date),
         func.max(WmsInventoryLot.production_date),
         # Same "mixed" rule as the derived status: picking one would hide that
@@ -582,7 +587,7 @@ async def list_batches(
         func.coalesce(WmsInventoryLot.supplier_batch, ""))
     summary_stmt = _apply_lot_filters(
         select(
-            MdmMaterial.base_uom,
+            WmsInventoryLot.uom,
             func.sum(WmsInventoryLot.qty),
             func.sum(case(
                 (WmsInventoryLot.mapped_status == "available",
@@ -599,7 +604,7 @@ async def list_batches(
             func.count(),
         ).outerjoin(MdmMaterial, MdmMaterial.code == WmsInventoryLot.material_code),
         **filters,
-    ).group_by(MdmMaterial.base_uom).order_by(func.sum(WmsInventoryLot.qty).desc())
+    ).group_by(WmsInventoryLot.uom).order_by(func.sum(WmsInventoryLot.qty).desc())
 
     summary = [
         InventorySummaryLine(
@@ -823,6 +828,11 @@ async def material_stock(
                 else_=0)),
             func.min(WmsInventoryLot.expiry_date),
             func.count(),
+            # The warehouse's unit, not the ERP's — these are the warehouse's
+            # quantities. See WmsInventoryLot.uom.
+            case((func.count(func.distinct(WmsInventoryLot.uom)) == 1,
+                  func.min(WmsInventoryLot.uom)),
+                 else_="mixed"),
         )
         .outerjoin(MdmMaterial, MdmMaterial.code == WmsInventoryLot.material_code)
         .where(_not_raw_milk())
@@ -831,8 +841,8 @@ async def material_stock(
     stock = {
         code: dict(on_hand=on_hand, allocated=allocated, on_hold=on_hold,
                    available=available, expired_qty=expired, next_expiry=next_expiry,
-                   lots=lots)
-        for code, on_hand, allocated, on_hold, available, expired, next_expiry, lots
+                   lots=lots, uom=uom)
+        for code, on_hand, allocated, on_hold, available, expired, next_expiry, lots, uom
         in (await db.execute(stock_stmt)).all()
     }
     on_order = await in_transit_by_material(db)
@@ -868,7 +878,11 @@ async def material_stock(
         rows.append(MaterialStockResponse(
             material_code=code,
             material_name=material.name if material else None,
-            base_uom=material.base_uom if material else None,
+            # The warehouse's unit where there is stock; the ERP's only as a
+            # last resort, for a material that is purely on order and has no
+            # lot to take a unit from. The in-transit quantity is in the PO
+            # line's own unit, which the drill-down shows per line.
+            base_uom=s.get("uom") or (material.base_uom if material else None),
             erp_class_code=material.erp_class_code if material else None,
             erp_class_name=material.erp_class_name if material else None,
             on_hand=on_hand,

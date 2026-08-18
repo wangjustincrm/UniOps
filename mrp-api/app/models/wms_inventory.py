@@ -23,6 +23,13 @@ class WmsInventoryLot(Base, UUIDPrimaryKey, TimestampMixin):
     material_code: Mapped[str] = mapped_column(String(50), index=True)  # <- INV_LOT.SKU
     lot_no: Mapped[str] = mapped_column(String(50), index=True)  # <- INV_LOT.LOTNUM
 
+    # The unit the WAREHOUSE measures this in, from its packaging ladder
+    # (BAS_PACKAGE_DETAILS.UOMDESCR at the base level). NOT the ERP's unit:
+    # the ERP counts S0093 in PIECES because that is how it is sold, the
+    # warehouse weighs it in KG because that is how it is stored, and these
+    # quantities are the warehouse's.
+    uom: Mapped[str | None] = mapped_column(String(20))
+
     qty: Mapped[object] = mapped_column(Numeric(18, 4), default=0)
     qty_allocated: Mapped[object] = mapped_column(Numeric(18, 4), default=0)
     qty_onhold: Mapped[object] = mapped_column(Numeric(18, 4), default=0)

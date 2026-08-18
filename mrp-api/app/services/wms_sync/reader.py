@@ -85,11 +85,23 @@ def fetch_inventory() -> list[dict]:
         cur.execute("""
             select l.warehouseid, l.sku, l.lotnum, l.qty, l.qtyallocated, l.qtyonhold,
                    a.lotatt01, a.lotatt02, a.lotatt03, a.lotatt05, a.lotatt08,
-                   a.lotatt13, a.lotatt14, l.edittime
+                   a.lotatt13, a.lotatt14, l.edittime, p.uomdescr as uom
             from INV_LOT l
             join INV_LOT_ATT a
               on a.organizationid = l.organizationid and a.lotnum = l.lotnum
              and a.customerid = l.customerid and a.sku = l.sku
+            -- The unit the warehouse measures this in. NOT BAS_SKU's own UOM
+            -- columns: those are 'EA' on all 2,482 SKUs and unmaintained. The
+            -- real answer is the BASE level of the packaging ladder
+            -- (PACKUOM='EA'), whose UOMDESCR is KG for STANDARD, PIECES for
+            -- PMSTANDARD/TINBOTTOM, and so on. Verified 1:1 against the live
+            -- instance -- (CUSTOMERID, PACKID) is unique at that level across
+            -- all 6,535 groups, and the extract stays at 3,429 rows.
+            left join BAS_SKU s
+              on s.sku = l.sku and s.customerid = l.customerid
+            left join BAS_PACKAGE_DETAILS p
+              on p.packid = s.packid and p.customerid = l.customerid
+             and p.packuom = 'EA'
             where l.qty > 0""")
         names = [c[0].lower() for c in cur.description]
         return [dict(zip(names, r)) for r in cur.fetchall()]
