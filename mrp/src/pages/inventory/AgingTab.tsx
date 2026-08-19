@@ -244,7 +244,7 @@ export function AgingTab({
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-neutral-500">
           {total.toLocaleString('en-US')} batch(es) in this band
-          {asOf && <> · as of {formatDateOnly(asOf)}</>}
+          {asOf && <> · shelf life measured from {formatDateOnly(asOf)}</>}
         </span>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}

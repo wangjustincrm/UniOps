@@ -116,6 +116,10 @@ services:
       NC_SERVICE: ${NC65_SERVICE:-}
       NC_USER: ${NC65_USER:-}
       NC_PASSWORD: ${NC65_PASSWORD:-}
+      # OFF in dev: with real NC65_* values in the root .env every developer
+      # machine would otherwise pull NC purchase orders on the same schedule
+      # as production. The Admin button still works.
+      NC_SYNC_SCHEDULER_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -420,6 +424,11 @@ services:
       WMS_SERVICE: ${WMS_SERVICE:-}
       WMS_USER: ${WMS_USER:-}
       WMS_PASSWORD: ${WMS_PASSWORD:-}
+      # The WMS sync scheduler is OFF in dev: with real WMS_* values in the
+      # root .env, every dev container would otherwise pull the whole live
+      # warehouse every few minutes alongside production. Flip to "true"
+      # (or press Sync now in Portal Admin) when working on the sync itself.
+      WMS_SYNC_SCHEDULER_ENABLED: "false"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8011/health').status==200 else 1)"]
@@ -575,6 +584,9 @@ services:
       VITE_VMS_API_URL: http://localhost:8008
       VITE_BUDGET_API_URL: http://localhost:8007
       VITE_MDM_API_URL: http://localhost:8002
+      # Admin -> WMS Sync talks to mrp-api directly. Browser-facing,
+      # so localhost rather than the container DNS name.
+      VITE_MRP_API_URL: http://localhost:8011
       VITE_FINANCE_API_URL: http://localhost:8004
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5174"
     healthcheck:

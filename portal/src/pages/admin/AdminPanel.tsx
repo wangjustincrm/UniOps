@@ -6,13 +6,14 @@ import {
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
-  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap,
+  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcPurchaseSyncSection } from './NcPurchaseSyncSection'
+import { WmsSyncSection } from './WmsSyncSection'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -2125,6 +2126,7 @@ const SECTIONS = [
   { key: 'workflows',    label: 'Approval Workflows',   icon: Workflow },
   { key: 'erp_mdm',      label: 'ERP MDM',              icon: Database },
   { key: 'nc_purchase',  label: 'NC Purchase Sync',     icon: DatabaseZap },
+  { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
 export default function AdminPanel() {
@@ -2208,6 +2210,7 @@ export default function AdminPanel() {
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}
           {section === 'nc_purchase' && <NcPurchaseSyncSection />}
+          {section === 'wms_sync'    && <WmsSyncSection />}
         </main>
       </div>
     </div>

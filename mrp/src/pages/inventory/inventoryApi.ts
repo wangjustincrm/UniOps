@@ -128,6 +128,12 @@ export interface InventoryBatchList {
   total: number
   page: number
   page_size: number
+  /** The date expiry was evaluated against — server "today", NOT the date the
+   *  data came from. The mirror can be weeks old and this still says today;
+   *  how fresh the data is lives in GET /admin/wms-sync/status (syncApi.ts).
+   *  Label it as a shelf-life reference wherever it is shown, never as
+   *  "as of": that wording invited a planner to read a three-week-old
+   *  snapshot as current. */
   as_of: string
   /** WMS lots behind the batches — so the screen can say "128 batches
    *  (543 lots)" rather than leaving a reader to wonder where they went. */

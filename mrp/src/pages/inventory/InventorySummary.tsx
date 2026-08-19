@@ -155,7 +155,7 @@ export function InventorySummary({
           blocked too, and stock expiring soon is still available today.
           {' '}<strong>Blocked</strong> is the warehouse's own hold (QLT_STS 01);
           material still under inspection is not counted as blocked.
-          {asOf && <> Figures as of {asOf}.</>}
+          {asOf && <> Shelf life is measured from {asOf}.</>}
         </span>
       </p>
 

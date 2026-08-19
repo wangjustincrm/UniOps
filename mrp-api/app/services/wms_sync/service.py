@@ -60,14 +60,21 @@ async def _load_mapping(db: AsyncSession) -> dict[str, str]:
 async def _write_sync_state(
     db: AsyncSession, *, status: str, row_count: int, last_error: str | None,
 ) -> datetime:
+    """Record the outcome of one attempt.
+
+    `last_synced_at` moves on every attempt; `last_success_at` moves only when
+    the mirror was actually replaced. Anything that wants to know how old the
+    data on screen is must read the latter — see migration
+    mrp16_sync_state_last_success. 'empty_extract' counts as an attempt, not a
+    success: it kept the previous snapshot, so that snapshot's age is unchanged.
+    """
     now = datetime.now(timezone.utc)
-    stmt = pg_insert(MrpSyncState).values(
-        source=_SOURCE, status=status, last_error=last_error,
-        row_count=row_count, last_synced_at=now, updated_at=now,
-    ).on_conflict_do_update(
-        index_elements=["source"],
-        set_=dict(status=status, last_error=last_error, row_count=row_count,
-                   last_synced_at=now, updated_at=now),
+    fields = dict(status=status, last_error=last_error, row_count=row_count,
+                  last_synced_at=now, updated_at=now)
+    if status == "success":
+        fields["last_success_at"] = now
+    stmt = pg_insert(MrpSyncState).values(source=_SOURCE, **fields).on_conflict_do_update(
+        index_elements=["source"], set_=fields,
     )
     await db.execute(stmt)
     return now

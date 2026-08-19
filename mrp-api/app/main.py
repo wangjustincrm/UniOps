@@ -20,8 +20,14 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
+    # Keeps the WMS mirror fresh on a schedule. Imported here rather than at
+    # module scope so importing `app.main` (tests, alembic env, one-off
+    # containers) never pulls in the scheduler's dependency chain.
+    from app.services.wms_sync import scheduler
+    wms_sync_task = scheduler.start()
     yield
     logger.info("Shutting down — closing engine")
+    await scheduler.stop(wms_sync_task)
     await engine.dispose()
 
 
