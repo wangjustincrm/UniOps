@@ -18,8 +18,8 @@ WINDOW_END = date(2026, 9, 3)
 
 
 async def _seed(db, *, delegate_active=True):
-    delegator = User(id=uuid.uuid4(), role="dept_manager", is_active=True)
-    delegate = User(id=uuid.uuid4(), role="dept_manager", is_active=delegate_active)
+    delegator = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", is_active=True)
+    delegate = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", is_active=delegate_active)
     db.add_all([delegator, delegate])
     await db.flush()
     db.add(ApprovalDelegation(
@@ -70,9 +70,9 @@ async def test_revoked_is_ignored_immediately(engine_db_session):
 async def test_not_transitive(engine_db_session):
     """A -> B and B -> C must not give C anything of A's."""
     db = engine_db_session
-    a = User(id=uuid.uuid4(), role="dept_manager", is_active=True)
-    b = User(id=uuid.uuid4(), role="dept_manager", is_active=True)
-    c = User(id=uuid.uuid4(), role="dept_manager", is_active=True)
+    a = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", is_active=True)
+    b = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", is_active=True)
+    c = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", is_active=True)
     db.add_all([a, b, c])
     await db.flush()
     db.add_all([

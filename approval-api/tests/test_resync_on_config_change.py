@@ -82,9 +82,9 @@ async def test_put_routing_repoints_task_at_the_current_dept_manager(engine_db_s
     db = engine_db_session
     dept_id = uuid.uuid4()
     await _departments_shadow_table(db, dept_id)
-    old_mgr = User(id=uuid.uuid4(), role="dept_manager", department_id=dept_id, is_active=True)
-    new_mgr = User(id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
+    old_mgr = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", department_id=dept_id, is_active=True)
+    new_mgr = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
     db.add_all([old_mgr, new_mgr, requester])
     await db.flush()
 
@@ -112,9 +112,9 @@ async def test_put_routing_reports_what_the_resync_touched(engine_db_session):
     db = engine_db_session
     dept_id = uuid.uuid4()
     await _departments_shadow_table(db, dept_id)
-    old_mgr = User(id=uuid.uuid4(), role="dept_manager", department_id=dept_id, is_active=True)
-    new_mgr = User(id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
+    old_mgr = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", department_id=dept_id, is_active=True)
+    new_mgr = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
     db.add_all([old_mgr, new_mgr, requester])
     await db.flush()
     pr = await _pr_awaiting_dept_manager(db, requester)

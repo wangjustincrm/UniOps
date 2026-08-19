@@ -28,11 +28,11 @@ _ACTOR_ID = uuid.UUID(int=(1 << 128) - 1)
 
 
 async def _seed(db, dept_id):
-    requester = User(id=uuid.uuid4(), role="requester",
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester",
                      department_id=dept_id, is_active=True)
-    gm_first = User(id=_GM_FIRST_ID, role="gm", is_active=True)
+    gm_first = User(full_name="Test User", id=_GM_FIRST_ID, role="gm", is_active=True)
     # The actor is BOTH this department's manager and a GM holder.
-    actor = User(id=_ACTOR_ID, role="dept_manager",
+    actor = User(full_name="Test User", id=_ACTOR_ID, role="dept_manager",
                  department_id=dept_id, is_active=True)
     db.add_all([requester, gm_first, actor])
     await db.flush()

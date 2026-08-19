@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.delegation import active_delegator_ids, local_today
+from app.crud.delegation import active_delegator_ids
 from app.crud.workflow import (get_dept_director_mapping, get_dept_gm_opm_mapping,
                                 get_dept_supervisor_enabled, get_role_management,
                                 post_holder_ids)
@@ -1004,6 +1004,12 @@ async def execute_action(
     doc_number = getattr(doc, meta["number_attr"])
     recorded_role = actor_role
     auto_skipped: list[int] = []
+    # Hoisted above the action branch so both approve and reject's authorization
+    # checks AND the on-behalf-of annotation below can share one computation —
+    # neither depends on which action is being taken, only on where the document
+    # currently sits in its workflow.
+    current_step_role = workflow[step]["role"] if step < len(workflow) else ""
+    finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
 
     if act == "submit":
         if _status_of(meta, doc) not in meta["valid_submit"]:
@@ -1049,11 +1055,9 @@ async def execute_action(
             raise ValueError(f"Cannot approve {doc_type.upper()} in status '{_status_of(meta, doc)}'")
 
         # Authorization: verify the actor is the assigned approver for this step
-        current_step_role = workflow[step]["role"] if step < len(workflow) else ""
-        finance_bp_ids_auth = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
         authorized = await _actor_can_approve(
             db, current_step_role, actor_id, actor_role,
-            routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
             today=today,
         )
@@ -1062,7 +1066,7 @@ async def execute_action(
                 f"Not authorized to approve this step (requires role: {current_step_role})"
             )
 
-        recorded_role = workflow[step]["role"] if step < len(workflow) else actor_role
+        recorded_role = current_step_role if step < len(workflow) else actor_role
         await _complete_tasks(db, doc_type, doc.id)
 
         # Auto-skip resolution. For gm_or_opm, _actor_is_step_holder resolves
@@ -1070,7 +1074,6 @@ async def execute_action(
         # — not doc.created_by (PO/PA creator) and not doc.department_id (None
         # on PO). routing_dept_id was computed once at the top of
         # execute_action via _routing_department_id.
-        finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
 
         next_step = step + 1
         while next_step < len(workflow):
@@ -1139,11 +1142,9 @@ async def execute_action(
         # Without this gate any user who could merely SEE a broadcast approve task
         # (get_for_role matches by assigned_role) could reject/cancel the document,
         # even when the same actor is (correctly) denied Approve.
-        current_step_role = workflow[step]["role"] if step < len(workflow) else ""
-        finance_bp_ids_auth = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
         authorized = await _actor_can_approve(
             db, current_step_role, actor_id, actor_role,
-            routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
             today=today,
         )
@@ -1179,14 +1180,20 @@ async def execute_action(
     else:
         raise ValueError(f"Unknown action '{act}' for {doc_type.upper()}")
 
-    if act == "approve":
+    if act in ("approve", "reject"):
         # Delegation annotation: if the actor reached this step only through
         # someone else's active delegation, name that delegator in the event
         # comment. The actor recorded on the event stays the person who
         # clicked — this is not a transfer of identity, just a note of whose
-        # authority was borrowed.
+        # authority was borrowed. Reject is included alongside approve: it is
+        # the same approval-step decision under the same authorization check
+        # (see _actor_can_approve calls above), so a delegate's rejection
+        # deserves the same audit trail as their approval. `current_step_role`
+        # (not `recorded_role`) is used here because it is set uniformly by
+        # both branches, whereas `recorded_role` only reflects the workflow
+        # step role on the approve path.
         on_behalf_of = await _acting_on_behalf_of(
-            db, recorded_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+            db, current_step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
             finance_bp_ids, doc, director_uid, supervisor_uid, today=today)
         if on_behalf_of is not None:
             delegator_name = (await db.execute(
