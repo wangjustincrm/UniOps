@@ -11,10 +11,13 @@
 import { useSearchParams } from 'react-router-dom'
 import { Boxes, CalendarClock, Layers } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ToastStack } from '@/components/Toast'
+import { useToasts } from '@/hooks/useToasts'
 import { MATERIAL_CLASSES } from './inventoryApi'
 import { BatchesTab } from './BatchesTab'
 import { AgingTab } from './AgingTab'
 import { MaterialsTab } from './MaterialsTab'
+import { WmsFreshness } from './WmsFreshness'
 
 const TABS = [
   { key: 'batches', label: 'Batches', icon: Layers,
@@ -29,6 +32,7 @@ type TabKey = typeof TABS[number]['key']
 
 export default function InventoryPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const toasts = useToasts()
   const raw = searchParams.get('tab')
   const tab: TabKey = TABS.some((t) => t.key === raw) ? (raw as TabKey) : 'batches'
   // Default to raw ingredients: it is the class with shelf life that anybody
@@ -58,7 +62,13 @@ export default function InventoryPage() {
     <div className="flex flex-col gap-4 p-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Inventory</h1>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-lg font-semibold text-neutral-900">Inventory</h1>
+            {/* The age of the warehouse snapshot every figure below is read
+                from — see WmsFreshness for why it is stated here and not per
+                tab. */}
+            <WmsFreshness toasts={toasts} />
+          </div>
           <p className="text-xs text-neutral-500">
             {TABS.find((t) => t.key === tab)?.hint}
           </p>
@@ -137,6 +147,8 @@ export default function InventoryPage() {
       {tab === 'materials' && (
         <MaterialsTab erpClassCode={erpClass} includeByproducts={includeByproducts} />
       )}
+
+      <ToastStack toasts={toasts.toasts} onDismiss={toasts.dismiss} />
     </div>
   )
 }

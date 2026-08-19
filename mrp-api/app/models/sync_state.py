@@ -18,5 +18,10 @@ class MrpSyncState(Base):
     status: Mapped[str | None] = mapped_column(String(20), nullable=True)  # 'success' | 'failed' | 'empty_extract'
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Last ATTEMPT — written on success, failure and empty-extract alike.
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Last attempt that actually replaced the mirror. This is the age of the
+    # data on screen; last_synced_at is not (migration mrp16 explains why a
+    # failing sync would otherwise keep looking fresh).
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

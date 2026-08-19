@@ -282,7 +282,7 @@ export function MaterialsTab({
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-neutral-500">
           {from}–{to} of {total.toLocaleString('en-US')}
-          {query.data && <> · as of {formatDateOnly(query.data.as_of)}</>}
+          {query.data && <> · expiry checked against {formatDateOnly(query.data.as_of)}</>}
         </span>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setPage((p) => Math.max(1, p - 1))}

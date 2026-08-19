@@ -151,6 +151,37 @@ _WEEK_START_DOW_KEY = "week_start_dow"
 FROZEN_MONTHS_KEY = "frozen_months"
 DEFAULT_FROZEN_MONTHS = 3
 
+WMS_SYNC_INTERVAL_KEY = "wms_sync_interval_minutes"
+# 5 minutes, not the 2 that the sizing note assumed: one full snapshot costs
+# ~4.8s end to end (0.2s of it in Oracle), so the interval is a policy choice
+# about staleness, not a performance one. Admins change it in Portal ->
+# Admin -> WMS Sync; this constant is only what a site that never set it gets.
+DEFAULT_WMS_SYNC_INTERVAL_MINUTES = 5
+# A day. Beyond that the scheduler is not what anybody wants — they want it
+# off, which is what 0 says.
+MAX_WMS_SYNC_INTERVAL_MINUTES = 1440
+
+
+def _validate_wms_sync_interval(value: object) -> None:
+    """Minutes between automatic WMS snapshots. 0 turns the scheduler OFF —
+    the mirror then only moves when somebody presses Refresh, which is
+    exactly the state this whole feature exists to end, so it is a
+    deliberate choice rather than a value anybody reaches by accident.
+
+    `bool` is rejected for the same reason `_validate_week_start_dow` rejects
+    it: `True == 1` in Python, so a stray boolean would silently mean "sync
+    every minute" — 1,440 full snapshots a day.
+    """
+    if (isinstance(value, bool) or not isinstance(value, int)
+            or not 0 <= value <= MAX_WMS_SYNC_INTERVAL_MINUTES):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"wms_sync_interval_minutes must be an integer 0..{MAX_WMS_SYNC_INTERVAL_MINUTES} "
+                f"(0 disables automatic sync), got {value!r}"
+            ),
+        )
+
 _WRITABLE_PARAMS: dict[str, Callable[[Any], None]] = {
     "week_calendar_mode": _validate_week_calendar_mode,
     _WEEK_START_DOW_KEY: _validate_week_start_dow,
@@ -160,6 +191,11 @@ _WRITABLE_PARAMS: dict[str, Callable[[Any], None]] = {
     # starts at 0 and must stay there until NC's packaging BOMs are exact.
     RAW_MATERIAL_LOSS_RATE_KEY: _validate_loss_rate,
     PACKAGING_LOSS_RATE_KEY: _validate_loss_rate,
+    # How often the WMS snapshot refreshes itself. Lives here, not in an env
+    # var, because it is an operational dial an admin turns (Portal -> Admin
+    # -> WMS Sync) rather than a deployment setting — changing it must not
+    # need a redeploy, and the scheduler re-reads it every tick.
+    WMS_SYNC_INTERVAL_KEY: _validate_wms_sync_interval,
 }
 
 

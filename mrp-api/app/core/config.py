@@ -85,6 +85,16 @@ class Settings(BaseSettings):
 
     oracle_client_lib: str = "/opt/oracle/instantclient_19_28"
 
+    # ── WMS sync scheduler ──────────────────────────────────────────────────
+    # HOW OFTEN the mirror refreshes is not here — it is the
+    # `wms_sync_interval_minutes` planning parameter, so an admin can change
+    # it without a redeploy (see app/services/wms_sync/scheduler.py). These two
+    # are deployment concerns: whether this process runs the loop at all
+    # (tests and one-off containers set it false), and how often it wakes up to
+    # ask whether a sync is due.
+    WMS_SYNC_SCHEDULER_ENABLED: bool = True
+    WMS_SYNC_TICK_SECONDS: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

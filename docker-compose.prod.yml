@@ -399,6 +399,9 @@ services:
         VITE_BUDGET_API_URL: ${BUDGET_API_URL}
         VITE_MDM_API_URL: ${MDM_API_URL}
         VITE_FINANCE_API_URL: ${FINANCE_API_URL}
+        # Admin -> WMS Sync talks to mrp-api directly (status, interval, manual
+        # run). ${MRP_API_URL} already exists in .env.prod.example for mrp-web.
+        VITE_MRP_API_URL: ${MRP_API_URL}
     ports: ["5174:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
