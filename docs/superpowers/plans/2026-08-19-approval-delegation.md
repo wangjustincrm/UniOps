@@ -35,6 +35,19 @@ TEST_APPROVAL_DB=approval_test python -m pytest approval-api/tests -q 2>&1 | tai
 ```
 Record each result in the task-1 commit message.
 
+**MEASURED 2026-08-19:** approval-api = **64 passed, 0 failed** (fully green — do NOT
+confuse with epms-api's red baseline). After Task 1: 66 passed.
+
+⚠️ The local Postgres password is NOT conftest's `epms_dev` default. Read it with
+`docker exec uniops_postgres printenv POSTGRES_PASSWORD` and export it as
+`TEST_PG_PASSWORD`. Working invocation:
+
+```bash
+cd c:/Project/uniops-delegation/approval-api
+export TEST_PG_PASSWORD="$(docker exec uniops_postgres printenv POSTGRES_PASSWORD)"
+DATABASE_URL="postgresql+asyncpg://epms:$TEST_PG_PASSWORD@localhost:5432/approval_test" \n  JWT_SECRET_KEY="test-secret" TEST_APPROVAL_DB=approval_test \n  python -m pytest tests -q
+```
+
 ---
 
 ## File Structure
@@ -78,7 +91,7 @@ Record each result in the task-1 commit message.
 
 No migration, no new table. Can ship on its own branch ahead of Phase 1.
 
-### Task 1: Extract the shared step-holder check and fix multi-holder auto-skip
+### Task 1: Extract the shared step-holder check and fix multi-holder auto-skip ✅ DONE (21ac7ed)
 
 `execute_action` decides "does this actor also hold the next step?" with a local
 `_holds()` closure that compares against `rm['<role>_user_id']` — the *first*
@@ -95,7 +108,7 @@ Manager who also holds GM as an additional role is not recognised at
 - Consumes: `post_holder_ids` from `app.crud.workflow`; `_get_dept_manager_id`, `_resolve_gm_or_opm`, `_build_role_map` from `engine.py`.
 - Produces: `async def _actor_is_step_holder(db, step_role, actor_id, routing_dept_id, rm, dept_gm_opm, finance_bp_ids, doc=None, director_uid=None, supervisor_uid=None) -> bool` — identity only, **no `system_admin` bypass**. Task 4 builds on it.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `approval-api/tests/test_engine_same_approver_skip.py`:
 
@@ -196,7 +209,7 @@ async def test_second_step_does_not_skip_for_a_different_person(engine_db_sessio
     assert pa.approval_step_idx == 1, "the GM step must still be pending"
 ```
 
-- [ ] **Step 2: Run the test and confirm the first one fails**
+- [x] **Step 2: Run the test and confirm the first one fails**
 
 ```bash
 cd c:/Project/uniops-delegation
@@ -208,7 +221,7 @@ Expected: `test_second_step_auto_skips_for_non_first_post_holder` FAILS with
 PASSES already. **If the first test passes before the fix, stop — the premise
 is wrong and the rest of this task is invalid.**
 
-- [ ] **Step 3: Extract `_actor_is_step_holder`**
+- [x] **Step 3: Extract `_actor_is_step_holder`**
 
 In `approval-api/app/crud/engine.py`, insert immediately **above**
 `_actor_can_approve`:
@@ -267,7 +280,7 @@ async def _actor_is_step_holder(
     return False
 ```
 
-- [ ] **Step 4: Make `_actor_can_approve` delegate to it**
+- [x] **Step 4: Make `_actor_can_approve` delegate to it**
 
 Replace the body of `_actor_can_approve` (keep its signature and docstring)
 after the `system_admin` line with:
@@ -285,7 +298,7 @@ after the `system_admin` line with:
     return actor_role == step_role and not await post_holder_ids(db, step_role)
 ```
 
-- [ ] **Step 5: Replace `_holds` with the shared check in the skip walk**
+- [x] **Step 5: Replace `_holds` with the shared check in the skip walk**
 
 Delete the `def _holds(role: str) -> bool:` closure. In the skip walk, replace
 `if _holds(next_role):` with:
@@ -300,7 +313,7 @@ Delete the `def _holds(role: str) -> bool:` closure. In the skip walk, replace
 `role_map` and `dept_mgr_id` above the closure become unused — delete them if
 nothing else in the function reads them, otherwise leave them.
 
-- [ ] **Step 6: Run the new tests**
+- [x] **Step 6: Run the new tests**
 
 ```bash
 python -m pytest approval-api/tests/test_engine_same_approver_skip.py -v
@@ -308,7 +321,7 @@ python -m pytest approval-api/tests/test_engine_same_approver_skip.py -v
 
 Expected: both PASS.
 
-- [ ] **Step 7: Run the whole approval-api suite against the baseline**
+- [x] **Step 7: Run the whole approval-api suite against the baseline**
 
 ```bash
 python -m pytest approval-api/tests -q 2>&1 | tail -5
@@ -318,7 +331,7 @@ Expected: the failing **set** matches the baseline from Global Constraints.
 Pay attention to `test_engine_multiholder_approve.py` and
 `test_engine_optional_levels.py` — they exercise these exact paths.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add approval-api/app/crud/engine.py approval-api/tests/test_engine_same_approver_skip.py
