@@ -81,7 +81,7 @@ async def test_additional_only_role_still_allowed_as_additional(seeded, target_u
     async with _admin() as c:
         r = await c.put(f"{BASE}/authz/users/{target_user}/roles",
                         json={"primary": "requester", "additional": [code]})
-    assert r.status_code == 204
+    assert r.status_code == 200
     held = (await db_session.execute(sa.text(
         "SELECT role_code FROM user_roles WHERE user_id = :u"), {"u": str(target_user)})).scalars().all()
     assert held == [code]
@@ -91,7 +91,7 @@ async def test_normal_role_still_settable_as_primary(seeded, target_user, db_ses
     async with _admin() as c:
         r = await c.put(f"{BASE}/authz/users/{target_user}/roles",
                         json={"primary": "ap_clerk", "additional": []})
-    assert r.status_code == 204
+    assert r.status_code == 200
     role = (await db_session.execute(sa.text(
         "SELECT role FROM users WHERE id = :u"), {"u": str(target_user)})).scalar_one()
     assert role == "ap_clerk"

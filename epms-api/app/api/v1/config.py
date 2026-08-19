@@ -4,7 +4,7 @@ import uuid
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from uniops_authz import effective_permissions, role_matrix, user_role_codes
@@ -364,9 +364,15 @@ async def get_user_roles(_: CurrentUserPayload, token: BearerToken):
     return body
 
 
-@router.put("/users/{user_id}/roles", status_code=204)
+@router.put("/users/{user_id}/roles")
 async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: BearerToken):
-    """Proxy PUT /authz/users/{id}/roles to identity (system_admin only)."""
+    """Proxy PUT /authz/users/{id}/roles to identity (system_admin only).
+
+    identity's body carries `routing_resync` — the outcome of re-pointing
+    in-flight approvals at the new role holder. Pass it through: this proxy is
+    Portal Admin's only route to that endpoint, so swallowing the body would
+    hide a failed re-sync from the one person who can rerun it.
+    """
     try:
         status_code, resp_body = await _forward_identity(
             "PUT", f"/authz/users/{user_id}/roles", token, json=body
@@ -375,7 +381,7 @@ async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: Bea
         raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
     if status_code not in (200, 204):
         raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
-    return Response(status_code=204)
+    return resp_body or {}
 
 
 # ── Approval routing passthrough (Phase 3) ──────────────────────────────────

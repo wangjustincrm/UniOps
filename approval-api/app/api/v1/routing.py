@@ -6,6 +6,7 @@ router only reads it via raw SQL against the shared `departments` table —
 no ORM model here, matching the rest of this service's cross-service reads
 (see app/crud/workflow.py's `_post_holders`).
 """
+import logging
 import uuid
 
 import sqlalchemy as sa
@@ -16,10 +17,32 @@ from app.core.deps import CurrentUser
 from app.crud.engine import _resync_document, resync_inflight_approvals
 from app.db.base import get_db
 
+_log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/routing", tags=["routing"])
 
 _VALID_POSTS = ("gm", "opm")
 _BACKUP_ROLES = ("gm", "opm")
+
+
+async def _resync_after_config_change(db: AsyncSession) -> dict:
+    """Hand in-flight approvals to whoever the NEW config resolves to.
+
+    Approval tasks for department-scoped roles are PINNED to a specific user at
+    creation time (engine._USER_SPECIFIC_ROLES), so a config change alone leaves
+    them pointing at the previous holder — the new one sees nothing in their Task
+    Inbox and the old one can no longer act. Best-effort: the config write has
+    already committed, so a failing resync is REPORTED, never raised.
+    """
+    try:
+        result = await resync_inflight_approvals(db)
+        await db.commit()
+        return {"resynced": len(result["resynced"]), "errors": len(result["errors"])}
+    except Exception as exc:
+        await db.rollback()
+        _log.warning("routing config saved but in-flight resync failed: %s: %s",
+                     type(exc).__name__, exc, exc_info=True)
+        return {"error": f"{type(exc).__name__}: {exc}"}
 
 
 async def _load_routing(db: AsyncSession) -> dict:
@@ -121,7 +144,9 @@ async def put_routing(body: dict, db: AsyncSession = Depends(get_db), user: Curr
             })
 
     await db.commit()
-    return await _load_routing(db)
+
+    routing_resync = await _resync_after_config_change(db)
+    return {**await _load_routing(db), "routing_resync": routing_resync}
 
 
 @router.post("/resync-inflight")
@@ -138,7 +163,10 @@ async def resync_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser 
         raise HTTPException(status_code=403, detail="system_admin only")
     result = await resync_inflight_approvals(db)
     await db.commit()
-    return {"resynced": len(result["resynced"]), "errors": len(result["errors"]), **result}
+    # `resynced` / `errors` are the per-document detail lists — the ** spread of
+    # `result` always overwrote the counts that used to be computed here, so
+    # callers have only ever seen the lists. Say so instead of pretending.
+    return result
 
 
 @router.post("/resync-document")

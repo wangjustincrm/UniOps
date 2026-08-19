@@ -1,7 +1,8 @@
 """Authz hub — matrix / defs / user roles / my effective permissions."""
+import logging
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, select, text
 
@@ -9,6 +10,9 @@ from app.core.deps import CurrentUserPayload, SessionDep
 from app.models.authz import (PermissionDef, RoleDef, RolePermission,
                               RolePermissionLock, UserRole)
 from app.models.user import User
+from app.services import approval_client
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["authz"])
 
@@ -174,9 +178,33 @@ async def _post_conflict(db, user_id: uuid.UUID, wanted: set[str]) -> dict | Non
     return None
 
 
-@router.put("/authz/users/{user_id}/roles", status_code=204)
+async def _resync_inflight_approvals(db, authorization: str | None) -> str:
+    """Commit the role change, then have the approval engine re-point in-flight
+    approvals at whoever the new roles resolve to.
+
+    The commit must happen first: approval-api reads the SHARED database over its
+    own connection, so a re-sync fired inside this request's open transaction
+    would re-resolve against the pre-change role and move nothing. Everything
+    after it is best-effort — the role change is the primary operation and must
+    survive an approval-api outage.
+    """
+    await db.commit()
+    try:
+        if not authorization or not authorization.lower().startswith("bearer "):
+            raise RuntimeError("no bearer token on the request")
+        result = await approval_client.resync_inflight(
+            bearer_token=authorization.split(None, 1)[1])
+        # `resynced` is the engine's per-document detail LIST, not a count.
+        return f"ok: {len(result.get('resynced') or [])} document(s) re-synced"
+    except Exception as e:
+        _log.warning("role change committed but in-flight approval resync failed: %s", e)
+        return f"failed: {e}"
+
+
+@router.put("/authz/users/{user_id}/roles")
 async def put_user_roles(user_id: uuid.UUID, body: UserRolesPut,
-                         db: SessionDep, user: CurrentUserPayload) -> None:
+                         db: SessionDep, user: CurrentUserPayload,
+                         authorization: str | None = Header(default=None)) -> dict:
     _require_admin(user)
     u = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if u is None:
@@ -201,7 +229,17 @@ async def put_user_roles(user_id: uuid.UUID, body: UserRolesPut,
     conflict = await _post_conflict(db, user_id, {body.primary, *body.additional})
     if conflict is not None:
         raise HTTPException(status_code=409, detail={"conflict": conflict})
+    primary_changed = u.role != body.primary
     u.role = body.primary
     await db.execute(delete(UserRole).where(UserRole.user_id == user_id))
     for code in set(body.additional) - {body.primary}:
         db.add(UserRole(user_id=user_id, role_code=code))
+
+    # A PRIMARY role change re-routes approvals: department-scoped approve
+    # tasks are pinned to a specific person at creation time, so the ones
+    # already in flight still point at the previous holder until the engine
+    # re-resolves them. Additional roles never drive that pinning, so they
+    # deliberately do not trigger a re-sync.
+    if not primary_changed:
+        return {"routing_resync": None}
+    return {"routing_resync": await _resync_inflight_approvals(db, authorization)}
