@@ -4,12 +4,13 @@ Supports action keys: pr, po, agr, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<cod
 Each action key binds to a configurable workflow stored in CompanyConfig.workflow_defs.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.delegation import active_delegator_ids, local_today
 from app.crud.workflow import (get_dept_director_mapping, get_dept_gm_opm_mapping,
                                 get_dept_supervisor_enabled, get_role_management,
                                 post_holder_ids)
@@ -401,6 +402,7 @@ async def _actor_can_approve(
     doc: Any | None = None,
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
+    today: date | None = None,
 ) -> bool:
     """Return True if the actor is authorized to approve the current workflow step.
 
@@ -412,6 +414,10 @@ async def _actor_can_approve(
     `routing_dept_id` is the department that drives dept_manager/gm_or_opm
     routing for this document — the PR's selected department_id, falling back
     to the routing user's own department (see `_routing_department_id`).
+
+    `today` drives dated delegation (代班) below — a bind parameter, never SQL
+    CURRENT_DATE, and defaults to None which `active_delegator_ids` resolves
+    to the plant-local date via `local_today()`.
     """
     if actor_role == "system_admin":
         return True
@@ -420,6 +426,16 @@ async def _actor_can_approve(
         finance_bp_ids, doc, director_uid, supervisor_uid,
     ):
         return True
+    # Delegation: act for anyone who has named this actor their stand-in today.
+    # Deliberately placed AFTER the own-identity check and BELOW the
+    # system_admin bypass — _actor_is_step_holder has no bypass, so an admin's
+    # delegate inherits nothing.
+    for delegator_id in await active_delegator_ids(db, actor_id, today=today):
+        if await _actor_is_step_holder(
+            db, step_role, delegator_id, routing_dept_id, rm, dept_gm_opm,
+            finance_bp_ids, doc, director_uid, supervisor_uid,
+        ):
+            return True
     # Fallback: actor's own JWT role must match the step role. Only reachable
     # for a step whose post has NO holders at all — with holders configured,
     # membership above is the authority and a non-holder must stay denied.
@@ -427,6 +443,40 @@ async def _actor_can_approve(
                      "gm_or_opm", "director", "supervisor"):
         return False
     return actor_role == step_role and not await post_holder_ids(db, step_role)
+
+
+async def _acting_on_behalf_of(
+    db: AsyncSession,
+    step_role: str,
+    actor_id: uuid.UUID,
+    routing_dept_id: uuid.UUID | None,
+    rm: dict,
+    dept_gm_opm: dict,
+    finance_bp_ids: set[uuid.UUID],
+    doc: Any | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+    today: date | None = None,
+) -> uuid.UUID | None:
+    """The delegator whose identity the actor borrowed, or None when the actor
+    holds this step in their own right.
+
+    A delegate may cover several people at once, so more than one delegator can
+    satisfy the step. Sorting makes the annotation deterministic rather than
+    dependent on row order.
+    """
+    if await _actor_is_step_holder(
+        db, step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+        finance_bp_ids, doc, director_uid, supervisor_uid,
+    ):
+        return None
+    for delegator_id in sorted(await active_delegator_ids(db, actor_id, today=today)):
+        if await _actor_is_step_holder(
+            db, step_role, delegator_id, routing_dept_id, rm, dept_gm_opm,
+            finance_bp_ids, doc, director_uid, supervisor_uid,
+        ):
+            return delegator_id
+    return None
 
 
 # ── Task helpers ──────────────────────────────────────────────────────────────
@@ -908,6 +958,7 @@ async def execute_action(
     actor_id: uuid.UUID,
     actor_role: str,
     comment: str | None = None,
+    today: date | None = None,
 ) -> ActionResult:
     meta = _resolve_meta(doc_type)
     Model = meta["model"]
@@ -1004,6 +1055,7 @@ async def execute_action(
             db, current_step_role, actor_id, actor_role,
             routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+            today=today,
         )
         if not authorized:
             raise ValueError(
@@ -1093,6 +1145,7 @@ async def execute_action(
             db, current_step_role, actor_id, actor_role,
             routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+            today=today,
         )
         if not authorized:
             raise ValueError(
@@ -1125,6 +1178,22 @@ async def execute_action(
 
     else:
         raise ValueError(f"Unknown action '{act}' for {doc_type.upper()}")
+
+    if act == "approve":
+        # Delegation annotation: if the actor reached this step only through
+        # someone else's active delegation, name that delegator in the event
+        # comment. The actor recorded on the event stays the person who
+        # clicked — this is not a transfer of identity, just a note of whose
+        # authority was borrowed.
+        on_behalf_of = await _acting_on_behalf_of(
+            db, recorded_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+            finance_bp_ids, doc, director_uid, supervisor_uid, today=today)
+        if on_behalf_of is not None:
+            delegator_name = (await db.execute(
+                select(User.full_name).where(User.id == on_behalf_of))
+            ).scalar_one_or_none() or "another approver"
+            suffix = f"on behalf of {delegator_name}"
+            comment = f"{comment} — {suffix}" if comment else suffix
 
     # Record the primary approval event
     db.add(ApprovalEvent(
