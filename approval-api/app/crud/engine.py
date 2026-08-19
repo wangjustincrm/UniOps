@@ -325,6 +325,70 @@ def _build_role_map(rm: dict, dept_gm_opm: dict, department_id: uuid.UUID | None
 
 # ── Authorization check ───────────────────────────────────────────────────────
 
+async def _actor_is_step_holder(
+    db: AsyncSession,
+    step_role: str,
+    actor_id: uuid.UUID,
+    routing_dept_id: uuid.UUID | None,
+    rm: dict,
+    dept_gm_opm: dict,
+    finance_bp_ids: set[uuid.UUID],
+    doc: Any | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+) -> bool:
+    """Is this actor, in their OWN right, a holder of `step_role` for this document?
+
+    Identity only — deliberately WITHOUT the `system_admin` bypass that
+    `_actor_can_approve` layers on top. Two callers depend on that omission:
+
+      * `_actor_can_approve` adds the bypass itself, so approving as an admin
+        still works;
+      * the same-approver auto-skip walk in `execute_action` must NOT treat an
+        admin as the holder of every remaining step — that would auto-approve
+        a whole workflow off a single admin click.
+
+    This is the single authority on "does X hold step Y". It replaced a second,
+    weaker copy (the `_holds` closure in `execute_action`) that compared against
+    the COLLAPSED first post holder `rm['<role>_user_id']` and therefore missed
+    multi-holder posts: a Department Manager who also held GM as an additional
+    role was not recognised at gm_or_opm whenever the real GM sorted first, so
+    the skip never fired and they had to approve the same document twice.
+    """
+    if step_role == "quality_manager":
+        if doc is None:
+            return False
+        expected = getattr(doc, "quality_approver_id", None)
+        return expected is not None and actor_id == expected
+    if step_role == "finance_bp":
+        return actor_id in finance_bp_ids
+    if step_role == "dept_manager":
+        dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
+        return dept_mgr_id is not None and actor_id == dept_mgr_id
+    if step_role == "gm_or_opm":
+        # Resolve which post (gm/opm) this department routes to — same logic as
+        # task assignment — then match ANY active holder of that post, not just
+        # the single collapsed rm['<role>_user_id'] (= _post_holders()[0]).
+        # A post can legitimately have >1 holder (e.g. a Department Manager who
+        # ALSO holds GM via an additional user_roles role); the broadcast approve
+        # task is visible to all of them, so all of them must be able to act.
+        resolved_role, resolved_user_id = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
+        if resolved_user_id is not None and actor_id == resolved_user_id:
+            return True
+        return actor_id in await post_holder_ids(db, resolved_role)
+    if step_role == "director":
+        # Director is resolved per-department (routing_dept_id), not via a
+        # collapsed global holder, so a director covering multiple departments
+        # already matches on any of their departments' documents.
+        return director_uid is not None and actor_id == director_uid
+    if step_role == "supervisor":
+        return supervisor_uid is not None and actor_id == supervisor_uid
+    # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager
+    # as a direct step): membership in the holder set, not equality to the
+    # single collapsed rm['<role>_user_id'].
+    return actor_id in await post_holder_ids(db, step_role)
+
+
 async def _actor_can_approve(
     db: AsyncSession,
     step_role: str,
@@ -351,42 +415,18 @@ async def _actor_can_approve(
     """
     if actor_role == "system_admin":
         return True
-    if step_role == "quality_manager":
-        if doc is None:
-            return False
-        expected = getattr(doc, "quality_approver_id", None)
-        return expected is not None and actor_id == expected
-    if step_role == "finance_bp":
-        return actor_id in finance_bp_ids
-    if step_role == "dept_manager":
-        dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
-        return dept_mgr_id is not None and actor_id == dept_mgr_id
-    if step_role == "gm_or_opm":
-        # Resolve which post (gm/opm) this department routes to — same logic as
-        # task assignment — then authorize ANY active holder of that post, not
-        # just the single collapsed rm['<role>_user_id'] (= _post_holders()[0]).
-        # A post can legitimately have >1 holder (e.g. a Department Manager who
-        # ALSO holds GM via an additional user_roles role); the broadcast approve
-        # task is visible to all of them, so all of them must be able to act.
-        resolved_role, resolved_user_id = await _resolve_gm_or_opm(db, routing_dept_id, rm, dept_gm_opm)
-        if resolved_user_id is not None and actor_id == resolved_user_id:
-            return True
-        return actor_id in await post_holder_ids(db, resolved_role)
-    if step_role == "director":
-        # Director is resolved per-department (routing_dept_id), not via a
-        # collapsed global holder, so a director covering multiple departments
-        # already matches on any of their departments' documents.
-        return director_uid is not None and actor_id == director_uid
-    if step_role == "supervisor":
-        return supervisor_uid is not None and actor_id == supervisor_uid
-    # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager
-    # as a direct step): authorize any active holder of that post — membership,
-    # not equality to the single collapsed rm['<role>_user_id'].
-    post_holders = await post_holder_ids(db, step_role)
-    if post_holders:
-        return actor_id in post_holders
-    # Fallback: actor's own JWT role must match the step role (for broadcast steps)
-    return actor_role == step_role
+    if await _actor_is_step_holder(
+        db, step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+        finance_bp_ids, doc, director_uid, supervisor_uid,
+    ):
+        return True
+    # Fallback: actor's own JWT role must match the step role. Only reachable
+    # for a step whose post has NO holders at all — with holders configured,
+    # membership above is the authority and a non-holder must stay denied.
+    if step_role in ("quality_manager", "finance_bp", "dept_manager",
+                     "gm_or_opm", "director", "supervisor"):
+        return False
+    return actor_role == step_role and not await post_holder_ids(db, step_role)
 
 
 # ── Task helpers ──────────────────────────────────────────────────────────────
@@ -973,30 +1013,12 @@ async def execute_action(
         recorded_role = workflow[step]["role"] if step < len(workflow) else actor_role
         await _complete_tasks(db, doc_type, doc.id)
 
-        # Build role → user map for auto-skip
-        # For gm_or_opm, resolve using the routing department (PR-selected, else
-        # the requester's own) — not doc.created_by (PO/PA creator) and not
-        # doc.department_id (None on PO). routing_dept_id was computed once at
-        # the top of execute_action via _routing_department_id.
-        role_map = _build_role_map(rm, dept_gm_opm, routing_dept_id)
+        # Auto-skip resolution. For gm_or_opm, _actor_is_step_holder resolves
+        # using the routing department (PR-selected, else the requester's own)
+        # — not doc.created_by (PO/PA creator) and not doc.department_id (None
+        # on PO). routing_dept_id was computed once at the top of
+        # execute_action via _routing_department_id.
         finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
-        dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
-
-        def _holds(role: str) -> bool:
-            if role == "finance_bp":
-                return actor_id in finance_bp_ids
-            if role == "dept_manager":
-                return dept_mgr_id is not None and actor_id == dept_mgr_id
-            if role == "quality_manager" and doc_type == "vms_visit":
-                # QM assignment is per-visit, not via role_map.
-                qm_id = getattr(doc, "quality_approver_id", None)
-                return qm_id is not None and actor_id == qm_id
-            if role == "director":
-                return director_uid is not None and actor_id == director_uid
-            if role == "supervisor":
-                return supervisor_uid is not None and actor_id == supervisor_uid
-            assigned = role_map.get(role)
-            return assigned is not None and assigned == actor_id
 
         next_step = step + 1
         while next_step < len(workflow):
@@ -1016,8 +1038,13 @@ async def execute_action(
                 auto_skipped.append(next_step)
                 next_step += 1
                 continue
-            # Same-approver auto-skip (the existing optimisation)
-            if _holds(next_role):
+            # Same-approver auto-skip. Uses the SAME identity check as
+            # authorization (_actor_is_step_holder), so a multi-holder post is
+            # recognised here exactly as it is there — the two used to diverge.
+            if await _actor_is_step_holder(
+                db, next_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+                finance_bp_ids, doc, director_uid, supervisor_uid,
+            ):
                 db.add(ApprovalEvent(
                     document_type=doc_type, document_id=doc.id, document_number=doc_number,
                     step_idx=next_step, action="approve",
