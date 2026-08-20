@@ -102,12 +102,16 @@ async def _make_agreement(test_engine, *, created_by: str) -> str:
 
 
 async def _make_agr_task(test_engine, *, agreement_id, assigned_user_id, assigned_role="dept_manager"):
+    """`assigned_user_id=None` makes this a ROLE-POOL (broadcast) task —
+    mirrors the finance_manager/procurement_manager steps of the agreement
+    workflow, which have no single pinned assignee."""
     factory = _factory(test_engine)
     async with factory() as db:
         db.add(Task(
             id=uuid.uuid4(), type="approve_agr", document_type="agr",
             document_id=uuid.UUID(agreement_id), document_number="AGR-DELEG-TEST",
-            assigned_role=assigned_role, assigned_user_id=uuid.UUID(assigned_user_id),
+            assigned_role=assigned_role,
+            assigned_user_id=uuid.UUID(assigned_user_id) if assigned_user_id else None,
             title="Approve", is_completed=False,
         ))
         await db.commit()
@@ -177,5 +181,129 @@ async def test_delegate_can_open_delegators_agreement_inside_window_only(test_en
         resp = await c.get(f"{AGR_URL}/{agreement_id}")
         assert resp.status_code == 404, (
             f"delegate (expired window) could open the delegator's agreement "
+            f"(status={resp.status_code})"
+        )
+
+
+# ── ROLE-POOL approve_agr (final review, 2026-08-19): _open_task_doc_ids and
+# own_agr in access_scope.py widened the PINNED half of the delegated arm
+# (Task.assigned_user_id.in_(delegator_ids)) but never the ROLE-POOL half
+# (Task.assigned_user_id IS NULL, Task.assigned_role IN delegator's broadcast
+# roles) — even though app/crud/task.py::get_for_role already surfaces these
+# tasks in the delegate's inbox via delegated_broadcast_roles. The agreement
+# workflow is [dept_manager, procurement_manager, finance_manager]; the last
+# two steps are role-pool. A restricted delegate (e.g. requester) covering a
+# finance_manager delegator saw the approve_agr task in their inbox but could
+# not open the agreement — 404 on both list and detail.
+
+@pytest.mark.asyncio
+async def test_delegate_can_open_delegators_agreement_via_role_pool_task_inside_window_only(
+    test_engine,
+):
+    await _grant_agreement_read(test_engine, "requester")
+    creator_id = await _make_user(test_engine, "requester")
+    # finance_manager: an UNRESTRICTED role (see access_scope._RESTRICTED_ROLES)
+    # held as the delegator's PRIMARY role, so delegated_broadcast_roles picks
+    # it up — mirrors the real finance_manager step of the agreement workflow.
+    delegator_id = await _make_user(test_engine, "finance_manager")
+    # The delegate holds a RESTRICTED role: this is the headline scenario from
+    # the defect report — a restricted delegate covering a role-pool approver.
+    delegate_id = await _make_user(test_engine, "requester")
+    delegate_outside_id = await _make_user(test_engine, "requester")
+
+    agreement_id = await _make_agreement(test_engine, created_by=creator_id)
+
+    # Baseline: without a task or delegation, an unrelated requester cannot
+    # open this agreement.
+    async with _authed_client(delegate_id, "requester") as c:
+        resp = await c.get(f"{AGR_URL}/{agreement_id}")
+        assert resp.status_code == 404, (
+            "test setup invalid: delegate could already see the agreement "
+            "before any task/delegation existed"
+        )
+
+    # Role-pool task: assigned_user_id=None, assigned_role="finance_manager" —
+    # exactly what the approval engine issues for a broadcast step.
+    await _make_agr_task(
+        test_engine, agreement_id=agreement_id,
+        assigned_user_id=None, assigned_role="finance_manager",
+    )
+
+    today = local_today()
+    await _seed_delegation(
+        test_engine, delegator_id=delegator_id, delegate_id=delegate_id,
+        start_date=today, end_date=today,
+    )
+    # A second delegate whose window has already expired.
+    await _seed_delegation(
+        test_engine, delegator_id=delegator_id, delegate_id=delegate_outside_id,
+        start_date=today - timedelta(days=10), end_date=today - timedelta(days=1),
+    )
+
+    async with _authed_client(delegate_id, "requester") as c:
+        resp = await c.get(f"{AGR_URL}/{agreement_id}")
+        assert resp.status_code == 200, (
+            f"delegate could not open the delegator's agreement via the "
+            f"delegator's ROLE-POOL approve_agr task inside the delegation "
+            f"window (status={resp.status_code}) — the task reached the "
+            f"delegate's inbox (app/crud/task.py::get_for_role) but the "
+            f"document itself was not reachable"
+        )
+
+    async with _authed_client(delegate_outside_id, "requester") as c:
+        resp = await c.get(f"{AGR_URL}/{agreement_id}")
+        assert resp.status_code == 404, (
+            f"delegate (expired window) could open the delegator's agreement "
+            f"via a role-pool task (status={resp.status_code})"
+        )
+
+
+@pytest.mark.asyncio
+async def test_delegation_from_unrestricted_role_does_not_unrestrict_delegate(test_engine):
+    """Security guard: the delegator here (finance_manager) holds an
+    UNRESTRICTED role — any held role outside access_scope._RESTRICTED_ROLES
+    grants full company-wide visibility. Delegating from such a role must
+    NOT hand that unrestricted scope to the delegate: the fix adds a new
+    role-pool arm keyed off `delegated_broadcast_roles`, a set of role
+    CODES used only to match Task.assigned_role — it must never be folded
+    into the delegate's own `_effective_role_codes` (which is what decides
+    unrestricted-vs-restricted). Proof: the delegate still cannot see an
+    UNRELATED agreement they hold no task for and never created, even
+    though the delegator-as-finance_manager could see every agreement in
+    the company.
+    """
+    await _grant_agreement_read(test_engine, "requester")
+    await _grant_agreement_read(test_engine, "finance_manager")
+    creator_id = await _make_user(test_engine, "requester")
+    delegator_id = await _make_user(test_engine, "finance_manager")
+    delegate_id = await _make_user(test_engine, "requester")
+
+    unrelated_agreement_id = await _make_agreement(test_engine, created_by=creator_id)
+
+    # Sanity: the finance_manager delegator really is unrestricted and can
+    # already see this agreement with no task and no delegation involved.
+    async with _authed_client(delegator_id, "finance_manager") as c:
+        resp = await c.get(f"{AGR_URL}/{unrelated_agreement_id}")
+        assert resp.status_code == 200, (
+            "test setup invalid: finance_manager (unrestricted role) cannot "
+            "see the agreement on its own"
+        )
+
+    today = local_today()
+    await _seed_delegation(
+        test_engine, delegator_id=delegator_id, delegate_id=delegate_id,
+        start_date=today, end_date=today,
+    )
+
+    # The delegate has NO task of any kind for this agreement — only the
+    # (task-only) delegation from an unrestricted finance_manager. Their own
+    # scope must stay exactly "requester" (own-created/owned agreements
+    # only), never widen to the delegator's unrestricted company-wide scope.
+    async with _authed_client(delegate_id, "requester") as c:
+        resp = await c.get(f"{AGR_URL}/{unrelated_agreement_id}")
+        assert resp.status_code == 404, (
+            f"delegate gained the finance_manager delegator's UNRESTRICTED "
+            f"scope via delegation — delegated_broadcast_roles must feed "
+            f"only Task.assigned_role matching, never _effective_role_codes "
             f"(status={resp.status_code})"
         )
