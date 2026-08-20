@@ -1,4 +1,4 @@
-import { formatAmount } from '@/lib/utils'
+import { formatAmount, formatDate } from '@/lib/utils'
 
 /** One line of an NC-imported PO as the buyer-detail form sees it.
  *  Everything except supplierItemId and sample is display-only: NC owns those
@@ -13,6 +13,9 @@ export interface ImportedPoLine {
   lineTotal: number
   supplierItemId: string
   sample: string
+  // ERP-synced per-line arrival date. Display-only — there is no field on
+  // PoImportedDetailsUpdate to write it back.
+  plannedArrivalDate?: string | null
 }
 
 interface ImportedPoLineItemsProps {
@@ -44,6 +47,7 @@ export function ImportedPoLineItems({ items, onChange, currency }: ImportedPoLin
             <th className="w-20 px-3 py-2 font-medium">Unit</th>
             <th className="w-28 px-3 py-2 text-right font-medium">Unit Price</th>
             <th className="w-28 px-3 py-2 text-right font-medium">Line Total</th>
+            <th className="w-28 px-3 py-2 font-medium">Delivery Date</th>
             <th className="w-40 px-3 py-2 font-medium">Supplier Item ID</th>
             <th className="w-32 px-3 py-2 font-medium">Sample (g or ea)</th>
           </tr>
@@ -63,6 +67,9 @@ export function ImportedPoLineItems({ items, onChange, currency }: ImportedPoLin
               </td>
               <td className="px-3 py-2 text-right font-mono text-neutral-900">
                 {formatAmount(item.lineTotal, currency)}
+              </td>
+              <td className="px-3 py-2 text-neutral-500">
+                {item.plannedArrivalDate ? formatDate(item.plannedArrivalDate) : '—'}
               </td>
               <td className="px-3 py-2">
                 <input

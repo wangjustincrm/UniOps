@@ -639,7 +639,25 @@ export default function PoDetailPage() {
   // Mirrors the PDF: the Sample column only appears when some line carries one,
   // so POs without samples keep their existing layout.
   const showSample = po.line_items.some((li) => li.sample)
+  // Delivery Date mirrors the same conditional-column pattern: it only appears
+  // when a line actually carries an ERP-synced planned_arrival_date, so POs
+  // without one (UniOps-native POs) keep their existing layout.
+  const showDeliveryDate = po.line_items.some((li) => li.planned_arrival_date)
   const hasMaterial = po.type === 1 || po.type === 3
+
+  // expected_delivery is a human-entered header override; NC-synced POs never
+  // populate it. When absent, fall back to the earliest ERP-synced line date
+  // (string comparison is safe/UTC-agnostic for YYYY-MM-DD) — but never treat
+  // it as anything other than display-only, and always mark it as ERP-sourced.
+  const erpDeliveryDate = po.line_items.reduce<string | undefined>((earliest, li) => {
+    if (!li.planned_arrival_date) return earliest
+    return !earliest || li.planned_arrival_date < earliest ? li.planned_arrival_date : earliest
+  }, undefined)
+  const expectedDeliveryDisplay = po.expected_delivery
+    ? formatDate(po.expected_delivery)
+    : erpDeliveryDate
+      ? `${formatDate(erpDeliveryDate)} (from ERP)`
+      : '—'
 
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
@@ -769,7 +787,7 @@ export default function PoDetailPage() {
                     ['Currency', po.currency],
                     ['Budget Code', po.budget_code ?? '—'],
                     ['Created', formatDate(po.created_at)],
-                    ['Expected Delivery', po.expected_delivery ? formatDate(po.expected_delivery) : '—'],
+                    ['Expected Delivery', expectedDeliveryDisplay],
                     ['Delivery Address', po.delivery_address || '—'],
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
@@ -863,6 +881,9 @@ export default function PoDetailPage() {
                           {showSample && (
                             <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-24">Sample</th>
                           )}
+                          {showDeliveryDate && (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-28">Delivery Date</th>
+                          )}
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Line Total</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-neutral-500 w-28">Received</th>
@@ -887,6 +908,11 @@ export default function PoDetailPage() {
                               {showSample && (
                                 <td className="px-4 py-2.5 text-neutral-500">{item.sample || '—'}</td>
                               )}
+                              {showDeliveryDate && (
+                                <td className="px-4 py-2.5 text-neutral-500">
+                                  {item.planned_arrival_date ? formatDate(item.planned_arrival_date) : '—'}
+                                </td>
+                              )}
                               <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, po.currency)}</td>
                               <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
@@ -909,7 +935,7 @@ export default function PoDetailPage() {
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                          <td colSpan={hasMaterial ? 7 : 6} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                          <td colSpan={6 + (hasMaterial ? 1 : 0) + (showSample ? 1 : 0) + (showDeliveryDate ? 1 : 0)} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
                             Subtotal
                           </td>
                           <td className="px-4 py-3 amount text-right text-base font-bold text-neutral-900">
