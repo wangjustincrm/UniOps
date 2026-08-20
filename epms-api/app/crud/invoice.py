@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.delegation import local_today
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
@@ -188,6 +189,8 @@ async def get_all(
     po_id: uuid.UUID | None = None,
     agreement_id: uuid.UUID | None = None,
     search: str | None = None,
+    sort: str | None = None,
+    overdue: bool = False,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
     task_user_id: uuid.UUID | None = None,
@@ -240,10 +243,31 @@ async def get_all(
             Invoice.vendor_invoice_number.ilike(term),
             Invoice.po_number.ilike(term),
         ))
+    if overdue:
+        # "Overdue" has to mean the same thing here as in the list's Due Date
+        # column, or the filter hides rows the column paints red and vice
+        # versa. Two halves, both load-bearing:
+        #   - today is the PLANT's calendar day, not the container's. The API
+        #     runs in UTC, so a server-side CURRENT_DATE flips over at 20:00
+        #     local and would report a full extra day of invoices as overdue
+        #     every evening.
+        #   - a paid invoice is never chased. Without this the filter is
+        #     dominated by historic settled invoices, which is precisely the
+        #     noise it exists to cut through.
+        q = q.where(Invoice.due_date < local_today(), Invoice.status != "paid")
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
+    # created_at desc stays the default AND the tiebreaker: several invoices
+    # routinely share a due date, and without a stable second key the same row
+    # can appear on two pages or on none.
+    if sort == "due_date":
+        ordering = [Invoice.due_date.asc(), Invoice.created_at.desc()]
+    elif sort == "-due_date":
+        ordering = [Invoice.due_date.desc(), Invoice.created_at.desc()]
+    else:
+        ordering = [Invoice.created_at.desc()]
     items = list((await db.execute(
-        q.order_by(Invoice.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*ordering).offset(offset).limit(page_size)
     )).scalars().all())
     await attach_allocation_display_fields(db, items)
     return items, total

@@ -24,6 +24,7 @@ from app.schemas.invoice import (
     AssignBillingPeriodRequest,
     AssignMatchRequest,
     DeclineMatchRequest,
+    InvoiceChainResponse,
     InvoiceCreate,
     InvoiceExceptionRequest,
     InvoiceListResponse,
@@ -37,6 +38,7 @@ from app.schemas.invoice import (
 from app.schemas.po import PoListResponse, PoResponse
 from app.services.notification import dispatch_task_notification, fire_and_forget_notify
 from app.services import finance_client
+from app.services.invoice_chain import build_chain
 from app.services import finance_sync
 from app.services import tax_prefill
 
@@ -293,6 +295,15 @@ async def list_invoices(
     po_id: uuid.UUID | None = Query(default=None),
     agreement_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None),
+    sort: str | None = Query(
+        default=None,
+        pattern="^-?due_date$",
+        description="due_date | -due_date. Omit for the default newest-first order.",
+    ),
+    overdue: bool = Query(
+        default=False,
+        description="Only invoices past their due date and not yet paid.",
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
 ):
@@ -342,6 +353,7 @@ async def list_invoices(
         po_subq = own_uploads = task_uid = None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, agreement_id=agreement_id, search=search,
+        sort=sort, overdue=overdue,
         po_ids_subq=po_subq,
         own_uploads_user_id=own_uploads,
         task_user_id=task_uid,
@@ -402,6 +414,26 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
+
+
+@router.get("/{invoice_id}/chain", response_model=InvoiceChainResponse)
+async def invoice_chain(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Match PO -> Link GR -> Create PA -> Payment for one invoice.
+
+    Read-only. Visibility follows the invoice's own read gate exactly (a
+    caller who cannot open the invoice gets the same 404 here), and the two
+    PA-owned steps are additionally gated on view_pa so this cannot become a
+    side channel onto payment state.
+    """
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    scope = await build_scope(db, user)
+    if not scope["perms"].get("view_invoice", False):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if scope["restrict"] and not await invoice_crud.is_visible(db, inv, scope):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return await build_chain(db, inv, can_view_pa=scope["perms"].get("view_pa", False))
 
 
 @router.patch("/{invoice_id}", response_model=InvoiceResponse)

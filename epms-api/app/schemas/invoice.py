@@ -283,3 +283,28 @@ class InvoiceResponse(BaseModel):
 class InvoiceListResponse(BaseModel):
     items: list[InvoiceResponse]
     total: int
+
+
+# ── Document chain (Invoice List due-date drawer) ─────────────────────────────
+
+class ChainStepRef(BaseModel):
+    """One document a chain step points at. `number` is the human-readable
+    document number; it is nullable only because the underlying columns are."""
+    doc_type: str   # po | agreement | gr | pa
+    id: str
+    number: str | None
+
+
+class ChainStep(BaseModel):
+    key: str        # match_po | link_gr | create_pa | payment
+    state: str      # done | pending | blocked | not_applicable | restricted
+    detail: str | None = None
+    refs: list[ChainStepRef] = []
+
+
+class InvoiceChainResponse(BaseModel):
+    invoice_id: uuid.UUID
+    internal_ref: str
+    status: str
+    due_date: date
+    steps: list[ChainStep]

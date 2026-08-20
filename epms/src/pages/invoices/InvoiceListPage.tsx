@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
+  ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react'
 import { parseInvoiceFile } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
@@ -13,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
 import { AiBadge } from '@/components/ui/AiBadge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
 import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice } from '@/hooks/useInvoices'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
@@ -27,6 +29,7 @@ import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllo
 import { MatchPanel } from './MatchPanel'
 import { FilePreviewPanel } from './FilePreviewPanel'
 import { AssignMatchDialog } from './AssignMatchDialog'
+import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
@@ -1086,9 +1089,43 @@ function ExceptionsTab() {
   )
 }
 
+// Due-date colouring for the list cell. Kept beside the table rather than in
+// lib/dueDate.ts so the helper stays free of presentation and testable on its
+// own; dueInfo() decides WHICH tone, this decides what the tone looks like.
+const DUE_CELL: Record<DueTone, { date: string; badge: string }> = {
+  overdue: { date: 'text-danger-700 font-semibold', badge: 'bg-danger-50 text-danger-700' },
+  soon:    { date: 'text-warning-800 font-semibold', badge: 'bg-warning-50 text-warning-800' },
+  normal:  { date: 'text-neutral-600', badge: '' },
+  settled: { date: 'text-neutral-400', badge: '' },
+}
+
+function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => void }) {
+  const info = dueInfo(invoice.due_date, invoice.status)
+  const style = DUE_CELL[info.tone]
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="Show this invoice's status"
+      className="-mx-1.5 flex flex-col items-start rounded px-1.5 py-1 text-left transition-colors hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-600"
+    >
+      <span className={cn('text-xs', style.date)}>{formatDate(invoice.due_date)}</span>
+      {info.label && (
+        <span className={cn('mt-0.5 rounded px-1 py-0.5 text-[11px] font-semibold', style.badge)}>
+          {info.label}
+        </span>
+      )}
+    </button>
+  )
+}
+
 function AllInvoicesTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all')
+  // null = the server's default order (newest uploaded first).
+  const [dueSort, setDueSort] = useState<'due_date' | '-due_date' | null>(null)
+  const [overdueOnly, setOverdueOnly] = useState(false)
+  const [chainInvoiceId, setChainInvoiceId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -1100,12 +1137,16 @@ function AllInvoicesTab() {
   const { data } = useInvoices({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
+    sort: dueSort ?? undefined,
+    overdue: overdueOnly || undefined,
     page,
     page_size: pageSize,
   })
-  const filtered = [...(data?.items ?? [])].sort(
-    (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
-  )
+  // Ordering belongs to the server. This list used to re-sort `data.items`
+  // locally, which only ever reordered the CURRENT page — "newest first" held
+  // within a page and not across the list, and any server-side sort would have
+  // been silently overridden here.
+  const filtered = data?.items ?? []
   const total = data?.total ?? 0
 
   return (
@@ -1125,6 +1166,13 @@ function AllInvoicesTab() {
               {s === 'all' ? 'All' : s === 'match_review' ? 'Pending Review' : s}
             </button>
           ))}
+          {/* Separate axis from the status chips: "overdue" is about the due
+              date, and it already excludes paid invoices server-side. */}
+          <button onClick={() => { setOverdueOnly((v) => !v); setPage(1) }}
+            className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
+              overdueOnly ? 'bg-danger-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200')}>
+            Overdue
+          </button>
         </div>
       </div>
 
@@ -1138,8 +1186,26 @@ function AllInvoicesTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {['Ref', 'Vendor', 'Invoice #', 'Amount', 'Invoice Date', 'Upload Date', 'Status', 'PO', ''].map((h) => (
+                {['Ref', 'Vendor', 'Invoice #', 'Amount', 'Invoice Date'].map((h) => (
                   <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
+                ))}
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">
+                  {/* Cycles unsorted -> soonest first -> latest first. Sorting
+                      is server-side, so it orders the whole list, not the page. */}
+                  <button type="button"
+                    onClick={() => {
+                      setDueSort((c) => (c === null ? 'due_date' : c === 'due_date' ? '-due_date' : null))
+                      setPage(1)
+                    }}
+                    className="flex items-center gap-1 uppercase tracking-wide hover:text-neutral-700">
+                    Due Date
+                    {dueSort === 'due_date' ? <ArrowUp className="h-3 w-3" />
+                      : dueSort === '-due_date' ? <ArrowDown className="h-3 w-3" />
+                      : <ArrowUpDown className="h-3 w-3 text-neutral-300" />}
+                  </button>
+                </th>
+                {['Upload Date', 'Status', 'PO', ''].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1157,6 +1223,9 @@ function AllInvoicesTab() {
                     {formatAmount(inv.total_amount, inv.currency)}
                   </td>
                   <td className="px-4 py-3 text-neutral-600 text-xs">{formatDate(inv.invoice_date)}</td>
+                  <td className="px-4 py-3">
+                    <DueDateCell invoice={inv} onOpen={() => setChainInvoiceId(inv.id)} />
+                  </td>
                   <td className="px-4 py-3 text-neutral-500 text-xs">{formatDate(inv.uploaded_at)}</td>
                   <td className="px-4 py-3"><InvoiceStatusBadge status={inv.status} /></td>
                   <td className="px-4 py-3">
@@ -1199,6 +1268,10 @@ function AllInvoicesTab() {
         )}
       </div>
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
+
+      {chainInvoiceId && (
+        <InvoiceChainDrawer invoiceId={chainInvoiceId} onClose={() => setChainInvoiceId(null)} />
+      )}
     </div>
   )
 }

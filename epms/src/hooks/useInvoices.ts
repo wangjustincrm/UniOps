@@ -93,6 +93,17 @@ export function useInvoices(filters?: InvoiceFilters, enabled = true) {
   })
 }
 
+// Fetched only while the drawer is open (`enabled`): the chain costs a PA
+// lookup per invoice, so the list must not prefetch one per row.
+export function useInvoiceChain(id: string | null) {
+  return useQuery({
+    queryKey: ['invoices', id, 'chain'],
+    queryFn: () => invoiceService.chain(id as string),
+    enabled: Boolean(id),
+    staleTime: 30_000,
+  })
+}
+
 export function useInvoice(id: string) {
   return useQuery({
     queryKey: ['invoices', id],
