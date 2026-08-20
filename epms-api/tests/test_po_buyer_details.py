@@ -12,6 +12,7 @@ pin that separation — especially test_cannot_touch_another_pos_line and
 test_locked_fields_are_unreachable.
 """
 import uuid
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -75,7 +76,7 @@ async def _nc_po(db, *, status: str = "issued", source: str | None = "nc", creat
     line = PoLineItem(
         po_id=po.id, description="Widget", material_id="MAT-1", qty=Decimal("10"),
         unit="EA", unit_price=Decimal("10.00"), line_total=Decimal("100.00"),
-        sort_order=0,
+        sort_order=0, planned_arrival_date=date(2026, 9, 15),
     )
     db.add(line)
     await db.flush()
@@ -122,6 +123,9 @@ async def test_erp_pa_officer_fills_in_buyer_details(test_engine):
     assert body["buyer_edited_at"] is not None
     assert body["line_items"][0]["supplier_item_id"] == "SKU-9"
     assert body["line_items"][0]["sample"] == "500 g"
+    # planned_arrival_date is NC-synced and untouched by this edit; the API
+    # must expose it now that PoLineItemResponse carries the field.
+    assert body["line_items"][0]["planned_arrival_date"] == "2026-09-15"
     # tax recomputed off the untouched subtotal
     assert Decimal(body["subtotal"]) == Decimal("100.00")
     assert Decimal(body["tax_amount"]) == Decimal("13.00")

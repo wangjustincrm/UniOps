@@ -55,6 +55,7 @@ class PoLineItemResponse(BaseModel):
     received_qty: Decimal
     notes: str | None
     sort_order: int
+    planned_arrival_date: date | None = None
     # 该 line 被【其他发票】累计分摊的税前额(仅 match-candidates 端点填充)
     already_allocated: Decimal | None = None
 
