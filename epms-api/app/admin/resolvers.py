@@ -12,6 +12,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cost_center import CostCenter
+from app.models.department import Department
 from app.models.user import User
 from app.models.vendor import Vendor
 
@@ -79,10 +80,33 @@ async def _cc_search(db: AsyncSession, q: str, limit: int) -> list[RefHit]:
     return [RefHit(c.id, _cc_label(c)) for c in (await db.execute(stmt)).scalars().all()]
 
 
+def _dept_label(d: Department) -> str:
+    return f"{d.code} — {d.name}"
+
+
+async def _dept_by_id(db: AsyncSession, rid: uuid.UUID) -> RefHit | None:
+    d = (await db.execute(select(Department).where(Department.id == rid))).scalar_one_or_none()
+    return RefHit(d.id, _dept_label(d)) if d else None
+
+
+async def _dept_search(db: AsyncSession, q: str, limit: int) -> list[RefHit]:
+    stmt = select(Department)
+    if q:
+        term = f"%{q}%"
+        stmt = stmt.where(or_(Department.name.ilike(term), Department.code.ilike(term)))
+    stmt = stmt.order_by(Department.code.asc()).limit(limit)
+    return [RefHit(d.id, _dept_label(d)) for d in (await db.execute(stmt)).scalars().all()]
+
+
 _RESOLVERS: dict[str, Resolver] = {
     "users": Resolver("users", _user_by_id, _user_search),
     "vendors": Resolver("vendors", _vendor_by_id, _vendor_search),
     "cost_centers": Resolver("cost_centers", _cc_by_id, _cc_search),
+    # purchase_agreements.department_id drives approval routing
+    # (engine._routing_department_id reads the agreement's OWN department, not the
+    # submitter's) and the agreement has no denormalized department_name column, so
+    # without this the admin can only paste a raw UUID and hope.
+    "departments": Resolver("departments", _dept_by_id, _dept_search),
 }
 
 

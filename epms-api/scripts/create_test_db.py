@@ -1,8 +1,11 @@
-"""Create the epms_test database (run once before running tests).
+"""Create the test database (run once before running tests).
 
 Usage:
-    python -m scripts.create_test_db
+    python -m scripts.create_test_db          # creates epms_test
+    TEST_EPMS_DB=epms_test_x python -m scripts.create_test_db
 """
+import os
+
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
@@ -19,12 +22,13 @@ def create_test_db():
     )
     conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
     cur = conn.cursor()
-    cur.execute("SELECT 1 FROM pg_database WHERE datname = 'epms_test'")
+    name = os.getenv("TEST_EPMS_DB", "epms_test")
+    cur.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,))
     if cur.fetchone():
-        print("epms_test database already exists.")
+        print(f"{name} database already exists.")
     else:
-        cur.execute(f"CREATE DATABASE epms_test OWNER {settings.POSTGRES_USER}")
-        print("epms_test database created.")
+        cur.execute(f'CREATE DATABASE "{name}" OWNER {settings.POSTGRES_USER}')
+        print(f"{name} database created.")
     cur.close()
     conn.close()
 

@@ -19,12 +19,12 @@ scripts already touched and self-sufficient on a fresh one. Unlike migration
 0004_erp_pa_officer_role, which this migration transitively follows.
 
 Revision id length: alembic_version_identity.version_num is varchar(32);
-"0006_po_edit_imported" is 21 characters.
+"0011_po_edit_imported" is 21 characters.
 """
 from alembic import op
 
-revision = "0006_po_edit_imported"
-down_revision = "0005_procurement_officer_pa"
+revision = "0011_po_edit_imported"
+down_revision = "0010_budget_view_scope"
 branch_labels = None
 depends_on = None
 
@@ -35,7 +35,7 @@ _KEY = "epms.po.edit_imported"
 def upgrade() -> None:
     op.execute(
         "INSERT INTO permission_defs(key,module,label,sort) "
-        f"VALUES ('{_KEY}','epms','Edit Imported (NC) POs',104) "
+        f"VALUES ('{_KEY}','epms','Edit Imported (NC) POs',107) "
         "ON CONFLICT (key) DO NOTHING")
     op.execute(
         "INSERT INTO role_permissions(role_code,permission_key) "

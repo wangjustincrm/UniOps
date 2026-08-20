@@ -12,3 +12,7 @@ build/
 .coverage
 htmlcov/
 .gstack/
+
+# One-shot script run artifacts (e.g. reassign_process_pa_tasks.py's
+# moved-ids record) — operational output, not source.
+scripts/*.moved.json

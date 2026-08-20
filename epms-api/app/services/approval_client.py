@@ -75,6 +75,25 @@ async def resync_document(doc_type: str, doc_id: str, bearer_token: str) -> dict
     return resp.json()
 
 
+async def resync_inflight(bearer_token: str) -> dict:
+    """Call POST /routing/resync-inflight on the Approval Engine: re-point every
+    in-flight document at whoever the CURRENT config resolves to.
+
+    Used after an admin edits a user's role / department / active state — approve
+    tasks for department-scoped roles are pinned to a specific person at creation
+    time, so without this the previous holder keeps them (prod incident
+    2026-08-18: 33 PA/PR tasks stranded on a swapped-out Department Manager).
+    Raises RuntimeError on unreachable / error so the caller can surface a
+    warning; the user edit itself has already been committed.
+    """
+    url = f"{settings.APPROVAL_ENGINE_URL}/routing/resync-inflight"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, headers={"Authorization": f"Bearer {bearer_token}"})
+    if not resp.is_success:
+        raise RuntimeError(f"resync-inflight {resp.status_code}: {resp.text[:200]}")
+    return resp.json()
+
+
 async def forward(method: str, path: str, token: str | None, json=None) -> tuple[int, dict]:
     """Pass a caller request through to the Approval Engine using the caller's own Bearer token.
 

@@ -6,13 +6,14 @@ import {
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
-  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap,
+  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcPurchaseSyncSection } from './NcPurchaseSyncSection'
+import { WmsSyncSection } from './WmsSyncSection'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ interface WorkflowNodeDef {
   role: string
 }
 
-type ActionKey = 'pr' | 'po' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -96,6 +97,7 @@ const ROLE_LABELS: Record<string,string> = {
   warehouse_staff:'Warehouse Staff', ap_clerk:'AP Clerk', finance_manager:'Finance Manager',
   finance_bp:'Finance BP', cfo:'CFO', auditor:'Auditor', vendor_manager:'Vendor Manager',
   erp_pa_officer:'ERP PA Officer',
+  payment_officer:'Payment Officer',
   system_admin:'System Admin',
 }
 
@@ -1344,11 +1346,18 @@ function RemittanceSettings() {
 
 // ── Approval Workflows ───────────────────────────────────────────────────────
 
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
+// Every key in approval-api's _WORKFLOW_DEFAULTS must be listed here. Saving
+// this form PATCHes workflow_defs, and epms-api crud/config.py::update replaces
+// that JSONB column WHOLESALE (only notification_settings is shallow-merged) —
+// so a key missing from this list is not merely uneditable, it is DELETED by
+// the next workflow save. approval-api reseeds it on its next boot (main.py
+// only fills gaps), but until then `workflow_defs->'agr'` reads NULL.
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
   po:          'Purchase Order',
+  agr:         'Purchase Agreement',
   pa:          'PA (PO-Linked)',
   pa_dir:      'PA (Direct)',
   exp:         'General Expense',
@@ -1380,6 +1389,8 @@ const WORKFLOW_ROLES = [
 const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   pr:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
   po:     [{ id: 'proc_mgr', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
+  // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['agr'].
+  agr:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'procurement_manager', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'finance_manager', role: 'finance_manager', label: 'Finance Manager' }],
   pa:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   pa_dir: [{ id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   exp:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
@@ -2115,6 +2126,7 @@ const SECTIONS = [
   { key: 'workflows',    label: 'Approval Workflows',   icon: Workflow },
   { key: 'erp_mdm',      label: 'ERP MDM',              icon: Database },
   { key: 'nc_purchase',  label: 'NC Purchase Sync',     icon: DatabaseZap },
+  { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
 export default function AdminPanel() {
@@ -2198,6 +2210,7 @@ export default function AdminPanel() {
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}
           {section === 'nc_purchase' && <NcPurchaseSyncSection />}
+          {section === 'wms_sync'    && <WmsSyncSection />}
         </main>
       </div>
     </div>

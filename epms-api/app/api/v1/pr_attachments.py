@@ -10,6 +10,7 @@ from sqlalchemy import select
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud.pr import get_by_id as get_pr
+from app.crud.signatories import approval_signatories
 from app.models.config import CompanyConfig
 from app.models.pr_attachment import PrAttachment
 from app.services.attachment_helper import delete_from_file_server, proxy_download, upload_to_file_server
@@ -102,11 +103,13 @@ async def regenerate_pdf(
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
     company_name = cfg.name if cfg else "EPMS"
     filename = f"{pr.number}.pdf"
+    requester_name, approvals = await approval_signatories(db, "pr", pr_id, pr.created_by)
     loop = asyncio.get_event_loop()
     pdf_bytes = await loop.run_in_executor(
         None, generate_pr_pdf, pr, company_name,
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
+        requester_name, approvals,
     )
 
     # Replace any prior auto-PDF of the same name (row + backing file).

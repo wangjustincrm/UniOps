@@ -29,7 +29,6 @@ from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
 from app.crud import remittance as rem
 from app.crud import remittance_send as rsend
-from app.crud.payment_execute import PaymentPermissionError
 from app.db.base import get_db
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
@@ -77,11 +76,38 @@ class SelectionSendRequest(BaseModel):
     recipients: list[RecipientRef] | None = None
 
 
+# Who may send remittance advice. Deliberately NOT
+# `payment_execute._check_can_pay`: that bar is for *executing* a payment, and
+# the 2026-08-13 SoD split exists precisely to keep AP Clerk away from it (see
+# payment_execute._PAY_ROLES). Remittance advice is a notification about a
+# payment that has ALREADY been executed and recorded — telling the payee is
+# AP's job. Reusing the execution gate meant the only way to let AP send one
+# was to grant them the authority to move money, i.e. to undo the split. So:
+# the payment executors (who must not lose a capability they already had),
+# plus ap_clerk. Derived from _PAY_ROLES rather than re-listed, so the two
+# cannot drift the next time payment authority changes.
+_SEND_ROLES = payment_execute._PAY_ROLES | {"ap_clerk"}
+# system_admin is a PRIMARY-role grant only in this codebase — same split as
+# _PAY_ROLES_ASSIGNED and budget_scope.FULL_ACCESS_ASSIGNED.
+_SEND_ROLES_ASSIGNED = _SEND_ROLES - {"system_admin"}
+
+
 async def _authorize(db: AsyncSession, user: dict) -> None:
+    if user.get("role") in _SEND_ROLES:
+        return
     try:
-        await payment_execute._check_can_pay(db, user)
-    except PaymentPermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        user_id = uuid.UUID(str(user.get("sub", "")))
+    except ValueError:
+        raise HTTPException(status_code=403,
+                            detail="Insufficient role to send remittance advice")
+    # Additional (assigned) roles from identity's user_roles, same lookup the
+    # payment gate uses — a Finance BP or AP Clerk granted through
+    # role_management qualifies without a new primary role.
+    codes = await payment_execute._user_role_codes(db, user_id, user.get("role", ""))
+    if codes & _SEND_ROLES_ASSIGNED:
+        return
+    raise HTTPException(status_code=403,
+                        detail="Insufficient role to send remittance advice")
 
 
 async def _scope_context(db: AsyncSession, *, scope_kind: str,

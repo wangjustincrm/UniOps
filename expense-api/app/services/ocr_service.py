@@ -1,8 +1,10 @@
 """Invoice OCR service using Claude API vision.
 
-Supports two modes:
+Supports three modes:
   invoice  — full extraction for PA-DIR (vendor, invoice_no, dates, line_items, totals)
   receipt  — simple extraction for EXP (vendor, date, total, tax, description)
+  slip     — pickup-slip extraction for house_account agreement purchases
+             (slip_ref, date, amount, tax_amount, total_amount, currency)
 """
 import base64
 import json
@@ -82,6 +84,32 @@ Return ONLY this JSON (no markdown):
   "tax_amount": {"value": number or null, "confidence": 0.0-1.0},
   "currency": {"value": "CAD", "confidence": 0.0-1.0}
 }"""
+
+_SLIP_PROMPT = """\
+Extract pickup-slip information from this image.
+
+Return ONLY this JSON (no markdown):
+{
+  "vendor_name":  {"value": "string or null", "confidence": 0.0-1.0},
+  "slip_ref":     {"value": "string or null", "confidence": 0.0-1.0},
+  "date":         {"value": "YYYY-MM-DD or null", "confidence": 0.0-1.0},
+  "amount":       {"value": number or null, "confidence": 0.0-1.0},
+  "tax_amount":   {"value": number or null, "confidence": 0.0-1.0},
+  "total_amount": {"value": number or null, "confidence": 0.0-1.0},
+  "currency":     {"value": "CAD", "confidence": 0.0-1.0}
+}
+
+- "vendor_name": the merchant name printed at the top of the slip — the store
+  or company that issued it, as printed (e.g. "PRINCESS AUTO #12"). Do NOT
+  translate, expand or tidy it. If no merchant name is legible, return null —
+  this is normal and not an error; a person can fill it in afterwards.
+- "slip_ref": the transaction or receipt reference printed on the slip. If the
+  slip prints it as several separate fields (for example a till number and a
+  transaction number in adjacent columns), join them with a hyphen in the order
+  they appear. If no such reference is printed, return null — this is normal and
+  not an error.
+- "amount" is the PRE-TAX subtotal; "total_amount" is the amount actually
+  charged, tax included."""
 
 
 def _reconcile_line_amounts(
@@ -333,4 +361,128 @@ async def extract_receipt(file_bytes: bytes, mime_type: str) -> dict:
         "total_amount": parsed.get("total_amount", {}).get("value"),
         "tax_amount": parsed.get("tax_amount", {}).get("value"),
         "currency": parsed.get("currency", {}).get("value", "CAD"),
+    }
+
+
+def _slip_field(parsed: dict, key: str, default=None):
+    """Unwrap one ``{"value": ..., "confidence": ...}`` pair from a slip response.
+
+    Review round 1 (Minor 2): the direct form, ``parsed.get(k, {}).get("value")``,
+    survives a MISSING key but not a key whose value is JSON ``null`` — the
+    default never fires, ``.get`` lands on ``None``, and the AttributeError
+    takes down the whole extraction with a 500. `_SLIP_PROMPT` explicitly
+    invites nulls ("return null — this is normal and not an error"), so a model
+    that answers ``{"vendor_name": null}`` instead of
+    ``{"vendor_name": {"value": null}}`` is a well-behaved model, and it must
+    not cost the recorder their OCR.
+
+    Behaviour is otherwise byte-identical to what it replaces: a missing key
+    yields ``default``, a present pair yields its ``value`` (``default`` when
+    the pair itself omits one), and an explicit ``"value": null`` still yields
+    ``None`` — including for ``currency``, whose "CAD" default has always
+    applied to the key/field being absent, not to a null value.
+
+    Scoped to extract_slip on purpose. extract_invoice/extract_receipt read
+    their fields the same fragile way, but they serve OA expense claims and
+    invoice OCR in production and are out of this task's blast radius.
+    """
+    field = parsed.get(key)
+    if not isinstance(field, dict):
+        return default
+    return field.get("value", default)
+
+
+async def extract_slip(file_bytes: bytes, mime_type: str) -> dict:
+    """Pickup-slip OCR for house_account agreement purchases.
+
+    A missing ``slip_ref`` is normal (baseline matching keys off date + amount,
+    not the reference), so it is returned as ``None`` rather than treated as
+    an extraction failure.
+    """
+    if not settings.anthropic_api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY is not configured")
+
+    import anthropic
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
+    media_type = _mime_to_media_type(mime_type)
+
+    # PDF slips must be sent as a document block; images as an image block.
+    if media_type == "application/pdf":
+        content_block = {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": b64},
+        }
+    else:
+        content_block = {
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": b64},
+        }
+
+    try:
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            messages=[{"role": "user", "content": [content_block, {"type": "text", "text": _SLIP_PROMPT}]}],
+        )
+    except anthropic.BadRequestError as exc:
+        # Unreadable / unsupported file (e.g. HEIC, corrupt) — degrade to manual entry
+        # (caller maps ValueError → HTTP 422) rather than a service-outage 503.
+        log.warning("Slip OCR could not process the file: %s", exc)
+        raise ValueError("Could not read this document. Please enter the details manually.")
+    except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
+        raise RuntimeError(f"OCR service error: {exc}")
+
+    raw_text = response.content[0].text.strip()
+    if raw_text.startswith("```"):
+        raw_text = raw_text.split("```")[1]
+        if raw_text.startswith("json"):
+            raw_text = raw_text[4:]
+
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError:
+        raise ValueError("OCR returned invalid JSON")
+
+    amount = _slip_field(parsed, "amount")
+    tax_amount = _slip_field(parsed, "tax_amount")
+    total_amount = _slip_field(parsed, "total_amount")
+
+    # Whole-branch review (small item A): counter slips very often print only a
+    # subtotal and a total, no separate tax line — and the prompt explicitly
+    # allows null for every field. The EPMS slip form requires all three
+    # amounts and told the user "Amount, tax and total are all required"
+    # without hinting that 0, or total − amount, is what belongs there. Derive
+    # it: the row's own invariant is amount + tax == total, so with two of the
+    # three known the third is not a guess.
+    #
+    # Integer cents, not float subtraction: the backend validates
+    # amount + tax_amount == total_amount as exact Decimal equality against a
+    # Numeric(15,2) column, and 113.0 - 100.0 in binary float is
+    # 13.000000000000014 — which serialises into the form, fails that equality
+    # and 422s. (Same reasoning as centsEqual in SlipEntryForm.tsx.)
+    if tax_amount is None and amount is not None and total_amount is not None:
+        try:
+            derived_cents = round(float(total_amount) * 100) - round(float(amount) * 100)
+        except (TypeError, ValueError):
+            derived_cents = None
+        # A negative difference means OCR misread one of the two figures;
+        # leave tax null rather than prefilling a value that cannot be right.
+        if derived_cents is not None and derived_cents >= 0:
+            tax_amount = derived_cents / 100
+
+    return {
+        # The merchant printed on the slip — NOT the agreement's vendor. epms
+        # stores it and flags the two disagreeing (a slip from shop A recorded
+        # against shop B's house account is the classic house-account
+        # mis-posting), so a null here must stay null rather than being
+        # back-filled with a guess.
+        "vendor_name": _slip_field(parsed, "vendor_name"),
+        "slip_ref": _slip_field(parsed, "slip_ref"),
+        "date": _slip_field(parsed, "date"),
+        "amount": amount,
+        "tax_amount": tax_amount,
+        "total_amount": total_amount,
+        "currency": _slip_field(parsed, "currency", "CAD"),
     }

@@ -254,6 +254,108 @@ async def test_get_invoice_returns_allocations(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_list_invoice_returns_allocation_display_fields(admin_client):
+    """Regression: the PA Detail page's by-line variance table reads
+    `po_number`/`po_line_description` off allocations returned by the invoice
+    LIST endpoint (GET /invoices), not the detail endpoint. Those fields are
+    display-only, resolved at read time (crud/invoice.py::
+    attach_allocation_display_fields) — `get_by_id` enriched them but
+    `get_all` did not, so the list response carried allocations with
+    po_number=None and the frontend fell back to showing a truncated raw PO
+    id (`row.poId.slice(0, 8)`) instead of the PO number."""
+    await _ensure_company_config()
+    v = await _make_vendor(admin_client, "VND-ALLOC-LIST-01")
+    po = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "L", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+    line = po["line_items"][0]["id"]
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="1000.00", tax_amount="0.00",
+        line_items=[{"description": "x", "quantity": "1",
+                     "unit_price": "1000.00", "line_total": "1000.00"}]))).json()
+    inv_line = inv["line_items"][0]["id"]
+    await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv_line, "po_id": po["id"], "po_line_id": line,
+         "allocated_amount": "1000.00", "allocated_tax": "0.00"},
+    ]})
+
+    r = await admin_client.get(INV_URL, params={"vendor_id": v["id"]})
+    assert r.status_code == 200, r.text
+    [item] = [it for it in r.json()["items"] if it["id"] == inv["id"]]
+    allocs = item["allocations"]
+    assert len(allocs) == 1
+    assert allocs[0]["po_id"] == po["id"]
+    assert allocs[0]["po_number"] == po["number"], (
+        "list endpoint must resolve po_number, same as detail — this is the "
+        "exact field the PA by-line variance table falls back to a truncated "
+        "UUID for when it comes back null")
+    assert allocs[0]["po_line_description"]
+
+
+@pytest.mark.asyncio
+async def test_allocation_display_fields_batch_load_is_single_query_per_table(
+    admin_client, test_engine,
+):
+    """N+1 guard, mirroring test_invoice_claimed_receipts.py's pattern:
+    serialise a page of 3 matched invoices (each with its own PO) and count
+    SELECTs against purchase_orders / po_line_items issued while resolving
+    allocation display fields for the whole page. Must be exactly 1 each —
+    one query per invoice would reintroduce the N+1
+    attach_allocation_display_fields exists to avoid on this hot path."""
+    from sqlalchemy import event
+
+    v = await _make_vendor(admin_client, "VND-ALLOC-N1-01")
+    invoice_ids = []
+    for i in range(3):
+        po = await _make_issued_po(admin_client, v["id"],
+            lines=[{"description": f"L{i}", "qty": "1", "unit": "EA", "unit_price": "1000.00"}])
+        line = po["line_items"][0]["id"]
+        inv = (await admin_client.post(INV_URL, json=_inv_payload(
+            v["id"], vendor_invoice_number=f"INV-N1-{i}", amount="1000.00", tax_amount="0.00",
+            line_items=[{"description": "x", "quantity": "1",
+                         "unit_price": "1000.00", "line_total": "1000.00"}]))).json()
+        inv_line = inv["line_items"][0]["id"]
+        r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+            {"invoice_line_id": inv_line, "po_id": po["id"], "po_line_id": line,
+             "allocated_amount": "1000.00", "allocated_tax": "0.00"},
+        ]})
+        assert r.status_code == 200, r.text
+        invoice_ids.append(inv["id"])
+
+    statements: list[str] = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    event.listen(test_engine.sync_engine, "before_cursor_execute", _capture)
+    try:
+        res = await admin_client.get(INV_URL, params={"vendor_id": v["id"], "page_size": 200})
+    finally:
+        event.remove(test_engine.sync_engine, "before_cursor_execute", _capture)
+
+    assert res.status_code == 200, res.text
+    items = [it for it in res.json()["items"] if it["id"] in invoice_ids]
+    assert len(items) == 3
+    assert all(it["allocations"][0]["po_number"] for it in items)
+
+    po_queries = [
+        s for s in statements
+        if "purchase_orders" in s and s.strip().upper().startswith("SELECT")
+    ]
+    line_queries = [
+        s for s in statements
+        if "po_line_items" in s and s.strip().upper().startswith("SELECT")
+    ]
+    assert len(po_queries) == 1, (
+        f"expected exactly 1 SELECT against purchase_orders for the whole "
+        f"page, got {len(po_queries)}:\n" + "\n---\n".join(po_queries)
+    )
+    assert len(line_queries) == 1, (
+        f"expected exactly 1 SELECT against po_line_items for the whole "
+        f"page, got {len(line_queries)}:\n" + "\n---\n".join(line_queries)
+    )
+
+
+@pytest.mark.asyncio
 async def test_visibility_via_allocation_po(admin_client):
     """Filtering invoices by a NON-primary allocated PO still finds the invoice."""
     await _ensure_company_config()

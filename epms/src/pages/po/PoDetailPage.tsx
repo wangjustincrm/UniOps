@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CheckCircle2, XCircle, RotateCcw, Pencil, ChevronDown,
   MessageSquare, X, Send, ExternalLink, FileText, Mail, ShoppingCart, Warehouse, Globe, Loader2,
+  CreditCard,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -10,7 +11,6 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
-import { OA_BASE_URL } from '@/lib/api'
 import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
@@ -18,8 +18,10 @@ import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { downloadPdf } from '@/lib/pdf-utils'
-import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
+import { usePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
+import { useInvoices } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import type { ApiEvent } from '@/services/pr'
@@ -397,9 +399,15 @@ interface ApprovalModalProps {
   poNumber: string
   onConfirm: (comment: string) => void
   onClose: () => void
+  // The modal stays mounted until the action resolves, so without this the
+  // confirm button is live for the whole request. A second click re-posts the
+  // same action: usually a 409 the user reads as a failure, but for 'approve'
+  // it can silently consume the NEXT step's task when the same person approves
+  // two consecutive steps — two levels passed on one intended click.
+  isPending: boolean
 }
 
-function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalProps) {
+function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
@@ -469,7 +477,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalPr
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
-              disabled={!canSubmit}
+              disabled={!canSubmit || isPending}
               onClick={() => onConfirm(comment)}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
@@ -477,7 +485,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalPr
               )}
             >
               {config.icon}
-              {config.label}
+              {isPending ? 'Working…' : config.label}
             </button>
           </div>
         </div>
@@ -497,8 +505,13 @@ export default function PoDetailPage() {
   const { data: po, isLoading } = usePo(id ?? '')
   const { data: events } = usePoEvents(id ?? '')
   const { data: poAttachments = [] } = usePoAttachments(id ?? '')
+  const uploadAttachment = useUploadPoAttachment(id ?? '')
+  const deleteAttachment = useDeletePoAttachment(id ?? '')
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
+  // Drives the Create PA gate below — see the comment there for why the PO's
+  // own has_unpaid_invoice flag cannot be used on this page.
+  const { data: poInvoices } = useInvoices({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
   const { user } = useAuthStore()
@@ -538,6 +551,7 @@ export default function PoDetailPage() {
   // grants system_admin every task. Showing the Approve button only when the current
   // user holds an active approve_po task for THIS PO keeps the button consistent with
   // the inbox and follows whatever workflow is configured in the engine.
+  const paPerms = useRolePermissions().data?.permissions
   const { data: myTasks } = useTasks({ is_completed: false })
   const hasApproveTask = !!po && !!(myTasks?.items ?? []).some(
     (t) => t.document_id === po.id && t.type === 'approve_po'
@@ -561,12 +575,26 @@ export default function PoDetailPage() {
     po.status === 'issued' &&
     (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
   const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
-  // PA creation: available to AP Clerk, Finance roles, and System Admin when PO is in a payable state
+  // PA creation is permission-driven, exactly like the PA list's Create button
+  // (PaListPage): the Access Control matrix decides, not a hard-coded role list.
+  // A hard-coded list also read only the JWT's primary role, so an ADDITIONAL
+  // role granted through user_roles (e.g. a Procurement Officer allowed to raise
+  // PAs on someone's behalf) never saw the button even with the matrix ticked.
+  // ...and on the PO actually having something to pay. The status alone is not
+  // that: an 'issued' PO with no invoice yet offers nothing a PA could be raised
+  // against, and PaCreatePage's own PO picker rejects it
+  // (`is_prepaid || has_unpaid_invoice`, PaCreatePage.tsx) — so the button was
+  // an invitation to a dead end. Mirror that same rule here so the entry point
+  // and the page it opens agree. `po.has_unpaid_invoice` cannot be used: only
+  // GET /po computes it, GET /po/{id} leaves the schema default false — hence
+  // the invoice fetch above, which uses the same header-OR-allocation rule the
+  // backend flag does (crud/invoice.py get_all).
+  const hasUnpaidInvoice = (poInvoices?.items ?? []).some((inv) => inv.status !== 'paid')
   const canCreatePa =
-    OA_BASE_URL &&
     po &&
     ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
-    ['ap_clerk', 'finance_manager', 'finance_bp', 'system_admin'].includes(user?.role ?? '')
+    (po.is_prepaid || hasUnpaidInvoice) &&
+    (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   const isServicePo = po?.type === 4
   // Physical PO: warehouse/procurement roles, PO must be issued or partially received
   // Service PO: the *requester of the linked PR* (not the PO creator, not a generic
@@ -671,6 +699,7 @@ export default function PoDetailPage() {
                 variant="secondary"
                 size="sm"
                 onClick={() => poAction.mutate({ action: 'cancel' })}
+                disabled={poAction.isPending}
               >
                 Withdraw
               </Button>
@@ -694,13 +723,13 @@ export default function PoDetailPage() {
               </button>
             )}
             {canCreatePa && (
-              <a
-                href={`${OA_BASE_URL}/pa/new?po_id=${po.id}&po_number=${encodeURIComponent(po.number)}&source=epms`}
+              <button
+                onClick={() => navigate(`/pa/new?poId=${po.id}`)}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary-600 px-3 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                <CreditCard className="h-3.5 w-3.5" />
                 Create PA
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -961,35 +990,22 @@ export default function PoDetailPage() {
                   </button>
                 )}
               </div>
-              {poAttachments.length > 0 ? (
-                <ul className="flex flex-col gap-2">
-                  {poAttachments.map((att) => (
-                    <li key={att.id}>
-                      <button
-                        type="button"
-                        onClick={() => downloadPoAttachment(att.id, att.filename)}
-                        className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-left text-sm transition-colors hover:border-primary-300 hover:bg-primary-50 group cursor-pointer"
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 group-hover:bg-primary-200 shrink-0">
-                          <FileText className="h-4 w-4 text-primary-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-neutral-900 truncate">{att.filename}</p>
-                          <p className="text-xs text-neutral-400">{(att.file_size / 1024).toFixed(1)} KB</p>
-                        </div>
-                        <span className="text-xs text-primary-600 font-medium shrink-0">Download</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <FileText className="h-8 w-8 text-neutral-300 mb-2" />
+              <AttachmentsEditor
+                inputId="po-detail-file-upload"
+                attachments={poAttachments}
+                isUploading={uploadAttachment.isPending}
+                isDeleting={deleteAttachment.isPending}
+                onUpload={(file) => uploadAttachment.mutateAsync(file)}
+                onDelete={(attId) => deleteAttachment.mutate(attId)}
+                onDownload={(att) => downloadPoAttachment(att.id, att.filename)}
+              />
+              {poAttachments.length === 0 && (
+                <div className="mt-3 flex flex-col items-center justify-center text-center">
                   <p className="text-sm text-neutral-400">
                     {po.status === 'approved' ? 'PDF is being generated…' : 'No attachments yet'}
                   </p>
                   {po.status !== 'approved' && (
-                    <button onClick={handleDownloadPdf} className="mt-3 text-xs text-primary-600 hover:underline">
+                    <button onClick={handleDownloadPdf} className="mt-1 text-xs text-primary-600 hover:underline">
                       Generate preview PDF
                     </button>
                   )}
@@ -1102,6 +1118,7 @@ export default function PoDetailPage() {
           poNumber={po.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
           onClose={() => setPendingAction(null)}
+          isPending={poAction.isPending}
         />
       )}
 

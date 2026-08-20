@@ -6,6 +6,7 @@ writer.upsert idempotency + consumed-doc guard, and service single-flight /
 end-to-end / full-reload orchestration.
 """
 import uuid
+from datetime import date
 from decimal import Decimal
 
 import psycopg2
@@ -45,7 +46,12 @@ def _mini_payload(seeded_vendor):
             "nc_source_pk": "OL1", "po_nc_pk": "O1", "material_id": "MAT-1",
             "description": "Widget", "qty": Decimal("10"), "unit": "EA",
             "unit_price": Decimal("10.00"), "line_total": Decimal("100.00"),
-            "received_qty": Decimal("10"), "sort_order": 1,
+            "received_qty": Decimal("10"),
+            # Always present on a transformed line -- the writer indexes it
+            # strictly on purpose, so a transform that ever stopped setting it
+            # fails loudly instead of writing NULL on every row.
+            "planned_arrival_date": date(2026, 5, 5),
+            "sort_order": 1,
         }],
         "grs": [{
             "nc_source_pk": "A1:O1", "po_nc_pk": "O1", "number": "GR-NC-A1",
@@ -145,6 +151,40 @@ def test_upsert_is_idempotent(pg_cur, seeded_vendor, system_user_id):
     pg_cur.execute("select count(*) from gr_line_items l join goods_receipts g "
                    "on g.id=l.gr_id where g.nc_source_pk='A1:O1'")
     assert pg_cur.fetchone()[0] == 1
+
+
+def test_planned_arrival_date_lands_on_insert_and_is_refreshed_on_update(
+    pg_cur, seeded_vendor, system_user_id,
+):
+    """The whole point of the column is the lines that ALREADY exist: every open
+    raw-material PO line was synced before this column did, so an insert-only
+    write would leave all 87 of them null forever. The second upsert here takes
+    the UPDATE branch, with a different date, and must move the stored value.
+    """
+    from app.services.nc_purchase_sync import writer
+
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+    pg_cur.execute("select planned_arrival_date from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone()[0] == date(2026, 5, 5), "insert path did not carry the date"
+
+    moved = _mini_payload(seeded_vendor)
+    moved["order_lines"][0]["planned_arrival_date"] = date(2026, 9, 30)
+    writer.upsert(pg_cur, moved, system_user_id)
+    pg_cur.execute("select planned_arrival_date from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone()[0] == date(2026, 9, 30), "update path did not refresh the date"
+
+
+def test_planned_arrival_date_of_none_is_stored_as_null(pg_cur, seeded_vendor, system_user_id):
+    """A UniOps-native line, or an NC line the ERP left blank, must store NULL
+    rather than anything that reads as a real arrival date."""
+    from app.services.nc_purchase_sync import writer
+
+    payload = _mini_payload(seeded_vendor)
+    payload["order_lines"][0]["planned_arrival_date"] = None
+    writer.upsert(pg_cur, payload, system_user_id)
+    pg_cur.execute("select planned_arrival_date from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone()[0] is None
 
 
 def test_gr_line_resolves_po_line_id(pg_cur, seeded_vendor, system_user_id):

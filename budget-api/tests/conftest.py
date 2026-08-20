@@ -36,6 +36,18 @@ ASYNC_URL = f"postgresql+asyncpg://{TEST_USER}:{TEST_PASSWORD}@{TEST_HOST}:{TEST
 SYNC_URL = f"postgresql+psycopg2://{TEST_USER}:{TEST_PASSWORD}@{TEST_HOST}:{TEST_PORT}/{TEST_DB}"
 
 
+_BUILTIN_ROLES = (
+    "requester", "dept_admin", "dept_manager", "supervisor", "director",
+    "gm", "opm", "procurement_officer", "procurement_manager",
+    "warehouse_staff", "ap_clerk", "finance_bp", "finance_manager",
+    "vendor_manager", "cfo", "auditor", "erp_pa_officer", "system_admin",
+)
+_BUDGET_VIEW_ALL_ROLES = frozenset({
+    "gm", "finance_manager", "ap_clerk", "system_admin",
+    "finance_bp", "auditor", "cfo",
+})
+
+
 def _create_scope_stub_tables(engine):
     """Minimal stand-ins for identity/epms-owned tables budget_scope.py reads.
 
@@ -71,13 +83,61 @@ def _create_scope_stub_tables(engine):
         ))
         # Test scaffolding for scope tests: approval-api owns this table in the
         # real shared DB; budget-api's own alembic chain never creates it. Only
-        # the two columns budget_scope.py reads are included.
+        # the columns budget_scope.py reads are included — director_user_id
+        # (which departments a user DIRECTS) and gm_or_opm (whether a
+        # department's GM/OPM approval step, and therefore the department
+        # itself, belongs to the GM or to the OPM).
         conn.execute(sa.text(
             "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
             " dept_id uuid PRIMARY KEY,"
-            " director_user_id uuid"
+            " director_user_id uuid,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm'"
             ")"
         ))
+        # identity-owned authz matrix. budget_scope.py admits callers through
+        # the shared uniops_authz package (user_role_codes / has_permission),
+        # which reads these three tables directly via raw SQL — same physical
+        # DB in production, no ORM model on this side.
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS role_defs ("
+            " code varchar(50) PRIMARY KEY,"
+            " label varchar(100) NOT NULL,"
+            " sort integer NOT NULL DEFAULT 0,"
+            " is_active boolean NOT NULL DEFAULT true"
+            ")"
+        ))
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS role_permissions ("
+            " role_code varchar(50) NOT NULL,"
+            " permission_key varchar(64) NOT NULL,"
+            " PRIMARY KEY (role_code, permission_key)"
+            ")"
+        ))
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS role_permission_locks ("
+            " role_code varchar(50) NOT NULL,"
+            " permission_key varchar(64) NOT NULL,"
+            " PRIMARY KEY (role_code, permission_key)"
+            ")"
+        ))
+        # user_role_codes() only counts an ADDITIONAL role that has an active
+        # role_defs row, so every role a test assigns via user_roles needs one.
+        for i, code in enumerate(_BUILTIN_ROLES):
+            conn.execute(sa.text(
+                "INSERT INTO role_defs (code, label, sort, is_active) "
+                "VALUES (:c, :c, :s, true) ON CONFLICT (code) DO NOTHING"),
+                {"c": code, "s": i})
+        # The production default grants, mirroring identity migration
+        # 0010_budget_view_scope_perms (that migration is the source of truth —
+        # keep in sync if it changes). Seeded here so every test sees the shape
+        # a real deployment has; tests that are about revocation revoke
+        # explicitly instead of relying on an empty matrix.
+        for code in _BUILTIN_ROLES:
+            key = ("finance.budget.view_all" if code in _BUDGET_VIEW_ALL_ROLES
+                   else "finance.budget.view_dept")
+            conn.execute(sa.text(
+                "INSERT INTO role_permissions (role_code, permission_key) "
+                "VALUES (:r, :k) ON CONFLICT DO NOTHING"), {"r": code, "k": key})
         conn.commit()
 
 

@@ -45,7 +45,7 @@ async def _grant_edit_imported(db):
     0006_po_edit_imported migration does in production."""
     await db.execute(text(
         "INSERT INTO permission_defs(key,module,label,sort) "
-        f"VALUES ('{_KEY}','epms','Edit Imported (NC) POs',104) ON CONFLICT (key) DO NOTHING"))
+        f"VALUES ('{_KEY}','epms','Edit Imported (NC) POs',107) ON CONFLICT (key) DO NOTHING"))
     await db.execute(text(
         "INSERT INTO role_permissions(role_code,permission_key) "
         f"VALUES ('erp_pa_officer','{_KEY}') ON CONFLICT DO NOTHING"))

@@ -1,18 +1,20 @@
 """Approval Engine — unified workflow execution for all UniOps modules.
 
-Supports action keys: pr, po, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<code>, vms_visit
+Supports action keys: pr, po, agr, pa, pa_dir, exp, mil, trv, tra, cfm, cfm_<code>, vms_visit
 Each action key binds to a configurable workflow stored in CompanyConfig.workflow_defs.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.delegation import active_delegator_ids
 from app.crud.workflow import (get_dept_director_mapping, get_dept_gm_opm_mapping,
                                 get_dept_supervisor_enabled, get_role_management,
                                 post_holder_ids)
+from app.models.agreement import PurchaseAgreement
 from app.models.budget_plan import BudgetPlan
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
@@ -81,6 +83,22 @@ _DOC_META: dict[str, dict] = {
         "vendor_attr":  "vendor_name",
         "task_approve": "approve_po",
         "task_revise":  "revise_po",
+        "valid_submit":  ("draft", "returned"),
+        "valid_approve": ("submitted", "in_review"),
+        "valid_return":  ("submitted", "in_review"),
+        "valid_cancel":  ("draft", "returned", "submitted"),
+    },
+    # ── EPMS purchase agreements ──────────────────────────────────────────────
+    # Terminal approve flips status to "active" (not "approved") — an agreement
+    # is an authorisation window, and "active" is what the invoice match
+    # candidate pool filters on. Handled by _post_approve_agr below.
+    "agr": {
+        "model":        PurchaseAgreement,
+        "number_attr":  "number",
+        "amount_attr":  "not_to_exceed",
+        "vendor_attr":  "vendor_name",
+        "task_approve": "approve_agr",
+        "task_revise":  "revise_agr",
         "valid_submit":  ("draft", "returned"),
         "valid_approve": ("submitted", "in_review"),
         "valid_return":  ("submitted", "in_review"),
@@ -216,6 +234,11 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
         {"id": "proc_mgr",  "role": "procurement_manager", "label": "Procurement Manager"},
         {"id": "gm_or_opm", "role": "gm_or_opm",           "label": "GM / OPM"},
     ],
+    "agr": [
+        {"id": "dept_manager",        "role": "dept_manager",        "label": "Department Manager"},
+        {"id": "procurement_manager", "role": "procurement_manager", "label": "Procurement Manager"},
+        {"id": "finance_manager",     "role": "finance_manager",     "label": "Finance Manager"},
+    ],
     "pa": [
         {"id": "dept_manager", "role": "dept_manager",   "label": "Department Manager"},
         {"id": "director",     "role": "director",       "label": "Director"},
@@ -303,11 +326,10 @@ def _build_role_map(rm: dict, dept_gm_opm: dict, department_id: uuid.UUID | None
 
 # ── Authorization check ───────────────────────────────────────────────────────
 
-async def _actor_can_approve(
+async def _actor_is_step_holder(
     db: AsyncSession,
     step_role: str,
     actor_id: uuid.UUID,
-    actor_role: str,
     routing_dept_id: uuid.UUID | None,
     rm: dict,
     dept_gm_opm: dict,
@@ -316,19 +338,24 @@ async def _actor_can_approve(
     director_uid: uuid.UUID | None = None,
     supervisor_uid: uuid.UUID | None = None,
 ) -> bool:
-    """Return True if the actor is authorized to approve the current workflow step.
+    """Is this actor, in their OWN right, a holder of `step_role` for this document?
 
-    `doc` is optional for back-compat (callers pre-S2 don't pass it). The
-    VMS Quality Manager step needs it to read `doc.quality_approver_id`
-    (per-visit assignment is VMS-local — no `role_management` mapping for
-    quality_manager). See S2_ARCHITECTURE_REVIEW.md F2.
+    Identity only — deliberately WITHOUT the `system_admin` bypass that
+    `_actor_can_approve` layers on top. Two callers depend on that omission:
 
-    `routing_dept_id` is the department that drives dept_manager/gm_or_opm
-    routing for this document — the PR's selected department_id, falling back
-    to the routing user's own department (see `_routing_department_id`).
+      * `_actor_can_approve` adds the bypass itself, so approving as an admin
+        still works;
+      * the same-approver auto-skip walk in `execute_action` must NOT treat an
+        admin as the holder of every remaining step — that would auto-approve
+        a whole workflow off a single admin click.
+
+    This is the single authority on "does X hold step Y". It replaced a second,
+    weaker copy (the `_holds` closure in `execute_action`) that compared against
+    the COLLAPSED first post holder `rm['<role>_user_id']` and therefore missed
+    multi-holder posts: a Department Manager who also held GM as an additional
+    role was not recognised at gm_or_opm whenever the real GM sorted first, so
+    the skip never fired and they had to approve the same document twice.
     """
-    if actor_role == "system_admin":
-        return True
     if step_role == "quality_manager":
         if doc is None:
             return False
@@ -341,8 +368,8 @@ async def _actor_can_approve(
         return dept_mgr_id is not None and actor_id == dept_mgr_id
     if step_role == "gm_or_opm":
         # Resolve which post (gm/opm) this department routes to — same logic as
-        # task assignment — then authorize ANY active holder of that post, not
-        # just the single collapsed rm['<role>_user_id'] (= _post_holders()[0]).
+        # task assignment — then match ANY active holder of that post, not just
+        # the single collapsed rm['<role>_user_id'] (= _post_holders()[0]).
         # A post can legitimately have >1 holder (e.g. a Department Manager who
         # ALSO holds GM via an additional user_roles role); the broadcast approve
         # task is visible to all of them, so all of them must be able to act.
@@ -358,13 +385,98 @@ async def _actor_can_approve(
     if step_role == "supervisor":
         return supervisor_uid is not None and actor_id == supervisor_uid
     # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager
-    # as a direct step): authorize any active holder of that post — membership,
-    # not equality to the single collapsed rm['<role>_user_id'].
-    post_holders = await post_holder_ids(db, step_role)
-    if post_holders:
-        return actor_id in post_holders
-    # Fallback: actor's own JWT role must match the step role (for broadcast steps)
-    return actor_role == step_role
+    # as a direct step): membership in the holder set, not equality to the
+    # single collapsed rm['<role>_user_id'].
+    return actor_id in await post_holder_ids(db, step_role)
+
+
+async def _actor_can_approve(
+    db: AsyncSession,
+    step_role: str,
+    actor_id: uuid.UUID,
+    actor_role: str,
+    routing_dept_id: uuid.UUID | None,
+    rm: dict,
+    dept_gm_opm: dict,
+    finance_bp_ids: set[uuid.UUID],
+    doc: Any | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+    today: date | None = None,
+) -> bool:
+    """Return True if the actor is authorized to approve the current workflow step.
+
+    `doc` is optional for back-compat (callers pre-S2 don't pass it). The
+    VMS Quality Manager step needs it to read `doc.quality_approver_id`
+    (per-visit assignment is VMS-local — no `role_management` mapping for
+    quality_manager). See S2_ARCHITECTURE_REVIEW.md F2.
+
+    `routing_dept_id` is the department that drives dept_manager/gm_or_opm
+    routing for this document — the PR's selected department_id, falling back
+    to the routing user's own department (see `_routing_department_id`).
+
+    `today` drives dated delegation (代班) below — a bind parameter, never SQL
+    CURRENT_DATE, and defaults to None which `active_delegator_ids` resolves
+    to the plant-local date via `local_today()`.
+    """
+    if actor_role == "system_admin":
+        return True
+    if await _actor_is_step_holder(
+        db, step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+        finance_bp_ids, doc, director_uid, supervisor_uid,
+    ):
+        return True
+    # Delegation: act for anyone who has named this actor their stand-in today.
+    # Deliberately placed AFTER the own-identity check and BELOW the
+    # system_admin bypass — _actor_is_step_holder has no bypass, so an admin's
+    # delegate inherits nothing.
+    for delegator_id in await active_delegator_ids(db, actor_id, today=today):
+        if await _actor_is_step_holder(
+            db, step_role, delegator_id, routing_dept_id, rm, dept_gm_opm,
+            finance_bp_ids, doc, director_uid, supervisor_uid,
+        ):
+            return True
+    # Fallback: actor's own JWT role must match the step role. Only reachable
+    # for a step whose post has NO holders at all — with holders configured,
+    # membership above is the authority and a non-holder must stay denied.
+    if step_role in ("quality_manager", "finance_bp", "dept_manager",
+                     "gm_or_opm", "director", "supervisor"):
+        return False
+    return actor_role == step_role and not await post_holder_ids(db, step_role)
+
+
+async def _acting_on_behalf_of(
+    db: AsyncSession,
+    step_role: str,
+    actor_id: uuid.UUID,
+    routing_dept_id: uuid.UUID | None,
+    rm: dict,
+    dept_gm_opm: dict,
+    finance_bp_ids: set[uuid.UUID],
+    doc: Any | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+    today: date | None = None,
+) -> uuid.UUID | None:
+    """The delegator whose identity the actor borrowed, or None when the actor
+    holds this step in their own right.
+
+    A delegate may cover several people at once, so more than one delegator can
+    satisfy the step. Sorting makes the annotation deterministic rather than
+    dependent on row order.
+    """
+    if await _actor_is_step_holder(
+        db, step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+        finance_bp_ids, doc, director_uid, supervisor_uid,
+    ):
+        return None
+    for delegator_id in sorted(await active_delegator_ids(db, actor_id, today=today)):
+        if await _actor_is_step_holder(
+            db, step_role, delegator_id, routing_dept_id, rm, dept_gm_opm,
+            finance_bp_ids, doc, director_uid, supervisor_uid,
+        ):
+            return delegator_id
+    return None
 
 
 # ── Task helpers ──────────────────────────────────────────────────────────────
@@ -476,6 +588,16 @@ async def _routing_department_id(
     """Department that drives dept-based approval routing (dept_manager /
     gm_or_opm / director). Prefer the department explicitly selected on the
     originating PR; fall back to the routing user's own department (legacy)."""
+    # 协议自带 department_id(建档时选定),没有 PR 可追溯 —— 直接用它。
+    # 必须与可见性口径一致:epms-api 的 PA 列表按 PurchaseAgreement.department_id
+    # 收窄(crud/pa.py)。若这里改用提交人部门,受限审批人会收到任务却在列表里
+    # 找不到单据;而且提交人无部门时(常见:采购/系统账号)整条链直接 409 卡死,
+    # 尽管协议自己的部门明明有在职经理。
+    if doc_type == "agr":
+        dept = getattr(doc, "department_id", None)
+        if dept:
+            return dept
+
     pr_id = None
     if doc_type == "pr":
         pr_id = doc.id
@@ -680,15 +802,28 @@ async def _post_approve_po(db: AsyncSession, po: PurchaseOrder) -> None:
         ))
 
 
+async def _post_approve_agr(db: AsyncSession, agr: PurchaseAgreement) -> None:
+    """Final approval activates the agreement rather than marking it 'approved'.
+
+    The invoice match candidate pool filters on status == "active" (plus the
+    grace window), so leaving it at "approved" would approve an agreement that
+    no invoice could ever be matched to.
+    """
+    agr.status = "active"
+
+
 async def _post_approve_pa(db: AsyncSession, pa: PaymentApplication) -> None:
-    """PA-PO: notify AP Clerk. Invoices are marked paid only on the process action."""
+    """PA-PO: notify Payment Officer. Invoices are marked paid only on the process action."""
     db.add(Task(
         type="process_pa",
         priority="normal",
         document_type="pa",
         document_id=pa.id,
         document_number=pa.pa_number,
-        assigned_role="ap_clerk",
+        # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13)。权限侧的隔离在
+        # finance-api 的 _PAY_ROLES;这里只负责把任务派给对的人 —— 别再改回
+        # ap_clerk。
+        assigned_role="payment_officer",
         title=f"Process Payment: {pa.pa_number} — {pa.title}",
         description=f"PA {pa.pa_number} has been fully approved. Please process the payment.",
         amount=pa.payment_amount,
@@ -697,14 +832,17 @@ async def _post_approve_pa(db: AsyncSession, pa: PaymentApplication) -> None:
 
 
 async def _post_approve_pa_dir(db: AsyncSession, pa: PaymentApplication) -> None:
-    """PA-DIR: notify AP Clerk only — invoices are in expense_invoices (OA-owned), not EPMS."""
+    """PA-DIR: notify Payment Officer only — invoices are in expense_invoices (OA-owned), not EPMS."""
     db.add(Task(
         type="process_pa",
         priority="normal",
         document_type="pa_dir",
         document_id=pa.id,
         document_number=pa.pa_number,
-        assigned_role="ap_clerk",
+        # 付款执行已从 AP Clerk 拆出为专职附加角色(2026-08-13)。权限侧的隔离在
+        # finance-api 的 _PAY_ROLES;这里只负责把任务派给对的人 —— 别再改回
+        # ap_clerk。
+        assigned_role="payment_officer",
         title=f"Process Direct Payment: {pa.pa_number} — {pa.title}",
         description=f"Direct PA {pa.pa_number} has been fully approved. Please process the payment.",
         amount=pa.payment_amount,
@@ -779,6 +917,7 @@ async def _post_approve_vms_visit(db: AsyncSession, visit: VmsVisit) -> None:
 _POST_APPROVE: dict[str, Any] = {
     "pr":     _post_approve_pr,
     "po":     _post_approve_po,
+    "agr":    _post_approve_agr,
     "pa":     _post_approve_pa,
     "pa_dir": _post_approve_pa_dir,
     "exp":    _post_approve_exp,
@@ -819,6 +958,7 @@ async def execute_action(
     actor_id: uuid.UUID,
     actor_role: str,
     comment: str | None = None,
+    today: date | None = None,
 ) -> ActionResult:
     meta = _resolve_meta(doc_type)
     Model = meta["model"]
@@ -864,6 +1004,12 @@ async def execute_action(
     doc_number = getattr(doc, meta["number_attr"])
     recorded_role = actor_role
     auto_skipped: list[int] = []
+    # Hoisted above the action branch so both approve and reject's authorization
+    # checks AND the on-behalf-of annotation below can share one computation —
+    # neither depends on which action is being taken, only on where the document
+    # currently sits in its workflow.
+    current_step_role = workflow[step]["role"] if step < len(workflow) else ""
+    finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
 
     if act == "submit":
         if _status_of(meta, doc) not in meta["valid_submit"]:
@@ -909,45 +1055,25 @@ async def execute_action(
             raise ValueError(f"Cannot approve {doc_type.upper()} in status '{_status_of(meta, doc)}'")
 
         # Authorization: verify the actor is the assigned approver for this step
-        current_step_role = workflow[step]["role"] if step < len(workflow) else ""
-        finance_bp_ids_auth = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
         authorized = await _actor_can_approve(
             db, current_step_role, actor_id, actor_role,
-            routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+            today=today,
         )
         if not authorized:
             raise ValueError(
                 f"Not authorized to approve this step (requires role: {current_step_role})"
             )
 
-        recorded_role = workflow[step]["role"] if step < len(workflow) else actor_role
+        recorded_role = current_step_role if step < len(workflow) else actor_role
         await _complete_tasks(db, doc_type, doc.id)
 
-        # Build role → user map for auto-skip
-        # For gm_or_opm, resolve using the routing department (PR-selected, else
-        # the requester's own) — not doc.created_by (PO/PA creator) and not
-        # doc.department_id (None on PO). routing_dept_id was computed once at
-        # the top of execute_action via _routing_department_id.
-        role_map = _build_role_map(rm, dept_gm_opm, routing_dept_id)
-        finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
-        dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
-
-        def _holds(role: str) -> bool:
-            if role == "finance_bp":
-                return actor_id in finance_bp_ids
-            if role == "dept_manager":
-                return dept_mgr_id is not None and actor_id == dept_mgr_id
-            if role == "quality_manager" and doc_type == "vms_visit":
-                # QM assignment is per-visit, not via role_map.
-                qm_id = getattr(doc, "quality_approver_id", None)
-                return qm_id is not None and actor_id == qm_id
-            if role == "director":
-                return director_uid is not None and actor_id == director_uid
-            if role == "supervisor":
-                return supervisor_uid is not None and actor_id == supervisor_uid
-            assigned = role_map.get(role)
-            return assigned is not None and assigned == actor_id
+        # Auto-skip resolution. For gm_or_opm, _actor_is_step_holder resolves
+        # using the routing department (PR-selected, else the requester's own)
+        # — not doc.created_by (PO/PA creator) and not doc.department_id (None
+        # on PO). routing_dept_id was computed once at the top of
+        # execute_action via _routing_department_id.
 
         next_step = step + 1
         while next_step < len(workflow):
@@ -967,8 +1093,13 @@ async def execute_action(
                 auto_skipped.append(next_step)
                 next_step += 1
                 continue
-            # Same-approver auto-skip (the existing optimisation)
-            if _holds(next_role):
+            # Same-approver auto-skip. Uses the SAME identity check as
+            # authorization (_actor_is_step_holder), so a multi-holder post is
+            # recognised here exactly as it is there — the two used to diverge.
+            if await _actor_is_step_holder(
+                db, next_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+                finance_bp_ids, doc, director_uid, supervisor_uid,
+            ):
                 db.add(ApprovalEvent(
                     document_type=doc_type, document_id=doc.id, document_number=doc_number,
                     step_idx=next_step, action="approve",
@@ -1011,12 +1142,11 @@ async def execute_action(
         # Without this gate any user who could merely SEE a broadcast approve task
         # (get_for_role matches by assigned_role) could reject/cancel the document,
         # even when the same actor is (correctly) denied Approve.
-        current_step_role = workflow[step]["role"] if step < len(workflow) else ""
-        finance_bp_ids_auth = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
         authorized = await _actor_can_approve(
             db, current_step_role, actor_id, actor_role,
-            routing_dept_id, rm, dept_gm_opm, finance_bp_ids_auth,
+            routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
             doc=doc, director_uid=director_uid, supervisor_uid=supervisor_uid,
+            today=today,
         )
         if not authorized:
             raise ValueError(
@@ -1049,6 +1179,28 @@ async def execute_action(
 
     else:
         raise ValueError(f"Unknown action '{act}' for {doc_type.upper()}")
+
+    if act in ("approve", "reject"):
+        # Delegation annotation: if the actor reached this step only through
+        # someone else's active delegation, name that delegator in the event
+        # comment. The actor recorded on the event stays the person who
+        # clicked — this is not a transfer of identity, just a note of whose
+        # authority was borrowed. Reject is included alongside approve: it is
+        # the same approval-step decision under the same authorization check
+        # (see _actor_can_approve calls above), so a delegate's rejection
+        # deserves the same audit trail as their approval. `current_step_role`
+        # (not `recorded_role`) is used here because it is set uniformly by
+        # both branches, whereas `recorded_role` only reflects the workflow
+        # step role on the approve path.
+        on_behalf_of = await _acting_on_behalf_of(
+            db, current_step_role, actor_id, routing_dept_id, rm, dept_gm_opm,
+            finance_bp_ids, doc, director_uid, supervisor_uid, today=today)
+        if on_behalf_of is not None:
+            delegator_name = (await db.execute(
+                select(User.full_name).where(User.id == on_behalf_of))
+            ).scalar_one_or_none() or "another approver"
+            suffix = f"on behalf of {delegator_name}"
+            comment = f"{comment} — {suffix}" if comment else suffix
 
     # Record the primary approval event
     db.add(ApprovalEvent(

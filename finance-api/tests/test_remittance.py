@@ -1,5 +1,6 @@
 """Remittance advice — notification log, grouping, sending."""
 import uuid
+from email.utils import getaddresses
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
@@ -1572,3 +1573,212 @@ async def test_selection_endpoints_require_payment_authority(client, db_session)
     r2 = await client.post("/finance/v1/payments/remittance/selection/send",
                            json={"payment_ids": []}, headers=_h("requester"))
     assert r2.status_code == 403
+
+
+# ── Recipient-address normalization (2026-08-17 prod incident) ───────────────
+#
+# Sangers Inc's remittance advice failed with
+# `SMTPRecipientRefused(501, '5.1.3 Bad recipient address syntax', '')` because
+# the vendor's remittance_email held TWO addresses joined by a semicolon.
+# A semicolon is not an RFC 5322 separator, so Python's address parser does not
+# salvage the good addresses — it collapses the whole header into ONE EMPTY
+# recipient, the empty recipient is the only one, every recipient is therefore
+# refused, and aiosmtplib raises. The fix is to normalize before the address
+# ever reaches the SMTP layer, and to refuse locally (with a block reason the
+# operator can read) when it cannot be normalized.
+
+async def test_semicolon_separated_vendor_email_is_normalized_for_smtp(db_session):
+    bp = await _vendor(db_session, remit="kyle@sangers.test; rob@sangers.test")
+    inv = await _invoice(db_session, "VINV-101")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.email == "kyle@sangers.test, rob@sangers.test"
+    assert g.block_reasons == []
+    # The assertion that actually reproduces the incident: the value we hand
+    # to the To header must survive the same parser aiosmtplib uses to build
+    # its RCPT TO list, with no empty recipient in it.
+    assert [a for _, a in getaddresses([g.email])] == [
+        "kyle@sangers.test", "rob@sangers.test"]
+
+
+async def test_trailing_separator_in_vendor_email_is_dropped(db_session):
+    bp = await _vendor(db_session, remit="a@x.test, b@x.test,")
+    inv = await _invoice(db_session, "VINV-102")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.email == "a@x.test, b@x.test"
+    assert "" not in [a for _, a in getaddresses([g.email])]
+
+
+async def test_malformed_vendor_email_blocks_group_instead_of_reaching_smtp(db_session):
+    bp = await _vendor(db_session, remit="a@x.test, not-an-email")
+    inv = await _invoice(db_session, "VINV-103")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert rem.BLOCK_INVALID_EMAIL in g.block_reasons
+    # Distinct from "no address at all" — the operator must be told the
+    # address is unusable, not that it is absent.
+    assert rem.BLOCK_MISSING_EMAIL not in g.block_reasons
+
+
+async def test_malformed_employee_email_blocks_group(db_session):
+    emp_id = uuid.uuid4()
+    db_session.add(User(id=emp_id, email="jane@crm.test; jim@crm.test",
+                        full_name="Jane Doe"))
+    claim = ExpenseClaim(claim_number="EXP-101", claim_type="EXP", status="approved",
+                         employee_id=emp_id, employee_name="Jane Doe", currency="CAD",
+                         total_amount=Decimal("20.00"), tax_amount=Decimal("0"),
+                         net_amount=Decimal("20.00"))
+    db_session.add(claim)
+    await db_session.flush()
+    rec = PaymentRecord(
+        doc_kind="expense_claim", doc_id=claim.id, doc_number=claim.claim_number,
+        payment_date=date(2026, 7, 22), payment_method="bank_transfer",
+        amount=Decimal("20.00"), currency="CAD", recorded_by=uuid.uuid4(),
+        status="completed",
+    )
+    db_session.add(rec)
+    await db_session.flush()
+
+    g = (await rem.build_groups(db_session, [rec]))[0]
+    assert g.email == "jane@crm.test, jim@crm.test"
+    assert g.block_reasons == []
+
+
+# ── Who may send remittance advice ──────────────────────────────────────────
+#
+# The 2026-08-13 SoD split removed ap_clerk from payment EXECUTION
+# (tests/test_payment_authority.py::test_ap_clerk_can_no_longer_execute_payments
+# is the guard for that, and must stay green). Remittance advice is not an act
+# of paying — the money has already moved — it is AP telling the payee about a
+# payment that is already recorded. Gating it on payment authority meant the
+# only way to let AP send it was to hand them the authority to move money,
+# which would undo the split. So the send surface gets its own role set.
+
+async def test_ap_clerk_may_preview_remittance_without_payment_authority(client, db_session):
+    batch = PaymentBatch(batch_number="BP-AC1", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+
+    r = await client.get(f"/finance/v1/payments/batches/{batch.id}/remittance/preview",
+                         headers=_h("ap_clerk"))
+    assert r.status_code == 200
+
+
+async def test_ap_clerk_may_send_remittance_without_payment_authority(client, db_session):
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-201")
+    pa = _pa(bp.id, "10.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    db_session.add(rec)
+    await db_session.flush()
+
+    with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
+        r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
+                              json={}, headers=_h("ap_clerk"))
+    assert r.status_code == 200
+    assert r.json()["sent"] == 1
+    assert m.await_count == 1
+
+
+async def test_remittance_send_still_refuses_a_role_with_no_finance_standing(client, db_session):
+    await _configured(db_session)
+    r = await client.post("/finance/v1/payments/remittance/selection/send",
+                          json={"payment_ids": []}, headers=_h("requester"))
+    assert r.status_code == 403
+
+
+async def test_semicolon_separated_cc_is_normalized_not_silently_dropped(db_session):
+    # The CC address goes into its own header, parsed separately from To, so a
+    # malformed CC does NOT fail the send — the payee is accepted, only the
+    # empty CC recipient is refused, and aiosmtplib raises only when EVERY
+    # recipient is refused. The finance copy would just never arrive, with a
+    # "sent" row in the log to say it did. Normalize it for the same reason
+    # the payee address is normalized.
+    db_session.add(CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test",
+        "cc_email": "finance@crm.test; ap@crm.test"}))
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_port=587,"
+        " po_smtp_use_tls=true"))
+
+    s = await rc.load(db_session)
+    assert s.cc_email == "finance@crm.test, ap@crm.test"
+    assert "" not in [a for _, a in getaddresses([s.cc_email])]
+
+
+async def test_unusable_cc_is_dropped_rather_than_breaking_the_header(db_session):
+    db_session.add(CompanyConfig(role_management={}, remittance_config={
+        "enabled": True, "from_email": "ap@crm.test", "cc_email": "not-an-email"}))
+    await db_session.flush()
+    await db_session.execute(sa.text(
+        "UPDATE company_config SET po_smtp_host='po.host', po_smtp_port=587,"
+        " po_smtp_use_tls=true"))
+
+    s = await rc.load(db_session)
+    assert s.cc_email is None
+
+
+async def test_ap_clerk_as_an_additional_role_may_send_remittance(client, db_session):
+    """AP Clerk held as an ADDITIONAL role (identity user_roles), not the JWT's
+    primary role — which is how these roles are actually expected to be held in
+    production (see test_payment_authority.py::
+    test_payment_officer_works_as_an_additional_role). The primary-role branch
+    alone would leave that operator at 403."""
+    user_id = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'ap_clerk')"),
+        {"u": str(user_id)})
+    batch = PaymentBatch(batch_number="BP-AC2", batch_date=date(2026, 7, 22),
+                         status=EXECUTED, currency="CAD", total=Decimal("0"),
+                         payment_method="bank_transfer", created_by=uuid.uuid4())
+    db_session.add(batch)
+    await db_session.flush()
+
+    token = jwt.encode({"sub": str(user_id), "role": "requester",
+                        "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                       settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    r = await client.get(f"/finance/v1/payments/batches/{batch.id}/remittance/preview",
+                         headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+
+
+async def test_system_admin_as_an_additional_role_may_not_send_remittance(client, db_session):
+    """Mirrors test_payment_authority.py::test_system_admin_as_additional_role_is_denied
+    — system_admin is a PRIMARY-role grant only, and deriving _SEND_ROLES_ASSIGNED
+    from _SEND_ROLES must not quietly reintroduce it."""
+    user_id = uuid.uuid4()
+    await db_session.execute(sa.text(
+        "INSERT INTO user_roles (user_id, role_code) VALUES (:u, 'system_admin')"),
+        {"u": str(user_id)})
+    token = jwt.encode({"sub": str(user_id), "role": "requester",
+                        "exp": datetime.now(timezone.utc) + timedelta(hours=1)},
+                       settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+    r = await client.post("/finance/v1/payments/remittance/selection/preview",
+                          json={"payment_ids": []},
+                          headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403

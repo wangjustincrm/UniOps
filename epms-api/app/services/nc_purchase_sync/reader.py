@@ -42,9 +42,27 @@ def select_incremental_order_pks(order_rows, arrival_rows, watermark) -> set:
     return pks
 
 
+#: NC keeps every version of a CHANGED purchase order as its own PO_ORDER row —
+#: same ``vbillcode``, same ``forderstatus=3``, same ``dr=0``. Only
+#: ``bislatest='Y'`` marks the version in force, and the arrivals hang off that
+#: one: not a single PO_ARRIVEORDER_B row in production points at a superseded
+#: order. Fetching both versions puts two rows with the same document number in
+#: front of a UNIQUE(number) mirror, where whichever Oracle returned first won —
+#: so the mirror could keep the CANCELLED version while the live one, carrying
+#: every arrival, was dropped. PO-019-2505-01 is exactly that: v1 (LB, no
+#: arrivals) mirrored, v2 (KGM, three arrivals) skipped, PO reads as never
+#: received in EPMS and inflates MRP's in-transit figure forever.
+_LATEST_VERSION = "bislatest='Y'"
+
+
 def fetch_nc(cutover: str, watermark: str | None) -> dict:
     """cutover: 'YYYY-MM-DD HH24:MI:SS' (only orders with dbilldate >= cutover).
-    watermark: last synced NC modifiedtime, or None for full."""
+    watermark: last synced NC modifiedtime, or None for full.
+
+    Superseded order versions are excluded at the source — see
+    ``_LATEST_VERSION``. EVERY read of PO_ORDER carries the predicate;
+    tests/test_nc_purchase_reader_sql.py asserts that in aggregate so a query
+    added later cannot quietly reintroduce them."""
     con = _connect()
     try:
         cur = con.cursor()
@@ -73,7 +91,8 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             # mirrored (needed to resolve po_line_id and ensure the PO exists).
             cur.execute(
                 "select pk_order, modifiedtime from NCSC.PO_ORDER "
-                "where forderstatus=3 and dbilldate >= :cut and modifiedtime >= :wm",
+                f"where forderstatus=3 and {_LATEST_VERSION} "
+                "and dbilldate >= :cut and modifiedtime >= :wm",
                 {"cut": cutover, "wm": watermark})
             order_rows = [dict(zip([c[0].lower() for c in cur.description], r))
                           for r in cur.fetchall()]
@@ -82,7 +101,8 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
                 "from NCSC.PO_ARRIVEORDER ah "
                 "join NCSC.PO_ARRIVEORDER_B ab on ab.pk_arriveorder = ah.pk_arriveorder "
                 "join NCSC.PO_ORDER o on o.pk_order = ab.pk_order "
-                "where ah.fbillstatus=3 and o.forderstatus=3 and o.dbilldate >= :cut "
+                f"where ah.fbillstatus=3 and o.forderstatus=3 and o.{_LATEST_VERSION} "
+                "and o.dbilldate >= :cut "
                 "and (ah.modifiedtime >= :wm or ah.creationtime >= :wm)",
                 {"cut": cutover, "wm": watermark})
             arrival_rows = [dict(zip([c[0].lower() for c in cur.description], r))
@@ -92,14 +112,19 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             for chunk in _chunks(order_pks, 900):
                 ph = ",".join(f":p{i}" for i in range(len(chunk)))
                 b = {f"p{i}": v for i, v in enumerate(chunk)}
+                # Redundant with the two queries that produced these pks, and
+                # kept anyway: this is the statement that actually MATERIALISES
+                # an order into the payload, so it is the one that must be
+                # unable to emit a superseded version.
                 cur.execute(f"select {_order_cols} from NCSC.PO_ORDER "
-                            f"where pk_order in ({ph})", b)
+                            f"where {_LATEST_VERSION} and pk_order in ({ph})", b)
                 ocols = [c[0].lower() for c in cur.description]
                 orders += [dict(zip(ocols, r)) for r in cur.fetchall()]
         else:
             # FULL: everything past cutover (unchanged).
             cur.execute(f"select {_order_cols} from NCSC.PO_ORDER "
-                        "where forderstatus=3 and dbilldate >= :cut", {"cut": cutover})
+                        f"where forderstatus=3 and {_LATEST_VERSION} "
+                        "and dbilldate >= :cut", {"cut": cutover})
             ocols = [c[0].lower() for c in cur.description]
             orders = [dict(zip(ocols, r)) for r in cur.fetchall()]
             order_pks = [o["pk_order"] for o in orders]
@@ -111,7 +136,18 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             b = {f"p{i}": v for i, v in enumerate(chunk)}
             cur.execute(
                 "select pk_order_b, pk_order, crowno, pk_material, vvendinventoryname, "
-                "castunitid, nastnum, norigtaxprice, ntaxrate, ctaxcodeid, norigtaxmny, norigmny, ntax, "
+                "castunitid, nastnum, norigtaxprice, "
+                # nqtorigtaxprice = 报价单位含税单价, the price per CASTUNITID —
+                # the same unit nastnum counts, which is what the mirror stores.
+                # norigtaxprice is per the MAIN unit and disagrees whenever the
+                # two differ (LB vs KGM: 2.2x).
+                "nqtorigtaxprice, "
+                "ntaxrate, ctaxcodeid, norigtaxmny, norigmny, ntax, "
+                # dplanarrvdate = 计划到货日期, the date NC's PO list shows as
+                # "Delivery Date". CHAR 'YYYY-MM-DD HH24:MI:SS'; the transform
+                # keeps only the date half. Line level, not header -- NC lets
+                # each line differ and real orders do.
+                "dplanarrvdate, "
                 "bpayclose, binvoiceclose "
                 f"from NCSC.PO_ORDER_B where pk_order in ({ph})", b)
             lcols = [c[0].lower() for c in cur.description]
@@ -125,7 +161,7 @@ def fetch_nc(cutover: str, watermark: str | None) -> dict:
             arrivals += [dict(zip(acols, r)) for r in cur.fetchall()]
             cur.execute(
                 "select pk_arriveorder_b, pk_arriveorder, pk_order, pk_order_b, crowno, "
-                "pk_material, nastnum, norigtaxprice, norigtaxmny, norigmny "
+                "pk_material, castunitid, nastnum, norigtaxprice, norigtaxmny, norigmny "
                 f"from NCSC.PO_ARRIVEORDER_B where pk_order in ({ph})", b)
             albcols = [c[0].lower() for c in cur.description]
             arrival_lines += [dict(zip(albcols, r)) for r in cur.fetchall()]

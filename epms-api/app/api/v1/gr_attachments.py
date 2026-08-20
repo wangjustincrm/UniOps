@@ -8,13 +8,18 @@ from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
-from app.crud.gr import get_by_id as get_gr
+from app.crud.gr import _attach_gr_pdf, get_by_id as get_gr
+from app.models.config import CompanyConfig
 from app.models.gr_attachment import GrAttachment
 from app.services.attachment_helper import delete_from_file_server, proxy_download, upload_to_file_server
 
 router = APIRouter(prefix="/gr/{gr_id}/attachments", tags=["gr-attachments"])
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+
+# Statuses at/after which the acknowledge/confirm GR PDF is meaningful
+# (regenerate-able) — everything past acknowledge, short of a dead end.
+_PDF_STATUSES = {"collection_pending", "collected", "confirmed", "discrepancy"}
 
 
 class AttachmentMeta(BaseModel):
@@ -71,6 +76,45 @@ async def upload_attachment(
     )
     db.add(att)
     await db.flush()
+    await db.refresh(att)
+    return _meta(att)
+
+
+@router.post("/regenerate-pdf", response_model=AttachmentMeta)
+async def regenerate_pdf(
+    gr_id: uuid.UUID,
+    db: SessionDep, user: CurrentUserPayload, token: BearerToken,
+):
+    """(Re)generate the GR PDF and (re)attach it.
+
+    Used to backfill the PDF on documents that reached ``collected``/``confirmed``
+    without generating one at acknowledge/confirm time — the large majority of
+    existing GRs (confirm collapsing acknowledge+confirm never called
+    ``_attach_gr_pdf`` before this fix; 20/20 service and 719/771 physical GRs
+    took that path) — or to refresh it after a template/logo change. Reuses
+    ``_attach_gr_pdf``, which replaces any existing ``<number>.pdf`` attachment
+    so there is exactly one auto-PDF.
+    """
+    gr = await get_gr(db, gr_id)
+    if gr is None:
+        raise HTTPException(status_code=404, detail="GR not found")
+    if gr.status not in _PDF_STATUSES:
+        raise HTTPException(status_code=409, detail="PDF is only available once the GR has been acknowledged")
+
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    company_name = cfg.name if cfg else "EPMS"
+    filename = f"{gr.number}.pdf"
+
+    await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+    await db.flush()
+
+    att = (await db.execute(
+        select(GrAttachment)
+        .where(GrAttachment.gr_id == gr_id, GrAttachment.filename == filename)
+        .order_by(GrAttachment.created_at.desc())
+    )).scalars().first()
+    if att is None:
+        raise HTTPException(status_code=500, detail="PDF generation did not produce an attachment")
     await db.refresh(att)
     return _meta(att)
 

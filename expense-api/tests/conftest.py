@@ -36,6 +36,28 @@ _JWT_SECRET = settings.jwt_secret_key
 _JWT_ALG = settings.jwt_algorithm
 
 
+# ── Identity-owned shadow tables ──────────────────────────────────────────────
+# These live in identity's schema and, in production, in the SAME physical
+# database as expense-api's own tables — several endpoints read them with raw
+# SQL (no ORM model here). expense_test is its own database, so shadow them.
+# One superset schema, created once per session: tests that drop and recreate
+# them with narrower column sets used to decide, by ordering alone, whether a
+# later test's query compiled.
+IDENTITY_SHADOW_DDL = (
+    "CREATE TABLE departments (id uuid PRIMARY KEY, name varchar(255) NULL,"
+    " code varchar(50) NULL, is_active boolean NOT NULL DEFAULT true)",
+    "CREATE TABLE users (id uuid PRIMARY KEY, full_name varchar(255) NULL,"
+    " email varchar(255) NULL, role varchar(50) NULL, department_id uuid NULL,"
+    " is_active boolean NOT NULL DEFAULT true)",
+    "CREATE TABLE role_defs (code varchar(50) PRIMARY KEY,"
+    " is_active boolean NOT NULL DEFAULT true)",
+    "CREATE TABLE role_permissions (role_code varchar(50) NOT NULL,"
+    " permission_key varchar(100) NOT NULL, PRIMARY KEY (role_code, permission_key))",
+    "CREATE TABLE role_permission_locks (role_code varchar(50) NOT NULL,"
+    " permission_key varchar(100) NOT NULL, PRIMARY KEY (role_code, permission_key))",
+)
+
+
 # ── Loop scope ────────────────────────────────────────────────────────────────
 
 def pytest_collection_modifyitems(items):
@@ -61,6 +83,34 @@ async def test_engine():
         await conn.execute(text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # The rest of the identity-owned shadows (see IDENTITY_SHADOW_DDL).
+        # They must exist for EVERY test, not just the ones that seed them:
+        # invoice_attachments' authz and the invoice list's scope read them on
+        # every call, so without the shadow an unrelated test blows up on
+        # UndefinedTable.
+        for ddl in IDENTITY_SHADOW_DDL:
+            table = ddl.split()[2]
+            await conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
+            await conn.execute(text(ddl))
+        # approval-api's delegation table (same physical DB in prod, no ORM
+        # model here — expense-api only reads it via app.core.delegation,
+        # never writes). Shadow it, minus the constraints approval-api
+        # enforces on write (exclusion constraint on overlapping windows,
+        # etc.) — this side only needs to select rows a test seeds directly.
+        await conn.execute(text("DROP TABLE IF EXISTS approval_delegations CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE approval_delegations ("
+            "  id uuid PRIMARY KEY,"
+            "  delegator_user_id uuid NOT NULL,"
+            "  delegate_user_id uuid NOT NULL,"
+            "  start_date date NOT NULL,"
+            "  end_date date NOT NULL,"
+            "  note text NULL,"
+            "  revoked_at timestamptz NULL,"
+            "  revoked_by uuid NULL,"
+            "  created_by uuid NOT NULL,"
+            "  created_at timestamptz NOT NULL DEFAULT now(),"
+            "  updated_at timestamptz NOT NULL DEFAULT now())"))
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

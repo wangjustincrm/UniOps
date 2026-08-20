@@ -1,0 +1,365 @@
+"""Capacity rules master data (Phase 1B Task 1).
+
+`resolve_limits_for_week` (see the weekly section further down) is what the
+MPS engine reads to know how much factory capacity a given WEEK has. Its
+month-based predecessor `resolve_effective_rules` -- and the one test that
+covered it, `test_resolve_effective_rules_filters_by_active_and_window` --
+were deleted together with the month-based engine when `app/api/v1/mps.py`
+moved onto weeks.
+
+The first version of that deletion claimed the weekly resolver's existing
+tests already covered its two behaviours. **They did not**: every one of them
+creates a single active, open-ended RULE, and the only `is_active=False` case
+is about an EXCEPTION. Nothing asserted that an inactive or expired RULE is
+excluded. `test_resolve_limits_for_week_ignores_inactive_and_expired_rules`
+below is the weekly replacement, and it goes through the same
+`_factory_rules_active_on` filter the deleted test did.
+
+The CRUD API mirrors app/api/v1/consignment.py's shape: `mrp.report.view`
+gates GET, `mrp.param.write` gates POST/PATCH/DELETE (same permission keys
+`test_permission_gates.py::test_admin_sync_write_gate_403s_non_permitted_role`
+already exercises for mrp.param.write on a different endpoint).
+"""
+from datetime import date
+
+import pytest
+
+
+@pytest.mark.anyio
+async def test_crud_roundtrip_and_permission_gate(client, admin_token, non_admin_token, monkeypatch):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.post(
+        "/api/v1/capacity/rules",
+        json={
+            "scope_type": "factory",
+            "constraint_type": "max_sku_count",
+            "limit_value": "12",
+            "effective_from": "2026-01-01",
+        },
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    created = r.json()
+    assert created["limit_value"] == "12.000"
+    assert created["is_active"] is True
+
+    r = await client.get("/api/v1/capacity/rules", headers=headers)
+    assert r.status_code == 200
+    ids = [row["id"] for row in r.json()]
+    assert created["id"] in ids
+
+    r = await client.patch(
+        f"/api/v1/capacity/rules/{created['id']}",
+        json={"is_active": False},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    assert r.json()["is_active"] is False
+
+    # A token without mrp.param.write must not be able to create a rule.
+    import uniops_authz.core as authz_core
+
+    async def _user_role_codes(db, user_id, base_role):
+        return {base_role}
+
+    async def _effective_matrix(db):
+        return {}
+
+    monkeypatch.setattr(authz_core, "user_role_codes", _user_role_codes)
+    monkeypatch.setattr(authz_core, "_effective_matrix", _effective_matrix)
+    denied_headers = {"Authorization": f"Bearer {non_admin_token}"}
+    r = await client.post(
+        "/api/v1/capacity/rules",
+        json={
+            "scope_type": "factory",
+            "constraint_type": "max_sku_count",
+            "limit_value": "5",
+            "effective_from": "2026-01-01",
+        },
+        headers=denied_headers,
+    )
+    assert r.status_code == 403
+
+
+# ── Task 3: minimum weekly output constraint + per-week exceptions ─────────
+
+
+@pytest.mark.anyio
+async def test_min_output_qty_is_an_accepted_constraint_type(client, auth_headers):
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "min_output_qty",
+        "limit_value": "20000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.anyio
+async def test_min_output_above_max_output_is_rejected(client, auth_headers):
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "min_output_qty",
+        "limit_value": "50000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    assert r.status_code == 422
+    assert "min" in r.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_week_exception_overrides_the_standing_rule(client, auth_headers, db_session):
+    from app.services.capacity import resolve_limits_for_week
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-08-10", "scope_type": "factory",
+        "constraint_type": "max_output_qty", "limit_value": "0", "uom": "KG",
+        "reason": "annual maintenance",
+    })
+    normal = await resolve_limits_for_week(db_session, date(2026, 8, 3))
+    shut = await resolve_limits_for_week(db_session, date(2026, 8, 10))
+    assert str(normal.max_output_qty) == "40000.000"
+    assert str(shut.max_output_qty) == "0.000"
+
+
+@pytest.mark.anyio
+async def test_inactive_exception_is_ignored(client, auth_headers, db_session):
+    from app.services.capacity import resolve_limits_for_week
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    exc = (await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-09-07", "scope_type": "factory",
+        "constraint_type": "max_output_qty", "limit_value": "0", "uom": "KG",
+        "reason": "cancelled",
+    })).json()
+    await client.patch(f"/api/v1/capacity/exceptions/{exc['id']}",
+                       json={"is_active": False}, headers=auth_headers)
+    assert str((await resolve_limits_for_week(db_session,
+                                              date(2026, 9, 7))).max_output_qty) == "40000.000"
+
+
+@pytest.mark.anyio
+async def test_resolve_limits_for_week_ignores_inactive_and_expired_rules(client, auth_headers, db_session):
+    """Replaces the deleted `test_resolve_effective_rules_filters_by_active_
+    and_window`. Three rules of the SAME constraint_type compete for one
+    week: an inactive one, one whose `effective_to` has passed, and the real
+    one. Only the real one may be resolved.
+
+    Without this, nothing anywhere asserted that a rule can be switched off
+    or allowed to expire -- a planner deactivating last year's ceiling would
+    have had no test saying it stops applying, which is exactly what
+    migration mrp10b relies on when it sets `is_active = false` on every
+    pre-existing monthly rule."""
+    from app.models.capacity import MrpCapacityRule
+    from app.services.capacity import resolve_limits_for_week
+
+    db_session.add_all([
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_output_qty",
+                        limit_value=999999, uom="KG", effective_from=date(2026, 1, 1),
+                        effective_to=None, is_active=False),                     # switched off
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_output_qty",
+                        limit_value=111111, uom="KG", effective_from=date(2026, 1, 1),
+                        effective_to=date(2026, 6, 30), is_active=True),         # expired
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_sku_count",
+                        limit_value=7, uom=None, effective_from=date(2026, 8, 1),
+                        effective_to=None, is_active=True),                      # in force
+        MrpCapacityRule(scope_type="factory", scope_ref=None, constraint_type="max_output_qty",
+                        limit_value=40000, uom="KG", effective_from=date(2026, 8, 1),
+                        effective_to=None, is_active=True),                      # in force
+    ])
+    await db_session.commit()
+
+    limits = await resolve_limits_for_week(db_session, date(2026, 8, 10))
+    assert str(limits.max_output_qty) == "40000.000"  # not 999999 and not 111111
+    assert limits.max_sku_count == 7
+
+    # ...and a week BEFORE the in-force rule starts resolves to no ceiling at
+    # all, rather than falling back to the expired one.
+    early = await resolve_limits_for_week(db_session, date(2026, 7, 6))
+    assert early.max_output_qty is None
+    assert early.max_sku_count is None
+
+
+# ── Fix round 1 (code review) ───────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_exception_with_scope_ref_does_not_leak_into_factory_wide_resolution(client, auth_headers, db_session):
+    """scope_type='factory' with a non-null scope_ref is nonsensical but not
+    schema-forbidden. resolve_limits_for_week must filter on
+    scope_ref IS NULL (not just scope_type == 'factory') so a stray row like
+    this can never be swept into the factory-wide resolution alongside the
+    real factory-wide rule."""
+    from app.services.capacity import resolve_limits_for_week
+    await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    r = await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-08-10", "scope_type": "factory", "scope_ref": "line-1",
+        "constraint_type": "max_output_qty", "limit_value": "99999", "uom": "KG",
+        "reason": "scoped to a specific line, must not apply factory-wide",
+    })
+    assert r.status_code == 201, r.text
+    limits = await resolve_limits_for_week(db_session, date(2026, 8, 10))
+    assert str(limits.max_output_qty) == "40000.000"
+
+
+@pytest.mark.anyio
+async def test_rule_create_rejects_unknown_constraint_type(client, auth_headers):
+    r = await client.post("/api/v1/capacity/rules", headers=auth_headers, json={
+        "scope_type": "factory", "constraint_type": "max_output_qtyy",
+        "limit_value": "1000", "uom": "KG", "effective_from": "2026-01-01",
+    })
+    assert r.status_code == 422
+    assert "max_output_qtyy" in r.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_exception_create_rejects_unknown_constraint_type(client, auth_headers):
+    r = await client.post("/api/v1/capacity/exceptions", headers=auth_headers, json={
+        "week_start": "2026-08-10", "scope_type": "factory",
+        "constraint_type": "bogus_type", "limit_value": "0", "uom": "KG",
+    })
+    assert r.status_code == 422
+    assert "bogus_type" in r.json()["detail"]
+
+
+# ── 产品级最小生产批量 ────────────────────────────────────────────────────
+#
+# 「开一次工最少产这么多」这个数每个产品不同，用同一张规则表的 scope_type
+# 'product' + scope_ref=<material_code> 表达。全厂的 min_output_qty 退化成
+# 「没配产品级规则时的默认下限」。
+
+
+@pytest.mark.anyio
+async def test_product_scope_min_output_qty_round_trips(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-001",
+        "constraint_type": "min_output_qty", "limit_value": "20000", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 201, r.text
+    assert r.json()["scope_ref"] == "FG-001"
+
+
+@pytest.mark.anyio
+async def test_product_scope_requires_a_material_code(client, admin_token):
+    """scope_ref 为空的 product 规则解析不到任何产品 —— 存下来只会是死规则。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    for bad in (None, "", "   "):
+        r = await client.post("/api/v1/capacity/rules", json={
+            "scope_type": "product", "scope_ref": bad,
+            "constraint_type": "min_output_qty", "limit_value": "20000", "uom": "KG",
+            "effective_from": "2026-01-01",
+        }, headers=headers)
+        assert r.status_code == 422, (bad, r.text)
+
+
+@pytest.mark.anyio
+async def test_unknown_scope_type_is_rejected(client, admin_token):
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "warehouse", "scope_ref": None,
+        "constraint_type": "min_output_qty", "limit_value": "10", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.anyio
+async def test_product_min_lot_above_the_factory_max_is_rejected(client, admin_token):
+    """产品级批量大于全厂周产能 = 这产品每次都凑不满一周，永远走「往后排+报警」。
+    规则本身就是错的，建的时候就挡。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "factory", "scope_ref": None, "constraint_type": "max_output_qty",
+        "limit_value": "40000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)
+
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-001",
+        "constraint_type": "min_output_qty", "limit_value": "50000", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert r.status_code == 422, r.text
+    assert "max_output_qty" in r.text
+
+    # 等于上限是允许的（正好一周产满）
+    ok = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-002",
+        "constraint_type": "min_output_qty", "limit_value": "40000", "uom": "KG",
+        "effective_from": "2026-01-01",
+    }, headers=headers)
+    assert ok.status_code == 201, ok.text
+
+
+@pytest.mark.anyio
+async def test_product_min_lot_check_ignores_non_overlapping_windows(client, admin_token):
+    """全厂产能 2027 年才生效 —— 2026 的产品批量与它并不同时有效，不该被挡。"""
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "factory", "scope_ref": None, "constraint_type": "max_output_qty",
+        "limit_value": "10000", "uom": "KG", "effective_from": "2027-01-01",
+    }, headers=headers)
+    r = await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-003",
+        "constraint_type": "min_output_qty", "limit_value": "20000", "uom": "KG",
+        "effective_from": "2026-01-01", "effective_to": "2026-12-31",
+    }, headers=headers)
+    assert r.status_code == 201, r.text
+
+
+@pytest.mark.anyio
+async def test_resolve_min_lots_prefers_the_product_rule_over_the_factory_floor(
+    client, db_session, admin_token,
+):
+    from decimal import Decimal
+
+    from app.services.capacity import resolve_default_min_lot, resolve_min_lots
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "factory", "scope_ref": None, "constraint_type": "min_output_qty",
+        "limit_value": "10000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)
+    await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-001", "constraint_type": "min_output_qty",
+        "limit_value": "20000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)
+
+    lots = await resolve_min_lots(db_session, date(2026, 8, 17))
+    assert lots["FG-001"] == Decimal("20000.000")
+    assert "FG-002" not in lots          # 没有产品级规则的不出现，由全厂默认兜底
+    assert await resolve_default_min_lot(db_session, date(2026, 8, 17)) == Decimal("10000.000")
+
+
+@pytest.mark.anyio
+async def test_resolve_min_lots_respects_effective_windows_and_is_active(
+    client, db_session, admin_token,
+):
+    from app.services.capacity import resolve_min_lots
+
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    expired = (await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-OLD", "constraint_type": "min_output_qty",
+        "limit_value": "9000", "uom": "KG",
+        "effective_from": "2026-01-01", "effective_to": "2026-06-30",
+    }, headers=headers)).json()
+    assert expired["id"]
+    inactive = (await client.post("/api/v1/capacity/rules", json={
+        "scope_type": "product", "scope_ref": "FG-OFF", "constraint_type": "min_output_qty",
+        "limit_value": "9000", "uom": "KG", "effective_from": "2026-01-01",
+    }, headers=headers)).json()
+    await client.patch(f"/api/v1/capacity/rules/{inactive['id']}",
+                       json={"is_active": False}, headers=headers)
+
+    lots = await resolve_min_lots(db_session, date(2026, 8, 17))
+    assert "FG-OLD" not in lots          # 窗口已过
+    assert "FG-OFF" not in lots          # 已停用

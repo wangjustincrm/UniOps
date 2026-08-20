@@ -20,8 +20,28 @@ MODULE_BY_KEY = {
     "view_budget_dashboard": "finance", "view_budget_plans": "finance",
     "view_finance": "finance",
     "view_booking": "booking", "manage_meeting_rooms": "booking",
+    # MRP phase-0 module keys (design: 2026-08-03-mrp-subsystem-design.md).
+    # Not pre-granted to any role — Portal Access Control matrix grants them.
+    "mrp.demand.write": "mrp", "mrp.run.execute": "mrp",
+    "mrp.proposal.confirm": "mrp", "mrp.proposal.export": "mrp",
+    "mrp.exception.handle": "mrp", "mrp.param.write": "mrp",
+    "mrp.report.view": "mrp", "mdm.bom.write": "mdm",
 }
 PERMISSION_KEYS = list(MODULE_BY_KEY)  # keeps epms UI order
+
+# Auto-derived labels (key.replace("_", " ").title()) only work for flat
+# snake_case keys. Namespaced dotted keys (module.action.verb, matching the
+# phase-2 key style in seed_phase2_keys.py) need an explicit English label.
+LABEL_OVERRIDES = {
+    "mrp.demand.write": "Demand import / maintenance / freeze",
+    "mrp.run.execute": "Start / stop MRP runs",
+    "mrp.proposal.confirm": "Confirm / lock / ignore proposals",
+    "mrp.proposal.export": "Export / notify purchase proposals",
+    "mrp.exception.handle": "Close / ignore / annotate exceptions",
+    "mrp.param.write": "Planning parameters, status mapping, calendars",
+    "mrp.report.view": "Reports, supply-demand detail, BOM browsing",
+    "mdm.bom.write": "BOM / material governance fields",
+}
 
 ROLE_LABELS = {  # built-in 18
     "requester": "Requester", "dept_admin": "Department Admin",
@@ -38,6 +58,13 @@ ROLE_LABELS = {  # built-in 18
     "erp_pa_officer": "ERP PA Officer",
     "system_admin": "System Admin",
 }
+
+# Roles granted ONLY through identity's user_roles side table — never written to
+# users.role. Mirrored into role_defs.assignable_as_primary (migration 0009),
+# which is what put_user_roles and both admin frontends actually read.
+# payment_officer is seeded by migration 0008, not by this script, but is listed
+# here so a fresh seed_authz on a migrated DB never flips it back.
+ADDITIONAL_ONLY_ROLES = {"erp_pa_officer", "payment_officer"}
 
 LOCKED = {
     "requester": {"view_pr"},
@@ -115,8 +142,9 @@ async def seed_authz(session) -> dict:
 
     for i, (code, label) in enumerate(ROLE_LABELS.items()):
         await session.execute(sa.text(
-            "INSERT INTO role_defs(code,label,sort,is_active) VALUES (:c,:l,:s,true) "
-            "ON CONFLICT (code) DO NOTHING"), {"c": code, "l": label, "s": i})
+            "INSERT INTO role_defs(code,label,sort,is_active,assignable_as_primary) "
+            "VALUES (:c,:l,:s,true,:p) ON CONFLICT (code) DO NOTHING"),
+            {"c": code, "l": label, "s": i, "p": code not in ADDITIONAL_ONLY_ROLES})
     for cr in custom:
         await session.execute(sa.text(
             "INSERT INTO role_defs(code,label,sort,is_active) VALUES (:c,:l,900,:a) "
@@ -124,7 +152,7 @@ async def seed_authz(session) -> dict:
             {"c": cr["code"], "l": cr.get("label", cr["code"]), "a": cr.get("is_active", True)})
 
     for i, (key, module) in enumerate(MODULE_BY_KEY.items()):
-        label = key.replace("_", " ").title()
+        label = LABEL_OVERRIDES.get(key) or key.replace("_", " ").title()
         await session.execute(sa.text(
             "INSERT INTO permission_defs(key,module,label,sort) VALUES (:k,:m,:l,:s) "
             "ON CONFLICT (key) DO NOTHING"), {"k": key, "m": module, "l": label, "s": i})

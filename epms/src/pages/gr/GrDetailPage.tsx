@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, CheckCircle2, Clock, Truck, Paperclip,
-  AlertTriangle, Package, ExternalLink, X,
+  AlertTriangle, Package, ExternalLink, X, RotateCcw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,8 +11,12 @@ import { useGr, useGrAction } from '@/hooks/useGrs'
 import { usePo } from '@/hooks/usePos'
 import { useAuthStore } from '@/stores/auth.store'
 import { type GrStatus, type ApiGr, type ApiGrLineItem } from '@/services/gr'
-import { useGrAttachments, useDeleteGrAttachment } from '@/hooks/useGrAttachments'
+import { useGrAttachments, useDeleteGrAttachment, useRegenerateGrPdf } from '@/hooks/useGrAttachments'
 import { grAttachmentService } from '@/services/grAttachments'
+
+// Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
+// (anything from the acknowledge step onward, excluding cancelled).
+const GR_PDF_REGENERATABLE_STATUSES: GrStatus[] = ['collection_pending', 'collected', 'confirmed', 'discrepancy']
 
 const CONDITION_CONFIG = {
   good:        { label: 'Good',        cls: 'bg-success-50 text-success-700' },
@@ -172,6 +176,8 @@ export default function GrDetailPage() {
   const { data: po } = usePo(gr?.po_id ?? '')
   const { data: attachments = [] } = useGrAttachments(id ?? '')
   const deleteAttachment = useDeleteGrAttachment(id ?? '')
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const regeneratePdf = useRegenerateGrPdf(id ?? '')
 
   const [activeTab, setActiveTab] = useState<'details' | 'attachments'>('details')
   const [showAckModal, setShowAckModal] = useState(false)
@@ -414,7 +420,28 @@ export default function GrDetailPage() {
           {/* Attachments tab */}
           {activeTab === 'attachments' && (
             <div className="rounded-xl border border-neutral-200 bg-white p-6">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Attachments</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                  Attachments
+                </h2>
+                {GR_PDF_REGENERATABLE_STATUSES.includes(gr.status) && (
+                  <button
+                    type="button"
+                    onClick={() => regeneratePdf.mutate()}
+                    disabled={regeneratePdf.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                    title="Generate the GR PDF and attach it (replaces the existing one)"
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${regeneratePdf.isPending ? 'animate-spin' : ''}`} />
+                    {regeneratePdf.isPending ? 'Generating…' : 'Regenerate PDF'}
+                  </button>
+                )}
+              </div>
+              {downloadError && (
+                <div className="mb-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+                  {downloadError}
+                </div>
+              )}
               {attachments.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />
@@ -429,7 +456,12 @@ export default function GrDetailPage() {
                       <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
                       <button
                         type="button"
-                        onClick={() => grAttachmentService.download(id!, att.id, att.filename)}
+                        onClick={() => {
+                          setDownloadError(null)
+                          grAttachmentService.download(id!, att.id, att.filename).catch(() => {
+                            setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
+                          })
+                        }}
                         className="text-xs text-primary-600 hover:underline"
                       >
                         Download

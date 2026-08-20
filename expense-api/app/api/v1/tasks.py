@@ -210,7 +210,9 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
             continue
         seen_pa.add(pa.id)
 
-        doc_type = "pa_dir" if pa.po_id is None else "pa"
+        # Not `po_id is None`: an EPMS agreement PA has no PO either, and
+        # labelling it pa_dir sends the deep link to OA's Direct-PA detail page.
+        doc_type = "pa_dir" if pa.is_direct else "pa"
 
         tasks.append(OaTaskItem(
             id=f"pa-{pa.id}",

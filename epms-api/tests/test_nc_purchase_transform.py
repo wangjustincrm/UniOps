@@ -1,11 +1,12 @@
 import uuid
+from datetime import date
 from decimal import Decimal
 
 from app.services.nc_purchase_sync.reader import (
     nc_configured,
     select_incremental_order_pks,
 )
-from app.services.nc_purchase_sync.transform import transform
+from app.services.nc_purchase_sync.transform import _planned_arrival, transform
 
 
 def test_nc_configured_false_when_unset(monkeypatch):
@@ -214,3 +215,74 @@ def test_transform_po_subtotal_and_tax_from_lines():
     po = r["orders"][0]
     assert po["subtotal"] == Decimal("95") and po["tax_amount"] == Decimal("5")
     assert po["total"] == Decimal("100")
+
+
+# ── planned arrival date (NCSC.PO_ORDER_B.DPLANARRVDATE) ─────────────────
+
+
+def test_planned_arrival_takes_the_date_half_only():
+    """The column is CHAR 'YYYY-MM-DD HH24:MI:SS'. The time is whenever the
+    value was last set and has no business meaning. Verified against the ERP's
+    own PO list: PO-001-2510-04 shows 2026-02-02 and stores this."""
+    assert _planned_arrival("2026-02-02 10:01:25") == date(2026, 2, 2)
+    assert _planned_arrival("2026-05-05 09:31:37") == date(2026, 5, 5)
+
+
+def test_planned_arrival_does_not_shift_across_a_day_boundary():
+    """The trap this guards: a date-only value put through a timezone
+    conversion lands a day early or late. A minute-before-midnight stamp
+    exposes the day shift, and Dec 31 exposes the wrong YEAR."""
+    assert _planned_arrival("2026-12-31 23:59:59") == date(2026, 12, 31)
+    assert _planned_arrival("2026-01-01 00:00:00") == date(2026, 1, 1)
+
+
+def test_planned_arrival_of_nothing_is_none_not_today():
+    """NULL has to stay distinguishable from a real date: it means the ERP did
+    not state one, and a screen that shows today instead is lying about when
+    goods land."""
+    for empty in (None, "", "   ", "not a date", "0000-00-00 00:00:00"):
+        assert _planned_arrival(empty) is None, empty
+
+
+def test_planned_arrival_accepts_a_real_date_object():
+    """oracledb can hand back a date rather than a string depending on the
+    column type it infers; str() of it still starts YYYY-MM-DD."""
+    assert _planned_arrival(date(2026, 8, 20)) == date(2026, 8, 20)
+
+
+def test_transform_carries_the_planned_arrival_date_onto_the_line():
+    """Reading the column is useless if the transform drops it, and the failure
+    would look exactly like the ERP not having the value."""
+    raw = _raw()
+    raw["order_lines"][0]["dplanarrvdate"] = "2026-05-05 09:31:37"
+    r = transform(raw, VEND)
+    assert r["order_lines"][0]["planned_arrival_date"] == date(2026, 5, 5)
+
+
+def test_transform_line_without_the_column_is_none_not_missing():
+    """Every consumer indexes this key unconditionally (the writer binds it on
+    both the insert and the update), so it must always be present."""
+    r = transform(_raw(), VEND)          # fixture has no dplanarrvdate at all
+    assert r["order_lines"][0]["planned_arrival_date"] is None
+
+
+# ── goods-receipt line unit ──────────────────────────────────────────────────
+
+def test_gr_line_carries_the_arrival_unit_not_a_hardcoded_one():
+    """A receipt line's unit is the arrival's own — the mirror used to write the
+    literal 'EA' on every one of them, so a 14,360 KGM receipt against a PO line
+    reading KGM was stored as 14,360 EA. The quantity is only a number until the
+    unit beside it is the right one."""
+    raw = _raw()
+    raw["arrival_lines"][0]["castunitid"] = "U1"      # KG, per the fixture's uoms
+    r = transform(raw, VEND)
+    assert r["gr_lines"][0]["unit"] == "KG"
+
+
+def test_gr_line_unit_falls_back_when_the_arrival_states_none():
+    """NC leaves the column empty on a handful of lines. 'EA' is the same
+    fallback the order line uses, so the two agree about what unknown means."""
+    raw = _raw()
+    raw["arrival_lines"][0]["castunitid"] = None
+    r = transform(raw, VEND)
+    assert r["gr_lines"][0]["unit"] == "EA"

@@ -13,6 +13,14 @@ interface AuthzRole {
   label: string
   sort: number
   is_active: boolean
+  /**
+   * False for ADDITIONAL-ONLY roles (erp_pa_officer / payment_officer): granted
+   * under Additional Roles, never as someone's primary login role. Comes from
+   * identity's `role_defs.assignable_as_primary`, so adding another such role is
+   * a data change — no frontend edit. Optional so an identity older than
+   * migration 0009 keeps the pre-existing behaviour (everything selectable).
+   */
+  assignable_as_primary?: boolean
 }
 
 interface AuthzPermission {
@@ -405,6 +413,14 @@ function UserRolesTab() {
     () => [...(defsQ.data?.roles ?? [])].filter((r) => r.is_active).sort((a, b) => a.sort - b.sort),
     [defsQ.data],
   )
+  // Additional-only roles are still offered as Additional Roles chips — they are
+  // only removed from the Primary Role dropdown. The backend rejects them as a
+  // primary role too (identity put_user_roles), this just keeps the admin from
+  // picking something that would 422.
+  const primaryRoles = useMemo(
+    () => activeRoles.filter((r) => r.assignable_as_primary !== false),
+    [activeRoles],
+  )
 
   const rowFor = (u: ApiUser): RowEdit =>
     edits[u.id] ?? { primary: u.role, additional: userRolesQ.data?.user_roles[u.id] ?? [], touched: false }
@@ -490,9 +506,13 @@ function UserRolesTab() {
                 const msg = rowMsg[u.id]
                 const isSaving = !!saving[u.id]
                 // Guard against a primary role no longer in the active list (e.g. deactivated after assignment).
-                const primaryOptions = activeRoles.some((r) => r.code === row.primary)
-                  ? activeRoles
-                  : [{ code: row.primary, label: `${row.primary} (inactive)`, sort: -1, is_active: false }, ...activeRoles]
+                // A user already holding a hidden/inactive role as primary (deactivated
+                // after assignment, or an additional-only role set before the backend
+                // guard existed) still needs their current value in the list — otherwise
+                // the <select> would silently display someone else's role.
+                const primaryOptions = primaryRoles.some((r) => r.code === row.primary)
+                  ? primaryRoles
+                  : [{ code: row.primary, label: `${row.primary} (not selectable)`, sort: -1, is_active: false }, ...primaryRoles]
                 const additionalOptions = activeRoles.filter((r) => r.code !== row.primary)
 
                 return (

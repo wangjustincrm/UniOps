@@ -17,6 +17,13 @@ import CollectionConfirmPage from '@/pages/gr/CollectionConfirmPage'
 import ServiceGrConfirmPage from '@/pages/gr/ServiceGrConfirmPage'
 import InvoiceListPage from '@/pages/invoices/InvoiceListPage'
 import InvoiceDetailPage from '@/pages/invoices/InvoiceDetailPage'
+import AgreementListPage from '@/pages/agreements/AgreementListPage'
+import AgreementCreatePage from '@/pages/agreements/AgreementCreatePage'
+import AgreementEditPage from '@/pages/agreements/AgreementEditPage'
+import AgreementDetailPage from '@/pages/agreements/AgreementDetailPage'
+import ReceiptListPage from '@/pages/receipts/ReceiptListPage'
+import ReceiptCreatePage from '@/pages/receipts/ReceiptCreatePage'
+import ReceiptDetailPage from '@/pages/receipts/ReceiptDetailPage'
 import PaListPage from '@/pages/pa/PaListPage'
 import PaCreatePage from '@/pages/pa/PaCreatePage'
 import PaDetailPage from '@/pages/pa/PaDetailPage'
@@ -58,6 +65,17 @@ export const epmsRoutes: RouteDef[] = [
 
   { path: '/invoices', element: <InvoiceListPage />, tab: { title: 'Invoices', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/invoices/:id', element: <InvoiceDetailPage />, tab: { title: (p) => `Invoice ${short(p.id)}`, icon: 'FileText', keyStrategy: 'param', paramName: 'id' } },
+
+  { path: '/agreements', element: <AgreementListPage />, tab: { title: 'Agreements', icon: 'FileSignature', keyStrategy: 'static' } },
+  { path: '/agreements/new', element: <AgreementCreatePage />, tab: { title: 'New Agreement', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/agreements/:id/edit', element: <AgreementEditPage />, tab: { title: (p) => `Edit Agreement ${short(p.id)}`, icon: 'FileSignature', keyStrategy: 'param', paramName: 'id' } },
+  { path: '/agreements/:id', element: <AgreementDetailPage />, tab: { title: (p) => `Agreement ${short(p.id)}`, icon: 'FileSignature', keyStrategy: 'param', paramName: 'id' } },
+
+  { path: '/receipts', element: <ReceiptListPage />, tab: { title: 'Agreement Receipts', icon: 'Receipt', keyStrategy: 'static' } },
+  { path: '/receipts/new', element: <ReceiptCreatePage />, tab: { title: 'New Receipt', icon: 'Plus', keyStrategy: 'static' } },
+  // After /receipts/new, matching how /gr/:id and /agreements/:id sit below
+  // their own literal sub-paths in this table.
+  { path: '/receipts/:id', element: <ReceiptDetailPage />, tab: { title: (p) => `Receipt ${short(p.id)}`, icon: 'Receipt', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/pa', element: <PaListPage />, tab: { title: 'Payment Applications', icon: 'CreditCard', keyStrategy: 'static' } },
   { path: '/pa/new', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static' } },

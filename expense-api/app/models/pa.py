@@ -25,6 +25,13 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     )
     po_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
+    # EPMS Purchase Agreement link (epms-api migration ag02_agreement_links).
+    # Mirrored here purely so is_direct() below can tell an agreement-backed
+    # EPMS PA apart from OA's own Direct PA — expense-api never writes it.
+    agreement_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True
     )
@@ -63,3 +70,20 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), nullable=False, index=True
     )
+
+    @property
+    def is_direct(self) -> bool:
+        """True only for OA's Direct PA — BOTH po_id AND agreement_id NULL.
+
+        payment_applications has three owners sharing one table: PO-based EPMS
+        PAs (po_id set), agreement-based EPMS PAs (agreement_id set, po_id
+        NULL — the Purchase Agreement branch), and OA's Direct PAs (both NULL).
+        Before agreements existed "po_id is None" was a sound test for a Direct
+        PA; it no longer is, and getting it wrong routes an EPMS agreement PA
+        through OA's `pa_dir` workflow instead of `pa`.
+
+        Mirrors finance-api/app/models/pa.py::is_direct deliberately. Single
+        source of truth for every doc_kind derivation in this service — do not
+        re-derive po_id-is-None inline at a new call site.
+        """
+        return self.po_id is None and self.agreement_id is None

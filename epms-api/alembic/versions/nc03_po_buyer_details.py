@@ -1,7 +1,7 @@
 """add buyer-supplied detail columns for NC-imported POs
 
 Revision ID: nc03_po_buyer_details
-Revises: nc02_nc_cutover
+Revises: aj01_nc_sync_collision_counts
 Create Date: 2026-08-07
 
 purchase_orders.notes belongs to the NC mirror — every incremental sync
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "nc03_po_buyer_details"
-down_revision = "nc02_nc_cutover"
+down_revision = "aj01_nc_sync_collision_counts"
 branch_labels = None
 depends_on = None
 

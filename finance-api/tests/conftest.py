@@ -125,7 +125,8 @@ def _migrate():
         conn.execute(sa.text(
             "CREATE TABLE IF NOT EXISTS approval_dept_routing ("
             " dept_id uuid PRIMARY KEY,"
-            " director_user_id uuid"
+            " director_user_id uuid,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm'"
             ")"
         ))
         for stmt in (
@@ -152,6 +153,10 @@ def _migrate():
 
         for i, code in enumerate((
             "system_admin", "finance_manager", "finance_bp", "ap_clerk", "requester",
+            # budget_scope.py resolves the caller's role union through
+            # uniops_authz, which drops an ADDITIONAL role without an active
+            # role_defs row — these are the ones its tests assign that way.
+            "dept_manager", "director", "opm",
         )):
             conn.execute(sa.text(
                 "INSERT INTO role_defs (code, label, sort, is_active) VALUES (:c, :c, :s, true)"),
@@ -160,6 +165,11 @@ def _migrate():
             ("finance.coa.manage", "finance"),
             ("finance.period.close", "finance"),
             ("finance.jv.post", "finance"),
+            # Budget Dashboard data scope — identity migration
+            # 0010_budget_view_scope_perms owns these two keys and the
+            # production defaults mirrored in _phase2_defaults below.
+            ("finance.budget.view_all", "finance"),
+            ("finance.budget.view_dept", "finance"),
         )):
             conn.execute(sa.text(
                 "INSERT INTO permission_defs (key, module, label, sort) VALUES (:k, :m, :k, :s)"),
@@ -168,6 +178,10 @@ def _migrate():
             "finance.coa.manage": ("system_admin", "finance_manager"),
             "finance.period.close": ("system_admin", "finance_manager"),
             "finance.jv.post": ("system_admin", "finance_manager", "finance_bp"),
+            "finance.budget.view_all": (
+                "system_admin", "finance_manager", "finance_bp", "ap_clerk",
+            ),
+            "finance.budget.view_dept": ("requester", "dept_manager", "director", "opm"),
         }
         for key, roles in _phase2_defaults.items():
             for role in roles:

@@ -145,6 +145,12 @@ class Settings(BaseSettings):
     # default. Do not add a second cutover setting.
     nc_purchase_cutover: str | None = None
 
+    # Whether THIS process runs the NC purchase sync loop. How OFTEN it runs
+    # is company config (an admin dial, changeable without a redeploy) — this
+    # is the deployment switch: dev containers set it false so a developer
+    # machine does not pull NC65 alongside production.
+    nc_sync_scheduler_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

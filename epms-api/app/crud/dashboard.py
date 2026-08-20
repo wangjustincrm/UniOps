@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
 from app.models.config import CompanyConfig
 from app.models.department import Department
 from app.models.gr import GoodsReceipt
@@ -106,15 +107,42 @@ async def _effective_roles(db: AsyncSession, role: str, user_id: uuid.UUID) -> s
     return await _effective_role_codes(db, role, user_id)
 
 
-def _task_subq(doc_type: str, task_type: str, user_id: uuid.UUID, effective_roles: set[str]):
-    """Subquery of document_ids where the user has an open approval task."""
+def _task_subq(
+    doc_type: str, task_type: str, user_id: uuid.UUID, effective_roles: set[str],
+    delegator_ids: set[uuid.UUID] = frozenset(),
+    delegated_roles: set[str] = frozenset(),
+):
+    """Subquery of document_ids where the user has an open approval task.
+
+    `delegator_ids` widens "own" to also match approve tasks assigned to
+    anyone this user is standing in for today (resolved once per request by
+    the caller, not here) — restricted to approve% so a delegate never
+    inherits a delegator's non-approval workload.
+
+    `delegated_roles` (from app.core.delegation.delegated_broadcast_roles)
+    mirrors that same widening for ROLE-POOL approve tasks (assigned_user_id
+    IS NULL, assigned_role = a role a delegator holds) — the counterpart to
+    `app/crud/task.py`'s `get_for_role`, which already folds this in for the
+    Task Inbox. Before this, a delegate covering a role-pool poster (e.g.
+    Finance Manager) saw the approve_pa task in their inbox but got no
+    Pending-Approvals row for it here, contradicting this function's own
+    docstring that the two surfaces always agree. `task_type` is always an
+    "approve_*" type at every call site, so it already gates this branch to
+    approval tasks — no separate approve% filter is needed here.
+    """
+    own = Task.assigned_user_id == user_id
+    if delegator_ids:
+        own = or_(own, and_(
+            Task.type.like("approve%"), Task.assigned_user_id.in_(delegator_ids),
+        ))
     return select(Task.document_id).where(
         Task.document_type == doc_type,
         Task.type == task_type,
         Task.is_completed.is_(False),
         or_(
-            Task.assigned_user_id == user_id,
-            and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(effective_roles)),
+            own,
+            and_(Task.assigned_user_id.is_(None),
+                 Task.assigned_role.in_(effective_roles | delegated_roles)),
         ),
     )
 
@@ -132,10 +160,13 @@ async def _pending_approvals(
     approve_* task for it (via personal assignment or role broadcast).
     """
     eff_roles = await _effective_roles(db, role, user_id)
+    # Resolved once per request, then reused across the PR/PO/PA subqueries below.
+    delegator_ids = await active_delegator_ids(db, user_id)
+    delegated_roles = await delegated_broadcast_roles(db, delegator_ids)
     items: list[ApprovalItem] = []
 
     # PRs — join creator + department for context
-    pr_subq = _task_subq("pr", "approve_pr", user_id, eff_roles)
+    pr_subq = _task_subq("pr", "approve_pr", user_id, eff_roles, delegator_ids, delegated_roles)
     pr_rows = await db.execute(
         select(
             PurchaseRequest,
@@ -162,7 +193,7 @@ async def _pending_approvals(
         ))
 
     # POs — filter by open approve_po tasks for this user
-    po_subq = _task_subq("po", "approve_po", user_id, eff_roles)
+    po_subq = _task_subq("po", "approve_po", user_id, eff_roles, delegator_ids, delegated_roles)
     po_rows = await db.execute(
         select(
             PurchaseOrder,
@@ -189,7 +220,7 @@ async def _pending_approvals(
         ))
 
     # PAs — filter by open approve_pa tasks for this user
-    pa_subq = _task_subq("pa", "approve_pa", user_id, eff_roles)
+    pa_subq = _task_subq("pa", "approve_pa", user_id, eff_roles, delegator_ids, delegated_roles)
     pa_rows = await db.execute(
         select(
             PaymentApplication,
@@ -341,10 +372,18 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     )
     active_prs = pr_result.scalar_one()
 
-    # Tasks overdue
+    # Tasks overdue — widened to the delegator's overdue APPROVE tasks while a
+    # delegation is active, restricted to approve% so the delegate's overdue
+    # count is never inflated by the delegator's other (non-approval) work.
+    delegator_ids = await active_delegator_ids(db, user_id)
+    own_task = Task.assigned_user_id == user_id
+    if delegator_ids:
+        own_task = or_(own_task, and_(
+            Task.type.like("approve%"), Task.assigned_user_id.in_(delegator_ids),
+        ))
     task_result = await db.execute(
         select(func.count()).select_from(Task).where(
-            Task.assigned_user_id == user_id,
+            own_task,
             Task.is_completed.is_(False),
             Task.due_date < _today(),
         )
@@ -568,6 +607,49 @@ async def build_ap_clerk(db: AsyncSession) -> DashboardResponse:
     )
 
 
+async def build_payment_officer(db: AsyncSession) -> DashboardResponse:
+    """Payment execution split out of AP Clerk (2026-08-13): scoped to PAs that
+    have cleared approval and are waiting to be paid, plus this role's own
+    throughput. Deliberately excludes ap_clerk's unmatched/exception invoice
+    counts — those belong to the AP review job this role is separated from."""
+    awaiting_r = await db.execute(
+        select(func.count()).select_from(PaymentApplication).where(
+            PaymentApplication.status == "approved"
+        )
+    )
+    awaiting_value_r = await db.execute(
+        select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
+            PaymentApplication.status == "approved"
+        )
+    )
+    processed_month_r = await db.execute(
+        select(func.count()).select_from(PaymentApplication).where(
+            PaymentApplication.status == "processed",
+            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+        )
+    )
+    processed_month_value_r = await db.execute(
+        select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
+            PaymentApplication.status == "processed",
+            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+        )
+    )
+
+    awaiting_pas = await _pa_rows(db, ["approved"])
+
+    awaiting_count = awaiting_r.scalar_one()
+    return DashboardResponse(
+        role="payment_officer",
+        kpis=[
+            KpiCard(title="PAs Awaiting Payment", value=str(awaiting_count), alert=awaiting_count > 0),
+            KpiCard(title="Value Awaiting Payment", value=_fmt(Decimal(str(awaiting_value_r.scalar_one())))),
+            KpiCard(title="Processed This Month", value=str(processed_month_r.scalar_one())),
+            KpiCard(title="Value Processed This Month", value=_fmt(Decimal(str(processed_month_value_r.scalar_one())))),
+        ],
+        pa_in_review=awaiting_pas,
+    )
+
+
 async def build_finance_bp(db: AsyncSession) -> DashboardResponse:
     in_review_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
@@ -756,8 +838,39 @@ async def build_system_admin(db: AsyncSession) -> DashboardResponse:
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 
+# Roles that only ever exist as ADDITIONAL roles (identity's
+# role_defs.assignable_as_primary = false) but still own a dashboard, in the
+# order they win when the primary role has none. Without this, every builder
+# below that names an additional-only role is unreachable code: the dispatcher
+# reads the JWT's PRIMARY role, and these are never anyone's primary role.
+_ADDITIONAL_ROLE_DASHBOARDS: tuple[str, ...] = ("payment_officer",)
+
+# Primary roles whose dashboard is not simply the role name. Keep in sync with
+# the branches in build() — this is only used to decide whether the primary role
+# already owns a dashboard before falling back to additional roles.
+_PRIMARY_WITH_DASHBOARD = frozenset({
+    "dept_manager", "gm", "opm", "director", "supervisor", "dept_admin",
+    "procurement_officer", "procurement_manager", "warehouse_staff", "ap_clerk",
+    "finance_bp", "finance_manager", "cfo", "auditor", "vendor_manager",
+    "system_admin",
+})
+
+
 async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardResponse:
-    if role in ("dept_manager", "gm", "opm"):
+    if role not in _PRIMARY_WITH_DASHBOARD:
+        # The primary role has no dashboard of its own (requester, or a custom
+        # role). An additional role may still carry one — this is what makes
+        # payment_officer's dashboard reachable at all.
+        eff = await _effective_roles(db, role, user_id)
+        for code in _ADDITIONAL_ROLE_DASHBOARDS:
+            if code in eff:
+                role = code
+                break
+    # director / supervisor / dept_admin are scoped approvers: the EPMS frontend
+    # has always routed them to the Approver dashboard, but they used to fall
+    # through to build_requester here, so their "Pending Approvals" list was
+    # structurally empty (the requester payload has no pending_approvals at all).
+    if role in ("dept_manager", "gm", "opm", "director", "supervisor", "dept_admin"):
         return await build_approver(db, user_id, role)
     if role in ("procurement_officer", "procurement_manager"):
         return await build_procurement(db)
@@ -765,6 +878,8 @@ async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardRes
         return await build_warehouse(db)
     if role == "ap_clerk":
         return await build_ap_clerk(db)
+    if role == "payment_officer":
+        return await build_payment_officer(db)
     if role == "finance_bp":
         return await build_finance_bp(db)
     if role == "finance_manager":

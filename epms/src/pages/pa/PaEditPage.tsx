@@ -7,8 +7,12 @@ import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDo
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { usePa, useUpdatePa } from '@/hooks/usePas'
+import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment } from '@/hooks/usePaAttachments'
+import { paAttachmentService } from '@/services/paAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { paService } from '@/services/pa'
 import { usePo } from '@/hooks/usePos'
+import { useAgreement } from '@/hooks/useAgreements'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useGrs } from '@/hooks/useGrs'
 
@@ -18,9 +22,23 @@ export default function PaEditPage() {
   const queryClient = useQueryClient()
   const { data: pa, isLoading } = usePa(id ?? '')
   const updatePa = useUpdatePa()
+  // Attachments hang off the saved PA, so upload/delete apply immediately
+  // rather than waiting for Save (same semantics as the Detail page).
+  const { data: attachments = [] } = usePaAttachments(id ?? '')
+  const uploadAttachment = useUploadPaAttachment(id ?? '')
+  const deleteAttachment = useDeletePaAttachment(id ?? '')
 
   // ── Step 1 — PO is fixed, just fetch it ───────────────────────────────────
+  // …unless this PA was raised against an AGREEMENT, which has no PO at all.
+  // Every query and every section below used to key off pa.po_id
+  // unconditionally, so an agreement PA opened the PO-based editor with an
+  // empty PO card, an empty "Invoices for this PO" list, an empty goods-receipt
+  // list and an empty PO-line table — the whole form describing a document that
+  // does not exist on this route. Saving from it would have sent gr_ids: [] and
+  // line_items: [] over a PA that never had either.
+  const isAgreementMode = !pa?.po_id && !!pa?.agreement_id
   const { data: po } = usePo(pa?.po_id ?? '')
+  const { data: agreement } = useAgreement(pa?.agreement_id ?? '')
 
   // ── Step 2 — Link invoices / GRs + type ───────────────────────────────────
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set())
@@ -42,8 +60,12 @@ export default function PaEditPage() {
   const [submitted, setSubmitted]       = useState(false)
   const [initialized, setInitialized]   = useState(false)
 
-  const { data: invoicesData } = useInvoices(pa?.po_id ? { po_id: pa.po_id } : undefined)
-  const { data: grsData }      = useGrs(pa?.po_id ? { po_id: pa.po_id } : undefined)
+  const { data: invoicesData } = useInvoices(
+    pa?.po_id ? { po_id: pa.po_id } : pa?.agreement_id ? { agreement_id: pa.agreement_id } : undefined
+  )
+  // No goods receipt exists on the agreement route, ever — skip the request
+  // rather than fire it with an undefined filter and get every GR in the system.
+  const { data: grsData } = useGrs(pa?.po_id ? { po_id: pa.po_id } : undefined, !isAgreementMode)
   const poInvoices = invoicesData?.items ?? []
   const poGrs      = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
 
@@ -90,8 +112,19 @@ export default function PaEditPage() {
 
   // Tax follows the linked PO's snapshot (from Finance Tax Settings); fall back
   // to the PA's own saved code, then 13% for legacy records.
-  const paTaxRate = po ? Number(po.tax_rate) : 0.13
-  const paTaxCode = po?.tax_code ?? pa?.tax_code ?? null
+  // The PA's own currency is authoritative and present on both routes; `po`
+  // is undefined for the whole agreement route, and every amount in the
+  // sidebar used to be formatted with po.currency behind a `po &&` guard —
+  // which silently hid the entire money breakdown for an agreement PA.
+  const paCurrency = pa?.currency ?? po?.currency ?? agreement?.currency ?? 'CAD'
+  // Tax snapshot: the PO's rate on the PO route; on the agreement route the
+  // PA already carries the rate it was created with (PaCreatePage derives it
+  // from the linked invoices), and the 0.13 fallback is a PO-route default
+  // that must not silently rewrite an agreement PA's tax.
+  const paTaxRate = isAgreementMode
+    ? Number(pa?.tax_rate ?? 0)
+    : (po ? Number(po.tax_rate) : 0.13)
+  const paTaxCode = (isAgreementMode ? pa?.tax_code : po?.tax_code) ?? pa?.tax_code ?? null
 
   // Auto-fill tax at the PO's rate when not manually edited
   useEffect(() => {
@@ -127,12 +160,16 @@ export default function PaEditPage() {
 
   const handleSave = async (andSubmit: boolean) => {
     setSubmitted(true)
-    if (!pa || !po) return
+    // `!po` used to be an unconditional bail-out. On the agreement route po is
+    // never loaded, so Save and Save-and-Submit both returned here — the
+    // buttons went through their motions and wrote nothing, with no error.
+    if (!pa) return
+    if (!isAgreementMode && !po) return
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || paymentTotal <= 0) return
     if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
 
     try {
-      const paLineItems = po.line_items
+      const paLineItems = (po?.line_items ?? [])
         .filter((l) => selectedLineIds.has(l.id))
         .map((l) => ({
           po_line_id: l.id,
@@ -154,10 +191,13 @@ export default function PaEditPage() {
           shipping_amount: shippingNum || undefined,
           other_charges: otherNum || undefined,
           invoice_ids: Array.from(selectedInvoiceIds),
-          gr_ids: Array.from(selectedGrIds),
+          // Omitted entirely on the agreement route rather than sent empty:
+          // there is no PO line and no goods receipt to carry, and `[]` is a
+          // value — it would overwrite, not skip.
+          gr_ids: isAgreementMode ? undefined : Array.from(selectedGrIds),
           prepayment_pct: paType === 'prepayment' ? parseFloat(prepaymentPct) : undefined,
           expected_settlement_date: paType === 'prepayment' ? expectedSettlement : undefined,
-          line_items: paLineItems,
+          line_items: isAgreementMode ? undefined : paLineItems,
           notes: notes.trim() || undefined,
         },
       })
@@ -210,16 +250,22 @@ export default function PaEditPage() {
         {/* Main form */}
         <div className="col-span-2 flex flex-col gap-5">
 
-          {/* ── PO (locked) ────────────────────────────────────────────────── */}
+          {/* ── PO / Agreement (locked) ────────────────────────────────────── */}
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-3">
             <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">1</span>
-              Purchase Order
+              {isAgreementMode ? 'Purchase Agreement' : 'Purchase Order'}
             </h2>
             <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3 flex items-center justify-between">
               <div>
-                <p className="font-mono text-xs font-semibold text-primary-700">{pa.po_number}</p>
-                <p className="text-xs text-neutral-500 mt-0.5">{po?.vendor_name ?? pa.vendor_name} · {po?.title}</p>
+                <p className="font-mono text-xs font-semibold text-primary-700">
+                  {isAgreementMode ? pa.agreement_number : pa.po_number}
+                </p>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  {isAgreementMode
+                    ? `${agreement?.vendor_name ?? pa.vendor_name}${agreement?.title ? ` · ${agreement.title}` : ''}`
+                    : `${po?.vendor_name ?? pa.vendor_name} · ${po?.title ?? ''}`}
+                </p>
               </div>
               <span className="text-xs text-neutral-400 italic">Locked</span>
             </div>
@@ -229,18 +275,19 @@ export default function PaEditPage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-5">
             <h2 className="text-sm font-semibold text-neutral-800 flex items-center gap-2">
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-600 text-white text-[10px] font-bold">2</span>
-              Link Invoices & Goods Receipts
+              {isAgreementMode ? 'Link Invoices' : 'Link Invoices & Goods Receipts'}
             </h2>
 
             {/* Invoices multi-select */}
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
-                <FileText className="h-3.5 w-3.5" /> Invoices for this PO
+                <FileText className="h-3.5 w-3.5" />
+                {isAgreementMode ? 'Invoices matched to this agreement' : 'Invoices for this PO'}
                 <span className="text-neutral-400 font-normal">(select all that apply)</span>
               </p>
               {poInvoices.length === 0 ? (
                 <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                  No invoices found for this PO yet
+                  {isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for this PO yet'}
                 </p>
               ) : (
                 <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
@@ -278,7 +325,8 @@ export default function PaEditPage() {
               )}
             </div>
 
-            {/* GRs multi-select */}
+            {/* GRs multi-select — PO route only; the agreement route never has one */}
+            {!isAgreementMode && (
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
                 <Package className="h-3.5 w-3.5" /> Goods / Service Receipts for this PO
@@ -319,8 +367,10 @@ export default function PaEditPage() {
               )}
             </div>
 
-            {/* PO Line Items */}
-            {po && (
+            )}
+
+            {/* PO Line Items — nothing to select without a PO */}
+            {!isAgreementMode && po && (
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
                   <CircleDot className="h-3.5 w-3.5" /> PO Line Items
@@ -396,7 +446,11 @@ export default function PaEditPage() {
               </div>
             )}
 
-            {/* PA Type — derived from the linked PO, read-only */}
+            {/* PA Type — derived from the linked PO, read-only. The agreement
+                route only ever creates pa_type='regular' (POST /pa 422s the
+                others: prepayment/settlement/balance all need a PO to prepay
+                against), so there is nothing here to show or choose. */}
+            {!isAgreementMode && (
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-neutral-600">Payment Type</p>
               <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 flex items-center justify-between">
@@ -455,6 +509,7 @@ export default function PaEditPage() {
                 </div>
               )}
             </div>
+            )}
           </div>
 
           {/* ── Step 3 — Charge Breakdown & Details ────────────────────────── */}
@@ -590,6 +645,23 @@ export default function PaEditPage() {
             </div>
           </div>
 
+          {/* Attachments */}
+          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
+              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+            </div>
+            <AttachmentsEditor
+              inputId="pa-edit-file-upload"
+              attachments={attachments}
+              isUploading={uploadAttachment.isPending}
+              isDeleting={deleteAttachment.isPending}
+              onUpload={(file) => uploadAttachment.mutateAsync(file)}
+              onDelete={(attId) => deleteAttachment.mutate(attId)}
+              onDownload={(att) => { void paAttachmentService.download(id!, att.id, att.filename).catch(() => {}) }}
+            />
+          </div>
+
           {/* Errors */}
           {errors.length > 0 && (
             <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
@@ -634,41 +706,45 @@ export default function PaEditPage() {
                   <span className="text-neutral-500">Invoices linked</span>
                   <span className="text-neutral-700">{selectedInvoiceIds.size}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-500">GRs linked</span>
-                  <span className="text-neutral-700">{selectedGrIds.size}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-500">Type</span>
-                  <span className="text-neutral-700 capitalize">{paType}</span>
-                </div>
+                {!isAgreementMode && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">GRs linked</span>
+                      <span className="text-neutral-700">{selectedGrIds.size}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-neutral-500">Type</span>
+                      <span className="text-neutral-700 capitalize">{paType}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
-              {subtotalNum > 0 && po && (
+              {subtotalNum > 0 && (
                 <div className="border-t border-neutral-200 pt-3 flex flex-col gap-1.5 text-xs">
                   <div className="flex justify-between text-neutral-500">
                     <span>Pre-tax</span>
-                    <span className="font-mono">{formatAmount(subtotalNum, po.currency)}</span>
+                    <span className="font-mono">{formatAmount(subtotalNum, paCurrency)}</span>
                   </div>
                   <div className="flex justify-between text-neutral-500">
                     <span>Tax</span>
-                    <span className="font-mono">{formatAmount(taxNum, po.currency)}</span>
+                    <span className="font-mono">{formatAmount(taxNum, paCurrency)}</span>
                   </div>
                   {shippingNum > 0 && (
                     <div className="flex justify-between text-neutral-500">
                       <span>Shipping</span>
-                      <span className="font-mono">{formatAmount(shippingNum, po.currency)}</span>
+                      <span className="font-mono">{formatAmount(shippingNum, paCurrency)}</span>
                     </div>
                   )}
                   {otherNum > 0 && (
                     <div className="flex justify-between text-neutral-500">
                       <span>Other</span>
-                      <span className="font-mono">{formatAmount(otherNum, po.currency)}</span>
+                      <span className="font-mono">{formatAmount(otherNum, paCurrency)}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-semibold text-neutral-800 border-t border-neutral-200 pt-1.5 mt-0.5">
                     <span>Total</span>
-                    <span className="font-mono">{formatAmount(paymentTotal, po.currency)}</span>
+                    <span className="font-mono">{formatAmount(paymentTotal, paCurrency)}</span>
                   </div>
                 </div>
               )}

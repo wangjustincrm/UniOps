@@ -22,9 +22,17 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up %s v%s [%s]", settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT)
     from app.tasks.daily_followup import daily_followup_loop
     followup_task = asyncio.create_task(daily_followup_loop())
+    from app.tasks.agreement_overdue import agreement_overdue_loop
+    overdue_task = asyncio.create_task(agreement_overdue_loop())
+    # Keeps the NC65 purchase mirror current on a schedule instead of on
+    # somebody remembering to press the button in Admin.
+    from app.tasks.nc_purchase_sync_scheduler import nc_purchase_sync_loop
+    nc_sync_task = asyncio.create_task(nc_purchase_sync_loop())
     yield
     logger.info("Shutting down — closing connections")
     followup_task.cancel()
+    overdue_task.cancel()
+    nc_sync_task.cancel()
     await engine.dispose()
     await close_redis()
 

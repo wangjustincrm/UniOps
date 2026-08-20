@@ -111,14 +111,22 @@ at build time).
 
   | Subdomain (`.canadaroyalmilk.com`) | → container        |
   |------------------------------------|--------------------|
-  | `portal`/`epms`/`oa`/`vms`/`finance` | the web images   |
+  | `portal`/`epms`/`oa`/`vms`/`finance`/`mrp` | the web images |
   | `epms-api`                         | epms-api `8000`    |
   | `oa-api`                           | expense-api `8006` |
   | `vms-api`                          | vms-api `8008`     |
   | `finance-api`                      | finance-api `8004` |
   | `budget-api`                       | budget-api `8007`  |
   | `mdm-api`                          | mdm-api `8002`     |
+  | `mrp-api`                          | mrp-api `8011`     |
   | `files`                            | File server `10.10.50.66:8005` |
+
+  (`booking`/`booking-api` also route through the same edge — see "Booking
+  Module Release Steps" below for their own dedicated DNS step; omitted from
+  this base table for the same reason `mrp`/`mrp-api` were originally, before
+  this update — each module's release-steps section is where its DNS gets
+  called out at the time it's added, and this base table lags behind unless
+  someone remembers to circle back and add it here too.)
 
   `approval-api`/`identity-api` are server-to-server only (no subdomain). The
   browser-facing `*_URL` are baked into the bundles at **build time** as
@@ -139,10 +147,12 @@ at build time).
   (TCP). Enable NAT **hairpin/loopback** so internal users hitting the public IP
   reach the edge too (or use split-DNS — see DNS below).
 - **DNS** A records (→ `45.78.113.218`): `portal`, `epms`, `oa`, `vms`, `finance`,
-  `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`, `files`
-  — each `.canadaroyalmilk.com`. (Use specific records, **not** a wildcard on the
-  company apex.) Internal: rely on firewall hairpin, or add the same names in the
-  internal DNS pointing at `10.10.50.65` (split-DNS).
+  `mrp`, `epms-api`, `oa-api`, `vms-api`, `finance-api`, `budget-api`, `mdm-api`,
+  `mrp-api`, `files` — each `.canadaroyalmilk.com`. (Use specific records, **not**
+  a wildcard on the company apex.) Internal: rely on firewall hairpin, or add the
+  same names in the internal DNS pointing at `10.10.50.65` (split-DNS). (`booking`/
+  `booking-api` need their own A records too — see "Booking Module Release
+  Steps" below, which was written with its own explicit DNS step.)
 - App server `10.10.50.65` can reach the **DB server** (`${DB_HOST}:5432` + Redis
   `:6379`) and **File server** (`10.10.50.66:8005`) — add `10.10.50.65` to
   **pg_hba.conf + ufw** on the DB server.
@@ -398,6 +408,81 @@ Additional one-time steps are required before the first booking release:
 6. **DNS + Caddy** — `booking.canadaroyalmilk.com` and `booking-api.canadaroyalmilk.com` are already
    present in the `Caddyfile`. Add both A records (→ `45.78.113.218`) in the external DNS and the
    corresponding internal split-DNS entries (→ `10.10.50.65`).
+
+---
+
+## MRP Module Release Steps
+
+`mrp-api` (`:8011`) and `mdm-api`'s BOM sync (`nc_bom*` raw mirror + canonical
+`boms`/`bom_lines`/`bom_substitutes`) follow the same build/push/deploy pattern
+as the other services. Two one-time steps are required for the first MRP
+release:
+
+1. **mrp-api is in `migrate-prod.sh`** — it owns its own `alembic_version_mrp`
+   table (independent from `alembic_version_mdm`/the shared `alembic_version`),
+   and its first migration has `down_revision=None`, so its position in the
+   ordered `SERVICES` list is unconstrained. It IS included in the list —
+   **do not remove it**: a release that ships the `mrp-api` image without
+   running its migration deploys a service whose `/health` reports healthy
+   with no tables underneath (every `wms_inventory_lots` read then 500s).
+
+2. **WMS (Flux) Oracle read-only connection** — `mrp-api`'s inventory-lot sync
+   needs `WMS_HOST` / `WMS_PORT` / `WMS_SERVICE` / `WMS_USER` / `WMS_PASSWORD`
+   in `.env` (see `.env.prod.example` / `.env.lan.example`). `docker-compose.prod.yml`
+   reads these as `${WMS_HOST:-}` etc. — leaving them blank does not fail the
+   deploy, it just leaves the sync endpoint reporting "not configured" (503)
+   until real values are filled in.
+
+3. **Seed the 8 MRP + 1 mdm permission keys** — the MRP phase-0 permission
+   keys (`mrp.demand.write`, `mrp.run.execute`, `mrp.proposal.confirm`,
+   `mrp.proposal.export`, `mrp.exception.handle`, `mrp.param.write`,
+   `mrp.report.view`, `mdm.bom.write`) are defined in code
+   (`identity-api/scripts/seed_authz.py`'s `MODULE_BY_KEY`) but only exist in
+   the DB — and therefore only appear in the Portal Access Control matrix and
+   only gate anything — after this script has run against production:
+
+   ```bash
+   # On the app server, inside the identity-api container:
+   docker compose -f docker-compose.prod.yml exec identity-api python -m scripts.seed_authz
+   ```
+
+   This is idempotent for *new* keys/roles (`ON CONFLICT DO NOTHING` on
+   `permission_defs`/`role_defs`) and safe to run on every MRP-touching
+   release. **Caveat — do not run it speculatively on unrelated releases**:
+   `seed_authz.py` also re-inserts each role's *default* grants
+   (`role_permissions`) for every key in `MODULE_BY_KEY`, and `ON CONFLICT DO
+   NOTHING` cannot tell "this grant was never inserted" apart from "an admin
+   explicitly unchecked this grant in the Access Control UI after a previous
+   seed". Re-running the script will silently **resurrect** any default grant
+   an admin has since revoked (for any of the keys in `MODULE_BY_KEY`, not
+   just the new MRP ones) — it does not touch grants that were never part of
+   `DEFAULTS`/`LOCKED` at all. Only run it when a release adds new keys/roles
+   that actually need seeding, and re-check the Access Control matrix
+   afterward for any revoked grant that came back.
+
+4. **DNS + Caddy** — `mrp.canadaroyalmilk.com` and `mrp-api.canadaroyalmilk.com`
+   are already present in the `Caddyfile` (same pattern as Booking's step 6
+   above). Add both A records (→ `45.78.113.218`) in the external DNS and the
+   corresponding internal split-DNS entries (→ `10.10.50.65`) — see
+   Prerequisites' DNS list above, which now includes them (M13, final-phase
+   review: this step and the Prerequisites DNS list previously omitted
+   `mrp`/`mrp-api` entirely).
+
+5. **Migration `0015` is DDL-only** (M8, final-phase review) — it adds
+   columns/constraints but does not backfill or re-derive any data. A
+   dev/staging DB that was already sitting at 0011-0014 before this release
+   will apply 0015 cleanly, but the `boms`/`bom_lines` rows it already had
+   from an earlier `POST /mdm/v1/boms/sync` keep serving the **batch-scaled**
+   quantities that sync run computed — 0015's new columns/behavior only take
+   effect for rows written by a sync that runs *after* 0015 is applied.
+   **Run `POST /mdm/v1/boms/sync` again after migrating** any environment
+   that had BOM data before this release, or the BOM Explorer / explosion
+   endpoints will silently keep serving pre-0015 quantities until the next
+   sync happens to run for some other reason. **Production is unaffected**:
+   `boms` is created empty by migration `0011` in this same release, so
+   there is no pre-existing data to be stale in the first place — this only
+   matters for a dev/staging DB that had already synced BOMs before 0015
+   landed.
 
 ---
 

@@ -4,7 +4,7 @@ import uuid
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import text
 from uniops_authz import effective_permissions, role_matrix, user_role_codes
@@ -259,6 +259,11 @@ async def list_roles(db: SessionDep, _: CurrentUserPayload, token: BearerToken):
             "description": "",
             "is_active": r.get("is_active", True),
             "is_builtin": r["code"] in BUILT_IN_ROLES,
+            # identity's role_defs.assignable_as_primary — false for roles that
+            # may only be held as ADDITIONAL (erp_pa_officer / payment_officer).
+            # Absent on an identity older than migration 0009 ⇒ treat as
+            # selectable, matching the pre-0009 behaviour.
+            "assignable_as_primary": r.get("assignable_as_primary", True),
         }
         for r in body.get("roles", [])
     ]
@@ -359,9 +364,15 @@ async def get_user_roles(_: CurrentUserPayload, token: BearerToken):
     return body
 
 
-@router.put("/users/{user_id}/roles", status_code=204)
+@router.put("/users/{user_id}/roles")
 async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: BearerToken):
-    """Proxy PUT /authz/users/{id}/roles to identity (system_admin only)."""
+    """Proxy PUT /authz/users/{id}/roles to identity (system_admin only).
+
+    identity's body carries `routing_resync` — the outcome of re-pointing
+    in-flight approvals at the new role holder. Pass it through: this proxy is
+    Portal Admin's only route to that endpoint, so swallowing the body would
+    hide a failed re-sync from the one person who can rerun it.
+    """
     try:
         status_code, resp_body = await _forward_identity(
             "PUT", f"/authz/users/{user_id}/roles", token, json=body
@@ -370,7 +381,7 @@ async def put_user_roles(user_id: uuid.UUID, body: dict, _: AdminDep, token: Bea
         raise HTTPException(status_code=502, detail=f"Identity unreachable: {exc}")
     if status_code not in (200, 204):
         raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
-    return Response(status_code=204)
+    return resp_body or {}
 
 
 # ── Approval routing passthrough (Phase 3) ──────────────────────────────────
@@ -406,6 +417,72 @@ async def put_approval_routing(body: dict, _: CurrentUserPayload, token: BearerT
     """
     try:
         status_code, resp_body = await approval_client.forward("PUT", "/routing", token, json=body)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
+
+
+# ── Approval delegation passthrough (Task 12) ───────────────────────────────
+#
+# Same reasoning as the approval-routing passthrough directly above:
+# approval-api's /delegations endpoints have no browser-facing subdomain/CORS
+# (Caddyfile: approval-api is server-to-server only), so epms-api gateways
+# them for the Portal admin page. No authz logic is duplicated here —
+# approval-api's own handlers gate every verb to system_admin and own all
+# 409/422 validation (self-delegation, end-before-start, overlapping live
+# windows); this just passes status + body through unchanged.
+
+@router.get("/approval-delegations")
+async def list_approval_delegations(_: CurrentUserPayload, token: BearerToken):
+    """Proxy GET /approval/v1/delegations from the Approval Engine."""
+    try:
+        status_code, body = await approval_client.forward("GET", "/delegations", token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    return body
+
+
+@router.post("/approval-delegations", status_code=201)
+async def create_approval_delegation(body: dict, _: CurrentUserPayload, token: BearerToken):
+    """Proxy POST /approval/v1/delegations. approval-api returns 409 on an
+    overlapping live window and 422 on self-delegation / end-before-start —
+    both pass through untouched so the Portal form can render them inline."""
+    try:
+        status_code, resp_body = await approval_client.forward("POST", "/delegations", token, json=body)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code not in (200, 201):
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
+
+
+@router.patch("/approval-delegations/{delegation_id}")
+async def update_approval_delegation(
+    delegation_id: uuid.UUID, body: dict, _: CurrentUserPayload, token: BearerToken,
+):
+    """Proxy PATCH /approval/v1/delegations/{id}. approval-api returns 409 if
+    the row is already revoked — passed through untouched."""
+    try:
+        status_code, resp_body = await approval_client.forward(
+            "PATCH", f"/delegations/{delegation_id}", token, json=body)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
+
+
+@router.post("/approval-delegations/{delegation_id}/revoke")
+async def revoke_approval_delegation(delegation_id: uuid.UUID, _: CurrentUserPayload, token: BearerToken):
+    """Proxy POST /approval/v1/delegations/{id}/revoke. Idempotent on
+    approval-api's side — revoking twice is a harmless 200."""
+    try:
+        status_code, resp_body = await approval_client.forward(
+            "POST", f"/delegations/{delegation_id}/revoke", token)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
     if status_code != 200:

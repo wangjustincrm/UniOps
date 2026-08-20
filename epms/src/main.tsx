@@ -32,6 +32,10 @@ function decodeUtf8Base64(b64: string): string {
       department_id: user.department_id ?? null,
     }
     const mfaVerifiedAt = Date.now()
+    // Honour the Portal's rotation flag instead of assuming a clean session —
+    // an expired or never-rotated password must still hit the forced modal
+    // after the handoff. Older Portal builds omit the field ⇒ falsy ⇒ no gate.
+    const mustChangePassword = user.must_change_password === true
 
     // 1. Update in-memory Zustand store (React will mount with this state)
     useAuthStore.setState({
@@ -41,7 +45,7 @@ function decodeUtf8Base64(b64: string): string {
       isAuthenticated: true,
       mfaVerifiedAt,
       mfaPendingToken: null,
-      mustChangePassword: false,
+      mustChangePassword,
     })
 
     // 2. Persist to localStorage so refreshes also work
@@ -56,7 +60,7 @@ function decodeUtf8Base64(b64: string): string {
         isAuthenticated: true,
         mfaVerifiedAt,
         mfaPendingToken: null,
-        mustChangePassword: false,
+        mustChangePassword,
       },
       version: 0,
     }))

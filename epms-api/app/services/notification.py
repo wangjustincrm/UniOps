@@ -204,7 +204,16 @@ async def _dispatch(
     recipients: list[User] = []
     if shared_mailbox is None:
         if task.assigned_user_id:
-            user = await db.get(User, task.assigned_user_id)
+            recipient_id = task.assigned_user_id
+            # Substitution, not widening: the delegator is away, so mailing
+            # them is noise. active_delegate_id already returns None when the
+            # stand-in is deactivated, which falls back to the delegator.
+            if (task.type or "").startswith("approve"):
+                from app.core.delegation import active_delegate_id
+                stand_in = await active_delegate_id(db, task.assigned_user_id)
+                if stand_in is not None:
+                    recipient_id = stand_in
+            user = await db.get(User, recipient_id)
             if user and user.is_active:
                 recipients.append(user)
         elif task.assigned_role == "requester":
@@ -418,6 +427,7 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "settle_prepayment": "prepayment_settlement_overdue",
         "match_invoice": "match_invoice_assigned",
         "review_match": "match_review_request",
+        "resolve_exception": "exception_resolution_request",
     }.get(task_type, "pr_approval_request")
 
 

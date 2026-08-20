@@ -19,9 +19,9 @@ async def test_pa_created_by_officer_routes_by_pr_requester(engine_db_session):
     db = engine_db_session
     dept_requester = uuid.uuid4()
     dept_officer = uuid.uuid4()
-    requester = User(id=uuid.uuid4(), role="requester",
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester",
                      department_id=dept_requester, is_active=True)
-    officer = User(id=uuid.uuid4(), role="procurement_officer",
+    officer = User(full_name="Test User", id=uuid.uuid4(), role="procurement_officer",
                    department_id=dept_officer, is_active=True)
     db.add_all([requester, officer])
     await db.flush()
@@ -62,9 +62,9 @@ async def test_pa_routing_follows_pr_selected_department(engine_db_session):
     db = engine_db_session
     dept_own = uuid.uuid4()
     dept_selected = uuid.uuid4()
-    requester = User(id=uuid.uuid4(), role="requester",
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester",
                      department_id=dept_own, is_active=True)
-    officer = User(id=uuid.uuid4(), role="procurement_officer",
+    officer = User(full_name="Test User", id=uuid.uuid4(), role="procurement_officer",
                    department_id=uuid.uuid4(), is_active=True)
     db.add_all([requester, officer])
     await db.flush()
@@ -108,7 +108,7 @@ async def test_pa_for_pr_less_po_routes_by_officer_department(engine_db_session)
     user's own department."""
     db = engine_db_session
     dept_officer = uuid.uuid4()
-    officer = User(id=uuid.uuid4(), role="procurement_officer",
+    officer = User(full_name="Test User", id=uuid.uuid4(), role="procurement_officer",
                    department_id=dept_officer, is_active=True)
     db.add(officer)
     await db.flush()

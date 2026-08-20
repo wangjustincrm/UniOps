@@ -75,6 +75,16 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
       POSTGRES_HOST: postgres
+      # epms-api computes its connection string from POSTGRES_* as a @property
+      # and IGNORES DATABASE_URL (app/core/config.py:52). This block overrides
+      # x-python-base wholesale -- YAML `<<:` does not deep-merge -- so every
+      # POSTGRES_* the app reads must be repeated here. Omitting the password
+      # silently fell back to the "epms_dev" default: every DB call failed auth
+      # while /health (which touches no DB) still reported healthy.
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: epms
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: epms
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: "0"
@@ -89,7 +99,7 @@ services:
       APP_NAME: EPMS API
       APP_VERSION: 0.1.0
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178"]'
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       ACCESS_TOKEN_EXPIRE_MINUTES: "480"
       REFRESH_TOKEN_EXPIRE_DAYS: "7"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
@@ -106,6 +116,10 @@ services:
       NC_SERVICE: ${NC65_SERVICE:-}
       NC_USER: ${NC65_USER:-}
       NC_PASSWORD: ${NC65_PASSWORD:-}
+      # OFF in dev: with real NC65_* values in the root .env every developer
+      # machine would otherwise pull NC purchase orders on the same schedule
+      # as production. The Admin button still works.
+      NC_SYNC_SCHEDULER_ENABLED: "false"
     depends_on:
       postgres:
         condition: service_healthy
@@ -136,6 +150,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: approval-engine
       PORT: "8003"
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
@@ -163,8 +178,16 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: mdm-stub
       PORT: "8002"
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       ERP_BASE_URL: http://10.10.95.66
       ERP_TIMEOUT_SECONDS: "60"
+      # NC65 read-only connection for the BOM raw mirror sync (values live in the
+      # gitignored root .env as NC65_*; missing values = feature hidden).
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8002/health').status==200 else 1)"]
@@ -196,6 +219,12 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_NAME: identity-api
       PORT: "8009"
+      # Approval Engine — identity re-syncs in-flight approvals here after a
+      # PRIMARY role change (department-scoped approve tasks are pinned to a
+      # specific person, so they would otherwise stay with the previous
+      # holder). Missing/wrong value = silent "failed:" in the response.
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
     depends_on:
       redis:
         condition: service_healthy
@@ -231,6 +260,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       SERVICE_NAME: finance-core
       PORT: "8004"
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       BUDGET_API_URL: http://budget-api:8007
       # Where the client reads QBO creds inside the container (see the volume above).
@@ -269,6 +299,7 @@ services:
       SERVICE_NAME: file-server
       PORT: "8005"
       STORAGE_ROOT: /file-storage
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
     command: uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     healthcheck:
       # Router is mounted under /files/v1 (app/main.py) — health lives there, not at /health.
@@ -300,6 +331,7 @@ services:
       JWT_ALGORITHM: HS256
       SERVICE_NAME: expense-api
       PORT: "8006"
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       DEBUG: "true"
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -337,11 +369,74 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       APPROVAL_API_URL: http://approval-api:8003/approval/v1
       EPMS_API_URL: http://epms-api:8000
     command: uvicorn app.main:app --host 0.0.0.0 --port 8007 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8007/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  mrp-api:
+    <<: *python-base
+    build:
+      context: .
+      dockerfile: mrp-api/Dockerfile
+    container_name: uniops_mrp_api
+    ports:
+      - "8011:8011"
+    volumes:
+      - ./mrp-api:/app
+      - ./packages/authz:/packages/authz
+    environment:
+      DATABASE_URL: postgresql+asyncpg://epms:${DB_PASSWORD}@postgres:5432/epms
+      POSTGRES_HOST: postgres
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      JWT_ALGORITHM: HS256
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      APP_NAME: UniOps MRP API
+      APP_VERSION: 0.1.0
+      DEBUG: "true"
+      ENVIRONMENT: development
+      API_V1_PREFIX: /api/v1
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
+      APPROVAL_API_URL: http://approval-api:8003/approval/v1
+      EPMS_API_URL: http://epms-api:8000
+      # Server-to-server mdm-api URL (container DNS name), NOT the
+      # localhost:8002 the frontends' VITE_MDM_API_URL points browsers at
+      # (see the mrp/portal/epms/oa service blocks below) — that host is
+      # unreachable from inside this container. Without this, forecast_io
+      # falls back to app/core/config.py's http://localhost:8002 default,
+      # which is nothing inside the mrp-api container, and every Excel
+      # import 503s with a misleading "could not reach mdm-api" error even
+      # though mdm-api itself is healthy.
+      MDM_API_URL: http://mdm-api:8002
+      # Server-to-server identity-api URL (mrp06 follow-up — resolves the
+      # caller's display name at write time for the forecast change log; see
+      # app/services/identity_client.py). Same container-DNS reasoning as
+      # MDM_API_URL above: without this it falls back to
+      # app/core/config.py's localhost:8009 default, unreachable from inside
+      # this container, and the name lookup silently degrades to null on
+      # every save (never breaks the save itself, just never shows a name).
+      IDENTITY_API_URL: http://identity-api:8009
+      # WMS(Flux) Oracle read-only connection (values live in the gitignored
+      # root .env as WMS_*; missing values = feature hidden). See wms_conn.env.
+      WMS_HOST: ${WMS_HOST:-}
+      WMS_PORT: ${WMS_PORT:-1521}
+      WMS_SERVICE: ${WMS_SERVICE:-}
+      WMS_USER: ${WMS_USER:-}
+      WMS_PASSWORD: ${WMS_PASSWORD:-}
+      # The WMS sync scheduler is OFF in dev: with real WMS_* values in the
+      # root .env, every dev container would otherwise pull the whole live
+      # warehouse every few minutes alongside production. Flip to "true"
+      # (or press Sync now in Portal Admin) when working on the sync itself.
+      WMS_SYNC_SCHEDULER_ENABLED: "false"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8011/health').status==200 else 1)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -372,7 +467,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178"]'
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
@@ -414,7 +509,7 @@ services:
       DEBUG: "true"
       ENVIRONMENT: development
       API_V1_PREFIX: /api/v1
-      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178"]'
+      ALLOWED_ORIGINS: '["http://localhost:5173","http://localhost:5174","http://localhost:5175","http://localhost:5176","http://localhost:5177","http://localhost:5178","http://localhost:5179"]'
       EPMS_API_URL: http://epms-api:8000/api/v1
       FILE_SERVER_URL: http://file-api:8005/files/v1
       SCHEDULER_ENABLED: "true"
@@ -455,6 +550,12 @@ services:
       VITE_BUDGET_API_URL: http://localhost:8007
       VITE_MDM_API_URL: http://localhost:8002
       VITE_FINANCE_API_URL: http://localhost:8004
+      # expense-api (OA). epms calls it cross-service for invoice attachments and
+      # for OCR (lib/api.ts EXPENSE_BASE, incl. the pickup-slip OCR endpoint).
+      # Was missing here and only worked by accident, via EXPENSE_BASE's own
+      # localhost:8006 fallback — declared explicitly now, matching
+      # docker-compose.prod.yml's epms-web (VITE_EXPENSE_API_URL: ${OA_API_URL}).
+      VITE_EXPENSE_API_URL: http://localhost:8006
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5173"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5173"]
@@ -482,11 +583,15 @@ services:
       VITE_VMS_URL: http://localhost:5176
       VITE_FINANCE_URL: http://localhost:5177
       VITE_BOOKING_URL: http://localhost:5178
+      VITE_MRP_URL: http://localhost:5179
       VITE_EPMS_API_URL: http://localhost:8000
       VITE_OA_API_URL: http://localhost:8006
       VITE_VMS_API_URL: http://localhost:8008
       VITE_BUDGET_API_URL: http://localhost:8007
       VITE_MDM_API_URL: http://localhost:8002
+      # Admin -> WMS Sync talks to mrp-api directly. Browser-facing,
+      # so localhost rather than the container DNS name.
+      VITE_MRP_API_URL: http://localhost:8011
       VITE_FINANCE_API_URL: http://localhost:8004
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5174"
     healthcheck:
@@ -613,6 +718,36 @@ services:
       retries: 5
       start_period: 30s
 
+  mrp-frontend:
+    image: node:20-alpine
+    container_name: uniops_mrp_frontend
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "5179:5179"
+    volumes:
+      - ./mrp:/app
+      - mrp_node_modules:/app/node_modules
+      # Shared workspace package lives outside ./mrp — mount it so the container
+      # can resolve `@uniops/shell` (file: dep). `/packages/shell` matches
+      # `../packages/shell` resolved from /app.
+      - ./packages/shell:/packages/shell
+    environment:
+      VITE_API_URL: http://localhost:8011
+      VITE_EPMS_API_URL: http://localhost:8000
+      VITE_MDM_API_URL: http://localhost:8002
+      VITE_PORTAL_URL: http://localhost:5174
+    # --install-links copies the file:../packages/shell dep into /app/node_modules
+    # as a real package (not a symlink to /packages/shell), so its transitive deps
+    # resolve from /app/node_modules inside the container.
+    command: sh -c "npm install --install-links && npm run dev -- --host --port 5179"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5179"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
 # ── Volumes ───────────────────────────────────────────────────────────────────
 
 volumes:
@@ -624,3 +759,4 @@ volumes:
   vms_node_modules:
   finance_node_modules:
   booking_node_modules:
+  mrp_node_modules:

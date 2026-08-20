@@ -12,12 +12,14 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.config import CompanyConfig
+from app.models.delegation import ApprovalDelegation
 from app.models.event import ApprovalEvent
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.posting import PostingEvent, PostingLine
 from app.models.pr import PurchaseRequest
 from app.models.routing import ApprovalBackup, DeptRouting
+from app.models.agreement import PurchaseAgreement
 from app.models.task import Task
 from app.models.user import User
 
@@ -70,10 +72,14 @@ _ENGINE_TABLES = [
     PaymentApplication.__table__,
     PurchaseOrder.__table__,
     PurchaseRequest.__table__,
+    # Agreements route through the same engine (agr action key); routing tests
+    # insert real rows, so the table must exist in the engine schema.
+    PurchaseAgreement.__table__,
     Task.__table__,
     ApprovalEvent.__table__,
     DeptRouting.__table__,
     ApprovalBackup.__table__,
+    ApprovalDelegation.__table__,
 ]
 
 
@@ -90,6 +96,10 @@ def _build_engine_schema():
     eng = sa.create_engine(SYNC_URL)
     from app.db.base import Base
     Base.metadata.drop_all(eng, tables=_ENGINE_TABLES)
+    # The delegation table's EXCLUDE constraint needs btree_gist. Trusted in
+    # PG 13+, and this fixture owns the database it just created.
+    with eng.begin() as conn:
+        conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
     Base.metadata.create_all(eng, tables=_ENGINE_TABLES)
     # `user_roles` is identity-owned (no ORM model here — see
     # tests/test_seed_routing.py's shadow-table idiom); the engine now reads it

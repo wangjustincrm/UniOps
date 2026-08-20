@@ -60,6 +60,10 @@ finance.canadaroyalmilk.com {
 	import wildcard
 	reverse_proxy finance-web:80
 }
+mrp.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy mrp-web:80
+}
 
 # ── Browser-facing APIs (approval/identity are server-to-server, no subdomain) ─
 epms-api.canadaroyalmilk.com {
@@ -89,6 +93,10 @@ budget-api.canadaroyalmilk.com {
 mdm-api.canadaroyalmilk.com {
 	import wildcard
 	reverse_proxy mdm-api:8002
+}
+mrp-api.canadaroyalmilk.com {
+	import wildcard
+	reverse_proxy mrp-api:8011
 }
 
 # ── File server (file-api lives on the File server, not in this compose) ──────

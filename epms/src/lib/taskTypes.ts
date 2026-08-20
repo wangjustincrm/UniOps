@@ -26,6 +26,7 @@ export const ALL_TASK_TYPES = [
   'confirm_settlement',
   'review_match',
   'match_invoice',
+  'resolve_exception',
 ] as const
 
 export type TaskType = (typeof ALL_TASK_TYPES)[number]
@@ -40,9 +41,13 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   approve_pa: 'Approve Payment Application',
   place_order: 'Place Order',
   confirm_settlement: 'Confirm Settlement',
-  review_match: 'Review Invoice Match',
+  review_match: 'Confirm Invoice Match',
   match_invoice: 'Match Invoice to PO',
+  resolve_exception: 'Resolve Match Exception',
   process_pa: 'Process Payment Application',
+  approve_agr: 'Approve Agreement',
+  revise_agr: 'Revise Agreement',
+  confirm_period: 'Confirm Service Period',
   revise_pr: 'Revise Purchase Request',
   revise_po: 'Revise Purchase Order',
   revise_pa: 'Revise Payment Application',
@@ -63,6 +68,7 @@ const HREF_MAP: Record<string, string> = {
   gr: '/gr',
   invoice: '/invoices',
   pa: '/pa',
+  agr: '/agreements',
 }
 
 // A task carries a type plus the document it anchors on. Accept the minimal shape

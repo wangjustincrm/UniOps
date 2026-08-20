@@ -280,7 +280,9 @@ export default function PrListPage() {
                   <td className="px-4 py-3">
                     <Link to={`/pr/${pr.id}`} className="font-medium text-primary-600 hover:underline whitespace-nowrap">{pr.number}</Link>
                   </td>
-                  <td className="px-4 py-3 text-neutral-900 max-w-52 truncate">{pr.title}</td>
+                  <td className="px-4 py-3 text-neutral-900">
+                    <p className="line-clamp-2 max-w-52 break-words" title={pr.title}>{pr.title}</p>
+                  </td>
                   <td className="px-4 py-3 text-neutral-600 max-w-40 truncate">{pr.vendor_name}</td>
                   <td className="px-4 py-3 amount text-neutral-900">{formatCAD(pr.amount)}</td>
                   <td className="px-4 py-3 text-neutral-500 whitespace-nowrap">{TYPE_LABELS[pr.type] ?? `Type ${pr.type}`}</td>

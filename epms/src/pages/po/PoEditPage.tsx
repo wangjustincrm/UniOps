@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
-import { ArrowLeft, Upload, X, Calendar, Search, Receipt } from 'lucide-react'
+import { ArrowLeft, X, Calendar, Search, Receipt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
@@ -11,7 +11,9 @@ import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
 import { CURRENCIES } from '@/types'
-import { usePo, useUpdatePo, usePoAction } from '@/hooks/usePos'
+import { usePo, useUpdatePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment } from '@/hooks/usePos'
+import { poAttachmentService } from '@/services/poAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { poService } from '@/services/po'
 import { useVendors } from '@/hooks/useVendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
@@ -113,6 +115,12 @@ export default function PoEditPage() {
     setErrors(e)
     return Object.keys(e).length === 0
   }
+
+  // Attachments hang off the saved PO, so upload/delete apply immediately
+  // rather than waiting for Save (same semantics as the Detail page).
+  const { data: poAttachments = [] } = usePoAttachments(id ?? '')
+  const uploadAttachment = useUploadPoAttachment(id ?? '')
+  const deleteAttachment = useDeletePoAttachment(id ?? '')
 
   const handleSave = async (andSubmit: boolean) => {
     const mode = andSubmit ? 'submitted' : 'draft'
@@ -394,6 +402,23 @@ export default function PoEditPage() {
                 Prepayment Required
               </label>
             </div>
+          </div>
+
+          {/* Attachments */}
+          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-4">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
+              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+            </div>
+            <AttachmentsEditor
+              inputId="po-edit-file-upload"
+              attachments={poAttachments}
+              isUploading={uploadAttachment.isPending}
+              isDeleting={deleteAttachment.isPending}
+              onUpload={(file) => uploadAttachment.mutateAsync(file)}
+              onDelete={(attId) => deleteAttachment.mutate(attId)}
+              onDownload={(att) => { void poAttachmentService.download(id!, att.id, att.filename) }}
+            />
           </div>
 
           {/* Footer actions */}

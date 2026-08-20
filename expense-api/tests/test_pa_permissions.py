@@ -252,6 +252,39 @@ async def test_can_pay_via_additional_finance_bp_role():
 
 
 @pytest.mark.asyncio
+async def test_can_pay_via_additional_payment_officer_role():
+    """2026-08-13 whole-phase-review fix: OA's own can_pay copy (pa.py) must grant
+    payment_officer the same as finance-api's authoritative gate
+    (_PAY_ROLES/_PAY_ROLES_ASSIGNED) — otherwise the PA-DIR process_pa task
+    approval-api now assigns to payment_officer is one nobody can act on."""
+    po_id = str(uuid.uuid4())
+    async with _client_for("requester", str(uuid.uuid4())) as owner:
+        pa = await _make_pa(owner)
+    await _set_pa_status(pa["id"], "approved")
+    await _grant_additional_role(po_id, "payment_officer")
+
+    async with _client_for("requester", po_id) as po:
+        resp = await po.get(f"/api/v1/pa/{pa['id']}/permissions")
+    assert resp.status_code == 200
+    assert resp.json()["can_pay"] is True
+
+
+@pytest.mark.asyncio
+async def test_ap_clerk_cannot_pay():
+    """Payment execution moved to payment_officer (2026-08-13); ap_clerk must no
+    longer see can_pay=True here — OA showing the Pay button would just earn AP
+    Clerk a 403 from finance-api's now-authoritative gate."""
+    async with _client_for("requester", str(uuid.uuid4())) as owner:
+        pa = await _make_pa(owner)
+    await _set_pa_status(pa["id"], "approved")
+
+    async with _client_for("ap_clerk", str(uuid.uuid4())) as ap_clerk:
+        resp = await ap_clerk.get(f"/api/v1/pa/{pa['id']}/permissions")
+    assert resp.status_code == 200
+    assert resp.json()["can_pay"] is False
+
+
+@pytest.mark.asyncio
 async def test_permissions_pa_not_found(admin_client):
     resp = await admin_client.get(f"/api/v1/pa/{uuid.uuid4()}/permissions")
     assert resp.status_code == 404

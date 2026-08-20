@@ -10,7 +10,7 @@ just passes reader.fetch_nc straight through and echoes the effective cutover.
 """
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -25,6 +25,9 @@ from app.models.config import CompanyConfig
 from app.models.nc_purchase_sync import RUNNING, NcPurchaseSyncRun
 from app.services.nc_purchase_sync import reader
 from app.services.nc_purchase_sync import service as svc
+# The schedule the loop actually follows — its interval resolution and its
+# bounds live there, so the endpoint cannot drift from what runs.
+from app.tasks import nc_purchase_sync_scheduler as sched
 
 router = APIRouter(prefix="/admin/nc-purchase-sync", tags=["nc-purchase-sync"])
 
@@ -63,6 +66,8 @@ def _run_out(r: NcPurchaseSyncRun | None) -> dict | None:
         "pos_upserted": r.pos_upserted, "po_lines_upserted": r.po_lines_upserted,
         "grs_upserted": r.grs_upserted, "gr_lines_upserted": r.gr_lines_upserted,
         "skipped_no_vendor": r.skipped_no_vendor, "skipped_consumed": r.skipped_consumed,
+        "renamed_number_collision": r.renamed_number_collision,
+        "skipped_number_collision": r.skipped_number_collision,
         "error": r.error,
     }
 
@@ -82,14 +87,53 @@ async def status(user: CurrentUserPayload, db: SessionDep):
     last = (await db.execute(
         select(NcPurchaseSyncRun).where(NcPurchaseSyncRun.status != RUNNING)
         .order_by(NcPurchaseSyncRun.started_at.desc()).limit(1))).scalars().first()
+    interval = sched.resolve_interval_minutes((await db.execute(
+        select(CompanyConfig.nc_purchase_sync_interval_minutes).limit(1))
+    ).scalar_one_or_none())
+    # When the scheduler will next pick it up. Measured from the last run's
+    # START, the same way is_due() measures it — a countdown computed from
+    # anything else would disagree with the loop it is describing. Null when
+    # the schedule is off, so the UI says "off" rather than drawing a
+    # countdown that never arrives.
+    anchor = (current or last)
+    next_due_at = None
+    if interval > 0 and anchor is not None and anchor.started_at is not None:
+        started = anchor.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        next_due_at = (started + timedelta(minutes=interval)).isoformat()
     return {
         "configured": svc.nc_configured(),
         "can_sync": user.get("role") in _SYNC_ROLES,
         "can_set_cutover": user.get("role") == "system_admin",
         "cutover": await _effective_cutover(db),
+        "interval_minutes": interval,
+        "next_due_at": next_due_at,
         "current_run": _run_out(current),
         "last_run": _run_out(last),
     }
+
+
+class IntervalIn(BaseModel):
+    minutes: int
+
+
+@router.patch("/interval")
+async def set_interval(body: IntervalIn, db: SessionDep, user: AdminOnlyDep):
+    """How often the sync runs itself. 0 turns the schedule off, leaving the
+    button as the only trigger — which is the state that let the mirror go
+    weeks without anybody noticing, so it is a choice rather than a default."""
+    if isinstance(body.minutes, bool) or not 0 <= body.minutes <= sched.MAX_INTERVAL_MINUTES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"minutes must be between 0 and {sched.MAX_INTERVAL_MINUTES} "
+                   f"(0 disables automatic sync)")
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalars().first()
+    if cfg is None:
+        raise HTTPException(status_code=404, detail="company config not found")
+    cfg.nc_purchase_sync_interval_minutes = body.minutes
+    await db.commit()
+    return {"interval_minutes": body.minutes}
 
 
 class CutoverIn(BaseModel):

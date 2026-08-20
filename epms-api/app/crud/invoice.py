@@ -1,4 +1,5 @@
 """CRUD for Invoice with 3-way match logic."""
+import logging
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -8,20 +9,138 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.delegation import local_today
+from app.crud import agreement as agreement_crud
+from app.crud import agreement_receipt as agreement_receipt_crud
+from app.crud import agreement_schedule as agreement_schedule_crud
+from app.models.agreement import PurchaseAgreement
+from app.models.agreement_receipt import AgreementReceipt
+from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.invoice_tax_line import InvoiceTaxLine
+from app.models.pa import PaymentApplication
 from app.models.po import PoLineItem, PurchaseOrder
+from app.models.task import Task
 from app.models.user import User
 from app.models.vendor import Vendor
 from app.schemas.invoice import (
     AllocationInput,
+    ClaimedReceipt,
     InvoiceCreate,
     InvoiceExceptionRequest,
     InvoiceMatchRequest,
     InvoiceUpdate,
 )
+
+logger = logging.getLogger(__name__)
+
+
+# ── Claimed receipts (Task 5) ───────────────────────────────────────────────────
+
+async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
+    """Inject `claimed_receipts` onto ORM invoice instances, batched.
+
+    Mirrors api/v1/invoices.py::_attach_match_assignees — same call-site
+    pattern, same "decorate the ORM object in place" shape — except the
+    source is `Invoice.receipt_ids` (a JSONB array of receipt id strings)
+    instead of the Task table.
+
+    Single `WHERE AgreementReceipt.id IN (...)` query across every invoice
+    being serialised, never one query per invoice: the ids from ALL invoices
+    in `invoices` are unioned first, fetched in one round trip, then handed
+    back out per-invoice from an in-memory dict. This exists specifically to
+    feed the invoice LIST endpoint (a page of invoices), so an O(n) query
+    count here would reintroduce the exact N+1 this helper is meant to avoid.
+
+    See schemas/invoice.py::ClaimedReceipt for why this data has to ride on
+    the invoice's own read permission (view_invoice) rather than the
+    dedicated, more narrowly gated receipts route.
+    """
+    all_ids: set[uuid.UUID] = set()
+    for inv in invoices:
+        for rid in (inv.receipt_ids or []):
+            try:
+                all_ids.add(rid if isinstance(rid, uuid.UUID) else uuid.UUID(str(rid)))
+            except (ValueError, AttributeError, TypeError):
+                continue
+
+    receipts_by_id: dict[uuid.UUID, AgreementReceipt] = {}
+    if all_ids:
+        rows = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id.in_(all_ids))
+        )).scalars().all()
+        receipts_by_id = {r.id: r for r in rows}
+
+    for inv in invoices:
+        claimed: list[ClaimedReceipt] = []
+        for rid in (inv.receipt_ids or []):
+            try:
+                key = rid if isinstance(rid, uuid.UUID) else uuid.UUID(str(rid))
+            except (ValueError, AttributeError, TypeError):
+                continue
+            receipt = receipts_by_id.get(key)
+            if receipt is None:
+                continue
+            # total_amount stays exactly what the receipt holds — None for a
+            # delivery/service receipt that never had an amount, NOT coerced
+            # to 0 (see ClaimedReceipt's docstring: a later task sums only
+            # the priced receipts, and a coerced 0 would make an invoice
+            # whose only evidence is a delivery note report a variance equal
+            # to the whole invoice — a false alarm shown to a PA approver).
+            claimed.append(ClaimedReceipt(
+                id=receipt.id,
+                receipt_ref=receipt.receipt_ref,
+                receipt_date=receipt.receipt_date,
+                receipt_type=receipt.receipt_type,
+                total_amount=receipt.total_amount,
+                vendor_name=receipt.vendor_name,
+            ))
+        # Mirrors receipt_ids' own convention (see Invoice.receipt_ids /
+        # crud/invoice.py's release path): empty means None, not [].
+        inv.claimed_receipts = claimed or None
+
+
+async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> None:
+    """Inject `po_number` + `po_line_description` onto each invoice's
+    allocation rows, batched — display-only fields resolved at read time,
+    never stored on `InvoicePoAllocation` (see that model).
+
+    Same batching shape as `attach_claimed_receipts` above: every `po_id`
+    and every `po_line_id` across ALL allocations of ALL invoices being
+    serialised is unioned first, each resolved with a single
+    `WHERE id IN (...)` query, then handed back out per-allocation from an
+    in-memory dict. Must be called from both the detail path (get_by_id)
+    and the LIST path (get_all, a whole page of invoices) — an O(n) query
+    count here is a hot-path N+1 that would run on every invoice list load.
+
+    `inv.allocations` itself is loaded via `lazy="selectin"` on the Invoice
+    model, so accessing it here across many invoices is already a single
+    batched query, not the N+1 this function guards against.
+    """
+    all_allocs = [a for inv in invoices for a in (inv.allocations or [])]
+    if not all_allocs:
+        return
+
+    po_ids = {a.po_id for a in all_allocs}
+    line_ids = {a.po_line_id for a in all_allocs if a.po_line_id is not None}
+
+    po_numbers: dict = {}
+    if po_ids:
+        po_numbers = dict((await db.execute(
+            select(PurchaseOrder.id, PurchaseOrder.number).where(PurchaseOrder.id.in_(po_ids))
+        )).all())
+
+    line_descs: dict = {}
+    if line_ids:
+        line_descs = dict((await db.execute(
+            select(PoLineItem.id, PoLineItem.description).where(PoLineItem.id.in_(line_ids))
+        )).all())
+
+    for a in all_allocs:
+        a.po_number = po_numbers.get(a.po_id)
+        a.po_line_description = line_descs.get(a.po_line_id) if a.po_line_id else None
 
 
 # ── Number generation ──────────────────────────────────────────────────────────
@@ -68,7 +187,10 @@ async def get_all(
     status: str | None = None,
     vendor_id: uuid.UUID | None = None,
     po_id: uuid.UUID | None = None,
+    agreement_id: uuid.UUID | None = None,
     search: str | None = None,
+    sort: str | None = None,
+    overdue: bool = False,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
     task_user_id: uuid.UUID | None = None,
@@ -90,7 +212,14 @@ async def get_all(
             scope_conds.append(Invoice.uploaded_by == own_uploads_user_id)
         if task_user_id is not None:
             from app.core.access_scope import _open_task_doc_ids
-            scope_conds.append(Invoice.id.in_(_open_task_doc_ids(task_user_id, "invoice")))
+            from app.core.delegation import active_delegator_ids
+            # Widen with anyone currently delegating their approvals to this
+            # user: a delegate who can approve a PA must be able to open its
+            # invoice — same open-approval-task rationale as access_scope's
+            # _open_task_doc_ids callers.
+            task_user_ids = {task_user_id} | await active_delegator_ids(db, task_user_id)
+            scope_conds.append(Invoice.id.in_(
+                await _open_task_doc_ids(db, task_user_id, task_user_ids, "invoice")))
             # Matcher retention: invoices this user matched remain visible in the list
             scope_conds.append(Invoice.matched_by == task_user_id)
         q = q.where(or_(*scope_conds))
@@ -104,6 +233,8 @@ async def get_all(
             InvoicePoAllocation.po_id == po_id
         )
         q = q.where(or_(Invoice.po_id == po_id, Invoice.id.in_(alloc_by_po)))
+    if agreement_id:
+        q = q.where(Invoice.agreement_id == agreement_id)
     if search and search.strip():
         term = f"%{search.strip()}%"
         q = q.where(or_(
@@ -112,11 +243,33 @@ async def get_all(
             Invoice.vendor_invoice_number.ilike(term),
             Invoice.po_number.ilike(term),
         ))
+    if overdue:
+        # "Overdue" has to mean the same thing here as in the list's Due Date
+        # column, or the filter hides rows the column paints red and vice
+        # versa. Two halves, both load-bearing:
+        #   - today is the PLANT's calendar day, not the container's. The API
+        #     runs in UTC, so a server-side CURRENT_DATE flips over at 20:00
+        #     local and would report a full extra day of invoices as overdue
+        #     every evening.
+        #   - a paid invoice is never chased. Without this the filter is
+        #     dominated by historic settled invoices, which is precisely the
+        #     noise it exists to cut through.
+        q = q.where(Invoice.due_date < local_today(), Invoice.status != "paid")
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
+    # created_at desc stays the default AND the tiebreaker: several invoices
+    # routinely share a due date, and without a stable second key the same row
+    # can appear on two pages or on none.
+    if sort == "due_date":
+        ordering = [Invoice.due_date.asc(), Invoice.created_at.desc()]
+    elif sort == "-due_date":
+        ordering = [Invoice.due_date.desc(), Invoice.created_at.desc()]
+    else:
+        ordering = [Invoice.created_at.desc()]
     items = list((await db.execute(
-        q.order_by(Invoice.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*ordering).offset(offset).limit(page_size)
     )).scalars().all())
+    await attach_allocation_display_fields(db, items)
     return items, total
 
 
@@ -127,21 +280,7 @@ async def get_by_id(db: AsyncSession, invoice_id: uuid.UUID) -> Invoice | None:
         return None
     # Enrich allocations with human-readable PO number + PO line description
     # (display only — resolved at read time, not stored on the allocation row).
-    allocs = inv.allocations
-    if allocs:
-        po_ids = {a.po_id for a in allocs}
-        line_ids = {a.po_line_id for a in allocs if a.po_line_id is not None}
-        po_numbers = dict((await db.execute(
-            select(PurchaseOrder.id, PurchaseOrder.number).where(PurchaseOrder.id.in_(po_ids))
-        )).all())
-        line_descs: dict = {}
-        if line_ids:
-            line_descs = dict((await db.execute(
-                select(PoLineItem.id, PoLineItem.description).where(PoLineItem.id.in_(line_ids))
-            )).all())
-        for a in allocs:
-            a.po_number = po_numbers.get(a.po_id)
-            a.po_line_description = line_descs.get(a.po_line_id) if a.po_line_id else None
+    await attach_allocation_display_fields(db, [inv])
     return inv
 
 
@@ -162,9 +301,13 @@ async def is_visible(db: AsyncSession, invoice: Invoice, scope: dict) -> bool:
     if role == "requester":
         conds.append(Invoice.uploaded_by == user_id)
     # Task-based visibility: if the user has an open match_invoice task for this
-    # invoice, they can see it regardless of department/PO scope.
+    # invoice, they can see it regardless of department/PO scope. Widened with
+    # anyone currently delegating their approvals to this user (same rationale
+    # as access_scope's _open_task_doc_ids callers).
     from app.core.access_scope import _open_task_doc_ids
-    conds.append(Invoice.id.in_(_open_task_doc_ids(user_id, "invoice")))
+    from app.core.delegation import active_delegator_ids
+    task_user_ids = {user_id} | await active_delegator_ids(db, user_id)
+    conds.append(Invoice.id.in_(await _open_task_doc_ids(db, user_id, task_user_ids, "invoice")))
     # Matcher retention: once a user has matched an invoice they retain visibility
     # even after their task is completed (you can see what you acted on).
     conds.append(Invoice.matched_by == user_id)
@@ -240,6 +383,10 @@ class LegacyMatchUnsupported(ValueError):
 class FeeOnlyLinkRequired(ValueError):
     """Raised when a fee-only invoice (no PO allocations) is confirmed without a
     reference PO to link it to (→ HTTP 422)."""
+
+
+class AgreementMatchInvalid(Exception):
+    """The invoice cannot be matched to the requested agreement (→ HTTP 422)."""
 
 
 async def _normalize_allocations(invoice: Invoice, req: InvoiceMatchRequest) -> list[AllocationInput]:
@@ -342,6 +489,492 @@ async def _discover_grs_for_allocations(
     return [g for g in found if not (g in seen or seen.add(g))]
 
 
+async def _recompute_consumed(db: AsyncSession, agreement_id: uuid.UUID) -> None:
+    """consumed_amount is derived, never incremented.
+
+    Deriving it from the invoice set makes re-match idempotent: incrementing
+    would double-count every correction, and the number drives the NTE warning
+    banner AP looks at.
+    """
+    total = (await db.execute(
+        select(func.coalesce(func.sum(Invoice.total_amount), Decimal("0")))
+        .where(Invoice.agreement_id == agreement_id)
+    )).scalar_one()
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == agreement_id)
+    )).scalar_one()
+    agr.consumed_amount = total
+
+
+def _set_agreement_link(invoice: Invoice, agr: PurchaseAgreement | None) -> None:
+    """The ONE place that writes agreement_id/agreement_number/agreement_type —
+    three denormalized fields on Invoice that must always move together
+    (fix-round 2, guardrail 1). Before this, three call sites each set (or
+    cleared) all three by hand; nothing in the schema enforces that they stay
+    in sync, and this codebase has already been burned once by exactly this
+    failure shape — invoices.receipt_ids drifting out of sync with
+    agreement_receipts.invoice_id because a release path forgot to touch one
+    side (see the docstring history on _release_agreement_evidence). Routing
+    every write through one function makes "set two of the three" a
+    compile-time impossibility rather than a code-review hope.
+
+    `agr=None` clears all three (route switch to PO, or a rejected match
+    detaching the agreement link entirely) — the two ARE the only shapes any
+    caller needs; nothing ever wants to change one field of the triple in
+    isolation.
+    """
+    if agr is None:
+        invoice.agreement_id = None
+        invoice.agreement_number = None
+        invoice.agreement_type = None
+    else:
+        invoice.agreement_id = agr.id
+        invoice.agreement_number = agr.number
+        invoice.agreement_type = agr.agreement_type
+
+
+async def _match_to_agreement(
+    db: AsyncSession, invoice: Invoice, req: InvoiceMatchRequest, matched_by: uuid.UUID,
+    require_review: bool = False,
+) -> Invoice:
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == req.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError(f"Agreement {req.agreement_id} not found")
+    if agr.vendor_id != invoice.vendor_id:
+        raise AgreementMatchInvalid(
+            "Agreement must belong to the same vendor as the invoice")
+
+    # One rule, one implementation. This used to be a Python rewrite of
+    # crud/agreement.py::_admissible_predicate ("same predicate as an interval
+    # comparison instead of an integer day difference"). The two agreed only
+    # because the rule was inert — status "active" short-circuited before any
+    # date was read. Now that the validity window is load-bearing (see
+    # _admissible_predicate) their date sources genuinely differ: SQL
+    # `literal(today)` evaluated server-side vs a process-local date.today().
+    # Call the predicate instead of restating it.
+    if not await agreement_crud.is_admissible(db, agr):
+        raise AgreementMatchInvalid(
+            f"Agreement {agr.number} is not open for new spend "
+            f"(status={agr.status}, valid to {agr.valid_to} + {agr.grace_days or 0}d grace); "
+            "renew it before matching invoices to it.")
+
+    # Review fix (Important #1, Task 5 round 1): release any evidence this
+    # invoice is CURRENTLY holding — a claimed schedule row and/or claimed
+    # agreement receipts — before the type branch below claims new evidence
+    # (or falls back to the no-evidence reason). Without this, a rematch
+    # through this function (e.g. Data Maintenance resets invoice.status back
+    # to "unmatched" with no release hook, then the invoice is POSTed to
+    # /match again) silently overwrites invoice.receipt_ids /
+    # invoice.schedule_id — the previously-claimed rows stay
+    # "reconciled"/"received" with invoice_id still pointing at this invoice
+    # forever, and since _release_agreement_evidence only ever discovers rows
+    # via invoice.receipt_ids/.schedule_id, they become permanently
+    # unreachable (update()/void() both refuse a reconciled receipt; there is
+    # no UI path back to open). This also covers switching agreement TYPE
+    # (house_account holding receipts → recurring/milestone claiming a
+    # schedule row): the old code never touched receipt_ids in that branch at
+    # all, leaving a stale pointer at a receipt that now belongs to nobody's
+    # current match.
+    # No-op when the invoice holds neither (the normal first-time-match case).
+    if invoice.receipt_ids or invoice.schedule_id:
+        await _release_agreement_evidence(db, invoice)
+
+    # 1A 曾把**所有**协议匹配都当成"无凭证付款":那时协议匹配确实没有任何凭证。
+    # 1B 之后 recurring 有排期行 + 履约确认、milestone 有阶段行,都是真凭证 ——
+    # 再统一标 legacy 会把每一张正常的周期账单算进协议详情页的
+    # "settled without receipt" 计数里,那个健康度指标就废了。
+    claimed_row = None
+    if agr.agreement_type == "house_account":
+        # Task 6: 匹配 = 只做关联。凭证挂载是发票详情页上的另一件事,无凭证结算的
+        # 声明也在那里(Task 7/8) —— 两者都不该卡住"这张票属于这份协议"这个独立
+        # 事实。唯一的硬约束在 PA 闸门(api/v1/pa.py):起付款时才要求要么有凭证、
+        # 要么有显式声明。这里既不设 legacy_settlement 也不清它 —— 一张已经声明
+        # 过无凭证的发票改挂到另一份协议时,那个声明依然成立,与挂在哪份协议
+        # 无关(receipt_ids/schedule_id 已在函数开头的释放调用里清空,不在这重复)。
+        pass
+    else:
+        invoice.legacy_settlement = False
+        invoice.legacy_settlement_reason = None
+        if agr.agreement_type == "recurring":
+            # Whole-branch review finding: spec §4.3 step 5's manual-assignment
+            # escape hatch was never built — an invoice that FIFO can't claim
+            # (out of tolerance / schedule exhausted) used to be permanently
+            # stuck: it lands in match_review with schedule_id NULL, approving
+            # it there never sets schedule_id (PA then 422s "not linked to a
+            # billing period" with no way to resolve), and rejecting it just
+            # re-runs the SAME FIFO row against the SAME tolerance. An explicit
+            # req.schedule_id here is a human overriding that FIFO/tolerance
+            # decision on purpose, so it claims the row directly and skips the
+            # amount check entirely.
+            if req.schedule_id is not None:
+                try:
+                    claimed_row = await agreement_schedule_crud.claim_specific_period(
+                        db, agr, invoice, req.schedule_id)
+                except ValueError as exc:
+                    raise AgreementMatchInvalid(str(exc)) from exc
+                await agreement_schedule_crud.create_confirm_task(db, agr, claimed_row)
+            else:
+                claimed_row = await agreement_schedule_crud.claim_next_period(db, agr, invoice)
+                if claimed_row is None:
+                    # 认不到期次(超容差 / 无候选行)就不猜,停在复核队列由人工指定。
+                    require_review = True
+                else:
+                    # recurring 免 GR —— 履约确认是它唯一的代偿,认领成功就派任务。
+                    await agreement_schedule_crud.create_confirm_task(db, agr, claimed_row)
+        else:   # milestone
+            if req.schedule_id is None:
+                raise AgreementMatchInvalid(
+                    "Pick the milestone stage this invoice pays for")
+            try:
+                claimed_row = await agreement_schedule_crud.claim_milestone(
+                    db, agr, invoice, req.schedule_id)
+            except ValueError as exc:
+                raise AgreementMatchInvalid(str(exc)) from exc
+
+    previous_agreement_id = invoice.agreement_id
+
+    # Clear any PO-route state so a re-routed invoice doesn't carry stale links.
+    await db.execute(sa_delete(InvoicePoAllocation).where(
+        InvoicePoAllocation.invoice_id == invoice.id))
+    invoice.po_id = None
+    invoice.po_number = None
+    invoice.matched_po_line_ids = None
+    invoice.matched_reference_total = None
+    invoice.gr_ids = None
+    invoice.gr_id = None
+    invoice.gr_number = None
+
+    _set_agreement_link(invoice, agr)
+    invoice.match_route = "agreement"
+    invoice.schedule_id = claimed_row.id if claimed_row else None
+    # An explicit req.schedule_id (the manual-assignment escape hatch above)
+    # is a human overriding FIFO/tolerance on purpose — it must not read as
+    # "automatic" just because a row got claimed. Milestone is never "auto"
+    # either (schedule_id is always caller-picked there), which this
+    # expression already captured via the agreement_type=="recurring" guard.
+    invoice.match_route_auto = (
+        agr.agreement_type == "recurring" and claimed_row is not None
+        and req.schedule_id is None
+    )
+    invoice.po_total = Decimal("0")
+    invoice.gr_value = None
+    invoice.variance = Decimal("0")
+    invoice.variance_pct = Decimal("0")
+    invoice.exception_reason = None
+    invoice.matched_at = datetime.now(timezone.utc)
+    invoice.matched_by = matched_by
+    invoice.matched_by_name = (await db.execute(
+        select(User.full_name).where(User.id == matched_by)
+    )).scalar_one_or_none()
+    # Mirrors the PO branch's require_review gate (code review finding,
+    # 2026-08-07): the PO branch only enters "match_review" when a delegated
+    # (non-AP, non-uploader) caller matched AND the numbers show a non-zero
+    # variance — a zero-variance PO match is objectively confirmed against a
+    # PO line, so a delegate can complete it terminally without a second set
+    # of eyes. The agreement route has no such objective reference at all
+    # (no PO line, no GR — that is the entire point of legacy_settlement), so
+    # there is never a "this is independently verified" case to exempt: if
+    # require_review is set, every agreement match by a delegate goes to
+    # review, full stop. Skipping this would leave the LEAST-evidenced route
+    # with the WEAKEST control, backwards from what require_review exists to
+    # guard against.
+    invoice.status = "match_review" if require_review else "matched"
+
+    await db.flush()
+    # consumed_amount must reflect BOTH sides of a route change: the newly-linked
+    # agreement gains this invoice, and — if the invoice previously pointed at a
+    # different agreement — that agreement must shed it, or its consumed_amount
+    # stays permanently inflated by an invoice it no longer backs.
+    await _recompute_consumed(db, agr.id)
+    if previous_agreement_id and previous_agreement_id != agr.id:
+        await _recompute_consumed(db, previous_agreement_id)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def _release_agreement_evidence(db: AsyncSession, invoice: Invoice) -> None:
+    """Release every piece of agreement-side evidence an invoice holds — the
+    claimed AgreementPaymentSchedule row (single) and any claimed
+    AgreementReceipt rows (potentially several) — back to unclaimed, when
+    the invoice that claimed them is being detached from its agreement
+    (route switch, or a match_review rejection).
+
+    Renamed from _release_schedule_row (Task 4): it now covers both kinds of
+    evidence a purchase agreement can substitute for a goods receipt —
+    schedule rows for recurring agreements, agreement receipts for house
+    accounts — because Phase 1B already learned the hard way (twice) what
+    happens when a release path is duplicated instead of shared: one call
+    site drifts and silently skips the release. Same helper, same three call
+    sites, now wider scope.
+
+    Extracted (code review finding, Task 7 fix round) so the release logic
+    lives in exactly one place: originally only match()'s agreement→PO
+    cleanup called this, but review_match()'s reject path detaches the same
+    agreement link without ever touching schedule_id — leaving the period
+    permanently marked "received" against an invoice that no longer backs
+    it, so it can never be claimed by a later invoice and silently
+    under-reports what's still owed. Both call sites now share this.
+
+    Whole-branch review finding (4a/4b), two more gaps in the same release:
+
+    4a — a release used to leave accepted_by/accepted_at standing on the row.
+    A delegate's match claims a period and a manager confirms it; AP then
+    rejects the match → the row released back to "pending" but STILL stamped
+    confirmed. A later invoice re-claims that same period and sails straight
+    past the PA gate (`accepted_at IS NULL`) — paid with nobody having
+    confirmed service for ITS billing cycle. The stamp describes the invoice
+    being detached, not the period in the abstract, so it must go with it.
+
+    4b — release never completed the open confirm_period task either, so a
+    later re-claim's create_confirm_task adds a SECOND task with the same
+    document_number. agreements.py's confirm endpoint used to look that task
+    up with `.scalar_one_or_none()`, which raises MultipleResultsFound (a 500)
+    the instant that happens — and the period becomes permanently
+    unconfirmable. (crud.confirm_period already tolerates duplicates via
+    `.scalars().all()`; the two layers now agree.)
+    """
+    if invoice.schedule_id is not None:
+        claimed_row = (await db.execute(
+            select(AgreementPaymentSchedule).where(
+                AgreementPaymentSchedule.id == invoice.schedule_id)
+        )).scalar_one_or_none()
+        if claimed_row is not None:
+            # Deferred minor from Task 6, folded in here: only release a row this
+            # SAME invoice actually holds. invoice.schedule_id should always point
+            # back at a row whose invoice_id mirrors it (both are only ever set
+            # together, by claim_next_period / claim_specific_period /
+            # claim_milestone) — but if that invariant were ever broken by a bug
+            # elsewhere, blindly releasing here would silently steal a period a
+            # DIFFERENT invoice is legitimately holding.
+            if claimed_row.invoice_id != invoice.id:
+                logger.error(
+                    "_release_agreement_evidence: schedule row %s is claimed by "
+                    "invoice %s, not %s (invoice.schedule_id pointed at it "
+                    "anyway) — leaving the row untouched, only clearing "
+                    "invoice.schedule_id",
+                    claimed_row.id, claimed_row.invoice_id, invoice.id,
+                )
+            else:
+                claimed_row.status = "pending"
+                claimed_row.invoice_id = None
+                claimed_row.accepted_by = None
+                claimed_row.accepted_at = None
+                if claimed_row.period_label is not None:
+                    agr_number = (await db.execute(
+                        select(PurchaseAgreement.number).where(
+                            PurchaseAgreement.id == claimed_row.agreement_id)
+                    )).scalar_one_or_none()
+                    if agr_number is not None:
+                        open_tasks = (await db.execute(
+                            select(Task).where(
+                                Task.document_type == "agr",
+                                Task.document_id == claimed_row.agreement_id,
+                                Task.type == "confirm_period",
+                                Task.document_number == f"{agr_number} · {claimed_row.period_label}",
+                                Task.is_completed.is_(False),
+                            )
+                        )).scalars().all()
+                        now = datetime.now(timezone.utc)
+                        for t in open_tasks:
+                            t.is_completed = True
+                            t.completed_at = now
+        invoice.schedule_id = None
+
+    # 凭证释放 —— 与排期行同理,但凭证是**多张**:invoice.receipt_ids 是数组。
+    # 逐张放回 open 并清 invoice_id;只动确实由这张发票持有的行(防止把别的
+    # 发票刚认领的同一张凭证抢回来 —— 当前不可达,但 Task 6 的匹配分支会写
+    # 这个字段,不变量要自己成立,不能依赖调用方)。
+    receipt_ids = invoice.receipt_ids or []
+    if receipt_ids:
+        rows = (await db.execute(
+            select(AgreementReceipt).where(AgreementReceipt.id.in_(receipt_ids))
+        )).scalars().all()
+        for row in rows:
+            if row.invoice_id != invoice.id:
+                logger.warning(
+                    "_release_agreement_evidence: receipt %s is claimed by invoice %s, "
+                    "not %s — leaving it alone", row.id, row.invoice_id, invoice.id)
+                continue
+            row.status = "open"
+            row.invoice_id = None
+    invoice.receipt_ids = None
+    invoice.receipt_variance_reason = None
+    await db.flush()
+
+
+async def _invoice_referenced_by_active_pa(
+    db: AsyncSession, invoice_id: uuid.UUID,
+) -> PaymentApplication | None:
+    """The non-cancelled Payment Application that already lists this invoice
+    in its invoice_ids JSONB array, or None if there isn't one.
+
+    Fix-round 3 review finding (N4): used to return a plain bool. Callers
+    need more than yes/no to write a useful 422 — a blanket "cancel that
+    payment application first" is actionable only when the blocking PA is
+    still in draft/returned (approval-api's valid_cancel for pa/pa_dir is
+    exactly `("draft", "returned")`, crud/engine.py:114-129); telling a
+    caller to cancel a submitted/in_review/approved/processed PA is an
+    instruction the approval engine will simply refuse. Returning the PA
+    itself lets the 422 name it (pa_number + status) and leave the "can I
+    cancel this" judgment to whoever reads that — this function still only
+    ever asserts WHETHER a blocking PA exists; the WHERE clause below,
+    and therefore what counts as "referenced", is unchanged from fix-round 1.
+
+    Fix-round 1 review finding (Important #1): set_receipts /
+    settle_without_receipt had NO status gate at all — an invoice's uploader
+    (always passes _require_invoice_match_access, see is_uploader there)
+    could PUT an empty receipt list onto an invoice a PA has already been
+    raised — even PAID — against. That would release its claimed receipts
+    back to `open` for a DIFFERENT invoice to claim (the same paper receipt
+    backing two payments) or plant an irreversible legacy_settlement=True
+    flag on an invoice that already cleared payment. Nothing else in the
+    request path catches this: an invoice's own `status` is not a reliable
+    substitute for checking the PA reference directly, because it only ever
+    flips away from "matched"/"approved" once a payment actually EXECUTES —
+    via finance-api's payment executor for a normal, real-money PA
+    (finance-api/app/crud/payment_execute.py, which writes `inv.status =
+    "paid"`/`"partially_paid"` straight into this same shared `invoices`
+    table through its own mirrored model — see finance-api/app/models/
+    mirrors.py's "status-write mirror" of Invoice), or via
+    `_mark_invoices_paid` (crud/pa.py:378) for the zero-cash settlement path
+    only (called from exactly one place, `finalize_settlement_reconciliation`,
+    crud/pa.py:355, where the prepayment already covers the invoice so no
+    payment executor runs at all). Either way, that flip happens LATE — only
+    once money has actually moved. For the entire stretch a PA sits in
+    draft/submitted/in_review/approved with this invoice already in its
+    `invoice_ids`, the invoice's status looks IDENTICAL to one no PA has
+    ever touched. A status check would miss that whole window; checking
+    `invoice_ids` directly does not. And the house_account evidence gate in
+    api/v1/pa.py's
+    `_validate_agreement_pa_invoices` only runs when a PA is CREATED or its
+    invoice_ids are PATCHed — never continuously, so it cannot itself catch
+    evidence being pulled out from under a PA that already exists.
+
+    "Referenced" is checked via JSONB containment (`invoice_ids @>
+    [str(invoice_id)]`) rather than joining through Invoice, because
+    PaymentApplication.invoice_ids has no FK back to invoices (shared table,
+    OA/finance also write it) — the JSONB array is the only link there is.
+    `status != "cancelled"` matches this codebase's convention for "PA is
+    still live" (a cancelled PA no longer holds a real claim on the invoice's
+    evidence).
+    """
+    return (await db.execute(
+        select(PaymentApplication)
+        .where(PaymentApplication.invoice_ids.contains([str(invoice_id)]),
+               PaymentApplication.status != "cancelled")
+        .limit(1)
+    )).scalars().first()
+
+
+async def set_receipts(
+    db: AsyncSession, invoice: Invoice, receipt_ids: list[uuid.UUID],
+    variance_reason: str | None,
+) -> Invoice:
+    """全量覆盖一张发票持有的凭证集合(Task 7:挂凭证是发票详情页上独立于
+    /match 的一个动作 —— 见 InvoiceMatchRequest 上那段关于 Task 6 拆分的注释)。
+
+    先无条件释放当前持有的全部凭证,再认领入参里的 —— 而不是做增量 diff。
+    理由:diff 要同时维护"新增"和"移除"两条路径,而本项目在释放这件事上
+    已经被咬过多次(每次都是某一条路径漏了释放,参见 _release_agreement_evidence
+    的开发历史)。释放-再认领只有一条路径,多余的写入换来一个不可能漏的
+    不变式:调用后 invoice.receipt_ids 永远等于且只等于 receipt_ids 里能通过
+    claim() 校验的那些 id(空列表 → 什么都不认领,等价于清空)。
+
+    Fix-round 1 (Important #1): refuses to touch an invoice a non-cancelled
+    PA already references — see _invoice_referenced_by_active_pa. Checked
+    BEFORE the release call runs, so a rejected request leaves every
+    currently-claimed receipt untouched.
+
+    Fix-round 1 (Minor #6): unlike `claim()` (crud/agreement_receipt.py),
+    which is deliberately written to make NO assumption about its caller's
+    session behavior, THIS function's atomicity is not self-contained — it
+    releases first and claims second, two separate flushes with no
+    savepoint between them, so "the release happened but the reclaim
+    failed" is a real intermediate state this function can pass through.
+    Whether that intermediate state ever reaches the database (vs. being
+    rolled back as if it never happened) depends entirely on the CALLER's
+    session. The only caller today is `PUT /invoices/{id}/receipts`
+    (api/v1/invoices.py), whose session is a request-scoped one from
+    app/db/session.py's get_session dependency — it rolls back on any raised
+    exception, which is what makes a rejected PUT observably a no-op end to
+    end. A caller with a session that does NOT roll back on ValueError would
+    not get that guarantee for free from this function alone.
+    """
+    blocking_pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if blocking_pa is not None:
+        raise ValueError(
+            f"This invoice is still referenced by payment application "
+            f"{blocking_pa.pa_number} ({blocking_pa.status}); resolve that "
+            f"payment application before this invoice's receipt evidence "
+            f"can be changed.")
+
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError("Invoice is not matched to an agreement")
+
+    await _release_agreement_evidence(db, invoice)
+
+    if receipt_ids:
+        claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, invoice)
+        invoice.receipt_ids = [str(r.id) for r in claimed]
+        invoice.receipt_variance_reason = (variance_reason or "").strip() or None
+        # 挂上了凭证就不再是无凭证结算 —— 这两个状态互斥,协议详情页那个
+        # 健康度计数依赖它们互斥才有意义。
+        invoice.legacy_settlement = False
+        invoice.legacy_settlement_reason = None
+    await db.flush()
+    return invoice
+
+
+async def settle_without_receipt(
+    db: AsyncSession, invoice: Invoice, reason: str,
+) -> Invoice:
+    """显式声明这张发票没有任何签收凭证(Task 7:PA 闸门在起付款时要求要么
+    有凭证、要么有这个声明——见 api/v1/pa.py)。
+
+    先释放它可能还持有的凭证:一张自称无凭证的发票不该继续锁着几份真凭证,
+    那些凭证会永久卡在 reconciled 且没有任何界面能放它们回来(update()/void()
+    都拒绝该状态)。
+
+    Fix-round 1 (Important #1): refuses an invoice a non-cancelled PA already
+    references, same as set_receipts — otherwise this could plant an
+    irreversible "settled without receipt" flag on an invoice that has
+    already cleared payment.
+
+    Fix-round 1 (Minor #5): mirrors set_receipts' agreement_id check
+    (Important #1's sibling gap) — without it, a plain PO-matched invoice
+    (agreement_id NULL, already 3-way matched with a real GR) could be
+    stamped legacy_settlement=True too. That flag doesn't bypass anything
+    (api/v1/pa.py only reads it inside the house_account branch), but
+    InvoiceDetailPage.tsx renders "settled without receipt evidence" on it
+    regardless of route — a false, confusing claim on an invoice that has
+    perfectly good GR evidence.
+    """
+    blocking_pa = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if blocking_pa is not None:
+        raise ValueError(
+            f"This invoice is still referenced by payment application "
+            f"{blocking_pa.pa_number} ({blocking_pa.status}); resolve that "
+            f"payment application before this invoice's settlement status "
+            f"can be changed.")
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError("Invoice is not matched to an agreement")
+
+    await _release_agreement_evidence(db, invoice)
+    invoice.legacy_settlement = True
+    invoice.legacy_settlement_reason = reason.strip()
+    await db.flush()
+    return invoice
+
+
 async def match(
     db: AsyncSession,
     invoice: Invoice,
@@ -350,6 +983,39 @@ async def match(
     require_review: bool = False,
     auto_link_grs: bool = False,
 ) -> Invoice:
+    # Agreement route short-circuits: it shares none of the PO allocation
+    # machinery (no lines, no GRs, no balance check), and running that first
+    # would reject a valid monthly statement.
+    if req.agreement_id is not None:
+        return await _match_to_agreement(db, invoice, req, matched_by, require_review)
+
+    # Symmetric cleanup for the agreement→PO direction (code review finding,
+    # 2026-08-07): _match_to_agreement above clears every PO field on a route
+    # switch; this is the mirror image. Without it an invoice moved back to
+    # the PO route would keep pointing at a stale agreement — inflating that
+    # agreement's NTE/consumed_amount with an invoice it no longer backs,
+    # while ALSO carrying PO fields. Currently unreachable through the API
+    # (POST /match 409s on an already-"matched" invoice — which every
+    # agreement match produces — and PATCH's rematch path only fires when
+    # po_id/gr_ids are already set, neither true for an agreement invoice),
+    # but crud.match() must hold this invariant regardless of which future
+    # caller reaches it.
+    #
+    # 1B addendum (code review finding): schedule_id is the same kind of
+    # stale link — a claimed AgreementPaymentSchedule row must be released
+    # back to "pending"/invoice_id=None, not left permanently marked
+    # "received" against an invoice that no longer backs it. Left alone, the
+    # schedule would silently under-report what is still owed and no later
+    # invoice could ever claim that period/milestone again.
+    previous_agreement_id = invoice.agreement_id
+    if previous_agreement_id is not None:
+        _set_agreement_link(invoice, None)
+        invoice.legacy_settlement = False
+        invoice.legacy_settlement_reason = None
+        await _release_agreement_evidence(db, invoice)
+    invoice.match_route = "po"
+    invoice.match_route_auto = False
+
     now = datetime.now(timezone.utc)
     allocs = await _normalize_allocations(invoice, req)
 
@@ -563,7 +1229,124 @@ async def match(
 
     await db.flush()
     await db.refresh(invoice)
+    if previous_agreement_id is not None:
+        # This invoice no longer counts against the agreement it used to
+        # settle against — release it, same as the agreement branch does when
+        # moving between two agreements.
+        await _recompute_consumed(db, previous_agreement_id)
     return invoice
+
+
+async def unmatch_po(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID], dict]:
+    """Reverse a PO-route match completely, returning the invoice to
+    `unmatched`. Returns (po_ids_that_were_paid_by_this_invoice, before) —
+    the caller needs the first to re-decide those POs' tasks and the second
+    for the audit row.
+
+    There is no "unmatch just the header PO": allocations must sum to the
+    invoice's pre-tax amount, so removing one PO from a multi-PO invoice would
+    leave the remainder permanently out of balance and unmatchable. Reversal is
+    all-or-nothing, back to the state the Unmatched Queue expects.
+
+    The GR link goes with it. A goods receipt belongs to a purchase order, so
+    an invoice with no PO cannot meaningfully still point at one, and leaving
+    it would make the invoice look 3-way matched to
+    po_has_three_way_matched_invoice's header branch.
+    """
+    alloc_rows = (await db.execute(
+        select(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id)
+    )).scalars().all()
+
+    po_ids: list[uuid.UUID] = []
+    if invoice.po_id is not None:
+        po_ids.append(invoice.po_id)
+    for row in alloc_rows:
+        if row.po_id not in po_ids:
+            po_ids.append(row.po_id)
+
+    before = {
+        "status": invoice.status,
+        "po_id": str(invoice.po_id) if invoice.po_id else None,
+        "po_number": invoice.po_number,
+        "po_total": str(invoice.po_total) if invoice.po_total is not None else None,
+        "gr_ids": [str(g) for g in (invoice.gr_ids or ([invoice.gr_id] if invoice.gr_id else []))],
+        "gr_number": invoice.gr_number,
+        "matched_at": invoice.matched_at.isoformat() if invoice.matched_at else None,
+        "matched_by_name": invoice.matched_by_name,
+        "allocations": [
+            {
+                "po_id": str(r.po_id),
+                "po_line_id": str(r.po_line_id) if r.po_line_id else None,
+                "invoice_line_id": str(r.invoice_line_id) if r.invoice_line_id else None,
+                "allocated_amount": str(r.allocated_amount),
+                "allocated_tax": str(r.allocated_tax),
+            }
+            for r in alloc_rows
+        ],
+    }
+
+    await db.execute(sa_delete(InvoicePoAllocation).where(
+        InvoicePoAllocation.invoice_id == invoice.id))
+    await _apply_gr_selection(db, invoice, [])
+
+    invoice.po_id = None
+    invoice.po_number = None
+    invoice.po_total = None
+    invoice.variance = None
+    invoice.variance_pct = None
+    invoice.matched_at = None
+    invoice.matched_by = None
+    invoice.matched_by_name = None
+    invoice.matched_po_line_ids = None
+    invoice.matched_reference_total = None
+    invoice.exception_reason = None
+    invoice.match_route = None
+    invoice.match_route_auto = False
+
+    # Non-PO fee marks are part of the match input (match() rewrites them from
+    # the request every time), so they are part of what is being undone.
+    if invoice.line_items:
+        for li in invoice.line_items:
+            li["non_po_fee"] = False
+            li["non_po_note"] = None
+        flag_modified(invoice, "line_items")
+
+    invoice.status = "unmatched"
+    await db.flush()
+    await db.refresh(invoice)
+    return po_ids, before
+
+
+async def unmatch_gr(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID], dict]:
+    """Withdraw only the receipt evidence. The invoice stays matched to its
+    PO(s) — `matched` describes the PO match, not the receipt — so the
+    allocations, the variance and the header links are all left alone.
+
+    Returns the same (po_ids, before) shape as unmatch_po so the caller can
+    re-decide the same set of POs' tasks either way.
+    """
+    po_ids: list[uuid.UUID] = []
+    if invoice.po_id is not None:
+        po_ids.append(invoice.po_id)
+    for pid in (await db.execute(
+        select(InvoicePoAllocation.po_id)
+        .where(InvoicePoAllocation.invoice_id == invoice.id).distinct()
+    )).scalars().all():
+        if pid not in po_ids:
+            po_ids.append(pid)
+
+    before = {
+        "status": invoice.status,
+        "po_number": invoice.po_number,
+        "gr_ids": [str(g) for g in (invoice.gr_ids or ([invoice.gr_id] if invoice.gr_id else []))],
+        "gr_number": invoice.gr_number,
+        "gr_value": str(invoice.gr_value) if invoice.gr_value is not None else None,
+    }
+
+    await _apply_gr_selection(db, invoice, [])
+    await db.flush()
+    await db.refresh(invoice)
+    return po_ids, before
 
 
 async def review_match(
@@ -576,6 +1359,7 @@ async def review_match(
     """复核被指派人的 match:approve 按容差落定,reject 回 unmatched。"""
     if invoice.status != "match_review":
         raise ValueError(f"Invoice is not pending review (status '{invoice.status}')")
+    released_agreement_id: uuid.UUID | None = None
     if action == "approve":
         rows = (await db.execute(
             select(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id)
@@ -605,8 +1389,38 @@ async def review_match(
         invoice.matched_by_name = None
         invoice.exception_reason = None   # defensive: stale reason must not survive back to unmatched
         # 分摊行保留供参考;下次 match 会整体重建(match() 幂等删除)
+        #
+        # The agreement route cannot keep the same "leave it for reference"
+        # convention: consumed_amount is derived from every invoice whose
+        # agreement_id is still set, with no status filter (a rejected match
+        # was never a real spend event and must not count toward the NTE
+        # ceiling). This branch only becomes reachable now that
+        # require_review can route an agreement match through match_review —
+        # before that, an agreement-linked invoice was always "matched", so a
+        # reject was never possible while agreement_id stayed set. Detaching
+        # the invoice fully (rather than filtering consumed_amount by status)
+        # mirrors the same cleanup match()'s PO branch already performs on a
+        # route switch, and keeps _recompute_consumed's "every linked invoice
+        # counts" contract simple and honest.
+        released_agreement_id = invoice.agreement_id
+        if released_agreement_id is not None:
+            _set_agreement_link(invoice, None)
+            invoice.match_route = None
+            invoice.legacy_settlement = False
+            invoice.legacy_settlement_reason = None
+            # Code review finding (Task 7 fix round): a delegate can claim a
+            # REAL period (schedule_id set, row status="received") and still
+            # land in match_review (require_review is delegate-driven, not
+            # only "no claimable row") — rejecting that match must release
+            # the row the same way match()'s agreement→PO switch already
+            # does, or the period stays permanently "received" against an
+            # invoice that no longer backs it and can never be claimed again.
+            await _release_agreement_evidence(db, invoice)
     await db.flush()
     await db.refresh(invoice)
+    if released_agreement_id is not None:
+        await _recompute_consumed(db, released_agreement_id)
+        await db.flush()
     return invoice
 
 
@@ -688,6 +1502,15 @@ async def update(db: AsyncSession, invoice: Invoice, payload: InvoiceUpdate) -> 
         await _apply_gr_selection(db, invoice, list(payload.gr_ids))
     invoice.total_amount = invoice.amount + invoice.tax_amount
     await db.flush()
+    # Agreement route: total_amount can change here (amount/tax edit) on an
+    # already-"matched" agreement invoice without ever going back through
+    # match() — rematch_from_existing below only fires when po_id or gr_ids
+    # are already set, neither of which an agreement invoice carries. Without
+    # this, consumed_amount silently drifts from the edited total and both the
+    # NTE warning and the progress bar under-report (code review finding,
+    # 2026-08-07).
+    if invoice.agreement_id is not None:
+        await _recompute_consumed(db, invoice.agreement_id)
     await db.refresh(invoice)
     return invoice
 
@@ -727,6 +1550,26 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
             "Only unmatched or exception invoices may be deleted."
         )
     po_id = invoice.po_id
+    agreement_id = invoice.agreement_id
+    # Whole-branch review (I4): release the agreement-side evidence BEFORE the
+    # row goes away — same helper, same order as the Data Maintenance delete
+    # path (app/admin/registry.py::_invoice_delete). It was only ever wired up
+    # over there, so the two delete paths disagreed.
+    #
+    # Reachable despite the status guard above: neither
+    # agreement_payment_schedule.invoice_id nor agreement_receipts
+    # .invoice_id has an FK back to invoices (shared table, three other
+    # services touch it), and Data Maintenance declares invoice.status an
+    # editable enum including "unmatched" (registry.py) applied by a bare
+    # setattr with no hooks (admin/service.py) — resetting a matched invoice
+    # to "unmatched" for a re-match is the documented way to do that, and it
+    # is exactly the path the comment in match() above already admits exists.
+    # Delete it in that state and the receipts are stranded "reconciled"
+    # pointing at a row that no longer exists: update() and void() both
+    # refuse a reconciled receipt, and _release_agreement_evidence can only
+    # ever discover them through invoice.receipt_ids — which just got
+    # deleted. No invoice can ever claim those receipts again.
+    await _release_agreement_evidence(db, invoice)
     await db.delete(invoice)
     await db.flush()
     # If this was the last invoice keeping a create_pa task alive for its PO,
@@ -734,12 +1577,75 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
     if po_id is not None:
         from app.crud.task import _complete_orphan_create_pa_tasks
         await _complete_orphan_create_pa_tasks(db, po_id)
+    # Agreement route: the FK (purchase_agreements.id ← invoices.agreement_id)
+    # is ondelete="RESTRICT" on the AGREEMENT side only — it blocks deleting
+    # the agreement while invoices reference it, it does NOT block deleting
+    # the invoice. A hard-deleted invoice must not leave the agreement's
+    # consumed_amount permanently inflated by a row that no longer exists
+    # (code review finding, 2026-08-07).
+    if agreement_id is not None:
+        await _recompute_consumed(db, agreement_id)
 
 
 # ── Status update ──────────────────────────────────────────────────────────────
 
 async def update_status(db: AsyncSession, invoice: Invoice, status: str) -> Invoice:
     invoice.status = status
+    await db.flush()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def assign_billing_period(
+    db: AsyncSession, invoice: Invoice, schedule_id: uuid.UUID
+) -> Invoice:
+    """Link an ALREADY-MATCHED recurring invoice to a billing period.
+
+    The escape hatch existed only at match time (InvoiceMatchRequest.schedule_id
+    → claim_specific_period). Everything downstream of that moment was a dead
+    end: an invoice that FIFO could not claim lands in match_review with
+    schedule_id NULL, approving it there never sets one, /match refuses to run
+    again on a matched invoice, and PA creation then 422s "not linked to a
+    billing period" — forever. The agreement is active by then, so its
+    tolerance cannot be edited either. Reported by the user on an invoice whose
+    agreement had NO tolerance set at all (blank = exact match required), where
+    a tax-bearing invoice can never equal a net expected amount.
+
+    Deliberately narrow, because this bypasses the amount check the schedule
+    exists to enforce:
+      • recurring agreements only — milestone picks its stage at match time and
+        house_account has no schedule at all;
+      • only when the invoice currently has NO period, so it can never move a
+        claim from one period to another (that would silently free a period
+        that has already been paid against);
+      • the period must be unclaimed and belong to this agreement
+        (claim_specific_period's own guards, reused rather than re-implemented).
+
+    Raises ValueError; the endpoint maps it to 422.
+    """
+    from app.crud import agreement_schedule as agreement_schedule_crud
+
+    if invoice.agreement_id is None:
+        raise ValueError("This invoice is not matched to an agreement")
+    if invoice.schedule_id is not None:
+        raise ValueError(
+            "This invoice is already linked to a billing period. Reassigning it "
+            "would release a period that may already have been paid against.")
+    agr = (await db.execute(
+        select(PurchaseAgreement).where(PurchaseAgreement.id == invoice.agreement_id)
+    )).scalar_one_or_none()
+    if agr is None:
+        raise ValueError("Agreement not found")
+    if agr.agreement_type != "recurring":
+        raise ValueError("Only a recurring agreement bills from scheduled periods")
+
+    claimed = await agreement_schedule_crud.claim_specific_period(
+        db, agr, invoice, schedule_id)
+    invoice.schedule_id = claimed.id
+    # The confirmation task is the recurring route's only compensating control
+    # for having no goods receipt — a period claimed here needs it exactly as
+    # much as one claimed at match time.
+    await agreement_schedule_crud.create_confirm_task(db, agr, claimed)
     await db.flush()
     await db.refresh(invoice)
     return invoice

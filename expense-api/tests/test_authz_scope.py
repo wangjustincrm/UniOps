@@ -295,13 +295,18 @@ async def test_vendor_suggestions_forbidden_for_unrelated_user(test_engine):
     assert r.status_code == 403
 
 
-# ── Task C1: my_actions derives approver steps from workflow_defs ──────────────
-# Locks in the audit-② remediation: /expenses/my-actions used to consult a
-# hardcoded step-index -> role map (_INBOX_STEP_ROLES) that could drift from
-# the actually-configured company_config.workflow_defs. It now reads
-# workflow_defs at request time (per claim_type, multi-role union via
-# _user_role_codes), so a customised chain (e.g. a role not in the old
-# hardcoded map) surfaces correctly.
+# ── Task C1: my_actions surfaces customised approval chains ───────────────────
+# Original audit-② remediation: /expenses/my-actions used to consult a hardcoded
+# step-index -> role map (_INBOX_STEP_ROLES) that could drift from the configured
+# company_config.workflow_defs, so a customised chain went missing from inboxes.
+#
+# 2026-08-14: the endpoint now reads the shared `tasks` table instead of matching
+# workflow steps itself (it had no department predicate, so every dept_manager saw
+# every company claim — see test_my_actions_task_scope.py). The property under test
+# is unchanged, and still holds: approval-api builds those tasks FROM workflow_defs,
+# so a customised chain reaches the right person. These tests now seed the task the
+# engine would have written, which is also closer to production than a claim with no
+# task at all could ever be.
 #
 # company_config is a single shared row read by other test modules too
 # (test_pa_permissions.py, test_travel_application_list.py) under the same
@@ -358,8 +363,22 @@ async def _seed_claim_at_step(test_engine, employee_id: uuid.UUID, claim_type: s
     return cid
 
 
+async def _seed_open_task(claim_id: uuid.UUID, *, role: str) -> None:
+    """The approve_* task approval-api writes when a claim reaches that step."""
+    from datetime import datetime, timezone
+    from app.models.task_mirror import TaskMirror
+    import app.db.base as _dbm
+    async with _dbm.AsyncSessionLocal() as db:
+        db.add(TaskMirror(
+            id=uuid.uuid4(), document_id=claim_id, document_type="exp",
+            type="approve_exp", assigned_user_id=None, assigned_role=role,
+            is_completed=False, created_at=datetime.now(timezone.utc),
+        ))
+        await db.commit()
+
+
 @pytest.mark.asyncio
-async def test_my_actions_derives_approver_step_from_workflow_defs(test_engine):
+async def test_my_actions_shows_the_step_this_user_owns(test_engine):
     # dept_manager is step 0 in the exp chain; finance_bp is step 1.
     previous = await _set_workflow_defs(test_engine, {"exp": [
         {"id": "s0", "role": "dept_manager", "label": "Dept Manager"},
@@ -368,6 +387,8 @@ async def test_my_actions_derives_approver_step_from_workflow_defs(test_engine):
     try:
         c0 = await _seed_claim_at_step(test_engine, uuid.uuid4(), "EXP", 0)  # at step 0
         c1 = await _seed_claim_at_step(test_engine, uuid.uuid4(), "EXP", 1)  # at step 1
+        await _seed_open_task(c0, role="dept_manager")
+        await _seed_open_task(c1, role="finance_bp")
         async with _client(_make_token("dept_manager", str(uuid.uuid4()))) as c:
             r = await c.get("/api/v1/expenses/my-actions")
         assert r.status_code == 200
@@ -386,6 +407,7 @@ async def test_my_actions_custom_role_not_in_default_map(test_engine):
     ]})
     try:
         c0 = await _seed_claim_at_step(test_engine, uuid.uuid4(), "EXP", 0)
+        await _seed_open_task(c0, role="gm")
         async with _client(_make_token("gm", str(uuid.uuid4()))) as c:
             r = await c.get("/api/v1/expenses/my-actions")
         assert r.status_code == 200

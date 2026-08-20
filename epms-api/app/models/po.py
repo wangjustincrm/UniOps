@@ -105,6 +105,15 @@ class PoLineItem(UUIDPrimaryKey, Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     line_total: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
     received_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False, default=Decimal("0"))
+    # The ERP's own planned arrival date for THIS line
+    # (NCSC.PO_ORDER_B.DPLANARRVDATE), brought across by the NC purchase sync.
+    #
+    # Line level, not header: NC lets each line carry its own date and real
+    # orders do (PO-009-2603-01's two lines differ), which is why this is not
+    # the header's `expected_delivery`. NULL for UniOps-native POs, where the
+    # hand-entered header date is the only date there is — so readers fall
+    # back to the header and treat "neither" as unknown rather than as today.
+    planned_arrival_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     nc_source_pk: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

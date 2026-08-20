@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
+  ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react'
 import { parseInvoiceFile } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
@@ -11,9 +12,12 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
+import { AiBadge } from '@/components/ui/AiBadge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
-import { useInvoices, useCreateInvoice, useMatchInvoice, useResolveException, useDeleteInvoice } from '@/hooks/useInvoices'
+import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice } from '@/hooks/useInvoices'
+import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
 import { usePos } from '@/hooks/usePos'
 import { useGrs } from '@/hooks/useGrs'
 import { useVendors } from '@/hooks/useVendors'
@@ -25,10 +29,11 @@ import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllo
 import { MatchPanel } from './MatchPanel'
 import { FilePreviewPanel } from './FilePreviewPanel'
 import { AssignMatchDialog } from './AssignMatchDialog'
+import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
 // which gates POST /invoices/{id}/match). Users without one of these must not be
-// offered the "Match to PO" action — the backend would 403.
+// offered the "Match Invoice" action (PO or Agreement route) — the backend would 403.
 const MATCH_ROLES = new Set(['system_admin', 'ap_clerk', 'finance_manager', 'finance_bp'])
 
 // PO statuses an invoice can be matched/allocated against.
@@ -75,16 +80,6 @@ function SlaBadge({ uploadedAt }: { uploadedAt: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-xs font-medium text-success-700">
       <CheckCircle2 className="h-3 w-3" /> On time
-    </span>
-  )
-}
-
-// ─── AI badge ─────────────────────────────────────────────────────────────────
-
-function AiBadge() {
-  return (
-    <span className="inline-flex items-center rounded-full bg-primary-50 border border-primary-200 px-1.5 py-0.5 text-[10px] font-medium text-primary-600 ml-1.5">
-      AI
     </span>
   )
 }
@@ -843,93 +838,6 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 }
 
 
-// ─── Exception resolve panel ──────────────────────────────────────────────────
-
-function ResolvePanel({ inv, onClose }: { inv: ApiInvoice; onClose: () => void }) {
-  const resolveExceptionMutation = useResolveException()
-  const [resolution, setResolution] = useState<'accepted' | 'credit_note_requested'>('accepted')
-  const [note, setNote] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-
-  const handleResolve = () => {
-    setSubmitted(true)
-    if (!note.trim()) return
-    resolveExceptionMutation.mutate(
-      { id: inv.id, resolution, note: note.trim() },
-      {
-        onSuccess: onClose,
-        onError: (err) => {
-          // error displayed below the button
-          console.error('resolve exception failed:', err)
-        },
-      }
-    )
-  }
-
-  return (
-    <div className="mt-2 rounded-xl border border-warning-200 bg-warning-50 p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold text-warning-700">Resolve Exception</p>
-        <button onClick={onClose} className="text-neutral-400 hover:text-neutral-600">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="rounded-lg border border-warning-200 bg-white p-3 text-xs">
-        <p className="font-medium text-neutral-700 mb-1">Variance Details</p>
-        <p className="text-neutral-500">{inv.exception_reason}</p>
-      </div>
-
-      <div className="flex gap-3">
-        {([
-          { value: 'accepted',               label: 'Accept with Justification' },
-          { value: 'credit_note_requested',  label: 'Request Credit Note'       },
-        ] as const).map((opt) => (
-          <label key={opt.value} className={cn(
-            'flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs transition-colors',
-            resolution === opt.value
-              ? 'border-primary-400 bg-primary-50 text-primary-700 font-medium'
-              : 'border-neutral-200 text-neutral-500 hover:border-neutral-300'
-          )}>
-            <input type="radio" name="resolution" value={opt.value} checked={resolution === opt.value}
-              onChange={() => setResolution(opt.value)} className="h-3 w-3" />
-            {opt.label}
-          </label>
-        ))}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-neutral-700">
-          {resolution === 'accepted' ? 'Justification' : 'Instructions'} <span className="text-danger-600">*</span>
-        </label>
-        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
-          placeholder={resolution === 'accepted'
-            ? 'Explain why the excess amount is acceptable...'
-            : 'Instructions for the vendor to issue a credit note...'}
-          className={cn(
-            'px-3 py-2 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-primary-600 resize-none',
-            submitted && !note.trim() ? 'border-danger-400' : 'border-neutral-300 bg-white'
-          )} />
-        {submitted && !note.trim() && <p className="text-xs text-danger-600">Required</p>}
-      </div>
-
-      {resolveExceptionMutation.isError && (
-        <p className="text-xs text-danger-600 text-right">
-          {resolveExceptionMutation.error instanceof Error
-            ? resolveExceptionMutation.error.message
-            : 'Failed to resolve exception'}
-        </p>
-      )}
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" size="sm" onClick={onClose} disabled={resolveExceptionMutation.isPending}>Cancel</Button>
-        <Button size="sm" onClick={handleResolve} disabled={resolveExceptionMutation.isPending}>
-          {resolveExceptionMutation.isPending ? 'Submitting…' : 'Submit Resolution'}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 // ─── Tab content components ───────────────────────────────────────────────────
 
 function UnmatchedTab() {
@@ -1031,7 +939,7 @@ function UnmatchedTab() {
                               onClick={() => { setDeletingId(null); setExpandedId(expandedId === inv.id ? null : inv.id) }}
                               className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors"
                             >
-                              Match to PO
+                              Match Invoice
                               {expandedId === inv.id ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                             </button>
                           )}
@@ -1167,7 +1075,7 @@ function ExceptionsTab() {
                 {expandedId === inv.id && (
                   <tr key={`${inv.id}-expand`} className="border-b border-neutral-100">
                     <td colSpan={8} className="px-4 pb-3">
-                      <ResolvePanel inv={inv} onClose={() => setExpandedId(null)} />
+                      <ResolveExceptionPanel inv={inv} onClose={() => setExpandedId(null)} />
                     </td>
                   </tr>
                 )}
@@ -1181,9 +1089,43 @@ function ExceptionsTab() {
   )
 }
 
+// Due-date colouring for the list cell. Kept beside the table rather than in
+// lib/dueDate.ts so the helper stays free of presentation and testable on its
+// own; dueInfo() decides WHICH tone, this decides what the tone looks like.
+const DUE_CELL: Record<DueTone, { date: string; badge: string }> = {
+  overdue: { date: 'text-danger-700 font-semibold', badge: 'bg-danger-50 text-danger-700' },
+  soon:    { date: 'text-warning-800 font-semibold', badge: 'bg-warning-50 text-warning-800' },
+  normal:  { date: 'text-neutral-600', badge: '' },
+  settled: { date: 'text-neutral-400', badge: '' },
+}
+
+function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => void }) {
+  const info = dueInfo(invoice.due_date, invoice.status)
+  const style = DUE_CELL[info.tone]
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title="Show this invoice's status"
+      className="-mx-1.5 flex flex-col items-start rounded px-1.5 py-1 text-left transition-colors hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-primary-600"
+    >
+      <span className={cn('text-xs', style.date)}>{formatDate(invoice.due_date)}</span>
+      {info.label && (
+        <span className={cn('mt-0.5 rounded px-1 py-0.5 text-[11px] font-semibold', style.badge)}>
+          {info.label}
+        </span>
+      )}
+    </button>
+  )
+}
+
 function AllInvoicesTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all')
+  // null = the server's default order (newest uploaded first).
+  const [dueSort, setDueSort] = useState<'due_date' | '-due_date' | null>(null)
+  const [overdueOnly, setOverdueOnly] = useState(false)
+  const [chainInvoiceId, setChainInvoiceId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -1195,12 +1137,16 @@ function AllInvoicesTab() {
   const { data } = useInvoices({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
+    sort: dueSort ?? undefined,
+    overdue: overdueOnly || undefined,
     page,
     page_size: pageSize,
   })
-  const filtered = [...(data?.items ?? [])].sort(
-    (a, b) => new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
-  )
+  // Ordering belongs to the server. This list used to re-sort `data.items`
+  // locally, which only ever reordered the CURRENT page — "newest first" held
+  // within a page and not across the list, and any server-side sort would have
+  // been silently overridden here.
+  const filtered = data?.items ?? []
   const total = data?.total ?? 0
 
   return (
@@ -1220,6 +1166,13 @@ function AllInvoicesTab() {
               {s === 'all' ? 'All' : s === 'match_review' ? 'Pending Review' : s}
             </button>
           ))}
+          {/* Separate axis from the status chips: "overdue" is about the due
+              date, and it already excludes paid invoices server-side. */}
+          <button onClick={() => { setOverdueOnly((v) => !v); setPage(1) }}
+            className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
+              overdueOnly ? 'bg-danger-600 text-white' : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200')}>
+            Overdue
+          </button>
         </div>
       </div>
 
@@ -1233,8 +1186,26 @@ function AllInvoicesTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {['Ref', 'Vendor', 'Invoice #', 'Amount', 'Invoice Date', 'Upload Date', 'Status', 'PO', ''].map((h) => (
+                {['Ref', 'Vendor', 'Invoice #', 'Amount', 'Invoice Date'].map((h) => (
                   <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
+                ))}
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">
+                  {/* Cycles unsorted -> soonest first -> latest first. Sorting
+                      is server-side, so it orders the whole list, not the page. */}
+                  <button type="button"
+                    onClick={() => {
+                      setDueSort((c) => (c === null ? 'due_date' : c === 'due_date' ? '-due_date' : null))
+                      setPage(1)
+                    }}
+                    className="flex items-center gap-1 uppercase tracking-wide hover:text-neutral-700">
+                    Due Date
+                    {dueSort === 'due_date' ? <ArrowUp className="h-3 w-3" />
+                      : dueSort === '-due_date' ? <ArrowDown className="h-3 w-3" />
+                      : <ArrowUpDown className="h-3 w-3 text-neutral-300" />}
+                  </button>
+                </th>
+                {['Upload Date', 'Status', 'PO', ''].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1252,6 +1223,9 @@ function AllInvoicesTab() {
                     {formatAmount(inv.total_amount, inv.currency)}
                   </td>
                   <td className="px-4 py-3 text-neutral-600 text-xs">{formatDate(inv.invoice_date)}</td>
+                  <td className="px-4 py-3">
+                    <DueDateCell invoice={inv} onOpen={() => setChainInvoiceId(inv.id)} />
+                  </td>
                   <td className="px-4 py-3 text-neutral-500 text-xs">{formatDate(inv.uploaded_at)}</td>
                   <td className="px-4 py-3"><InvoiceStatusBadge status={inv.status} /></td>
                   <td className="px-4 py-3">
@@ -1294,6 +1268,10 @@ function AllInvoicesTab() {
         )}
       </div>
       <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
+
+      {chainInvoiceId && (
+        <InvoiceChainDrawer invoiceId={chainInvoiceId} onClose={() => setChainInvoiceId(null)} />
+      )}
     </div>
   )
 }
