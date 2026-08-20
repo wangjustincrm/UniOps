@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.delegation import active_delegator_ids
 from app.models.config import CompanyConfig
 from app.models.department import Department
 from app.models.gr import GoodsReceipt
@@ -106,14 +107,28 @@ async def _effective_roles(db: AsyncSession, role: str, user_id: uuid.UUID) -> s
     return await _effective_role_codes(db, role, user_id)
 
 
-def _task_subq(doc_type: str, task_type: str, user_id: uuid.UUID, effective_roles: set[str]):
-    """Subquery of document_ids where the user has an open approval task."""
+def _task_subq(
+    doc_type: str, task_type: str, user_id: uuid.UUID, effective_roles: set[str],
+    delegator_ids: set[uuid.UUID] = frozenset(),
+):
+    """Subquery of document_ids where the user has an open approval task.
+
+    `delegator_ids` widens "own" to also match approve tasks assigned to
+    anyone this user is standing in for today (resolved once per request by
+    the caller, not here) — restricted to approve% so a delegate never
+    inherits a delegator's non-approval workload.
+    """
+    own = Task.assigned_user_id == user_id
+    if delegator_ids:
+        own = or_(own, and_(
+            Task.type.like("approve%"), Task.assigned_user_id.in_(delegator_ids),
+        ))
     return select(Task.document_id).where(
         Task.document_type == doc_type,
         Task.type == task_type,
         Task.is_completed.is_(False),
         or_(
-            Task.assigned_user_id == user_id,
+            own,
             and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(effective_roles)),
         ),
     )
@@ -132,10 +147,12 @@ async def _pending_approvals(
     approve_* task for it (via personal assignment or role broadcast).
     """
     eff_roles = await _effective_roles(db, role, user_id)
+    # Resolved once per request, then reused across the PR/PO/PA subqueries below.
+    delegator_ids = await active_delegator_ids(db, user_id)
     items: list[ApprovalItem] = []
 
     # PRs — join creator + department for context
-    pr_subq = _task_subq("pr", "approve_pr", user_id, eff_roles)
+    pr_subq = _task_subq("pr", "approve_pr", user_id, eff_roles, delegator_ids)
     pr_rows = await db.execute(
         select(
             PurchaseRequest,
@@ -162,7 +179,7 @@ async def _pending_approvals(
         ))
 
     # POs — filter by open approve_po tasks for this user
-    po_subq = _task_subq("po", "approve_po", user_id, eff_roles)
+    po_subq = _task_subq("po", "approve_po", user_id, eff_roles, delegator_ids)
     po_rows = await db.execute(
         select(
             PurchaseOrder,
@@ -189,7 +206,7 @@ async def _pending_approvals(
         ))
 
     # PAs — filter by open approve_pa tasks for this user
-    pa_subq = _task_subq("pa", "approve_pa", user_id, eff_roles)
+    pa_subq = _task_subq("pa", "approve_pa", user_id, eff_roles, delegator_ids)
     pa_rows = await db.execute(
         select(
             PaymentApplication,
@@ -341,10 +358,18 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     )
     active_prs = pr_result.scalar_one()
 
-    # Tasks overdue
+    # Tasks overdue — widened to the delegator's overdue APPROVE tasks while a
+    # delegation is active, restricted to approve% so the delegate's overdue
+    # count is never inflated by the delegator's other (non-approval) work.
+    delegator_ids = await active_delegator_ids(db, user_id)
+    own_task = Task.assigned_user_id == user_id
+    if delegator_ids:
+        own_task = or_(own_task, and_(
+            Task.type.like("approve%"), Task.assigned_user_id.in_(delegator_ids),
+        ))
     task_result = await db.execute(
         select(func.count()).select_from(Task).where(
-            Task.assigned_user_id == user_id,
+            own_task,
             Task.is_completed.is_(False),
             Task.due_date < _today(),
         )

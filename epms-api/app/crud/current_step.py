@@ -5,6 +5,7 @@ than approval_step_idx, which over-budget injection and stale routing can skew.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.delegation import active_delegate_id
 from app.models.task import Task
 from app.models.user import User
 
@@ -38,6 +39,14 @@ ROLE_ORDER: dict[str, int] = {
 
 def role_label(role: str) -> str:
     return ROLE_LABELS.get(role) or role.replace("_", " ").title()
+
+
+def _approver_label(name: str | None, stand_in: str | None) -> str | None:
+    """"Sivers" normally; "Sivers (delegated: Mohammadi)" while she is away, so
+    a reader can tell why someone else is expected to act."""
+    if name and stand_in:
+        return f"{name} (delegated: {stand_in})"
+    return name
 
 
 async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> None:
@@ -74,6 +83,26 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> N
         )).all()
         name_by_user = {uid: name for uid, name in urows}
 
+    # Who is standing in for each assigned approver today, if anyone. One
+    # active_delegate_id lookup per unique approver (not per row); their
+    # names are then resolved in a single batched query, not one per stand-in.
+    stand_in_id_by_user: dict = {}
+    for uid in user_ids:
+        stand_in_id = await active_delegate_id(db, uid)
+        if stand_in_id is not None:
+            stand_in_id_by_user[uid] = stand_in_id
+
+    stand_in_names: dict = {}
+    if stand_in_id_by_user:
+        wanted_ids = set(stand_in_id_by_user.values())
+        srows = (await db.execute(
+            select(User.id, User.full_name).where(User.id.in_(wanted_ids))
+        )).all()
+        name_by_stand_in_id = {uid: name for uid, name in srows}
+        stand_in_names = {
+            uid: name_by_stand_in_id.get(sid) for uid, sid in stand_in_id_by_user.items()
+        }
+
     for it in in_review:
         t = task_by_doc.get(it.id)
         if t is None:
@@ -81,6 +110,9 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> N
         it.current_step = {
             "role": t.assigned_role,
             "label": role_label(t.assigned_role),
-            "approver_name": name_by_user.get(t.assigned_user_id) if t.assigned_user_id else None,
+            "approver_name": _approver_label(
+                name_by_user.get(t.assigned_user_id),
+                stand_in_names.get(t.assigned_user_id),
+            ) if t.assigned_user_id else None,
             "since": t.created_at,
         }
