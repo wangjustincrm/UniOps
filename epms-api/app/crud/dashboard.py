@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.delegation import active_delegator_ids
+from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
 from app.models.config import CompanyConfig
 from app.models.department import Department
 from app.models.gr import GoodsReceipt
@@ -110,6 +110,7 @@ async def _effective_roles(db: AsyncSession, role: str, user_id: uuid.UUID) -> s
 def _task_subq(
     doc_type: str, task_type: str, user_id: uuid.UUID, effective_roles: set[str],
     delegator_ids: set[uuid.UUID] = frozenset(),
+    delegated_roles: set[str] = frozenset(),
 ):
     """Subquery of document_ids where the user has an open approval task.
 
@@ -117,6 +118,17 @@ def _task_subq(
     anyone this user is standing in for today (resolved once per request by
     the caller, not here) — restricted to approve% so a delegate never
     inherits a delegator's non-approval workload.
+
+    `delegated_roles` (from app.core.delegation.delegated_broadcast_roles)
+    mirrors that same widening for ROLE-POOL approve tasks (assigned_user_id
+    IS NULL, assigned_role = a role a delegator holds) — the counterpart to
+    `app/crud/task.py`'s `get_for_role`, which already folds this in for the
+    Task Inbox. Before this, a delegate covering a role-pool poster (e.g.
+    Finance Manager) saw the approve_pa task in their inbox but got no
+    Pending-Approvals row for it here, contradicting this function's own
+    docstring that the two surfaces always agree. `task_type` is always an
+    "approve_*" type at every call site, so it already gates this branch to
+    approval tasks — no separate approve% filter is needed here.
     """
     own = Task.assigned_user_id == user_id
     if delegator_ids:
@@ -129,7 +141,8 @@ def _task_subq(
         Task.is_completed.is_(False),
         or_(
             own,
-            and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(effective_roles)),
+            and_(Task.assigned_user_id.is_(None),
+                 Task.assigned_role.in_(effective_roles | delegated_roles)),
         ),
     )
 
@@ -149,10 +162,11 @@ async def _pending_approvals(
     eff_roles = await _effective_roles(db, role, user_id)
     # Resolved once per request, then reused across the PR/PO/PA subqueries below.
     delegator_ids = await active_delegator_ids(db, user_id)
+    delegated_roles = await delegated_broadcast_roles(db, delegator_ids)
     items: list[ApprovalItem] = []
 
     # PRs — join creator + department for context
-    pr_subq = _task_subq("pr", "approve_pr", user_id, eff_roles, delegator_ids)
+    pr_subq = _task_subq("pr", "approve_pr", user_id, eff_roles, delegator_ids, delegated_roles)
     pr_rows = await db.execute(
         select(
             PurchaseRequest,
@@ -179,7 +193,7 @@ async def _pending_approvals(
         ))
 
     # POs — filter by open approve_po tasks for this user
-    po_subq = _task_subq("po", "approve_po", user_id, eff_roles, delegator_ids)
+    po_subq = _task_subq("po", "approve_po", user_id, eff_roles, delegator_ids, delegated_roles)
     po_rows = await db.execute(
         select(
             PurchaseOrder,
@@ -206,7 +220,7 @@ async def _pending_approvals(
         ))
 
     # PAs — filter by open approve_pa tasks for this user
-    pa_subq = _task_subq("pa", "approve_pa", user_id, eff_roles, delegator_ids)
+    pa_subq = _task_subq("pa", "approve_pa", user_id, eff_roles, delegator_ids, delegated_roles)
     pa_rows = await db.execute(
         select(
             PaymentApplication,

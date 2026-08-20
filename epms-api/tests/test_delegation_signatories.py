@@ -89,6 +89,32 @@ async def test_delegated_approval_with_own_comment_renders_on_behalf_of_suffix(t
 
 
 @pytest.mark.asyncio
+async def test_own_comment_containing_marker_text_does_not_corrupt_delegator_name(test_engine):
+    """I5 (2026-08-19 final review): the delegator's name must be read from
+    the LAST 'on behalf of' occurrence in the comment (the engine-appended
+    delegation suffix), not the first. A user's own free-text comment can
+    legitimately contain the words "on behalf of" (e.g. approving "on behalf
+    of the whole team") — `split(marker, 1)` would take everything after
+    that FIRST occurrence, corrupting the name printed on a vendor-facing
+    PDF. `rsplit(marker, 1)` fixes it by always taking the real, engine-
+    appended suffix at the end."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await _user(db, "Rita Requester")
+        delegate = await _user(db, "Mohammadi")
+        pr = await _pr(db, requester.id)
+        db.add_all([
+            _event(pr, 0, delegate.id, "dept_manager",
+                   comment="Approving on behalf of the whole team — on behalf of Sivers"),
+        ])
+        await db.commit()
+
+        _, approvals = await approval_signatories(db, "pr", pr.id, pr.created_by)
+
+        assert [a["name"] for a in approvals] == ["Mohammadi (on behalf of Sivers)"]
+
+
+@pytest.mark.asyncio
 async def test_plain_approval_renders_just_the_name(test_engine):
     """A plain approval with no delegation renders exactly as before — just
     the name, no suffix, no empty parentheses."""

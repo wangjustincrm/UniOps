@@ -69,6 +69,35 @@ async def active_delegate_id(
     )).scalar_one_or_none()
 
 
+async def active_delegate_ids(
+    db: AsyncSession, delegator_ids: set[uuid.UUID], today: date | None = None,
+) -> dict[uuid.UUID, uuid.UUID]:
+    """Batched form of `active_delegate_id`: who is standing in for each of
+    `delegator_ids` today, if anyone. One query for the whole set instead of
+    one query per delegator — `enrich_current_step` (app/crud/current_step.py)
+    used to call `active_delegate_id` in a loop, once per unique approver on
+    the page, which is an N+1 on every PR/PO/PA list render.
+
+    ⚠️ EPMS-ONLY, not a sibling-copy addition: approval-api's and expense-api's
+    delegation modules have no caller that fans this lookup out over a list of
+    ids, so there is no matching N+1 to batch there today. If either ever
+    grows one, add the equivalent helper there too.
+
+    Returns only the delegators who currently have an active stand-in
+    (missing key = no delegate today), same semantics as `active_delegate_id`
+    returning None.
+    """
+    if not delegator_ids:
+        return {}
+    ids = [str(i) for i in delegator_ids]
+    rows = (await db.execute(text(
+        f"SELECT d.delegator_user_id, d.delegate_user_id FROM approval_delegations d "
+        f"WHERE d.delegator_user_id = ANY(:ids) AND {_ACTIVE}"),
+        {"ids": ids, "today": today or local_today()},
+    )).all()
+    return {row[0]: row[1] for row in rows}
+
+
 async def delegated_broadcast_roles(
     db: AsyncSession, delegator_ids: set[uuid.UUID],
 ) -> set[str]:

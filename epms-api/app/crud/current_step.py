@@ -5,7 +5,7 @@ than approval_step_idx, which over-budget injection and stale routing can skew.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.delegation import active_delegate_id
+from app.core.delegation import active_delegate_ids
 from app.models.task import Task
 from app.models.user import User
 
@@ -84,13 +84,11 @@ async def enrich_current_step(db: AsyncSession, doc_type: str, items: list) -> N
         name_by_user = {uid: name for uid, name in urows}
 
     # Who is standing in for each assigned approver today, if anyone. One
-    # active_delegate_id lookup per unique approver (not per row); their
-    # names are then resolved in a single batched query, not one per stand-in.
-    stand_in_id_by_user: dict = {}
-    for uid in user_ids:
-        stand_in_id = await active_delegate_id(db, uid)
-        if stand_in_id is not None:
-            stand_in_id_by_user[uid] = stand_in_id
+    # batched active_delegate_ids query for every unique approver on the page
+    # (not one query per approver — see delegation.py's ⚠️ EPMS-ONLY note);
+    # their names are then resolved in a single batched query too, not one
+    # per stand-in.
+    stand_in_id_by_user: dict = await active_delegate_ids(db, user_ids)
 
     stand_in_names: dict = {}
     if stand_in_id_by_user:

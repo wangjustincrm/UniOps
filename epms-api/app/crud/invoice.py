@@ -215,7 +215,8 @@ async def get_all(
             # invoice — same open-approval-task rationale as access_scope's
             # _open_task_doc_ids callers.
             task_user_ids = {task_user_id} | await active_delegator_ids(db, task_user_id)
-            scope_conds.append(Invoice.id.in_(_open_task_doc_ids(task_user_ids, "invoice")))
+            scope_conds.append(Invoice.id.in_(
+                _open_task_doc_ids(task_user_id, task_user_ids, "invoice")))
             # Matcher retention: invoices this user matched remain visible in the list
             scope_conds.append(Invoice.matched_by == task_user_id)
         q = q.where(or_(*scope_conds))
@@ -282,7 +283,7 @@ async def is_visible(db: AsyncSession, invoice: Invoice, scope: dict) -> bool:
     from app.core.access_scope import _open_task_doc_ids
     from app.core.delegation import active_delegator_ids
     task_user_ids = {user_id} | await active_delegator_ids(db, user_id)
-    conds.append(Invoice.id.in_(_open_task_doc_ids(task_user_ids, "invoice")))
+    conds.append(Invoice.id.in_(_open_task_doc_ids(user_id, task_user_ids, "invoice")))
     # Matcher retention: once a user has matched an invoice they retain visibility
     # even after their task is completed (you can see what you acted on).
     conds.append(Invoice.matched_by == user_id)

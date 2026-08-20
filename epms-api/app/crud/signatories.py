@@ -44,7 +44,14 @@ def _signatory_name(name: str | None, comment: str | None) -> str | None:
     """
     if not name or not comment or _ON_BEHALF_MARKER not in comment:
         return name
-    delegator = comment.split(_ON_BEHALF_MARKER, 1)[1].strip()
+    # rsplit, not split: the engine always APPENDS the delegation suffix at
+    # the end of the comment. A user's own free-text comment can legitimately
+    # contain the words "on behalf of" earlier (e.g. "Approving on behalf of
+    # the whole team — on behalf of Sivers") — split(marker, 1) would take
+    # everything after the FIRST occurrence, corrupting the name on a
+    # vendor-facing PDF. rsplit always takes the real, engine-appended
+    # delegator name at the tail.
+    delegator = comment.rsplit(_ON_BEHALF_MARKER, 1)[1].strip()
     return f"{name} ({_ON_BEHALF_MARKER}{delegator})" if delegator else name
 
 

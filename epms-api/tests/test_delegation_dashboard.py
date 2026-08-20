@@ -102,6 +102,33 @@ async def test_pending_approvals_count_includes_delegator_approve_tasks(test_eng
         assert _kpi(resp, "Pending Approvals") == "2"
 
 
+async def test_pending_approvals_count_includes_delegator_role_pool_approve_tasks(test_engine):
+    """Inside the window, the delegate's Pending Approvals count includes a
+    ROLE-POOL approve_pr task assigned to a role the delegator holds (not
+    directly to them) — the same widening the Task Inbox already applies via
+    task.py's delegated_broadcast_roles. Before this fix the dashboard's
+    _task_subq role arm only matched the VIEWER's own effective_roles, so a
+    delegate covering a role-pool poster (e.g. Finance Manager) saw the task
+    in their inbox but got no Pending-Approvals row for it — the two surfaces
+    disagreed despite the dashboard's own docstring promising they always do."""
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as db:
+        delegator = _user("Sivers", role="procurement_manager")
+        delegate = _user("Mohammadi", role="requester")
+        db.add_all([delegator, delegate])
+        await db.flush()
+        await _insert_delegation(db, delegator_id=delegator.id, delegate_id=delegate.id)
+
+        pr_id = uuid.uuid4()
+        db.add(_pr(status="in_review", created_by=delegator.id, document_id=pr_id))
+        db.add(_task(doc_type="pr", task_type="approve_pr", assigned_user_id=None,
+                      assigned_role="procurement_manager", document_id=pr_id))
+        await db.commit()
+
+        resp = await dash.build_approver(db, delegate.id, "requester")
+        assert _kpi(resp, "Pending Approvals") == "1"
+
+
 async def test_pending_approvals_count_excludes_delegator_tasks_without_delegation(test_engine):
     """Without an active delegation, the delegator's open task must NOT count
     toward an unrelated user."""
