@@ -285,6 +285,20 @@ class InvoiceListResponse(BaseModel):
     total: int
 
 
+class UnmatchRequest(BaseModel):
+    """Reversing a match is a financial action, so the reason is mandatory and
+    is what the audit row carries — a blank one would leave a trail that
+    records the change without recording why."""
+    reason: str = Field(max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("A reason is required when unmatching")
+        return v.strip()
+
+
 # ── Document chain (Invoice List due-date drawer) ─────────────────────────────
 
 class ChainStepRef(BaseModel):

@@ -290,6 +290,18 @@ export const invoiceService = {
   match: (id: string, body: MatchInvoiceBody) =>
     api.post<ApiInvoice>(`/invoices/${id}/match`, body),
 
+  // Reversing a match. Two separate routes because they undo different
+  // amounts: unmatch-po returns the invoice to `unmatched` (allocations
+  // deleted, GR link dropped with the PO it belongs to), unmatch-gr withdraws
+  // only the receipt evidence and leaves the PO match standing. Both are
+  // gated on epms.invoice.match and both require a reason, which lands in
+  // admin_audit_log.
+  unmatchPo: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/unmatch-po`, { reason }),
+
+  unmatchGr: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/unmatch-gr`, { reason }),
+
   // Candidate POs for allocation (same vendor, open statuses) — authorized by
   // the invoice's match rights, NOT the caller's general PO scope, so task
   // assignees without related PRs still see them.
