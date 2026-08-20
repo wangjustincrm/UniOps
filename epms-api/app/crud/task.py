@@ -530,12 +530,26 @@ async def get_for_role(
     if role != "system_admin":
         all_roles = await _all_roles_for_user(db, role, user_id)
         broadcast_roles = all_roles - _PERSONAL_APPROVAL_ROLES
-        q = q.where(
-            or_(
-                and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(broadcast_roles)),
-                Task.assigned_user_id == user_id,
-            )
-        )
+        from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
+        delegator_ids = await active_delegator_ids(db, user_id)
+        deleg_roles = await delegated_broadcast_roles(db, delegator_ids)
+        clauses = [
+            and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(broadcast_roles)),
+            Task.assigned_user_id == user_id,
+        ]
+        if delegator_ids:
+            # Delegation covers APPROVAL tasks only — never create_po / create_pa
+            # / GR acknowledgement, which are role pools that do not strand and
+            # whose actions are gated by the Access Control matrix.
+            clauses.append(and_(
+                Task.type.like("approve%"),
+                Task.assigned_user_id.in_(delegator_ids)))
+            if deleg_roles:
+                clauses.append(and_(
+                    Task.type.like("approve%"),
+                    Task.assigned_user_id.is_(None),
+                    Task.assigned_role.in_(deleg_roles)))
+        q = q.where(or_(*clauses))
     completed = is_completed if is_completed is not None else False
     q = q.where(Task.is_completed.is_(completed))
     result = await db.execute(q.order_by(Task.created_at.desc()))
