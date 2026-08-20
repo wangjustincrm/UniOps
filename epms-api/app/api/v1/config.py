@@ -422,3 +422,69 @@ async def put_approval_routing(body: dict, _: CurrentUserPayload, token: BearerT
     if status_code != 200:
         raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
     return resp_body
+
+
+# ── Approval delegation passthrough (Task 12) ───────────────────────────────
+#
+# Same reasoning as the approval-routing passthrough directly above:
+# approval-api's /delegations endpoints have no browser-facing subdomain/CORS
+# (Caddyfile: approval-api is server-to-server only), so epms-api gateways
+# them for the Portal admin page. No authz logic is duplicated here —
+# approval-api's own handlers gate every verb to system_admin and own all
+# 409/422 validation (self-delegation, end-before-start, overlapping live
+# windows); this just passes status + body through unchanged.
+
+@router.get("/approval-delegations")
+async def list_approval_delegations(_: CurrentUserPayload, token: BearerToken):
+    """Proxy GET /approval/v1/delegations from the Approval Engine."""
+    try:
+        status_code, body = await approval_client.forward("GET", "/delegations", token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=body.get("detail"))
+    return body
+
+
+@router.post("/approval-delegations", status_code=201)
+async def create_approval_delegation(body: dict, _: CurrentUserPayload, token: BearerToken):
+    """Proxy POST /approval/v1/delegations. approval-api returns 409 on an
+    overlapping live window and 422 on self-delegation / end-before-start —
+    both pass through untouched so the Portal form can render them inline."""
+    try:
+        status_code, resp_body = await approval_client.forward("POST", "/delegations", token, json=body)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code not in (200, 201):
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
+
+
+@router.patch("/approval-delegations/{delegation_id}")
+async def update_approval_delegation(
+    delegation_id: uuid.UUID, body: dict, _: CurrentUserPayload, token: BearerToken,
+):
+    """Proxy PATCH /approval/v1/delegations/{id}. approval-api returns 409 if
+    the row is already revoked — passed through untouched."""
+    try:
+        status_code, resp_body = await approval_client.forward(
+            "PATCH", f"/delegations/{delegation_id}", token, json=body)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
+
+
+@router.post("/approval-delegations/{delegation_id}/revoke")
+async def revoke_approval_delegation(delegation_id: uuid.UUID, _: CurrentUserPayload, token: BearerToken):
+    """Proxy POST /approval/v1/delegations/{id}/revoke. Idempotent on
+    approval-api's side — revoking twice is a harmless 200."""
+    try:
+        status_code, resp_body = await approval_client.forward(
+            "POST", f"/delegations/{delegation_id}/revoke", token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Approval Engine unreachable: {exc}")
+    if status_code != 200:
+        raise HTTPException(status_code=status_code, detail=resp_body.get("detail"))
+    return resp_body
