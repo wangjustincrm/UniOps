@@ -10,6 +10,7 @@ import base64
 import re
 import uuid
 import zlib
+from datetime import date
 from decimal import Decimal
 
 from app.models.po import PoLineItem, PurchaseOrder
@@ -116,3 +117,45 @@ def test_sample_column_appears_only_when_a_line_has_one():
 
     without = _text_of(generate_po_pdf(_po(line_kw={"sample": None})))
     assert "Sample" not in without, "existing POs must keep their original layout"
+
+
+def test_pdf_delivery_falls_back_to_earliest_line_date_when_header_is_unset():
+    """expected_delivery is NULL on every NC-synced PO (the ERP has no header
+    delivery date; rule 1 forbids ever backfilling it there). The vendor PDF
+    must not print '—' for Delivery on those orders — it should show the
+    earliest planned_arrival_date across the PO's lines, and mark it as
+    ERP-sourced so nobody mistakes a rollup for a value someone typed in."""
+    po = _po(source="nc", expected_delivery=None)
+    po.line_items = [
+        PoLineItem(
+            id=uuid.uuid4(), po_id=po.id, description="Widget A", qty=Decimal("10"),
+            unit="EA", unit_price=Decimal("10.00"), line_total=Decimal("50.00"),
+            received_qty=Decimal("0"), sort_order=0,
+            planned_arrival_date=date(2026, 9, 20),
+        ),
+        PoLineItem(
+            id=uuid.uuid4(), po_id=po.id, description="Widget B", qty=Decimal("10"),
+            unit="EA", unit_price=Decimal("10.00"), line_total=Decimal("50.00"),
+            received_qty=Decimal("0"), sort_order=1,
+            planned_arrival_date=date(2026, 9, 5),
+        ),
+    ]
+    text = _text_of(generate_po_pdf(po))
+    assert "2026-09-05" in text, "the earlier line date must win"
+    assert "2026-09-20" not in text, "the later line date must not appear"
+    assert "from ERP" in text, "the fallback must be visibly ERP-sourced"
+    # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
+    assert "Widget A" in text
+
+
+def test_pdf_header_expected_delivery_wins_over_line_dates():
+    """A human-entered expected_delivery is a deliberate override (rule 3) — it
+    must win over any line-level ERP date, everywhere it's displayed."""
+    po = _po(source="nc", expected_delivery=date(2026, 10, 1),
+             line_kw={"planned_arrival_date": date(2026, 9, 5)})
+    text = _text_of(generate_po_pdf(po))
+    assert "2026-10-01" in text, "the human-entered header value must win"
+    assert "2026-09-05" not in text, "the line date must not override the header value"
+    assert "from ERP" not in text, "a header value is not ERP-derived, so no marker"
+    # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
+    assert "Widget" in text

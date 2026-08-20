@@ -75,10 +75,25 @@ def generate_po_pdf(
     def _cell(label: str, value: str):
         return [Paragraph(label, lbl_style), Paragraph(value or "—", val_style)]
 
+    # expected_delivery is a human-entered header override; NC-synced POs never
+    # populate it (the ERP has no header delivery date). Fall back to the
+    # earliest non-null line-level planned_arrival_date — NC's own "Delivery
+    # Date" list column is that same rollup — but keep the header value's
+    # precedence and mark the fallback as ERP-sourced so nobody mistakes it
+    # for a manually entered date.
+    if po.expected_delivery:
+        delivery_str = str(po.expected_delivery)
+    else:
+        line_dates = [
+            item.planned_arrival_date for item in po.line_items
+            if item.planned_arrival_date
+        ]
+        delivery_str = f"{min(line_dates)} (from ERP)" if line_dates else "—"
+
     meta = Table(
         [
             [_cell("Vendor",    po.vendor_name or "—"), _cell("PO Date",   now_str)],
-            [_cell("PO Number", po.number      or "—"), _cell("Delivery",  str(po.expected_delivery or "—"))],
+            [_cell("PO Number", po.number      or "—"), _cell("Delivery",  delivery_str)],
             [_cell("Delivery Address", po.delivery_address or "—"), _cell("Currency", po.currency or "CAD")],
         ],
         colWidths=[W * 0.55, W * 0.45],
