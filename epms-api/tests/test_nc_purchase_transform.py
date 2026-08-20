@@ -264,3 +264,25 @@ def test_transform_line_without_the_column_is_none_not_missing():
     both the insert and the update), so it must always be present."""
     r = transform(_raw(), VEND)          # fixture has no dplanarrvdate at all
     assert r["order_lines"][0]["planned_arrival_date"] is None
+
+
+# ── goods-receipt line unit ──────────────────────────────────────────────────
+
+def test_gr_line_carries_the_arrival_unit_not_a_hardcoded_one():
+    """A receipt line's unit is the arrival's own — the mirror used to write the
+    literal 'EA' on every one of them, so a 14,360 KGM receipt against a PO line
+    reading KGM was stored as 14,360 EA. The quantity is only a number until the
+    unit beside it is the right one."""
+    raw = _raw()
+    raw["arrival_lines"][0]["castunitid"] = "U1"      # KG, per the fixture's uoms
+    r = transform(raw, VEND)
+    assert r["gr_lines"][0]["unit"] == "KG"
+
+
+def test_gr_line_unit_falls_back_when_the_arrival_states_none():
+    """NC leaves the column empty on a handful of lines. 'EA' is the same
+    fallback the order line uses, so the two agree about what unknown means."""
+    raw = _raw()
+    raw["arrival_lines"][0]["castunitid"] = None
+    r = transform(raw, VEND)
+    assert r["gr_lines"][0]["unit"] == "EA"
