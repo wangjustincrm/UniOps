@@ -55,10 +55,9 @@ def _po_consumed(cur, po_id) -> bool:
 
 def _number_conflict(cur, number, nc_source_pk) -> bool:
     """True if purchase_orders already holds this document number on a row that is
-    NOT this NC order — e.g. a PMS-imported PO that shares the same PO-xxx code.
-    purchase_orders.number is UNIQUE, so inserting a colliding NC order would abort
-    the whole run; instead the caller SKIPS that order (and its children) so the
-    sync completes and the pre-existing PO is never clobbered."""
+    NOT this NC order — e.g. a PMS-imported PO, or another NC order that genuinely
+    carries the same ``vbillcode``. purchase_orders.number is UNIQUE, so inserting
+    a colliding order would abort the whole run."""
     cur.execute(
         "select 1 from purchase_orders where number=%s "
         "and (source is distinct from 'nc' or nc_source_pk is distinct from %s) limit 1",
@@ -67,13 +66,87 @@ def _number_conflict(cur, number, nc_source_pk) -> bool:
     return cur.fetchone() is not None
 
 
+#: How far the suffix search will walk before giving up. The worst real group is
+#: five orders on one number (PO-022-2507-01); 50 is far past anything the ERP
+#: has produced while still bounding the loop, so a pathological input degrades
+#: to the old skip-and-log instead of hanging the run.
+_MAX_NUMBER_SUFFIX = 50
+
+
+def _erp_number_held_by_another(cur, number, nc_source_pk) -> bool:
+    """True if ``number`` is some OTHER NC order's genuine ERP number.
+
+    A mirrored order keeps its ``vbillcode`` in ``place_order_reference`` even
+    when ``number`` had to be suffixed, so this is where the ERP's own numbering
+    survives. A suffix must not land on one: NC really issues numbers ending in
+    ``-2`` (PO-022-2302-01-2), and handing that string to a DIFFERENT order would
+    make the mirror disagree with the ERP about which document is which.
+    """
+    cur.execute(
+        "select 1 from purchase_orders where source='nc' and place_order_reference=%s "
+        "and nc_source_pk is distinct from %s limit 1",
+        (number, nc_source_pk),
+    )
+    return cur.fetchone() is not None
+
+
+def _free_number(cur, number, nc_source_pk, reserved=frozenset()) -> str | None:
+    """A document number this NC order can own: ``number``, else ``number-2``,
+    ``number-3``… — the first one nobody holds.
+
+    NC's ``vbillcode`` is NOT unique (1,682 approved orders, 1,645 distinct
+    numbers) and the duplicates are separate live orders, not versions: different
+    suppliers, different materials, in one case five delivery days. UniOps needs
+    a unique number, so the later arrivals get a suffix and are MIRRORED. The
+    previous behaviour — drop the order and everything under it — cost 15 orders
+    and 16 goods receipts inside the cutover, and left the surviving PO reading
+    as never received.
+
+    ``-N`` matches the suffix the split-GR numbering already uses, so there is
+    one convention rather than two. NC itself has numbers that end that way
+    (PO-022-2302-01-2), which is exactly why each candidate is CHECKED rather
+    than assumed free.
+
+    ``reserved`` holds every ERP number in this batch. A suffix is never allowed
+    to land on one, because that string may be another order's real ``vbillcode``
+    rather than a free slot — the base number is exempt, since that one IS this
+    order's own ERP number.
+
+    Returns None if nothing is free within ``_MAX_NUMBER_SUFFIX`` — the caller
+    then skips, as before, rather than looping.
+
+    Stability: an order that already exists keeps the number it was given (the
+    UPDATE branch never renames), and the insert order is sorted, so repeated
+    runs reproduce the same assignment. The one case that can move a suffix is a
+    FULL reload after NC has added a new order whose pk sorts ahead of an
+    existing duplicate — the reload discards the old assignment along with the
+    rows. Rare, visible in the run's rename count, and the alternative (carrying
+    assignments across a reload that exists precisely to rebuild from scratch)
+    buys less than it costs.
+    """
+    if not _number_conflict(cur, number, nc_source_pk):
+        return number
+    for n in range(2, _MAX_NUMBER_SUFFIX + 1):
+        candidate = f"{number}-{n}"
+        if candidate in reserved:
+            continue
+        if _number_conflict(cur, candidate, nc_source_pk):
+            continue
+        if _erp_number_held_by_another(cur, candidate, nc_source_pk):
+            continue
+        return candidate
+    return None
+
+
 def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
     """Idempotent mirror write. ``heartbeat`` (optional) is a zero-arg callable
     invoked every ~500 processed rows so a long-running full load can refresh its
     run row's updated_at and not be swept as stale mid-flight."""
     counts = dict(pos_upserted=0, po_lines_upserted=0, grs_upserted=0,
-                  gr_lines_upserted=0, skipped_consumed=0, skipped_number_collision=0)
+                  gr_lines_upserted=0, skipped_consumed=0, skipped_number_collision=0,
+                  renamed_number_collision=0)
     collisions: list = []
+    renames: list = []
     po_id_by_ncpk, po_line_id_by_ncpk, gr_id_by_ncpk = {}, {}, {}
     consumed_pks: set = set()
 
@@ -85,9 +158,19 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
         if heartbeat is not None and _processed % 500 == 0:
             heartbeat()
 
-    for po in payload["orders"]:
+    # Every ERP number in this batch, so a suffix can never be handed to one
+    # order while it is another order's genuine vbillcode.
+    erp_numbers = frozenset(o["number"] for o in payload["orders"])
+
+    # Sorted, not fetch-ordered. When several orders share a number the suffix
+    # goes to whoever is processed second, and Oracle promises no ordering — so
+    # an unsorted loop could hand PO-005-2402-01 to a different one of the two
+    # orders on every run, renaming documents under the people reading them.
+    # (number, nc_source_pk) is stable for as long as NC keeps the rows.
+    for po in sorted(payload["orders"], key=lambda o: (o["number"], o["nc_source_pk"])):
         _beat()
-        cur.execute("select id from purchase_orders where nc_source_pk=%s and source='nc'",
+        cur.execute("select id, number from purchase_orders "
+                    "where nc_source_pk=%s and source='nc'",
                     (po["nc_source_pk"],))
         row = cur.fetchone()
         if row and _po_consumed(cur, row[0]):
@@ -98,23 +181,37 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
             counts["skipped_consumed"] += 1
             continue
         if row:
-            pid = row[0]
+            pid, current_number = row
+            # Keep whatever number this row already owns when the ERP number is
+            # held by somebody else: the row may BE a renamed duplicate, and
+            # putting the ERP number back would rename a document under its
+            # readers and violate UNIQUE(number) against the order that holds it.
+            number = (po["number"] if not _number_conflict(cur, po["number"], po["nc_source_pk"])
+                      else current_number)
             cur.execute("update purchase_orders set number=%s,title=%s,status=%s,currency=%s,"
                         "subtotal=%s,tax_rate=%s,tax_amount=%s,total=%s,"
                         "vendor_id=%s,vendor_name=%s,notes=%s,updated_at=now() where id=%s",
-                        (po["number"], po["title"], po["status"], po["currency"],
+                        (number, po["title"], po["status"], po["currency"],
                          po["subtotal"], po["tax_rate"], po["tax_amount"], po["total"],
                          po["vendor_id"], po["vendor_name"], po["notes"], pid))
         else:
-            if _number_conflict(cur, po["number"], po["nc_source_pk"]):
-                # Another PO already owns this number (e.g. PMS import). Skip this
-                # NC order and ALL its children so the run completes without
-                # aborting on the UNIQUE(number) constraint and without clobbering
-                # the pre-existing PO.
+            number = _free_number(cur, po["number"], po["nc_source_pk"], erp_numbers)
+            if number is None:
+                # Nothing free within the bound — fall back to the old behaviour
+                # rather than loop. Skipping the order and ALL its children keeps
+                # the run from aborting on UNIQUE(number); it is reported, not
+                # swallowed.
                 consumed_pks.add(po["nc_source_pk"])
                 counts["skipped_number_collision"] += 1
                 collisions.append(po["number"])
                 continue
+            if number != po["number"]:
+                # Somebody else holds the ERP number: another NC order that
+                # genuinely carries the same vbillcode, or a PMS-imported PO.
+                # Either way this order is mirrored under a name of its own — the
+                # holder is never rewritten.
+                counts["renamed_number_collision"] += 1
+                renames.append(f"{po['number']} -> {number}")
             pid = uuid.uuid4()
             cur.execute(
                 "insert into purchase_orders (id,number,title,type,status,currency,subtotal,"
@@ -122,7 +219,7 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
                 "pr_id,created_by,place_order_method,place_order_reference,source,nc_source_pk,"
                 "notes,created_at,updated_at) values (%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s,%s,false,0,"
                 "NULL,%s,'nc',%s,'nc',%s,%s,coalesce(%s::timestamptz, now()),now())",
-                (pid, po["number"], po["title"], po["status"], po["currency"],
+                (pid, number, po["title"], po["status"], po["currency"],
                  po["subtotal"], po["tax_rate"], po["tax_amount"], po["total"],
                  po["vendor_id"], po["vendor_name"], system_user_id,
                  po["place_order_reference"], po["nc_source_pk"], po["notes"],
@@ -208,10 +305,14 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
             "qty_received,unit,unit_price,line_total,condition,sort_order,nc_source_pk) "
             "values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'good',%s,%s)",
             (uuid.uuid4(), gid, plid, gl["description"], gl["material_id"], gl["qty_ordered"],
-             gl["qty_received"], "EA", gl["unit_price"], gl["line_total"], gl["sort_order"],
+             gl["qty_received"], gl.get("unit") or "EA", gl["unit_price"],
+             gl["line_total"], gl["sort_order"],
              gl["nc_source_pk"]))
         counts["gr_lines_upserted"] += 1
+    if renames:
+        print(f"[nc_purchase_sync] mirrored {len(renames)} PO(s) under a suffixed "
+              f"number (the ERP number was already held): {renames[:20]}", flush=True)
     if collisions:
-        print(f"[nc_purchase_sync] skipped {len(collisions)} PO(s) on number collision "
-              f"with an existing non-NC PO: {collisions[:20]}", flush=True)
+        print(f"[nc_purchase_sync] skipped {len(collisions)} PO(s): no free document "
+              f"number within {_MAX_NUMBER_SUFFIX} suffixes: {collisions[:20]}", flush=True)
     return counts

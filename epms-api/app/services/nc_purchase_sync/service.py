@@ -202,6 +202,8 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                        gr_lines_upserted=counts["gr_lines_upserted"],
                        skipped_no_vendor=len(payload.get("skipped_no_vendor", [])),
                        skipped_consumed=skipped_consumed,
+                       renamed_number_collision=counts["renamed_number_collision"],
+                       skipped_number_collision=counts["skipped_number_collision"],
                        watermark_from=prev_wm, watermark_to=wm_to)
     except Exception as e:  # noqa: BLE001 — terminal state must always be written
         try:
