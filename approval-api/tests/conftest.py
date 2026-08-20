@@ -12,6 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.config import CompanyConfig
+from app.models.delegation import ApprovalDelegation
 from app.models.event import ApprovalEvent
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
@@ -78,6 +79,7 @@ _ENGINE_TABLES = [
     ApprovalEvent.__table__,
     DeptRouting.__table__,
     ApprovalBackup.__table__,
+    ApprovalDelegation.__table__,
 ]
 
 
@@ -94,6 +96,10 @@ def _build_engine_schema():
     eng = sa.create_engine(SYNC_URL)
     from app.db.base import Base
     Base.metadata.drop_all(eng, tables=_ENGINE_TABLES)
+    # The delegation table's EXCLUDE constraint needs btree_gist. Trusted in
+    # PG 13+, and this fixture owns the database it just created.
+    with eng.begin() as conn:
+        conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
     Base.metadata.create_all(eng, tables=_ENGINE_TABLES)
     # `user_roles` is identity-owned (no ORM model here — see
     # tests/test_seed_routing.py's shadow-table idiom); the engine now reads it

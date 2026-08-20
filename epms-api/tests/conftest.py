@@ -277,6 +277,25 @@ async def test_engine():
             " supervisor_enabled boolean NOT NULL DEFAULT false,"
             " updated_by uuid,"
             " updated_at timestamptz NOT NULL DEFAULT now())"))
+        # approval-api's delegation table (same physical DB in prod, no ORM
+        # model here — epms only reads it via app.core.delegation, never
+        # writes). Shadow it, minus the constraints approval-api enforces on
+        # write (exclusion constraint on overlapping windows, etc.) — this
+        # side only needs to select rows a test seeds directly.
+        await conn.execute(text("DROP TABLE IF EXISTS approval_delegations CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE approval_delegations ("
+            "  id uuid PRIMARY KEY,"
+            "  delegator_user_id uuid NOT NULL,"
+            "  delegate_user_id uuid NOT NULL,"
+            "  start_date date NOT NULL,"
+            "  end_date date NOT NULL,"
+            "  note text NULL,"
+            "  revoked_at timestamptz NULL,"
+            "  revoked_by uuid NULL,"
+            "  created_by uuid NOT NULL,"
+            "  created_at timestamptz NOT NULL DEFAULT now(),"
+            "  updated_at timestamptz NOT NULL DEFAULT now())"))
         # role_defs / permission_defs / role_permissions / role_permission_locks
         # are also identity-owned (no ORM model here) — same physical DB in
         # prod. The shared uniops_authz package (require_permission,

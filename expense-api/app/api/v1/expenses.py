@@ -152,6 +152,29 @@ async def _can_act_on_claim(db, claim, user_id: uuid.UUID, role: str | None = No
                     return True
             elif assigned in held:
                 return True
+
+    # Delegation (task-11): a delegate standing in for one or more delegators
+    # today may act on any of the delegators' open approve tasks — pinned
+    # directly to a delegator, or role-pool tasks for a role a delegator
+    # holds. This function sees every open task on the document (unlike
+    # my-actions' TM.type.like("approve_%") predicate), so the approve-type
+    # guard is applied here explicitly.
+    from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
+    delegator_ids = await active_delegator_ids(db, user_id)
+    if delegator_ids:
+        deleg_roles = await delegated_broadcast_roles(db, delegator_ids)
+        for t in open_tasks:
+            if not (t.type or "").startswith("approve"):
+                continue
+            if t.assigned_user_id is not None and t.assigned_user_id in delegator_ids:
+                return True
+            if t.assigned_user_id is None and t.assigned_role:
+                assigned = t.assigned_role.lower()
+                held = {r.lower() for r in deleg_roles}
+                if "gm" in held or "opm" in held:
+                    held.add("gm_or_opm")
+                if assigned in held:
+                    return True
     return False
 
 
@@ -371,6 +394,7 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     per-document task, so it stays role-based.
     """
     from sqlalchemy import and_, func, or_, select
+    from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
     from app.models.expense import ExpenseClaim as EC
     from app.models.task_mirror import TaskMirror as TM
 
@@ -385,14 +409,29 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     if "gm" in assigned_roles or "opm" in assigned_roles:
         assigned_roles.add("gm_or_opm")
 
+    # Delegation (task-11): fold in any live delegators' pinned tasks and the
+    # role-pool tasks for roles they hold. Only widens which TASKS are
+    # matched here — never the caller's own role/visibility scope above.
+    delegator_ids = await active_delegator_ids(db, user_id)
+    deleg_roles = {r.lower() for r in await delegated_broadcast_roles(db, delegator_ids)}
+    if "gm" in deleg_roles or "opm" in deleg_roles:
+        deleg_roles.add("gm_or_opm")
+
+    arms = [
+        TM.assigned_user_id == user_id,
+        and_(TM.assigned_user_id.is_(None),
+             func.lower(TM.assigned_role).in_(assigned_roles)),
+    ]
+    if delegator_ids:
+        arms.append(TM.assigned_user_id.in_(delegator_ids))
+        if deleg_roles:
+            arms.append(and_(TM.assigned_user_id.is_(None),
+                              func.lower(TM.assigned_role).in_(deleg_roles)))
+
     open_task_for_me = select(TM.document_id).where(
         TM.is_completed.is_(False),
         TM.type.like("approve_%"),
-        or_(
-            TM.assigned_user_id == user_id,
-            and_(TM.assigned_user_id.is_(None),
-                 func.lower(TM.assigned_role).in_(assigned_roles)),
-        ),
+        or_(*arms),
     )
 
     conditions = [

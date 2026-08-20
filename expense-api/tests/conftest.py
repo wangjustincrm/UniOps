@@ -92,6 +92,25 @@ async def test_engine():
             table = ddl.split()[2]
             await conn.execute(text(f"DROP TABLE IF EXISTS {table} CASCADE"))
             await conn.execute(text(ddl))
+        # approval-api's delegation table (same physical DB in prod, no ORM
+        # model here — expense-api only reads it via app.core.delegation,
+        # never writes). Shadow it, minus the constraints approval-api
+        # enforces on write (exclusion constraint on overlapping windows,
+        # etc.) — this side only needs to select rows a test seeds directly.
+        await conn.execute(text("DROP TABLE IF EXISTS approval_delegations CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE approval_delegations ("
+            "  id uuid PRIMARY KEY,"
+            "  delegator_user_id uuid NOT NULL,"
+            "  delegate_user_id uuid NOT NULL,"
+            "  start_date date NOT NULL,"
+            "  end_date date NOT NULL,"
+            "  note text NULL,"
+            "  revoked_at timestamptz NULL,"
+            "  revoked_by uuid NULL,"
+            "  created_by uuid NOT NULL,"
+            "  created_at timestamptz NOT NULL DEFAULT now(),"
+            "  updated_at timestamptz NOT NULL DEFAULT now())"))
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)

@@ -16,8 +16,8 @@ from app.models.user import User
 async def test_resolve_director_returns_active_mapped_user(engine_db_session):
     db = engine_db_session
     dept = uuid.uuid4()
-    director = User(id=uuid.uuid4(), role="requester", department_id=None, is_active=True)
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
+    director = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=None, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
     db.add_all([director, requester])
     await db.flush()
     mapping = {str(dept): str(director.id)}
@@ -28,7 +28,7 @@ async def test_resolve_director_returns_active_mapped_user(engine_db_session):
 async def test_resolve_director_none_when_unmapped(engine_db_session):
     db = engine_db_session
     dept = uuid.uuid4()
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
     db.add(requester)
     await db.flush()
     assert await _resolve_director(db, dept, {}) is None
@@ -38,8 +38,8 @@ async def test_resolve_director_none_when_unmapped(engine_db_session):
 async def test_resolve_director_none_when_mapped_user_inactive(engine_db_session):
     db = engine_db_session
     dept = uuid.uuid4()
-    director = User(id=uuid.uuid4(), role="requester", is_active=False)
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
+    director = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=False)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept, is_active=True)
     db.add_all([director, requester])
     await db.flush()
     assert await _resolve_director(db, dept, {str(dept): str(director.id)}) is None
@@ -49,8 +49,9 @@ async def test_resolve_director_none_when_mapped_user_inactive(engine_db_session
 async def test_resolve_supervisor_requires_enabled_dept_and_active_user(engine_db_session):
     db = engine_db_session
     dept = uuid.uuid4()
-    sup = User(id=uuid.uuid4(), role="requester", is_active=True)
+    sup = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
     req = User(
+        full_name="Test User",
         id=uuid.uuid4(),
         role="requester",
         department_id=dept,
@@ -102,16 +103,17 @@ async def _seed(
     Returns a dict of the created objects.
     """
     dept = uuid.uuid4()
-    gm = User(id=uuid.uuid4(), role="gm", is_active=True)
-    manager = User(id=uuid.uuid4(), role="dept_manager", department_id=dept, is_active=True)
+    gm = User(full_name="Test User", id=uuid.uuid4(), role="gm", is_active=True)
+    manager = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", department_id=dept, is_active=True)
 
     supervisor = None
     supervisor_id = None
     if with_supervisor:
-        supervisor = User(id=uuid.uuid4(), role="requester", is_active=True)
+        supervisor = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
         supervisor_id = supervisor.id
 
     requester = User(
+        full_name="Test User",
         id=uuid.uuid4(),
         role="requester",
         department_id=dept,
@@ -122,7 +124,7 @@ async def _seed(
     director = None
     director_user_id = None
     if with_director:
-        director = User(id=uuid.uuid4(), role="requester", is_active=director_active)
+        director = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=director_active)
         director_user_id = director.id
 
     to_add = [gm, manager, requester]
@@ -330,7 +332,7 @@ async def test_random_user_cannot_approve_director_step(engine_db_session):
     await execute_action(db, "pr", pr.id, "submit", s["requester"].id, "requester")
     await execute_action(db, "pr", pr.id, "approve", s["manager"].id, "dept_manager")
     # now on the director step
-    intruder = User(id=uuid.uuid4(), role="requester", is_active=True)
+    intruder = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
     db.add(intruder)
     await db.flush()
 

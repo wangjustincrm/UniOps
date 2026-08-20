@@ -209,7 +209,14 @@ async def get_all(
             scope_conds.append(Invoice.uploaded_by == own_uploads_user_id)
         if task_user_id is not None:
             from app.core.access_scope import _open_task_doc_ids
-            scope_conds.append(Invoice.id.in_(_open_task_doc_ids(task_user_id, "invoice")))
+            from app.core.delegation import active_delegator_ids
+            # Widen with anyone currently delegating their approvals to this
+            # user: a delegate who can approve a PA must be able to open its
+            # invoice — same open-approval-task rationale as access_scope's
+            # _open_task_doc_ids callers.
+            task_user_ids = {task_user_id} | await active_delegator_ids(db, task_user_id)
+            scope_conds.append(Invoice.id.in_(
+                await _open_task_doc_ids(db, task_user_id, task_user_ids, "invoice")))
             # Matcher retention: invoices this user matched remain visible in the list
             scope_conds.append(Invoice.matched_by == task_user_id)
         q = q.where(or_(*scope_conds))
@@ -270,9 +277,13 @@ async def is_visible(db: AsyncSession, invoice: Invoice, scope: dict) -> bool:
     if role == "requester":
         conds.append(Invoice.uploaded_by == user_id)
     # Task-based visibility: if the user has an open match_invoice task for this
-    # invoice, they can see it regardless of department/PO scope.
+    # invoice, they can see it regardless of department/PO scope. Widened with
+    # anyone currently delegating their approvals to this user (same rationale
+    # as access_scope's _open_task_doc_ids callers).
     from app.core.access_scope import _open_task_doc_ids
-    conds.append(Invoice.id.in_(_open_task_doc_ids(user_id, "invoice")))
+    from app.core.delegation import active_delegator_ids
+    task_user_ids = {user_id} | await active_delegator_ids(db, user_id)
+    conds.append(Invoice.id.in_(await _open_task_doc_ids(db, user_id, task_user_ids, "invoice")))
     # Matcher retention: once a user has matched an invoice they retain visibility
     # even after their task is completed (you can see what you acted on).
     conds.append(Invoice.matched_by == user_id)

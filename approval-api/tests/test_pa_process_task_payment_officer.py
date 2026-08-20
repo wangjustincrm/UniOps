@@ -36,8 +36,8 @@ async def _seed_finance_bp_single_step(db, doc_type: str):
     finance_bp is a function, not a singleton post, so it is read from
     user_roles only), plus a CompanyConfig pinning doc_type's workflow to a
     single finance_bp step so approving it is the LAST step."""
-    requester = User(id=uuid.uuid4(), role="requester", is_active=True)
-    approver = User(id=uuid.uuid4(), role="finance_bp", is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
+    approver = User(full_name="Test User", id=uuid.uuid4(), role="finance_bp", is_active=True)
     db.add_all([requester, approver])
     await db.flush()
     await db.execute(sa.text(

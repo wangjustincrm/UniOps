@@ -32,6 +32,29 @@ def _is_machine_approval(comment: str | None) -> bool:
     return any(marker in text for marker in _MACHINE_APPROVAL_MARKERS)
 
 
+_ON_BEHALF_MARKER = "on behalf of "
+
+
+def _signatory_name(name: str | None, comment: str | None) -> str | None:
+    """"Mohammadi (on behalf of Sivers)" when a stand-in approved.
+
+    The delegator's name is read back out of the event comment the engine
+    wrote, so a PDF regenerated years later still shows who the signature was
+    really for — even if the delegation row is long gone.
+    """
+    if not name or not comment or _ON_BEHALF_MARKER not in comment:
+        return name
+    # rsplit, not split: the engine always APPENDS the delegation suffix at
+    # the end of the comment. A user's own free-text comment can legitimately
+    # contain the words "on behalf of" earlier (e.g. "Approving on behalf of
+    # the whole team — on behalf of Sivers") — split(marker, 1) would take
+    # everything after the FIRST occurrence, corrupting the name on a
+    # vendor-facing PDF. rsplit always takes the real, engine-appended
+    # delegator name at the tail.
+    delegator = comment.rsplit(_ON_BEHALF_MARKER, 1)[1].strip()
+    return f"{name} ({_ON_BEHALF_MARKER}{delegator})" if delegator else name
+
+
 async def resolve_user_names(
     db: AsyncSession, ids: Iterable[uuid.UUID | None]
 ) -> dict[uuid.UUID, str]:
@@ -65,7 +88,11 @@ async def approval_signatories(
         .order_by(ApprovalEvent.step_idx, ApprovalEvent.created_at)
     )).all()
     approvals = [
-        {"role": role_label(ev.actor_role), "name": name, "at": ev.created_at}
+        {
+            "role": role_label(ev.actor_role),
+            "name": _signatory_name(name, ev.comment),
+            "at": ev.created_at,
+        }
         for ev, name in rows
         if not _is_machine_approval(ev.comment)
     ]

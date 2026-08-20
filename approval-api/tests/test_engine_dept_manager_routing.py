@@ -41,7 +41,7 @@ async def test_submit_pr_without_dept_manager_raises_not_broadcast(engine_db_ses
     a NULL-assigned (broadcast) approve_pr task."""
     db = engine_db_session
     dept_id = uuid.uuid4()  # a department with no dept_manager configured
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
     db.add(requester)
     await db.flush()
     pr = await _make_draft_pr(db, requester)
@@ -55,8 +55,8 @@ async def test_submit_pr_with_dept_manager_assigns_specific_user(engine_db_sessi
     that specific user (not a NULL broadcast)."""
     db = engine_db_session
     dept_id = uuid.uuid4()
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
-    manager = User(id=uuid.uuid4(), role="dept_manager", department_id=dept_id, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
+    manager = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", department_id=dept_id, is_active=True)
     db.add_all([requester, manager])
     await db.flush()
     pr = await _make_draft_pr(db, requester)
@@ -88,9 +88,9 @@ async def test_pr_department_id_drives_dept_manager_routing(engine_db_session):
     db = engine_db_session
     dept_a = uuid.uuid4()
     dept_b = uuid.uuid4()
-    manager_a = User(id=uuid.uuid4(), role="dept_manager", department_id=dept_a, is_active=True)
-    manager_b = User(id=uuid.uuid4(), role="dept_manager", department_id=dept_b, is_active=True)
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_a, is_active=True)
+    manager_a = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", department_id=dept_a, is_active=True)
+    manager_b = User(full_name="Test User", id=uuid.uuid4(), role="dept_manager", department_id=dept_b, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_a, is_active=True)
     db.add_all([manager_a, manager_b, requester])
     await db.flush()
 
@@ -121,7 +121,7 @@ async def test_null_pr_department_falls_back_to_creator_department(engine_db_ses
     the requester's own department — unchanged legacy behaviour."""
     db = engine_db_session
     dept_a = uuid.uuid4()
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_a, is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_a, is_active=True)
     db.add(requester)
     await db.flush()
     pr = await _make_draft_pr(db, requester)
@@ -138,9 +138,9 @@ async def test_supervisor_resolution_unaffected_by_pr_department(engine_db_sessi
     db = engine_db_session
     dept_a = uuid.uuid4()
     dept_b = uuid.uuid4()
-    supervisor = User(id=uuid.uuid4(), role="requester", is_active=True)
+    supervisor = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
     requester = User(
-        id=uuid.uuid4(), role="requester", department_id=dept_a,
+        full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_a,
         is_active=True, supervisor_id=supervisor.id,
     )
     db.add_all([supervisor, requester])
@@ -198,7 +198,7 @@ async def test_agr_routes_on_the_agreements_own_department(engine_db_session):
     db = engine_db_session
     agr_dept = uuid.uuid4()
     submitter_dept = uuid.uuid4()
-    submitter = User(id=uuid.uuid4(), role="procurement_officer",
+    submitter = User(full_name="Test User", id=uuid.uuid4(), role="procurement_officer",
                      department_id=submitter_dept, is_active=True)
     db.add(submitter)
     await db.flush()
@@ -215,7 +215,7 @@ async def test_agr_routes_when_the_submitter_has_no_department(engine_db_session
     as a 409 'no active Department Manager for the requester's department')."""
     db = engine_db_session
     agr_dept = uuid.uuid4()
-    submitter = User(id=uuid.uuid4(), role="system_admin",
+    submitter = User(full_name="Test User", id=uuid.uuid4(), role="system_admin",
                      department_id=None, is_active=True)
     db.add(submitter)
     await db.flush()
@@ -228,7 +228,7 @@ async def test_agr_without_a_department_falls_back_to_the_submitter(engine_db_se
     """An agreement with no department of its own keeps the legacy fallback."""
     db = engine_db_session
     submitter_dept = uuid.uuid4()
-    submitter = User(id=uuid.uuid4(), role="procurement_officer",
+    submitter = User(full_name="Test User", id=uuid.uuid4(), role="procurement_officer",
                      department_id=submitter_dept, is_active=True)
     db.add(submitter)
     await db.flush()
