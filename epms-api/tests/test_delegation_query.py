@@ -149,3 +149,21 @@ async def test_broadcast_roles_empty_input(test_engine):
     sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with sf() as db:
         assert await delegated_broadcast_roles(db, set()) == set()
+
+
+async def test_broadcast_roles_excludes_inactive_delegator_additional_role(test_engine):
+    """A deactivated delegator's ADDITIONAL role (user_roles) must not leak
+    into the broadcast set, matching how their PRIMARY role (users.role) is
+    already excluded once inactive. Both halves of the union filter
+    is_active identically."""
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with sf() as db:
+        delegator = _user(role="dept_manager", is_active=False)
+        db.add(delegator)
+        await db.flush()
+        await db.execute(text(
+            "INSERT INTO user_roles (user_id, role_code) VALUES (:u, :r)"),
+            {"u": delegator.id, "r": "procurement_manager"})
+        await db.commit()
+        got = await delegated_broadcast_roles(db, {delegator.id})
+        assert got == set()
