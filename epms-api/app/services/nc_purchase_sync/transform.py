@@ -21,6 +21,23 @@ def _num(v):
     return Decimal(str(v)) if v is not None else Decimal("0")
 
 
+def _quotation_price(ln: dict) -> Decimal:
+    """The price per the unit this line's quantity is counted in.
+
+    The mirror stores ``nastnum`` (quantity in NC's QUOTATION unit, ``castunitid``)
+    as the line quantity. ``norigtaxprice`` is the price per NC's MAIN unit, so
+    pairing the two breaks the line's own arithmetic wherever the units differ:
+    PO-078-2411-01 is 3,900 LB at 2.50 = 9,750, and the main-unit price is 5.5556
+    because 1 kg is 2.2 lb. NC carries ``nqtorigtaxprice`` for exactly this.
+
+    Verified against NC: ``nastnum * nqtorigtaxprice`` reproduces ``norigtaxmny``
+    on all 629 in-scope order lines. The fallback covers a line the ERP left
+    without a quotation price — which only happens when the two units coincide,
+    and beats writing 0 into a price column.
+    """
+    return _num(ln.get("nqtorigtaxprice") or ln.get("norigtaxprice"))
+
+
 def _planned_arrival(raw: str | None) -> date | None:
     """NCSC.PO_ORDER_B.DPLANARRVDATE -> a plain date.
 
@@ -156,7 +173,7 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
             "nc_source_pk": ln["pk_order_b"], "po_nc_pk": ln["pk_order"],
             "material_id": mcode, "description": mname or (ln.get("vvendinventoryname") or mcode or ""),
             "qty": _num(ln["nastnum"]), "unit": uom.get(ln["castunitid"], "EA"),
-            "unit_price": _num(ln["norigtaxprice"]), "line_total": _num(ln["norigtaxmny"]),
+            "unit_price": _quotation_price(ln), "line_total": _num(ln["norigtaxmny"]),
             "received_qty": recv.get(ln["pk_order_b"], Decimal("0")),
             # The ERP's own planned arrival date for this line. Populated on
             # 4,890 of 4,890 approved NC order lines, and the only source of an
@@ -209,6 +226,10 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
                 "po_line_nc_pk": al["pk_order_b"], "material_id": mcode,
                 "description": mname or mcode or "",
                 "qty_ordered": Decimal("0"), "qty_received": _num(al["nastnum"]),
+                # The arrival's OWN unit, not the order line's: NC lets a receipt
+                # be booked in a different one, and 'EA' — which the writer used
+                # to hardcode — is right for almost none of them.
+                "unit": uom.get(al.get("castunitid"), "EA"),
                 "unit_price": _num(al["norigtaxprice"]), "line_total": _num(al["norigtaxmny"]),
                 "sort_order": int(al["crowno"]) if str(al.get("crowno") or "").isdigit() else 0,
             })

@@ -66,6 +66,8 @@ def _run_out(r: NcPurchaseSyncRun | None) -> dict | None:
         "pos_upserted": r.pos_upserted, "po_lines_upserted": r.po_lines_upserted,
         "grs_upserted": r.grs_upserted, "gr_lines_upserted": r.gr_lines_upserted,
         "skipped_no_vendor": r.skipped_no_vendor, "skipped_consumed": r.skipped_consumed,
+        "renamed_number_collision": r.renamed_number_collision,
+        "skipped_number_collision": r.skipped_number_collision,
         "error": r.error,
     }
 

@@ -39,6 +39,11 @@ export interface NcPurchaseSyncRun {
   gr_lines_upserted: number
   skipped_no_vendor: number
   skipped_consumed: number
+  /** Orders mirrored under a suffixed number because the ERP number was taken.
+   *  Normal — NC issues the same vbillcode to genuinely different orders. */
+  renamed_number_collision: number
+  /** Orders that reached UniOps not at all. Should always be 0. */
+  skipped_number_collision: number
   error: string | null
 }
 
@@ -65,6 +70,23 @@ function RunCounters({ run }: { run: NcPurchaseSyncRun }) {
       <span>{Number(run.gr_lines_upserted).toLocaleString()} GR lines</span>
       {run.skipped_no_vendor > 0 && <span>{Number(run.skipped_no_vendor).toLocaleString()} skipped (no vendor)</span>}
       {run.skipped_consumed > 0 && <span>{Number(run.skipped_consumed).toLocaleString()} skipped (consumed)</span>}
+      {run.renamed_number_collision > 0 && (
+        // Not an error: the ERP reuses a document number across genuinely
+        // different orders, and UniOps numbers must be unique. Shown because a
+        // PO whose number is not the ERP's is a surprise when somebody goes
+        // looking for it.
+        <span title="The ERP number was already taken, so these orders were mirrored under a numbered suffix">
+          {Number(run.renamed_number_collision).toLocaleString()} renumbered
+        </span>
+      )}
+      {run.skipped_number_collision > 0 && (
+        // This one IS an error: the order is not in UniOps at all. It used to
+        // happen on every collision and reached nothing but a container log.
+        <span className="text-danger-600"
+              title="No free document number — these orders are NOT in UniOps">
+          {Number(run.skipped_number_collision).toLocaleString()} skipped (no free number)
+        </span>
+      )}
     </div>
   )
 }
