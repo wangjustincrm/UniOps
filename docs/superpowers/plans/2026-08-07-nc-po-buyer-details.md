@@ -2022,3 +2022,17 @@ improvement someone should pick up.
 6. **`admin_audit_log.actor_email` is always the empty string** for this endpoint, because
    identity's JWT carries no `email` claim. Same as the pre-existing `admin.py::_actor` convention,
    not introduced here — but it makes the audit trail less useful than it looks.
+
+7. **`PoLineItemInput`'s `Omit` list does not exclude `planned_arrival_date`.**
+   `epms/src/services/po.ts:44-48` derives the outgoing line payload type by omitting
+   `id` / `line_total` / `received_qty` / `already_allocated`, so the type technically
+   permits attaching the ERP-owned delivery date to a write. Inert today — the backend's
+   `PoLineItemIn` has no such field and sets no `extra="forbid"`, so pydantic drops it —
+   but the type does not express the "display-only, never sent back" intent the adjacent
+   comment claims. One-word fix: add `'planned_arrival_date'` to the `Omit`.
+
+8. **The earliest-line-date roll-up is duplicated between two frontend files.**
+   `PoDetailPage.tsx` and `PoImportedEditPage.tsx` each carry the same four-line reduce.
+   Backend/frontend duplication is expected, but this frontend-to-frontend pair could be
+   one helper in `lib/utils.ts` and could drift if the tie-break rule is ever revisited
+   in one file only.
