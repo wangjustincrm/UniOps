@@ -13,7 +13,7 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
-  Network,
+  Network, Repeat,
 } from 'lucide-react'
 
 // MRP has no single landing tile like the other modules — Portal links
@@ -93,6 +93,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'Data Maintenance', icon: Database,    href: 'portal:/admin/data-maintenance', permission: 'data_maintenance' },
       { label: 'Access Control',   icon: ShieldCheck, href: 'portal:/admin/access-control',   adminOnly: true },
       { label: 'Approval Routing', icon: GitBranch,   href: 'portal:/admin/approval-routing', adminOnly: true },
+      { label: 'Approval Delegation', icon: Repeat,   href: 'portal:/admin/approval-delegation', adminOnly: true },
     ],
   },
 ]

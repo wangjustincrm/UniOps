@@ -56,6 +56,43 @@ export interface ApprovalStateResult {
 export interface ListResult { items: Record<string, unknown>[]; total: number }
 export type CascadeSummary = Record<string, number>
 
+// ── Approval delegation (Task 12) ───────────────────────────────────────────
+// approval-api's /delegations endpoints have no browser-facing subdomain/CORS
+// (server-to-server only — same reasoning documented on the /approval-routing
+// proxy in epms-api/app/api/v1/config.py), so epms-api gateways them at
+// /config/approval-delegations. Shape mirrors approval-api's DelegationOut /
+// DelegationCreate / DelegationUpdate schemas exactly.
+
+export interface DelegationOut {
+  id: string
+  delegator_user_id: string
+  delegate_user_id: string
+  delegator_name: string | null
+  delegate_name: string | null
+  start_date: string   // YYYY-MM-DD, inclusive
+  end_date: string      // YYYY-MM-DD, inclusive
+  note: string | null
+  revoked_at: string | null
+  revoked_by: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface DelegationCreate {
+  delegator_user_id: string
+  delegate_user_id: string
+  start_date: string
+  end_date: string
+  note?: string | null
+}
+
+export interface DelegationUpdate {
+  start_date?: string
+  end_date?: string
+  note?: string | null
+}
+
 // ── Per-system API host + path prefix (mirror lib/api.ts defaults) ─────────────
 // Most services mount admin under /api/v1; finance-api mounts under /finance/v1.
 const HOST: Record<string, string> = {
@@ -152,4 +189,13 @@ export const adminApi = {
     }
     return ids
   },
+  // ── Approval delegation ───────────────────────────────────────────────────
+  listDelegations: () =>
+    request<DelegationOut[]>('epms', 'GET', '/config/approval-delegations'),
+  createDelegation: (body: DelegationCreate) =>
+    request<DelegationOut>('epms', 'POST', '/config/approval-delegations', body),
+  updateDelegation: (id: string, body: DelegationUpdate) =>
+    request<DelegationOut>('epms', 'PATCH', `/config/approval-delegations/${id}`, body),
+  revokeDelegation: (id: string) =>
+    request<DelegationOut>('epms', 'POST', `/config/approval-delegations/${id}/revoke`),
 }
