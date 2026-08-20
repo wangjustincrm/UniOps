@@ -9,6 +9,7 @@ import { FormField } from '@/components/ui/form-field'
 import { ImportedPoLineItems, type ImportedPoLine } from '@/components/po/ImportedPoLineItems'
 import { usePo, useUpdatePoImportedDetails, useRegeneratePoPdf } from '@/hooks/usePos'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
+import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, formatDate } from '@/lib/utils'
 import type { ImportedDetailsBody } from '@/services/po'
 
@@ -36,6 +37,7 @@ export default function PoImportedEditPage() {
   // query-result object) — see hooks/useTaxCodes.ts. PoEditPage.tsx consumes
   // it the same way.
   const taxCodes = useTaxCodes()
+  const { data: config } = useConfig()
   const saveDetails = useUpdatePoImportedDetails(id ?? '')
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
 
@@ -65,11 +67,13 @@ export default function PoImportedEditPage() {
   // move the repo's lint baseline. Restructuring would diverge from those three.
   useEffect(() => {
     if (!po) return
-    // Prefill with the stored header override if there is one, otherwise the
-    // ERP roll-up — but only mark the field "touched" (and so eligible to be
-    // written back) once the user actually edits it. See handleSave.
+    // The Expected Delivery input only ever renders when neither a stored
+    // header value nor an ERP roll-up exists (see showExpectedDeliveryInput
+    // below), so there is nothing to prefill it with — start blank and only
+    // mark it "touched" (and so eligible to be written back) once the buyer
+    // actually types something. See handleSave.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpectedDelivery(po.expected_delivery ?? erpDeliveryDate ?? '')
+    setExpectedDelivery('')
     setDeliveryTouched(false)
     setDeliveryAddress(po.delivery_address ?? '')
     setIncoterms(po.incoterms ?? '')
@@ -92,6 +96,16 @@ export default function PoImportedEditPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [po?.id])
 
+  // Delivery Address prefill from the company default — same pattern as
+  // PoCreatePage.tsx. Only fills in when the PO itself has nothing stored;
+  // a value already on the PO always wins over the company default.
+  useEffect(() => {
+    if (po?.id && !po.delivery_address && config?.delivery_address) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDeliveryAddress(config.delivery_address)
+    }
+  }, [po?.id, po?.delivery_address, config?.delivery_address])
+
   const editable = po?.source === 'nc' && po?.status === 'issued'
   const isCadOrder = po?.currency === 'CAD'
   // Same rule as PoCreatePage / PoEditPage — tax only applies to CAD orders.
@@ -107,18 +121,21 @@ export default function PoImportedEditPage() {
   const total = isCadOrder ? subtotal + taxAmount : Number(po?.total ?? subtotal)
   const currency = po?.currency ?? 'CAD'
 
-  // Wording depends on whether a header override is already stored, since
-  // that determines what the input above is actually showing right now.
-  const erpDeliveryHint = po?.expected_delivery
-    ? (erpDeliveryDate
-        ? `This is a fixed override — NC currently shows ${formatDate(erpDeliveryDate)}. `
-          + 'Clear the field to go back to tracking NC automatically.'
-        : undefined)
-    : (erpDeliveryDate
-        ? `Prefilled from NC (earliest line: ${formatDate(erpDeliveryDate)}). Leave unchanged `
-          + 'to keep tracking NC as it reschedules; changing it sets a fixed override that '
-          + 'will stop following NC.'
-        : undefined)
+  // Expected Delivery is read-only whenever there's already something to
+  // show — a stored header value, or the ERP roll-up — per the user's rule:
+  // only editable when there is nothing to show. The header value (when
+  // present) always wins over the ERP roll-up for display.
+  const expectedDeliveryDisplay = po?.expected_delivery
+    ? formatDate(po.expected_delivery)
+    : erpDeliveryDate
+      ? formatDate(erpDeliveryDate)
+      : null
+  const showExpectedDeliveryInput = !expectedDeliveryDisplay
+  const expectedDeliveryHint = po?.expected_delivery
+    ? undefined
+    : erpDeliveryDate
+      ? 'Tracks NC automatically.'
+      : undefined
 
   const handleSave = async () => {
     if (!id) return
@@ -152,14 +169,14 @@ export default function PoImportedEditPage() {
         payload.tax_code = effectiveTaxRate > 0 ? taxCode : null
         payload.tax_rate = effectiveTaxRate
       }
-      // expected_delivery is prefilled from the ERP roll-up for display, but
-      // that prefill must never be written back as a stored header override
-      // on an untouched save — otherwise the header freezes at whatever NC
-      // said on page-load, and both the PO detail page and the vendor PDF
-      // stop tracking NC's own reschedules. Only send the key once the user
-      // has actually edited the field; the backend's absent-key contract
-      // then leaves the stored value (NULL, or an existing override) alone.
-      if (deliveryTouched) {
+      // The Expected Delivery input only renders when there's nothing to
+      // show (no stored header value, no ERP roll-up) — in every other case
+      // it's read-only text and the key must stay absent entirely, so the
+      // backend's absent-key contract leaves the stored value (NULL, or an
+      // existing override) untouched and display keeps tracking NC. Even
+      // while the input is rendered, only send the key once the buyer has
+      // actually typed something.
+      if (showExpectedDeliveryInput && deliveryTouched) {
         payload.expected_delivery = expectedDelivery || null
       }
       await saveDetails.mutateAsync(payload)
@@ -231,9 +248,13 @@ export default function PoImportedEditPage() {
         </dl>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <FormField label="Expected Delivery" htmlFor="expectedDelivery" hint={erpDeliveryHint}>
-            <Input id="expectedDelivery" type="date" value={expectedDelivery}
-                   onChange={(e) => { setExpectedDelivery(e.target.value); setDeliveryTouched(true) }} />
+          <FormField label="Expected Delivery" htmlFor="expectedDelivery" hint={expectedDeliveryHint}>
+            {showExpectedDeliveryInput ? (
+              <Input id="expectedDelivery" type="date" value={expectedDelivery}
+                     onChange={(e) => { setExpectedDelivery(e.target.value); setDeliveryTouched(true) }} />
+            ) : (
+              <p id="expectedDelivery" className="text-sm text-neutral-900">{expectedDeliveryDisplay}</p>
+            )}
           </FormField>
           <FormField label="Incoterms" htmlFor="incoterms">
             <Input id="incoterms" type="text" value={incoterms} maxLength={100}

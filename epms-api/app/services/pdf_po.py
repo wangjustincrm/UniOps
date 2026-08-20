@@ -79,8 +79,8 @@ def generate_po_pdf(
     # populate it (the ERP has no header delivery date). Fall back to the
     # earliest non-null line-level planned_arrival_date — NC's own "Delivery
     # Date" list column is that same rollup — but keep the header value's
-    # precedence and mark the fallback as ERP-sourced so nobody mistakes it
-    # for a manually entered date.
+    # precedence. This PDF goes to the vendor, so no internal provenance
+    # marker is printed; only the resolved date is shown.
     if po.expected_delivery:
         delivery_str = str(po.expected_delivery)
     else:
@@ -88,7 +88,7 @@ def generate_po_pdf(
             item.planned_arrival_date for item in po.line_items
             if item.planned_arrival_date
         ]
-        delivery_str = f"{min(line_dates)} (from ERP)" if line_dates else "—"
+        delivery_str = str(min(line_dates)) if line_dates else "—"
 
     meta = Table(
         [

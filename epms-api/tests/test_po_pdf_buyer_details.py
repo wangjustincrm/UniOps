@@ -123,8 +123,8 @@ def test_pdf_delivery_falls_back_to_earliest_line_date_when_header_is_unset():
     """expected_delivery is NULL on every NC-synced PO (the ERP has no header
     delivery date; rule 1 forbids ever backfilling it there). The vendor PDF
     must not print '—' for Delivery on those orders — it should show the
-    earliest planned_arrival_date across the PO's lines, and mark it as
-    ERP-sourced so nobody mistakes a rollup for a value someone typed in."""
+    earliest planned_arrival_date across the PO's lines. The PDF is
+    vendor-facing, so no internal "from ERP" provenance marker is printed."""
     po = _po(source="nc", expected_delivery=None)
     po.line_items = [
         PoLineItem(
@@ -143,7 +143,7 @@ def test_pdf_delivery_falls_back_to_earliest_line_date_when_header_is_unset():
     text = _text_of(generate_po_pdf(po))
     assert "2026-09-05" in text, "the earlier line date must win"
     assert "2026-09-20" not in text, "the later line date must not appear"
-    assert "from ERP" in text, "the fallback must be visibly ERP-sourced"
+    assert "from ERP" not in text, "no internal provenance marker on the vendor-facing PDF"
     # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
     assert "Widget A" in text
 

@@ -647,8 +647,9 @@ export default function PoDetailPage() {
 
   // expected_delivery is a human-entered header override; NC-synced POs never
   // populate it. When absent, fall back to the earliest ERP-synced line date
-  // (string comparison is safe/UTC-agnostic for YYYY-MM-DD) — but never treat
-  // it as anything other than display-only, and always mark it as ERP-sourced.
+  // (string comparison is safe/UTC-agnostic for YYYY-MM-DD) — display-only,
+  // no internal provenance marker (this page is also what buyers screenshot
+  // for vendors, so keep it consistent with the PDF's plain date).
   const erpDeliveryDate = po.line_items.reduce<string | undefined>((earliest, li) => {
     if (!li.planned_arrival_date) return earliest
     return !earliest || li.planned_arrival_date < earliest ? li.planned_arrival_date : earliest
@@ -656,7 +657,7 @@ export default function PoDetailPage() {
   const expectedDeliveryDisplay = po.expected_delivery
     ? formatDate(po.expected_delivery)
     : erpDeliveryDate
-      ? `${formatDate(erpDeliveryDate)} (from ERP)`
+      ? formatDate(erpDeliveryDate)
       : '—'
 
   return (
