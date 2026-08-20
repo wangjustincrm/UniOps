@@ -283,3 +283,42 @@ class InvoiceResponse(BaseModel):
 class InvoiceListResponse(BaseModel):
     items: list[InvoiceResponse]
     total: int
+
+
+class UnmatchRequest(BaseModel):
+    """Reversing a match is a financial action, so the reason is mandatory and
+    is what the audit row carries — a blank one would leave a trail that
+    records the change without recording why."""
+    reason: str = Field(max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def _non_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("A reason is required when unmatching")
+        return v.strip()
+
+
+# ── Document chain (Invoice List due-date drawer) ─────────────────────────────
+
+class ChainStepRef(BaseModel):
+    """One document a chain step points at. `number` is the human-readable
+    document number; it is nullable only because the underlying columns are."""
+    doc_type: str   # po | agreement | gr | pa
+    id: str
+    number: str | None
+
+
+class ChainStep(BaseModel):
+    key: str        # match_po | link_gr | create_pa | payment
+    state: str      # done | pending | blocked | not_applicable | restricted
+    detail: str | None = None
+    refs: list[ChainStepRef] = []
+
+
+class InvoiceChainResponse(BaseModel):
+    invoice_id: uuid.UUID
+    internal_ref: str
+    status: str
+    due_date: date
+    steps: list[ChainStep]

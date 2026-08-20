@@ -93,6 +93,38 @@ export function useInvoices(filters?: InvoiceFilters, enabled = true) {
   })
 }
 
+// Fetched only while the drawer is open (`enabled`): the chain costs a PA
+// lookup per invoice, so the list must not prefetch one per row.
+export function useInvoiceChain(id: string | null) {
+  return useQuery({
+    queryKey: ['invoices', id, 'chain'],
+    queryFn: () => invoiceService.chain(id as string),
+    enabled: Boolean(id),
+    staleTime: 30_000,
+  })
+}
+
+export type UnmatchScope = 'po' | 'gr'
+
+export function useUnmatchInvoice() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, scope, reason }: { id: string; scope: UnmatchScope; reason: string }) =>
+      scope === 'po'
+        ? invoiceService.unmatchPo(id, reason)
+        : invoiceService.unmatchGr(id, reason),
+    onSuccess: () => {
+      // ['invoices'] prefix-matches the detail query AND ['invoices', id,
+      // 'chain'], so the due-date drawer cannot keep serving the pre-unmatch
+      // chain. Tasks and POs move too: unmatching may withdraw a PO's
+      // create_pa/confirm_receipt task.
+      qc.invalidateQueries({ queryKey: ['invoices'] })
+      qc.invalidateQueries({ queryKey: ['tasks'] })
+      qc.invalidateQueries({ queryKey: ['pos'] })
+    },
+  })
+}
+
 export function useInvoice(id: string) {
   return useQuery({
     queryKey: ['invoices', id],

@@ -4,6 +4,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
   AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
+  Unlink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -11,13 +12,15 @@ import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { EXPENSE_BASE } from '@/lib/api'
 import { computeSla } from '@/stores/invoice.store'
 import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
-import { useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
+import { useInvoiceChain, useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
+import { UnmatchDialog } from './UnmatchDialog'
+import type { UnmatchScope } from '@/hooks/useInvoices'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
 import { getTaxLines } from '@/services/invoiceTax'
 import { AssignMatchDialog } from './AssignMatchDialog'
@@ -49,16 +52,21 @@ function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
 // ─── 3-way match result row ───────────────────────────────────────────────────
 
 function MatchRow({
-  icon, label, ref: docRef, href, amount, currency, note, ok,
+  icon, label, docRef, href, amount, currency, note, ok, action,
 }: {
   icon: React.ReactNode
   label: string
-  ref?: string
+  /** The document number shown in the Reference column. NOT called `ref`:
+      that is a reserved React prop, and naming it so made the compiler lint
+      treat every attribute on these rows as a ref access during render. */
+  docRef?: string
   href?: string
   amount?: number
   currency?: string
   note?: string
   ok?: boolean
+  /** Right-hand action cell (the Unmatch button); the Invoice row has none. */
+  action?: React.ReactNode
 }) {
   return (
     <tr className="border-b border-neutral-100">
@@ -87,7 +95,27 @@ function MatchRow({
         {ok === false && <AlertTriangle className="h-4 w-4 text-danger-600 mx-auto" />}
         {ok == null   && <span className="text-neutral-300">—</span>}
       </td>
+      <td className="px-4 py-3 text-right">{action}</td>
     </tr>
+  )
+}
+
+function UnmatchButton({ label, blockedReason, onClick }: {
+  label: string
+  /** Non-null when the backend would refuse; the button explains rather than 422s. */
+  blockedReason: string | null
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      disabled={blockedReason != null}
+      onClick={onClick}
+      title={blockedReason ?? 'Reverse this link (a reason is required)'}
+      className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-2 py-1 text-xs font-medium text-danger-600 transition-colors hover:border-danger-200 hover:bg-danger-50 disabled:cursor-not-allowed disabled:border-neutral-100 disabled:text-neutral-300 disabled:hover:bg-transparent"
+    >
+      <Unlink className="h-3 w-3" />{label}
+    </button>
   )
 }
 
@@ -99,10 +127,21 @@ export default function InvoiceDetailPage() {
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
+  const [unmatchScope, setUnmatchScope] = useState<UnmatchScope | null>(null)
+  // Same gate the backend uses (ApDep = require_permission("epms.invoice.match"))
+  // — AP staff and admins. Deliberately narrower than the rule for PERFORMING a
+  // match, which also admits the uploader and the holder of an open match task.
+  const canUnmatch = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
   const deleteInvoice = useDeleteInvoice()
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
   const { data: gr } = useGr(inv?.gr_id ?? '')
+  // The blocking condition for an unmatch is "a non-cancelled PA still claims
+  // this invoice", which lives in payment_applications.invoice_ids and cannot
+  // be read off the invoice. The chain endpoint already resolves exactly that,
+  // so the buttons can say why they are unavailable instead of handing the
+  // user a 422 after the fact. Only fetched for people who could act on it.
+  const { data: chain } = useInvoiceChain(canUnmatch ? (id ?? null) : null)
   const updateInvoice = useUpdateInvoice()
 
   // Tax lines are the source of truth for the header tax when present: the
@@ -260,6 +299,17 @@ export default function InvoiceDetailPage() {
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
   const isAgreementRoute = inv.match_route === 'agreement'
+  // Mirrors _guard_unmatch on the backend. `restricted` means the caller has
+  // no view_pa and the chain cannot tell us — leave the button live and let
+  // the server answer, rather than blocking on something we cannot see.
+  const paStep = chain?.steps.find((s) => s.key === 'create_pa')
+  const blockedPa = paStep?.state === 'done' ? (paStep.refs[0]?.number ?? 'a payment application') : null
+  const unmatchBlockedReason =
+    inv.status === 'approved' || inv.status === 'paid'
+      ? `This invoice has already entered payment (status "${inv.status}").`
+      : blockedPa
+        ? `Payment Application ${blockedPa} still claims this invoice — cancel it first.`
+        : null
   // Fix-round 1 (Important 1): read straight off the invoice response
   // (agreement_type is a denormalized snapshot written at match time — see
   // ag05_invoice_agreement_type) instead of a separate, more narrowly gated
@@ -1125,34 +1175,49 @@ export default function InvoiceDetailPage() {
                           <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Amount</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Note</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-neutral-500">Status</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         <MatchRow
                           icon={<FileText className="h-4 w-4 text-neutral-400" />}
                           label="Purchase Order"
-                          ref={inv.po_number}
+                          docRef={inv.po_number}
                           href={`/po/${inv.po_id}`}
                           amount={inv.po_total}
                           currency={inv.currency}
                           note="Authorised PO total"
                           ok={true}
+                          action={canUnmatch && (
+                            <UnmatchButton
+                              label="Unmatch"
+                              blockedReason={unmatchBlockedReason}
+                              onClick={() => setUnmatchScope('po')}
+                            />
+                          )}
                         />
                         <MatchRow
                           icon={<TrendingUp className="h-4 w-4 text-neutral-400" />}
                           label="Goods / Service Receipt"
-                          ref={inv.gr_number}
+                          docRef={inv.gr_number}
                           href={`/gr/${inv.gr_id}`}
                           amount={inv.gr_value}
                           currency={inv.currency}
                           note={inv.gr_value != null && inv.po_total != null && Number(inv.gr_value) < Number(inv.po_total)
                             ? 'Partial delivery' : 'Fully delivered'}
                           ok={inv.gr_value != null}
+                          action={canUnmatch && inv.gr_id != null && (
+                            <UnmatchButton
+                              label="Unmatch"
+                              blockedReason={unmatchBlockedReason}
+                              onClick={() => setUnmatchScope('gr')}
+                            />
+                          )}
                         />
                         <MatchRow
                           icon={<FileText className="h-4 w-4 text-primary-500" />}
                           label="Invoice"
-                          ref={inv.internal_ref}
+                          docRef={inv.internal_ref}
                           href={`/invoices/${inv.id}`}
                           amount={inv.total_amount}
                           currency={inv.currency}
@@ -1311,6 +1376,14 @@ export default function InvoiceDetailPage() {
           currentAssigneeName={inv.match_assignee_name}
           onClose={() => setShowAssignDialog(false)}
           onAssigned={() => setShowAssignDialog(false)}
+        />
+      )}
+
+      {unmatchScope && (
+        <UnmatchDialog
+          invoiceId={inv.id}
+          scope={unmatchScope}
+          onClose={() => setUnmatchScope(null)}
         />
       )}
     </div>

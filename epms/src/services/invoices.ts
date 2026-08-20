@@ -217,8 +217,47 @@ export interface InvoiceFilters {
   po_id?: string
   agreement_id?: string
   search?: string
+  // 'due_date' | '-due_date'. Omit for the server default (newest uploaded
+  // first) — every other caller of this endpoint relies on that order.
+  sort?: string
+  // Past the due date and not yet paid, evaluated against the PLANT's calendar
+  // day on the server (the API container runs in UTC).
+  overdue?: boolean
   page?: number
   page_size?: number
+}
+
+// ── Document chain (Due Date drawer) ──────────────────────────────────────────
+// Mirrors InvoiceChainResponse in epms-api/app/schemas/invoice.py.
+
+export type ChainStepKey = 'match_po' | 'link_gr' | 'create_pa' | 'payment'
+
+export type ChainStepState =
+  | 'done'
+  | 'pending'         // the outstanding action
+  | 'blocked'         // an earlier step has to land first
+  | 'not_applicable'  // this route never has this step (GR on an agreement)
+  | 'restricted'      // caller is not admitted to the module that owns it
+
+export interface ChainStepRef {
+  doc_type: 'po' | 'agreement' | 'gr' | 'pa'
+  id: string
+  number: string | null
+}
+
+export interface ChainStep {
+  key: ChainStepKey
+  state: ChainStepState
+  detail: string | null
+  refs: ChainStepRef[]
+}
+
+export interface InvoiceChain {
+  invoice_id: string
+  internal_ref: string
+  status: InvoiceStatus
+  due_date: string
+  steps: ChainStep[]
 }
 
 export interface InvoiceListResponse {
@@ -236,6 +275,12 @@ export const invoiceService = {
   get: (id: string) =>
     api.get<ApiInvoice>(`/invoices/${id}`),
 
+  // Match PO -> Link GR -> Create PA -> Payment for one invoice. A separate
+  // endpoint because the PA link lives in payment_applications.invoice_ids (a
+  // JSONB array with no FK), which no PA list filter can reach.
+  chain: (id: string) =>
+    api.get<InvoiceChain>(`/invoices/${id}/chain`),
+
   create: (body: CreateInvoiceBody) =>
     api.post<ApiInvoice>('/invoices', body),
 
@@ -244,6 +289,18 @@ export const invoiceService = {
 
   match: (id: string, body: MatchInvoiceBody) =>
     api.post<ApiInvoice>(`/invoices/${id}/match`, body),
+
+  // Reversing a match. Two separate routes because they undo different
+  // amounts: unmatch-po returns the invoice to `unmatched` (allocations
+  // deleted, GR link dropped with the PO it belongs to), unmatch-gr withdraws
+  // only the receipt evidence and leaves the PO match standing. Both are
+  // gated on epms.invoice.match and both require a reason, which lands in
+  // admin_audit_log.
+  unmatchPo: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/unmatch-po`, { reason }),
+
+  unmatchGr: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/unmatch-gr`, { reason }),
 
   // Candidate POs for allocation (same vendor, open statuses) — authorized by
   // the invoice's match rights, NOT the caller's general PO scope, so task

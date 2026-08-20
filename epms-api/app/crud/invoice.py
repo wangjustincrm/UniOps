@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.delegation import local_today
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
@@ -188,6 +189,8 @@ async def get_all(
     po_id: uuid.UUID | None = None,
     agreement_id: uuid.UUID | None = None,
     search: str | None = None,
+    sort: str | None = None,
+    overdue: bool = False,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
     task_user_id: uuid.UUID | None = None,
@@ -240,10 +243,31 @@ async def get_all(
             Invoice.vendor_invoice_number.ilike(term),
             Invoice.po_number.ilike(term),
         ))
+    if overdue:
+        # "Overdue" has to mean the same thing here as in the list's Due Date
+        # column, or the filter hides rows the column paints red and vice
+        # versa. Two halves, both load-bearing:
+        #   - today is the PLANT's calendar day, not the container's. The API
+        #     runs in UTC, so a server-side CURRENT_DATE flips over at 20:00
+        #     local and would report a full extra day of invoices as overdue
+        #     every evening.
+        #   - a paid invoice is never chased. Without this the filter is
+        #     dominated by historic settled invoices, which is precisely the
+        #     noise it exists to cut through.
+        q = q.where(Invoice.due_date < local_today(), Invoice.status != "paid")
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
+    # created_at desc stays the default AND the tiebreaker: several invoices
+    # routinely share a due date, and without a stable second key the same row
+    # can appear on two pages or on none.
+    if sort == "due_date":
+        ordering = [Invoice.due_date.asc(), Invoice.created_at.desc()]
+    elif sort == "-due_date":
+        ordering = [Invoice.due_date.desc(), Invoice.created_at.desc()]
+    else:
+        ordering = [Invoice.created_at.desc()]
     items = list((await db.execute(
-        q.order_by(Invoice.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*ordering).offset(offset).limit(page_size)
     )).scalars().all())
     await attach_allocation_display_fields(db, items)
     return items, total
@@ -1211,6 +1235,118 @@ async def match(
         # moving between two agreements.
         await _recompute_consumed(db, previous_agreement_id)
     return invoice
+
+
+async def unmatch_po(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID], dict]:
+    """Reverse a PO-route match completely, returning the invoice to
+    `unmatched`. Returns (po_ids_that_were_paid_by_this_invoice, before) —
+    the caller needs the first to re-decide those POs' tasks and the second
+    for the audit row.
+
+    There is no "unmatch just the header PO": allocations must sum to the
+    invoice's pre-tax amount, so removing one PO from a multi-PO invoice would
+    leave the remainder permanently out of balance and unmatchable. Reversal is
+    all-or-nothing, back to the state the Unmatched Queue expects.
+
+    The GR link goes with it. A goods receipt belongs to a purchase order, so
+    an invoice with no PO cannot meaningfully still point at one, and leaving
+    it would make the invoice look 3-way matched to
+    po_has_three_way_matched_invoice's header branch.
+    """
+    alloc_rows = (await db.execute(
+        select(InvoicePoAllocation).where(InvoicePoAllocation.invoice_id == invoice.id)
+    )).scalars().all()
+
+    po_ids: list[uuid.UUID] = []
+    if invoice.po_id is not None:
+        po_ids.append(invoice.po_id)
+    for row in alloc_rows:
+        if row.po_id not in po_ids:
+            po_ids.append(row.po_id)
+
+    before = {
+        "status": invoice.status,
+        "po_id": str(invoice.po_id) if invoice.po_id else None,
+        "po_number": invoice.po_number,
+        "po_total": str(invoice.po_total) if invoice.po_total is not None else None,
+        "gr_ids": [str(g) for g in (invoice.gr_ids or ([invoice.gr_id] if invoice.gr_id else []))],
+        "gr_number": invoice.gr_number,
+        "matched_at": invoice.matched_at.isoformat() if invoice.matched_at else None,
+        "matched_by_name": invoice.matched_by_name,
+        "allocations": [
+            {
+                "po_id": str(r.po_id),
+                "po_line_id": str(r.po_line_id) if r.po_line_id else None,
+                "invoice_line_id": str(r.invoice_line_id) if r.invoice_line_id else None,
+                "allocated_amount": str(r.allocated_amount),
+                "allocated_tax": str(r.allocated_tax),
+            }
+            for r in alloc_rows
+        ],
+    }
+
+    await db.execute(sa_delete(InvoicePoAllocation).where(
+        InvoicePoAllocation.invoice_id == invoice.id))
+    await _apply_gr_selection(db, invoice, [])
+
+    invoice.po_id = None
+    invoice.po_number = None
+    invoice.po_total = None
+    invoice.variance = None
+    invoice.variance_pct = None
+    invoice.matched_at = None
+    invoice.matched_by = None
+    invoice.matched_by_name = None
+    invoice.matched_po_line_ids = None
+    invoice.matched_reference_total = None
+    invoice.exception_reason = None
+    invoice.match_route = None
+    invoice.match_route_auto = False
+
+    # Non-PO fee marks are part of the match input (match() rewrites them from
+    # the request every time), so they are part of what is being undone.
+    if invoice.line_items:
+        for li in invoice.line_items:
+            li["non_po_fee"] = False
+            li["non_po_note"] = None
+        flag_modified(invoice, "line_items")
+
+    invoice.status = "unmatched"
+    await db.flush()
+    await db.refresh(invoice)
+    return po_ids, before
+
+
+async def unmatch_gr(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID], dict]:
+    """Withdraw only the receipt evidence. The invoice stays matched to its
+    PO(s) — `matched` describes the PO match, not the receipt — so the
+    allocations, the variance and the header links are all left alone.
+
+    Returns the same (po_ids, before) shape as unmatch_po so the caller can
+    re-decide the same set of POs' tasks either way.
+    """
+    po_ids: list[uuid.UUID] = []
+    if invoice.po_id is not None:
+        po_ids.append(invoice.po_id)
+    for pid in (await db.execute(
+        select(InvoicePoAllocation.po_id)
+        .where(InvoicePoAllocation.invoice_id == invoice.id).distinct()
+    )).scalars().all():
+        if pid not in po_ids:
+            po_ids.append(pid)
+
+    before = {
+        "status": invoice.status,
+        "po_number": invoice.po_number,
+        "gr_ids": [str(g) for g in (invoice.gr_ids or ([invoice.gr_id] if invoice.gr_id else []))],
+        "gr_number": invoice.gr_number,
+        "gr_value": str(invoice.gr_value) if invoice.gr_value is not None else None,
+    }
+
+    await _apply_gr_selection(db, invoice, [])
+    await db.flush()
+    await db.refresh(invoice)
+    return po_ids, before
 
 
 async def review_match(

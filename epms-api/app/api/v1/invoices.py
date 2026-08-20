@@ -16,6 +16,8 @@ from app.crud import vendor as vendor_crud
 from app.models.agreement import PurchaseAgreement
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
+from app.models.admin_audit_log import AdminAuditLog
+from app.models.invoice import Invoice
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.agreement import AgreementListResponse
@@ -24,6 +26,7 @@ from app.schemas.invoice import (
     AssignBillingPeriodRequest,
     AssignMatchRequest,
     DeclineMatchRequest,
+    InvoiceChainResponse,
     InvoiceCreate,
     InvoiceExceptionRequest,
     InvoiceListResponse,
@@ -32,11 +35,13 @@ from app.schemas.invoice import (
     InvoiceResponse,
     InvoiceUpdate,
     MatchReviewRequest,
+    UnmatchRequest,
     SettleWithoutReceiptRequest,
 )
 from app.schemas.po import PoListResponse, PoResponse
 from app.services.notification import dispatch_task_notification, fire_and_forget_notify
 from app.services import finance_client
+from app.services.invoice_chain import build_chain
 from app.services import finance_sync
 from app.services import tax_prefill
 
@@ -293,6 +298,15 @@ async def list_invoices(
     po_id: uuid.UUID | None = Query(default=None),
     agreement_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None),
+    sort: str | None = Query(
+        default=None,
+        pattern="^-?due_date$",
+        description="due_date | -due_date. Omit for the default newest-first order.",
+    ),
+    overdue: bool = Query(
+        default=False,
+        description="Only invoices past their due date and not yet paid.",
+    ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
 ):
@@ -342,6 +356,7 @@ async def list_invoices(
         po_subq = own_uploads = task_uid = None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, agreement_id=agreement_id, search=search,
+        sort=sort, overdue=overdue,
         po_ids_subq=po_subq,
         own_uploads_user_id=own_uploads,
         task_user_id=task_uid,
@@ -399,6 +414,196 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
             return inv
         if not await invoice_crud.is_visible(db, inv, scope):
             raise HTTPException(status_code=404, detail="Invoice not found")
+    await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
+    return inv
+
+
+@router.get("/{invoice_id}/chain", response_model=InvoiceChainResponse)
+async def invoice_chain(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Match PO -> Link GR -> Create PA -> Payment for one invoice.
+
+    Read-only. Visibility follows the invoice's own read gate exactly (a
+    caller who cannot open the invoice gets the same 404 here), and the two
+    PA-owned steps are additionally gated on view_pa so this cannot become a
+    side channel onto payment state.
+    """
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    scope = await build_scope(db, user)
+    if not scope["perms"].get("view_invoice", False):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if scope["restrict"] and not await invoice_crud.is_visible(db, inv, scope):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return await build_chain(db, inv, can_view_pa=scope["perms"].get("view_pa", False))
+
+
+async def _guard_unmatch(db, inv) -> None:
+    """The three things that make reversing a match unsafe.
+
+    Order matters: an agreement invoice has po_id NULL, so the agreement check
+    has to come before "not matched to a PO" or it would be told the wrong
+    thing about itself.
+    """
+    if inv.match_route == "agreement" or inv.agreement_id is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=("This invoice is matched to an agreement, not a PO. Unlink it from "
+                    "the agreement's own receipt/billing-period panel instead — that "
+                    "route holds claimed receipts and schedule rows this action would "
+                    "leave stranded."),
+        )
+    if inv.status in ("approved", "paid"):
+        raise HTTPException(
+            status_code=422,
+            detail=(f"This invoice has already entered payment (status '{inv.status}'). "
+                    "Unmatching it would leave the payment without the evidence it was "
+                    "approved on."),
+        )
+    # Same predicate as the receipt-evidence gate (crud/invoice.py). The
+    # invoice's own status is NOT a substitute: it only flips to approved/paid
+    # once money moves, so for the whole stretch a PA sits in draft/submitted/
+    # in_review/approved with this invoice in its invoice_ids, the invoice
+    # looks untouched.
+    pa = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
+    if pa is not None:
+        raise HTTPException(
+            status_code=422,
+            detail=(f"Payment Application {pa.pa_number} ({pa.status}) still claims this "
+                    "invoice. Cancel that payment application first."),
+        )
+
+
+async def _po_has_matched_invoice(db, po_id: uuid.UUID) -> bool:
+    """Any invoice still matched to this PO, by header link or allocation —
+    the weaker sibling of po_has_three_way_matched_invoice (no receipt
+    requirement), which is what a confirm_receipt task waits on."""
+    from app.models.invoice_allocation import InvoicePoAllocation
+
+    header = (await db.execute(
+        select(Invoice.id).where(Invoice.po_id == po_id,
+                                 Invoice.status.in_(("matched", "exception", "match_review",
+                                                     "approved", "paid"))).limit(1)
+    )).scalar_one_or_none()
+    if header is not None:
+        return True
+    return (await db.execute(
+        select(InvoicePoAllocation.invoice_id)
+        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+        .where(InvoicePoAllocation.po_id == po_id).limit(1)
+    )).scalar_one_or_none() is not None
+
+
+async def _withdraw_orphaned_po_tasks(db, po_ids: list[uuid.UUID]) -> dict:
+    """Close the tasks an unmatch just removed the justification for — and only
+    those.
+
+    These tasks hang off the PO, not off the invoice, so "this invoice was
+    unmatched" is NOT sufficient reason to close them: another invoice may
+    still be entitled to the same task. Each PO is re-decided from scratch
+    against `po_has_three_way_matched_invoice`, which IS the PA receipt gate —
+    so a PO whose gate would still admit a PA keeps its create_pa task, and
+    the two can never disagree. (Closing tasks indiscriminately is how a
+    document ends up with zero open tasks and nobody able to act on it.)
+    """
+    from app.crud.po import po_has_three_way_matched_invoice
+
+    now = datetime.now(timezone.utc)
+    summary: dict[str, list[str]] = {"create_pa_closed": [], "confirm_receipt_closed": []}
+
+    for po_id in po_ids:
+        checks = (
+            ("create_pa", not await po_has_three_way_matched_invoice(db, po_id)),
+            ("confirm_receipt", not await _po_has_matched_invoice(db, po_id)),
+        )
+        for task_type, orphaned in checks:
+            if not orphaned:
+                continue
+            rows = (await db.execute(select(Task).where(
+                Task.type == task_type, Task.document_type == "po",
+                Task.document_id == po_id, Task.is_completed.is_(False),
+            ))).scalars().all()
+            for t in rows:
+                t.is_completed = True
+                t.completed_at = now
+                summary[f"{task_type}_closed"].append(str(t.id))
+    await db.flush()
+    return summary
+
+
+async def _audit_unmatch(db, inv, user: dict, scope_label: str,
+                         before: dict, reason: str, cascade: dict) -> None:
+    actor_id = uuid.UUID(user["sub"])
+    actor_email = (await db.execute(
+        select(User.email).where(User.id == actor_id)
+    )).scalar_one_or_none()
+    db.add(AdminAuditLog(
+        actor_id=actor_id, actor_email=actor_email or "unknown",
+        action="unmatch", system="epms", entity="invoice",
+        record_id=inv.id, record_number=inv.internal_ref,
+        before=before,
+        after={"scope": scope_label, "reason": reason, "status": inv.status},
+        cascade_summary=cascade,
+    ))
+    await db.flush()
+
+
+@router.post("/{invoice_id}/unmatch-po", response_model=InvoiceResponse)
+async def unmatch_invoice_po(
+    invoice_id: uuid.UUID, body: UnmatchRequest, db: SessionDep,
+    user: ApDep, token: BearerToken,
+):
+    """Reverse a PO-route match entirely — the invoice returns to `unmatched`.
+
+    Gated on epms.invoice.match (AP staff + admins) and deliberately NOT on
+    _require_invoice_match_access: that helper also admits the invoice's
+    uploader and whoever holds an open match task, which is the right rule for
+    performing a match and the wrong one for tearing a completed one down.
+    """
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    await _guard_unmatch(db, inv)
+    if inv.po_id is None:
+        raise HTTPException(status_code=422, detail="This invoice is not matched to a PO")
+
+    po_ids, before = await invoice_crud.unmatch_po(db, inv)
+    cascade = await _withdraw_orphaned_po_tasks(db, po_ids)
+    # inv.status is now "unmatched", so this closes any open resolve_exception
+    # task the previous over-tolerance match had raised.
+    await _sync_exception_task(db, inv, inv, uuid.UUID(user["sub"]))
+    await _audit_unmatch(db, inv, user, "po", before, body.reason, cascade)
+    await db.commit()
+    await db.refresh(inv)
+    # Back to unmatched means the AP mirror drops back to draft; sync_ap_invoice
+    # already derives that from the status, so there is nothing to decide here.
+    await finance_sync.sync_ap_invoice(db, inv, token)
+    await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
+    return inv
+
+
+@router.post("/{invoice_id}/unmatch-gr", response_model=InvoiceResponse)
+async def unmatch_invoice_gr(
+    invoice_id: uuid.UUID, body: UnmatchRequest, db: SessionDep,
+    user: ApDep, token: BearerToken,
+):
+    """Withdraw the goods-receipt link only. The PO match, its allocations and
+    the invoice's status all stand."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    await _guard_unmatch(db, inv)
+    if inv.gr_id is None and not inv.gr_ids:
+        raise HTTPException(status_code=422, detail="No goods receipt is linked to this invoice")
+
+    po_ids, before = await invoice_crud.unmatch_gr(db, inv)
+    cascade = await _withdraw_orphaned_po_tasks(db, po_ids)
+    await _audit_unmatch(db, inv, user, "gr", before, body.reason, cascade)
+    await db.commit()
+    await db.refresh(inv)
+    await finance_sync.sync_ap_invoice(db, inv, token)
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
