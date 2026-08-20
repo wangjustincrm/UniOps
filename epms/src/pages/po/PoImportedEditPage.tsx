@@ -40,6 +40,7 @@ export default function PoImportedEditPage() {
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
 
   const [expectedDelivery, setExpectedDelivery] = useState('')
+  const [deliveryTouched, setDeliveryTouched] = useState(false)
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [incoterms, setIncoterms] = useState('')
   const [taxCode, setTaxCode] = useState<string | null>(null)
@@ -50,13 +51,26 @@ export default function PoImportedEditPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // The ERP's earliest per-line delivery date. Computed ahead of the prefill
+  // effect below so both it and the read-only hint text can use the same
+  // value; kept a plain expression (not memoized) since it is cheap and po
+  // changes trigger a re-render anyway.
+  const erpDeliveryDate = (po?.line_items ?? []).reduce<string | undefined>((earliest, li) => {
+    if (!li.planned_arrival_date) return earliest
+    return !earliest || li.planned_arrival_date < earliest ? li.planned_arrival_date : earliest
+  }, undefined)
+
   // Prefill from the loaded PO. Same shape as PoEditPage / PaEditPage / PrEditPage,
   // which carry this pattern unsuppressed; suppressed here so this page does not
   // move the repo's lint baseline. Restructuring would diverge from those three.
   useEffect(() => {
     if (!po) return
+    // Prefill with the stored header override if there is one, otherwise the
+    // ERP roll-up — but only mark the field "touched" (and so eligible to be
+    // written back) once the user actually edits it. See handleSave.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpectedDelivery(po.expected_delivery ?? '')
+    setExpectedDelivery(po.expected_delivery ?? erpDeliveryDate ?? '')
+    setDeliveryTouched(false)
     setDeliveryAddress(po.delivery_address ?? '')
     setIncoterms(po.incoterms ?? '')
     setTaxCode(po.tax_code ?? null)
@@ -93,18 +107,18 @@ export default function PoImportedEditPage() {
   const total = isCadOrder ? subtotal + taxAmount : Number(po?.total ?? subtotal)
   const currency = po?.currency ?? 'CAD'
 
-  // Display-only: the ERP's earliest per-line delivery date, shown beside the
-  // Expected Delivery input for reference. Never used to prefill the input —
-  // doing so would let the first save silently convert an ERP-derived value
-  // into a stored human estimate (see ImportedPoLine.plannedArrivalDate).
-  const erpDeliveryDate = (po?.line_items ?? []).reduce<string | undefined>((earliest, li) => {
-    if (!li.planned_arrival_date) return earliest
-    return !earliest || li.planned_arrival_date < earliest ? li.planned_arrival_date : earliest
-  }, undefined)
-  const erpDeliveryHint = erpDeliveryDate
-    ? `ERP-synced delivery date (from NC, earliest line): ${formatDate(erpDeliveryDate)}. `
-      + 'This field is an optional header-level override and is not derived from or written back to NC.'
-    : undefined
+  // Wording depends on whether a header override is already stored, since
+  // that determines what the input above is actually showing right now.
+  const erpDeliveryHint = po?.expected_delivery
+    ? (erpDeliveryDate
+        ? `This is a fixed override — NC currently shows ${formatDate(erpDeliveryDate)}. `
+          + 'Clear the field to go back to tracking NC automatically.'
+        : undefined)
+    : (erpDeliveryDate
+        ? `Prefilled from NC (earliest line: ${formatDate(erpDeliveryDate)}). Leave unchanged `
+          + 'to keep tracking NC as it reschedules; changing it sets a fixed override that '
+          + 'will stop following NC.'
+        : undefined)
 
   const handleSave = async () => {
     if (!id) return
@@ -112,7 +126,6 @@ export default function PoImportedEditPage() {
     setError(null)
     try {
       const payload: ImportedDetailsBody = {
-        expected_delivery: expectedDelivery || null,
         delivery_address: deliveryAddress || null,
         incoterms: incoterms || null,
         is_prepaid: isPrepaid,
@@ -138,6 +151,16 @@ export default function PoImportedEditPage() {
         // rate.
         payload.tax_code = effectiveTaxRate > 0 ? taxCode : null
         payload.tax_rate = effectiveTaxRate
+      }
+      // expected_delivery is prefilled from the ERP roll-up for display, but
+      // that prefill must never be written back as a stored header override
+      // on an untouched save — otherwise the header freezes at whatever NC
+      // said on page-load, and both the PO detail page and the vendor PDF
+      // stop tracking NC's own reschedules. Only send the key once the user
+      // has actually edited the field; the backend's absent-key contract
+      // then leaves the stored value (NULL, or an existing override) alone.
+      if (deliveryTouched) {
+        payload.expected_delivery = expectedDelivery || null
       }
       await saveDetails.mutateAsync(payload)
     } catch (err) {
@@ -210,7 +233,7 @@ export default function PoImportedEditPage() {
         <div className="grid gap-4 md:grid-cols-2">
           <FormField label="Expected Delivery" htmlFor="expectedDelivery" hint={erpDeliveryHint}>
             <Input id="expectedDelivery" type="date" value={expectedDelivery}
-                   onChange={(e) => setExpectedDelivery(e.target.value)} />
+                   onChange={(e) => { setExpectedDelivery(e.target.value); setDeliveryTouched(true) }} />
           </FormField>
           <FormField label="Incoterms" htmlFor="incoterms">
             <Input id="incoterms" type="text" value={incoterms} maxLength={100}
