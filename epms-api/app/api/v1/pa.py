@@ -9,7 +9,13 @@ from sqlalchemy import select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
-from app.core.access_scope import build_scope, is_agreement_visible, _effective_role_codes
+from app.core.access_scope import (
+    build_scope,
+    is_agreement_visible,
+    is_pr_in_departments,
+    _effective_role_codes,
+    _user_dept_id,
+)
 from app.services import approval_client as approval_client
 from app.services.approval_client import delegate_action
 from app.services import finance_client
@@ -183,7 +189,12 @@ async def _get_prepayment_config(db: SessionDep) -> PrepaymentConfig:
     return PrepaymentConfig.model_validate(raw)
 
 
-def _may_create_pa_on_behalf(roles: set[str], po: PurchaseOrder) -> bool:
+async def _may_create_pa_on_behalf(
+    db: SessionDep,
+    roles: set[str],
+    po: PurchaseOrder,
+    user_id: uuid.UUID,
+) -> bool:
     """Whether these role codes let the caller raise a PA against `po` that is
     not linked to their own requisition.
 
@@ -197,7 +208,26 @@ def _may_create_pa_on_behalf(roles: set[str], po: PurchaseOrder) -> bool:
         return True
     # erp_pa_officer covers only PR-less NC-imported POs — those have no
     # requisitioner for ownership to apply to in the first place.
-    return "erp_pa_officer" in roles and po.pr_id is None and po.source == "nc"
+    if "erp_pa_officer" in roles and po.pr_id is None and po.source == "nc":
+        return True
+    # A Department Administrator raises payments for the department they
+    # administer — their own department's requisitions, and no further. Unlike
+    # the two roles above this is a SCOPED exemption, because dept_admin is a
+    # RESTRICTED role (access_scope._RESTRICTED_ROLES): the department boundary
+    # is the whole of its authority, so the same two conditions that decide
+    # whether she may SEE the requisition decide whether she may pay it.
+    #
+    # Without this the matrix and the code disagree: ticking "Create / Edit PAs"
+    # for dept_admin in the Access Control Matrix grants nothing at all to the
+    # normal shape of that role (dept_admin layered on a `requester` login), as
+    # every colleague's PO is rejected right here — while the SAME permission
+    # set held with dept_admin as the PRIMARY role skips this branch entirely
+    # and pays company-wide. Neither outcome was intended by anyone ticking that
+    # box.
+    if "dept_admin" in roles and po.pr_id is not None:
+        own_dept = await _user_dept_id(db, user_id)
+        return await is_pr_in_departments(db, po.pr_id, {own_dept} if own_dept else set())
+    return False
 
 
 @router.post("", response_model=PaResponse, status_code=201)
@@ -273,7 +303,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
             )).scalar_one_or_none()
         if pr_requester_id != uuid.UUID(user["sub"]):
             roles = await _effective_role_codes(db, "requester", uuid.UUID(user["sub"]))
-            if not _may_create_pa_on_behalf(roles, po):
+            if not await _may_create_pa_on_behalf(db, roles, po, uuid.UUID(user["sub"])):
                 raise HTTPException(
                     status_code=403,
                     detail="You can only create payments for purchase orders linked to your own requisitions.",

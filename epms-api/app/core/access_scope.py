@@ -148,6 +148,41 @@ async def _dept_cc_subq(dept_ids: list[uuid.UUID]):
     return select(CostCenter.id).where(CostCenter.department_id.in_(dept_ids))
 
 
+async def is_pr_in_departments(
+    db: AsyncSession,
+    pr_id: uuid.UUID,
+    dept_ids: set[uuid.UUID],
+) -> bool:
+    """True if this PR belongs to one of `dept_ids`.
+
+    "Belongs to" uses exactly the two conditions `visible_pr_subquery` gives a
+    dept_manager/dept_admin — charged to one of the departments' cost centers,
+    or raised by one of their members — and nothing else. The task-chain and
+    own-PR conditions OR-ed in there widen VISIBILITY on purpose (holding an
+    approval task must not 404 you), but they are not statements about which
+    department a requisition belongs to, so they must not travel into an
+    authorisation gate: an approver routed a PR from another department would
+    otherwise inherit the right to pay it.
+
+    An empty `dept_ids` is False, never "matches everything" — a caller with no
+    department administers nothing.
+    """
+    if not dept_ids:
+        return False
+    hit = (await db.execute(
+        select(PurchaseRequest.id).where(
+            PurchaseRequest.id == pr_id,
+            or_(
+                PurchaseRequest.cost_center_id.in_(
+                    select(CostCenter.id).where(CostCenter.department_id.in_(dept_ids))),
+                PurchaseRequest.created_by.in_(
+                    select(User.id).where(User.department_id.in_(dept_ids))),
+            ),
+        ).limit(1)
+    )).scalar_one_or_none()
+    return hit is not None
+
+
 async def _mapped_dept_ids(db: AsyncSession, role: str) -> list[uuid.UUID]:
     """Return department IDs whose gm_or_opm step routes to this role.
 
