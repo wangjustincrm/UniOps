@@ -563,6 +563,17 @@ export default function PoDetailPage() {
     hasApproveTask
   const canPlaceOrder = isProcurementOfficer && po?.status === 'approved'
   const canEdit = isProcurementOfficer && po && ['draft', 'returned'].includes(po.status)
+  // NC-imported POs never reach draft/returned, so canEdit above can never fire
+  // for them. Buyer detail (supplier item IDs, samples, Incoterms, delivery,
+  // notes) is filled in through a separate, deliberately narrow endpoint —
+  // gated by the Access Control Matrix, not a hardcoded role list, so the
+  // button and PATCH /po/{id}/imported-details cannot disagree.
+  const perms = useRolePermissions().data?.permissions
+  const canEditImported =
+    !!po &&
+    po.source === 'nc' &&
+    po.status === 'issued' &&
+    (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
   const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
   // PA creation is permission-driven, exactly like the PA list's Create button
   // (PaListPage): the Access Control matrix decides, not a hard-coded role list.
@@ -625,7 +636,29 @@ export default function PoDetailPage() {
   }
 
   const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [])
+  // Mirrors the PDF: the Sample column only appears when some line carries one,
+  // so POs without samples keep their existing layout.
+  const showSample = po.line_items.some((li) => li.sample)
+  // Delivery Date mirrors the same conditional-column pattern: it only appears
+  // when a line actually carries an ERP-synced planned_arrival_date, so POs
+  // without one (UniOps-native POs) keep their existing layout.
+  const showDeliveryDate = po.line_items.some((li) => li.planned_arrival_date)
   const hasMaterial = po.type === 1 || po.type === 3
+
+  // expected_delivery is a human-entered header override; NC-synced POs never
+  // populate it. When absent, fall back to the earliest ERP-synced line date
+  // (string comparison is safe/UTC-agnostic for YYYY-MM-DD) — display-only,
+  // no internal provenance marker (this page is also what buyers screenshot
+  // for vendors, so keep it consistent with the PDF's plain date).
+  const erpDeliveryDate = po.line_items.reduce<string | undefined>((earliest, li) => {
+    if (!li.planned_arrival_date) return earliest
+    return !earliest || li.planned_arrival_date < earliest ? li.planned_arrival_date : earliest
+  }, undefined)
+  const expectedDeliveryDisplay = po.expected_delivery
+    ? formatDate(po.expected_delivery)
+    : erpDeliveryDate
+      ? formatDate(erpDeliveryDate)
+      : '—'
 
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
@@ -672,6 +705,12 @@ export default function PoDetailPage() {
               <Button variant="secondary" size="sm" onClick={() => navigate(`/po/${po.id}/edit`)}>
                 <Pencil className="h-3.5 w-3.5" />
                 Edit
+              </Button>
+            )}
+            {canEditImported && (
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/po/${po.id}/edit-imported`)}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Details
               </Button>
             )}
             {canWithdraw && (
@@ -749,9 +788,8 @@ export default function PoDetailPage() {
                     ['Currency', po.currency],
                     ['Budget Code', po.budget_code ?? '—'],
                     ['Created', formatDate(po.created_at)],
-                    ['Expected Delivery', po.expected_delivery ? formatDate(po.expected_delivery) : '—'],
+                    ['Expected Delivery', expectedDeliveryDisplay],
                     ['Delivery Address', po.delivery_address || '—'],
-                    ['Buyer Notes', po.notes || '—'],
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
@@ -759,6 +797,35 @@ export default function PoDetailPage() {
                       <dd className="text-neutral-900">{value}</dd>
                     </div>
                   ))}
+                  {po.incoterms && (
+                    <div className="flex flex-col gap-0.5">
+                      <dt className="text-xs font-medium text-neutral-500">Incoterms</dt>
+                      <dd className="text-neutral-900">{po.incoterms}</dd>
+                    </div>
+                  )}
+                  {/* purchase_orders.notes means two different things depending on origin:
+                      buyer text (from the Create PO page's "Buyer Notes / Terms &
+                      Conditions" box) on native POs, but ERP-owned sync text (rewritten
+                      every NC sync with [NC Paid] / [NC Closed <date>] markers for
+                      finance) on NC POs. The rows below are gated accordingly — Buyer
+                      Notes only falls back to notes on non-NC POs, and NC Sync Notes is a
+                      separate, NC-only row so the markers stay visible to finance here on
+                      the internal detail page without leaking into the vendor-facing PDF,
+                      which mirrors this same split (pdf_po.py) and prints neither NC row. */}
+                  {(po.buyer_notes || (po.source !== 'nc' ? po.notes : undefined)) && (
+                    <div className="flex flex-col gap-0.5 sm:col-span-2">
+                      <dt className="text-xs font-medium text-neutral-500">Buyer Notes</dt>
+                      <dd className="whitespace-pre-wrap text-neutral-900">
+                        {po.buyer_notes || po.notes}
+                      </dd>
+                    </div>
+                  )}
+                  {po.source === 'nc' && po.notes && (
+                    <div className="flex flex-col gap-0.5 sm:col-span-2">
+                      <dt className="text-xs font-medium text-neutral-500">NC Sync Notes</dt>
+                      <dd className="whitespace-pre-wrap text-neutral-900">{po.notes}</dd>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs font-medium text-neutral-500">Prepayment PO</dt>
                     <dd>
@@ -812,6 +879,12 @@ export default function PoDetailPage() {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-20">Qty</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-20">Unit</th>
+                          {showSample && (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-24">Sample</th>
+                          )}
+                          {showDeliveryDate && (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-28">Delivery Date</th>
+                          )}
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Line Total</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-neutral-500 w-28">Received</th>
@@ -833,6 +906,14 @@ export default function PoDetailPage() {
                               <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
                               <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
                               <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
+                              {showSample && (
+                                <td className="px-4 py-2.5 text-neutral-500">{item.sample || '—'}</td>
+                              )}
+                              {showDeliveryDate && (
+                                <td className="px-4 py-2.5 text-neutral-500">
+                                  {item.planned_arrival_date ? formatDate(item.planned_arrival_date) : '—'}
+                                </td>
+                              )}
                               <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, po.currency)}</td>
                               <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
@@ -855,7 +936,7 @@ export default function PoDetailPage() {
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                          <td colSpan={hasMaterial ? 7 : 6} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                          <td colSpan={6 + (hasMaterial ? 1 : 0) + (showSample ? 1 : 0) + (showDeliveryDate ? 1 : 0)} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
                             Subtotal
                           </td>
                           <td className="px-4 py-3 amount text-right text-base font-bold text-neutral-900">
