@@ -42,7 +42,6 @@ export default function PoImportedEditPage() {
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
 
   const [expectedDelivery, setExpectedDelivery] = useState('')
-  const [deliveryTouched, setDeliveryTouched] = useState(false)
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [incoterms, setIncoterms] = useState('')
   const [taxCode, setTaxCode] = useState<string | null>(null)
@@ -69,12 +68,9 @@ export default function PoImportedEditPage() {
     if (!po) return
     // The Expected Delivery input only ever renders when neither a stored
     // header value nor an ERP roll-up exists (see showExpectedDeliveryInput
-    // below), so there is nothing to prefill it with — start blank and only
-    // mark it "touched" (and so eligible to be written back) once the buyer
-    // actually types something. See handleSave.
+    // below), so there is nothing to prefill it with — start blank.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpectedDelivery('')
-    setDeliveryTouched(false)
     setDeliveryAddress(po.delivery_address ?? '')
     setIncoterms(po.incoterms ?? '')
     setTaxCode(po.tax_code ?? null)
@@ -97,14 +93,16 @@ export default function PoImportedEditPage() {
   }, [po?.id])
 
   // Delivery Address prefill from the company default — same pattern as
-  // PoCreatePage.tsx. Only fills in when the PO itself has nothing stored;
-  // a value already on the PO always wins over the company default.
+  // PoCreatePage.tsx. usePo() and useConfig() are independent queries with no
+  // ordering guarantee, so config can resolve after the buyer has already
+  // started typing; guard on the local field too (not just the persisted
+  // po.delivery_address) so a non-empty field is never silently overwritten.
   useEffect(() => {
-    if (po?.id && !po.delivery_address && config?.delivery_address) {
+    if (po?.id && !po.delivery_address && !deliveryAddress && config?.delivery_address) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDeliveryAddress(config.delivery_address)
     }
-  }, [po?.id, po?.delivery_address, config?.delivery_address])
+  }, [po?.id, po?.delivery_address, deliveryAddress, config?.delivery_address])
 
   const editable = po?.source === 'nc' && po?.status === 'issued'
   const isCadOrder = po?.currency === 'CAD'
@@ -173,10 +171,8 @@ export default function PoImportedEditPage() {
       // show (no stored header value, no ERP roll-up) — in every other case
       // it's read-only text and the key must stay absent entirely, so the
       // backend's absent-key contract leaves the stored value (NULL, or an
-      // existing override) untouched and display keeps tracking NC. Even
-      // while the input is rendered, only send the key once the buyer has
-      // actually typed something.
-      if (showExpectedDeliveryInput && deliveryTouched) {
+      // existing override) untouched and display keeps tracking NC.
+      if (showExpectedDeliveryInput) {
         payload.expected_delivery = expectedDelivery || null
       }
       await saveDetails.mutateAsync(payload)
@@ -251,7 +247,7 @@ export default function PoImportedEditPage() {
           <FormField label="Expected Delivery" htmlFor="expectedDelivery" hint={expectedDeliveryHint}>
             {showExpectedDeliveryInput ? (
               <Input id="expectedDelivery" type="date" value={expectedDelivery}
-                     onChange={(e) => { setExpectedDelivery(e.target.value); setDeliveryTouched(true) }} />
+                     onChange={(e) => setExpectedDelivery(e.target.value)} />
             ) : (
               <p id="expectedDelivery" className="text-sm text-neutral-900">{expectedDeliveryDisplay}</p>
             )}
