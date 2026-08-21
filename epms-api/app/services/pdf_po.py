@@ -9,6 +9,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     HRFlowable,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -36,6 +37,7 @@ def generate_po_pdf(
     company_name: str = "EPMS",
     pdf_templates: dict | None = None,
     logo_data_url: str | None = None,
+    signatory_name: str | None = None,
 ) -> bytes:
     """Render an approved PurchaseOrder to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "po")
@@ -217,6 +219,49 @@ def generate_po_pdf(
     # ── Terms & Conditions (from template) ───────────────────────────────────
     if tmpl.get("show_terms") and tmpl.get("terms_text"):
         story.extend(terms_element(tmpl["terms_text"]))
+
+    # ── Signature Block (Type 1 POs only) ────────────────────────────────────
+    # Countersigned commercial-document layout: our company on the left (named
+    # signatory = the OPM, resolved by the caller — see po.py / po_attachments.py),
+    # the vendor on the right, left blank for them to fill in by hand. No Date
+    # row on either side (per spec). signatory_name is left None/blank by the
+    # caller whenever the "opm" role has zero or more-than-one active holder,
+    # so this never prints an arbitrarily-chosen name — the Title line still
+    # prints regardless, since it is a fixed literal, not role-derived.
+    if po.type == 1:
+        sig_entity_style = _s("sig_entity", fontSize=10, textColor=_DARK, fontName="Helvetica-Bold")
+        col_w = 80 * mm
+        gap_w = W - 2 * col_w
+        line_w = col_w - 8 * mm
+
+        def _sig_col(entity_name: str | None, name_value: str | None, title_value: str) -> list:
+            name_txt = escape(name_value) if name_value else ""
+            title_txt = escape(title_value) if title_value else ""
+            return [
+                Paragraph(escape(entity_name) if entity_name else "—", sig_entity_style),
+                Spacer(1, 13 * mm),
+                HRFlowable(width=line_w, color=_GRAY, thickness=0.5),
+                Spacer(1, 2 * mm),
+                Paragraph(f"<b>Name:</b>&nbsp;&nbsp;&nbsp;{name_txt}", val_style),
+                Paragraph(f"<b>Title:</b>&nbsp;&nbsp;&nbsp;{title_txt}", val_style),
+            ]
+
+        sig_table = Table(
+            [[
+                _sig_col(company_name, signatory_name, "Operation Manager"),
+                "",
+                _sig_col(po.vendor_name, None, ""),
+            ]],
+            colWidths=[col_w, gap_w, col_w],
+        )
+        sig_table.setStyle(TableStyle([
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ]))
+        story += [Spacer(1, 8 * mm), KeepTogether([sig_table])]
 
     # ── Footer ────────────────────────────────────────────────────────────────
     story += [

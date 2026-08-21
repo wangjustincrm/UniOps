@@ -35,12 +35,14 @@ def _text_of(pdf_bytes: bytes) -> str:
 
 def _po(**kw) -> PurchaseOrder:
     line_kw = kw.pop("line_kw", {})
-    po = PurchaseOrder(
+    defaults = dict(
         id=uuid.uuid4(), number="PO-NC-0001", title="NC order", type=1,
         status="issued", currency="CAD", vendor_id=uuid.uuid4(), vendor_name="Acme",
         subtotal=Decimal("100.00"), tax_rate=Decimal("0"), tax_amount=Decimal("0"),
-        total=Decimal("100.00"), created_by=uuid.uuid4(), **kw,
+        total=Decimal("100.00"), created_by=uuid.uuid4(),
     )
+    defaults.update(kw)
+    po = PurchaseOrder(**defaults)
     po.line_items = [PoLineItem(
         id=uuid.uuid4(), po_id=po.id, description="Widget", qty=Decimal("10"),
         unit="EA", unit_price=Decimal("10.00"), line_total=Decimal("100.00"),
@@ -180,6 +182,53 @@ def test_material_id_blank_not_none_when_absent():
     assert "None" not in text
     # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
     assert "Widget" in text
+
+
+def test_type1_po_signature_block_renders_company_vendor_and_signatory():
+    """Type 1 POs get a countersigned-document signature block: our company's
+    name, the vendor's name, the resolved OPM name, and the fixed literal
+    'Operation Manager' title — never derived from the user's actual role."""
+    po = _po(type=1, vendor_name="Acme Vendor Co")
+    text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
+                                     signatory_name="Laura Sivers"))
+    assert "Canada Royal Milk" in text
+    assert "Acme Vendor Co" in text
+    assert "Laura Sivers" in text
+    assert "Operation Manager" in text
+
+
+def test_type2_po_has_no_signature_block():
+    """A non-Type-1 PO must render none of the signature-block text."""
+    po = _po(type=2, vendor_name="Acme Vendor Co")
+    text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
+                                     signatory_name="Laura Sivers"))
+    assert "Operation Manager" not in text
+    # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
+    assert "Widget" in text
+
+
+def test_type1_po_signature_block_blank_name_when_signatory_missing():
+    """When the caller resolves no unique OPM holder (zero or multiple active
+    holders), signatory_name is None — the block must still render with the
+    Title line, and must never print the literal string 'None'."""
+    po = _po(type=1, vendor_name="Acme Vendor Co")
+    text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
+                                     signatory_name=None))
+    assert "Operation Manager" in text
+    assert "Acme Vendor Co" in text
+    assert "None" not in text
+
+
+def test_signature_block_introduces_no_date_row():
+    """The signature block must carry no Date row on either side. The meta
+    grid already renders a 'PO Date' label, so assert on something the block
+    would uniquely introduce rather than a bare 'Date' substring."""
+    po = _po(type=1, vendor_name="Acme Vendor Co")
+    text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
+                                     signatory_name="Laura Sivers"))
+    assert "Operation Manager" in text  # positive control: block did render
+    assert "Signature Date" not in text
+    assert "Date:" not in text
 
 
 def test_pdf_header_expected_delivery_wins_over_line_dates():

@@ -207,6 +207,8 @@ async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: s
     from app.models.po import PurchaseOrder
     from app.models.po_attachment import PoAttachment
     from app.models.config import CompanyConfig
+    from app.models.user import User
+    from app.core.access_scope import role_holder_ids
     from app.services.attachment_helper import upload_to_file_server
     from app.db.session import AsyncSessionLocal
     from sqlalchemy import select as sa_select
@@ -231,11 +233,25 @@ async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: s
             if existing:
                 return
 
+            # Type 1 POs carry a signature block naming the OPM as our
+            # company's signatory. role_holder_ids counts a PRIMARY (users.role)
+            # or ADDITIONAL (identity's user_roles) "opm" role, active users
+            # only. Leave the name blank unless exactly one holder is found —
+            # never print an arbitrarily-chosen name on a vendor-facing document.
+            signatory_name = None
+            if po_row.type == 1:
+                opm_holders = (await role_holder_ids(fresh_db, codes=("opm",))).get("opm", set())
+                if len(opm_holders) == 1:
+                    signatory_name = (await fresh_db.execute(
+                        sa_select(User.full_name).where(User.id == next(iter(opm_holders)))
+                    )).scalar_one_or_none()
+
             loop = asyncio.get_event_loop()
             pdf_bytes = await loop.run_in_executor(
                 None, generate_po_pdf, po_row, company_name,
                 cfg.pdf_templates if cfg else None,
                 cfg.logo_data_url if cfg else None,
+                signatory_name,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{po_number}.pdf", "application/pdf", "po", po_id, token,
