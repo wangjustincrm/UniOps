@@ -5,6 +5,7 @@
  */
 import { useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, Users, Clock, Wrench, AlertCircle,
   Tv, Presentation, PenLine, Video, Phone,
@@ -53,19 +54,18 @@ export default function RoomDetailPage() {
   const [selectedDay, setSelectedDay] = useState<string>(today)
 
   const { data: room, isLoading, error } = useRoomDetail(id)
+  useDocTabTitle(room?.name)
 
   if (isLoading) {
     return (
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-          <button
-            type="button"
-            onClick={() => navigate('/rooms')}
+          <BackLink to="/rooms"
             className="mb-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Rooms
-          </button>
+          </BackLink>
           <Skeleton />
         </div>
       </div>
@@ -76,14 +76,12 @@ export default function RoomDetailPage() {
     return (
       <div className="h-full overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6">
-          <button
-            type="button"
-            onClick={() => navigate('/rooms')}
+          <BackLink to="/rooms"
             className="mb-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to Rooms
-          </button>
+          </BackLink>
           <div className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {error instanceof Error ? error.message : 'Room not found.'}
@@ -117,14 +115,12 @@ export default function RoomDetailPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-4xl px-4 py-6 sm:px-6 space-y-6">
         {/* Back nav */}
-        <button
-          type="button"
-          onClick={() => navigate('/rooms')}
+        <BackLink to="/rooms"
           className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to Rooms
-        </button>
+        </BackLink>
 
         {/* Room header card */}
         <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, Trash2, CheckCircle2, XCircle, Paperclip, Upload, X,
   AlertTriangle, Lock, ExternalLink,
@@ -73,6 +74,7 @@ function lockReason(receipt: ApiReceiptWithAgreement): string {
 export default function ReceiptDetailPage() {
   const { id = '' } = useParams<{ id: string }>()
   const { data: receipt, isLoading, isError, error } = useReceipt(id)
+  useDocTabTitle(receipt?.receipt_ref && `Receipt ${receipt.receipt_ref}`)
 
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
@@ -93,9 +95,9 @@ export default function ReceiptDetailPage() {
             {error instanceof Error ? error.message : 'It may have been removed.'}
           </p>
         )}
-        <Link to="/receipts" className="mt-4 text-sm text-primary-600 hover:underline">
+        <BackLink to="/receipts" className="mt-4 text-sm text-primary-600 hover:underline">
           ← Back to Agreement Receipts
-        </Link>
+        </BackLink>
       </div>
     )
   }

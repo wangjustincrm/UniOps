@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { BackLink } from '@/components/BackLink'
 import { useReplaceTab, Button } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
@@ -114,9 +115,9 @@ export default function CfmCreatePage() {
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-lg">
       <div>
-        <a href="/expenses" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
+        <BackLink to="/expenses" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Expenses
-        </a>
+        </BackLink>
         <h1 className="text-2xl font-bold text-neutral-900">{form.name}</h1>
         <p className="mt-0.5 text-sm text-neutral-500 font-mono">CFM_{form.code}</p>
       </div>

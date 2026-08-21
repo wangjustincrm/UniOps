@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, Loader2, CheckCircle2, RotateCcw, XCircle,
@@ -656,6 +657,7 @@ export default function PaDetailPage() {
     queryFn: () => api.get<Pa>(`/api/v1/pa/${id}`),
     enabled: !!id,
   })
+  useDocTabTitle(pa?.pa_number)
 
   // Server-computed permissions — approval roles (Finance BP, etc.) are assignments,
   // not JWT roles, so authorization is resolved server-side via tasks + role_management.
@@ -714,9 +716,9 @@ export default function PaDetailPage() {
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
       {/* Back */}
-      <a href="/pa" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 self-start">
+      <BackLink to="/pa" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 self-start">
         <ArrowLeft className="h-4 w-4" />Back to PA List
-      </a>
+      </BackLink>
 
       {/* Header */}
       <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-5">

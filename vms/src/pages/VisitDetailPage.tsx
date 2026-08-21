@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, AlertCircle, Calendar, Clock, Printer, X, Loader2, RotateCw, LogOut,
   ShieldCheck, ShieldAlert, ThumbsUp, ThumbsDown, Undo2, Users, HardHat, Eye,
@@ -36,6 +37,7 @@ export default function VisitDetailPage() {
 
   const { data: visit, isLoading, error } = useVisit(visitId)
   const { data: visitor }       = useVisitor(visit?.visitor_id)
+  useDocTabTitle(visitor ? `Visit ${visitor.first_name} ${visitor.last_name}` : undefined)
   const { data: host }          = useUserBrief(visit?.host_id)
   const { data: prints }        = useBadgeHistory(visitId)
   const { data: healthDecls }   = useHealthDeclarations(visitId)
@@ -71,10 +73,10 @@ export default function VisitDetailPage() {
           <AlertCircle className="h-4 w-4" />
           {error?.message ?? 'Visit not found'}
         </p>
-        <Link to="/" className="mt-2 inline-flex items-center gap-1 text-xs text-danger-600 hover:underline">
+        <BackLink to="/" className="mt-2 inline-flex items-center gap-1 text-xs text-danger-600 hover:underline">
           <ArrowLeft className="h-3 w-3" />
           Back to today's visits
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -127,10 +129,10 @@ export default function VisitDetailPage() {
 
   return (
     <div className="max-w-3xl">
-      <Link to="/" className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700">
+      <BackLink to="/" className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700">
         <ArrowLeft className="h-3 w-3" />
         Back
-      </Link>
+      </BackLink>
 
       <div className="mt-2 flex items-start justify-between">
         <div>

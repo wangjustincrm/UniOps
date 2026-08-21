@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, X, Calendar, Search } from 'lucide-react'
@@ -46,6 +47,7 @@ export default function PrEditPage() {
   const { user } = useAuthStore()
   const { data: config } = useConfig()
   const { data: pr, isLoading } = usePr(id ?? '')
+  useDocTabTitle(pr?.number && `Edit ${pr.number}`)
   const { data: budgetData } = useBudgetOverview()
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | undefined>(undefined)
   const { data: departmentsData } = useDepartments()
@@ -291,9 +293,9 @@ export default function PrEditPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <p className="text-sm text-neutral-400">This PR cannot be edited.</p>
-        <Link to={`/pr/${id}`} className="mt-4">
+        <BackLink to={`/pr/${id}`} className="mt-4">
           <Button variant="secondary">Back to PR</Button>
-        </Link>
+        </BackLink>
       </div>
     )
   }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
   AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
@@ -135,6 +136,7 @@ export default function InvoiceDetailPage() {
   const deleteInvoice = useDeleteInvoice()
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
+  useDocTabTitle(inv?.internal_ref)
   const { data: gr } = useGr(inv?.gr_id ?? '')
   // The blocking condition for an unmatch is "a non-cancelled PA still claims
   // this invoice", which lives in payment_applications.invoice_ids and cannot
@@ -286,7 +288,7 @@ export default function InvoiceDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-lg font-semibold text-neutral-500">Invoice not found</p>
-        <Link to="/invoices" className="mt-4 text-sm text-primary-600 hover:underline">← Back to Invoices</Link>
+        <BackLink to="/invoices" className="mt-4 text-sm text-primary-600 hover:underline">← Back to Invoices</BackLink>
       </div>
     )
   }

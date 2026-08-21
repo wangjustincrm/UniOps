@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { financeApi } from '@/lib/api'
@@ -221,6 +222,7 @@ export default function PaDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { data: pa, isLoading } = usePa(id ?? '')
+  useDocTabTitle(pa?.pa_number)
   const { data: events } = usePaEvents(id ?? '')
   const paAction = usePaAction(id ?? '')
   const confirmSettlement = useConfirmSettlement(id ?? '')
@@ -282,7 +284,7 @@ export default function PaDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-neutral-500">Payment Application not found.</p>
-        <Button variant="secondary" className="mt-4" onClick={() => navigate('/pa')}>Back to PA List</Button>
+        <BackLink to="/pa" className="mt-4"><Button variant="secondary">Back to PA List</Button></BackLink>
       </div>
     )
   }

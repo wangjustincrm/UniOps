@@ -11,7 +11,7 @@
  * badge_returned / PPE / notes and POSTs check-out.
  */
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { BackLink } from '@/components/BackLink'
 import {
   Keyboard, Camera, Loader2, AlertCircle, ArrowLeft, Search,
 } from 'lucide-react'
@@ -33,7 +33,6 @@ function extractUuid(text: string): string | null {
 }
 
 export default function CheckOutPage() {
-  const navigate = useNavigate()
 
   // Auto-pick the default mode by viewport, but let the user override.
   const [mode, setMode] = useState<Mode>(() => {
@@ -98,13 +97,13 @@ export default function CheckOutPage() {
 
   return (
     <div className="max-w-2xl">
-      <button
-        onClick={() => navigate('/')}
+      <BackLink
+        to="/"
         className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700"
       >
         <ArrowLeft className="h-3 w-3" />
         Back
-      </button>
+      </BackLink>
 
       <h1 className="mt-2 text-2xl font-bold text-neutral-900">Check out</h1>
       <p className="mt-1 text-sm text-neutral-500">

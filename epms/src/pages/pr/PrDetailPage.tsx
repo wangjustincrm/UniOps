@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
@@ -203,6 +204,7 @@ export default function PrDetailPage() {
   const moreRef = useRef<HTMLDivElement>(null)
 
   const { data: pr, isLoading } = usePr(id ?? '')
+  useDocTabTitle(pr?.number)
   const { data: events } = usePrEvents(id ?? '')
   const prAction = usePrAction(id ?? '')
   const { data: attachments = [] } = usePrAttachments(id ?? '')
@@ -269,9 +271,9 @@ export default function PrDetailPage() {
         <p className="mt-2 text-sm text-neutral-400">
           The purchase requisition you're looking for doesn't exist.
         </p>
-        <Link to="/pr" className="mt-4">
+        <BackLink to="/pr" className="mt-4">
           <Button variant="secondary">Back to PR List</Button>
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -290,12 +292,12 @@ export default function PrDetailPage() {
       {/* Page header */}
       <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
-          <Link to="/pr">
+          <BackLink to="/pr">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4" />
               Back to PR List
             </Button>
-          </Link>
+          </BackLink>
         </div>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
