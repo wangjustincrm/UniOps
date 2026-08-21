@@ -40,7 +40,7 @@ describe('TabHost keep-alive', () => {
     localStorage.clear()
     render(
       <BrowserRouter>
-        <TabStoreProvider options={{ storageKey: 'ka:test', initialTabs: [tabA] }}>
+        <TabStoreProvider options={{ initialTabs: [tabA] }}>
           <Harness routeDefs={routes} />
         </TabStoreProvider>
       </BrowserRouter>,
@@ -80,7 +80,7 @@ describe('TabHost shared context', () => {
     render(
       <Ctx.Provider value="from-app">
         <BrowserRouter>
-          <TabStoreProvider options={{ storageKey: 'ka:ctx-test', initialTabs: [tabCtx] }}>
+          <TabStoreProvider options={{ initialTabs: [tabCtx] }}>
             <TabHost routes={ctxRoutes} />
           </TabStoreProvider>
         </BrowserRouter>
@@ -116,7 +116,7 @@ describe('TabHost params', () => {
     localStorage.clear()
     render(
       <BrowserRouter>
-        <TabStoreProvider options={{ storageKey: 'ka:param-test', initialTabs: [tabVisit] }}>
+        <TabStoreProvider options={{ initialTabs: [tabVisit] }}>
           <TabHost routes={paramRoutes} />
         </TabStoreProvider>
       </BrowserRouter>,

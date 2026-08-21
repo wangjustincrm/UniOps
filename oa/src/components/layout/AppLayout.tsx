@@ -345,7 +345,7 @@ export default function AppLayout() {
   }
 
   return (
-    <TabStoreProvider options={{ storageKey: 'uniops:oa:tabs', initialTabs: OA_INITIAL_TABS, userId: user?.id }}>
+    <TabStoreProvider options={{ initialTabs: OA_INITIAL_TABS, userId: user?.id }}>
       <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
         {/* Mobile overlay */}
         {mobileOpen && (

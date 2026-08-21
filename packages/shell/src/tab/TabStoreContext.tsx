@@ -7,10 +7,31 @@ type TabStoreApi = ReturnType<typeof createTabStore>
 const TabStoreContext = createContext<TabStoreApi | null>(null)
 
 export function TabStoreProvider({ options, children }: { options: TabStoreOptions; children: ReactNode }) {
-  // Create exactly once per provider lifetime.
-  const ref = useRef<TabStoreApi>(null)
-  if (ref.current === null) ref.current = createTabStore(options)
-  return <TabStoreContext.Provider value={ref.current}>{children}</TabStoreContext.Provider>
+  // Create once per provider lifetime, and again when the user actually changes.
+  //
+  // Tabs live only in memory, so unmounting the provider already discards them;
+  // this covers the one case where the provider stays mounted across a change of
+  // user (an SPA logout → login with no page load), which would otherwise hand
+  // the new user the previous user's open tabs.
+  //
+  // Only transitions between two KNOWN users count. `userId` is read from an auth
+  // store that can briefly report `undefined` (rehydrate, token refresh) while a
+  // session is perfectly alive, and treating that blip as a user switch would
+  // wipe a working set of tabs out from under someone.
+  const ref = useRef<{ api: TabStoreApi; userId: string | undefined }>(null)
+  if (ref.current === null) {
+    ref.current = { api: createTabStore(options), userId: options.userId }
+  } else if (
+    options.userId !== undefined &&
+    ref.current.userId !== undefined &&
+    options.userId !== ref.current.userId
+  ) {
+    ref.current = { api: createTabStore(options), userId: options.userId }
+  } else if (options.userId !== undefined && ref.current.userId === undefined) {
+    // First time we learn who this is — adopt it without discarding the store.
+    ref.current = { api: ref.current.api, userId: options.userId }
+  }
+  return <TabStoreContext.Provider value={ref.current.api}>{children}</TabStoreContext.Provider>
 }
 
 export function useTabStoreApi(): TabStoreApi {

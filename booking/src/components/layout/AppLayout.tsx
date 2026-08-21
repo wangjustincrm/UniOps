@@ -311,7 +311,7 @@ export default function AppLayout() {
   const initialTabs: TabMeta[] = homeMeta ? [{ ...homeMeta, pinned: true, closable: false }] : []
 
   return (
-    <TabStoreProvider options={{ storageKey: 'uniops:booking:tabs:v1', initialTabs, userId }}>
+    <TabStoreProvider options={{ initialTabs, userId }}>
       <div className="relative flex h-screen overflow-hidden bg-[#FAFBFC]">
         {mobileOpen && (
           <div
