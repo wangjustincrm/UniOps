@@ -13,7 +13,7 @@ from app.core.access_scope import build_scope
 from app.crud import gr as gr_crud
 from app.crud import po as po_crud
 from app.models.task import Task
-from app.schemas.gr import GrActionRequest, GrCreate, GrListResponse, GrResponse
+from app.schemas.gr import GrActionRequest, GrCreate, GrListResponse, GrResponse, is_service
 from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/gr", tags=["goods-receipts"])
@@ -52,7 +52,7 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
     if po is None:
         raise HTTPException(status_code=404, detail="Purchase order not found")
 
-    is_service_po = po.type in (4, 6)   # Service (4) and Project (6) follow service GR flow
+    is_service_po = is_service(po.type)   # Service (4) and Project (6) follow service GR flow
     # Warehouse admission is the `epms.gr.receive` matrix permission — the same
     # gate as every other warehouse GR action (acknowledge/collect/confirm), so
     # it honors ADDITIONAL roles from identity's user_roles (a user whose JWT
