@@ -81,10 +81,17 @@ export default function PoImportedEditPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpectedDelivery('')
     setDeliveryAddress(po.delivery_address ?? '')
-    // Reset per-PO interaction tracking alongside the field it prefills, so
-    // navigating to a different PO starts clean and is eligible for its own
-    // default again.
+    // Reset both per-PO decision refs alongside the field they gate, because
+    // this effect just rebuilt the form from the PO: any earlier decision
+    // derived from the previous form state (which PO's default was already
+    // applied, whether the buyer has touched the field) is now stale and must
+    // be re-decided. This also covers React StrictMode's mount/unmount/
+    // remount in development — the second mount re-runs this effect and
+    // re-blanks deliveryAddress, so addressDefaultAppliedFor must be cleared
+    // here too or the company-default effect below sees its "already decided
+    // for this PO" guard still set from the first mount and never re-applies.
     deliveryAddressTouched.current = false
+    addressDefaultAppliedFor.current = null
     setIncoterms(po.incoterms ?? '')
     setTaxCode(po.tax_code ?? null)
     setTaxRate(Number(po.tax_rate))
