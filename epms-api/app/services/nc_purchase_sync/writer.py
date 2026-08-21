@@ -10,6 +10,7 @@ has advanced matched -> partially_paid -> paid.
 System-user ensure mirrors scripts/import_pms/load.py (find-by-email, else
 insert a locked system_admin using app.core.security.hash_password).
 """
+from decimal import Decimal
 import secrets
 import uuid
 
@@ -188,11 +189,32 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
             # readers and violate UNIQUE(number) against the order that holds it.
             number = (po["number"] if not _number_conflict(cur, po["number"], po["nc_source_pk"])
                       else current_number)
+            # buyer_notes / incoterms / buyer_edited_at here, and sample /
+            # supplier_item_id on the line UPDATE below, are human-owned: NC has
+            # no source for them, so they are deliberately absent from these
+            # column lists. Never add them — a sync would silently erase work a
+            # buyer did by hand.
+            cur.execute("select tax_rate from purchase_orders "
+                        "where id=%s and buyer_edited_at is not null", (pid,))
+            edited = cur.fetchone()
+            if edited is None:
+                tax_rate = po["tax_rate"]
+                tax_amount = po["tax_amount"]
+                total = po["total"]
+            else:
+                # A buyer set this rate by hand (PATCH /po/{id}/imported-details).
+                # Keep it, but re-derive the money from NC's fresh subtotal —
+                # simply skipping the columns would leave subtotal + tax != total
+                # whenever NC changed the line amounts.
+                tax_rate = edited[0]
+                tax_amount = (Decimal(po["subtotal"]) * Decimal(tax_rate)).quantize(
+                    Decimal("0.01"))
+                total = Decimal(po["subtotal"]) + tax_amount
             cur.execute("update purchase_orders set number=%s,title=%s,status=%s,currency=%s,"
                         "subtotal=%s,tax_rate=%s,tax_amount=%s,total=%s,"
                         "vendor_id=%s,vendor_name=%s,notes=%s,updated_at=now() where id=%s",
                         (number, po["title"], po["status"], po["currency"],
-                         po["subtotal"], po["tax_rate"], po["tax_amount"], po["total"],
+                         po["subtotal"], tax_rate, tax_amount, total,
                          po["vendor_id"], po["vendor_name"], po["notes"], pid))
         else:
             number = _free_number(cur, po["number"], po["nc_source_pk"], erp_numbers)
@@ -238,6 +260,8 @@ def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
         row = cur.fetchone()
         if row:
             lid = row[0]
+            # supplier_item_id and sample are omitted on purpose — see the note
+            # on the PO UPDATE above.
             # planned_arrival_date is on the UPDATE too, not just the INSERT:
             # every NC line already exists, so an insert-only column would stay
             # null forever on exactly the rows the feature is for.

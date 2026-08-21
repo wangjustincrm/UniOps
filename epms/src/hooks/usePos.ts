@@ -4,6 +4,7 @@ import {
   type PoFilters,
   type CreatePoBody,
   type UpdatePoBody,
+  type ImportedDetailsBody,
   type PoActionBody,
   type PlaceOrderBody,
 } from '@/services/po'
@@ -77,6 +78,20 @@ export function useUpdatePo() {
       queryClient.invalidateQueries({ queryKey: ['pos', id] })
     },
     onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to update purchase order'),
+  })
+}
+
+/** Buyer-detail edit for NC-imported POs (PATCH /po/{id}/imported-details).
+ *  Separate from useUpdatePo: that one drives the general draft/returned edit
+ *  form and can change the vendor, the currency and the whole line set. */
+export function useUpdatePoImportedDetails(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ImportedDetailsBody) => poService.updateImportedDetails(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pos'] })
+      queryClient.invalidateQueries({ queryKey: ['pos', id] })
+    },
   })
 }
 

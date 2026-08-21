@@ -9,6 +9,7 @@ import PoListPage from '@/pages/po/PoListPage'
 import PoCreatePage from '@/pages/po/PoCreatePage'
 import PoDetailPage from '@/pages/po/PoDetailPage'
 import PoEditPage from '@/pages/po/PoEditPage'
+import PoImportedEditPage from '@/pages/po/PoImportedEditPage'
 import GrListPage from '@/pages/gr/GrListPage'
 import GrCreatePage from '@/pages/gr/GrCreatePage'
 import GrDetailPage from '@/pages/gr/GrDetailPage'
@@ -53,6 +54,7 @@ export const epmsRoutes: RouteDef[] = [
   { path: '/po', element: <PoListPage />, tab: { title: 'Purchase Orders', icon: 'Package', keyStrategy: 'static' } },
   { path: '/po/new', element: <PoCreatePage />, tab: { title: 'New PO', icon: 'Plus', keyStrategy: 'static' } },
   { path: '/po/:id/edit', element: <PoEditPage />, tab: { title: (p) => `Edit PO ${short(p.id)}`, icon: 'Package', keyStrategy: 'param', paramName: 'id' } },
+  { path: '/po/:id/edit-imported', element: <PoImportedEditPage />, tab: { title: (p) => `Edit Details ${short(p.id)}`, icon: 'Package', keyStrategy: 'param', paramName: 'id' } },
   { path: '/po/:id', element: <PoDetailPage />, tab: { title: (p) => `PO ${short(p.id)}`, icon: 'Package', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/gr', element: <GrListPage />, tab: { title: 'Goods Receipt', icon: 'Warehouse', keyStrategy: 'static' } },

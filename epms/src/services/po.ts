@@ -22,6 +22,8 @@ export interface ApiPoLineItem {
   description: string
   material_id?: string
   supplier_item_id?: string
+  // Buyer-supplied sample requirement, e.g. "500 g" / "2 ea" (NC-imported POs).
+  sample?: string | null
   // Source PR line this PO line was created from (backend persists it).
   pr_line_id?: string | null
   qty: number
@@ -30,6 +32,9 @@ export interface ApiPoLineItem {
   line_total: number
   received_qty: number
   notes?: string
+  // ERP-synced per-line arrival date (NC-imported POs only). Display-only —
+  // never sent back to the server.
+  planned_arrival_date?: string | null
   // 该 line 被其他发票累计分摊的税前额(仅 match-candidates 端点返回)
   already_allocated?: string | null
 }
@@ -61,6 +66,12 @@ export interface ApiPo {
   expected_delivery?: string
   delivery_address?: string
   notes?: string
+  // Buyer-supplied detail on NC-imported POs. `notes` stays NC-owned and may
+  // contain internal [NC Paid] / [NC Closed] markers — never show it as
+  // buyer text on an NC PO.
+  buyer_notes?: string | null
+  incoterms?: string | null
+  buyer_edited_at?: string | null
   pr_id?: string
   pr_number?: string
   pr_requester_id?: string | null
@@ -108,6 +119,23 @@ export interface UpdatePoBody {
   notes?: string
   // subtotal/tax_amount/total/vendor_name are recomputed/derived server-side.
   line_items?: PoLineItemInput[]
+}
+
+export interface ImportedDetailsLineBody {
+  id: string
+  supplier_item_id?: string | null
+  sample?: string | null
+}
+
+export interface ImportedDetailsBody {
+  expected_delivery?: string | null
+  delivery_address?: string | null
+  incoterms?: string | null
+  tax_code?: string | null
+  tax_rate?: number | null
+  is_prepaid?: boolean | null
+  buyer_notes?: string | null
+  lines: ImportedDetailsLineBody[]
 }
 
 export interface PoActionBody {
@@ -158,6 +186,9 @@ export const poService = {
 
   update: (id: string, body: UpdatePoBody) =>
     api.patch<ApiPo>(`/po/${id}`, body),
+
+  updateImportedDetails: (id: string, body: ImportedDetailsBody) =>
+    api.patch<ApiPo>(`/po/${id}/imported-details`, body),
 
   action: (id: string, body: PoActionBody) =>
     api.post<ApiPo>(`/po/${id}/action`, body),

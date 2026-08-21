@@ -39,6 +39,22 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
     delivery_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Buyer-supplied detail, filled in by hand after an NC import. NC owns
+    # `notes` (it rewrites it every sync with its own memo plus [NC Paid] /
+    # [NC Closed] markers), so buyer text needs a column of its own.
+    # nc_purchase_sync/writer.py must never add these to its UPDATE lists.
+    buyer_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    incoterms: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Set only when a buyer-initiated edit changes tax_rate (see crud.po.
+    # update_imported_details). nc_purchase_sync/writer.py reads this as "the
+    # tax rate was set by hand" and, while it is non-null, keeps the stored
+    # tax_rate instead of NC's incoming value, re-deriving tax_amount/total
+    # from NC's fresh subtotal. Editing unrelated fields (Incoterms, a line's
+    # Supplier Item ID, ...) must NOT stamp this column.
+    buyer_edited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     # NC ERP provenance (NULL for non-NC POs)
     source: Mapped[str | None] = mapped_column(String(10), nullable=True, index=True)
     nc_source_pk: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -82,6 +98,8 @@ class PoLineItem(UUIDPrimaryKey, Base):
     description: Mapped[str] = mapped_column(String(500), nullable=False)
     material_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     supplier_item_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Free-text sample requirement asked of the vendor, e.g. "500 g" / "2 ea".
+    sample: Mapped[str | None] = mapped_column(String(100), nullable=True)
     qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), nullable=False)
     unit: Mapped[str] = mapped_column(String(30), nullable=False)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)

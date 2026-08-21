@@ -1,6 +1,7 @@
 """PDF generator for Purchase Orders using ReportLab."""
 from datetime import datetime, timezone
 from io import BytesIO
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -8,6 +9,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     HRFlowable,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -35,6 +37,7 @@ def generate_po_pdf(
     company_name: str = "EPMS",
     pdf_templates: dict | None = None,
     logo_data_url: str | None = None,
+    signatory_name: str | None = None,
 ) -> bytes:
     """Render an approved PurchaseOrder to PDF applying Admin Panel → PDF Templates settings."""
     tmpl = get_tmpl(pdf_templates, "po")
@@ -74,10 +77,25 @@ def generate_po_pdf(
     def _cell(label: str, value: str):
         return [Paragraph(label, lbl_style), Paragraph(value or "—", val_style)]
 
+    # expected_delivery is a human-entered header override; NC-synced POs never
+    # populate it (the ERP has no header delivery date). Fall back to the
+    # earliest non-null line-level planned_arrival_date — NC's own "Delivery
+    # Date" list column is that same rollup — but keep the header value's
+    # precedence. This PDF goes to the vendor, so no internal provenance
+    # marker is printed; only the resolved date is shown.
+    if po.expected_delivery:
+        delivery_str = str(po.expected_delivery)
+    else:
+        line_dates = [
+            item.planned_arrival_date for item in po.line_items
+            if item.planned_arrival_date
+        ]
+        delivery_str = str(min(line_dates)) if line_dates else "—"
+
     meta = Table(
         [
             [_cell("Vendor",    po.vendor_name or "—"), _cell("PO Date",   now_str)],
-            [_cell("PO Number", po.number      or "—"), _cell("Delivery",  str(po.expected_delivery or "—"))],
+            [_cell("PO Number", po.number      or "—"), _cell("Delivery",  delivery_str)],
             [_cell("Delivery Address", po.delivery_address or "—"), _cell("Currency", po.currency or "CAD")],
         ],
         colWidths=[W * 0.55, W * 0.45],
@@ -97,19 +115,63 @@ def generate_po_pdf(
     td_r_style = _s("td_r", fontSize=8, textColor=_DARK, fontName="Helvetica",
                     leading=11, alignment=2)
 
-    col_w = [8 * mm, W * 0.28, 26 * mm, 15 * mm, 14 * mm, 28 * mm, 28 * mm]
-    headers = ["#", "Description", "Supplier ID", "Qty", "Unit", "Unit Price", "Line Total"]
+    # Columns are modelled as an ordered list of descriptors — header, fixed
+    # width (None for the flex column), cell style, cell renderer, and
+    # whether the column is optional. Headers, widths and body cells are all
+    # derived from this one list, so the three can never drift apart. An
+    # optional column is dropped from the document when every line's value
+    # for it is empty (None or whitespace-only) — e.g. Material ID and
+    # Supplier Item ID on POs that never populate them, or Sample on POs
+    # with no buyer-supplied sample data. With zero line items every
+    # optional column is (harmlessly) dropped too, since there is no line to
+    # supply data for it; the table still renders with just its header row.
+    #
+    # Width budget (W = 170mm; every cell also loses 8mm to LEFTPADDING(4) +
+    # RIGHTPADDING(4)): # 8, Material ID 18, Supplier Item ID 20, Qty 18,
+    # UOM 13, Unit Price 18, Line Total 22, Sample 15. Description has no
+    # fixed width — it always takes whatever remains of W, so dropping an
+    # optional column widens Description automatically instead of leaving a
+    # gap, and the arithmetic can't silently drift if a fixed width changes.
+    class _Col:
+        __slots__ = ("header", "width", "style", "cell", "optional")
+
+        def __init__(self, header, width, style, cell, optional=False):
+            self.header = header
+            self.width = width      # None => flex (Description)
+            self.style = style
+            self.cell = cell        # (line_no, item) -> str
+            self.optional = optional
+
+    def _blank(value) -> bool:
+        return value is None or (isinstance(value, str) and not value.strip())
+
+    all_columns = [
+        _Col("#",                8 * mm,  td_style,   lambda i, item: str(i)),
+        _Col("Material ID",      18 * mm, td_style,   lambda i, item: item.material_id or "",
+             optional=True),
+        _Col("Supplier Item ID", 20 * mm, td_style,   lambda i, item: item.supplier_item_id or "",
+             optional=True),
+        _Col("Description",      None,    td_style,   lambda i, item: item.description),
+        _Col("Qty",               18 * mm, td_r_style, lambda i, item: str(item.qty)),
+        _Col("UOM",               13 * mm, td_style,   lambda i, item: item.unit or ""),
+        _Col("Unit Price",        18 * mm, td_r_style, lambda i, item: f"{float(item.unit_price):,.2f}"),
+        _Col("Line Total",        22 * mm, td_r_style, lambda i, item: f"{float(item.line_total):,.2f}"),
+        _Col("Sample",            15 * mm, td_style,   lambda i, item: getattr(item, "sample", None) or "",
+             optional=True),
+    ]
+
+    def _has_data(col: "_Col") -> bool:
+        return any(not _blank(col.cell(i, item)) for i, item in enumerate(po.line_items, 1))
+
+    columns = [c for c in all_columns if not c.optional or _has_data(c)]
+
+    desc_w = W - sum(c.width for c in columns if c.width is not None)
+    headers = [c.header for c in columns]
+    col_w = [c.width if c.width is not None else desc_w for c in columns]
+
     rows: list = [[Paragraph(h, th_style) for h in headers]]
     for i, item in enumerate(po.line_items, 1):
-        rows.append([
-            Paragraph(str(i),                              td_style),
-            Paragraph(item.description,                    td_style),
-            Paragraph(item.supplier_item_id or "",         td_style),
-            Paragraph(str(item.qty),                       td_r_style),
-            Paragraph(item.unit or "",                     td_style),
-            Paragraph(f"{float(item.unit_price):,.2f}",    td_r_style),
-            Paragraph(f"{float(item.line_total):,.2f}",    td_r_style),
-        ])
+        rows.append([Paragraph(c.cell(i, item), c.style) for c in columns])
 
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
@@ -143,9 +205,111 @@ def generate_po_pdf(
     ]))
     story += [Spacer(1, 3 * mm), totals, Spacer(1, 6 * mm)]
 
+    # ── Incoterms ─────────────────────────────────────────────────────────────
+    # Free text from the buyer-detail form — escape before handing to Paragraph,
+    # which parses its content as mini-XML (unescaped "&"/"<"/">" raise or
+    # silently swallow text; see the two escape() sites in this function).
+    if po.incoterms:
+        story += [
+            Table([[Paragraph("Incoterms", lbl_style),
+                    Paragraph(escape(po.incoterms).replace("\n", "<br/>"), val_style)]],
+                  colWidths=[25 * mm, W - 25 * mm]),
+            Spacer(1, 4 * mm),
+        ]
+
+    # ── Buyer Notes ───────────────────────────────────────────────────────────
+    # NC owns purchase_orders.notes: every sync rewrites it with NC's memo plus
+    # [NC Paid] / [NC Closed] markers meant for finance. Falling back to it on an
+    # NC PO would print those internal markers on the vendor's copy, so only
+    # non-NC POs fall back (that is where the Create PO page's "Buyer Notes /
+    # Terms & Conditions" box lands — it never reached the PDF before).
+    buyer_text = po.buyer_notes or (po.notes if po.source != "nc" else None)
+    if buyer_text and buyer_text.strip():
+        story += [
+            Paragraph("BUYER NOTES", sec_style),
+            Paragraph(escape(buyer_text.strip()).replace("\n", "<br/>"), val_style),
+            Spacer(1, 4 * mm),
+        ]
+
     # ── Terms & Conditions (from template) ───────────────────────────────────
     if tmpl.get("show_terms") and tmpl.get("terms_text"):
         story.extend(terms_element(tmpl["terms_text"]))
+
+    # ── Signature Block (Type 1 POs only) ────────────────────────────────────
+    # Countersigned commercial-document layout: our company on the left (named
+    # signatory = the OPM, resolved by the caller — see po.py / po_attachments.py),
+    # the vendor on the right, left blank for them to fill in by hand. No Date
+    # row on either side (per spec). signatory_name is left None/blank by the
+    # caller whenever the "opm" role has zero or more-than-one active holder,
+    # so this never prints an arbitrarily-chosen name — the Title line still
+    # prints regardless, since it is a fixed literal, not role-derived.
+    if po.type == 1:
+        # Entity names and the Name:/Title: labels carry the same accent colour as
+        # the LINE ITEMS / BUYER NOTES section headings (sec_style's _PRIMARY), so the
+        # signature block reads as part of the same document rather than a bolt-on.
+        # Derived from _PRIMARY rather than hard-coded so a palette change moves both.
+        _accent = f"#{_PRIMARY.hexval()[2:]}"
+        sig_entity_style = _s("sig_entity", fontSize=10, textColor=_PRIMARY, fontName="Helvetica-Bold")
+        col_w = 80 * mm
+        gap_w = W - 2 * col_w
+        line_w = col_w - 8 * mm
+
+        # Built as a 3-row table — entity names / rules / Name+Title — rather
+        # than two independently-flowing column cells, so that the rules
+        # (row 2) always start at the same y in both columns. A table row's
+        # height is the max of its cells' natural heights, so whichever
+        # entity name wraps to more lines (e.g. a long vendor name) grows
+        # row 1 for *both* columns together, instead of only pushing down
+        # the rule beneath the taller name.
+        # Every cell holds a SINGLE flowable, never a list. A list-valued cell makes
+        # ReportLab wrap the contents in an internal table whose own padding is not
+        # governed by this table's LEFTPADDING, which pushed the Name:/Title: rows
+        # 6pt out of line with the entity names above them (measured: 56.69pt vs
+        # 62.69pt for every other left-edge element on the page). One flowable per
+        # cell keeps the whole block on the frame's left edge, aligned with the
+        # LINE ITEMS / BUYER NOTES headings.
+        #
+        # The bands are separate ROWS so the signature rules share a row and land at
+        # the same y even when one entity name wraps to more lines than the other.
+        def _entity(name: str | None):
+            return Paragraph(escape(name) if name else "—", sig_entity_style)
+
+        def _field(label: str, value: str | None):
+            txt = escape(value) if value else ""
+            return Paragraph(
+                f'<font color="{_accent}"><b>{label}:</b></font>&nbsp;&nbsp;&nbsp;{txt}',
+                val_style,
+            )
+
+        def _rule():
+            return HRFlowable(width=line_w, color=_GRAY, thickness=0.5)
+
+        sig_table = Table(
+            [
+                [_entity(company_name), "", _entity(po.vendor_name)],
+                ["", "", ""],                                   # clear signing space
+                [_rule(), "", _rule()],
+                [_field("Name", signatory_name), "", _field("Name", None)],
+                [_field("Title", "Operation Manager"), "", _field("Title", None)],
+            ],
+            colWidths=[col_w, gap_w, col_w],
+            rowHeights=[None, 13 * mm, None, None, None],
+        )
+        sig_table.setStyle(TableStyle([
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+            # Keep ReportLab's default 6pt horizontal cell padding. Every W-wide
+            # table on this page is laid out 6pt left of the frame's content edge,
+            # and they all line up with the section headings only *because* that
+            # default padding puts their contents back at the same x. Zeroing it
+            # here is what made this block hang 6pt to the left of LINE ITEMS /
+            # BUYER NOTES (measured: 56.69pt vs 62.69pt).
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+            ("TOPPADDING",    (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 3), (-1, 3), 2 * mm),         # gap under the rule
+        ]))
+        story += [Spacer(1, 8 * mm), KeepTogether([sig_table])]
 
     # ── Footer ────────────────────────────────────────────────────────────────
     story += [

@@ -15,17 +15,19 @@ from app.crud import po as po_crud
 from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
 from app.crud.current_step import enrich_current_step
+from app.models.admin_audit_log import AdminAuditLog
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
-from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoListResponse, PoResponse, PoUpdate
+from app.schemas.po import PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoListResponse, PoResponse, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
 from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/po", tags=["purchase-orders"])
 
 PoWriteDep = Annotated[dict, Depends(require_permission("epms.po.write"))]
+PoEditImportedDep = Annotated[dict, Depends(require_permission("epms.po.edit_imported"))]
 
 
 @router.get("", response_model=PoListResponse)
@@ -151,6 +153,52 @@ async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWr
     return await po_crud.update(db, po, body, vendor_code=vendor_code, vendor_name=vendor_name)
 
 
+@router.patch("/{po_id}/imported-details", response_model=PoResponse)
+async def update_imported_details(
+    po_id: uuid.UUID, body: PoImportedDetailsUpdate, db: SessionDep, user: PoEditImportedDep,
+):
+    """Fill in buyer-supplied detail on an NC-imported PO.
+
+    Deliberately separate from PATCH /po/{po_id}. That endpoint accepts a new
+    vendor_id, a new currency and a full replacement line_items list (crud.update
+    deletes and rebuilds the lines), so relaxing its draft/returned status gate
+    for NC POs would hand anyone holding epms.po.write the ability to rewrite the
+    money on an order already in the invoice/payment flow. Here the request model
+    itself makes those fields unreachable.
+    """
+    po = await po_crud.get_by_id(db, po_id)
+    if po is None:
+        raise HTTPException(status_code=404, detail="PO not found")
+    if po.source != "nc":
+        raise HTTPException(
+            status_code=409, detail="Only NC-imported POs can be edited here")
+    if po.status != "issued":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot edit an NC PO in status '{po.status}' — only 'issued' is editable",
+        )
+
+    try:
+        po, before, after = await po_crud.update_imported_details(db, po, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if after:
+        db.add(AdminAuditLog(
+            actor_id=uuid.UUID(user["sub"]),
+            actor_email=user.get("email", ""),
+            action="edit",
+            system="epms",
+            entity="po",
+            record_id=po.id,
+            record_number=po.number,
+            before=before,
+            after=after,
+        ))
+        await db.flush()
+    return po
+
+
 async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: str) -> None:
     """Generate and attach the approved-PO PDF using a fresh DB session (PRD §3.4)."""
     import asyncio
@@ -159,6 +207,8 @@ async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: s
     from app.models.po import PurchaseOrder
     from app.models.po_attachment import PoAttachment
     from app.models.config import CompanyConfig
+    from app.models.user import User
+    from app.core.access_scope import role_holder_ids
     from app.services.attachment_helper import upload_to_file_server
     from app.db.session import AsyncSessionLocal
     from sqlalchemy import select as sa_select
@@ -183,11 +233,25 @@ async def _generate_po_pdf_background(po_id: uuid.UUID, po_number: str, token: s
             if existing:
                 return
 
+            # Type 1 POs carry a signature block naming the OPM as our
+            # company's signatory. role_holder_ids counts a PRIMARY (users.role)
+            # or ADDITIONAL (identity's user_roles) "opm" role, active users
+            # only. Leave the name blank unless exactly one holder is found —
+            # never print an arbitrarily-chosen name on a vendor-facing document.
+            signatory_name = None
+            if po_row.type == 1:
+                opm_holders = (await role_holder_ids(fresh_db, codes=("opm",))).get("opm", set())
+                if len(opm_holders) == 1:
+                    signatory_name = (await fresh_db.execute(
+                        sa_select(User.full_name).where(User.id == next(iter(opm_holders)))
+                    )).scalar_one_or_none()
+
             loop = asyncio.get_event_loop()
             pdf_bytes = await loop.run_in_executor(
                 None, generate_po_pdf, po_row, company_name,
                 cfg.pdf_templates if cfg else None,
                 cfg.logo_data_url if cfg else None,
+                signatory_name,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{po_number}.pdf", "application/pdf", "po", po_id, token,
