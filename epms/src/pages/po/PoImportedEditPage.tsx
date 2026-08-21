@@ -56,6 +56,10 @@ export default function PoImportedEditPage() {
   // below. A ref, not state: this is a one-time-per-PO decision, not a value
   // that should drive re-renders or appear in the effect's own deps.
   const addressDefaultAppliedFor = useRef<string | null>(null)
+  // Tracks whether the buyer has interacted with the Delivery Address field
+  // for the current PO — separately from what the field currently contains.
+  // See the effect below for why this, not the field's value, is the guard.
+  const deliveryAddressTouched = useRef(false)
 
   // The ERP's earliest per-line delivery date. Computed ahead of the prefill
   // effect below so both it and the read-only hint text can use the same
@@ -77,6 +81,10 @@ export default function PoImportedEditPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpectedDelivery('')
     setDeliveryAddress(po.delivery_address ?? '')
+    // Reset per-PO interaction tracking alongside the field it prefills, so
+    // navigating to a different PO starts clean and is eligible for its own
+    // default again.
+    deliveryAddressTouched.current = false
     setIncoterms(po.incoterms ?? '')
     setTaxCode(po.tax_code ?? null)
     setTaxRate(Number(po.tax_rate))
@@ -99,14 +107,26 @@ export default function PoImportedEditPage() {
 
   // Delivery Address prefill from the company default — same pattern as
   // PoCreatePage.tsx. usePo() and useConfig() are independent queries with no
-  // ordering guarantee, so config can resolve after the buyer has already
-  // started typing (or cleared) the field. This is a once-per-PO decision,
-  // not a continuously-enforced invariant: the live deliveryAddress value
-  // must stay out of both the guard and the deps, or clearing the field
-  // (deliveryAddress -> '') would re-trigger the effect and immediately
-  // snap the default back in, making the field permanently unclearable.
-  // addressDefaultAppliedFor tracks the decision instead, keyed on po.id so
-  // navigating to a different PO re-applies the default for that PO.
+  // ordering guarantee, so config can resolve at any point relative to the
+  // buyer's own edits — before them, during them, or after. The guard below
+  // deliberately keys on *interaction*, not on the field's current value:
+  // an empty field nobody has touched yet is a candidate for the default; an
+  // empty field the buyer deliberately cleared is their choice, and the two
+  // are indistinguishable by value alone. A value-based guard (checking
+  // !deliveryAddress) previously made a cleared field snap the default right
+  // back, because clearing it made it look "untouched" again. A value-free
+  // guard (no local-state check at all) previously let a late-resolving
+  // config overwrite text the buyer had already typed during the gap before
+  // config arrived. deliveryAddressTouched.current — set true in the
+  // textarea's onChange, independent of what the field currently contains —
+  // resolves both: it flips permanently for this PO the instant the buyer
+  // does anything, so config can never clobber real edits (typed or
+  // cleared), while still being free to apply the default whenever it
+  // arrives for a field nobody has touched. Do not "simplify" this back to
+  // a check on deliveryAddress itself — that reintroduces one of the two
+  // bugs above. addressDefaultAppliedFor additionally tracks the decision
+  // itself, keyed on po.id, so navigating to a different PO re-decides (and
+  // deliveryAddressTouched is reset alongside it in the prefill effect above).
   useEffect(() => {
     if (!po?.id) return
     if (addressDefaultAppliedFor.current === po.id) return // already decided for this PO
@@ -115,6 +135,7 @@ export default function PoImportedEditPage() {
       addressDefaultAppliedFor.current = po.id
       return
     }
+    if (deliveryAddressTouched.current) return // buyer already acted — their value wins, forever, for this PO
     if (!config?.delivery_address) return // config not in yet; try again when it arrives
     addressDefaultAppliedFor.current = po.id
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -278,7 +299,7 @@ export default function PoImportedEditPage() {
 
         <FormField label="Delivery Address" htmlFor="deliveryAddress">
           <textarea id="deliveryAddress" rows={2} value={deliveryAddress}
-                    onChange={(e) => setDeliveryAddress(e.target.value)}
+                    onChange={(e) => { setDeliveryAddress(e.target.value); deliveryAddressTouched.current = true }}
                     className="w-full rounded border border-neutral-300 bg-white px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary-600" />
         </FormField>
 
