@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
+import { budgetAccountError } from '@/lib/prBudget'
 import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useBalance, useFactors } from '@/hooks/useBudget'
@@ -76,6 +77,7 @@ export default function PrEditPage() {
   const [factorCombo, setFactorCombo] = useState<Record<string, string>>({})
   const [factorComboError, setFactorComboError] = useState<string | null>(null)
   const [departmentError, setDepartmentError] = useState<string | null>(null)
+  const [budgetError, setBudgetError] = useState<string | null>(null)
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
 
@@ -258,6 +260,15 @@ export default function PrEditPage() {
       setDepartmentError('Department is required')
       return
     }
+    // Budget account is required for every type except Type 1 — matches the
+    // epms-api submit guard, which 409s without it. Legacy PRs saved before the
+    // guard existed hit this on their next submit; Save as Draft stays lenient
+    // so they can still be worked on.
+    const budgetErr = budgetAccountError(pr?.type, selectedCostCenterId, selectedL2)
+    if (budgetErr) {
+      setBudgetError(budgetErr)
+      return
+    }
     // Factor combo: when the selected Account has decomposition factors, every
     // factor must have a value picked.
     if (accountFactors.length > 0) {
@@ -437,7 +448,7 @@ export default function PrEditPage() {
               </select>
               <select
                 value={selectedL2}
-                onChange={(e) => { setSelectedL2(e.target.value); setFactorCombo({}); setFactorComboError(null) }}
+                onChange={(e) => { setSelectedL2(e.target.value); setFactorCombo({}); setFactorComboError(null); setBudgetError(null) }}
                 disabled={ccL2Accounts.length === 0}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
               >
@@ -446,6 +457,9 @@ export default function PrEditPage() {
                   <option key={l2.id} value={l2.code}>{l2.code} — {l2.name}</option>
                 ))}
               </select>
+              {budgetError && (
+                <p className="text-xs text-danger-600">{budgetError}</p>
+              )}
             </div>
 
             {/* Factor selectors — shown when the chosen Budget Account has factors configured */}
