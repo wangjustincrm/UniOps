@@ -261,46 +261,53 @@ def generate_po_pdf(
         # entity name wraps to more lines (e.g. a long vendor name) grows
         # row 1 for *both* columns together, instead of only pushing down
         # the rule beneath the taller name.
-        def _sig_col_entity(entity_name: str | None) -> list:
-            # The 13mm spacer lives inside row 1's cell — not between rows —
-            # so it is part of the height that gets shared across columns:
-            # it preserves the clear signing space above the rule even when
-            # the other column's name is short enough not to need it.
-            return [
-                Paragraph(escape(entity_name) if entity_name else "—", sig_entity_style),
-                Spacer(1, 13 * mm),
-            ]
+        # Every cell holds a SINGLE flowable, never a list. A list-valued cell makes
+        # ReportLab wrap the contents in an internal table whose own padding is not
+        # governed by this table's LEFTPADDING, which pushed the Name:/Title: rows
+        # 6pt out of line with the entity names above them (measured: 56.69pt vs
+        # 62.69pt for every other left-edge element on the page). One flowable per
+        # cell keeps the whole block on the frame's left edge, aligned with the
+        # LINE ITEMS / BUYER NOTES headings.
+        #
+        # The bands are separate ROWS so the signature rules share a row and land at
+        # the same y even when one entity name wraps to more lines than the other.
+        def _entity(name: str | None):
+            return Paragraph(escape(name) if name else "—", sig_entity_style)
 
-        def _sig_col_fields(name_value: str | None, title_value: str) -> list:
-            name_txt = escape(name_value) if name_value else ""
-            title_txt = escape(title_value) if title_value else ""
-            return [
-                Paragraph(f'<font color="{_accent}"><b>Name:</b></font>&nbsp;&nbsp;&nbsp;{name_txt}', val_style),
-                Paragraph(f'<font color="{_accent}"><b>Title:</b></font>&nbsp;&nbsp;&nbsp;{title_txt}', val_style),
-            ]
+        def _field(label: str, value: str | None):
+            txt = escape(value) if value else ""
+            return Paragraph(
+                f'<font color="{_accent}"><b>{label}:</b></font>&nbsp;&nbsp;&nbsp;{txt}',
+                val_style,
+            )
+
+        def _rule():
+            return HRFlowable(width=line_w, color=_GRAY, thickness=0.5)
 
         sig_table = Table(
             [
-                [_sig_col_entity(company_name), "", _sig_col_entity(po.vendor_name)],
-                [
-                    HRFlowable(width=line_w, color=_GRAY, thickness=0.5),
-                    "",
-                    HRFlowable(width=line_w, color=_GRAY, thickness=0.5),
-                ],
-                [
-                    _sig_col_fields(signatory_name, "Operation Manager"),
-                    "",
-                    _sig_col_fields(None, ""),
-                ],
+                [_entity(company_name), "", _entity(po.vendor_name)],
+                ["", "", ""],                                   # clear signing space
+                [_rule(), "", _rule()],
+                [_field("Name", signatory_name), "", _field("Name", None)],
+                [_field("Title", "Operation Manager"), "", _field("Title", None)],
             ],
             colWidths=[col_w, gap_w, col_w],
+            rowHeights=[None, 13 * mm, None, None, None],
         )
         sig_table.setStyle(TableStyle([
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+            # Keep ReportLab's default 6pt horizontal cell padding. Every W-wide
+            # table on this page is laid out 6pt left of the frame's content edge,
+            # and they all line up with the section headings only *because* that
+            # default padding puts their contents back at the same x. Zeroing it
+            # here is what made this block hang 6pt to the left of LINE ITEMS /
+            # BUYER NOTES (measured: 56.69pt vs 62.69pt).
+            ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
             ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("TOPPADDING",    (0, 2), (-1, 2), 2 * mm),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 3), (-1, 3), 2 * mm),         # gap under the rule
         ]))
         story += [Spacer(1, 8 * mm), KeepTogether([sig_table])]
 

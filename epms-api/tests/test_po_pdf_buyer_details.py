@@ -319,13 +319,19 @@ def _capture_story(po, **kw):
 
 
 def test_signature_block_rules_share_a_dedicated_table_row():
-    """The two signature rules must sit in their own table row, separate
-    from the entity-name row above them and the Name:/Title: row below —
-    that is what makes ReportLab give both rules the same row height (and
-    therefore the same starting y) regardless of how many lines either
-    entity name wraps to. Asserted structurally: locate the signature
-    Table inside the KeepTogether the block is wrapped in, and check its
-    3-row x 3-column shape plus which flowable type occupies each row.
+    """The two signature rules must sit in their own table row, separate from
+    the entity-name row above and the Name:/Title: rows below — that is what
+    makes ReportLab give both rules the same row height, and therefore the
+    same starting y, no matter how many lines either entity name wraps to.
+
+    Every cell holds a SINGLE flowable. A list-valued cell makes ReportLab
+    wrap the contents in an internal table with its own padding, which is not
+    governed by this table's style — so lists are what let rows drift out of
+    horizontal alignment with each other.
+
+    Asserted structurally: locate the signature Table inside the KeepTogether
+    the block is wrapped in, then check its shape and which flowable type
+    occupies each row.
     """
     po = _po(type=1, vendor_name="Acme Vendor Co")
     story = _capture_story(po, company_name="Canada Royal Milk", signatory_name="Laura Sivers")
@@ -336,26 +342,107 @@ def test_signature_block_rules_share_a_dedicated_table_row():
     ]
     assert len(sig_tables) == 1, "exactly one signature table in the story"
     table = sig_tables[0]
-    assert table._nrows == 3, "entity names / rules / Name+Title, one row each"
+    assert table._nrows == 5, "entities / signing space / rules / Name / Title"
     assert table._ncols == 3, "left column, gap column, right column"
 
-    row_entities, row_rules, row_fields = table._cellvalues
+    row_entities, row_space, row_rules, row_name, row_title = table._cellvalues
 
-    # Row 0: entity names — a [Paragraph, Spacer] pair per column, sharing
-    # the row's height so a taller name grows the signing space for both.
-    assert isinstance(row_entities[0], list) and isinstance(row_entities[0][0], Paragraph)
-    assert isinstance(row_entities[2], list) and isinstance(row_entities[2][0], Paragraph)
+    # Row 0 — entity names, one Paragraph per content column. Sharing this
+    # row is what keeps the rules below level when one name wraps.
+    assert isinstance(row_entities[0], Paragraph)
+    assert isinstance(row_entities[2], Paragraph)
 
-    # Row 1: nothing but the two rules — this is the row whose shared
-    # height is the whole point of the fix.
+    # Row 1 — clear signing space, held by an explicit row height rather than
+    # a spacer inside a cell, so it cannot reintroduce a list-valued cell.
+    assert row_space == ["", "", ""]
+
+    # Row 2 — nothing but the two rules; the shared height here is the point.
     assert isinstance(row_rules[0], HRFlowable)
     assert isinstance(row_rules[2], HRFlowable)
-    assert row_rules[1] == ""  # gap column carries no content
+    assert row_rules[1] == "", "gap column carries no content"
 
-    # Row 2: Name:/Title: paragraph pairs, one per column.
-    assert isinstance(row_fields[0], list) and len(row_fields[0]) == 2
-    assert all(isinstance(p, Paragraph) for p in row_fields[0])
-    assert isinstance(row_fields[2], list) and len(row_fields[2]) == 2
+    # Rows 3 and 4 — one Paragraph per cell, never a list.
+    for row in (row_name, row_title):
+        assert isinstance(row[0], Paragraph)
+        assert isinstance(row[2], Paragraph)
+        assert row[1] == ""
+
+    # Horizontal alignment with the rest of the page depends on this table
+    # keeping ReportLab's default 6pt cell padding: every W-wide table here is
+    # laid out 6pt left of the frame's content edge, and they line up with the
+    # section headings only because that padding puts their contents back.
+    # Zeroing it made this block hang 6pt to the left of LINE ITEMS.
+    # Horizontal alignment with the rest of the page is verified separately by
+    # test_signature_block_left_edge_matches_the_page (padding is not readable
+    # off the Table object in a stable way).
+
+
+def _abs_x_of(pdf_bytes: bytes, prefixes: list[str]) -> dict:
+    """Absolute x (in points) of the first text run starting with each prefix.
+
+    ReportLab positions each paragraph with a `cm` translate inside a q/Q
+    graphics-state pair and then a `Tm` relative to it, so the absolute x is
+    the running CTM translation plus the text matrix. The q/Q stack has to be
+    tracked or nested table cells report nonsense.
+    """
+    out = bytearray()
+    for m in _STREAM_RE.finditer(pdf_bytes):
+        raw = m.group(1).strip(b"\r\n")
+        try:
+            data = raw.rstrip()[:-2] if raw.rstrip().endswith(b"~>") else raw
+            out += zlib.decompress(base64.a85decode(data))
+        except Exception:
+            continue
+    stream = out.decode("latin-1")
+    tok = re.compile(
+        r"(?P<q>\bq\b)|(?P<Q>\bQ\b)"
+        r"|1 0 0 1 (?P<cx>[-\d.]+) [-\d.]+ cm"
+        r"|1 0 0 1 (?P<tx>[-\d.]+) [-\d.]+ Tm"
+        r"|\((?P<s>.*?)\) Tj",
+        re.DOTALL,
+    )
+    stack, ctm_x, tm_x, found = [], 0.0, 0.0, {}
+    for m in tok.finditer(stream):
+        if m.group("q"):
+            stack.append(ctm_x)
+        elif m.group("Q"):
+            ctm_x = stack.pop() if stack else 0.0
+        elif m.group("cx") is not None:
+            ctm_x += float(m.group("cx"))
+        elif m.group("tx") is not None:
+            tm_x = float(m.group("tx"))
+        elif m.group("s") is not None:
+            for pref in prefixes:
+                if m.group("s").startswith(pref) and pref not in found:
+                    found[pref] = round(ctm_x + tm_x, 2)
+    return found
+
+
+def test_signature_block_shares_the_page_left_edge():
+    """The signature block must start on the same left edge as the section
+    headings and the meta grid.
+
+    This is the bug the row-based rewrite originally shipped with: every
+    W-wide table on this page is laid out 6pt left of the frame's content
+    edge, and they align with the story paragraphs only because ReportLab's
+    default 6pt cell padding puts their contents back. The signature table
+    had that padding zeroed, so its text hung 6pt further left than
+    everything else — measured 56.69pt against 62.69pt.
+
+    Asserted on real rendered coordinates rather than on the layout code,
+    because the defect lived in the interaction between the table's padding
+    and the frame's, which no structural assertion on the Table object
+    would have caught.
+    """
+    po = _po(type=1, vendor_name="Acme Vendor Co", buyer_notes="see attached")
+    pdf = generate_po_pdf(po, company_name="Canada Royal Milk", signatory_name="Laura Sivers")
+
+    xs = _abs_x_of(pdf, ["LINE ITEMS", "BUYER NOTES", "Vendor", "Name:", "Title:"])
+
+    # Positive control: if the stream failed to decode, nothing is found and
+    # the equality below would pass vacuously on an empty dict.
+    assert set(xs) == {"LINE ITEMS", "BUYER NOTES", "Vendor", "Name:", "Title:"}, xs
+    assert len(set(xs.values())) == 1, f"left edges disagree: {xs}"
 
 
 def test_signature_block_survives_a_wrapping_entity_name():
