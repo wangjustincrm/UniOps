@@ -14,6 +14,10 @@ confirm_receipt 特判成 `/gr/new?poId=`)。这样 Task Inbox 里不会因为�
 调度形状镜像 `agreement_overdue`(它又镜像 `daily_followup`):同一个
 followup_time、**独立开关**、先 commit 再发信。
 
+阶梯是**有序**的:部门经理的升级信只在 requester 已经真的收到过一封催办信之后
+才可能发出,光是天数到了不算。存量单据回填后完成日往往已经过去几个月,少了这
+个前置条件,第一轮扫描就会对着几十个从没被催过的人「催一封、同时告状一封」。
+
 ⚠️ 与那两个一样是**单实例假设**。epms-api 若扩到多副本,扫描会重复执行。
 """
 from __future__ import annotations
@@ -164,13 +168,16 @@ async def _ensure_task(db: AsyncSession, due: DueService) -> tuple[Task, bool]:
     return task, True
 
 
-async def _already_escalated(db: AsyncSession, task_id) -> bool:
-    """升级信只发一次。判据是 notification_logs 里这条任务有没有成功发过升级模板
-    —— 零迁移的幂等标记。"""
+async def _has_been_sent(db: AsyncSession, task_id, template_key: str) -> bool:
+    """这条任务有没有成功发出过该模板的信。
+
+    既是升级信的「只发一次」幂等标记,也是「升级前必须先催过」的前置条件 ——
+    两者都靠 notification_logs 判定,零迁移。
+    """
     return bool((await db.execute(
         select(NotificationLog.id).where(
             NotificationLog.task_id == task_id,
-            NotificationLog.template_key == ESCALATION_TEMPLATE,
+            NotificationLog.template_key == template_key,
             NotificationLog.status == "ok",
         ).limit(1)
     )).scalar_one_or_none())
@@ -180,7 +187,7 @@ async def _escalate_to_manager(
     db: AsyncSession, cfg, due: DueService, task: Task,
 ) -> bool:
     """抄送 requester 的部门经理。发过就不再发。返回是否本次发出。"""
-    if await _already_escalated(db, task.id):
+    if await _has_been_sent(db, task.id, ESCALATION_TEMPLATE):
         return False
 
     from app.crud.pr import _get_dept_manager_id
@@ -261,6 +268,10 @@ async def run_service_gr_due() -> None:
             await db.commit()
 
             for item, task, _created in plan:
+                # ★ 必须在发本轮提醒**之前**取这个值:dispatch 会就地写一条
+                # notification_logs,之后再查就永远是 True,前置条件形同虚设。
+                reminded_before = await _has_been_sent(db, task.id, REMINDER_TEMPLATE)
+
                 # 提醒:复用 confirm_receipt 任务,但用到期专用模板,措辞是
                 # 「完成日到了」而不是「发票来了」。
                 await dispatch_task_notification(
@@ -272,7 +283,12 @@ async def run_service_gr_due() -> None:
                         "days_overdue": item.days_over,
                     },
                 )
-                if item.days_over >= escalation_days:
+
+                # 升级的语义是「催过了还不动」,所以天数到了还不够 —— requester
+                # 必须先真的收到过一封催办信。否则回填进来的存量单据(完成日
+                # 早就过去几个月)会在第一轮里「一边催他、一边告状给他经理」,
+                # 而他一次都没被催过。
+                if item.days_over >= escalation_days and reminded_before:
                     await _escalate_to_manager(db, cfg, item, task)
             await db.commit()
 

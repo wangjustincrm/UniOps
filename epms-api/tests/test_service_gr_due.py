@@ -250,7 +250,16 @@ def spy(monkeypatch):
     s = _Spy()
 
     async def fake_dispatch(task, db, **kwargs):
-        s.tasks.append((task.id, kwargs.get("template_key")))
+        template_key = kwargs.get("template_key")
+        s.tasks.append((task.id, template_key))
+        # 真的 dispatch 会写一条 notification_logs,而升级的前置条件
+        # (_has_been_sent)正是读它 —— 替身不写就等于把那条链路掐断,
+        # 升级永远不会发生,测试会「因为替身而绿/红」。
+        db.add(NotificationLog(
+            task_id=task.id, recipient_email="spy@example.com",
+            channel="email", template_key=template_key, status="ok", attempt=1,
+        ))
+        await db.flush()
 
     async def fake_admin_alert(subject, body, db=None):
         s.admin_alerts.append((subject, body))
@@ -340,17 +349,42 @@ async def test_a_second_sweep_reuses_the_task_instead_of_duplicating_it(
     assert len([t for t in spy.tasks if t[0] == rows[0].id]) == 2, "但两轮都要重发提醒"
 
 
+async def test_the_first_sweep_never_escalates_however_overdue(
+    test_engine, spy, patched_sessions,
+):
+    """回填进来的存量单据完成日可能已经过去几个月,但 requester 一次都没被催过。
+    「催一封、同时告状给他经理」是这个功能上线第一天就会被当成坏了的行为。"""
+    async with patched_sessions() as db:
+        stale, _, _ = await _ids(db, days=300)
+        await _configure(db, service_gr_due_enabled=True, service_gr_due_dry_run=False)
+        await db.commit()
+
+    await run_service_gr_due()
+
+    # 断言收敛到本用例这张单:run_service_gr_due 扫全库,同一会话里别的用例
+    # commit 的 PO 也会被一起扫到(它们可能已经催过、因而合法地升级)。
+    assert stale.number not in spy.escalations, "第一轮只该催 requester"
+    async with patched_sessions() as db:
+        task = await mod._open_confirm_receipt_task(db, stale.id)
+    assert (task.id, "service_gr_due") in spy.tasks, "但催办信要发出去"
+
+
 async def test_escalation_only_fires_past_the_manager_threshold(
     test_engine, spy, patched_sessions,
 ):
+    """天数到了**且**已经催过,才升级。两条都建在同一轮,所以第二轮跑时
+    reminded_before 都为真,差别只剩天数。"""
     async with patched_sessions() as db:
         fresh, _, _ = await _ids(db, days=1)      # 刚过 reminder,还没到升级
         stale, _, _ = await _ids(db, days=30)     # 远超升级阈值
         await _configure(db, service_gr_due_enabled=True, service_gr_due_dry_run=False)
         await db.commit()
 
-    await run_service_gr_due()
+    await run_service_gr_due()      # 第一轮:只催
+    after_first = list(spy.escalations)
+    await run_service_gr_due()      # 第二轮:天数够的那条才升级
 
+    assert stale.number not in after_first, "第一轮不该升级"
     assert stale.number in spy.escalations
     assert fresh.number not in spy.escalations
 
@@ -377,8 +411,9 @@ async def test_escalation_is_sent_only_once_per_task(test_engine, monkeypatch, p
         await _configure(db, service_gr_due_enabled=True, service_gr_due_dry_run=False)
         await db.commit()
 
-    await run_service_gr_due()
-    await run_service_gr_due()
+    await run_service_gr_due()      # 催
+    await run_service_gr_due()      # 升级(此时已催过)
+    await run_service_gr_due()      # 不该再升级
 
     assert sent.count(manager.email) == 1, "升级信只发一次"
     async with patched_sessions() as db:
