@@ -249,24 +249,45 @@ def generate_po_pdf(
         gap_w = W - 2 * col_w
         line_w = col_w - 8 * mm
 
-        def _sig_col(entity_name: str | None, name_value: str | None, title_value: str) -> list:
-            name_txt = escape(name_value) if name_value else ""
-            title_txt = escape(title_value) if title_value else ""
+        # Built as a 3-row table — entity names / rules / Name+Title — rather
+        # than two independently-flowing column cells, so that the rules
+        # (row 2) always start at the same y in both columns. A table row's
+        # height is the max of its cells' natural heights, so whichever
+        # entity name wraps to more lines (e.g. a long vendor name) grows
+        # row 1 for *both* columns together, instead of only pushing down
+        # the rule beneath the taller name.
+        def _sig_col_entity(entity_name: str | None) -> list:
+            # The 13mm spacer lives inside row 1's cell — not between rows —
+            # so it is part of the height that gets shared across columns:
+            # it preserves the clear signing space above the rule even when
+            # the other column's name is short enough not to need it.
             return [
                 Paragraph(escape(entity_name) if entity_name else "—", sig_entity_style),
                 Spacer(1, 13 * mm),
-                HRFlowable(width=line_w, color=_GRAY, thickness=0.5),
-                Spacer(1, 2 * mm),
+            ]
+
+        def _sig_col_fields(name_value: str | None, title_value: str) -> list:
+            name_txt = escape(name_value) if name_value else ""
+            title_txt = escape(title_value) if title_value else ""
+            return [
                 Paragraph(f"<b>Name:</b>&nbsp;&nbsp;&nbsp;{name_txt}", val_style),
                 Paragraph(f"<b>Title:</b>&nbsp;&nbsp;&nbsp;{title_txt}", val_style),
             ]
 
         sig_table = Table(
-            [[
-                _sig_col(company_name, signatory_name, "Operation Manager"),
-                "",
-                _sig_col(po.vendor_name, None, ""),
-            ]],
+            [
+                [_sig_col_entity(company_name), "", _sig_col_entity(po.vendor_name)],
+                [
+                    HRFlowable(width=line_w, color=_GRAY, thickness=0.5),
+                    "",
+                    HRFlowable(width=line_w, color=_GRAY, thickness=0.5),
+                ],
+                [
+                    _sig_col_fields(signatory_name, "Operation Manager"),
+                    "",
+                    _sig_col_fields(None, ""),
+                ],
+            ],
             colWidths=[col_w, gap_w, col_w],
         )
         sig_table.setStyle(TableStyle([
@@ -274,7 +295,7 @@ def generate_po_pdf(
             ("LEFTPADDING",   (0, 0), (-1, -1), 0),
             ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
             ("TOPPADDING",    (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING",    (0, 2), (-1, 2), 2 * mm),
         ]))
         story += [Spacer(1, 8 * mm), KeepTogether([sig_table])]
 

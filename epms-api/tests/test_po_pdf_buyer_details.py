@@ -13,6 +13,9 @@ import zlib
 from datetime import date
 from decimal import Decimal
 
+from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, Table
+
+import app.services.pdf_po as pdf_po
 from app.models.po import PoLineItem, PurchaseOrder
 from app.services.pdf_po import generate_po_pdf
 
@@ -293,6 +296,85 @@ def test_zero_line_items_still_renders():
     assert "Sample" not in text
     # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
     assert "LINE ITEMS" in text
+
+
+def _capture_story(po, **kw):
+    """Build the PDF's flowable story without letting ReportLab actually
+    render it, so the test can inspect the Table/Flowable objects it built
+    (row/column shape, which flowable landed in which cell) rather than
+    only the flattened text of the finished PDF — a raw text dump has no
+    way to show y-coordinates or row alignment."""
+    captured = {}
+
+    def _fake_build(self, story, *a, **kwargs):
+        captured["story"] = story
+
+    original_build = pdf_po.SimpleDocTemplate.build
+    pdf_po.SimpleDocTemplate.build = _fake_build
+    try:
+        generate_po_pdf(po, **kw)
+    finally:
+        pdf_po.SimpleDocTemplate.build = original_build
+    return captured["story"]
+
+
+def test_signature_block_rules_share_a_dedicated_table_row():
+    """The two signature rules must sit in their own table row, separate
+    from the entity-name row above them and the Name:/Title: row below —
+    that is what makes ReportLab give both rules the same row height (and
+    therefore the same starting y) regardless of how many lines either
+    entity name wraps to. Asserted structurally: locate the signature
+    Table inside the KeepTogether the block is wrapped in, and check its
+    3-row x 3-column shape plus which flowable type occupies each row.
+    """
+    po = _po(type=1, vendor_name="Acme Vendor Co")
+    story = _capture_story(po, company_name="Canada Royal Milk", signatory_name="Laura Sivers")
+
+    sig_tables = [
+        flowable for el in story if isinstance(el, KeepTogether)
+        for flowable in el._content if isinstance(flowable, Table)
+    ]
+    assert len(sig_tables) == 1, "exactly one signature table in the story"
+    table = sig_tables[0]
+    assert table._nrows == 3, "entity names / rules / Name+Title, one row each"
+    assert table._ncols == 3, "left column, gap column, right column"
+
+    row_entities, row_rules, row_fields = table._cellvalues
+
+    # Row 0: entity names — a [Paragraph, Spacer] pair per column, sharing
+    # the row's height so a taller name grows the signing space for both.
+    assert isinstance(row_entities[0], list) and isinstance(row_entities[0][0], Paragraph)
+    assert isinstance(row_entities[2], list) and isinstance(row_entities[2][0], Paragraph)
+
+    # Row 1: nothing but the two rules — this is the row whose shared
+    # height is the whole point of the fix.
+    assert isinstance(row_rules[0], HRFlowable)
+    assert isinstance(row_rules[2], HRFlowable)
+    assert row_rules[1] == ""  # gap column carries no content
+
+    # Row 2: Name:/Title: paragraph pairs, one per column.
+    assert isinstance(row_fields[0], list) and len(row_fields[0]) == 2
+    assert all(isinstance(p, Paragraph) for p in row_fields[0])
+    assert isinstance(row_fields[2], list) and len(row_fields[2]) == 2
+
+
+def test_signature_block_survives_a_wrapping_entity_name():
+    """Regression case: a long vendor name that wraps to multiple lines,
+    paired with a short company name, must not crash the row-based layout
+    and both names must still render."""
+    long_vendor = (
+        "Beijing Zhongbai Pioneer Chemical Products Co., Ltd (China) "
+        "Import and Export Trading Division"
+    )
+    po = _po(type=1, vendor_name=long_vendor)
+    text = _text_of(generate_po_pdf(
+        po, company_name="Canada Royal Milk", signatory_name="Laura Sivers",
+    ))  # must not raise
+    assert "Canada Royal Milk" in text
+    # ReportLab wraps the long name across multiple Tj runs, so check a
+    # distinctive fragment rather than the full contiguous string.
+    assert "Zhongbai Pioneer" in text
+    assert "Operation Manager" in text
 
 
 def test_pdf_header_expected_delivery_wins_over_line_dates():
