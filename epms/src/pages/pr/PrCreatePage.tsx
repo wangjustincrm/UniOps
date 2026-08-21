@@ -13,6 +13,7 @@ import { FormField } from '@/components/ui/form-field'
 import { ProcurementTypeSelector } from '@/components/pr/ProcurementTypeSelector'
 import { BudgetBalanceWidget, OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
+import { budgetAccountError, requiresBudgetAccount } from '@/lib/prBudget'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useFactors, useBalance } from '@/hooks/useBudget'
@@ -94,6 +95,7 @@ export default function PrCreatePage() {
   const [factorCombo, setFactorCombo] = useState<Record<string, string>>({})
   const [factorComboError, setFactorComboError] = useState<string | null>(null)
   const [departmentError, setDepartmentError] = useState<string | null>(null)
+  const [budgetError, setBudgetError] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<File[]>([])
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
@@ -287,6 +289,15 @@ export default function PrCreatePage() {
       setDepartmentError('Department is required')
       return
     }
+    // Budget account is required for every type except Type 1. Without it the
+    // server's budget check short-circuits, so an unbudgeted PR would sail past
+    // even a `hard_block` config. epms-api rejects this with a 409 — catch it
+    // here so the user gets a field-level message instead.
+    const budgetErr = budgetAccountError(selectedType, selectedCostCenterId, selectedL2)
+    if (budgetErr) {
+      setBudgetError(budgetErr)
+      return
+    }
     // Factor combo: when the selected Account has decomposition factors, every
     // factor must have a value picked (matches the per-PR Required policy).
     if (accountFactors.length > 0) {
@@ -404,7 +415,7 @@ export default function PrCreatePage() {
     if (selectedType) setValue('procurementType', selectedType)
   }, [selectedType, setValue])
 
-  const requiresBudget = selectedType !== null && selectedType !== 1
+  const requiresBudget = requiresBudgetAccount(selectedType)
   const requiresFixedAsset = selectedType === 5
   const requiresProject = selectedType === 6
   const requiresServiceDate = selectedType === 4
@@ -592,7 +603,7 @@ export default function PrCreatePage() {
                       {/* Step 3: L2 Account */}
                       <select
                         value={selectedL2}
-                        onChange={(e) => setSelectedL2(e.target.value)}
+                        onChange={(e) => { setSelectedL2(e.target.value); setBudgetError(null) }}
                         disabled={!selectedL1}
                         className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
                       >
@@ -601,6 +612,9 @@ export default function PrCreatePage() {
                           <option key={l2.id} value={l2.code}>{l2.code} — {l2.name}</option>
                         ))}
                       </select>
+                      {budgetError && (
+                        <p className="text-xs text-danger-600">{budgetError}</p>
+                      )}
                     </div>
                   )}
 
