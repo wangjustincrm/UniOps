@@ -42,6 +42,19 @@ const prSchema = z.object({
   deliveryAddress: z.string().optional(),
   requiredBy: z.string().min(1, 'Required by date is needed'),
   notes: z.string().optional(),
+}).superRefine((v, ctx) => {
+  // Service (4) / Project-Related (6) both run the service GR flow, and the
+  // completion date is what app/tasks/service_gr_due.py scans to nudge the
+  // requester. The field has always rendered with a required asterisk; this is
+  // the rule that finally makes the asterisk true. The server enforces the same
+  // pair on submit.
+  if ((v.procurementType === 4 || v.procurementType === 6) && !v.serviceCompletionDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['serviceCompletionDate'],
+      message: 'Expected completion date is required',
+    })
+  }
 })
 
 type PrForm = z.infer<typeof prSchema>
@@ -318,6 +331,7 @@ export default function PrCreatePage() {
         budget_code: selectedL2 || undefined,
         factor_combo: accountFactors.length > 0 ? factorCombo : undefined,
         required_by: formData.requiredBy,
+        service_completion_date: formData.serviceCompletionDate || undefined,
         delivery_address: formData.deliveryAddress || config?.delivery_address || undefined,
         notes: formData.notes,
         over_budget_justification: isOverBudget ? justification : undefined,
@@ -362,6 +376,7 @@ export default function PrCreatePage() {
             ? factorCombo
             : undefined,
         required_by: values.requiredBy || undefined,
+        service_completion_date: values.serviceCompletionDate || undefined,
         delivery_address: values.deliveryAddress || config?.delivery_address || undefined,
         notes: values.notes,
         over_budget_justification: draftJustification || undefined,
@@ -407,7 +422,10 @@ export default function PrCreatePage() {
   const requiresBudget = selectedType !== null && selectedType !== 1
   const requiresFixedAsset = selectedType === 5
   const requiresProject = selectedType === 6
-  const requiresServiceDate = selectedType === 4
+  // Type 6 (Project-Related) follows the same service GR flow as type 4 —
+  // api/v1/gr.py has always treated the pair identically. Asking only type 4
+  // for a date left every project PO permanently outside the reminder sweep.
+  const requiresServiceDate = selectedType === 4 || selectedType === 6
 
   return (
     <div className="flex flex-col gap-6">
@@ -700,7 +718,7 @@ export default function PrCreatePage() {
                   )}
 
                   {requiresServiceDate && (
-                    <FormField label="Service Expected Completion Date" required htmlFor="serviceDate" error={errors.serviceCompletionDate?.message}>
+                    <FormField label="Service/Project Expected Completion Date" required htmlFor="serviceDate" error={errors.serviceCompletionDate?.message}>
                       <div className="relative">
                         <Input id="serviceDate" type="date" {...register('serviceCompletionDate')} />
                         <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />

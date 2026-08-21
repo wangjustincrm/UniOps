@@ -595,7 +595,10 @@ export default function PoDetailPage() {
     ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
     (po.is_prepaid || hasUnpaidInvoice) &&
     (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
-  const isServicePo = po?.type === 4
+  // Types 4 (Service) and 6 (Project-Related) both run the service GR flow —
+  // api/v1/gr.py has always admitted the pair. Checking only type 4 here left
+  // project POs reachable from GR List but not from their own PO page.
+  const isServicePo = po?.type === 4 || po?.type === 6
   // Physical PO: warehouse/procurement roles, PO must be issued or partially received
   // Service PO: the *requester of the linked PR* (not the PO creator, not a generic
   // 'requester' role) can confirm delivery / create the GR, from approved onwards.
@@ -738,7 +741,7 @@ export default function PoDetailPage() {
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-600 px-3 text-sm font-medium text-white transition-colors hover:bg-success-700"
               >
                 <Warehouse className="h-3.5 w-3.5" />
-                {isServicePo ? 'Confirm Service' : 'Create GR'}
+                {po.type === 4 ? 'Confirm Service' : po.type === 6 ? 'Confirm Completion' : 'Create GR'}
               </button>
             )}
             {canCreatePa && (

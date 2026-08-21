@@ -402,6 +402,10 @@ export default function PrDetailPage() {
                     ['Currency', pr.currency ?? 'CAD'],
                     [`Total Amount (${pr.currency ?? 'CAD'})`, formatAmount(pr.amount, pr.currency ?? 'CAD')],
                     ['Required By Date', formatDate(pr.required_by ?? '')],
+                    ...(pr.type === 4 || pr.type === 6
+                      ? [['Service/Project Expected Completion Date',
+                          formatDate(pr.service_completion_date ?? '')] as [string, string]]
+                      : []),
                     ['Delivery Address', pr.delivery_address || '—'],
                     ['Notes', pr.notes || '—'],
                   ] as [string, string][]).map(([label, value]) => (

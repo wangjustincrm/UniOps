@@ -1591,24 +1591,29 @@ function ServiceGrSla() {
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       <p className="text-sm text-neutral-500">
-        Configures the SLA escalation ladder for <strong>Service Receipt Confirmation</strong> (Type 4 / service lines of Type 6 POs).
-        Day 0 is always the Service Expected Completion Date set on the PO.
+        Configures the SLA escalation ladder for <strong>Service Receipt Confirmation</strong> (Type 4 Service and Type 6 Project-Related POs).
+        Day 0 is the Service/Project Expected Completion Date entered on the linked PR.
+      </p>
+      <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        The first two rungs are live. <strong>GM / OPM escalation</strong> and{' '}
+        <strong>Finance Manager alert</strong> are not implemented yet — their values are
+        stored but nothing acts on them. Enable the sweep itself under{' '}
+        <strong>Notification Settings</strong>.
       </p>
 
       {/* Ladder diagram */}
       <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 font-mono text-xs text-neutral-600 leading-6">
-        <p>Day 0        → Task created for Requester</p>
-        <p>Day 0 + {String(cfg.reminder_days).padEnd(2)}  → Reminder to Requester</p>
+        <p>Day 0 + {String(cfg.reminder_days).padEnd(2)}  → Task + reminder to Requester</p>
         <p>Day 0 + {String(cfg.manager_escalation_days).padEnd(2)}  → Escalation to Dept. Manager</p>
-        <p>Day 0 + {String(cfg.gm_opm_escalation_days).padEnd(2)}  → Escalation to GM / OPM</p>
-        <p>Day 0 + {String(cfg.fm_alert_days).padEnd(2)}  → Finance Manager alert</p>
+        <p className="text-neutral-400">Day 0 + {String(cfg.gm_opm_escalation_days).padEnd(2)}  → Escalation to GM / OPM (not implemented)</p>
+        <p className="text-neutral-400">Day 0 + {String(cfg.fm_alert_days).padEnd(2)}  → Finance Manager alert (not implemented)</p>
       </div>
 
       <div className="flex flex-col gap-3">
-        <SlaRow label="Requester reminder" description="First reminder sent to Requester after Day 0." value={cfg.reminder_days} onChange={(v) => set('reminder_days', v)} />
-        <SlaRow label="Dept. Manager escalation" description="Escalate to Dept. Manager if Requester has not confirmed." value={cfg.manager_escalation_days} onChange={(v) => set('manager_escalation_days', v)} min={cfg.reminder_days + 1} />
-        <SlaRow label="GM / OPM escalation" description="Escalate to GM or OPM. PO flagged as overdue on dashboard." value={cfg.gm_opm_escalation_days} onChange={(v) => set('gm_opm_escalation_days', v)} min={cfg.manager_escalation_days + 1} />
-        <SlaRow label="Finance Manager alert" description="Finance Manager notified. PO flagged 'Confirmation Overdue'." value={cfg.fm_alert_days} onChange={(v) => set('fm_alert_days', v)} min={cfg.gm_opm_escalation_days + 1} />
+        <SlaRow label="Requester reminder" description="Days after the completion date before the Requester is asked to create a GR." value={cfg.reminder_days} onChange={(v) => set('reminder_days', v)} />
+        <SlaRow label="Dept. Manager escalation" description="Escalate to the Requester's Dept. Manager if still not confirmed. Sent once." value={cfg.manager_escalation_days} onChange={(v) => set('manager_escalation_days', v)} min={cfg.reminder_days + 1} />
+        <SlaRow label="GM / OPM escalation" description="Not implemented — stored for a future release." value={cfg.gm_opm_escalation_days} onChange={(v) => set('gm_opm_escalation_days', v)} min={cfg.manager_escalation_days + 1} />
+        <SlaRow label="Finance Manager alert" description="Not implemented — stored for a future release." value={cfg.fm_alert_days} onChange={(v) => set('fm_alert_days', v)} min={cfg.gm_opm_escalation_days + 1} />
       </div>
 
       <SaveBar saved={saved} onSave={() => { updateConfig.mutate({ service_gr_sla: cfg }); setSaved(true); setTimeout(() => setSaved(false), 2500) }} />

@@ -67,6 +67,7 @@ export default function PrEditPage() {
   const [title, setTitle] = useState('')
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [requiredBy, setRequiredBy] = useState('')
+  const [serviceCompletionDate, setServiceCompletionDate] = useState('')
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [projectCode, setProjectCode] = useState('')
@@ -115,6 +116,7 @@ export default function PrEditPage() {
     setTitle(pr.title)
     setCurrency(pr.currency as Currency)
     setRequiredBy(pr.required_by ?? '')
+    setServiceCompletionDate(pr.service_completion_date ?? '')
     setDeliveryAddress(pr.delivery_address ?? '')
     setNotes(pr.notes ?? '')
     setProjectCode(pr.project_code ?? '')
@@ -214,6 +216,7 @@ export default function PrEditPage() {
         ? factorCombo
         : undefined,
     required_by: requiredBy || undefined,
+    service_completion_date: serviceCompletionDate || undefined,
     delivery_address: deliveryAddress || undefined,
     notes: notes || undefined,
     is_prepaid: isPrepaid,
@@ -246,6 +249,7 @@ export default function PrEditPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!id || !title.trim() || !requiredBy) return
+    if ((procurementType === 4 || procurementType === 6) && !serviceCompletionDate) return
     const errs = validateLineItems(lineItems)
     if (Object.keys(errs).length > 0) { setLineErrors(errs); return }
     if (estimatedAmount === 0) { setLineErrors({ '0': { unitPrice: 'At least one line must have a price' } }); return }
@@ -568,6 +572,23 @@ export default function PrEditPage() {
                 <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
               </div>
             </FormField>
+
+            {/* Service/Project Expected Completion Date — Types 4 and 6.
+                Feeds app/tasks/service_gr_due.py, which nudges the requester to
+                create a GR once this date passes. Required on submit server-side. */}
+            {(procurementType === 4 || procurementType === 6) && (
+              <FormField label="Service/Project Expected Completion Date" required htmlFor="serviceCompletionDate">
+                <div className="relative">
+                  <Input
+                    id="serviceCompletionDate"
+                    type="date"
+                    value={serviceCompletionDate}
+                    onChange={(e) => setServiceCompletionDate(e.target.value)}
+                  />
+                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                </div>
+              </FormField>
+            )}
 
             {/* Project Code — Type 6 only */}
             {procurementType === 6 && (
