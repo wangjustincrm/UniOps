@@ -244,7 +244,12 @@ def generate_po_pdf(
     # so this never prints an arbitrarily-chosen name — the Title line still
     # prints regardless, since it is a fixed literal, not role-derived.
     if po.type == 1:
-        sig_entity_style = _s("sig_entity", fontSize=10, textColor=_DARK, fontName="Helvetica-Bold")
+        # Entity names and the Name:/Title: labels carry the same accent colour as
+        # the LINE ITEMS / BUYER NOTES section headings (sec_style's _PRIMARY), so the
+        # signature block reads as part of the same document rather than a bolt-on.
+        # Derived from _PRIMARY rather than hard-coded so a palette change moves both.
+        _accent = f"#{_PRIMARY.hexval()[2:]}"
+        sig_entity_style = _s("sig_entity", fontSize=10, textColor=_PRIMARY, fontName="Helvetica-Bold")
         col_w = 80 * mm
         gap_w = W - 2 * col_w
         line_w = col_w - 8 * mm
@@ -270,8 +275,8 @@ def generate_po_pdf(
             name_txt = escape(name_value) if name_value else ""
             title_txt = escape(title_value) if title_value else ""
             return [
-                Paragraph(f"<b>Name:</b>&nbsp;&nbsp;&nbsp;{name_txt}", val_style),
-                Paragraph(f"<b>Title:</b>&nbsp;&nbsp;&nbsp;{title_txt}", val_style),
+                Paragraph(f'<font color="{_accent}"><b>Name:</b></font>&nbsp;&nbsp;&nbsp;{name_txt}', val_style),
+                Paragraph(f'<font color="{_accent}"><b>Title:</b></font>&nbsp;&nbsp;&nbsp;{title_txt}', val_style),
             ]
 
         sig_table = Table(
