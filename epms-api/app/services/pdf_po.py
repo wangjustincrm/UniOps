@@ -115,48 +115,63 @@ def generate_po_pdf(
     td_r_style = _s("td_r", fontSize=8, textColor=_DARK, fontName="Helvetica",
                     leading=11, alignment=2)
 
-    # Sample is a buyer-supplied, NC-import-only field. Rendering the column
-    # only when some line actually carries one keeps a Sample-less PO's
-    # layout free of an always-empty column. Material ID is unconditional.
+    # Columns are modelled as an ordered list of descriptors — header, fixed
+    # width (None for the flex column), cell style, cell renderer, and
+    # whether the column is optional. Headers, widths and body cells are all
+    # derived from this one list, so the three can never drift apart. An
+    # optional column is dropped from the document when every line's value
+    # for it is empty (None or whitespace-only) — e.g. Material ID and
+    # Supplier Item ID on POs that never populate them, or Sample on POs
+    # with no buyer-supplied sample data. With zero line items every
+    # optional column is (harmlessly) dropped too, since there is no line to
+    # supply data for it; the table still renders with just its header row.
     #
     # Width budget (W = 170mm; every cell also loses 8mm to LEFTPADDING(4) +
-    # RIGHTPADDING(4)): the fixed columns are # 8, Material ID 18,
-    # Supplier Item ID 20, Qty 18, UOM 13, Unit Price 18, Line Total 22
-    # (+ Sample 15 when shown). Description gets whatever remains of W, so
-    # the arithmetic can't silently drift if a fixed width is tweaked.
-    show_sample = any(getattr(item, "sample", None) for item in po.line_items)
+    # RIGHTPADDING(4)): # 8, Material ID 18, Supplier Item ID 20, Qty 18,
+    # UOM 13, Unit Price 18, Line Total 22, Sample 15. Description has no
+    # fixed width — it always takes whatever remains of W, so dropping an
+    # optional column widens Description automatically instead of leaving a
+    # gap, and the arithmetic can't silently drift if a fixed width changes.
+    class _Col:
+        __slots__ = ("header", "width", "style", "cell", "optional")
 
-    fixed = {
-        "#": 8 * mm, "Material ID": 18 * mm, "Supplier Item ID": 20 * mm,
-        "Qty": 18 * mm, "UOM": 13 * mm, "Unit Price": 18 * mm, "Line Total": 22 * mm,
-    }
-    if show_sample:
-        fixed["Sample"] = 15 * mm
-    desc_w = W - sum(fixed.values())
+        def __init__(self, header, width, style, cell, optional=False):
+            self.header = header
+            self.width = width      # None => flex (Description)
+            self.style = style
+            self.cell = cell        # (line_no, item) -> str
+            self.optional = optional
 
-    headers = ["#", "Material ID", "Supplier Item ID", "Description", "Qty", "UOM",
-               "Unit Price", "Line Total"]
-    col_w = [fixed["#"], fixed["Material ID"], fixed["Supplier Item ID"], desc_w,
-             fixed["Qty"], fixed["UOM"], fixed["Unit Price"], fixed["Line Total"]]
-    if show_sample:
-        headers.append("Sample")
-        col_w.append(fixed["Sample"])
+    def _blank(value) -> bool:
+        return value is None or (isinstance(value, str) and not value.strip())
+
+    all_columns = [
+        _Col("#",                8 * mm,  td_style,   lambda i, item: str(i)),
+        _Col("Material ID",      18 * mm, td_style,   lambda i, item: item.material_id or "",
+             optional=True),
+        _Col("Supplier Item ID", 20 * mm, td_style,   lambda i, item: item.supplier_item_id or "",
+             optional=True),
+        _Col("Description",      None,    td_style,   lambda i, item: item.description),
+        _Col("Qty",               18 * mm, td_r_style, lambda i, item: str(item.qty)),
+        _Col("UOM",               13 * mm, td_style,   lambda i, item: item.unit or ""),
+        _Col("Unit Price",        18 * mm, td_r_style, lambda i, item: f"{float(item.unit_price):,.2f}"),
+        _Col("Line Total",        22 * mm, td_r_style, lambda i, item: f"{float(item.line_total):,.2f}"),
+        _Col("Sample",            15 * mm, td_style,   lambda i, item: getattr(item, "sample", None) or "",
+             optional=True),
+    ]
+
+    def _has_data(col: "_Col") -> bool:
+        return any(not _blank(col.cell(i, item)) for i, item in enumerate(po.line_items, 1))
+
+    columns = [c for c in all_columns if not c.optional or _has_data(c)]
+
+    desc_w = W - sum(c.width for c in columns if c.width is not None)
+    headers = [c.header for c in columns]
+    col_w = [c.width if c.width is not None else desc_w for c in columns]
 
     rows: list = [[Paragraph(h, th_style) for h in headers]]
     for i, item in enumerate(po.line_items, 1):
-        row = [
-            Paragraph(str(i),                              td_style),
-            Paragraph(item.material_id or "",              td_style),
-            Paragraph(item.supplier_item_id or "",         td_style),
-            Paragraph(item.description,                    td_style),
-            Paragraph(str(item.qty),                       td_r_style),
-            Paragraph(item.unit or "",                     td_style),
-            Paragraph(f"{float(item.unit_price):,.2f}",    td_r_style),
-            Paragraph(f"{float(item.line_total):,.2f}",    td_r_style),
-        ]
-        if show_sample:
-            row.append(Paragraph(getattr(item, "sample", None) or "", td_style))
-        rows.append(row)
+        rows.append([Paragraph(c.cell(i, item), c.style) for c in columns])
 
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([

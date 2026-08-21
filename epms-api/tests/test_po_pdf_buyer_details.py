@@ -231,6 +231,70 @@ def test_signature_block_introduces_no_date_row():
     assert "Date:" not in text
 
 
+def test_all_optional_columns_empty_are_dropped():
+    """Material ID, Supplier Item ID and Sample must all disappear when no
+    line on the PO carries a value for any of them."""
+    po = _po(line_kw={"material_id": None, "supplier_item_id": None, "sample": None})
+    text = _text_of(generate_po_pdf(po))
+    assert "Material ID" not in text
+    # "Supplier Item ID" wraps across two Tj runs (see the column-order test
+    # below) — "Item ID" alone would also match "Line Total"'s neighbour text
+    # so check the distinctive first fragment.
+    assert "Supplier" not in text
+    assert "Sample" not in text
+    # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
+    assert "Widget" in text
+
+
+def test_only_material_id_populated_keeps_only_that_column():
+    po = _po(line_kw={"material_id": "MAT-1", "supplier_item_id": None, "sample": None})
+    text = _text_of(generate_po_pdf(po))
+    assert "Material ID" in text
+    assert "Supplier" not in text
+    assert "Sample" not in text
+    assert "MAT-1" in text
+
+
+def test_all_optional_columns_populated_appear_in_order():
+    po = _po(line_kw={"material_id": "MAT-2", "supplier_item_id": "SUP-2", "sample": "1 kg"})
+    text = _text_of(generate_po_pdf(po))
+    assert "Material ID" in text
+    assert "Supplier" in text
+    assert "Sample" in text
+    assert "MAT-2" in text
+    assert "SUP-2" in text
+    assert "1 kg" in text
+    # Header order: Material ID, Supplier Item ID, Description, ..., Sample.
+    assert text.index("Material ID") < text.index("Supplier") < text.index("Description")
+    assert text.index("Description") < text.index("Sample")
+
+
+def test_whitespace_only_optional_value_counts_as_empty():
+    """A whitespace-only string is not real data — the column must still drop."""
+    po = _po(line_kw={"material_id": None, "supplier_item_id": "   ", "sample": None})
+    text = _text_of(generate_po_pdf(po))
+    assert "Supplier" not in text
+    assert "Material ID" not in text
+    assert "Sample" not in text
+    # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
+    assert "Widget" in text
+
+
+def test_zero_line_items_still_renders():
+    """A PO with no line items must not crash — every optional column drops
+    (there is no line to supply data for any of them) and the table renders
+    with just its header row."""
+    po = _po()
+    po.line_items = []
+    text = _text_of(generate_po_pdf(po))   # must not raise
+    assert "Description" in text
+    assert "Material ID" not in text
+    assert "Supplier" not in text
+    assert "Sample" not in text
+    # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
+    assert "LINE ITEMS" in text
+
+
 def test_pdf_header_expected_delivery_wins_over_line_dates():
     """A human-entered expected_delivery is a deliberate override (rule 3) — it
     must win over any line-level ERP date, everywhere it's displayed."""
