@@ -10,6 +10,7 @@ from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_r
 from app.crud import pr as pr_crud
 from app.crud.current_step import enrich_current_step
 from app.models.task import Task
+from app.schemas.gr import is_service
 from app.schemas.pr import (
     ApprovalEventResponse,
     BudgetCheckRequest,
@@ -219,6 +220,20 @@ async def pr_action(
         raise HTTPException(
             status_code=409,
             detail="A cost center and budget code are required before submitting this PR",
+        )
+    # Same reasoning for the service/project completion date: it is the only
+    # signal app/tasks/service_gr_due.py has for "this should be finished by
+    # now, go create a GR", so a service PR without one silently opts out of
+    # the reminder. The create form has shown this field with a required
+    # asterisk since it was written, but its zod rule was .optional() and
+    # neither payload carried the value — hence the server-side guard.
+    if (body.action.lower() == "submit"
+            and is_service(pr.type)
+            and pr.service_completion_date is None):
+        raise HTTPException(
+            status_code=409,
+            detail=("A Service/Project Expected Completion Date is required "
+                    "before submitting this PR"),
         )
     try:
         await delegate_action("pr", str(pr_id), body.action, body.comment, token)

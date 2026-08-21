@@ -13,8 +13,6 @@ export interface WorkflowConfig {
 export interface ServiceGrSlaConfig {
   reminder_days: number
   manager_escalation_days: number
-  gm_opm_escalation_days: number
-  fm_alert_days: number
 }
 
 export interface GrNotificationSlaConfig {

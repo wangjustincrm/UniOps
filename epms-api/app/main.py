@@ -28,11 +28,16 @@ async def lifespan(app: FastAPI):
     # somebody remembering to press the button in Admin.
     from app.tasks.nc_purchase_sync_scheduler import nc_purchase_sync_loop
     nc_sync_task = asyncio.create_task(nc_purchase_sync_loop())
+    # Nudges the PR requester to create a GR once a service/project PO passes
+    # its expected completion date (PRD GR-S-001a). Gated OFF by default.
+    from app.tasks.service_gr_due import service_gr_due_loop
+    service_gr_task = asyncio.create_task(service_gr_due_loop())
     yield
     logger.info("Shutting down — closing connections")
     followup_task.cancel()
     overdue_task.cancel()
     nc_sync_task.cancel()
+    service_gr_task.cancel()
     await engine.dispose()
     await close_redis()
 

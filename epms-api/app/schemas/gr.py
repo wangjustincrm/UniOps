@@ -6,11 +6,25 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 PHYSICAL_TYPES = {1, 2, 3, 5}   # Raw Materials, Consumables, Spare Parts, Fixed Assets
+# Service (4) and Project-Related (6) follow the service GR flow: the requester
+# confirms completion instead of the warehouse receiving goods. Everything that
+# branches on "is this a service?" must read this set — before it existed the
+# pair was spelled out inline in api/v1/gr.py while the PR form only asked type
+# 4 for a completion date, so type 6 silently had no date to work from.
+SERVICE_TYPES = {4, 6}
 GR_STATUSES = {"pending_ack", "collection_pending", "collected", "confirmed", "discrepancy", "rejected", "cancelled"}
+# A GR in one of these statuses does not discharge the obligation to receive —
+# the requester still has to produce a good one, so the due-date sweep keeps
+# nudging.
+GR_VOID_STATUSES = {"rejected", "cancelled"}
 
 
 def is_physical(procurement_type: int) -> bool:
     return procurement_type in PHYSICAL_TYPES
+
+
+def is_service(procurement_type: int) -> bool:
+    return procurement_type in SERVICE_TYPES
 
 
 # ── Line items ─────────────────────────────────────────────────────────────────

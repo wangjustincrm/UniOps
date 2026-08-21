@@ -45,6 +45,14 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
     project_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     required_by: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # When the service / project is expected to be finished. Collected only for
+    # procurement types 4 (Service) and 6 (Project-Related) — the same pair
+    # app/api/v1/gr.py routes through the service GR flow — and required at
+    # submit time for those two. Nullable at the DB level because every row
+    # created before this column existed has no value, and the due-date sweep
+    # (app/tasks/service_gr_due.py) deliberately skips those rather than
+    # guessing a date for them.
+    service_completion_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     delivery_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 

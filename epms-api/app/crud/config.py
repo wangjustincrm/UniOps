@@ -84,10 +84,7 @@ _DEFAULT_PDF_TEMPLATES = {
     "pa": {"show_logo": True, "header_note": "", "footer_note": "", "show_terms": False, "terms_text": ""},
 }
 
-_DEFAULT_SERVICE_GR_SLA = {
-    "reminder_days": 1, "manager_escalation_days": 3,
-    "gm_opm_escalation_days": 5, "fm_alert_days": 7,
-}
+_DEFAULT_SERVICE_GR_SLA = {"reminder_days": 1, "manager_escalation_days": 3}
 
 _DEFAULT_GR_NOTIFICATION_SLA = {"reminder_days": 1, "manager_escalation_days": 3}
 
@@ -117,6 +114,13 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     # 默认 ON 是刻意的:daily_followup_enabled 默认 OFF,结果上线后没人知道要去
     # admin 打开、提醒一直没发。开关的作用是"吵了可以关掉",不是"要用得先找到它"。
     "agreement_overdue_enabled": True,
+    # 服务/项目 PO 完成日到期催建 GR(app/tasks/service_gr_due.py)。
+    # 默认 OFF + dry_run 默认 ON 是刻意的两道闸:上线当天先让扫描空跑一轮,
+    # 把命中清单汇总发给 admin 过目,确认无误再开。存量单据靠回填脚本补日期,
+    # 一次放开可能同时命中一大批逾期 PO —— 2026-08-05 的 GR 群发 59 人就是
+    # 没有这道闸。消费方一律显式回落,老配置行没有这两个键也算「关 + 空跑」。
+    "service_gr_due_enabled": False,
+    "service_gr_due_dry_run": True,
     # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
     # 不再逐个通知该角色成员。空 = 维持逐人发送。
     "role_shared_mailboxes": {},
@@ -181,6 +185,27 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "Action Required: Confirm Service Completion — {gr_number}",
         "Hi {recipient_name},\n\nService GR <b>{gr_number}</b> is pending your confirmation.\n\n"
         "<a href=\"{link}\">Confirm Service Completion</a>\n\n{company_name}",
+    ),
+    # 完成日到期催建 GR(service_gr_due 扫描)。与 service_gr_pending 的区别:
+    # 那个是「GR 已经建好了,去确认」,这个是「还没有 GR,去建」,所以变量围绕
+    # PO 而不是 GR,链接也直通 New GR 页(_task_link 对 confirm_receipt 特判)。
+    "service_gr_due": _DEFAULT_EMAIL_TEMPLATE(
+        "Action Required: Confirm Service Completion — {po_number}",
+        "Hi {recipient_name},\n\nThe expected completion date for PO <b>{po_number}</b> "
+        "was <b>{completion_date}</b> ({days_overdue} day(s) ago), but no goods receipt "
+        "has been created yet.\n\nIf the service is complete, please confirm it so the "
+        "vendor can be paid.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Confirm Service &amp; Create GR</a>\n\n{company_name}",
+    ),
+    "service_gr_escalation": _DEFAULT_EMAIL_TEMPLATE(
+        "Overdue: Service Completion Not Confirmed — {po_number}",
+        "Hi {recipient_name},\n\nPO <b>{po_number}</b> was expected to be complete on "
+        "<b>{completion_date}</b> — {days_overdue} day(s) ago — and <b>{requester_name}</b> "
+        "has not yet confirmed the service or created a goods receipt.\n\n"
+        "Until it is confirmed the vendor cannot be paid.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Review PO</a>\n\n{company_name}",
     ),
     # ── PA ────────────────────────────────────────────────────────────────────
     "create_pa_reminder": _DEFAULT_EMAIL_TEMPLATE(

@@ -118,8 +118,7 @@ async def test_update_workflow_defs(admin_client):
 @pytest.mark.asyncio
 async def test_update_sla_configs(admin_client):
     r = await admin_client.patch(CONFIG_URL, json={
-        "service_gr_sla": {"reminder_days": 2, "manager_escalation_days": 4,
-                           "gm_opm_escalation_days": 6, "fm_alert_days": 8},
+        "service_gr_sla": {"reminder_days": 2, "manager_escalation_days": 4},
         "gr_notification_sla": {"reminder_days": 1, "manager_escalation_days": 2},
         "collection_config": {"collection_required": False, "reminder_days": 1,
                               "manager_escalation_days": 3, "fm_alert_days": 5},
