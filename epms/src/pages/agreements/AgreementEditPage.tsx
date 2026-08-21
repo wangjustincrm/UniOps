@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Search, Upload, X } from 'lucide-react'
@@ -32,6 +33,7 @@ export default function AgreementEditPage() {
   const { id } = useParams<{ id: string }>()
   const replaceTab = useReplaceTab(epmsRoutes)
   const { data: agreement, isLoading } = useAgreement(id ?? '')
+  useDocTabTitle(agreement?.number && `Edit ${agreement.number}`)
   const updateAgreement = useUpdateAgreement()
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
@@ -352,7 +354,7 @@ export default function AgreementEditPage() {
     return (
       <div className="p-8">
         <p className="text-sm text-neutral-500">This agreement cannot be edited in its current status.</p>
-        <Link to={`/agreements/${id}`} className="mt-3 inline-block text-sm text-primary-600 hover:underline">← Back to Agreement</Link>
+        <BackLink to={`/agreements/${id}`} className="mt-3 inline-block text-sm text-primary-600 hover:underline">← Back to Agreement</BackLink>
       </div>
     )
   }

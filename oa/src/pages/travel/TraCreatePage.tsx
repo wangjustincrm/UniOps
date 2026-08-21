@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BackLink } from '@/components/BackLink'
 import { useReplaceTab, Button } from '@uniops/shell'
 import { useMutation } from '@tanstack/react-query'
 import { ArrowLeft } from 'lucide-react'
@@ -55,9 +56,9 @@ export default function TraCreatePage() {
   return (
     <form onSubmit={submit} className="flex flex-col gap-6 max-w-3xl">
       <div>
-        <a href="/travel" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
+        <BackLink to="/travel" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
           <ArrowLeft className="h-4 w-4" />Back to Travel Applications
-        </a>
+        </BackLink>
         <h1 className="text-2xl font-bold text-neutral-900">Travel Application</h1>
         <p className="mt-0.5 text-sm text-neutral-500">Apply for a business trip before claiming expenses</p>
       </div>

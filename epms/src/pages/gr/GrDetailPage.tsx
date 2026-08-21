@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, CheckCircle2, Clock, Truck, Paperclip,
   AlertTriangle, Package, ExternalLink, X, RotateCcw,
@@ -172,6 +173,7 @@ export default function GrDetailPage() {
   const { user } = useAuthStore()
 
   const { data: gr, isLoading } = useGr(id ?? '')
+  useDocTabTitle(gr?.number)
   const grAction = useGrAction(id ?? '')
   const { data: po } = usePo(gr?.po_id ?? '')
   const { data: attachments = [] } = useGrAttachments(id ?? '')
@@ -188,7 +190,7 @@ export default function GrDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <Link to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</Link>
+        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
       </div>
     )
   }

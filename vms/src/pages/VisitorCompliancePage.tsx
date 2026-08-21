@@ -7,7 +7,8 @@
  * Only the configured contact (or system_admin) can click Confirm — the
  * server enforces the same gate and returns 403 otherwise.
  */
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, AlertCircle, CheckCircle2, ShieldCheck, HardHat, Loader2,
 } from 'lucide-react'
@@ -19,6 +20,7 @@ import { formatDateTime } from '@/lib/utils'
 export default function VisitorCompliancePage() {
   const { visitorId } = useParams<{ visitorId: string }>()
   const { data: visitor, isLoading, error } = useVisitor(visitorId)
+  useDocTabTitle(visitor ? `Compliance ${visitor.first_name} ${visitor.last_name}` : undefined)
   const confirmTraining = useConfirmTraining(visitorId ?? '')
   const confirmPpe      = useConfirmPpe(visitorId ?? '')
 
@@ -30,10 +32,10 @@ export default function VisitorCompliancePage() {
           <AlertCircle className="h-4 w-4" />
           {error?.message ?? 'Visitor not found'}
         </p>
-        <Link to="/tasks" className="mt-2 inline-flex items-center gap-1 text-xs text-danger-600 hover:underline">
+        <BackLink to="/tasks" className="mt-2 inline-flex items-center gap-1 text-xs text-danger-600 hover:underline">
           <ArrowLeft className="h-3 w-3" />
           Back to task inbox
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -43,10 +45,10 @@ export default function VisitorCompliancePage() {
 
   return (
     <div className="max-w-3xl">
-      <Link to="/tasks" className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700">
+      <BackLink to="/tasks" className="inline-flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-700">
         <ArrowLeft className="h-3 w-3" />
         Back to task inbox
-      </Link>
+      </BackLink>
 
       <h1 className="mt-2 text-2xl font-bold text-neutral-900">
         {visitor.first_name} {visitor.last_name}

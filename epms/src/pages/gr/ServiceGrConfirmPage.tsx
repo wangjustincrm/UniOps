@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
@@ -29,6 +30,7 @@ export default function ServiceGrConfirmPage() {
   const { id } = useParams<{ id: string }>()
   const replaceTab = useReplaceTab(epmsRoutes)
   const { data: gr, isLoading } = useGr(id ?? '')
+  useDocTabTitle(gr?.number && `Confirm ${gr.number}`)
   const grAction = useGrAction(id ?? '')
   const { user } = useAuthStore()
 
@@ -51,7 +53,7 @@ export default function ServiceGrConfirmPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <Link to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</Link>
+        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
       </div>
     )
   }
@@ -60,7 +62,7 @@ export default function ServiceGrConfirmPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-sm text-neutral-500 mb-2">Service confirm is for service GRs only</p>
-        <Link to={`/gr/${gr.id}`} className="text-sm text-primary-600 hover:underline">← Back to GR</Link>
+        <BackLink to={`/gr/${gr.id}`} className="text-sm text-primary-600 hover:underline">← Back to GR</BackLink>
       </div>
     )
   }
@@ -69,7 +71,7 @@ export default function ServiceGrConfirmPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-sm text-neutral-500 mb-2">This GR is not pending confirmation (status: {gr.status})</p>
-        <Link to={`/gr/${gr.id}`} className="text-sm text-primary-600 hover:underline">← Back to GR</Link>
+        <BackLink to={`/gr/${gr.id}`} className="text-sm text-primary-600 hover:underline">← Back to GR</BackLink>
       </div>
     )
   }

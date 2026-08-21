@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, X, Calendar, Search, Receipt } from 'lucide-react'
@@ -37,6 +38,7 @@ export default function PoEditPage() {
   const replaceTab = useReplaceTab(epmsRoutes)
 
   const { data: po, isLoading } = usePo(id ?? '')
+  useDocTabTitle(po?.number && `Edit ${po.number}`)
   const { data: config } = useConfig()
   const updatePo = useUpdatePo()
   const poAction = usePoAction(id ?? '')
@@ -179,7 +181,7 @@ export default function PoEditPage() {
     return (
       <div className="p-8">
         <p className="text-sm text-neutral-500">This PO cannot be edited in its current status.</p>
-        <Link to={`/po/${id}`} className="mt-3 inline-block text-sm text-primary-600 hover:underline">← Back to PO</Link>
+        <BackLink to={`/po/${id}`} className="mt-3 inline-block text-sm text-primary-600 hover:underline">← Back to PO</BackLink>
       </div>
     )
   }

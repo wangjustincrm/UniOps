@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
@@ -21,6 +22,7 @@ export default function PaEditPage() {
   const replaceTab = useReplaceTab(epmsRoutes)
   const queryClient = useQueryClient()
   const { data: pa, isLoading } = usePa(id ?? '')
+  useDocTabTitle(pa?.pa_number && `Edit ${pa.pa_number}`)
   const updatePa = useUpdatePa()
   // Attachments hang off the saved PA, so upload/delete apply immediately
   // rather than waiting for Save (same semantics as the Detail page).
@@ -226,7 +228,7 @@ export default function PaEditPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-neutral-500">This PA cannot be edited.</p>
-        <Button variant="secondary" className="mt-4" onClick={() => replaceTab(`/pa/${id}`)}>Back</Button>
+        <BackLink to={`/pa/${id}`} className="mt-4"><Button variant="secondary">Back</Button></BackLink>
       </div>
     )
   }

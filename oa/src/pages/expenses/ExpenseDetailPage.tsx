@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
+import { useDocTabTitle } from '@/components/BackLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock } from 'lucide-react'
@@ -320,6 +321,7 @@ export default function ExpenseDetailPage() {
     queryKey: ['expense', id],
     queryFn: () => api.get<ExpenseClaim>(`/api/v1/expenses/${id}`),
   })
+  useDocTabTitle(claim?.claim_number)
 
   // Shared with AttachmentsCard (same query key) — used to gate submit (EXP-007/TRV-008).
   const { data: attachments = [] } = useQuery<Attachment[]>({

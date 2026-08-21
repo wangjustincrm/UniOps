@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, CheckCircle2, XCircle, RotateCcw, Pencil, ChevronDown,
   MessageSquare, X, Send, ExternalLink, FileText, Mail, ShoppingCart, Warehouse, Globe, Loader2,
@@ -503,6 +504,7 @@ type Tab = typeof TABS[number]
 export default function PoDetailPage() {
   const { id } = useParams()
   const { data: po, isLoading } = usePo(id ?? '')
+  useDocTabTitle(po?.number)
   const { data: events } = usePoEvents(id ?? '')
   const { data: poAttachments = [] } = usePoAttachments(id ?? '')
   const uploadAttachment = useUploadPoAttachment(id ?? '')
@@ -628,9 +630,9 @@ export default function PoDetailPage() {
         <div className="text-5xl mb-4">🔍</div>
         <h2 className="text-xl font-semibold text-neutral-700">PO Not Found</h2>
         <p className="mt-2 text-sm text-neutral-400">The purchase order you're looking for doesn't exist.</p>
-        <Link to="/po" className="mt-4">
+        <BackLink to="/po" className="mt-4">
           <Button variant="secondary">Back to PO List</Button>
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -665,12 +667,12 @@ export default function PoDetailPage() {
       {/* Page header */}
       <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
-          <Link to="/po">
+          <BackLink to="/po">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4" />
               Back to PO List
             </Button>
-          </Link>
+          </BackLink>
         </div>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>

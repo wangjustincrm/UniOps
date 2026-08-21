@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
 import {
   ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil,
@@ -259,6 +260,7 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending 
 export default function AgreementDetailPage() {
   const { id } = useParams()
   const { data: agreement, isLoading } = useAgreement(id ?? '')
+  useDocTabTitle(agreement?.number)
   const { data: config } = useConfig()
   const { data: deptData } = useDepartments()
   const departments = deptData?.items ?? []
@@ -428,9 +430,9 @@ export default function AgreementDetailPage() {
         <div className="text-5xl mb-4">🔍</div>
         <h2 className="text-xl font-semibold text-neutral-700">Agreement Not Found</h2>
         <p className="mt-2 text-sm text-neutral-400">The agreement you're looking for doesn't exist.</p>
-        <Link to="/agreements" className="mt-4">
+        <BackLink to="/agreements" className="mt-4">
           <Button variant="secondary">Back to Agreements</Button>
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -450,12 +452,12 @@ export default function AgreementDetailPage() {
       {/* Page header */}
       <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
-          <Link to="/agreements">
+          <BackLink to="/agreements">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4" />
               Back to Agreements
             </Button>
-          </Link>
+          </BackLink>
         </div>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>

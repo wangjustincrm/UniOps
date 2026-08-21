@@ -1,5 +1,6 @@
 import { useState, useEffect, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { oaRoutes } from '@/app/routes'
 import { useQuery } from '@tanstack/react-query'
@@ -31,6 +32,7 @@ export default function PaDirectEditPage() {
     queryFn: () => api.get<Pa>(`/api/v1/pa/${id}`),
     enabled: !!id,
   })
+  useDocTabTitle(pa?.pa_number && `Edit ${pa.pa_number}`)
 
   const { data: costCenters = [] } = useQuery<CostCenter[]>({
     queryKey: ['epms-cost-centers', deptId],
@@ -89,9 +91,9 @@ export default function PaDirectEditPage() {
   if (!pa) return <div className="py-16 text-center text-sm text-danger-500">Payment application not found</div>
   if (!isEditable(pa.status)) return (
     <div className="flex flex-col gap-4 max-w-2xl">
-      <a href={`/pa/${id}`} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700">
+      <BackLink to={`/pa/${id}`} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700">
         <ArrowLeft className="h-4 w-4" />Back to PA
-      </a>
+      </BackLink>
       <p className="rounded-lg border border-warning-200 bg-warning-50 px-4 py-3 text-sm text-warning-700">
         This payment application is {pa.status} and can no longer be edited.
       </p>
@@ -122,9 +124,9 @@ export default function PaDirectEditPage() {
   return (
     <form onSubmit={save} className="flex flex-col gap-5 max-w-2xl">
       <div>
-        <a href={`/pa/${id}`} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
+        <BackLink to={`/pa/${id}`} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 mb-4">
           <ArrowLeft className="h-4 w-4" />Back to PA
-        </a>
+        </BackLink>
         <h1 className="text-2xl font-bold text-neutral-900">Edit Payment Application</h1>
         <p className="mt-0.5 text-sm text-neutral-500 font-mono">{pa.pa_number}</p>
       </div>

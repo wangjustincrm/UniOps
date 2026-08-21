@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { ArrowLeft } from 'lucide-react'
 import { epmsRoutes } from '@/app/routes'
@@ -33,6 +34,7 @@ export default function PoImportedEditPage() {
   const { id } = useParams<{ id: string }>()
   const replaceTab = useReplaceTab(epmsRoutes)
   const { data: po, isLoading } = usePo(id ?? '')
+  useDocTabTitle(po?.number && `Edit Details ${po.number}`)
   // useTaxCodes() returns the TaxCode[] array directly (not wrapped in a
   // query-result object) — see hooks/useTaxCodes.ts. PoEditPage.tsx consumes
   // it the same way.
@@ -243,10 +245,10 @@ export default function PoImportedEditPage() {
         <p className="text-sm text-neutral-700">
           Only imported POs in status "issued" can be edited here.
         </p>
-        <Link to={`/po/${po.id}`} className="mt-3 inline-flex items-center gap-1 text-sm text-primary-600">
+        <BackLink to={`/po/${po.id}`} className="mt-3 inline-flex items-center gap-1 text-sm text-primary-600">
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to PO
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -254,10 +256,10 @@ export default function PoImportedEditPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div>
-        <Link to={`/po/${po.id}`} className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900">
+        <BackLink to={`/po/${po.id}`} className="inline-flex items-center gap-1 text-sm text-neutral-500 hover:text-neutral-900">
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to PO
-        </Link>
+        </BackLink>
         <h1 className="mt-2 text-xl font-semibold text-neutral-900">
           Edit Details — {po.number}
         </h1>
@@ -356,9 +358,9 @@ export default function PoImportedEditPage() {
       </section>
 
       <div className="flex justify-end gap-2">
-        <Link to={`/po/${po.id}`}>
+        <BackLink to={`/po/${po.id}`}>
           <Button variant="secondary" type="button">Cancel</Button>
-        </Link>
+        </BackLink>
         <Button type="button" onClick={handleSave} disabled={isSubmitting}>
           {isSubmitting ? 'Saving…' : 'Save & Regenerate PDF'}
         </Button>

@@ -1,5 +1,4 @@
 import { createStore } from 'zustand/vanilla'
-import { persist, createJSONStorage } from 'zustand/middleware'
 import type { TabMeta } from './types'
 
 export interface TabStoreState {
@@ -30,7 +29,6 @@ export interface TabStoreState {
 }
 
 export interface TabStoreOptions {
-  storageKey: string
   /**
    * Maximum number of open tabs before LRU eviction kicks in. Only counts
    * and evicts tabs with `kind: 'page'` — iframe tabs are exempt from the cap.
@@ -38,10 +36,11 @@ export interface TabStoreOptions {
   cap?: number
   initialTabs?: TabMeta[]
   /**
-   * Identity of the current user. Persisted alongside the tabs; on rehydrate, if
-   * it differs from the stored value the persisted tabs are discarded and the
-   * store starts fresh (initialTabs only). This closes the previous user's tabs
-   * after a user switch. Omit to disable the check (tabs always restore).
+   * Identity of the current user. The STORE does not read this — tabs are never
+   * persisted, so there is nothing to invalidate here. `TabStoreProvider` uses it
+   * as the store's identity: when it changes, the provider builds a new store, so
+   * a user switch inside a single SPA session never inherits the previous user's
+   * tabs.
    */
   userId?: string
 }
@@ -50,13 +49,18 @@ function touchLru(lru: string[], key: string): string[] {
   return [...lru.filter((k) => k !== key), key]
 }
 
+/**
+ * The tab workspace is deliberately IN-MEMORY ONLY. Leaving a module (Back to
+ * Portal is a full-page navigation), reloading, or reopening the browser all
+ * unload the SPA and therefore this store, so the next entry starts with just
+ * the pinned initial tabs. Do not re-add a `persist` middleware here: "come back
+ * to a clean workspace" is the required behaviour, not an accident.
+ */
 export function createTabStore(opts: TabStoreOptions) {
   const initial = opts.initialTabs ?? []
   const firstKey = initial[0]?.key ?? ''
 
-  return createStore<TabStoreState>()(
-    persist(
-      (set, get) => ({
+  return createStore<TabStoreState>()((set, get) => ({
     tabs: initial,
     activeKey: firstKey,
     alive: firstKey ? [firstKey] : [],
@@ -185,41 +189,5 @@ export function createTabStore(opts: TabStoreOptions) {
         }
       })
     },
-      }),
-      {
-        name: opts.storageKey,
-        storage: createJSONStorage(() => localStorage),
-        partialize: (s) => ({ tabs: s.tabs, activeKey: s.activeKey, userId: opts.userId }),
-        version: 1,
-        merge: (persisted, current) => {
-          const p = (persisted ?? {}) as Partial<TabStoreState> & { userId?: string }
-          // User switched (persisted tabs belong to a different user) → discard
-          // them and start fresh with just the initial (pinned) tabs.
-          if (opts.userId !== undefined && p.userId !== opts.userId) {
-            return current
-          }
-          let tabs = p.tabs ?? current.tabs
-          // Guarantee pinned initial tabs exist, sit first, and carry their
-          // canonical identity flags — even if a persisted tab with the same
-          // key has stale flags (e.g. pinned:false) from before it was
-          // configured as a pinned initial tab.
-          for (const pin of initial) {
-            const idx = tabs.findIndex((t) => t.key === pin.key)
-            if (idx === -1) {
-              tabs = [pin, ...tabs]
-            } else {
-              const existing = tabs[idx]
-              const repaired = { ...existing, pinned: pin.pinned, closable: pin.closable, icon: pin.icon, title: pin.title }
-              tabs = [...tabs.slice(0, idx), repaired, ...tabs.slice(idx + 1)]
-            }
-          }
-          const activeKey =
-            p.activeKey && tabs.some((t) => t.key === p.activeKey)
-              ? p.activeKey
-              : tabs[0]?.key ?? ''
-          return { ...current, tabs, activeKey, alive: activeKey ? [activeKey] : [], lru: activeKey ? [activeKey] : [] }
-        },
-      },
-    ),
-  )
+  }))
 }
