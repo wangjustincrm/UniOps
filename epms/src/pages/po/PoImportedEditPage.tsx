@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { ArrowLeft } from 'lucide-react'
@@ -51,6 +51,11 @@ export default function PoImportedEditPage() {
   const [lines, setLines] = useState<ImportedPoLine[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Tracks which PO id the Delivery Address default has already been decided
+  // for (applied, or skipped because the PO has its own) — see the effect
+  // below. A ref, not state: this is a one-time-per-PO decision, not a value
+  // that should drive re-renders or appear in the effect's own deps.
+  const addressDefaultAppliedFor = useRef<string | null>(null)
 
   // The ERP's earliest per-line delivery date. Computed ahead of the prefill
   // effect below so both it and the read-only hint text can use the same
@@ -95,14 +100,26 @@ export default function PoImportedEditPage() {
   // Delivery Address prefill from the company default — same pattern as
   // PoCreatePage.tsx. usePo() and useConfig() are independent queries with no
   // ordering guarantee, so config can resolve after the buyer has already
-  // started typing; guard on the local field too (not just the persisted
-  // po.delivery_address) so a non-empty field is never silently overwritten.
+  // started typing (or cleared) the field. This is a once-per-PO decision,
+  // not a continuously-enforced invariant: the live deliveryAddress value
+  // must stay out of both the guard and the deps, or clearing the field
+  // (deliveryAddress -> '') would re-trigger the effect and immediately
+  // snap the default back in, making the field permanently unclearable.
+  // addressDefaultAppliedFor tracks the decision instead, keyed on po.id so
+  // navigating to a different PO re-applies the default for that PO.
   useEffect(() => {
-    if (po?.id && !po.delivery_address && !deliveryAddress && config?.delivery_address) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDeliveryAddress(config.delivery_address)
+    if (!po?.id) return
+    if (addressDefaultAppliedFor.current === po.id) return // already decided for this PO
+    if (po.delivery_address) {
+      // PO has its own — never override, and nothing left to decide later.
+      addressDefaultAppliedFor.current = po.id
+      return
     }
-  }, [po?.id, po?.delivery_address, deliveryAddress, config?.delivery_address])
+    if (!config?.delivery_address) return // config not in yet; try again when it arrives
+    addressDefaultAppliedFor.current = po.id
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDeliveryAddress(config.delivery_address)
+  }, [po?.id, po?.delivery_address, config?.delivery_address])
 
   const editable = po?.source === 'nc' && po?.status === 'issued'
   const isCadOrder = po?.currency === 'CAD'
