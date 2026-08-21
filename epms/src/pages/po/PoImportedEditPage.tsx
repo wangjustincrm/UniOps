@@ -51,11 +51,6 @@ export default function PoImportedEditPage() {
   const [lines, setLines] = useState<ImportedPoLine[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Tracks which PO id the Delivery Address default has already been decided
-  // for (applied, or skipped because the PO has its own) — see the effect
-  // below. A ref, not state: this is a one-time-per-PO decision, not a value
-  // that should drive re-renders or appear in the effect's own deps.
-  const addressDefaultAppliedFor = useRef<string | null>(null)
   // Tracks whether the buyer has interacted with the Delivery Address field
   // for the current PO — separately from what the field currently contains.
   // See the effect below for why this, not the field's value, is the guard.
@@ -81,17 +76,14 @@ export default function PoImportedEditPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setExpectedDelivery('')
     setDeliveryAddress(po.delivery_address ?? '')
-    // Reset both per-PO decision refs alongside the field they gate, because
-    // this effect just rebuilt the form from the PO: any earlier decision
-    // derived from the previous form state (which PO's default was already
-    // applied, whether the buyer has touched the field) is now stale and must
-    // be re-decided. This also covers React StrictMode's mount/unmount/
-    // remount in development — the second mount re-runs this effect and
-    // re-blanks deliveryAddress, so addressDefaultAppliedFor must be cleared
-    // here too or the company-default effect below sees its "already decided
-    // for this PO" guard still set from the first mount and never re-applies.
+    // Reset the interaction ref alongside the field it gates, so navigating
+    // to a different PO starts clean and is eligible for its own default
+    // again. This also covers React StrictMode's mount/unmount/remount in
+    // development — the second mount re-runs this effect and re-blanks
+    // deliveryAddress, and this reset ensures the buyer's interaction state
+    // is rebuilt from scratch alongside it rather than surviving stale from
+    // the first mount.
     deliveryAddressTouched.current = false
-    addressDefaultAppliedFor.current = null
     setIncoterms(po.incoterms ?? '')
     setTaxCode(po.tax_code ?? null)
     setTaxRate(Number(po.tax_rate))
@@ -131,20 +123,22 @@ export default function PoImportedEditPage() {
   // cleared), while still being free to apply the default whenever it
   // arrives for a field nobody has touched. Do not "simplify" this back to
   // a check on deliveryAddress itself — that reintroduces one of the two
-  // bugs above. addressDefaultAppliedFor additionally tracks the decision
-  // itself, keyed on po.id, so navigating to a different PO re-decides (and
-  // deliveryAddressTouched is reset alongside it in the prefill effect above).
+  // bugs above.
+  //
+  // The final rule: the company default applies to a field the buyer has
+  // not touched, on a PO that has no address of its own — nothing more.
+  // There is deliberately no one-time latch recording that "this PO has
+  // already been decided": buyer interaction is the only thing that ends
+  // the default's eligibility, not the field's value and not a past
+  // decision. Re-running this effect and re-applying the same default
+  // string when nothing has changed is a harmless no-op — setDeliveryAddress
+  // with a value equal to the field's current contents changes nothing the
+  // buyer can see — so nothing needs to be latched to prevent it.
   useEffect(() => {
     if (!po?.id) return
-    if (addressDefaultAppliedFor.current === po.id) return // already decided for this PO
-    if (po.delivery_address) {
-      // PO has its own — never override, and nothing left to decide later.
-      addressDefaultAppliedFor.current = po.id
-      return
-    }
-    if (deliveryAddressTouched.current) return // buyer already acted — their value wins, forever, for this PO
+    if (po.delivery_address) return // PO has its own — never override
+    if (deliveryAddressTouched.current) return // buyer already acted — their value wins
     if (!config?.delivery_address) return // config not in yet; try again when it arrives
-    addressDefaultAppliedFor.current = po.id
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDeliveryAddress(config.delivery_address)
   }, [po?.id, po?.delivery_address, config?.delivery_address])
