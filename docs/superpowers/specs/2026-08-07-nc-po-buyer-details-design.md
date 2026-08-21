@@ -261,3 +261,54 @@ interface ImportedPoLineItemsProps {
 - 迁移：epms-api `nc03_po_buyer_details`、identity-api `0006_po_edit_imported`（**有迁移**，发布需跑 `migrate-prod.sh`）
 - 受影响镜像：`epms-api`、`epms`（前端）、`identity-api`
 - 上线后须在 Portal Admin → Access Control 确认 `epms.po.edit_imported` 已勾给 `erp_pa_officer`
+
+---
+
+## 设计修订（2026-08-20/21，本地测试后由用户定案）
+
+以下决定推翻或细化了上文的原始设计。**冲突时以本节为准。**
+
+### 1. ERP 交期是既有数据，不是缺失数据
+
+原设计假设 NC 不提供交期，因此让人工填写 Expected Delivery。这个前提是错的。
+
+实测：`NCSC.PO_ORDER` 表头**没有**交期列（只有 `DBILLDATE` / `DCLOSEDATE` / `DMAKEDATE` / `PK_DELIVERADD`）；NC 列表界面上的 "Delivery Date" 是**行级** `dplanarrvdate` 的汇总。该字段一直在同步，落在 `po_line_items.planned_arrival_date`，本地快照 **206/206 行全有值**；而 `purchase_orders.expected_delivery` 在 **120 张 NC 单上全为 NULL**。缺口只在呈现层：`PoLineItemResponse` 没暴露它，前端零引用。
+
+取值口径沿用 mrp-api `in_transit.py` 已确立的优先级——**行级 ERP 日期优先，表头人工值为覆盖**。一单多行且交期不同时，**取最早的一行**（采购要盯的是最早到货日）。
+
+### 2. Expected Delivery 改为只读，不再是可编辑字段
+
+原设计（含一度实现过的「预填 + touched 守卫」）已废弃。现行规则：
+
+- 表头存有人工值，**或**存在 ERP 行级日期 → 渲染为**只读文本**，请求体中**完全不含** `expected_delivery`
+- 两者皆无 → 才渲染日期输入框
+
+这样表头列在有 ERP 数据时永远保持 NULL，显示持续跟随 NC 重排期，从根本上消除了「人工值静默冻结、NC 改期后无人察觉」的漂移。
+
+### 3. 不得显示 "(from ERP)" 之类的溯源标记
+
+PDF 是发给供应商的文件，内部溯源标记不应出现在上面。Detail 页同理，只显示日期本身。回落逻辑保留，仅去掉标记文字。
+
+### 4. Delivery Address 默认取公司设置
+
+编辑页在 PO 自身 `delivery_address` 为空时，用 `company_config.delivery_address` 预填（沿用 `PoCreatePage` 既有做法，含 `Default: …` 提示）。PO 已存的地址永不被覆盖。
+
+**PDF 不做地址回落**（用户定案）：每张导入 PO 都会被编辑一遍，届时地址已落库。
+
+### 5. PDF 行项目列顺序（用户指定）
+
+```
+#, Material ID, Supplier Item ID, Description, Qty, UOM, Unit Price, Line Total, Sample
+```
+
+Material ID 为常驻列；Sample 仍为条件列（无任何行填写时不渲染，避免给供应商一列空白）。
+
+列宽预算（A4 可用宽 `W = 170mm`，每格左右各 4mm 内边距共吃 8mm，故 9 位金额至少需 21mm）：
+`# 8 / Material ID 18 / Supplier Item ID 20 / Qty 18 / UOM 13 / Unit Price 18 / Line Total 22 / Sample 15`，
+Description 取剩余（有 Sample 38mm、无 Sample 53mm）。**Description 宽度在代码中按 `W - 其余之和` 计算**，不写死比例，以免日后调整某列时算术悄悄失配。
+
+### 6. 分支已合并 origin/main（598 commits）
+
+三处结构性冲突的处理见合并提交 `1d251a0`：`nc03` 改挂 `aj01_nc_sync_collision_counts`；identity 迁移改名 `0011_po_edit_imported` 并改挂 `0010_budget_view_scope`；权限键 sort 由 104 改为 **107**（104/105/106 已被协议采购占用）。
+
+前端基线随之变化，**旧数字作废**：合并后实测 `tsc 57` / `eslint 111 errors + 24 warnings`（合并前是 58 / 165 + 23）。
