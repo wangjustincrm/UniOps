@@ -148,6 +148,40 @@ def test_pdf_delivery_falls_back_to_earliest_line_date_when_header_is_unset():
     assert "Widget A" in text
 
 
+def test_material_id_supplier_item_id_description_appear_in_column_order():
+    """LINE ITEMS columns must read #, Material ID, Supplier Item ID,
+    Description, Qty, UOM, Unit Price, Line Total, [Sample] — left to right."""
+    po = _po()
+    po.line_items = [PoLineItem(
+        id=uuid.uuid4(), po_id=po.id, description="Distinctive Widget Description",
+        qty=Decimal("10"), unit="EA", unit_price=Decimal("10.00"),
+        line_total=Decimal("100.00"), received_qty=Decimal("0"), sort_order=0,
+        material_id="MAT-7788", supplier_item_id="SUP-99XY",
+    )]
+    text = _text_of(generate_po_pdf(po))
+    assert "MAT-7788" in text
+    assert "SUP-99XY" in text
+    assert "Distinctive Widget Description" in text
+    # Header labels must appear in the mandated order. "Supplier Item ID" wraps
+    # onto two lines inside its 20mm column (ReportLab emits "Supplier" and
+    # "Item ID" as separate Tj runs around a T* newline operator), so anchor
+    # on "Supplier" rather than the full contiguous label.
+    assert "Item ID" in text
+    assert text.index("Material ID") < text.index("Supplier") < text.index("Description")
+    # Body cell values must follow the same left-to-right column order.
+    assert text.index("MAT-7788") < text.index("SUP-99XY") < text.index("Distinctive Widget Description")
+
+
+def test_material_id_blank_not_none_when_absent():
+    """A line with no material_id must render an empty cell, not the string
+    'None' (a naive f-string/str() of a NULL column would print that)."""
+    po = _po()  # default line's material_id is unset (None)
+    text = _text_of(generate_po_pdf(po))
+    assert "None" not in text
+    # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
+    assert "Widget" in text
+
+
 def test_pdf_header_expected_delivery_wins_over_line_dates():
     """A human-entered expected_delivery is a deliberate override (rule 3) — it
     must win over any line-level ERP date, everywhere it's displayed."""
