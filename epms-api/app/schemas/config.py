@@ -43,10 +43,11 @@ class PdfTemplates(BaseModel):
 
 
 class ServiceGrSlaConfig(BaseModel):
+    # Two rungs only. The GM/OPM and Finance Manager rungs were configurable but
+    # never wired to anything, so they were removed rather than left as knobs
+    # that do nothing.
     reminder_days: int = 1
     manager_escalation_days: int = 3
-    gm_opm_escalation_days: int = 5
-    fm_alert_days: int = 7
 
 
 class GrNotificationSlaConfig(BaseModel):

@@ -84,10 +84,7 @@ _DEFAULT_PDF_TEMPLATES = {
     "pa": {"show_logo": True, "header_note": "", "footer_note": "", "show_terms": False, "terms_text": ""},
 }
 
-_DEFAULT_SERVICE_GR_SLA = {
-    "reminder_days": 1, "manager_escalation_days": 3,
-    "gm_opm_escalation_days": 5, "fm_alert_days": 7,
-}
+_DEFAULT_SERVICE_GR_SLA = {"reminder_days": 1, "manager_escalation_days": 3}
 
 _DEFAULT_GR_NOTIFICATION_SLA = {"reminder_days": 1, "manager_escalation_days": 3}
 
