@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
-import { useTabStoreApi } from './TabStoreContext'
+import { useOptionalTabStoreApi } from './TabStoreContext'
 import { deriveTabMeta } from './routeTable'
 import type { RouteDef } from './types'
 
@@ -14,14 +14,15 @@ import type { RouteDef } from './types'
  * `PO a5f40064` into `PO PO-20260815-0007`.
  *
  * Pass `undefined` while loading (or when the document has no number) to leave the
- * route table's fallback title in place.
+ * route table's fallback title in place. Outside a tab shell this does nothing.
  */
 export function useTabTitle(routes: RouteDef[], title: string | undefined | null) {
-  const api = useTabStoreApi()
+  const api = useOptionalTabStoreApi()
   const { pathname } = useLocation()
 
   useEffect(() => {
-    if (!title) return
+    // No tab shell (iframe embed) — there is no tab to rename.
+    if (!api || !title) return
     const meta = deriveTabMeta(routes, pathname)
     if (!meta) return
     api.getState().updateTitle(meta.key, title)

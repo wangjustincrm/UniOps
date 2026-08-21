@@ -40,6 +40,20 @@ export function useTabStoreApi(): TabStoreApi {
   return api
 }
 
+/**
+ * The tab store when there is one, or null.
+ *
+ * Pages are not always inside a tab shell: EPMS and OA render their routes with
+ * no TabStoreProvider when embedded in an iframe (Finance's AP list drills into
+ * an invoice that way, and the embedded app hides its own tab bar on purpose).
+ * Page-level hooks must use THIS and degrade, not the throwing accessor above —
+ * throwing takes down the whole embedded page. Reserve `useTabStoreApi` for
+ * chrome that genuinely cannot exist without a shell, like TabBar and TabHost.
+ */
+export function useOptionalTabStoreApi(): TabStoreApi | null {
+  return useContext(TabStoreContext)
+}
+
 export function useTabStore<T>(selector: (s: TabStoreState) => T): T {
   return useStore(useTabStoreApi(), selector)
 }
