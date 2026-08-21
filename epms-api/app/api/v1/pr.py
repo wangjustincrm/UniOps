@@ -207,6 +207,19 @@ async def pr_action(
             status_code=409,
             detail="A vendor is required before submitting this PR",
         )
+    # A budget account (cost center + budget code) is required to submit any
+    # budget-bearing PR. Type 1 carries no budget — the Create PR form hides the
+    # Budget Account block for it. Without BOTH fields compute_budget_check
+    # short-circuits to over_budget=False, so an unbudgeted PR silently bypasses
+    # the entire budget check, `hard_block` included. Only submit is gated:
+    # legacy PRs with no budget code must stay approvable / cancellable.
+    if body.action.lower() == "submit" and pr.type != 1 and (
+        not pr.budget_code or pr.cost_center_id is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="A cost center and budget code are required before submitting this PR",
+        )
     try:
         await delegate_action("pr", str(pr_id), body.action, body.comment, token)
     except LookupError as exc:
