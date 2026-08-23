@@ -619,6 +619,24 @@ async def _autofill_gr_to_matched_invoices(
             .group_by(InvoicePoAllocation.invoice_id)
             .having(func.count(InvoicePoAllocation.po_line_id) == 0)
         )).scalars().all()
+        # Zero-allocation header link: a PMS/NC-imported invoice is matched in
+        # bulk straight onto Invoice.po_id and never gets an
+        # invoice_po_allocations row at all (419 of them in production). Both
+        # queries above start FROM that table, so those invoices were invisible
+        # here — the GR never linked, invoice.gr_id stayed NULL forever, and
+        # with it po_has_three_way_matched_invoice stayed False, so the PO never
+        # got its create_pa task (real prod: the goods were received and
+        # invoiced, yet nothing ever asked anyone to pay). The whole invoice
+        # bills this PO, so — exactly like the header-level branch above — any
+        # GR on the PO is its receipt evidence.
+        inv_ids += (await db.execute(
+            select(Invoice.id).where(
+                Invoice.po_id == gr.po_id,
+                ~select(InvoicePoAllocation.id)
+                .where(InvoicePoAllocation.invoice_id == Invoice.id)
+                .exists(),
+            )
+        )).scalars().all()
     if not inv_ids:
         return
     invoices = (await db.execute(
@@ -649,6 +667,17 @@ async def _autofill_gr_to_matched_invoices(
         inv.gr_id = gr_uuids[0]
         inv.gr_number = ", ".join(num_by_id.get(u, "") for u in gr_uuids)
         inv.gr_value = total
+
+    # The session runs autoflush=False (app/db/session.py), so these writes stay
+    # invisible to any later raw SELECT until something flushes them. The very
+    # next caller IS such a SELECT: _on_three_way_reached →
+    # po_has_three_way_matched_invoice reads Invoice.gr_id to decide whether the
+    # PO reached 3-way. Without this flush it read a stale NULL and skipped the
+    # create_pa task — that is what happened to prod PO-192-2608-01 on
+    # 2026-08-07 (confirm_receipt closed, create_pa never raised). The
+    # allocation branch added later to po_has_three_way_matched_invoice happens
+    # to mask it today; the missing flush is the actual defect.
+    await db.flush()
 
 
 async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
