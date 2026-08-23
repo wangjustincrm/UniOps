@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import hash_password
@@ -92,3 +93,84 @@ async def test_pr_list_endpoint_serializes_current_step_key(admin_client):
     assert r.status_code == 200
     for item in r.json()["items"]:
         assert "current_step" in item          # field present on every row
+
+
+# ── I4 (2026-08-19 final review): stand-in lookup must batch, not N+1 ────────
+
+async def test_enrich_current_step_batches_stand_in_lookup_no_n_plus_1(test_engine, monkeypatch):
+    """enrich_current_step's own docstring promises 'one batched task query +
+    one batched user-name query (no N+1)'. Before this fix it called
+    `active_delegate_id` once per UNIQUE approver in the page (a query per
+    approver, not per row) — this test seeds 3 documents with 3 DISTINCT
+    approvers, each with an active delegation, and proves the per-approver
+    helper is never invoked: the batched `active_delegate_ids` (plural) must
+    be used instead, in a single call covering the whole set."""
+    import app.crud.current_step as cs_module
+    from app.core.delegation import local_today
+    from datetime import timedelta
+
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    docs = [uuid.uuid4() for _ in range(3)]
+    approvers = [uuid.uuid4() for _ in range(3)]
+    delegates = [uuid.uuid4() for _ in range(3)]
+    today = local_today()
+
+    async with sf() as db:
+        for i, (doc_id, approver_id, delegate_id) in enumerate(zip(docs, approvers, delegates)):
+            db.add(User(id=approver_id, email=f"appr{i}-{TAG}@x.com",
+                        hashed_password=hash_password("x"), full_name=f"Approver {i}",
+                        role="dept_manager", is_active=True))
+            db.add(User(id=delegate_id, email=f"deleg{i}-{TAG}@x.com",
+                        hashed_password=hash_password("x"), full_name=f"Delegate {i}",
+                        role="dept_manager", is_active=True))
+        await db.commit()
+
+    async with sf() as db:
+        for doc_id, approver_id in zip(docs, approvers):
+            db.add(_task(doc_id, role="dept_manager", user_id=approver_id))
+        for approver_id, delegate_id in zip(approvers, delegates):
+            await db.execute(sa_text(
+                "INSERT INTO approval_delegations "
+                "(id, delegator_user_id, delegate_user_id, start_date, end_date, "
+                " revoked_at, created_by) "
+                "VALUES (:id, :delegator, :delegate, :start, :end, NULL, :delegator)"),
+                {"id": uuid.uuid4(), "delegator": approver_id, "delegate": delegate_id,
+                 "start": today - timedelta(days=1), "end": today + timedelta(days=1)})
+        await db.commit()
+
+        calls: list = []
+        original_batch = cs_module.active_delegate_ids
+
+        async def _spy_batch(db_, delegator_ids, today=None):
+            calls.append(set(delegator_ids))
+            return await original_batch(db_, delegator_ids, today)
+
+        monkeypatch.setattr(cs_module, "active_delegate_ids", _spy_batch)
+        # If a future edit ever regresses this back to the per-id helper, this
+        # patch turns it into a hard failure rather than a silent perf regression.
+        called_singular = {"n": 0}
+
+        async def _forbid_singular(*a, **kw):
+            called_singular["n"] += 1
+            raise AssertionError("N+1 regression: active_delegate_id called per-approver")
+
+        monkeypatch.setattr(cs_module, "active_delegate_id", _forbid_singular, raising=False)
+
+        items = [SimpleNamespace(id=doc_id, status="in_review") for doc_id in docs]
+        await enrich_current_step(db, "pr", items)
+
+    assert called_singular["n"] == 0, "the per-approver N+1 helper was still called"
+    assert len(calls) == 1, (
+        f"active_delegate_ids (batched) should be called exactly ONCE for "
+        f"the whole page, not once per approver — was called {len(calls)} times"
+    )
+    assert calls[0] == set(approvers), (
+        "the single batched call did not cover every unique approver on the page"
+    )
+
+    names = {it.current_step["approver_name"] for it in items}
+    assert names == {
+        "Approver 0 (delegated: Delegate 0)",
+        "Approver 1 (delegated: Delegate 1)",
+        "Approver 2 (delegated: Delegate 2)",
+    }

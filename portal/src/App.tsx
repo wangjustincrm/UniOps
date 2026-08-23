@@ -6,16 +6,22 @@ import LoginPage from '@/pages/LoginPage'
 import AdminPanel from '@/pages/admin/AdminPanel'
 import LogoutPage from '@/pages/LogoutPage'
 import DataMaintenance from '@/pages/admin/DataMaintenance'
+import ForcePasswordChangePage from '@/pages/ForcePasswordChangePage'
 import AccessControl from '@/pages/admin/AccessControl'
 import ApprovalRouting from '@/pages/admin/ApprovalRouting'
+import ApprovalDelegation from '@/pages/admin/ApprovalDelegation'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 })
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, user } = useAuthStore()
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  // Password rotation gate — swallows every authenticated route (including the
+  // module launcher, so no SSO handoff is minted either) until the account
+  // clears must_change_password. /logout stays reachable: it is unguarded.
+  if (user?.must_change_password) return <ForcePasswordChangePage />
   return <>{children}</>
 }
 
@@ -46,6 +52,10 @@ export default function App() {
           <Route
             path="/admin/approval-routing"
             element={<ProtectedRoute><ApprovalRouting /></ProtectedRoute>}
+          />
+          <Route
+            path="/admin/approval-delegation"
+            element={<ProtectedRoute><ApprovalDelegation /></ProtectedRoute>}
           />
           {/* Public logout route — clears Portal session, no auth guard */}
           <Route path="/logout" element={<LogoutPage />} />

@@ -5,9 +5,10 @@ THE single implementation of "money goes out": status flip + payment_records
 legacy HTTP entries (epms-api PA action=process, expense-api /pa/{id}/pay and
 /expenses/{id}/pay) forward here.
 
-can_pay: JWT role in _PAY_ROLES, OR an ADDITIONAL role of finance_bp /
-finance_manager held in identity's user_roles (same physical DB — phase 3
-retired the old company_config.role_management assignments).
+can_pay: primary (JWT) role in _PAY_ROLES, OR an ADDITIONAL role (identity's
+user_roles) in _PAY_ROLES_ASSIGNED = _PAY_ROLES minus system_admin — this
+codebase treats system_admin as primary-role-only (see budget_scope.py's
+FULL_ACCESS_PRIMARY vs FULL_ACCESS_ASSIGNED).
 """
 import uuid
 from datetime import date, datetime, timezone
@@ -34,7 +35,24 @@ from app.services import budget_client
 from app.schemas.payment_execute import PaymentExecuteRequest, PaymentExecuteResponse
 from app.services.posting import emit_event
 
-_PAY_ROLES = {"ap_clerk", "finance_manager", "finance_bp", "system_admin"}
+# Segregation of duties (2026-08-13): payment EXECUTION is split out of AP
+# Clerk. ap_clerk is deliberately REMOVED, not left in alongside
+# payment_officer — that removal is the entire point of the change; AP Clerk
+# still reads finance data (see _FINANCE_ROLES in app/core/deps.py), it just
+# can no longer move money. finance_manager / finance_bp / system_admin stay
+# as the availability fallback so payment doesn't deadlock while the
+# payment_officer holder is away.
+_PAY_ROLES = {"payment_officer", "finance_manager", "finance_bp", "system_admin"}
+
+# Roles that confer payment authority when held as an ADDITIONAL (assigned)
+# role. system_admin is deliberately EXCLUDED here (fix round 1, 2026-08-13):
+# this codebase treats system_admin as a PRIMARY-role grant only — see
+# budget_scope.py's FULL_ACCESS_PRIMARY (has system_admin) vs
+# FULL_ACCESS_ASSIGNED (does not), and the same split in admin.py's
+# require_system_admin and the shared uniops_authz package. Deriving from
+# _PAY_ROLES (rather than a second hand-maintained literal) keeps this from
+# drifting the next time _PAY_ROLES changes.
+_PAY_ROLES_ASSIGNED = _PAY_ROLES - {"system_admin"}
 
 
 class PaymentPermissionError(Exception):
@@ -83,7 +101,13 @@ async def _check_can_pay(db: AsyncSession, user: dict) -> None:
         return
     user_id = uuid.UUID(str(user.get("sub", "")))
     codes = await _user_role_codes(db, user_id, user.get("role", ""))
-    if "finance_bp" in codes or "finance_manager" in codes:
+    # Generalized against _PAY_ROLES_ASSIGNED (2026-08-13, narrowed in fix
+    # round 1) rather than a hardcoded finance_bp/finance_manager check —
+    # payment_officer must also qualify when held as an ADDITIONAL role
+    # (identity user_roles), which is how it is expected to be assigned in
+    # production. system_admin is excluded from this branch on purpose: see
+    # _PAY_ROLES_ASSIGNED's comment above.
+    if codes & _PAY_ROLES_ASSIGNED:
         return
     raise PaymentPermissionError("Insufficient role to record payment")
 
@@ -266,7 +290,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         if pa.status != "approved":
             raise ValueError(f"Cannot pay PA in status '{pa.status}'")
         # actual kind derives from the document, not the client
-        doc_kind = "pa_dir" if pa.po_id is None else "pa"
+        doc_kind = "pa_dir" if pa.is_direct else "pa"
         pa.status = "processed"
         # Stamp the real payment date (honours a back-dated req.payment_date).
         # Dashboards read paid_at, never the onupdate-bumped updated_at.

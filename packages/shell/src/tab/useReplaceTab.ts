@@ -1,6 +1,6 @@
 import { useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { useTabStoreApi } from './TabStoreContext'
+import { useOptionalTabStoreApi } from './TabStoreContext'
 import { deriveTabMeta } from './routeTable'
 import type { RouteDef } from './types'
 
@@ -14,7 +14,7 @@ import type { RouteDef } from './types'
  * `useLocation()` here resolves to the calling page's own tab path.
  */
 export function useReplaceTab(routes: RouteDef[]) {
-  const api = useTabStoreApi()
+  const api = useOptionalTabStoreApi()
   const navigate = useNavigate()
   const { pathname, search } = useLocation()
 
@@ -24,12 +24,16 @@ export function useReplaceTab(routes: RouteDef[]) {
       const qIdx = toPath.indexOf('?')
       const toPathname = qIdx === -1 ? toPath : toPath.slice(0, qIdx)
       const toSearch = qIdx === -1 ? '' : toPath.slice(qIdx)
-      const toMeta = deriveTabMeta(routes, toPathname, toSearch)
-      const fromMeta = deriveTabMeta(routes, pathname, search)
-      if (toMeta && fromMeta) {
-        api.getState().replaceTab(fromMeta.key, toMeta)
-      } else if (toMeta) {
-        api.getState().openTab(toMeta)
+      // Outside a tab shell (iframe embed) there is no tab to replace; the
+      // navigation itself must still happen.
+      if (api) {
+        const toMeta = deriveTabMeta(routes, toPathname, toSearch)
+        const fromMeta = deriveTabMeta(routes, pathname, search)
+        if (toMeta && fromMeta) {
+          api.getState().replaceTab(fromMeta.key, toMeta)
+        } else if (toMeta) {
+          api.getState().openTab(toMeta)
+        }
       }
       navigate(toPath)
     },

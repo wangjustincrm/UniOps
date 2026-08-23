@@ -11,7 +11,8 @@
  * through to the API.
  */
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { AlertCircle, ArrowLeft, Loader2, Printer } from 'lucide-react'
 import {
   useVisit, useVisitor, useUserBrief, usePrintBadge, useBadgeConfig,
@@ -20,12 +21,12 @@ import { BadgePreview } from '@/components/BadgePreview'
 
 export default function BadgePrintPage() {
   const { visitId } = useParams<{ visitId: string }>()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const reprintReason = searchParams.get('reason') || null
 
   const { data: visit, isLoading: vLoading, error } = useVisit(visitId)
   const { data: visitor }                            = useVisitor(visit?.visitor_id)
+  useDocTabTitle(visitor ? `Badge ${visitor.first_name} ${visitor.last_name}` : undefined)
   const { data: host }                               = useUserBrief(visit?.host_id)
   const print                                        = usePrintBadge(visitId)
   const { data: badgeConfig } = useBadgeConfig()
@@ -66,13 +67,13 @@ export default function BadgePrintPage() {
     <div className="badge-print-root">
       {/* Toolbar (hidden in print output) */}
       <div className="no-print mb-4 flex items-center justify-between gap-3">
-        <button
-          onClick={() => navigate(`/${visitId}`)}
+        <BackLink
+          to={`/${visitId}`}
           className="inline-flex items-center gap-1.5 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to visit
-        </button>
+        </BackLink>
         {/* Manual print is always available once the badge layout has rendered
             — even if the check-in API is slow or stuck, the operator can still
             print the badge. */}

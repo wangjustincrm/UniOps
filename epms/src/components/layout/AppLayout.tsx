@@ -63,7 +63,7 @@ export function AppLayout() {
 
   // Normal: full chrome + keep-alive multi-tab workspace.
   return (
-    <TabStoreProvider options={{ storageKey: 'uniops:epms:tabs', initialTabs: EPMS_INITIAL_TABS, userId }}>
+    <TabStoreProvider options={{ initialTabs: EPMS_INITIAL_TABS, userId }}>
       <div className="flex h-screen overflow-hidden bg-[#FAFBFC] relative">
         {/* Mobile overlay backdrop */}
         {mobileOpen && (

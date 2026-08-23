@@ -1,0 +1,96 @@
+"""ORM model for Purchase Agreement (AGR) — the blanket-PO replacement.
+
+An agreement is the authorisation + price container for spend that must not go
+through PR→PO→GR: house accounts (staff pick up at the vendor and the vendor
+bills monthly) and contract-driven recurring / milestone payments. It is NOT an
+order: it carries no quantities and is never received against.
+"""
+import uuid
+from datetime import date
+from decimal import Decimal
+
+from sqlalchemy import Date, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
+
+
+class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
+    __tablename__ = "purchase_agreements"
+
+    number: Mapped[str] = mapped_column(String(40), unique=True, index=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # house_account | recurring | milestone — only house_account is wired in 1A.
+    agreement_type: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    contract_no: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    vendor_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("business_partners.id", ondelete="RESTRICT"),
+        nullable=False, index=True
+    )
+    vendor_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # 供应商侧的账号/引用号。切换时把现有 Open PO 号登记于此,供应商无需改号,
+    # 其发票上印的老号仍能解析到本协议(1B 的自动识别用)。
+    vendor_reference: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+
+    valid_from: Mapped[date] = mapped_column(Date, nullable=False)
+    valid_to: Mapped[date] = mapped_column(Date, nullable=False)
+    # 过期后仍可匹配的宽限窗口 —— 月结账单总在期末之后才到(8/31 到期,9/3 来票)。
+    grace_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
+
+    # NTE 只预警不拦截(用户决策):这两列驱动进度条与阈值通知,不阻断任何写路径。
+    not_to_exceed: Mapped[Decimal | None] = mapped_column(Numeric(15, 2), nullable=True)
+    consumed_amount: Mapped[Decimal] = mapped_column(
+        Numeric(15, 2), nullable=False, server_default="0")
+
+    currency: Mapped[str] = mapped_column(String(10), nullable=False, server_default="CAD")
+    tax_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+
+    department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    budget_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True)
+
+    # ── recurring 专用(agreement_type='recurring' 时必填,其余类型必须为空) ──
+    # weekly | monthly | quarterly | yearly
+    recurring_type: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 到票日。weekly=1..7(ISO,周一=1);其余=1..31,遇短月钳到月末。
+    expected_invoice_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 1..12,仅 quarterly / yearly 使用。**不从 valid_from 推导** —— 很多季度账单
+    # 按合同起始月走(起始月 2 月 → 2/5/8/11),而签订日未必等于账单周期起点。
+    anchor_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 排期起始期(ag08):排期从这一天起生成,而不是从 valid_from。协议往往已经跑了
+    # 一两年才进系统 —— 那些早期期次的票是在系统外付掉的,永远不会到这里来,却会
+    # 一直挂 pending、被逾期扫描翻成 overdue、每天给负责人发催票信。
+    # 期次网格本身仍按 valid_from 推,标签与季度/年度锚点保持合同的口径;这里只
+    # 决定从哪一行开始留。NULL = 从 valid_from 起,即本列出现之前的行为。
+    schedule_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expected_amount_per_period: Mapped[Decimal | None] = mapped_column(
+        Numeric(15, 2), nullable=True)
+    # 百分数:5.00 = ±5%。**NULL = 不做金额校验**(用户裁定 2026-08-13);
+    # 显式 0 才是"必须分毫不差"。比对用发票**税前额**对 expected_amount_per_period
+    # —— 两条规则都实现在 crud/agreement_schedule.py::claim_next_period,那里
+    # 有完整理由。
+    tolerance_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    overdue_after_days: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, server_default="7")
+
+    # 协议责任人 —— NTE 预警与到期提醒的收件人。
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+
+    # draft | in_review | returned | active | expired | closed | cancelled
+    # "returned" is produced by the approval engine on a return action (see
+    # approval-api/app/crud/engine.py "agr" entry) — EDITABLE_STATUSES accepts it.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="draft", index=True)
+    approval_step_idx: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True)

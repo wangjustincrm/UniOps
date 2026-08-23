@@ -304,7 +304,7 @@ async def test_executor_stamps_account_codes(client, db_session):
 
     r = await client.post("/finance/v1/payments/execute",
                           json={"doc_kind": "pa_dir", "doc_id": str(pa.id)},
-                          headers=_h("ap_clerk"))
+                          headers=_h("payment_officer"))
     assert r.status_code == 200, r.text
 
     ev = (await db_session.execute(

@@ -95,9 +95,10 @@ async def test_purge_polymorphic_counts_and_deletes(test_engine):
         assert remaining == []
 
 
-def test_registry_has_five_epms_entities():
+def test_registry_has_the_epms_entities():
     from app.admin.registry import REGISTRY
-    assert set(REGISTRY.keys()) == {"pr", "po", "gr", "invoice", "pa", "task"}
+    assert set(REGISTRY.keys()) == {"pr", "po", "gr", "invoice", "pa",
+                                    "agreement", "agreement_receipt", "task"}
     for spec in REGISTRY.values():
         assert spec.schema.number_field
         assert spec.schema.fields            # non-empty

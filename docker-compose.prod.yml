@@ -110,6 +110,7 @@ services:
       <<: *db-env
       SERVICE_NAME: approval-engine
       PORT: "8003"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     ports: ["8003:8003"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8003
     healthcheck:
@@ -130,6 +131,13 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
       ERP_BASE_URL: ${ERP_BASE_URL}
       ERP_TIMEOUT_SECONDS: "60"
+      # NC65 read-only connection for the BOM raw mirror sync (values live in the
+      # gitignored .env as NC65_*; missing values = feature hidden).
+      NC_HOST: ${NC65_HOST:-}
+      NC_PORT: ${NC65_PORT:-1521}
+      NC_SERVICE: ${NC65_SERVICE:-}
+      NC_USER: ${NC65_USER:-}
+      NC_PASSWORD: ${NC65_PASSWORD:-}
     ports: ["8002:8002"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8002
     healthcheck:
@@ -154,6 +162,12 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       SERVICE_NAME: identity-api
       PORT: "8009"
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      # Approval Engine — identity re-syncs in-flight approvals here after a
+      # PRIMARY role change (department-scoped approve tasks are pinned to a
+      # specific person, so they would otherwise stay with the previous
+      # holder). Missing/wrong value = silent "failed:" in the response.
+      APPROVAL_ENGINE_URL: http://approval-api:8003/approval/v1
     ports: ["8009:8009"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8009
     healthcheck:
@@ -253,6 +267,43 @@ services:
       retries: 5
       start_period: 20s
 
+  mrp-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-mrp-api:${TAG:-latest}
+    build: { context: ., dockerfile: mrp-api/Dockerfile }
+    environment:
+      <<: *db-env
+      APP_NAME: UniOps MRP API
+      APP_VERSION: 0.1.0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      APPROVAL_API_URL: http://approval-api:8003/approval/v1
+      EPMS_API_URL: http://epms-api:8000
+      # Server-to-server mdm-api URL (container DNS name) — see
+      # docker-compose.dev.yml's mrp-api block for why this must NOT be the
+      # browser-facing ${MDM_API_URL} build var.
+      MDM_API_URL: http://mdm-api:8002
+      # Server-to-server identity-api URL (mrp06 follow-up — see
+      # docker-compose.dev.yml's mrp-api block for the same reasoning).
+      IDENTITY_API_URL: http://identity-api:8009
+      # WMS(Flux) Oracle read-only connection (values live in the gitignored
+      # .env as WMS_*; missing values = feature hidden).
+      WMS_HOST: ${WMS_HOST:-}
+      WMS_PORT: ${WMS_PORT:-1521}
+      WMS_SERVICE: ${WMS_SERVICE:-}
+      WMS_USER: ${WMS_USER:-}
+      WMS_PASSWORD: ${WMS_PASSWORD:-}
+    ports: ["8011:8011"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8011
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8011/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   vms-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-vms-api:${TAG:-latest}
@@ -325,6 +376,10 @@ services:
         VITE_MDM_API_URL: ${MDM_API_URL}
         VITE_EXPENSE_API_URL: ${OA_API_URL}
         VITE_FINANCE_API_URL: ${FINANCE_API_URL}
+        VITE_FINANCE_URL: ${FINANCE_URL}
+        # VMS 深链:Task Inbox 里的 vms_* 任务(访客签出 / PPE 备货 / 培训与
+        # PPE 合规确认)锚在 VMS 单据上,EPMS 里没有对应页面,必须整页跳 VMS。
+        VITE_VMS_URL: ${VMS_URL}
     ports: ["5173:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
@@ -345,12 +400,16 @@ services:
         VITE_VMS_URL: ${VMS_URL}
         VITE_FINANCE_URL: ${FINANCE_URL}
         VITE_BOOKING_URL: ${BOOKING_URL}
+        VITE_MRP_URL: ${MRP_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_OA_API_URL: ${OA_API_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}
         VITE_BUDGET_API_URL: ${BUDGET_API_URL}
         VITE_MDM_API_URL: ${MDM_API_URL}
         VITE_FINANCE_API_URL: ${FINANCE_API_URL}
+        # Admin -> WMS Sync talks to mrp-api directly (status, interval, manual
+        # run). ${MRP_API_URL} already exists in .env.prod.example for mrp-web.
+        VITE_MRP_API_URL: ${MRP_API_URL}
     ports: ["5174:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
@@ -372,6 +431,7 @@ services:
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_BUDGET_API_URL: ${BUDGET_API_URL}
         VITE_FINANCE_API_URL: ${FINANCE_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
     ports: ["5175:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
@@ -433,7 +493,27 @@ services:
         VITE_EPMS_URL: ${EPMS_URL}
         VITE_OA_URL: ${OA_URL}
         VITE_VMS_URL: ${VMS_URL}
+        VITE_VMS_API_URL: ${VMS_API_URL}
     ports: ["5177:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  mrp-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-mrp-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: mrp/Dockerfile
+      args:
+        VITE_API_URL: ${MRP_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+        VITE_MDM_API_URL: ${MDM_API_URL}
+    ports: ["5179:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
       interval: 30s

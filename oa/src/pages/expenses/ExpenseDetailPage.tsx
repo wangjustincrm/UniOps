@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom'
+import { useDocTabTitle } from '@/components/BackLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock } from 'lucide-react'
@@ -8,6 +9,7 @@ import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
 import { ActionModal } from '@/components/ui/ActionModal'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -319,6 +321,7 @@ export default function ExpenseDetailPage() {
     queryKey: ['expense', id],
     queryFn: () => api.get<ExpenseClaim>(`/api/v1/expenses/${id}`),
   })
+  useDocTabTitle(claim?.claim_number)
 
   // Shared with AttachmentsCard (same query key) — used to gate submit (EXP-007/TRV-008).
   const { data: attachments = [] } = useQuery<Attachment[]>({
@@ -328,7 +331,7 @@ export default function ExpenseDetailPage() {
 
   // Server-computed permissions — approval roles (Finance BP, etc.) are assignments,
   // not JWT roles, so authorization is resolved server-side via tasks + role_management.
-  const { data: perms } = useQuery<{ is_owner: boolean; can_approve: boolean; can_pay: boolean }>({
+  const { data: perms } = useQuery<{ is_owner: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
     queryKey: ['expense-permissions', id],
     queryFn: () => api.get(`/api/v1/expenses/${id}/permissions`),
   })
@@ -350,6 +353,19 @@ export default function ExpenseDetailPage() {
   const payMutation = useMutation({
     mutationFn: (bankAccountId: string) => api.post(`/api/v1/expenses/${id}/pay`, { bank_account_id: bankAccountId }),
     onSuccess: () => { setActiveAction(null); invalidateAll() },
+  })
+
+  // TRA-only: hard-delete an unapproved Travel Application. `deleteMutation`
+  // above is the attachment delete — different thing.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const deleteClaim = useMutation({
+    mutationFn: () => api.delete(`/api/v1/expenses/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['travel-list'] })
+      navigate('/travel')
+    },
+    onError: (e: unknown) => setDeleteError(e instanceof Error ? e.message : 'Delete failed'),
   })
 
   // TRA-only: regenerate the Travel Application PDF and refresh the attachments card.
@@ -379,6 +395,9 @@ export default function ExpenseDetailPage() {
   const isOwner = perms?.is_owner ?? false
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
+  // False server-side for EXP/MIL/TRV, so this shared component needs no
+  // client-side claim-type check.
+  const canDelete = perms?.can_delete ?? false
 
   // TRA claims live under the Travel Applications section, not Expense Claims.
   const backHref = claim.claim_type === 'TRA' ? '/travel' : '/expenses'
@@ -460,6 +479,15 @@ export default function ExpenseDetailPage() {
                 className="rounded-lg bg-success-600 px-4 py-2 text-sm font-medium text-white hover:bg-success-700"
               >
                 Mark as Processed
+              </button>
+            )}
+            {canDelete && (
+              <button
+                onClick={() => { setDeleteError(''); setConfirmingDelete(true) }}
+                className="inline-flex items-center gap-2 rounded-lg border border-danger-200 px-4 py-2 text-sm font-medium text-danger-600 hover:bg-danger-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
               </button>
             )}
           </div>
@@ -675,6 +703,18 @@ export default function ExpenseDetailPage() {
           loading={actionMutation.isPending}
           error={actionMutation.isError ? (actionMutation.error as Error).message : undefined}
           onConfirm={(comment) => actionMutation.mutate({ action: activeAction, comment })}
+        />
+      )}
+
+      {/* Delete confirmation (unapproved Travel Applications only) */}
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={`Delete ${claim.claim_number}?`}
+          message="This travel application and its approval history will be permanently deleted. This cannot be undone."
+          onConfirm={() => deleteClaim.mutate()}
+          onClose={() => setConfirmingDelete(false)}
+          loading={deleteClaim.isPending}
+          error={deleteError}
         />
       )}
     </div>

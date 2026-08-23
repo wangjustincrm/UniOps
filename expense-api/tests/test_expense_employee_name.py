@@ -14,19 +14,16 @@ import uuid
 import pytest
 from sqlalchemy import text
 
-from tests.conftest import _client, _make_token
+from tests.conftest import IDENTITY_SHADOW_DDL, _client, _make_token
 
 
 async def _ensure_identity_tables(db_session):
     # `users`/`departments` are identity-owned (same physical DB in prod, no ORM
-    # model here). Shadow them so the create endpoint's lookup can resolve names.
-    await db_session.execute(text("DROP TABLE IF EXISTS users CASCADE"))
-    await db_session.execute(text("DROP TABLE IF EXISTS departments CASCADE"))
-    await db_session.execute(text(
-        "CREATE TABLE departments (id uuid PRIMARY KEY, name varchar(255) NOT NULL)"))
-    await db_session.execute(text(
-        "CREATE TABLE users (id uuid PRIMARY KEY, full_name varchar(255) NOT NULL,"
-        " department_id uuid NULL)"))
+    # model here); conftest shadows both for the whole session. Only clear them
+    # here — dropping and recreating with a narrower column set used to leave
+    # later tests querying a table that no longer had the columns they need.
+    await db_session.execute(text("DELETE FROM users"))
+    await db_session.execute(text("DELETE FROM departments"))
     await db_session.commit()
 
 
@@ -42,8 +39,8 @@ async def identity_user(db_session):
         {"u": uid, "d": dept_id})
     await db_session.commit()
     yield str(uid), str(dept_id)
-    await db_session.execute(text("DROP TABLE IF EXISTS users CASCADE"))
-    await db_session.execute(text("DROP TABLE IF EXISTS departments CASCADE"))
+    await db_session.execute(text("DELETE FROM users"))
+    await db_session.execute(text("DELETE FROM departments"))
     await db_session.commit()
 
 
@@ -85,7 +82,15 @@ async def test_create_still_succeeds_when_identity_tables_absent(db_session):
     await db_session.execute(text("DROP TABLE IF EXISTS users CASCADE"))
     await db_session.execute(text("DROP TABLE IF EXISTS departments CASCADE"))
     await db_session.commit()
-    token = _make_token("requester", user_id=str(uuid.uuid4()))
-    async with _client(token) as c:
-        r = await c.post("/api/v1/expenses", json=_exp_body())
-    assert r.status_code == 201, r.text
+    try:
+        token = _make_token("requester", user_id=str(uuid.uuid4()))
+        async with _client(token) as c:
+            r = await c.post("/api/v1/expenses", json=_exp_body())
+        assert r.status_code == 201, r.text
+    finally:
+        # Put the session-wide shadows back — this is the one test that removes
+        # them on purpose, and everything after it needs them.
+        for ddl in IDENTITY_SHADOW_DDL:
+            if ddl.split()[2] in ("users", "departments"):
+                await db_session.execute(text(ddl))
+        await db_session.commit()

@@ -5,11 +5,16 @@ preferred, internal smtp_* as fallback). The From address is always the
 remittance-specific one — never the shared smtp_from — with optional
 credential overrides for servers that reject a mismatched From.
 """
+import logging
 import re
 from dataclasses import dataclass, field
 
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.crud.remittance import normalize_recipients
+
+logger = logging.getLogger(__name__)
 
 # Light sanity guard, not a full validator: logo_data_url is admin-uploaded
 # (system_admin-gated, same trust tier as the rest of remittance_config.template
@@ -41,6 +46,26 @@ class RemittanceSettings:
     smtp_use_tls: bool
     template: dict = field(default_factory=dict)
     logo_data_url: str | None = None
+
+
+def _cc_email(cfg: dict) -> str | None:
+    """The standing CC on every remittance email, as an RFC 5322 address-list.
+
+    A malformed CC does NOT fail the send the way a malformed payee address
+    does — To and Cc are parsed as separate headers, so the payee is still
+    accepted and aiosmtplib only raises when EVERY recipient is refused. The
+    finance copy would simply never arrive, while the log recorded a
+    successful send. Dropping an unusable value (loudly) beats shipping a
+    header that silently swallows it.
+    """
+    normalized, ok = normalize_recipients((cfg.get("cc_email") or "").strip())
+    if not normalized:
+        return None
+    if not ok:
+        logger.error("remittance cc_email is not a usable address list (%r) — "
+                     "sending without a CC", normalized)
+        return None
+    return normalized
 
 
 async def load(db: AsyncSession) -> RemittanceSettings | None:
@@ -81,7 +106,7 @@ async def load(db: AsyncSession) -> RemittanceSettings | None:
         enabled=True,
         from_email=from_email,
         from_name=(cfg.get("from_name") or "").strip(),
-        cc_email=(cfg.get("cc_email") or "").strip() or None,
+        cc_email=_cc_email(cfg),
         smtp_host=host, smtp_port=int(port),
         smtp_user=cfg.get("smtp_user") or user,
         smtp_password=cfg.get("smtp_password") or password,

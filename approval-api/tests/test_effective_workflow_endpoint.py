@@ -28,7 +28,7 @@ from app.models.user import User
 async def _seed_pr_and_cfg(db, *, over_budget: bool, over_budget_mode: str = "fm_gm_opm"):
     """Seed the minimum rows needed: a User (FK target), a PurchaseRequest, and a
     CompanyConfig with the given over_budget_mode.  Returns (pr, cfg)."""
-    requester = User(id=uuid.uuid4(), role="requester", is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
     db.add(requester)
     await db.flush()
 

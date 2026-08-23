@@ -1,4 +1,5 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Loader2, Paperclip, Download, AlertTriangle } from 'lucide-react'
 import { formatAmount, formatDate } from '@/lib/utils'
@@ -171,6 +172,7 @@ function OaDetailView({ id }: { id: string }) {
     queryKey: ['invoice-oa', id],
     queryFn: () => api.get<OaInvoice>(`/api/v1/invoices/${id}`),
   })
+  useDocTabTitle(inv?.invoice_number)
 
   if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-400" /></div>
   if (error || !inv) return <div className="py-12 text-center text-sm text-danger-500">Invoice not found</div>
@@ -231,6 +233,7 @@ function EpmsDetailView({ id }: { id: string }) {
     queryKey: ['invoice-epms', id],
     queryFn: () => epmsApi.get<EpmsInvoice>(`/api/v1/invoices/${id}`),
   })
+  useDocTabTitle(inv?.vendor_invoice_number)
 
   if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-neutral-400" /></div>
   if (error || !inv) return <div className="py-12 text-center text-sm text-danger-500">Invoice not found</div>
@@ -280,17 +283,16 @@ function EpmsDetailView({ id }: { id: string }) {
 
 export default function InvoiceDetailPage() {
   const { source, id } = useParams<{ source: string; id: string }>()
-  const navigate = useNavigate()
 
   const isOa = source === 'oa'
   const isEpms = source === 'epms'
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
-      <button onClick={() => navigate('/invoices')}
+      <BackLink to="/invoices"
         className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 self-start">
         <ArrowLeft className="h-4 w-4" />Back to Invoices
-      </button>
+      </BackLink>
 
       {isOa  && id && <OaDetailView  id={id} />}
       {isEpms && id && <EpmsDetailView id={id} />}

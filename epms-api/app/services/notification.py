@@ -46,6 +46,11 @@ def _task_link(document_type: str, document_id: Any, task_type: str | None = Non
         "pa":          (settings.EPMS_URL,    "/pa/{id}"),
         "gr":          (settings.EPMS_URL,    "/gr/{id}"),
         "invoice":     (settings.EPMS_URL,    "/invoices/{id}"),
+        # Purchase Agreement. Missing here since agr tasks were introduced, so
+        # confirm_period / chase_agreement_invoice emails fell through to the
+        # OA expense-claim default below and deep-linked to /expenses/<agr id>,
+        # which 404s.
+        "agr":         (settings.EPMS_URL,    "/agreements/{id}"),
         "pa_dir":      (settings.OA_URL,      "/pa/{id}"),          # OA Direct PA detail
         "budget_plan": (settings.FINANCE_URL, "/budget/plans/{id}"),
         "vms_visit":   (settings.VMS_URL,     ""),                  # VMS routes by role from its root
@@ -204,7 +209,16 @@ async def _dispatch(
     recipients: list[User] = []
     if shared_mailbox is None:
         if task.assigned_user_id:
-            user = await db.get(User, task.assigned_user_id)
+            recipient_id = task.assigned_user_id
+            # Substitution, not widening: the delegator is away, so mailing
+            # them is noise. active_delegate_id already returns None when the
+            # stand-in is deactivated, which falls back to the delegator.
+            if (task.type or "").startswith("approve"):
+                from app.core.delegation import active_delegate_id
+                stand_in = await active_delegate_id(db, task.assigned_user_id)
+                if stand_in is not None:
+                    recipient_id = stand_in
+            user = await db.get(User, recipient_id)
             if user and user.is_active:
                 recipients.append(user)
         elif task.assigned_role == "requester":
@@ -418,6 +432,7 @@ def _infer_template(task_type: str, is_followup: bool) -> str:
         "settle_prepayment": "prepayment_settlement_overdue",
         "match_invoice": "match_invoice_assigned",
         "review_match": "match_review_request",
+        "resolve_exception": "exception_resolution_request",
     }.get(task_type, "pr_approval_request")
 
 
@@ -467,7 +482,8 @@ async def send_admin_alert(subject: str, body_html: str, db: AsyncSession | None
 
 def fire_and_forget_admin_alert(subject: str, body_html: str) -> None:
     """Schedule an admin alert email in the background (own DB session)."""
-    asyncio.create_task(send_admin_alert(subject, body_html))
+    from app.core.background import spawn
+    spawn(send_admin_alert(subject, body_html), name=f"admin_alert:{subject[:40]}")
 
 
 # ── Convenience fire-and-forget helper ───────────────────────────────────────
@@ -480,7 +496,8 @@ def fire_and_forget_notify(task: Task, db: AsyncSession, **kwargs) -> None:
     The background coroutine creates its own DB session to avoid
     sharing the request session after it closes.
     """
-    asyncio.create_task(_notify_in_background(task.id, **kwargs))
+    from app.core.background import spawn
+    spawn(_notify_in_background(task.id, **kwargs), name=f"notify:{task.id}")
 
 
 async def _notify_in_background(task_id, **kwargs) -> None:

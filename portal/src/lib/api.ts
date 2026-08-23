@@ -204,6 +204,41 @@ export const financeApi = {
   delete: <T = void>(path: string)          => financeRequest<T>('DELETE', path),
 }
 
+// ── mrp-api ───────────────────────────────────────────────────────────────────
+// Portal reaches MRP for exactly one thing: the WMS sync controls in Admin
+// (status, the interval parameter, the manual run). MRP's own screens live in
+// the separate mrp front-end at VITE_MRP_URL — this is the API host, a
+// different value, wired as VITE_MRP_API_URL in portal/Dockerfile and both
+// docker-compose files. A missing build arg here degrades to localhost:8011,
+// which in a browser on somebody's desk means the section never loads; that
+// exact omission has shipped three times in this repo, so the arg is added in
+// all four places or not at all.
+const MRP_API = (import.meta.env.VITE_MRP_API_URL as string | undefined) || 'http://localhost:8011'
+
+async function mrpRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${MRP_API}/api/v1${path}`, {
+    method,
+    headers: authHeaders(!!body),
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (res.status === 401 && getToken()) {
+    globalSignOut()
+    throw new Error('Session expired. Please log in again.')
+  }
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(extractDetail(errBody.detail, res.status))
+  }
+  if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T
+  return res.json()
+}
+
+export const mrpApi = {
+  get:  <T>(path: string)                => mrpRequest<T>('GET',  path),
+  post: <T>(path: string, body: unknown) => mrpRequest<T>('POST', path, body),
+  put:  <T>(path: string, body: unknown) => mrpRequest<T>('PUT',  path, body),
+}
+
 /** POST a File as multipart/form-data to Finance API (system CSV import convention). */
 export async function financeUpload<T>(path: string, file: File): Promise<T> {
   const form = new FormData()

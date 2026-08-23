@@ -10,12 +10,14 @@ from app.crud._numbering import next_number
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
+from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
+from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.po import PO_WORKFLOW, PlaceOrderRequest, PoActionRequest, PoCreate, PoUpdate
+from app.schemas.po import PO_WORKFLOW, PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
 
 
@@ -233,6 +235,105 @@ async def update(
     await db.flush()
     await db.refresh(po)
     return po
+
+
+# ── Imported-PO buyer details (NC mirror, status='issued' only) ───────────────
+
+async def update_imported_details(
+    db: AsyncSession,
+    po: PurchaseOrder,
+    payload: PoImportedDetailsUpdate,
+) -> tuple[PurchaseOrder, dict, dict]:
+    """Apply buyer-supplied detail to an NC-imported PO.
+
+    Only writes the columns named in PoImportedDetailsUpdate. subtotal is never
+    touched: a tax-rate change re-derives tax_amount/total from the existing
+    subtotal so the header stays internally consistent.
+
+    Returns (po, before, after) holding only the fields this call actually
+    changed, for the caller's audit-log entry. Raises ValueError if a line id
+    does not belong to this PO.
+    """
+    before: dict = {}
+    after: dict = {}
+    # pydantic v2: which keys the caller's JSON body actually contained. A key
+    # present with an explicit null must clear a nullable column; a key
+    # absent from the body must leave the column untouched — those are not
+    # the same thing, and collapsing them (checking `value is None` alone)
+    # made a nullable field impossible to ever clear from the frontend.
+    fields_set = payload.model_fields_set
+
+    def _set(field: str, value, *, nullable: bool = True) -> None:
+        if field not in fields_set:
+            return
+        if value is None and not nullable:
+            # NOT NULL column (is_prepaid) — an explicit null on the wire has
+            # no column state to map to, so it is a no-op, not a clear.
+            return
+        old = getattr(po, field)
+        if old == value:
+            return
+        before[field] = str(old) if old is not None else None
+        after[field] = str(value) if value is not None else None
+        setattr(po, field, value)
+
+    for field in ("expected_delivery", "delivery_address", "incoterms",
+                  "tax_code", "buyer_notes"):
+        _set(field, getattr(payload, field))
+    _set("is_prepaid", payload.is_prepaid, nullable=False)
+
+    # tax_rate is NOT NULL too (default 0), so an explicit null is likewise a
+    # no-op rather than a clear — only a present, non-null rate is applied.
+    if "tax_rate" in fields_set and payload.tax_rate is not None and payload.tax_rate != po.tax_rate:
+        before["tax_rate"] = str(po.tax_rate)
+        before["tax_amount"] = str(po.tax_amount)
+        before["total"] = str(po.total)
+        po.tax_rate = payload.tax_rate
+        po.tax_amount = (po.subtotal * payload.tax_rate).quantize(Decimal("0.01"))
+        po.total = po.subtotal + po.tax_amount
+        after["tax_rate"] = str(po.tax_rate)
+        after["tax_amount"] = str(po.tax_amount)
+        after["total"] = str(po.total)
+
+    by_id = {line.id: line for line in po.line_items}
+    line_changes: list[dict] = []
+    for patch in payload.lines:
+        line = by_id.get(patch.id)
+        if line is None:
+            # Never a 500 and never a silent no-op: a line id from another PO is
+            # a caller error worth surfacing, and letting it through would make
+            # this endpoint a cross-document write primitive.
+            raise ValueError(f"Line {patch.id} does not belong to PO {po.number}")
+        delta: dict = {}
+        line_fields_set = patch.model_fields_set
+        if "supplier_item_id" in line_fields_set and line.supplier_item_id != patch.supplier_item_id:
+            delta["supplier_item_id"] = [line.supplier_item_id, patch.supplier_item_id]
+            line.supplier_item_id = patch.supplier_item_id
+        if "sample" in line_fields_set and line.sample != patch.sample:
+            delta["sample"] = [line.sample, patch.sample]
+            line.sample = patch.sample
+        if delta:
+            line_changes.append({"line_id": str(patch.id), **delta})
+    if line_changes:
+        after["lines"] = line_changes
+
+    if "tax_rate" in after:
+        # Marks the PO for nc_purchase_sync/writer.py's tax-rate guard, which
+        # reads this column as "the tax rate was set by hand" and keeps it
+        # (re-deriving tax_amount/total from NC's fresh subtotal) instead of
+        # letting NC's own tax_rate/tax_amount/total overwrite it. Gated
+        # specifically on the tax rate having changed — NOT on `if after:` —
+        # because an edit that only touches e.g. Incoterms or a line's
+        # Supplier Item ID must not freeze NC's tax on this PO forever.
+        before["buyer_edited_at"] = (
+            po.buyer_edited_at.isoformat() if po.buyer_edited_at is not None else None
+        )
+        po.buyer_edited_at = datetime.now(timezone.utc)
+        after["buyer_edited_at"] = po.buyer_edited_at.isoformat()
+
+    await db.flush()
+    await db.refresh(po)
+    return po, before, after
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
@@ -524,17 +625,42 @@ async def get_approval_events(
 
 
 async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
-    """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已挂 GR(gr_id 非空)。
+    """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已收货。
 
     这是 PA 收货闸门 / create_pa 触发 / confirm_receipt 停发 的统一真相源。
     GR 一创建即由 _autofill_gr_to_matched_invoices 写 gr_id → 立即达成 3-way,
     不要求收货确认(collected/confirmed)。
+
+    发票挂到 PO 有两种方式,两种都算(与 crud.invoice.get_all 的可见性口径、
+    api.v1.pa 的「发票是否属于本 PO」校验一致):
+      1. 表头直连 Invoice.po_id —— 收货证据用发票自己的 gr_id(原口径不变)。
+      2. 行级分摊 invoice_po_allocations(一票多 PO)—— 此时发票的 gr_id 可能
+         指向**别的** PO 的 GR,拿它当本 PO 的收货证据会放行未收货的付款,
+         所以要求本 PO 自己有 GR。
+    只认表头会让分摊 PO 永远拿不到 create_pa 且被闸门 422 挡住(生产
+    PO-400-2607-12:发票表头是 PO-400-2607-11,242 元静默漏付)。
     """
-    row = (await db.execute(
+    header = (await db.execute(
         select(Invoice.id).where(
             Invoice.po_id == po_id,
             Invoice.status == "matched",
             Invoice.gr_id.is_not(None),
         ).limit(1)
     )).scalar_one_or_none()
-    return row is not None
+    if header is not None:
+        return True
+
+    allocated = (await db.execute(
+        select(InvoicePoAllocation.invoice_id)
+        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+        .where(
+            InvoicePoAllocation.po_id == po_id,
+            Invoice.status == "matched",
+        ).limit(1)
+    )).scalar_one_or_none()
+    if allocated is None:
+        return False
+    own_gr = (await db.execute(
+        select(GoodsReceipt.id).where(GoodsReceipt.po_id == po_id).limit(1)
+    )).scalar_one_or_none()
+    return own_gr is not None

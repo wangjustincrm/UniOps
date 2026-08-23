@@ -54,6 +54,28 @@ export function financeHandoffHref(path: string): string {
 }
 
 /**
+ * VMS module FRONTEND origin. The shared `tasks` table carries VMS-owned rows
+ * (visit approvals, visitor check-out, PPE prep, training/PPE compliance), which
+ * therefore surface in the EPMS Task Inbox too — but EPMS has no page for them,
+ * so they must jump out to VMS. Build arg VITE_VMS_URL; see epms/Dockerfile
+ * (ARG **and** ENV — an ARG alone does not survive into the build) and the
+ * epms-web build args in docker-compose.prod.yml.
+ */
+export const VMS_URL = (import.meta.env.VITE_VMS_URL as string | undefined) || 'http://localhost:5176'
+
+/**
+ * Full-page URL into the VMS frontend with the same `#__session=` handoff Portal
+ * uses to launch VMS (consumed by vms/src/main.tsx's bootstrapFromPortal).
+ */
+export function vmsHandoffHref(path: string): string {
+  const { token, refreshToken, user } = useAuthStore.getState()
+  const base = `${VMS_URL}${path}`
+  if (!token || !user) return base
+  const session = encodeUtf8Base64(JSON.stringify({ token, refreshToken: refreshToken ?? '', user }))
+  return `${base}#__session=${session}`
+}
+
+/**
  * Expense/OA microservice base URL (expense-api :8006) — unified invoice storage
  * + attachments. Browser-reachable absolute URL: the dev `/oa-api` Vite proxy is
  * dead inside the dockerized frontend (proxies to container-localhost:8006).

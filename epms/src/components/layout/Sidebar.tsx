@@ -12,6 +12,8 @@ import {
   Building2,
   FolderTree,
   Wrench,
+  FileSignature,
+  Receipt,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -55,6 +57,12 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Invoices', href: '/invoices', icon: <FileText className="h-4 w-4" />, permission: 'view_invoice' },
       { label: 'Vendor Credits', href: '/vendor-credits', icon: <FileText className="h-4 w-4" />, permission: 'view_invoice' },
       { label: 'Payment Applications', href: '/pa', icon: <CreditCard className="h-4 w-4" />, permission: 'view_pa' },
+      { label: 'Agreements', href: '/agreements', icon: <FileSignature className="h-4 w-4" />, permission: 'epms.agreement.read' },
+      // epms.agreement.read (read), NOT epms.agreement.receipt.write — anyone
+      // who can see an agreement should be able to see its receipts too,
+      // otherwise a read-only role (auditor, finance_bp, etc.) can reach
+      // /agreements but never finds this entry in the sidebar at all.
+      { label: 'Agreement Receipts', href: '/receipts', icon: <Receipt className="h-4 w-4" />, permission: 'epms.agreement.read' },
     ],
   },
   // NOTE: FINANCE section (Budget Dashboard / Budget Plans / Account Catalog)

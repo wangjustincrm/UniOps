@@ -13,8 +13,6 @@ export interface WorkflowConfig {
 export interface ServiceGrSlaConfig {
   reminder_days: number
   manager_escalation_days: number
-  gm_opm_escalation_days: number
-  fm_alert_days: number
 }
 
 export interface GrNotificationSlaConfig {
@@ -120,6 +118,14 @@ export interface CustomRole {
   description: string
   is_active: boolean
   is_builtin: boolean
+  /**
+   * False for ADDITIONAL-ONLY roles (erp_pa_officer / payment_officer) — held
+   * through identity's user_roles, never written to users.role. Source of truth
+   * is identity's `role_defs.assignable_as_primary`; epms-api passes it through
+   * GET /config/roles and keeps it false in its identity-down fallback.
+   * Optional so an older backend degrades to "everything selectable".
+   */
+  assignable_as_primary?: boolean
 }
 
 export interface CreateCustomRoleBody {
@@ -194,6 +200,9 @@ export interface CompanyConfig {
     pr: WorkflowNodeDef[]
     po: WorkflowNodeDef[]
     pa: WorkflowNodeDef[]
+    // Agreement (agr) workflow — admin-configurable in Portal, seeded from
+    // AGR_WORKFLOW server-side. Optional: legacy CompanyConfig rows predate it.
+    agr?: WorkflowNodeDef[]
   }
 }
 

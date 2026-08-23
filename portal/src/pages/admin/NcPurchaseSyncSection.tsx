@@ -39,6 +39,11 @@ export interface NcPurchaseSyncRun {
   gr_lines_upserted: number
   skipped_no_vendor: number
   skipped_consumed: number
+  /** Orders mirrored under a suffixed number because the ERP number was taken.
+   *  Normal — NC issues the same vbillcode to genuinely different orders. */
+  renamed_number_collision: number
+  /** Orders that reached UniOps not at all. Should always be 0. */
+  skipped_number_collision: number
   error: string | null
 }
 
@@ -47,6 +52,11 @@ export interface NcPurchaseSyncStatus {
   can_sync: boolean
   can_set_cutover?: boolean
   cutover: string | null
+  /** Minutes between automatic syncs; 0 = the schedule is off and this button
+   *  is the only trigger. */
+  interval_minutes: number
+  /** When the scheduler will next pick it up. Null when the schedule is off. */
+  next_due_at: string | null
   current_run: NcPurchaseSyncRun | null
   last_run: NcPurchaseSyncRun | null
 }
@@ -60,8 +70,47 @@ function RunCounters({ run }: { run: NcPurchaseSyncRun }) {
       <span>{Number(run.gr_lines_upserted).toLocaleString()} GR lines</span>
       {run.skipped_no_vendor > 0 && <span>{Number(run.skipped_no_vendor).toLocaleString()} skipped (no vendor)</span>}
       {run.skipped_consumed > 0 && <span>{Number(run.skipped_consumed).toLocaleString()} skipped (consumed)</span>}
+      {run.renamed_number_collision > 0 && (
+        // Not an error: the ERP reuses a document number across genuinely
+        // different orders, and UniOps numbers must be unique. Shown because a
+        // PO whose number is not the ERP's is a surprise when somebody goes
+        // looking for it.
+        <span title="The ERP number was already taken, so these orders were mirrored under a numbered suffix">
+          {Number(run.renamed_number_collision).toLocaleString()} renumbered
+        </span>
+      )}
+      {run.skipped_number_collision > 0 && (
+        // This one IS an error: the order is not in UniOps at all. It used to
+        // happen on every collision and reached nothing but a container log.
+        <span className="text-danger-600"
+              title="No free document number — these orders are NOT in UniOps">
+          {Number(run.skipped_number_collision).toLocaleString()} skipped (no free number)
+        </span>
+      )}
     </div>
   )
+}
+
+/** Render an instant from the API in the reader's own timezone.
+ *
+ *  The API sends `timestamptz` values as ISO strings carrying +00:00, and this
+ *  card used to print `started_at.slice(0, 16)` — the raw UTC text with the
+ *  offset chopped off. On a UTC-4 plant that reads four hours into the future:
+ *  a sync that ran at 09:17 said 13:17, right next to a "next run" line that
+ *  was converted properly, so the same card disagreed with itself.
+ *
+ *  24-hour, no "a.m." — one format for every instant in this screen.
+ *  ★ Only for instants. Date-only values must NOT go through `new Date()` (see
+ *  the project-wide UTC-4 off-by-one-day bug); `cutover` is deliberately still
+ *  rendered by slicing its string. */
+function localTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return d.toLocaleString('en-CA', {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
 }
 
 function RunSummary({ run, label }: { run: NcPurchaseSyncRun; label: string }) {
@@ -69,7 +118,7 @@ function RunSummary({ run, label }: { run: NcPurchaseSyncRun; label: string }) {
     <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
       <span className="font-medium text-neutral-700">{label}:</span>{' '}
       {run.mode} · {run.status}
-      {run.started_at && ` · ${run.started_at.slice(0, 16).replace('T', ' ')}`}
+      {run.started_at && ` · ${localTime(run.started_at)}`}
       {run.watermark_to && <> · watermark {run.watermark_to}</>}
       {run.status !== 'running' && <RunCounters run={run} />}
       {run.error && <div className="mt-1 text-red-600">{run.error}</div>}
@@ -85,6 +134,8 @@ export function NcPurchaseSyncSection() {
   const [starting, setStarting] = useState(false)
   const [cutoverEdit, setCutoverEdit] = useState<string | null>(null)
   const [cutoverSaving, setCutoverSaving] = useState(false)
+  const [intervalEdit, setIntervalEdit] = useState<string | null>(null)
+  const [intervalSaving, setIntervalSaving] = useState(false)
 
   const { data: status } = useQuery({
     queryKey: ['nc-purchase-sync-status'],
@@ -106,6 +157,26 @@ export function NcPurchaseSyncSection() {
       setCutoverSaving(false)
     }
   }
+  async function saveInterval() {
+    if (intervalEdit === null) return
+    const minutes = Number(intervalEdit)
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440) {
+      setErr('Sync every: a whole number of minutes between 0 and 1440 (0 turns it off).')
+      return
+    }
+    setIntervalSaving(true)
+    setErr(null)
+    try {
+      await epmsApi.patch('/admin/nc-purchase-sync/interval', { minutes })
+      setIntervalEdit(null)
+      qc.invalidateQueries({ queryKey: ['nc-purchase-sync-status'] })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save the interval')
+    } finally {
+      setIntervalSaving(false)
+    }
+  }
+
   const running = status?.current_run ?? null
 
   const start = async () => {
@@ -168,6 +239,48 @@ export function NcPurchaseSyncSection() {
               </div>
               <p className="mt-1 text-[11px] text-neutral-400">
                 Only NC purchase orders with an order date on/after this are imported. Run a Full reload after changing it.
+              </p>
+            </div>
+
+            {/* The schedule. Until this existed the mirror only moved when
+                somebody opened this page and pressed the button, so how current
+                UniOps' purchase data was depended on who remembered. */}
+            <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-neutral-700">Sync every:</span>
+                <span>
+                  {status.interval_minutes === 0
+                    ? 'off — manual only'
+                    : `${status.interval_minutes} min`}
+                </span>
+                {status.can_set_cutover && (
+                  <>
+                    <span className="mx-1 text-neutral-300">|</span>
+                    <input
+                      type="number" min={0} max={1440} step={1}
+                      className="w-20 rounded border border-neutral-300 px-2 py-1 text-xs"
+                      value={intervalEdit ?? String(status.interval_minutes)}
+                      onChange={(e) => setIntervalEdit(e.target.value)}
+                    />
+                    <span className="text-neutral-400">minutes</span>
+                    <button
+                      type="button"
+                      onClick={saveInterval}
+                      disabled={intervalSaving || intervalEdit === null
+                                || intervalEdit === String(status.interval_minutes)}
+                      className="rounded bg-primary-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+                    >
+                      {intervalSaving ? 'Saving…' : 'Save'}
+                    </button>
+                  </>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-neutral-400">
+                Automatic runs are always incremental — a Full reload is destructive and
+                stays manual. 0 turns automatic sync off.
+                {status.next_due_at && status.interval_minutes > 0 && (
+                  <> Next run around {localTime(status.next_due_at)}.</>
+                )}
               </p>
             </div>
 

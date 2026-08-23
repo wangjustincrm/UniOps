@@ -282,7 +282,7 @@ async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUser
     shared tasks table (same contract as the expense-claim endpoint) plus the user's
     role union (JWT base role ∪ identity user_roles additional roles), since approval
     roles (Finance BP, etc.) are assignments, not JWT role claims."""
-    from app.api.v1.expenses import _CAN_PAY, _can_act_on_claim
+    from app.api.v1.expenses import _PAY_ASSIGNED, _PAY_PRIMARY, _can_act_on_claim
 
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
@@ -301,12 +301,9 @@ async def get_pa_permissions(pa_id: uuid.UUID, db: SessionDep, user: CurrentUser
     can_pay = False
     if pa.status == "approved":
         codes = await _user_role_codes(db, user_id, role)
-        can_pay = (
-            is_admin
-            or role in _CAN_PAY
-            or "finance_bp" in codes
-            or "finance_manager" in codes
-        )
+        # Mirrors finance-api's authoritative gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED)
+        # — NOT _CAN_PAY, which is a visibility set and still includes ap_clerk.
+        can_pay = role in _PAY_PRIMARY or bool(codes & _PAY_ASSIGNED)
 
     return PaPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)
 
@@ -354,8 +351,11 @@ async def pa_action(
     pa = await pa_crud.get_by_id(db, pa_id)
     if not pa:
         raise HTTPException(status_code=404, detail="PA not found")
-    # PA-DIR (no linked PO) uses its own configurable workflow; PA-PO uses "pa".
-    action_key = "pa_dir" if pa.po_id is None else "pa"
+    # PA-DIR uses its own configurable workflow; everything else uses "pa".
+    # NOT `po_id is None` — an EPMS Purchase Agreement PA also has no PO, and
+    # approving it through workflow_defs["pa_dir"] would run it down the wrong
+    # chain entirely. See PaymentApplication.is_direct.
+    action_key = "pa_dir" if pa.is_direct else "pa"
     # NOTE: "process" (payment) is intentionally NOT in PaActionRequest's
     # Literal — OA's only payment entry is POST /pa/{id}/pay, which forwards
     # to finance-api's unified executor (Phase 0-B1.5).
@@ -406,7 +406,7 @@ async def record_payment(
         # explained on the remittance advice and in
         # GET /finance/v1/vendor-credits/{id}/applications.
         await finance_client.execute_payment(
-            doc_kind="pa_dir" if pa.po_id is None else "pa",
+            doc_kind="pa_dir" if pa.is_direct else "pa",
             doc_id=pa_id, bearer_token=token,
             bank_account_id=body.bank_account_id,
         )

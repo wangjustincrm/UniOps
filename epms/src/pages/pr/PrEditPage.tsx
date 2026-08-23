@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, X, Calendar, Search } from 'lucide-react'
@@ -7,12 +8,16 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
+import { budgetAccountError } from '@/lib/prBudget'
 import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useBalance, useFactors } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { useDepartments } from '@/hooks/useDepartments'
 import { usePr, useUpdatePr, usePrAction } from '@/hooks/usePrs'
+import { usePrAttachments, useUploadAttachment, useDeleteAttachment } from '@/hooks/usePrAttachments'
+import { prAttachmentService } from '@/services/prAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
 import type { ApiVendor } from '@/services/vendors'
@@ -43,6 +48,7 @@ export default function PrEditPage() {
   const { user } = useAuthStore()
   const { data: config } = useConfig()
   const { data: pr, isLoading } = usePr(id ?? '')
+  useDocTabTitle(pr?.number && `Edit ${pr.number}`)
   const { data: budgetData } = useBudgetOverview()
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string | undefined>(undefined)
   const { data: departmentsData } = useDepartments()
@@ -53,11 +59,18 @@ export default function PrEditPage() {
   })
   const updatePr = useUpdatePr()
   const prAction = usePrAction(id ?? '')
+  // Attachments belong to a PR that already exists, so upload/delete hit the
+  // server right away instead of being staged until Save (same semantics as the
+  // Detail page's Attachments tab).
+  const { data: attachments = [] } = usePrAttachments(id ?? '')
+  const uploadAttachment = useUploadAttachment(id ?? '')
+  const deleteAttachment = useDeleteAttachment(id ?? '')
 
   // ── form state ────────────────────────────────────────────────────────────
   const [title, setTitle] = useState('')
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [requiredBy, setRequiredBy] = useState('')
+  const [serviceCompletionDate, setServiceCompletionDate] = useState('')
   const [deliveryAddress, setDeliveryAddress] = useState('')
   const [notes, setNotes] = useState('')
   const [projectCode, setProjectCode] = useState('')
@@ -67,6 +80,7 @@ export default function PrEditPage() {
   const [factorCombo, setFactorCombo] = useState<Record<string, string>>({})
   const [factorComboError, setFactorComboError] = useState<string | null>(null)
   const [departmentError, setDepartmentError] = useState<string | null>(null)
+  const [budgetError, setBudgetError] = useState<string | null>(null)
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
 
@@ -106,6 +120,7 @@ export default function PrEditPage() {
     setTitle(pr.title)
     setCurrency(pr.currency as Currency)
     setRequiredBy(pr.required_by ?? '')
+    setServiceCompletionDate(pr.service_completion_date ?? '')
     setDeliveryAddress(pr.delivery_address ?? '')
     setNotes(pr.notes ?? '')
     setProjectCode(pr.project_code ?? '')
@@ -205,6 +220,7 @@ export default function PrEditPage() {
         ? factorCombo
         : undefined,
     required_by: requiredBy || undefined,
+    service_completion_date: serviceCompletionDate || undefined,
     delivery_address: deliveryAddress || undefined,
     notes: notes || undefined,
     is_prepaid: isPrepaid,
@@ -237,6 +253,7 @@ export default function PrEditPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!id || !title.trim() || !requiredBy) return
+    if ((procurementType === 4 || procurementType === 6) && !serviceCompletionDate) return
     const errs = validateLineItems(lineItems)
     if (Object.keys(errs).length > 0) { setLineErrors(errs); return }
     if (estimatedAmount === 0) { setLineErrors({ '0': { unitPrice: 'At least one line must have a price' } }); return }
@@ -247,6 +264,15 @@ export default function PrEditPage() {
     // can't resolve a dept_manager for a NULL department.
     if (!selectedDepartmentId) {
       setDepartmentError('Department is required')
+      return
+    }
+    // Budget account is required for every type except Type 1 — matches the
+    // epms-api submit guard, which 409s without it. Legacy PRs saved before the
+    // guard existed hit this on their next submit; Save as Draft stays lenient
+    // so they can still be worked on.
+    const budgetErr = budgetAccountError(pr?.type, selectedCostCenterId, selectedL2)
+    if (budgetErr) {
+      setBudgetError(budgetErr)
       return
     }
     // Factor combo: when the selected Account has decomposition factors, every
@@ -282,9 +308,9 @@ export default function PrEditPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <p className="text-sm text-neutral-400">This PR cannot be edited.</p>
-        <Link to={`/pr/${id}`} className="mt-4">
+        <BackLink to={`/pr/${id}`} className="mt-4">
           <Button variant="secondary">Back to PR</Button>
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -428,7 +454,7 @@ export default function PrEditPage() {
               </select>
               <select
                 value={selectedL2}
-                onChange={(e) => { setSelectedL2(e.target.value); setFactorCombo({}); setFactorComboError(null) }}
+                onChange={(e) => { setSelectedL2(e.target.value); setFactorCombo({}); setFactorComboError(null); setBudgetError(null) }}
                 disabled={ccL2Accounts.length === 0}
                 className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
               >
@@ -437,6 +463,9 @@ export default function PrEditPage() {
                   <option key={l2.id} value={l2.code}>{l2.code} — {l2.name}</option>
                 ))}
               </select>
+              {budgetError && (
+                <p className="text-xs text-danger-600">{budgetError}</p>
+              )}
             </div>
 
             {/* Factor selectors — shown when the chosen Budget Account has factors configured */}
@@ -560,6 +589,23 @@ export default function PrEditPage() {
               </div>
             </FormField>
 
+            {/* Service/Project Expected Completion Date — Types 4 and 6.
+                Feeds app/tasks/service_gr_due.py, which nudges the requester to
+                create a GR once this date passes. Required on submit server-side. */}
+            {(procurementType === 4 || procurementType === 6) && (
+              <FormField label="Service/Project Expected Completion Date" required htmlFor="serviceCompletionDate">
+                <div className="relative">
+                  <Input
+                    id="serviceCompletionDate"
+                    type="date"
+                    value={serviceCompletionDate}
+                    onChange={(e) => setServiceCompletionDate(e.target.value)}
+                  />
+                  <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+                </div>
+              </FormField>
+            )}
+
             {/* Project Code — Type 6 only */}
             {procurementType === 6 && (
               <FormField label="Project No." required htmlFor="projectCode">
@@ -611,6 +657,23 @@ export default function PrEditPage() {
             {Object.keys(lineErrors).length > 0 && (
               <p className="mt-2 text-xs text-danger-600">Please fix the errors in the line items above.</p>
             )}
+          </div>
+
+          {/* Attachments */}
+          <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-3">
+            <div>
+              <h2 className="text-base font-semibold text-neutral-900">Attachments</h2>
+              <p className="text-xs text-neutral-400 mt-1">Uploads and removals are saved immediately.</p>
+            </div>
+            <AttachmentsEditor
+              inputId="pr-edit-file-upload"
+              attachments={attachments}
+              isUploading={uploadAttachment.isPending}
+              isDeleting={deleteAttachment.isPending}
+              onUpload={(file) => uploadAttachment.mutateAsync(file)}
+              onDelete={(attId) => deleteAttachment.mutate(attId)}
+              onDownload={(att) => { void prAttachmentService.download(id!, att.id, att.filename).catch(() => {}) }}
+            />
           </div>
 
           {/* Action bar */}

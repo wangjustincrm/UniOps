@@ -13,7 +13,16 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
+  Network, Repeat,
 } from 'lucide-react'
+
+// MRP has no single landing tile like the other modules — Portal links
+// directly into three of its routes (Task 8 scaffold: Forecast, Consignment
+// Stock, BOM Explorer), each permission-gated on its own. Resolved with
+// import.meta.env directly (rather than via HrefContext, whose oa/vms/etc.
+// fields are populated by PortalSidebar/PortalPageLayout/PortalHome) so this
+// file is the single place that needs to change to wire the new module in.
+export const MRP_URL = (import.meta.env.VITE_MRP_URL as string | undefined) || 'http://localhost:5179'
 
 export interface NavItemDef {
   label: string
@@ -53,6 +62,12 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
     ],
   },
   {
+    // Applications, not pages. Each entry opens a module at its own root and
+    // that module's own sidebar takes over from there. Do not add a deep link
+    // to a single screen here — Agreements was listed for a while and it made
+    // one EPMS page look like a sibling of EPMS itself, reachable from Portal
+    // while every other EPMS page was not. It lives in the EPMS sidebar
+    // (epms/src/components/layout/Sidebar.tsx), gated on the same permission.
     title: 'MODULES',
     items: [
       { label: 'Procurement', icon: ShoppingCart, href: 'epms' },
@@ -60,6 +75,15 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'VMS',         icon: UserCheck,    href: 'vms' },
       { label: 'Finance',     icon: Landmark,     href: 'finance', anyPermission: FINANCE_ACCESS_PERMS },
       { label: 'Meeting Rooms', icon: CalendarClock, href: 'booking', anyPermission: BOOKING_ACCESS_PERMS },
+      // MRP is a single module entry like its siblings — its own sidebar owns
+      // the page-level navigation (Forecast / Consignment Stock / BOM Explorer).
+      // Gated on mrp.report.view, not mrp.demand.write: every read the MRP
+      // pages perform on load requires mrp.report.view, and packages/authz has
+      // no write⇒read implication — a planner granted only mrp.demand.write
+      // (as the nav previously advertised) would see the entry appear, then
+      // have every fetch 403 forever (I5, final-phase review). mrp.demand.write
+      // is still required for the in-page write actions.
+      { label: 'MRP',         icon: Network,      href: 'mrp', permission: 'mrp.report.view' },
     ],
   },
   {
@@ -69,6 +93,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       { label: 'Data Maintenance', icon: Database,    href: 'portal:/admin/data-maintenance', permission: 'data_maintenance' },
       { label: 'Access Control',   icon: ShieldCheck, href: 'portal:/admin/access-control',   adminOnly: true },
       { label: 'Approval Routing', icon: GitBranch,   href: 'portal:/admin/approval-routing', adminOnly: true },
+      { label: 'Approval Delegation', icon: Repeat,   href: 'portal:/admin/approval-delegation', adminOnly: true },
     ],
   },
 ]
@@ -109,11 +134,19 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   if (key === 'vms')  return ctx.vmsHref
   if (key === 'finance') return ctx.financeHref
   if (key === 'booking') return ctx.bookingHref
+  // Bare 'mrp' lands on the module root, which redirects to its default page —
+  // same shape as the sibling module entries above. The session fragment is
+  // still needed because MRP is a separate origin.
+  if (key === 'mrp') return ctx.session ? `${MRP_URL}/#__session=${ctx.session}` : MRP_URL
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {
     const path = key.slice('epms:'.length)
     return ctx.session ? `${ctx.epmsUrl}${path}#__session=${ctx.session}` : `${ctx.epmsUrl}${path}`
+  }
+  if (key.startsWith('mrp:')) {
+    const path = key.slice('mrp:'.length)
+    return ctx.session ? `${MRP_URL}${path}#__session=${ctx.session}` : `${MRP_URL}${path}`
   }
   return '#'
 }

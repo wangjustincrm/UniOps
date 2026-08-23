@@ -31,21 +31,20 @@ export const paAttachmentService = {
     return res.json()
   },
 
-  download: (paId: string, attId: string, filename: string) => {
-    fetch(`${base()}/pa/${paId}/attachments/${attId}/download`, {
+  download: async (paId: string, attId: string, filename: string): Promise<void> => {
+    const res = await fetch(`${base()}/pa/${paId}/attachments/${attId}/download`, {
       headers: token() ? { Authorization: `Bearer ${token()}` } : {},
-    }).then(async (res) => {
-      if (!res.ok) return
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
     })
+    if (!res.ok) throw new Error(`Download failed: ${res.status}`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
   },
 
   delete: async (paId: string, attId: string): Promise<void> => {

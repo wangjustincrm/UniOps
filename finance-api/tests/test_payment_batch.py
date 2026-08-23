@@ -38,10 +38,11 @@ async def client(db_session):
 
 
 def _pa(amount="100.00", status="approved", currency="CAD", po_id=None,
-        pa_type="regular", invoice_ids=None) -> PaymentApplication:
+        pa_type="regular", invoice_ids=None, agreement_id=None) -> PaymentApplication:
     return PaymentApplication(
         pa_number=f"PA-{uuid.uuid4().hex[:8]}", title="t", pa_type=pa_type,
         status=status, po_id=po_id, po_number="PO-1" if po_id else None,
+        agreement_id=agreement_id,
         vendor_id=uuid.uuid4(), vendor_name="ACME", invoice_ids=invoice_ids or [],
         payment_amount=Decimal(amount), currency=currency, created_by=uuid.uuid4(),
     )
@@ -64,6 +65,18 @@ async def test_due_lists_approved_pas(client, db_session):
     assert r.status_code == 200
     assert all(row["doc_number"] for row in r.json())
     assert len(r.json()) >= 1 and all(Decimal(row["amount"]) > 0 for row in r.json())
+
+
+async def test_due_classifies_agreement_pa_as_pa_not_pa_dir(client, db_session):
+    """Same NEW-1 fix, list_due's row-level doc_kind (payment_batch.py's other
+    site using the same is_direct discriminator)."""
+    pa = _pa("75.00", po_id=None, agreement_id=uuid.uuid4())
+    db_session.add(pa)
+    await db_session.flush()
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    row = next(r for r in rows if r["doc_id"] == str(pa.id))
+    assert row["doc_kind"] == "pa"
 
 
 async def test_due_surfaces_vendor_invoice_number(client, db_session):
@@ -114,6 +127,26 @@ async def test_batch_detail_surfaces_vendor_invoice_number(client, db_session):
     assert detail["lines"][0]["vendor_inv_no"] == "VINV-042"
 
 
+async def test_create_batch_classifies_agreement_pa_as_pa_not_pa_dir(client, db_session):
+    """Code review NEW-1: create_batch's line-level doc_kind used to be
+    'pa_dir' whenever po_id was NULL, misclassifying an agreement PA (po_id
+    NULL, agreement_id set) as an OA Direct PA. Fixed via
+    PaymentApplication.is_direct (po_id AND agreement_id both NULL)."""
+    pa = _pa("250.00", po_id=None, agreement_id=uuid.uuid4())
+    db_session.add(pa)
+    await db_session.flush()
+
+    r = await client.post("/finance/v1/payments/batches", headers=_h(),
+                          json={"docs": [{"doc_kind": "pa", "doc_id": str(pa.id)}]})
+    assert r.status_code == 201, r.text
+
+    from app.models.payment_batch import PaymentBatchLine
+    line = (await db_session.execute(
+        select(PaymentBatchLine).where(PaymentBatchLine.doc_id == pa.id)
+    )).scalar_one()
+    assert line.doc_kind == "pa"
+
+
 async def test_create_and_execute_batch(client, db_session):
     a, b = _pa("100.00"), _pa("200.00")
     db_session.add_all([a, b])
@@ -127,7 +160,7 @@ async def test_create_and_execute_batch(client, db_session):
     assert batch["total"] == "300.00" and batch["status"] == "draft"
 
     r2 = await client.post(f"/finance/v1/payments/batches/{batch['id']}/execute",
-                           headers=_h("ap_clerk"))
+                           headers=_h("payment_officer"))
     assert r2.status_code == 200, r2.text
     assert r2.json()["paid"] == 2 and r2.json()["failed"] == 0
 
@@ -184,7 +217,7 @@ async def test_prepayment_pa_leaves_invoice_partially_paid(client, db_session):
                  invoice_ids=[str(inv.id)])
     db_session.add(prepay)
     await db_session.flush()
-    r = await client.post("/finance/v1/payments/execute", headers=_h("ap_clerk"),
+    r = await client.post("/finance/v1/payments/execute", headers=_h("payment_officer"),
                           json={"doc_kind": "pa", "doc_id": str(prepay.id)})
     assert r.status_code == 200, r.text
     await db_session.refresh(inv)
@@ -200,7 +233,7 @@ async def test_prepayment_pa_leaves_invoice_partially_paid(client, db_session):
                   invoice_ids=[str(inv.id)])
     db_session.add(balance)
     await db_session.flush()
-    r = await client.post("/finance/v1/payments/execute", headers=_h("ap_clerk"),
+    r = await client.post("/finance/v1/payments/execute", headers=_h("payment_officer"),
                           json={"doc_kind": "pa", "doc_id": str(balance.id)})
     assert r.status_code == 200, r.text
     await db_session.refresh(inv)
@@ -233,7 +266,7 @@ async def test_batch_with_claim_executes_and_flips_status(client, db_session):
     assert r.json()["total"] == "175.00"
 
     r2 = await client.post(f"/finance/v1/payments/batches/{r.json()['id']}/execute",
-                           headers=_h("ap_clerk"))
+                           headers=_h("payment_officer"))
     assert r2.status_code == 200, r2.text
     assert r2.json()["paid"] == 2 and r2.json()["failed"] == 0
 

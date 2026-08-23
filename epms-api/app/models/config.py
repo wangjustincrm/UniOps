@@ -53,6 +53,12 @@ class CompanyConfig(Base):
     # Cutover: only NC POs with order date >= this are imported. 'YYYY-MM-DD
     # HH:MM:SS' (or date). NULL falls back to the env/default in the sync service.
     nc_purchase_cutover: Mapped[str | None] = mapped_column(String(19), nullable=True)
+    # Minutes between automatic NC purchase syncs. NULL = nobody has chosen,
+    # which resolves to the default in app/tasks/nc_purchase_sync_scheduler.py;
+    # 0 = the schedule is off and the Admin button is the only trigger. Kept
+    # nullable on purpose so "unset" stays distinguishable from a chosen value
+    # (migration ai01 explains why).
+    nc_purchase_sync_interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ── Security ────────────────────────────────────────────────────────────
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

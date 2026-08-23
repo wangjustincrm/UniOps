@@ -27,6 +27,40 @@ const STATUS_CONFIG: Record<
   paid: { label: 'Paid', variant: 'dark', dot: 'bg-neutral-400' },
   closed: { label: 'Closed', variant: 'dark', dot: 'bg-neutral-400' },
   nc_milk: { label: 'Milk / NC', variant: 'info', dot: 'bg-primary-500' },
+  nc_pending: { label: 'NC Pending Approval', variant: 'warning', dot: 'bg-warning-500' },
+  // Purchase Agreement — 'active' is the approval-terminal status (not 'approved').
+  active: { label: 'Active', variant: 'success', dot: 'bg-success-600' },
+  expired: { label: 'Expired', variant: 'warning', dot: 'bg-warning-500' },
+  // Agreement payment-schedule row statuses.
+  pending: { label: 'Pending', variant: 'neutral', dot: 'bg-neutral-400' },
+  received: { label: 'Received', variant: 'info', dot: 'bg-primary-500' },
+  overdue: { label: 'Overdue', variant: 'danger', dot: 'bg-danger-600' },
+  waived: { label: 'Waived', variant: 'dark', dot: 'bg-neutral-400' },
+  // House-account pickup receipt statuses.
+  pending_ap_review: { label: 'Pending AP Review', variant: 'warning', dot: 'bg-warning-500' },
+  open: { label: 'Open', variant: 'info', dot: 'bg-primary-500' },
+  reconciled: { label: 'Reconciled', variant: 'success', dot: 'bg-success-600' },
+  // Label != value ON PURPOSE, which is the whole reason this table exists.
+  // The DB status stays 'voided' — it is written into the ag04 migration, the
+  // model, crud's RETIRED tuple, and the partial unique index predicate
+  // `status NOT IN ('voided', 'rejected')` — but the people recording receipts
+  // told us "Void" told them nothing, so the word they READ is "Removed".
+  // Note it is still a soft-cancel, not a row delete (see
+  // services/agreementReceipts.ts's `void:` comment).
+  voided: { label: 'Removed', variant: 'dark', dot: 'bg-neutral-400' },
+}
+
+// The wording in STATUS_CONFIG above is the ONLY place a status is spelled out
+// for a human in this app. Callers that need the words WITHOUT the badge — e.g.
+// InvoiceReceiptsPanel's empty state, which has to say "2 Removed" inside a
+// sentence — must come through here rather than keeping their own status→text
+// map, or the two copies drift and the same status ends up with two names on
+// two screens. Takes a plain string (not DocumentStatus) so callers holding a
+// narrower union — ReceiptStatus, schedule-row status — can pass it without a
+// cast, and falls back to the raw value for anything not in the table, exactly
+// as StatusBadge does.
+export function statusLabel(status: string): string {
+  return STATUS_CONFIG[status as DocumentStatus]?.label ?? String(status)
 }
 
 export function StatusBadge({ status, label }: { status: DocumentStatus; label?: string }) {

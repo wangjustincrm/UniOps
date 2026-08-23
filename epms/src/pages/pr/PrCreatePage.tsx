@@ -13,6 +13,7 @@ import { FormField } from '@/components/ui/form-field'
 import { ProcurementTypeSelector } from '@/components/pr/ProcurementTypeSelector'
 import { BudgetBalanceWidget, OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
+import { budgetAccountError, requiresBudgetAccount } from '@/lib/prBudget'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useFactors, useBalance } from '@/hooks/useBudget'
@@ -42,6 +43,19 @@ const prSchema = z.object({
   deliveryAddress: z.string().optional(),
   requiredBy: z.string().min(1, 'Required by date is needed'),
   notes: z.string().optional(),
+}).superRefine((v, ctx) => {
+  // Service (4) / Project-Related (6) both run the service GR flow, and the
+  // completion date is what app/tasks/service_gr_due.py scans to nudge the
+  // requester. The field has always rendered with a required asterisk; this is
+  // the rule that finally makes the asterisk true. The server enforces the same
+  // pair on submit.
+  if ((v.procurementType === 4 || v.procurementType === 6) && !v.serviceCompletionDate) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['serviceCompletionDate'],
+      message: 'Expected completion date is required',
+    })
+  }
 })
 
 type PrForm = z.infer<typeof prSchema>
@@ -94,6 +108,7 @@ export default function PrCreatePage() {
   const [factorCombo, setFactorCombo] = useState<Record<string, string>>({})
   const [factorComboError, setFactorComboError] = useState<string | null>(null)
   const [departmentError, setDepartmentError] = useState<string | null>(null)
+  const [budgetError, setBudgetError] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<File[]>([])
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
@@ -287,6 +302,15 @@ export default function PrCreatePage() {
       setDepartmentError('Department is required')
       return
     }
+    // Budget account is required for every type except Type 1. Without it the
+    // server's budget check short-circuits, so an unbudgeted PR would sail past
+    // even a `hard_block` config. epms-api rejects this with a 409 — catch it
+    // here so the user gets a field-level message instead.
+    const budgetErr = budgetAccountError(selectedType, selectedCostCenterId, selectedL2)
+    if (budgetErr) {
+      setBudgetError(budgetErr)
+      return
+    }
     // Factor combo: when the selected Account has decomposition factors, every
     // factor must have a value picked (matches the per-PR Required policy).
     if (accountFactors.length > 0) {
@@ -318,6 +342,7 @@ export default function PrCreatePage() {
         budget_code: selectedL2 || undefined,
         factor_combo: accountFactors.length > 0 ? factorCombo : undefined,
         required_by: formData.requiredBy,
+        service_completion_date: formData.serviceCompletionDate || undefined,
         delivery_address: formData.deliveryAddress || config?.delivery_address || undefined,
         notes: formData.notes,
         over_budget_justification: isOverBudget ? justification : undefined,
@@ -362,6 +387,7 @@ export default function PrCreatePage() {
             ? factorCombo
             : undefined,
         required_by: values.requiredBy || undefined,
+        service_completion_date: values.serviceCompletionDate || undefined,
         delivery_address: values.deliveryAddress || config?.delivery_address || undefined,
         notes: values.notes,
         over_budget_justification: draftJustification || undefined,
@@ -404,10 +430,13 @@ export default function PrCreatePage() {
     if (selectedType) setValue('procurementType', selectedType)
   }, [selectedType, setValue])
 
-  const requiresBudget = selectedType !== null && selectedType !== 1
+  const requiresBudget = requiresBudgetAccount(selectedType)
   const requiresFixedAsset = selectedType === 5
   const requiresProject = selectedType === 6
-  const requiresServiceDate = selectedType === 4
+  // Type 6 (Project-Related) follows the same service GR flow as type 4 —
+  // api/v1/gr.py has always treated the pair identically. Asking only type 4
+  // for a date left every project PO permanently outside the reminder sweep.
+  const requiresServiceDate = selectedType === 4 || selectedType === 6
 
   return (
     <div className="flex flex-col gap-6">
@@ -592,7 +621,7 @@ export default function PrCreatePage() {
                       {/* Step 3: L2 Account */}
                       <select
                         value={selectedL2}
-                        onChange={(e) => setSelectedL2(e.target.value)}
+                        onChange={(e) => { setSelectedL2(e.target.value); setBudgetError(null) }}
                         disabled={!selectedL1}
                         className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-100 disabled:text-neutral-400"
                       >
@@ -601,6 +630,9 @@ export default function PrCreatePage() {
                           <option key={l2.id} value={l2.code}>{l2.code} — {l2.name}</option>
                         ))}
                       </select>
+                      {budgetError && (
+                        <p className="text-xs text-danger-600">{budgetError}</p>
+                      )}
                     </div>
                   )}
 
@@ -700,7 +732,7 @@ export default function PrCreatePage() {
                   )}
 
                   {requiresServiceDate && (
-                    <FormField label="Service Expected Completion Date" required htmlFor="serviceDate" error={errors.serviceCompletionDate?.message}>
+                    <FormField label="Service/Project Expected Completion Date" required htmlFor="serviceDate" error={errors.serviceCompletionDate?.message}>
                       <div className="relative">
                         <Input id="serviceDate" type="date" {...register('serviceCompletionDate')} />
                         <Calendar className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />

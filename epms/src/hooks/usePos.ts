@@ -4,10 +4,12 @@ import {
   type PoFilters,
   type CreatePoBody,
   type UpdatePoBody,
+  type ImportedDetailsBody,
   type PoActionBody,
   type PlaceOrderBody,
 } from '@/services/po'
 import { api } from '@/lib/api'
+import { poAttachmentService } from '@/services/poAttachments'
 
 export interface PoAttachmentMeta {
   id: string
@@ -79,6 +81,20 @@ export function useUpdatePo() {
   })
 }
 
+/** Buyer-detail edit for NC-imported POs (PATCH /po/{id}/imported-details).
+ *  Separate from useUpdatePo: that one drives the general draft/returned edit
+ *  form and can change the vendor, the currency and the whole line set. */
+export function useUpdatePoImportedDetails(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: ImportedDetailsBody) => poService.updateImportedDetails(id, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pos'] })
+      queryClient.invalidateQueries({ queryKey: ['pos', id] })
+    },
+  })
+}
+
 export function usePoAction(id: string) {
   const queryClient = useQueryClient()
 
@@ -100,6 +116,22 @@ export function usePoAttachments(poId: string) {
     queryFn: () => api.get<PoAttachmentMeta[]>(`/po/${poId}/attachments`),
     enabled: Boolean(poId),
     staleTime: 30_000,
+  })
+}
+
+export function useUploadPoAttachment(poId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (file: File) => poAttachmentService.upload(poId, file),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pos', poId, 'attachments'] }),
+  })
+}
+
+export function useDeletePoAttachment(poId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (attId: string) => poAttachmentService.delete(poId, attId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['pos', poId, 'attachments'] }),
   })
 }
 

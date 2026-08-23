@@ -40,9 +40,28 @@ export function todayISODate(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+// A date-only string ("2026-07-30") carries no time zone. `new Date()` parses it
+// as UTC midnight, and rendering that with a local formatter anywhere west of
+// Greenwich shows the PREVIOUS day — this company is UTC-4/-5, so every
+// date-only field in the app displayed one day early. Reported against an
+// agreement's payment schedule (expected 2026-07-30, shown as 29/07/2026), but
+// it applied to invoice dates, due dates, validity windows and everything else
+// stored as a plain date.
+//
+// Strings that carry a time are left alone: those are real instants, and
+// showing them in the reader's own zone is correct.
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+
+function toLocalDate(value: Date | string): Date {
+  if (typeof value !== 'string') return value
+  if (!DATE_ONLY.test(value)) return new Date(value)
+  const [y, m, d] = value.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export function formatDate(date: Date | string | null | undefined): string {
   if (!date) return '—'
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = toLocalDate(date)
   if (isNaN(d.getTime())) return '—'
   return d.toLocaleDateString('en-GB', {
     day: '2-digit',
@@ -68,7 +87,7 @@ export function formatBytes(b: number): string {
 
 export function formatDateTime(date: Date | string | null | undefined): string {
   if (!date) return '—'
-  const d = typeof date === 'string' ? new Date(date) : date
+  const d = toLocalDate(date)
   if (isNaN(d.getTime())) return '—'
   const datePart = d.toLocaleDateString('en-GB', {
     day: '2-digit',

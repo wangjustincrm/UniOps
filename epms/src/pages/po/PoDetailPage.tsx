@@ -1,8 +1,10 @@
 import { useState, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, CheckCircle2, XCircle, RotateCcw, Pencil, ChevronDown,
   MessageSquare, X, Send, ExternalLink, FileText, Mail, ShoppingCart, Warehouse, Globe, Loader2,
+  CreditCard,
 } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -10,16 +12,17 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
-import { OA_BASE_URL } from '@/lib/api'
 import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { downloadPdf } from '@/lib/pdf-utils'
-import { usePo, usePoAction, usePoAttachments, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
+import { usePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment, usePoEvents, usePlaceOrder, usePoWorkflowSteps, useRegeneratePoPdf } from '@/hooks/usePos'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
+import { useInvoices } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import type { ApiEvent } from '@/services/pr'
@@ -92,7 +95,11 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
       s = 'completed'
     } else if (status === 'cancelled') {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else if (status === 'submitted') {
+    } else if (status === 'submitted' || status === 'nc_pending') {
+      // 'nc_pending' = awaiting approval in NC, where the real signatories are.
+      // Every UniOps step renders as pending rather than 'current': no task was
+      // ever raised here, and showing one as current invites somebody to wait
+      // for an approval that will never arrive in this system.
       s = i < stepIdx ? 'completed' : 'pending'
     } else {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
@@ -397,9 +404,15 @@ interface ApprovalModalProps {
   poNumber: string
   onConfirm: (comment: string) => void
   onClose: () => void
+  // The modal stays mounted until the action resolves, so without this the
+  // confirm button is live for the whole request. A second click re-posts the
+  // same action: usually a 409 the user reads as a failure, but for 'approve'
+  // it can silently consume the NEXT step's task when the same person approves
+  // two consecutive steps — two levels passed on one intended click.
+  isPending: boolean
 }
 
-function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalProps) {
+function ApprovalModal({ action, poNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
@@ -469,7 +482,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalPr
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
-              disabled={!canSubmit}
+              disabled={!canSubmit || isPending}
               onClick={() => onConfirm(comment)}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
@@ -477,7 +490,7 @@ function ApprovalModal({ action, poNumber, onConfirm, onClose }: ApprovalModalPr
               )}
             >
               {config.icon}
-              {config.label}
+              {isPending ? 'Working…' : config.label}
             </button>
           </div>
         </div>
@@ -495,10 +508,16 @@ type Tab = typeof TABS[number]
 export default function PoDetailPage() {
   const { id } = useParams()
   const { data: po, isLoading } = usePo(id ?? '')
+  useDocTabTitle(po?.number)
   const { data: events } = usePoEvents(id ?? '')
   const { data: poAttachments = [] } = usePoAttachments(id ?? '')
+  const uploadAttachment = useUploadPoAttachment(id ?? '')
+  const deleteAttachment = useDeletePoAttachment(id ?? '')
   const regeneratePdf = useRegeneratePoPdf(id ?? '')
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
+  // Drives the Create PA gate below — see the comment there for why the PO's
+  // own has_unpaid_invoice flag cannot be used on this page.
+  const { data: poInvoices } = useInvoices({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
   const { user } = useAuthStore()
@@ -538,6 +557,7 @@ export default function PoDetailPage() {
   // grants system_admin every task. Showing the Approve button only when the current
   // user holds an active approve_po task for THIS PO keeps the button consistent with
   // the inbox and follows whatever workflow is configured in the engine.
+  const paPerms = useRolePermissions().data?.permissions
   const { data: myTasks } = useTasks({ is_completed: false })
   const hasApproveTask = !!po && !!(myTasks?.items ?? []).some(
     (t) => t.document_id === po.id && t.type === 'approve_po'
@@ -549,14 +569,46 @@ export default function PoDetailPage() {
     hasApproveTask
   const canPlaceOrder = isProcurementOfficer && po?.status === 'approved'
   const canEdit = isProcurementOfficer && po && ['draft', 'returned'].includes(po.status)
+  // NC-imported POs never reach draft/returned, so canEdit above can never fire
+  // for them. Buyer detail (supplier item IDs, samples, Incoterms, delivery,
+  // notes) is filled in through a separate, deliberately narrow endpoint —
+  // gated by the Access Control Matrix, not a hardcoded role list, so the
+  // button and PATCH /po/{id}/imported-details cannot disagree.
+  const perms = useRolePermissions().data?.permissions
+  // 'nc_pending' — still in NC's approval chain — is editable for the same
+  // reason it is mirrored at all: the buyer prints this PO PDF for off-line
+  // signature, and these are the fields that make it presentable. Kept in step
+  // with _EDITABLE_IMPORTED_STATUSES in epms-api/app/api/v1/po.py.
+  const canEditImported =
+    !!po &&
+    po.source === 'nc' &&
+    ['issued', 'nc_pending'].includes(po.status) &&
+    (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
   const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
-  // PA creation: available to AP Clerk, Finance roles, and System Admin when PO is in a payable state
+  // PA creation is permission-driven, exactly like the PA list's Create button
+  // (PaListPage): the Access Control matrix decides, not a hard-coded role list.
+  // A hard-coded list also read only the JWT's primary role, so an ADDITIONAL
+  // role granted through user_roles (e.g. a Procurement Officer allowed to raise
+  // PAs on someone's behalf) never saw the button even with the matrix ticked.
+  // ...and on the PO actually having something to pay. The status alone is not
+  // that: an 'issued' PO with no invoice yet offers nothing a PA could be raised
+  // against, and PaCreatePage's own PO picker rejects it
+  // (`is_prepaid || has_unpaid_invoice`, PaCreatePage.tsx) — so the button was
+  // an invitation to a dead end. Mirror that same rule here so the entry point
+  // and the page it opens agree. `po.has_unpaid_invoice` cannot be used: only
+  // GET /po computes it, GET /po/{id} leaves the schema default false — hence
+  // the invoice fetch above, which uses the same header-OR-allocation rule the
+  // backend flag does (crud/invoice.py get_all).
+  const hasUnpaidInvoice = (poInvoices?.items ?? []).some((inv) => inv.status !== 'paid')
   const canCreatePa =
-    OA_BASE_URL &&
     po &&
     ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
-    ['ap_clerk', 'finance_manager', 'finance_bp', 'system_admin'].includes(user?.role ?? '')
-  const isServicePo = po?.type === 4
+    (po.is_prepaid || hasUnpaidInvoice) &&
+    (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
+  // Types 4 (Service) and 6 (Project-Related) both run the service GR flow —
+  // api/v1/gr.py has always admitted the pair. Checking only type 4 here left
+  // project POs reachable from GR List but not from their own PO page.
+  const isServicePo = po?.type === 4 || po?.type === 6
   // Physical PO: warehouse/procurement roles, PO must be issued or partially received
   // Service PO: the *requester of the linked PR* (not the PO creator, not a generic
   // 'requester' role) can confirm delivery / create the GR, from approved onwards.
@@ -589,27 +641,49 @@ export default function PoDetailPage() {
         <div className="text-5xl mb-4">🔍</div>
         <h2 className="text-xl font-semibold text-neutral-700">PO Not Found</h2>
         <p className="mt-2 text-sm text-neutral-400">The purchase order you're looking for doesn't exist.</p>
-        <Link to="/po" className="mt-4">
+        <BackLink to="/po" className="mt-4">
           <Button variant="secondary">Back to PO List</Button>
-        </Link>
+        </BackLink>
       </div>
     )
   }
 
   const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [])
+  // Mirrors the PDF: the Sample column only appears when some line carries one,
+  // so POs without samples keep their existing layout.
+  const showSample = po.line_items.some((li) => li.sample)
+  // Delivery Date mirrors the same conditional-column pattern: it only appears
+  // when a line actually carries an ERP-synced planned_arrival_date, so POs
+  // without one (UniOps-native POs) keep their existing layout.
+  const showDeliveryDate = po.line_items.some((li) => li.planned_arrival_date)
   const hasMaterial = po.type === 1 || po.type === 3
+
+  // expected_delivery is a human-entered header override; NC-synced POs never
+  // populate it. When absent, fall back to the earliest ERP-synced line date
+  // (string comparison is safe/UTC-agnostic for YYYY-MM-DD) — display-only,
+  // no internal provenance marker (this page is also what buyers screenshot
+  // for vendors, so keep it consistent with the PDF's plain date).
+  const erpDeliveryDate = po.line_items.reduce<string | undefined>((earliest, li) => {
+    if (!li.planned_arrival_date) return earliest
+    return !earliest || li.planned_arrival_date < earliest ? li.planned_arrival_date : earliest
+  }, undefined)
+  const expectedDeliveryDisplay = po.expected_delivery
+    ? formatDate(po.expected_delivery)
+    : erpDeliveryDate
+      ? formatDate(erpDeliveryDate)
+      : '—'
 
   return (
     <div className={cn('flex flex-col gap-6', canApprove && 'pb-16')}>
       {/* Page header */}
       <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
-          <Link to="/po">
+          <BackLink to="/po">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4" />
               Back to PO List
             </Button>
-          </Link>
+          </BackLink>
         </div>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
@@ -646,11 +720,18 @@ export default function PoDetailPage() {
                 Edit
               </Button>
             )}
+            {canEditImported && (
+              <Button variant="secondary" size="sm" onClick={() => navigate(`/po/${po.id}/edit-imported`)}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit Details
+              </Button>
+            )}
             {canWithdraw && (
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => poAction.mutate({ action: 'cancel' })}
+                disabled={poAction.isPending}
               >
                 Withdraw
               </Button>
@@ -670,17 +751,17 @@ export default function PoDetailPage() {
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-success-600 px-3 text-sm font-medium text-white transition-colors hover:bg-success-700"
               >
                 <Warehouse className="h-3.5 w-3.5" />
-                {isServicePo ? 'Confirm Service' : 'Create GR'}
+                {po.type === 4 ? 'Confirm Service' : po.type === 6 ? 'Confirm Completion' : 'Create GR'}
               </button>
             )}
             {canCreatePa && (
-              <a
-                href={`${OA_BASE_URL}/pa/new?po_id=${po.id}&po_number=${encodeURIComponent(po.number)}&source=epms`}
+              <button
+                onClick={() => navigate(`/pa/new?poId=${po.id}`)}
                 className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary-600 px-3 text-sm font-medium text-primary-600 transition-colors hover:bg-primary-50"
               >
-                <ExternalLink className="h-3.5 w-3.5" />
+                <CreditCard className="h-3.5 w-3.5" />
                 Create PA
-              </a>
+              </button>
             )}
           </div>
         </div>
@@ -720,9 +801,8 @@ export default function PoDetailPage() {
                     ['Currency', po.currency],
                     ['Budget Code', po.budget_code ?? '—'],
                     ['Created', formatDate(po.created_at)],
-                    ['Expected Delivery', po.expected_delivery ? formatDate(po.expected_delivery) : '—'],
+                    ['Expected Delivery', expectedDeliveryDisplay],
                     ['Delivery Address', po.delivery_address || '—'],
-                    ['Buyer Notes', po.notes || '—'],
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
@@ -730,6 +810,35 @@ export default function PoDetailPage() {
                       <dd className="text-neutral-900">{value}</dd>
                     </div>
                   ))}
+                  {po.incoterms && (
+                    <div className="flex flex-col gap-0.5">
+                      <dt className="text-xs font-medium text-neutral-500">Incoterms</dt>
+                      <dd className="text-neutral-900">{po.incoterms}</dd>
+                    </div>
+                  )}
+                  {/* purchase_orders.notes means two different things depending on origin:
+                      buyer text (from the Create PO page's "Buyer Notes / Terms &
+                      Conditions" box) on native POs, but ERP-owned sync text (rewritten
+                      every NC sync with [NC Paid] / [NC Closed <date>] markers for
+                      finance) on NC POs. The rows below are gated accordingly — Buyer
+                      Notes only falls back to notes on non-NC POs, and NC Sync Notes is a
+                      separate, NC-only row so the markers stay visible to finance here on
+                      the internal detail page without leaking into the vendor-facing PDF,
+                      which mirrors this same split (pdf_po.py) and prints neither NC row. */}
+                  {(po.buyer_notes || (po.source !== 'nc' ? po.notes : undefined)) && (
+                    <div className="flex flex-col gap-0.5 sm:col-span-2">
+                      <dt className="text-xs font-medium text-neutral-500">Buyer Notes</dt>
+                      <dd className="whitespace-pre-wrap text-neutral-900">
+                        {po.buyer_notes || po.notes}
+                      </dd>
+                    </div>
+                  )}
+                  {po.source === 'nc' && po.notes && (
+                    <div className="flex flex-col gap-0.5 sm:col-span-2">
+                      <dt className="text-xs font-medium text-neutral-500">NC Sync Notes</dt>
+                      <dd className="whitespace-pre-wrap text-neutral-900">{po.notes}</dd>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs font-medium text-neutral-500">Prepayment PO</dt>
                     <dd>
@@ -783,6 +892,12 @@ export default function PoDetailPage() {
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-36">Supplier Item ID</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-20">Qty</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-20">Unit</th>
+                          {showSample && (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-24">Sample</th>
+                          )}
+                          {showDeliveryDate && (
+                            <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-500 w-28">Delivery Date</th>
+                          )}
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Unit Price</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-500 w-32">Line Total</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold text-neutral-500 w-28">Received</th>
@@ -804,6 +919,14 @@ export default function PoDetailPage() {
                               <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
                               <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
                               <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
+                              {showSample && (
+                                <td className="px-4 py-2.5 text-neutral-500">{item.sample || '—'}</td>
+                              )}
+                              {showDeliveryDate && (
+                                <td className="px-4 py-2.5 text-neutral-500">
+                                  {item.planned_arrival_date ? formatDate(item.planned_arrival_date) : '—'}
+                                </td>
+                              )}
                               <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, po.currency)}</td>
                               <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
@@ -826,7 +949,7 @@ export default function PoDetailPage() {
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                          <td colSpan={hasMaterial ? 7 : 6} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                          <td colSpan={6 + (hasMaterial ? 1 : 0) + (showSample ? 1 : 0) + (showDeliveryDate ? 1 : 0)} className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">
                             Subtotal
                           </td>
                           <td className="px-4 py-3 amount text-right text-base font-bold text-neutral-900">
@@ -894,7 +1017,7 @@ export default function PoDetailPage() {
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Attachments</h2>
-                {['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(po.status) && (
+                {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending'].includes(po.status) && (
                   <button
                     type="button"
                     onClick={() => regeneratePdf.mutate()}
@@ -907,35 +1030,22 @@ export default function PoDetailPage() {
                   </button>
                 )}
               </div>
-              {poAttachments.length > 0 ? (
-                <ul className="flex flex-col gap-2">
-                  {poAttachments.map((att) => (
-                    <li key={att.id}>
-                      <button
-                        type="button"
-                        onClick={() => downloadPoAttachment(att.id, att.filename)}
-                        className="flex w-full items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-left text-sm transition-colors hover:border-primary-300 hover:bg-primary-50 group cursor-pointer"
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-100 group-hover:bg-primary-200 shrink-0">
-                          <FileText className="h-4 w-4 text-primary-600" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-neutral-900 truncate">{att.filename}</p>
-                          <p className="text-xs text-neutral-400">{(att.file_size / 1024).toFixed(1)} KB</p>
-                        </div>
-                        <span className="text-xs text-primary-600 font-medium shrink-0">Download</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <FileText className="h-8 w-8 text-neutral-300 mb-2" />
+              <AttachmentsEditor
+                inputId="po-detail-file-upload"
+                attachments={poAttachments}
+                isUploading={uploadAttachment.isPending}
+                isDeleting={deleteAttachment.isPending}
+                onUpload={(file) => uploadAttachment.mutateAsync(file)}
+                onDelete={(attId) => deleteAttachment.mutate(attId)}
+                onDownload={(att) => downloadPoAttachment(att.id, att.filename)}
+              />
+              {poAttachments.length === 0 && (
+                <div className="mt-3 flex flex-col items-center justify-center text-center">
                   <p className="text-sm text-neutral-400">
                     {po.status === 'approved' ? 'PDF is being generated…' : 'No attachments yet'}
                   </p>
                   {po.status !== 'approved' && (
-                    <button onClick={handleDownloadPdf} className="mt-3 text-xs text-primary-600 hover:underline">
+                    <button onClick={handleDownloadPdf} className="mt-1 text-xs text-primary-600 hover:underline">
                       Generate preview PDF
                     </button>
                   )}
@@ -1048,6 +1158,7 @@ export default function PoDetailPage() {
           poNumber={po.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
           onClose={() => setPendingAction(null)}
+          isPending={poAction.isPending}
         />
       )}
 

@@ -43,6 +43,7 @@ export interface ApiPr {
   factor_combo?: Record<string, string> | null
   project_code?: string | null
   required_by?: string
+  service_completion_date?: string
   delivery_address?: string
   notes?: string
   over_budget: boolean
@@ -70,6 +71,7 @@ export interface CreatePrBody {
   budget_code?: string
   factor_combo?: Record<string, string>
   required_by?: string
+  service_completion_date?: string
   delivery_address?: string
   notes?: string
   over_budget_justification?: string
@@ -87,6 +89,7 @@ export interface UpdatePrBody {
   budget_code?: string
   factor_combo?: Record<string, string> | null
   required_by?: string
+  service_completion_date?: string
   delivery_address?: string
   notes?: string
   is_prepaid?: boolean

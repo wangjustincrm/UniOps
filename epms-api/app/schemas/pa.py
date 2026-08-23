@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.current_step import CurrentStep
 
@@ -47,7 +47,10 @@ class PaLineItemResponse(BaseModel):
 # ── PA ────────────────────────────────────────────────────────────────────────
 
 class PaCreate(BaseModel):
-    po_id: uuid.UUID
+    po_id: uuid.UUID | None = None
+    # Agreement-sourced PA (no PO, no GR). Exactly one of po_id / agreement_id
+    # must be set — a PA with neither is OA's Direct PA, which EPMS does not own.
+    agreement_id: uuid.UUID | None = None
     title: str = Field(min_length=1, max_length=255)
     pa_type: str = Field(default="regular", max_length=20)  # regular | prepayment | settlement | balance
     prepayment_pa_id: uuid.UUID | None = None   # required for settlement / balance types
@@ -68,6 +71,12 @@ class PaCreate(BaseModel):
     line_items: list[PaLineItemIn] = Field(default_factory=list)
     receipt_override: bool = False
     receipt_override_reason: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _exactly_one_source(self):
+        if (self.po_id is None) == (self.agreement_id is None):
+            raise ValueError("Provide exactly one of po_id or agreement_id")
+        return self
 
 
 class PaUpdate(BaseModel):
@@ -114,8 +123,8 @@ class PaResponse(BaseModel):
     id: uuid.UUID
     pa_number: str
     title: str
-    po_id: uuid.UUID
-    po_number: str
+    po_id: uuid.UUID | None
+    po_number: str | None
     vendor_id: uuid.UUID
     vendor_name: str
     invoice_ids: list
@@ -153,6 +162,8 @@ class PaResponse(BaseModel):
     receipt_override_reason: str | None = None
     receipt_override_by: uuid.UUID | None = None
     current_step: CurrentStep | None = None
+    agreement_id: uuid.UUID | None = None
+    agreement_number: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -7,6 +7,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
@@ -108,6 +109,7 @@ export default function BookingCreatePage() {
   const locationState = (location.state as FormState | null) ?? {}
 
   const { data: room, isLoading: roomLoading } = useRoomDetail(roomId)
+  useDocTabTitle(room?.name && `Book ${room.name}`)
 
   // ── Form state ──────────────────────────────────────────────────────────────
   const today = new Date().toISOString().slice(0, 10)
@@ -328,14 +330,12 @@ export default function BookingCreatePage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 space-y-6">
         {/* Back nav */}
-        <button
-          type="button"
-          onClick={() => navigate(`/rooms/${roomId}`)}
+        <BackLink to={`/rooms/${roomId}`}
           className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to {room.name}
-        </button>
+        </BackLink>
 
         {/* Toast */}
         {toast && (

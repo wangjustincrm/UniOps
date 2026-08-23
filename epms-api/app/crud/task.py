@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.agreement import PurchaseAgreement
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
@@ -198,6 +199,11 @@ async def _complete_stale_approve_tasks(db: AsyncSession) -> None:
         ("pr", "approve_pr", PurchaseRequest),
         ("po", "approve_po", PurchaseOrder),
         ("pa", "approve_pa", PaymentApplication),
+        # Purchase Agreements leave the approvable set the same ways a PO does
+        # (approved -> "active", returned, cancelled) plus one route nothing
+        # else has: expiry. Omitting them here reproduces exactly the Task
+        # Inbox / Dashboard split this function was written to end.
+        ("agr", "approve_agr", PurchaseAgreement),
     )
     now = datetime.now(timezone.utc)
     for doc_type, task_type, Model in doc_specs:
@@ -254,7 +260,7 @@ async def _backfill_create_po_tasks(db: AsyncSession) -> None:
     is the symmetric safety net so the purchasing office actually sees the work.
 
     Scope: status='approved' AND po_id IS NULL (a PR with a PO needs no task;
-    _complete_stale_create_po_tasks completes any that slipped through).
+    _complete_stale_create_po_tasks completes any that fell through the cracks).
     """
     approved_prs_q = select(PurchaseRequest).where(
         PurchaseRequest.status == "approved",
@@ -354,9 +360,37 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
         Invoice.gr_id.is_not(None),
         Invoice.created_at >= _BACKFILL_MIN_CREATED,
     )
+    # 一票多 PO:表头之外的 PO 只在 invoice_po_allocations 里出现,header-only 的
+    # 查询看不见它们(生产 PO-400-2607-12 就这么漏掉的)。发票的 gr_id 可能是
+    # 别的 PO 的 GR,所以这里的收货证据取「本 PO 自己有 GR」——与
+    # crud.po.po_has_three_way_matched_invoice 同口径。
+    recent_matched_alloc_pos = (
+        select(InvoicePoAllocation.po_id)
+        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
+        .where(
+            Invoice.status == "matched",
+            Invoice.created_at >= _BACKFILL_MIN_CREATED,
+        )
+    )
+    pos_with_gr = select(GoodsReceipt.po_id)
     candidates_q = select(PurchaseOrder).where(
-        PurchaseOrder.status.in_(("issued", "partially_received", "fully_received")),
-        PurchaseOrder.id.in_(recent_matched_pos),
+        or_(
+            PurchaseOrder.status.in_(("issued", "partially_received", "fully_received")),
+            # A Service/Project PO can be received while still 'approved' — the
+            # service GR branch in api/v1/gr.py allows a GR from 'approved'
+            # onward, and place_order is never run for a service engagement that
+            # was simply performed. Prod PO-192-2608-01 sat exactly there: GR
+            # created, invoice matched, no PA, and the status filter kept this
+            # self-heal from ever rescuing it. Admitted only WITH a GR, so an
+            # approved-but-unreceived PO still cannot be prompted to pay.
+            and_(PurchaseOrder.status == "approved",
+                 PurchaseOrder.id.in_(pos_with_gr)),
+        ),
+        or_(
+            PurchaseOrder.id.in_(recent_matched_pos),
+            and_(PurchaseOrder.id.in_(recent_matched_alloc_pos),
+                 PurchaseOrder.id.in_(pos_with_gr)),
+        ),
         PurchaseOrder.id.not_in(pos_with_pa),
         PurchaseOrder.id.not_in(pos_with_open_task),
     )
@@ -507,12 +541,26 @@ async def get_for_role(
     if role != "system_admin":
         all_roles = await _all_roles_for_user(db, role, user_id)
         broadcast_roles = all_roles - _PERSONAL_APPROVAL_ROLES
-        q = q.where(
-            or_(
-                and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(broadcast_roles)),
-                Task.assigned_user_id == user_id,
-            )
-        )
+        from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
+        delegator_ids = await active_delegator_ids(db, user_id)
+        deleg_roles = await delegated_broadcast_roles(db, delegator_ids)
+        clauses = [
+            and_(Task.assigned_user_id.is_(None), Task.assigned_role.in_(broadcast_roles)),
+            Task.assigned_user_id == user_id,
+        ]
+        if delegator_ids:
+            # Delegation covers APPROVAL tasks only — never create_po / create_pa
+            # / GR acknowledgement, which are role pools that do not strand and
+            # whose actions are gated by the Access Control matrix.
+            clauses.append(and_(
+                Task.type.like("approve%"),
+                Task.assigned_user_id.in_(delegator_ids)))
+            if deleg_roles:
+                clauses.append(and_(
+                    Task.type.like("approve%"),
+                    Task.assigned_user_id.is_(None),
+                    Task.assigned_role.in_(deleg_roles)))
+        q = q.where(or_(*clauses))
     completed = is_completed if is_completed is not None else False
     q = q.where(Task.is_completed.is_(completed))
     result = await db.execute(q.order_by(Task.created_at.desc()))

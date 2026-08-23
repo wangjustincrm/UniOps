@@ -1,5 +1,6 @@
 """Shared pytest fixtures for the EPMS API test suite."""
 import asyncio
+import os
 import uuid
 
 import pytest
@@ -227,7 +228,12 @@ def _patch_mdm_client(monkeypatch):
 # Requires a pre-created database. Run once:
 #   python -m scripts.create_test_db
 _base_url, _ = str(settings.DATABASE_URL).rsplit("/", 1)
-_TEST_DB_URL = f"{_base_url}/epms_test"
+# TEST_EPMS_DB lets a second session run this suite against its own database.
+# The suite drops and recreates every table, so two sessions sharing `epms_test`
+# corrupt each other's runs (the 2026-08-11 three-way-allocation release saw a
+# shared DB produce three different fake failure counts). Same knob identity-api's
+# conftest has had as TEST_IDENTITY_DB.
+_TEST_DB_URL = f"{_base_url}/{os.getenv('TEST_EPMS_DB', 'epms_test')}"
 
 
 # ── Force all async tests to use the session event loop ───────────────────────
@@ -257,6 +263,39 @@ async def test_engine():
         await conn.execute(text(
             "CREATE TABLE user_roles (user_id uuid NOT NULL, role_code varchar(50) NOT NULL,"
             " PRIMARY KEY (user_id, role_code))"))
+        # approval-api's routing table (same physical DB in prod, no ORM model
+        # here). access_scope reads it with raw SQL whenever it resolves a scoped
+        # approver's departments, which every dashboard that counts pending
+        # approvals goes through — without the shadow those tests die on
+        # UndefinedTable instead of asserting anything.
+        await conn.execute(text("DROP TABLE IF EXISTS approval_dept_routing CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE approval_dept_routing ("
+            " dept_id uuid PRIMARY KEY,"
+            " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm',"
+            " director_user_id uuid,"
+            " supervisor_enabled boolean NOT NULL DEFAULT false,"
+            " updated_by uuid,"
+            " updated_at timestamptz NOT NULL DEFAULT now())"))
+        # approval-api's delegation table (same physical DB in prod, no ORM
+        # model here — epms only reads it via app.core.delegation, never
+        # writes). Shadow it, minus the constraints approval-api enforces on
+        # write (exclusion constraint on overlapping windows, etc.) — this
+        # side only needs to select rows a test seeds directly.
+        await conn.execute(text("DROP TABLE IF EXISTS approval_delegations CASCADE"))
+        await conn.execute(text(
+            "CREATE TABLE approval_delegations ("
+            "  id uuid PRIMARY KEY,"
+            "  delegator_user_id uuid NOT NULL,"
+            "  delegate_user_id uuid NOT NULL,"
+            "  start_date date NOT NULL,"
+            "  end_date date NOT NULL,"
+            "  note text NULL,"
+            "  revoked_at timestamptz NULL,"
+            "  revoked_by uuid NULL,"
+            "  created_by uuid NOT NULL,"
+            "  created_at timestamptz NOT NULL DEFAULT now(),"
+            "  updated_at timestamptz NOT NULL DEFAULT now())"))
         # role_defs / permission_defs / role_permissions / role_permission_locks
         # are also identity-owned (no ORM model here) — same physical DB in
         # prod. The shared uniops_authz package (require_permission,
@@ -326,6 +365,37 @@ async def _restore_default_matrix(test_engine):
         await _seed_default_matrix(db)
         await db.commit()
     yield
+
+
+@pytest.fixture(autouse=True)
+async def _drain_background_tasks():
+    """Cancel any fire-and-forget task the test left in flight, and WAIT for the
+    cancellation to unwind it.
+
+    Endpoints spawn background coroutines (notification emails, PDF generation)
+    that each open their own `async with AsyncSessionLocal() as db`. A test that
+    triggers one and then returns leaves it suspended there forever: the session
+    is never closed, so its connection goes back to the pool still inside a
+    transaction. That is not merely untidy — a leaked `idle in transaction`
+    backend holds row/table locks, and the next module's `drop_all` teardown
+    blocks on them. It wedged a full-suite run for four minutes on a
+    `DROP TABLE invoices` before the blocker was killed by hand.
+
+    tests/test_gr.py's `_quiet_notification_email` fixture already documents
+    this exact deadlock ("a reliable deadlock recipe on the shared test DB") and
+    works around it for that one module by stubbing SMTP. This is the general
+    fix; that local stub stays valid (it also keeps the tests fast).
+
+    Cancel rather than await-to-completion: the emails cannot succeed in tests
+    anyway (no SMTP), and awaiting them would let previously-dead notifications
+    start writing notification_logs rows, changing assertions in tests that
+    count them. Cancelling only reclaims the connection. `CancelledError` is a
+    BaseException, so the `except Exception` guards inside those coroutines do
+    not swallow it and the `async with` unwinds properly.
+    """
+    yield
+    from app.core.background import drain
+    await drain(timeout=0)
 
 
 @pytest.fixture(scope="session", autouse=True)

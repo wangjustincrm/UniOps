@@ -6,6 +6,7 @@ writer.upsert idempotency + consumed-doc guard, and service single-flight /
 end-to-end / full-reload orchestration.
 """
 import uuid
+from datetime import date
 from decimal import Decimal
 
 import psycopg2
@@ -45,7 +46,12 @@ def _mini_payload(seeded_vendor):
             "nc_source_pk": "OL1", "po_nc_pk": "O1", "material_id": "MAT-1",
             "description": "Widget", "qty": Decimal("10"), "unit": "EA",
             "unit_price": Decimal("10.00"), "line_total": Decimal("100.00"),
-            "received_qty": Decimal("10"), "sort_order": 1,
+            "received_qty": Decimal("10"),
+            # Always present on a transformed line -- the writer indexes it
+            # strictly on purpose, so a transform that ever stopped setting it
+            # fails loudly instead of writing NULL on every row.
+            "planned_arrival_date": date(2026, 5, 5),
+            "sort_order": 1,
         }],
         "grs": [{
             "nc_source_pk": "A1:O1", "po_nc_pk": "O1", "number": "GR-NC-A1",
@@ -145,6 +151,40 @@ def test_upsert_is_idempotent(pg_cur, seeded_vendor, system_user_id):
     pg_cur.execute("select count(*) from gr_line_items l join goods_receipts g "
                    "on g.id=l.gr_id where g.nc_source_pk='A1:O1'")
     assert pg_cur.fetchone()[0] == 1
+
+
+def test_planned_arrival_date_lands_on_insert_and_is_refreshed_on_update(
+    pg_cur, seeded_vendor, system_user_id,
+):
+    """The whole point of the column is the lines that ALREADY exist: every open
+    raw-material PO line was synced before this column did, so an insert-only
+    write would leave all 87 of them null forever. The second upsert here takes
+    the UPDATE branch, with a different date, and must move the stored value.
+    """
+    from app.services.nc_purchase_sync import writer
+
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+    pg_cur.execute("select planned_arrival_date from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone()[0] == date(2026, 5, 5), "insert path did not carry the date"
+
+    moved = _mini_payload(seeded_vendor)
+    moved["order_lines"][0]["planned_arrival_date"] = date(2026, 9, 30)
+    writer.upsert(pg_cur, moved, system_user_id)
+    pg_cur.execute("select planned_arrival_date from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone()[0] == date(2026, 9, 30), "update path did not refresh the date"
+
+
+def test_planned_arrival_date_of_none_is_stored_as_null(pg_cur, seeded_vendor, system_user_id):
+    """A UniOps-native line, or an NC line the ERP left blank, must store NULL
+    rather than anything that reads as a real arrival date."""
+    from app.services.nc_purchase_sync import writer
+
+    payload = _mini_payload(seeded_vendor)
+    payload["order_lines"][0]["planned_arrival_date"] = None
+    writer.upsert(pg_cur, payload, system_user_id)
+    pg_cur.execute("select planned_arrival_date from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone()[0] is None
 
 
 def test_gr_line_resolves_po_line_id(pg_cur, seeded_vendor, system_user_id):
@@ -358,3 +398,106 @@ def test_full_reload_preserves_invoice_linked_po(committed_nc_env):
     status, skipped = cur.fetchone()
     assert status == "success"
     assert skipped >= 1
+
+
+# ── buyer-edited data survives re-sync ───────────────────────────────────────
+
+def test_upsert_preserves_buyer_details_and_manual_tax(pg_cur, seeded_vendor, system_user_id):
+    """A PO whose buyer_edited_at is set keeps its hand-entered columns and its
+    hand-set tax rate. The money is re-derived from NC's new subtotal so the
+    header still satisfies subtotal + tax_amount == total."""
+    from app.services.nc_purchase_sync import writer
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "update purchase_orders set buyer_notes=%s, incoterms=%s, tax_rate=%s, "
+        "buyer_edited_at=now() where nc_source_pk='O1'",
+        ("Ship in one lot", "FOB Shanghai", Decimal("0.13")))
+    pg_cur.execute(
+        "update po_line_items set supplier_item_id=%s, sample=%s where nc_source_pk='OL1'",
+        ("SKU-9", "500 g"))
+
+    # NC re-sends the order with a bigger subtotal and its own zero tax.
+    payload["orders"][0]["subtotal"] = Decimal("200.00")
+    payload["orders"][0]["tax_rate"] = Decimal("0")
+    payload["orders"][0]["tax_amount"] = Decimal("0")
+    payload["orders"][0]["total"] = Decimal("200.00")
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "select buyer_notes, incoterms, subtotal, tax_rate, tax_amount, total "
+        "from purchase_orders where nc_source_pk='O1'")
+    notes, inco, subtotal, rate, tax_amount, total = pg_cur.fetchone()
+    assert notes == "Ship in one lot"
+    assert inco == "FOB Shanghai"
+    assert subtotal == Decimal("200.00")      # NC still owns the subtotal
+    assert rate == Decimal("0.13")            # buyer's rate survives
+    assert tax_amount == Decimal("26.00")     # re-derived off the new subtotal
+    assert total == Decimal("226.00")
+    assert subtotal + tax_amount == total
+
+    pg_cur.execute(
+        "select supplier_item_id, sample from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone() == ("SKU-9", "500 g")
+
+
+def test_upsert_takes_nc_tax_when_edit_did_not_touch_tax_rate(pg_cur, seeded_vendor, system_user_id):
+    """A buyer edit that only fills in Incoterms/Supplier Item ID — never the tax
+    rate — must NOT arm the tax-rate guard. crud.po.update_imported_details only
+    stamps buyer_edited_at when "tax_rate" is among the changed fields, so this
+    simulates that: buyer_notes/incoterms/supplier_item_id/sample change but
+    buyer_edited_at is left NULL. The next NC upsert must still adopt NC's
+    tax_rate/tax_amount/total verbatim, not silently freeze them."""
+    from app.services.nc_purchase_sync import writer
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    # A buyer edit that never touched tax_rate — buyer_edited_at stays NULL.
+    pg_cur.execute(
+        "update purchase_orders set buyer_notes=%s, incoterms=%s "
+        "where nc_source_pk='O1'",
+        ("Ship in one lot", "FOB Shanghai"))
+    pg_cur.execute(
+        "update po_line_items set supplier_item_id=%s, sample=%s where nc_source_pk='OL1'",
+        ("SKU-9", "500 g"))
+    pg_cur.execute(
+        "select buyer_edited_at from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone()[0] is None
+
+    # NC re-sends the order with a new subtotal and its own non-zero tax.
+    payload["orders"][0]["subtotal"] = Decimal("200.00")
+    payload["orders"][0]["tax_rate"] = Decimal("0.05")
+    payload["orders"][0]["tax_amount"] = Decimal("10.00")
+    payload["orders"][0]["total"] = Decimal("210.00")
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "select tax_rate, tax_amount, total from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone() == (Decimal("0.05"), Decimal("10.00"), Decimal("210.00"))
+
+    # And the buyer's earlier edits are still intact — untouched by this sync.
+    pg_cur.execute(
+        "select buyer_notes, incoterms from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone() == ("Ship in one lot", "FOB Shanghai")
+    pg_cur.execute(
+        "select supplier_item_id, sample from po_line_items where nc_source_pk='OL1'")
+    assert pg_cur.fetchone() == ("SKU-9", "500 g")
+
+
+def test_upsert_takes_nc_tax_when_po_was_never_buyer_edited(pg_cur, seeded_vendor, system_user_id):
+    """Guard against over-reach: with buyer_edited_at NULL the mirror must still
+    take NC's tax verbatim, exactly as before this change."""
+    from app.services.nc_purchase_sync import writer
+    payload = _mini_payload(seeded_vendor)
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    payload["orders"][0]["subtotal"] = Decimal("200.00")
+    payload["orders"][0]["tax_rate"] = Decimal("0.05")
+    payload["orders"][0]["tax_amount"] = Decimal("10.00")
+    payload["orders"][0]["total"] = Decimal("210.00")
+    writer.upsert(pg_cur, payload, system_user_id)
+
+    pg_cur.execute(
+        "select tax_rate, tax_amount, total from purchase_orders where nc_source_pk='O1'")
+    assert pg_cur.fetchone() == (Decimal("0.05"), Decimal("10.00"), Decimal("210.00"))

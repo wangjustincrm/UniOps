@@ -10,6 +10,7 @@ from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_r
 from app.crud import pr as pr_crud
 from app.crud.current_step import enrich_current_step
 from app.models.task import Task
+from app.schemas.gr import is_service
 from app.schemas.pr import (
     ApprovalEventResponse,
     BudgetCheckRequest,
@@ -160,11 +161,17 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
             if existing:
                 return
 
+            from app.crud.signatories import approval_signatories
+            requester_name, approvals = await approval_signatories(
+                fresh_db, "pr", pr_id, pr_row.created_by
+            )
+
             loop = asyncio.get_event_loop()
             pdf_bytes = await loop.run_in_executor(
                 None, generate_pr_pdf, pr_row, company_name,
                 cfg.pdf_templates if cfg else None,
                 cfg.logo_data_url if cfg else None,
+                requester_name, approvals,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{pr_number}.pdf", "application/pdf", "pr", pr_id, token,
@@ -201,6 +208,33 @@ async def pr_action(
             status_code=409,
             detail="A vendor is required before submitting this PR",
         )
+    # A budget account (cost center + budget code) is required to submit any
+    # budget-bearing PR. Type 1 carries no budget — the Create PR form hides the
+    # Budget Account block for it. Without BOTH fields compute_budget_check
+    # short-circuits to over_budget=False, so an unbudgeted PR silently bypasses
+    # the entire budget check, `hard_block` included. Only submit is gated:
+    # legacy PRs with no budget code must stay approvable / cancellable.
+    if body.action.lower() == "submit" and pr.type != 1 and (
+        not pr.budget_code or pr.cost_center_id is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="A cost center and budget code are required before submitting this PR",
+        )
+    # Same reasoning for the service/project completion date: it is the only
+    # signal app/tasks/service_gr_due.py has for "this should be finished by
+    # now, go create a GR", so a service PR without one silently opts out of
+    # the reminder. The create form has shown this field with a required
+    # asterisk since it was written, but its zod rule was .optional() and
+    # neither payload carried the value — hence the server-side guard.
+    if (body.action.lower() == "submit"
+            and is_service(pr.type)
+            and pr.service_completion_date is None):
+        raise HTTPException(
+            status_code=409,
+            detail=("A Service/Project Expected Completion Date is required "
+                    "before submitting this PR"),
+        )
     try:
         await delegate_action("pr", str(pr_id), body.action, body.comment, token)
     except LookupError as exc:
@@ -213,8 +247,8 @@ async def pr_action(
     # Re-read updated PR for response + PDF side-effects
     await db.refresh(pr)
     if pr.status == "approved":
-        import asyncio
-        asyncio.create_task(_generate_pr_pdf_background(pr_id, pr.number, token))
+        from app.core.background import spawn
+        spawn(_generate_pr_pdf_background(pr_id, pr.number, token), name=f"pr_pdf:{pr.number}")
 
     # Fire notifications for newly opened tasks
     new_tasks_result = await db.execute(

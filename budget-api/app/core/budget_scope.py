@@ -1,11 +1,23 @@
 """Budget Dashboard department scoping (shared-DB resolver).
 
 Server-side source of truth for "who may see company-wide budget" vs "only the
-departments they are responsible for" (their own department plus every department
-they are the configured Director of). Reads the shared DB (users / user_roles /
-approval_dept_routing / cost_centers). An identical copy lives in
-finance-api/app/core/budget_scope.py — it MUST stay byte-identical (each service
-pins the role sets with a test).
+departments they are responsible for". Both are driven by the Access Control
+matrix (Portal Admin -> Access Control), NOT by a hardcoded role list:
+
+    finance.budget.view_all   -> company-wide
+    finance.budget.view_dept  -> own department, every department they DIRECT,
+                                 and (for the OPM) every department routed to
+                                 the OPM
+    neither                   -> nothing (fail-closed)
+
+Admission goes through the shared uniops_authz package, so a grant counts
+whether it sits on the caller's primary role or on an additional role, and
+system_admin is admitted without consulting the matrix.
+
+Reads the shared DB (identity's role_defs / role_permissions matrix, users,
+user_roles, approval_dept_routing, cost_centers). An identical copy lives in
+finance-api/app/core/budget_scope.py — it MUST stay byte-identical (each
+service pins the behaviour with a test).
 See docs/superpowers/specs/2026-07-23-budget-scope-director-departments-design.md
 """
 import logging
@@ -14,18 +26,14 @@ from dataclasses import dataclass
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from uniops_authz import has_permission, user_role_codes
 
 logger = logging.getLogger(__name__)
 
-# Faithful port of BudgetDashboard.tsx's FULL_ACCESS_ROLES (primary role) ∪
-# SPECIAL_ROLE_CODES (primary∪additional) ∪ the finance_bp-assigned check.
-FULL_ACCESS_PRIMARY = frozenset({
-    "gm", "opm", "finance_manager", "ap_clerk",
-    "system_admin", "cfo", "auditor", "procurement_manager",
-})
-FULL_ACCESS_ASSIGNED = frozenset({
-    "gm", "opm", "finance_manager", "procurement_manager", "finance_bp",
-})
+# Access Control matrix keys, registered and seeded by identity migration
+# 0010_budget_view_scope_perms.
+PERM_VIEW_ALL = "finance.budget.view_all"
+PERM_VIEW_DEPT = "finance.budget.view_dept"
 
 
 @dataclass
@@ -37,23 +45,19 @@ class BudgetScope:
 async def resolve_budget_scope(
     db: AsyncSession, user_id: uuid.UUID, primary_role: str | None,
 ) -> BudgetScope:
-    if primary_role in FULL_ACCESS_PRIMARY:
-        return BudgetScope(full_access=True, cost_center_ids=[])
-
-    # Everything below reads the shared DB (user_roles / users /
-    # approval_dept_routing / cost_centers). Per spec, ANY resolution error
-    # here — not just "no department" — must fail CLOSED to an empty scope,
-    # never full-access: e.g. approval_dept_routing is owned by approval-api's
-    # migration chain, so it may simply not exist in some environments.
+    # Everything here reads the shared DB (identity's matrix, then user_roles /
+    # users / approval_dept_routing / cost_centers). Per spec, ANY resolution
+    # error — not just "no department" — must fail CLOSED to an empty scope,
+    # never full-access: approval_dept_routing is owned by approval-api's
+    # migration chain and the matrix tables by identity's, so either may simply
+    # not exist in some environments, and a service deployed ahead of identity's
+    # migration must not hand out company-wide numbers.
     try:
-        assigned = {
-            r for (r,) in (await db.execute(
-                text("SELECT role_code FROM user_roles WHERE user_id = CAST(:uid AS uuid)"),
-                {"uid": str(user_id)},
-            )).all()
-        }
-        if assigned & FULL_ACCESS_ASSIGNED:
+        role = primary_role or ""
+        if await has_permission(db, user_id, role, PERM_VIEW_ALL):
             return BudgetScope(full_access=True, cost_center_ids=[])
+        if not await has_permission(db, user_id, role, PERM_VIEW_DEPT):
+            return BudgetScope(full_access=False, cost_center_ids=[])
 
         own_dept = (await db.execute(
             text("SELECT department_id FROM users WHERE id = CAST(:uid AS uuid)"),
@@ -71,7 +75,21 @@ async def resolve_budget_scope(
             )).all()
         ]
 
-        dept_ids = {d for d in [own_dept, *directed] if d}
+        # Departments the OPM is responsible for. Unlike `director`, the OPM is a
+        # POST (identity migration 0003 keeps it a singleton) and
+        # approval_dept_routing records only WHICH POST — 'gm' or 'opm' — owns a
+        # department's gm_or_opm approval step, with no user column to match on.
+        # So here, and only here, the role string is the link back to the person.
+        opm_depts: list[uuid.UUID] = []
+        if "opm" in await user_role_codes(db, user_id, role):
+            opm_depts = [
+                r for (r,) in (await db.execute(
+                    text("SELECT dept_id FROM approval_dept_routing "
+                         "WHERE gm_or_opm = 'opm'"),
+                )).all()
+            ]
+
+        dept_ids = {d for d in [own_dept, *directed, *opm_depts] if d}
         if not dept_ids:
             return BudgetScope(full_access=False, cost_center_ids=[])
 

@@ -37,6 +37,7 @@ from app.models.user_mirror import User
 from app.models.visit import Visit, VisitStatus
 from app.models.visitor import Visitor
 from app.services import notifications as notifications_svc
+from app.services import visit_tasks
 
 log = logging.getLogger(__name__)
 
@@ -251,9 +252,13 @@ async def run_all(db: AsyncSession, *, now: datetime | None = None) -> dict[str,
     reminders = await send_day_before_reminders(db, now=now)
     overdue_reminders = await send_overdue_reminders(db, now=now)
     escalations = await escalate_overdue(db, now=now)
+    # 访客签出 / PPE 备货任务的收口。放在最后:mark_no_shows 可能刚把一批 visit
+    # 推出「等待到访」状态,它们的备货任务应当在同一趟里一起关掉。
+    settled_tasks = await visit_tasks.close_settled_visit_tasks(db)
     return {
         "no_shows": len(no_shows),
         "reminders": len(reminders),
         "overdue_reminders": len(overdue_reminders),
         "escalations": len(escalations),
+        "settled_tasks": settled_tasks,
     }

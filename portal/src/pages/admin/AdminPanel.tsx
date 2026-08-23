@@ -6,13 +6,14 @@ import {
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
-  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap,
+  Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcPurchaseSyncSection } from './NcPurchaseSyncSection'
+import { WmsSyncSection } from './WmsSyncSection'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,7 @@ interface WorkflowNodeDef {
   role: string
 }
 
-type ActionKey = 'pr' | 'po' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -50,6 +51,8 @@ interface CompanyConfig {
     teams_webhook_url: string | null
     followup_time: string
     daily_followup_enabled?: boolean
+    service_gr_due_enabled?: boolean
+    service_gr_due_dry_run?: boolean
     role_shared_mailboxes?: Record<string, string>
     [key: string]: unknown
   }
@@ -96,6 +99,7 @@ const ROLE_LABELS: Record<string,string> = {
   warehouse_staff:'Warehouse Staff', ap_clerk:'AP Clerk', finance_manager:'Finance Manager',
   finance_bp:'Finance BP', cfo:'CFO', auditor:'Auditor', vendor_manager:'Vendor Manager',
   erp_pa_officer:'ERP PA Officer',
+  payment_officer:'Payment Officer',
   system_admin:'System Admin',
 }
 
@@ -896,6 +900,8 @@ function NotificationSettings() {
   const [webhook, setWebhook] = useState('')
   const [followup, setFollowup] = useState('')
   const [dailyFollowup, setDailyFollowup] = useState<boolean | null>(null)
+  const [serviceGrDue, setServiceGrDue] = useState<boolean | null>(null)
+  const [serviceGrDryRun, setServiceGrDryRun] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
   const [mailboxError, setMailboxError] = useState<string | null>(null)
   const [smtp, setSmtp] = useState({ host: '', port: '', user: '', password: '', from: '', use_tls: true })
@@ -911,6 +917,10 @@ function NotificationSettings() {
   // '08:00' mirrors the backend default (_DEFAULT_NOTIFICATION_SETTINGS / scheduler fallback).
   const followupVal = followup || ns?.followup_time || '08:00'
   const dailyFollowupVal = dailyFollowup ?? ns?.daily_followup_enabled ?? false
+  // Fallbacks mirror the server (crud/config.py): the sweep is off until
+  // switched on, and once on it stays in dry-run until explicitly released.
+  const serviceGrDueVal = serviceGrDue ?? ns?.service_gr_due_enabled ?? false
+  const serviceGrDryRunVal = serviceGrDryRun ?? ns?.service_gr_due_dry_run ?? true
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
   const setMailboxFor = (code: string, value: string) => {
@@ -955,6 +965,8 @@ function NotificationSettings() {
           teams_webhook_url: webhookVal || null,
           followup_time: followupVal,
           daily_followup_enabled: dailyFollowupVal,
+          service_gr_due_enabled: serviceGrDueVal,
+          service_gr_due_dry_run: serviceGrDryRunVal,
           role_shared_mailboxes: mailboxesVal,
         },
         smtp_host: smtpVal.host || null,
@@ -1081,6 +1093,25 @@ function NotificationSettings() {
       <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
+
+      <Field label="Service Completion Reminder" hint="When on, service and project POs whose expected completion date has passed raise a task asking the PR requester to create a GR. Runs at the follow-up time above. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={serviceGrDueVal} onChange={(v) => setServiceGrDue(v)} />
+          <span className="text-xs text-neutral-500">{serviceGrDueVal ? 'On — overdue service POs are chased' : 'Off — no completion reminders'}</span>
+        </div>
+      </Field>
+      {serviceGrDueVal && (
+        <Field label="Service Completion Reminder — Dry Run" hint="Leave on for the first few days: the sweep still runs, but instead of emailing requesters it sends administrators the list of POs it would have chased. Turn off once that list looks right.">
+          <div className="flex items-center gap-2 pt-1.5">
+            <Toggle checked={serviceGrDryRunVal} onChange={(v) => setServiceGrDryRun(v)} />
+            <span className="text-xs text-neutral-500">
+              {serviceGrDryRunVal
+                ? 'Dry run — admins get a preview, requesters are not contacted'
+                : 'Live — requesters and their managers are notified'}
+            </span>
+          </div>
+        </Field>
+      )}
 
       {/* Test notification */}
       <div className="flex items-center gap-2">
@@ -1344,11 +1375,18 @@ function RemittanceSettings() {
 
 // ── Approval Workflows ───────────────────────────────────────────────────────
 
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
+// Every key in approval-api's _WORKFLOW_DEFAULTS must be listed here. Saving
+// this form PATCHes workflow_defs, and epms-api crud/config.py::update replaces
+// that JSONB column WHOLESALE (only notification_settings is shallow-merged) —
+// so a key missing from this list is not merely uneditable, it is DELETED by
+// the next workflow save. approval-api reseeds it on its next boot (main.py
+// only fills gaps), but until then `workflow_defs->'agr'` reads NULL.
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
   po:          'Purchase Order',
+  agr:         'Purchase Agreement',
   pa:          'PA (PO-Linked)',
   pa_dir:      'PA (Direct)',
   exp:         'General Expense',
@@ -1380,6 +1418,8 @@ const WORKFLOW_ROLES = [
 const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   pr:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
   po:     [{ id: 'proc_mgr', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }],
+  // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['agr'].
+  agr:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'procurement_manager', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'finance_manager', role: 'finance_manager', label: 'Finance Manager' }],
   pa:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   pa_dir: [{ id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   exp:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
@@ -2115,6 +2155,7 @@ const SECTIONS = [
   { key: 'workflows',    label: 'Approval Workflows',   icon: Workflow },
   { key: 'erp_mdm',      label: 'ERP MDM',              icon: Database },
   { key: 'nc_purchase',  label: 'NC Purchase Sync',     icon: DatabaseZap },
+  { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
 export default function AdminPanel() {
@@ -2198,6 +2239,7 @@ export default function AdminPanel() {
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}
           {section === 'nc_purchase' && <NcPurchaseSyncSection />}
+          {section === 'wms_sync'    && <WmsSyncSection />}
         </main>
       </div>
     </div>

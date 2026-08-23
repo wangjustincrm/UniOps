@@ -47,6 +47,7 @@ class PoLineItemResponse(BaseModel):
     description: str
     material_id: str | None
     supplier_item_id: str | None
+    sample: str | None = None
     qty: Decimal
     unit: str
     unit_price: Decimal
@@ -54,6 +55,7 @@ class PoLineItemResponse(BaseModel):
     received_qty: Decimal
     notes: str | None
     sort_order: int
+    planned_arrival_date: date | None = None
     # 该 line 被【其他发票】累计分摊的税前额(仅 match-candidates 端点填充)
     already_allocated: Decimal | None = None
 
@@ -91,6 +93,31 @@ class PoUpdate(BaseModel):
     notes: str | None = None
     is_prepaid: bool | None = None
     line_items: list[PoLineItemIn] | None = None
+
+
+class PoImportedLineUpdate(BaseModel):
+    """The only two line columns a buyer may fill in on an imported PO."""
+    id: uuid.UUID
+    supplier_item_id: str | None = Field(default=None, max_length=100)
+    sample: str | None = Field(default=None, max_length=100)
+
+
+class PoImportedDetailsUpdate(BaseModel):
+    """Buyer-supplied detail on an NC-imported PO.
+
+    Deliberately narrow. vendor_id, currency, title, budget_code, type and every
+    line money/quantity field are absent, so no caller can reach them through
+    this endpoint no matter what the frontend does or does not disable. Widening
+    this model is a security change, not a convenience change.
+    """
+    expected_delivery: date | None = None
+    delivery_address: str | None = None
+    incoterms: str | None = Field(default=None, max_length=100)
+    tax_code: str | None = Field(default=None, max_length=20)
+    tax_rate: Decimal | None = Field(default=None, ge=0, le=1)
+    is_prepaid: bool | None = None
+    buyer_notes: str | None = None
+    lines: list[PoImportedLineUpdate] = Field(default_factory=list)
 
 
 class PoListResponse(BaseModel):
@@ -133,6 +160,10 @@ class PoResponse(BaseModel):
     expected_delivery: date | None
     delivery_address: str | None
     notes: str | None
+    # Buyer-supplied detail (NC-imported POs). `notes` stays NC-owned.
+    buyer_notes: str | None = None
+    incoterms: str | None = None
+    buyer_edited_at: datetime | None = None
     approval_step_idx: int
     pr_id: uuid.UUID | None
     pr_number: str | None

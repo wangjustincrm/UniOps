@@ -14,8 +14,8 @@ from app.models.user import User
 
 
 async def _make_submitted_pa(db) -> tuple[PaymentApplication, User, User]:
-    owner = User(id=uuid.uuid4(), role="requester", is_active=True)
-    other = User(id=uuid.uuid4(), role="finance_bp", is_active=True)
+    owner = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
+    other = User(full_name="Test User", id=uuid.uuid4(), role="finance_bp", is_active=True)
     db.add_all([owner, other])
     await db.flush()  # users must land before the PA row (FK created_by → users.id)
     pa = PaymentApplication(
@@ -58,7 +58,7 @@ async def test_recall_by_submitter_succeeds(engine_db_session):
 async def test_recall_by_system_admin_allowed(engine_db_session):
     db = engine_db_session
     pa, _owner, _other = await _make_submitted_pa(db)
-    admin = User(id=uuid.uuid4(), role="system_admin", is_active=True)
+    admin = User(full_name="Test User", id=uuid.uuid4(), role="system_admin", is_active=True)
     db.add(admin)
     await db.flush()
 

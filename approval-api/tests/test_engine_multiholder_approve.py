@@ -40,9 +40,9 @@ _ACTOR_ID = uuid.UUID(int=(1 << 128) - 1)
 
 async def _seed_two_gm_holders(db, dept_id):
     """requester in dept_id + two gm holders (gm_first primary, actor additional)."""
-    requester = User(id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
-    gm_first = User(id=_GM_FIRST_ID, role="gm", is_active=True)
-    actor = User(id=_ACTOR_ID, role="dept_manager", is_active=True)
+    requester = User(full_name="Test User", id=uuid.uuid4(), role="requester", department_id=dept_id, is_active=True)
+    gm_first = User(full_name="Test User", id=_GM_FIRST_ID, role="gm", is_active=True)
+    actor = User(full_name="Test User", id=_ACTOR_ID, role="dept_manager", is_active=True)
     db.add_all([requester, gm_first, actor])
     await db.flush()
     # actor holds gm as an ADDITIONAL role (identity user_roles).
@@ -82,7 +82,7 @@ async def test_actor_can_approve_gm_or_opm_denies_non_holder(engine_db_session):
     db = engine_db_session
     dept_id = uuid.uuid4()
     requester, gm_first, actor = await _seed_two_gm_holders(db, dept_id)
-    intruder = User(id=uuid.uuid4(), role="requester", is_active=True)
+    intruder = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
     db.add(intruder)
     await db.flush()
 
@@ -122,7 +122,7 @@ async def test_reject_denied_for_non_approver(engine_db_session):
     db = engine_db_session
     dept_id = uuid.uuid4()
     requester, gm_first, actor = await _seed_two_gm_holders(db, dept_id)
-    intruder = User(id=uuid.uuid4(), role="requester", is_active=True)
+    intruder = User(full_name="Test User", id=uuid.uuid4(), role="requester", is_active=True)
     db.add(intruder)
     db.add(CompanyConfig(id=uuid.uuid4(), workflow_defs={
         "pa": [{"id": "gm_or_opm", "role": "gm_or_opm", "label": "GM"}]}))

@@ -1,0 +1,379 @@
+/**
+ * One-off verification script for weekColumns.ts's pure column-model logic
+ * (week_grid -> WeekRef mapping / month grouping / collapse / expand /
+ * default expand set). mrp has no test framework — see
+ * components/matrixGrid/verify.ts's header comment for the established
+ * plain-assert-script convention this follows.
+ *
+ * `check` takes a THUNK (`() => boolean`), not a pre-evaluated boolean, and
+ * wraps its call in try/catch — fix-round-1 minor finding: the original
+ * version evaluated each condition as an IIFE passed directly as an
+ * argument, so a thrown error inside one check propagated straight out of
+ * the whole script, aborting it before any later check (or the final
+ * pass/fail summary) ever ran. The exit code still failed in that case, but
+ * the printed report was misleading (silently truncated, not "N failed").
+ *
+ * Run with:  npx tsx src/pages/mps/weekColumns.verify.ts   (from mrp/)
+ */
+import {
+  buildWeekColumns, buildWeekRefs, currentGridWeekStart, defaultExpandedMonths, sumPlannedByColumn,
+  type Column, type PlannedContribution, type WeekGridEntryLike,
+} from './weekColumns'
+
+let failures = 0
+function check(name: string, fn: () => boolean) {
+  let cond: boolean
+  try {
+    cond = fn()
+  } catch (err) {
+    failures++
+    console.log(`FAIL  ${name}  (threw: ${err instanceof Error ? err.message : String(err)})`)
+    return
+  }
+  if (cond) console.log(`  ok  ${name}`)
+  else { failures++; console.log(`FAIL  ${name}`) }
+}
+
+// ── buildWeekColumns ───────────────────────────────────────────────────────
+console.log('buildWeekColumns')
+
+const WEEKS = [
+  { week_start: '2026-08-03', month: '2026-08' },
+  { week_start: '2026-08-10', month: '2026-08' },
+  { week_start: '2026-08-17', month: '2026-08' },
+  { week_start: '2026-08-24', month: '2026-08' },
+  { week_start: '2026-09-07', month: '2026-09' },
+]
+
+check('an expanded month contributes one column per week', () => {
+  const cols = buildWeekColumns(WEEKS, new Set(['2026-08', '2026-09']))
+  return cols.filter((c) => c.month === '2026-08' && c.kind === 'week').length === 4
+})
+
+check('a collapsed month contributes exactly one summary column', () => {
+  const cols = buildWeekColumns(WEEKS, new Set(['2026-09']))
+  const aug = cols.filter((c) => c.month === '2026-08')
+  return aug.length === 1 && aug[0].kind === 'monthSummary'
+})
+
+// Fix-round-1: this used to read "a month with no planned week still
+// occupies a column" and hand-construct a WeekRef for October directly —
+// which only proved buildWeekColumns doesn't drop a month it's GIVEN, not
+// that an empty month survives the real pipeline (review: "does not test
+// that"). The real guarantee now lives one layer down, in buildWeekRefs
+// (see that section below) — this check narrows to what buildWeekColumns
+// itself is actually responsible for.
+check('buildWeekColumns never drops a month present in its input, expanded or collapsed', () => {
+  const withOct = [...WEEKS, { week_start: '2026-10-05', month: '2026-10' }]
+  const collapsed = buildWeekColumns(withOct, new Set())
+  const expanded = buildWeekColumns(withOct, new Set(['2026-10']))
+  return collapsed.some((c) => c.month === '2026-10') && expanded.some((c) => c.month === '2026-10')
+})
+
+// Fix-round-1: replaces the old "collapsing then expanding returns the
+// original column set" check. Review proved that one could not fail —
+// `buildWeekColumns` is pure and stateless, so two calls with IDENTICAL
+// arguments comparing equal is a property of the language, not of this
+// module (confirmed: mutating the function to `return []` unconditionally
+// still passed it). These two replacements test properties that a real bug
+// actually could violate.
+check('column ids are unique, and stable across repeated calls with identical input', () => {
+  const a = buildWeekColumns(WEEKS, new Set(['2026-08']))
+  const b = buildWeekColumns(WEEKS, new Set(['2026-08']))
+  const idsA = a.map((c) => c.id)
+  const idsB = b.map((c) => c.id)
+  const unique = new Set(idsA).size === idsA.length
+  const stableAcrossCalls = JSON.stringify(idsA) === JSON.stringify(idsB)
+  return unique && stableAcrossCalls
+})
+
+check('expanding one month does not change another month\'s own columns (no cross-month coupling)', () => {
+  const augCollapsedOnly = buildWeekColumns(WEEKS, new Set(['2026-09'])).filter((c) => c.month === '2026-09')
+  const augAlsoExpanded = buildWeekColumns(WEEKS, new Set(['2026-08', '2026-09'])).filter((c) => c.month === '2026-09')
+  return JSON.stringify(augCollapsedOnly) === JSON.stringify(augAlsoExpanded)
+})
+
+// ── buildWeekColumns: additional coverage ───────────────────────────────────
+console.log('')
+console.log('buildWeekColumns (additional)')
+
+check('months come out in ascending chronological order regardless of input order', () => {
+  const shuffled = [
+    { week_start: '2026-09-07', month: '2026-09' },
+    { week_start: '2026-07-06', month: '2026-07' },
+    { week_start: '2026-08-03', month: '2026-08' },
+  ]
+  const cols = buildWeekColumns(shuffled, new Set(['2026-07', '2026-08', '2026-09']))
+  return cols.map((c) => c.month).join() === ['2026-07', '2026-08', '2026-09'].join()
+})
+
+check('duplicate week_start within a month (two lines sharing a week) collapses to ONE week column', () => {
+  const dup = [
+    { week_start: '2026-08-03', month: '2026-08', label: 'Aug W1' },
+    { week_start: '2026-08-03', month: '2026-08', label: 'Aug W1' },
+  ]
+  const cols = buildWeekColumns(dup, new Set(['2026-08']))
+  return cols.length === 1 && cols[0].kind === 'week'
+})
+
+check('week columns within an expanded month are sorted chronologically', () => {
+  const outOfOrder = [
+    { week_start: '2026-08-24', month: '2026-08' },
+    { week_start: '2026-08-03', month: '2026-08' },
+    { week_start: '2026-08-10', month: '2026-08' },
+  ]
+  const cols = buildWeekColumns(outOfOrder, new Set(['2026-08']))
+  return cols.map((c) => (c.kind === 'week' ? c.week_start : '')).join() ===
+    ['2026-08-03', '2026-08-10', '2026-08-24'].join()
+})
+
+check('a real week_label survives onto its week Column', () => {
+  const cols = buildWeekColumns(
+    [{ week_start: '2026-08-03', month: '2026-08', label: 'Aug W1 · Aug 3–9' }],
+    new Set(['2026-08']),
+  )
+  return cols[0].kind === 'week' && cols[0].label === 'Aug W1 · Aug 3–9'
+})
+
+check('empty input -> empty output, no throw', () => buildWeekColumns([], new Set()).length === 0)
+
+// ── buildWeekRefs (fix-round-1: the empty-month guarantee's real home) ─────
+console.log('')
+console.log('buildWeekRefs')
+
+const GRID: WeekGridEntryLike[] = [
+  // ISO-straddling week: starts in JULY (week_start's own calendar month)
+  // but OWNS August (week_month) under iso_thursday — the Thursday of the
+  // week beginning Mon 2026-07-27 is 2026-07-30, but this fixture models
+  // the equally-real other direction of straddle (a week whose START
+  // calendar month and OWNING month differ) so that a mutant reading
+  // `week_start.slice(0, 7)` instead of `week_month` is actually exercised
+  // here. Task 9 review flagged that the original GRID had NO such
+  // entry — every week_start's own YYYY-MM already matched its week_month,
+  // so `week_month: g.week_month` and `month: g.week_start.slice(0, 7)`
+  // agreed on every row and a mutant swapping one for the other still
+  // passed all checks below. This is exactly the case `plan_week_month`
+  // exists for (see mpsApi.ts's `MpsLine.plan_week_month` doc).
+  { week_start: '2026-07-27', week_month: '2026-08', label: 'Aug W1 · Jul 27–Aug 2' },
+  { week_start: '2026-08-03', week_month: '2026-08', label: 'Aug W2 · Aug 3–9' },
+  { week_start: '2026-08-10', week_month: '2026-08', label: 'Aug W3 · Aug 10–16' },
+  // 2026-09 stands in for a month with zero plan lines (a maintenance week,
+  // or a demand month that netted to zero) — mrp-api's week_grid still
+  // enumerates its real weeks (see _compute_week_grid's docstring), so
+  // buildWeekRefs must carry all of them through untouched.
+  { week_start: '2026-09-07', week_month: '2026-09', label: 'Sep W1 · Sep 7–13' },
+  { week_start: '2026-09-14', week_month: '2026-09', label: 'Sep W2 · Sep 14–20' },
+]
+
+check('buildWeekRefs preserves every week_grid entry, in order, field for field', () => {
+  const refs = buildWeekRefs(GRID)
+  return refs.length === GRID.length && refs.every((r, i) =>
+    r.week_start === GRID[i].week_start && r.month === GRID[i].week_month && r.label === GRID[i].label)
+})
+
+check('an ISO-straddling week (week_start\'s own month differs from week_month) keeps its OWNING month, not week_start\'s calendar month — catches a `week_start.slice(0, 7)` mutant', () => {
+  const refs = buildWeekRefs(GRID)
+  const straddler = refs.find((r) => r.week_start === '2026-07-27')
+  return !!straddler && straddler.month === '2026-08' && straddler.month !== straddler.week_start.slice(0, 7)
+})
+
+check('a month with no lines of its own (only present because week_grid enumerated it) still occupies a column once fed through buildWeekColumns', () => {
+  const cols = buildWeekColumns(buildWeekRefs(GRID), new Set())
+  const months = new Set(cols.map((c) => c.month))
+  return months.has('2026-08') && months.has('2026-09') && months.size === 2
+})
+
+check('that same empty month, when EXPANDED, shows its real week columns (not one synthetic placeholder)', () => {
+  const cols = buildWeekColumns(buildWeekRefs(GRID), new Set(['2026-09']))
+  const septWeeks = cols.filter((c) => c.month === '2026-09' && c.kind === 'week')
+  return septWeeks.length === 2 &&
+    septWeeks.every((c) => c.kind === 'week' && !!c.label && c.label.startsWith('Sep'))
+})
+
+check('empty week_grid -> empty WeekRef list, no throw', () => buildWeekRefs([]).length === 0)
+
+// ── currentGridWeekStart ────────────────────────────────────────────────────
+//
+// The AdjustDrawer's week picker hides weeks that have passed, because
+// mrp-api's update_line 422s a move into one (a past week consumes demand
+// without occupying capacity). This is the predicate behind that filter, so
+// it lives here rather than in an inline useMemo the verify script cannot
+// reach — the same finding that moved the empty-month rule out of
+// ProductionMatrix.tsx.
+console.log('')
+console.log('currentGridWeekStart')
+
+// A four-week August plus two September weeks, the shape week_grid arrives
+// in (ascending, contiguous, one entry per real week).
+const GRID_WEEKS = [
+  { week_start: '2026-08-03' },
+  { week_start: '2026-08-10' },
+  { week_start: '2026-08-17' },
+  { week_start: '2026-08-24' },
+  { week_start: '2026-08-31' },
+]
+
+check('a day inside a week resolves to THAT week, not the next one', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-08-13') === '2026-08-10')
+
+check('the first day of a week resolves to that same week (boundary is inclusive)', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-08-17') === '2026-08-17')
+
+check('the last day of a week still resolves to that week, not the next', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-08-16') === '2026-08-10')
+
+check('today before the whole grid -> null, so nothing is treated as past', () =>
+  currentGridWeekStart(GRID_WEEKS, '2026-07-20') === null)
+
+check('today after the whole grid -> the last week (an elapsed run has no future weeks)', () =>
+  currentGridWeekStart(GRID_WEEKS, '2027-01-01') === '2026-08-31')
+
+check('empty grid -> null, no throw', () => currentGridWeekStart([], '2026-08-13') === null)
+
+// The property the picker actually depends on: everything strictly before
+// the answer is past, everything from it onward is still plannable. A
+// "return the first entry" or "return the last entry" implementation
+// satisfies some of the point checks above but not this partition.
+check('partitions the grid: exactly the weeks before the answer are past', () => {
+  const today = '2026-08-19'
+  const current = currentGridWeekStart(GRID_WEEKS, today)
+  const past = GRID_WEEKS.filter((w) => current !== null && w.week_start < current)
+  const open = GRID_WEEKS.filter((w) => current === null || w.week_start >= current)
+  return current === '2026-08-17' &&
+    past.length === 2 && open.length === 3 &&
+    past.every((w) => w.week_start < today) &&
+    open.every((w, i) => i === 0 || w.week_start > today)
+})
+
+// ── defaultExpandedMonths ───────────────────────────────────────────────────
+console.log('')
+console.log('defaultExpandedMonths')
+
+check('current month + next 2, when the current month is inside the horizon', () => {
+  const months = ['2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11']
+  const expanded = defaultExpandedMonths(months, new Date('2026-08-15T00:00:00Z'))
+  return [...expanded].sort().join() === ['2026-08', '2026-09', '2026-10'].join()
+})
+
+check('current month at the very end of the horizon expands only what exists (no overrun, no throw)', () => {
+  const months = ['2026-06', '2026-07', '2026-08']
+  const expanded = defaultExpandedMonths(months, new Date('2026-08-15T00:00:00Z'))
+  return [...expanded].sort().join() === ['2026-08'].join()
+})
+
+check('current month NOT in the horizon (run fully in the future) falls back to the first 3 months', () => {
+  const months = ['2027-01', '2027-02', '2027-03', '2027-04']
+  const expanded = defaultExpandedMonths(months, new Date('2026-08-15T00:00:00Z'))
+  return [...expanded].sort().join() === ['2027-01', '2027-02', '2027-03'].join()
+})
+
+check('empty horizon -> empty expand set, no throw', () => defaultExpandedMonths([], new Date('2026-08-15T00:00:00Z')).size === 0)
+
+// ── sumPlannedByColumn ──────────────────────────────────────────────────────
+//
+// The pinned weekly-total footer row (design §5.1's last bullet). See
+// weekColumns.ts's own doc on `sumPlannedByColumn`/`PlannedContribution` for
+// why this takes an already-gap-excluded `planned` per (product, column)
+// rather than raw MpsLines: the exclusion is `aggregateLines`'
+// (ProductionMatrix.tsx) job, already documented and exercised by that
+// file's own comment trail — this function's contract is narrower: sum by
+// column, never lose or cross-contaminate a column, and never omit one
+// `columns` says exists.
+console.log('')
+console.log('sumPlannedByColumn')
+
+const WEEK_COLS: Column[] = [
+  { kind: 'week', id: 'w:2026-08-03', month: '2026-08', week_start: '2026-08-03' },
+  { kind: 'week', id: 'w:2026-08-10', month: '2026-08', week_start: '2026-08-10' },
+  { kind: 'week', id: 'w:2026-08-17', month: '2026-08', week_start: '2026-08-17' },
+  { kind: 'week', id: 'w:2026-08-24', month: '2026-08', week_start: '2026-08-24' },
+]
+
+check('a week column sums Planned across several products, not just the last one seen', () => {
+  // Three products land in the SAME week column (w:2026-08-10). A mutation
+  // that assigns instead of accumulates (`totals.set(id, c.planned)` instead
+  // of `totals.set(id, prev + c.planned)`) would leave this at 3000 (the
+  // last contribution) instead of 6000 (the sum of all three) — catching
+  // exactly the "overwrite, don't accumulate" class of bug.
+  const contributions: PlannedContribution[] = [
+    { columnId: 'w:2026-08-10', planned: 1000 },
+    { columnId: 'w:2026-08-10', planned: 2000 },
+    { columnId: 'w:2026-08-10', planned: 3000 },
+  ]
+  const totals = sumPlannedByColumn(contributions, WEEK_COLS)
+  return totals.get('w:2026-08-10') === 6000
+})
+
+check('contributions to one column never leak into a sibling column\'s total', () => {
+  // A mutation that sums ALL contributions into every column (e.g. ignoring
+  // `columnId` and just returning the grand total under every key) would
+  // pass the single-column check above but fail this one: the untouched
+  // column must stay at exactly what IT was given, not pick up its
+  // neighbour's number. This is also the shape of "a column whose only line
+  // is a capacity_gap must read 0, not the gap qty" one layer up: the caller
+  // (ProductionMatrix.tsx) hands this function `cell.planned`, which
+  // `aggregateLines` already zeroes for a gap-only cell — what THIS function
+  // must not do is let that legitimate 0 get contaminated by a neighbouring
+  // column's real production.
+  const contributions: PlannedContribution[] = [
+    { columnId: 'w:2026-08-03', planned: 5000 }, // a real, busy week
+    { columnId: 'w:2026-08-10', planned: 0 },    // stands in for a gap-only cell: aggregateLines already excluded the gap qty before this ever sees it
+  ]
+  const totals = sumPlannedByColumn(contributions, WEEK_COLS)
+  return totals.get('w:2026-08-03') === 5000 && totals.get('w:2026-08-10') === 0
+})
+
+check('a column with NO contributions at all still reads as a real 0, not undefined', () => {
+  // Stands in for an empty column — a maintenance week, or a month that
+  // netted to zero for every product, so no (product, column) pair was ever
+  // pushed for it. A mutation that only seeds/updates totals for columns
+  // that appear in `contributions` (dropping the `for (const col of
+  // columns) totals.set(col.id, 0)` pre-seed) would leave `.get()` returning
+  // `undefined` here — the caller's `weekTotals.get(col.id) ?? 0` would mask
+  // that with `?? 0` today, but this pins the CONTRACT (every real column
+  // has a real 0) rather than relying on a defensive fallback at the call
+  // site to paper over it.
+  const totals = sumPlannedByColumn([], WEEK_COLS)
+  return totals.size === WEEK_COLS.length && totals.get('w:2026-08-17') === 0
+})
+
+check('a collapsed month\'s total equals the sum of what its weeks would total, expanded', () => {
+  // Same underlying per-product weekly figures, read at two different
+  // grains — exactly what "the month summary column, collapsed, must equal
+  // its 4-5 weeks, expanded" (design §5.1) requires. Two products, four
+  // weeks: expanded, each product contributes one entry per week column;
+  // collapsed, each product contributes ONE entry to the single month
+  // column, valued at that product's own four-week sum (mirroring what
+  // `aggregateLines`' month-grain map — the same map `getMonthCell` reads —
+  // actually produces: one accumulated total per product per month, not a
+  // re-derivation performed by this function). A mutation that, say, only
+  // sums the FIRST contribution per column (instead of accumulating) would
+  // make the expanded-then-summed total diverge from the collapsed total on
+  // this fixture (5000 + 16000 = 21000 either way only if accumulation is
+  // real on both sides), since both readings exercise the same underlying
+  // accumulation logic on different partitions of the same numbers.
+  const productA = [1000, 2000, 1500, 500] // by week, Aug W1..W4 (sums to 5000)
+  const productB = [4000, 3000, 3000, 6000] // sums to 16000
+  const expandedContributions: PlannedContribution[] = WEEK_COLS.flatMap((col, i) => [
+    { columnId: col.id, planned: productA[i] },
+    { columnId: col.id, planned: productB[i] },
+  ])
+  const expandedTotals = sumPlannedByColumn(expandedContributions, WEEK_COLS)
+  const expandedSum = WEEK_COLS.reduce((sum, col) => sum + (expandedTotals.get(col.id) ?? 0), 0)
+
+  const monthCol: Column[] = [{ kind: 'monthSummary', id: 'm:2026-08', month: '2026-08' }]
+  const collapsedContributions: PlannedContribution[] = [
+    { columnId: 'm:2026-08', planned: productA.reduce((a, b) => a + b, 0) },
+    { columnId: 'm:2026-08', planned: productB.reduce((a, b) => a + b, 0) },
+  ]
+  const collapsedTotal = sumPlannedByColumn(collapsedContributions, monthCol).get('m:2026-08')
+
+  return expandedSum === 21000 && collapsedTotal === 21000 && expandedSum === collapsedTotal
+})
+
+check('empty contributions and empty columns -> empty map, no throw', () =>
+  sumPlannedByColumn([], []).size === 0)
+
+console.log('')
+if (failures > 0) { console.log(`${failures} check(s) FAILED`); process.exit(1) }
+else console.log('All checks passed.')

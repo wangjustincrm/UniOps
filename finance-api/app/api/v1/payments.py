@@ -263,10 +263,15 @@ class ExecuteBatchRequest(BaseModel):
 
 @router.get("/can-pay")
 async def can_pay(user: CurrentUser, db: AsyncSession = Depends(get_db)):
-    """Whether the current user may execute payments (ap_clerk / finance roles or
-    a finance_bp / finance_manager role_management assignment). Used by the
-    Payment Batches UI to show the Create/Execute controls — same gate the
-    create_batch / execute_batch endpoints enforce server-side."""
+    """Whether the current user may execute payments — primary (JWT) role in
+    _PAY_ROLES, or an ADDITIONAL role (identity's user_roles) in
+    _PAY_ROLES_ASSIGNED (_PAY_ROLES minus system_admin): payment_officer /
+    finance_manager / finance_bp, or system_admin as a primary role only.
+    ap_clerk is deliberately NOT in this set (2026-08-13: payment execution
+    moved to payment_officer; ap_clerk keeps read access, see _FINANCE_ROLES
+    in app/core/deps.py). Used by the Payment Batches UI to show the
+    Create/Execute controls — same gate the create_batch / execute_batch
+    endpoints enforce server-side."""
     try:
         await payment_execute._check_can_pay(db, user)
         return {"can_pay": True}
@@ -320,7 +325,9 @@ async def get_batch(batch_id: uuid.UUID, user: CurrentUser, db: AsyncSession = D
 @router.post("/batches", response_model=BatchOut, status_code=201)
 async def create_batch(body: CreateBatchRequest, user: CurrentUser,
                        db: AsyncSession = Depends(get_db)):
-    # payment authority (can_pay incl. ap_clerk + assignments), not COA-manage
+    # payment authority: primary role in _PAY_ROLES or an additional role in
+    # _PAY_ROLES_ASSIGNED (payment_officer / finance_manager / finance_bp —
+    # ap_clerk removed 2026-08-13), not COA-manage
     try:
         await payment_execute._check_can_pay(db, user)
     except PaymentPermissionError as e:

@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { financeApi } from '@/lib/api'
 import {
   ArrowLeft, CheckCircle2, Clock, AlertTriangle, ChevronDown,
-  CreditCard, FileText, ExternalLink, Landmark, Paperclip, X,
+  CreditCard, FileText, ExternalLink, Landmark, X,
   RotateCcw, XCircle, Pencil, MessageSquare, SkipForward,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -16,14 +17,17 @@ import { usePo } from '@/hooks/usePos'
 import { useInvoices } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
-import { usePaAttachments, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
+import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { PA_TYPE_LABEL, type PaStatus } from '@/services/pa'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import {
   planApplications, plannedTotal, suggestCredits,
   type CreditSuggestResponse,
 } from '@/services/vendorCredits'
+import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
+import { useConfig } from '@/hooks/useConfig'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -100,9 +104,14 @@ function TimelineStep({
 
 type ApprovalAction = 'approve' | 'return' | 'reject'
 
-function ApprovalModal({ action, paNumber, onConfirm, onClose }: {
+// isPending: the modal stays mounted until the action resolves, so without it
+// the confirm button is live for the whole request. A second click re-posts the
+// same action — usually a 409 the user reads as a failure, but for 'approve' it
+// can silently consume the NEXT step's task when the same person approves two
+// consecutive steps. ProcessModal already gates on `busy` for the same reason.
+function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending }: {
   action: ApprovalAction; paNumber: string
-  onConfirm: (comment: string) => void; onClose: () => void
+  onConfirm: (comment: string) => void; onClose: () => void; isPending: boolean
 }) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
@@ -136,9 +145,9 @@ function ApprovalModal({ action, paNumber, onConfirm, onClose }: {
           </div>
           <div className="flex justify-end gap-2">
             <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
-            <button disabled={needsComment && !comment.trim()} onClick={() => onConfirm(comment)}
+            <button disabled={(needsComment && !comment.trim()) || isPending} onClick={() => onConfirm(comment)}
               className={cn('inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed', cfg.btn)}>
-              {cfg.icon}{cfg.label}
+              {cfg.icon}{isPending ? 'Working…' : cfg.label}
             </button>
           </div>
         </div>
@@ -339,15 +348,30 @@ export default function PaDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { data: pa, isLoading } = usePa(id ?? '')
+  useDocTabTitle(pa?.pa_number)
   const { data: events } = usePaEvents(id ?? '')
   const paAction = usePaAction(id ?? '')
   const confirmSettlement = useConfirmSettlement(id ?? '')
   const { data: po } = usePo(pa?.po_id ?? '')
-  const { data: invoicesData } = useInvoices(pa?.invoice_ids.length ? { po_id: pa.po_id } : undefined)
-  // The PO can carry multiple PAs/invoices, so narrow to the invoices actually
-  // linked to THIS PA (pa.invoice_ids) instead of showing every PO invoice.
+  // PO 路由按 po_id 取,协议路由按 agreement_id 取。原先只判 pa.po_id,
+  // 协议 PA(po_id 为 null)整个跳过 fetch,Linked Documents 永远显示
+  // "No invoices linked"。agreement_id 过滤后端早就支持(DocumentChainTree 已在用)。
+  //
+  // 刻意**不传** page/page_size:useInvoices 据此分流 —— 传了就走单页
+  // list(),不传才走 listAll()(fetchAllPages 逐页取全)。截断已由 listAll
+  // 解决,再传 page_size 反而把「取全部」降级成「封顶一页」。
+  const invoiceFilters = pa?.invoice_ids.length
+    ? (pa.po_id
+        ? { po_id: pa.po_id }
+        : pa.agreement_id
+          ? { agreement_id: pa.agreement_id }
+          : undefined)
+    : undefined
+  const { data: invoicesData } = useInvoices(invoiceFilters, !!invoiceFilters)
   const linkedInvoices = (invoicesData?.items ?? []).filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
+  // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
+  const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
 
   const [activeTab, setActiveTab] = useState<'details' | 'attachments' | 'history'>('details')
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
@@ -355,13 +379,24 @@ export default function PaDetailPage() {
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
   const { data: attachments = [] } = usePaAttachments(id ?? '')
+  const uploadAttachment = useUploadPaAttachment(id ?? '')
   const deleteAttachment = useDeletePaAttachment(id ?? '')
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const regeneratePdf = useRegeneratePaPdf(id ?? '')
 
   const { data: workflowSteps } = usePaWorkflowSteps(id ?? '')
   // Must stay above the early returns below — calling it later would make the
   // hook count differ between the loading and loaded renders (Rules of Hooks).
   const { data: myTasks } = useTasks({ is_completed: false })
+  // Payment execution authority is segregated from ap_clerk (2026-08-13) and
+  // held by payment_officer (an additional role, invisible to user?.role) plus
+  // finance_manager/finance_bp/system_admin. Ask the server rather than
+  // re-deriving the role set client-side — same endpoint/gate the Finance
+  // Payment Batches UI uses (finance/src/pages/finance/PaymentBatchPage.tsx).
+  const { data: payPerm } = useQuery({
+    queryKey: ['payments-can-pay'],
+    queryFn: () => financeApi.get<{ can_pay: boolean }>('/payments/can-pay'),
+  })
 
   if (isLoading) {
     return (
@@ -375,7 +410,7 @@ export default function PaDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24">
         <p className="text-neutral-500">Payment Application not found.</p>
-        <Button variant="secondary" className="mt-4" onClick={() => navigate('/pa')}>Back to PA List</Button>
+        <BackLink to="/pa" className="mt-4"><Button variant="secondary">Back to PA List</Button></BackLink>
       </div>
     )
   }
@@ -395,7 +430,7 @@ export default function PaDetailPage() {
   const canApprove  =
     (['submitted', 'in_review'].includes(pa.status)) &&
     hasApproveTask
-  const canProcess  = user?.role === 'ap_clerk'
+  const canProcess  = payPerm?.can_pay ?? false
   const canSettle   = user?.role === 'requester' || user?.role === 'system_admin'
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
@@ -513,7 +548,7 @@ export default function PaDetailPage() {
               Settle Prepayment
             </Button>
           )}
-          {pa.pa_type === 'settlement' && pa.status === 'submitted' && Number(pa.payment_amount) === 0 && (canProcess || user?.role === 'system_admin') && (
+          {pa.pa_type === 'settlement' && pa.status === 'submitted' && Number(pa.payment_amount) === 0 && canProcess && (
             <Button
               onClick={() => confirmSettlement.mutate()}
               disabled={confirmSettlement.isPending}
@@ -754,6 +789,28 @@ export default function PaDetailPage() {
                   )}
                 </div>
               </div>
+
+              {/* Invoice-to-PO / invoice-to-receipts variance — per-invoice,
+                  collapsed to a total, expandable to line/receipt detail. AP
+                  will not personally absorb a payment difference; this makes
+                  it visible to the manager who already approves the PA
+                  instead of adding an approval step. Covers both the PO
+                  route (pa.po_id) and the house-account agreement route
+                  (pa.agreement_id, Task 8) — InvoiceMatchVariancePanel itself
+                  decides which comparison applies per invoice's
+                  agreement_type, and whether it has anything to show at all. */}
+              {(pa.po_id || pa.agreement_id) && linkedInvoices.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  {linkedInvoices.map((inv) => (
+                    <InvoiceMatchVariancePanel
+                      key={inv.id}
+                      invoice={inv}
+                      poLines={po?.line_items}
+                      tolerancePct={matchTolerancePct}
+                    />
+                  ))}
+                </div>
+              )}
             </>
           )}
 
@@ -774,36 +831,25 @@ export default function PaDetailPage() {
                   </button>
                 )}
               </div>
-              {attachments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />
-                  <p className="text-sm text-neutral-400">No attachments uploaded</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {attachments.map((att) => (
-                    <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-                      <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-                      <span className="flex-1 truncate text-sm text-neutral-700">{att.filename}</span>
-                      <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
-                      <button
-                        type="button"
-                        onClick={() => paAttachmentService.download(id!, att.id, att.filename)}
-                        className="text-xs text-primary-600 hover:underline"
-                      >
-                        Download
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteAttachment.mutate(att.id)}
-                        className="text-neutral-300 hover:text-danger-500"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
+              {downloadError && (
+                <div className="mb-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+                  {downloadError}
                 </div>
               )}
+              <AttachmentsEditor
+                inputId="pa-detail-file-upload"
+                attachments={attachments}
+                isUploading={uploadAttachment.isPending}
+                isDeleting={deleteAttachment.isPending}
+                onUpload={(file) => uploadAttachment.mutateAsync(file)}
+                onDelete={(attId) => deleteAttachment.mutate(attId)}
+                onDownload={(att) => {
+                  setDownloadError(null)
+                  paAttachmentService.download(id!, att.id, att.filename).catch(() => {
+                    setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
+                  })
+                }}
+              />
             </div>
           )}
 
@@ -898,6 +944,7 @@ export default function PaDetailPage() {
           paNumber={pa.pa_number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
           onClose={() => setPendingAction(null)}
+          isPending={paAction.isPending}
         />
       )}
       {processOpen && (

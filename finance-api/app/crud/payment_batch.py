@@ -118,7 +118,7 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
 
     inv_no = await vendor_inv_no_map(db, pas)
     rows = [
-        {"doc_kind": "pa_dir" if r.po_id is None else "pa",
+        {"doc_kind": "pa_dir" if r.is_direct else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
          "payee": r.vendor_name, "vendor_inv_no": inv_no.get(r.id, ""),
          "amount": str(r.payment_amount), "currency": r.currency}
@@ -182,7 +182,7 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
         # payment preview and is recorded on the payment_record, not here.
         db.add(PaymentBatchLine(
             batch_id=batch.id,
-            doc_kind="pa_dir" if p.po_id is None else "pa",
+            doc_kind="pa_dir" if p.is_direct else "pa",
             doc_id=p.id, doc_number=p.pa_number, amount=p.payment_amount,
         ))
     for c in claims:

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.api.v1 import api_router
+from app.api.v1.delegations import router as delegations_router
 from app.api.v1.health import router as health_router
 from app.api.v1.routing import router as routing_router
 from app.core.config import settings
@@ -59,4 +60,5 @@ app.add_middleware(
 
 app.include_router(api_router, prefix="/approval/v1")
 app.include_router(routing_router, prefix="/approval/v1")
+app.include_router(delegations_router, prefix="/approval/v1")
 app.include_router(health_router)

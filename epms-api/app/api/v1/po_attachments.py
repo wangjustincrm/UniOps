@@ -7,11 +7,13 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.core.access_scope import role_holder_ids
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud.po import get_by_id as get_po
 from app.models.config import CompanyConfig
 from app.models.po_attachment import PoAttachment
+from app.models.user import User
 from app.services.attachment_helper import delete_from_file_server, proxy_download, upload_to_file_server
 from app.services.pdf_po import generate_po_pdf
 
@@ -19,8 +21,16 @@ router = APIRouter(prefix="/po/{po_id}/attachments", tags=["po-attachments"])
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
-# Statuses at/after which an approved-document PDF is meaningful (regenerate-able).
-_PDF_STATUSES = {"approved", "issued", "partially_received", "fully_received", "closed"}
+# Statuses at/after which the PO PDF is meaningful (regenerate-able).
+#
+# ``nc_pending`` — an NC order still working through the ERP's approval chain —
+# is included deliberately, and is the one entry that is not "at/after approval":
+# the printed PDF is what gets signed off-line, and those signatures are what
+# feed NC's approval. Requiring approval first would make the document
+# unobtainable exactly when it is needed. The PO stays read-only in every other
+# respect; nothing about holding a PDF makes it payable or receivable.
+_PDF_STATUSES = {"approved", "issued", "partially_received", "fully_received",
+                 "closed", "nc_pending"}
 
 
 class AttachmentMeta(BaseModel):
@@ -96,16 +106,33 @@ async def regenerate_pdf(
     if po is None:
         raise HTTPException(status_code=404, detail="PO not found")
     if po.status not in _PDF_STATUSES:
-        raise HTTPException(status_code=409, detail="PDF is only available once the PO is approved")
+        raise HTTPException(
+            status_code=409,
+            detail=f"PDF is not available for a PO in status '{po.status}'")
 
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
     company_name = cfg.name if cfg else "EPMS"
+
+    # Type 1 POs carry a signature block naming the OPM as our company's
+    # signatory. role_holder_ids counts a PRIMARY (users.role) or ADDITIONAL
+    # (identity's user_roles) "opm" role, active users only. Leave the name
+    # blank unless exactly one holder is found — never print an
+    # arbitrarily-chosen name on a vendor-facing document.
+    signatory_name = None
+    if po.type == 1:
+        opm_holders = (await role_holder_ids(db, codes=("opm",))).get("opm", set())
+        if len(opm_holders) == 1:
+            signatory_name = (await db.execute(
+                select(User.full_name).where(User.id == next(iter(opm_holders)))
+            )).scalar_one_or_none()
+
     filename = f"{po.number}.pdf"
     loop = asyncio.get_event_loop()
     pdf_bytes = await loop.run_in_executor(
         None, generate_po_pdf, po, company_name,
         cfg.pdf_templates if cfg else None,
         cfg.logo_data_url if cfg else None,
+        signatory_name,
     )
 
     existing = (await db.execute(

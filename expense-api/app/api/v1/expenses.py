@@ -1,4 +1,5 @@
 """Expense claim endpoints — EXP / MIL / TRV / CFM (OA module)."""
+import logging
 import uuid
 from typing import Annotated
 
@@ -11,21 +12,42 @@ from app.crud import expense as expense_crud
 from app.schemas.expense import (
     ExpenseActionRequest,
     ExpenseClaimCreate,
+    ExpenseClaimListItem,
     ExpenseClaimListResponse,
     ExpenseClaimResponse,
     ExpenseClaimUpdate,
     PaymentRecordRequest,
 )
 from app.services.approval_client import delegate_action
+from app.services.attachment_helper import delete_from_file_server
 from app.services import finance_client
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
-# Roles that can trigger the pay action (kept for my_actions inbox logic).
+logger = logging.getLogger(__name__)
+
+# Roles that may VIEW payment-stage documents / OA payment attachments (kept for
+# my_actions inbox logic, list visibility, and invoice-attachment read/delete).
 # Intentionally fixed — payment authority is a hardcoded financial-role set,
 # not part of the configurable approval workflow (unlike the step→role
 # lookups in my_actions below, which are derived from workflow_defs).
-_CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "system_admin"}
+#
+# NOTE this is a VISIBILITY set, not the payment-execution gate — it still
+# includes ap_clerk (2026-08-13: AP Clerk keeps read access to payment-stage
+# docs/attachments after payment_officer took over execution; see finance-api's
+# _FINANCE_ROLES in app/core/deps.py, which is the same split). Do not remove
+# ap_clerk from here to "match" the pay gate below — that silently blinds AP.
+_CAN_PAY = {"finance_bp", "finance_manager", "ap_clerk", "payment_officer", "system_admin"}
+
+# Who may actually EXECUTE the pay action — mirrors finance-api's authoritative
+# gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED in app/crud/payment_execute.py) so this
+# service's can_pay flag never grants a button finance-api's endpoint will 403,
+# nor hides one that endpoint would allow. ap_clerk is deliberately NOT in this
+# set — payment execution moved to payment_officer; system_admin is deliberately
+# primary-role-only (this codebase's convention, see budget_scope.py's
+# FULL_ACCESS_PRIMARY vs FULL_ACCESS_ASSIGNED).
+_PAY_PRIMARY = {"payment_officer", "finance_manager", "finance_bp", "system_admin"}
+_PAY_ASSIGNED = _PAY_PRIMARY - {"system_admin"}
 
 
 def _action_key(claim_type: str) -> str:
@@ -130,7 +152,54 @@ async def _can_act_on_claim(db, claim, user_id: uuid.UUID, role: str | None = No
                     return True
             elif assigned in held:
                 return True
+
+    # Delegation (task-11): a delegate standing in for one or more delegators
+    # today may act on any of the delegators' open approve tasks — pinned
+    # directly to a delegator, or role-pool tasks for a role a delegator
+    # holds. This function sees every open task on the document (unlike
+    # my-actions' TM.type.like("approve_%") predicate), so the approve-type
+    # guard is applied here explicitly.
+    from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
+    delegator_ids = await active_delegator_ids(db, user_id)
+    if delegator_ids:
+        deleg_roles = await delegated_broadcast_roles(db, delegator_ids)
+        for t in open_tasks:
+            if not (t.type or "").startswith("approve"):
+                continue
+            if t.assigned_user_id is not None and t.assigned_user_id in delegator_ids:
+                return True
+            if t.assigned_user_id is None and t.assigned_role:
+                assigned = t.assigned_role.lower()
+                held = {r.lower() for r in deleg_roles}
+                if "gm" in held or "opm" in held:
+                    held.add("gm_or_opm")
+                if assigned in held:
+                    return True
     return False
+
+
+_DELETABLE_STATUSES = ("draft", "returned", "submitted", "in_review")
+
+
+def can_delete_claim(claim, user_id: uuid.UUID, role: str) -> bool:
+    """Whether `user_id` may hard-delete `claim`. Pure — no queries.
+
+    Deliberately does not check for a referencing TRV: that would be one query
+    per row on every list render, for a case the status rule already makes
+    unreachable. The DELETE endpoint runs that check.
+    """
+    if claim.claim_type != "TRA":
+        return False
+    if claim.status not in _DELETABLE_STATUSES:
+        return False
+    return role == "system_admin" or claim.employee_id == user_id
+
+
+def _list_item(claim, user_id: uuid.UUID, role: str) -> ExpenseClaimListItem:
+    """Serialize one list row, stamping the server-computed delete permission."""
+    item = ExpenseClaimListItem.model_validate(claim)
+    item.can_delete = can_delete_claim(claim, user_id, role)
+    return item
 
 
 @router.get("", response_model=ExpenseClaimListResponse)
@@ -139,6 +208,7 @@ async def list_expenses(
     user: CurrentUserDep,
     claim_type: Annotated[str | None, Query(alias="type")] = None,
     status_filter: Annotated[str | None, Query(alias="status")] = None,
+    exclude_type: Annotated[str | None, Query(alias="exclude_type")] = None,
     my_claims: bool = False,
     page: int = 1,
     page_size: Annotated[int, Query(le=100)] = 20,
@@ -146,6 +216,13 @@ async def list_expenses(
     """OA expense list — role-based visibility (PRD §B):
     All roles see their own submissions + claims in their approval queue.
     system_admin sees all.
+
+    `exclude_type` (comma-separated) drops claim types from the result. The
+    Expense Claims page sends `exclude_type=TRA`: a Travel Application shares
+    this table but is not a reimbursement (total_amount 0, never reaches the
+    payment path, and its detail route is /travel/:id) — without this it showed
+    up on both /expenses and /travel. The Travel Applications page sends
+    `type=TRA` instead and is unaffected.
     """
     from sqlalchemy import func, or_, select as sa_select
     from app.models.expense import ExpenseClaim as EC
@@ -153,6 +230,7 @@ async def list_expenses(
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
+    excluded = [t.strip() for t in exclude_type.split(",") if t.strip()] if exclude_type else []
 
     # Full visibility: system_admin (config) and ap_clerk (processes payments across all
     # claims — must keep seeing a claim after it is marked paid, not just while approved).
@@ -160,10 +238,11 @@ async def list_expenses(
         employee_id = user_id if my_claims else None
         items, total = await expense_crud.list_claims(
             db, claim_type=claim_type, status=status_filter,
-            employee_id=employee_id, page=page, page_size=page_size,
+            employee_id=employee_id, exclude_types=excluded,
+            page=page, page_size=page_size,
         )
         return ExpenseClaimListResponse(
-            items=[ExpenseClaimListItem.model_validate(c) for c in items],
+            items=[_list_item(c, user_id, role) for c in items],
             total=total,
         )
 
@@ -203,6 +282,8 @@ async def list_expenses(
     q = sa_select(EC).where(or_(*conditions))
     if claim_type:
         q = q.where(EC.claim_type == claim_type)
+    if excluded:
+        q = q.where(EC.claim_type.not_in(excluded))
     if status_filter:
         q = q.where(EC.status == status_filter)
 
@@ -214,7 +295,7 @@ async def list_expenses(
     )).scalars().all())
 
     return ExpenseClaimListResponse(
-        items=[ExpenseClaimListItem.model_validate(c) for c in paged],
+        items=[_list_item(c, user_id, role) for c in paged],
         total=total,
     )
 
@@ -293,41 +374,74 @@ async def create_expense(
 @router.get("/my-actions", response_model=ExpenseClaimListResponse)
 async def my_actions(db: SessionDep, user: CurrentUserDep):
     """Returns expense claims where the current user needs to take action.
-    Used by Portal task inbox aggregation. Approver steps are derived from the
-    configured workflow_defs (per claim type) at request time — not a hardcoded
-    step→role map — so a customised approval flow stays consistent here.
+    Used by Portal task inbox aggregation.
+
+    The approval half reads the shared `tasks` table (written by approval-api) —
+    the same source `_can_act_on_claim` gates the Approve button on, so the inbox
+    lists exactly what the caller can actually act on. It used to select every
+    claim parked at a workflow step whose role the caller holds, which had no
+    department predicate at all: since `dept_manager` is a populous role, every
+    department manager saw every company claim at that step (requester name and
+    amount included). approval-api PINS a dept_manager task to the one manager
+    who routes for that claim's department, so reading tasks restores the scope
+    without this endpoint having to re-derive routing rules of its own.
+
+    Trade-off, deliberate: a claim whose approval task was closed while the claim
+    stayed open (the Mark Done incident) no longer appears here. It cannot be
+    approved by anyone — it needs the heal script, not an inbox row.
+
+    The payment half (approved claims for _CAN_PAY roles) is a role pool with no
+    per-document task, so it stays role-based.
     """
-    from sqlalchemy import or_, select
+    from sqlalchemy import and_, func, or_, select
+    from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
     from app.models.expense import ExpenseClaim as EC
+    from app.models.task_mirror import TaskMirror as TM
 
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
     roles = await _user_role_codes(db, user_id, role)   # multi-role union
-    wf = await _get_workflow_defs(db)
 
-    conditions = []
+    # `gm_or_opm` is a synthetic assigned_role (not a real role code): approval-api
+    # broadcasts singleton-post steps under it so the CURRENT holder resolves live.
+    # Mirrors _can_act_on_claim.
+    assigned_roles = {r.lower() for r in roles}
+    if "gm" in assigned_roles or "opm" in assigned_roles:
+        assigned_roles.add("gm_or_opm")
 
-    def _add(ct_filter, key):
-        for idx, step in enumerate(wf.get(key) or []):
-            if step.get("role") in roles:
-                conditions.append(
-                    ct_filter
-                    & (EC.status.in_(["submitted", "in_review"]))
-                    & (EC.approval_step_idx == idx)
-                )
+    # Delegation (task-11): fold in any live delegators' pinned tasks and the
+    # role-pool tasks for roles they hold. Only widens which TASKS are
+    # matched here — never the caller's own role/visibility scope above.
+    delegator_ids = await active_delegator_ids(db, user_id)
+    deleg_roles = {r.lower() for r in await delegated_broadcast_roles(db, delegator_ids)}
+    if "gm" in deleg_roles or "opm" in deleg_roles:
+        deleg_roles.add("gm_or_opm")
 
-    _add(EC.claim_type == "EXP", "exp")
-    _add(EC.claim_type == "MIL", "mil")
-    _add(EC.claim_type == "TRV", "trv")
-    _add(EC.claim_type.like("CFM%"), "cfm")
+    arms = [
+        TM.assigned_user_id == user_id,
+        and_(TM.assigned_user_id.is_(None),
+             func.lower(TM.assigned_role).in_(assigned_roles)),
+    ]
+    if delegator_ids:
+        arms.append(TM.assigned_user_id.in_(delegator_ids))
+        if deleg_roles:
+            arms.append(and_(TM.assigned_user_id.is_(None),
+                              func.lower(TM.assigned_role).in_(deleg_roles)))
+
+    open_task_for_me = select(TM.document_id).where(
+        TM.is_completed.is_(False),
+        TM.type.like("approve_%"),
+        or_(*arms),
+    )
+
+    conditions = [
+        EC.status.in_(["submitted", "in_review"]) & EC.id.in_(open_task_for_me)
+    ]
 
     # TRA excluded — an approved Travel Application has total_amount 0 and never
     # enters the payment path, so it must not surface as a pay-action inbox item.
     if any(r in _CAN_PAY for r in roles):
         conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
-
-    if not conditions:
-        return ExpenseClaimListResponse(items=[], total=0)
 
     q = select(EC).where(or_(*conditions)).order_by(EC.created_at.desc()).limit(50)
     result = await db.execute(q)
@@ -374,6 +488,7 @@ class ClaimPermissions(BaseModel):
     is_owner: bool
     can_approve: bool      # may approve / return / reject the current pending step
     can_pay: bool          # may record payment (status = approved)
+    can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
 
 
 @router.get("/{claim_id}/permissions", response_model=ClaimPermissions)
@@ -398,14 +513,16 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
     can_pay = False
     if claim.status == "approved" and claim.claim_type != "TRA":
         codes = await _user_role_codes(db, user_id, role)
-        can_pay = (
-            is_admin
-            or role in _CAN_PAY
-            or "finance_bp" in codes
-            or "finance_manager" in codes
-        )
+        # Mirrors finance-api's authoritative gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED)
+        # — NOT _CAN_PAY, which is a visibility set and still includes ap_clerk.
+        can_pay = role in _PAY_PRIMARY or bool(codes & _PAY_ASSIGNED)
 
-    return ClaimPermissions(is_owner=is_owner, can_approve=can_approve, can_pay=can_pay)
+    return ClaimPermissions(
+        is_owner=is_owner,
+        can_approve=can_approve,
+        can_pay=can_pay,
+        can_delete=can_delete_claim(claim, user_id, role),
+    )
 
 
 class ApprovalStepOut(BaseModel):
@@ -528,6 +645,75 @@ async def update_expense(
         raise HTTPException(status_code=409, detail=str(exc))
     await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
     return ExpenseClaimResponse.model_validate(claim)
+
+
+@router.delete("/{claim_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_travel_application(
+    claim_id: uuid.UUID,
+    db: SessionDep,
+    user: CurrentUserDep,
+    token: BearerTokenDep,
+):
+    """Hard-delete an unapproved Travel Application.
+
+    Restricted to TRA: EXP/MIL/TRV carry budget and payment consequences, so
+    this does not open hard delete for them. The record is gone for good —
+    approval history included — and the claim number is retired (numbering
+    takes max-suffix + 1 and never reuses a gap).
+    """
+    from sqlalchemy import func, select as sa_select
+    from app.models.expense import ExpenseClaim as EC
+
+    claim = await expense_crud.get_by_id(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+
+    user_id = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+
+    # Type and status are checked before ownership on purpose: the owner of an
+    # approved TRA should be told it is too late, not that they lack rights.
+    if claim.claim_type != "TRA":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Only Travel Applications can be deleted, not {claim.claim_type}",
+        )
+    if claim.status not in _DELETABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot delete a Travel Application in status '{claim.status}'",
+        )
+    if not can_delete_claim(claim, user_id, role):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the applicant can delete this Travel Application",
+        )
+
+    # travel_application_id is ON DELETE SET NULL, so a referencing TRV would
+    # silently lose its authorization basis. Unreachable today (the TRV gate
+    # requires an APPROVED TRA, and approved is not deletable) — one query to
+    # keep it that way if the two rules ever drift.
+    referencing = (await db.execute(
+        sa_select(func.count()).select_from(EC)
+        .where(EC.travel_application_id == claim_id)
+    )).scalar_one()
+    if referencing:
+        raise HTTPException(
+            status_code=409,
+            detail="This Travel Application is referenced by a travel expense claim",
+        )
+
+    # Drop attachment blobs before the rows cascade away, otherwise file-api
+    # accumulates orphans. Best-effort: the claim going away matters more.
+    for att in claim.attachments:
+        if att.file_id:
+            try:
+                await delete_from_file_server(uuid.UUID(att.file_id), token)
+            except Exception:
+                logger.warning("file-api delete failed for %s; continuing", att.file_id)
+
+    await expense_crud.delete_claim(db, claim)
+    await db.commit()
 
 
 @router.post("/{claim_id}/action", response_model=ExpenseClaimResponse)

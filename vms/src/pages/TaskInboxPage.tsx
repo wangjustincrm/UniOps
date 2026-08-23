@@ -29,7 +29,10 @@ function taskIcon(docType: string) {
 // Fixed display order + labels for VMS task groups (keyed by document_type).
 const VMS_GROUP_ORDER = ['vms_visit', 'vms_train', 'vms_ppe']
 const VMS_GROUP_LABELS: Record<string, string> = {
-  vms_visit: 'Visit Approvals',
+  // 这一组按 document_type 归类,除审批外还装着 check_out_visitor /
+  // prepare_ppe(vms-api/app/services/visit_tasks.py),所以不能再叫
+  // "Visit Approvals"。
+  vms_visit: 'Visits',
   vms_train: 'Training Confirmations',
   vms_ppe:   'PPE Confirmations',
 }

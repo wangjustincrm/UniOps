@@ -17,10 +17,14 @@ export type TaskType =
   | 'confirm_settlement'
   | 'review_match'
   | 'match_invoice'
+  | 'resolve_exception'
   | 'create_pa'
   | 'create_prepayment_pa'
   | 'approve_budget_plan'
   | 'revise_budget_plan'
+  | 'approve_agr'
+  | 'revise_agr'
+  | 'confirm_period'
 
 export interface ApiTask {
   id: string
@@ -55,7 +59,7 @@ export interface TaskListResponse {
 export const taskService = {
   list: (filters?: TaskFilters) =>
     api.get<TaskListResponse>('/tasks', filters),
-
-  complete: (id: string) =>
-    api.post<ApiTask>(`/tasks/${id}/complete`),
+  // No `complete()` wrapper on purpose: tasks are closed by the engine when the
+  // underlying action is performed, never dismissed from the inbox. See the
+  // note in TaskInboxPage's FullTaskCard.
 }

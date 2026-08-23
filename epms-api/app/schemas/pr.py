@@ -97,6 +97,7 @@ class PrCreate(BaseModel):
     factor_combo: dict[str, str] | None = None
     project_code: str | None = Field(default=None, max_length=100)
     required_by: date | None = None
+    service_completion_date: date | None = None
     delivery_address: str | None = None
     notes: str | None = None
     is_prepaid: bool = False
@@ -120,6 +121,7 @@ class PrUpdate(BaseModel):
     factor_combo: dict[str, str] | None = None
     project_code: str | None = Field(default=None, max_length=100)
     required_by: date | None = None
+    service_completion_date: date | None = None
     delivery_address: str | None = None
     notes: str | None = None
     is_prepaid: bool | None = None
@@ -177,6 +179,7 @@ class PrResponse(BaseModel):
     factor_combo: dict[str, str] | None = None
     project_code: str | None
     required_by: date | None
+    service_completion_date: date | None = None
     delivery_address: str | None
     notes: str | None
     over_budget: bool

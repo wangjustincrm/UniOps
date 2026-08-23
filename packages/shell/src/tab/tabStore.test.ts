@@ -6,8 +6,7 @@ const dash: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', pat
 const page = (key: string): TabMeta => ({ key, title: key, kind: 'page', path: key, closable: true })
 
 function fresh() {
-  localStorage.clear()
-  return createTabStore({ storageKey: 'test:tabs', initialTabs: [dash] })
+  return createTabStore({ initialTabs: [dash] })
 }
 
 describe('tab store', () => {
@@ -98,8 +97,7 @@ describe('tab store — eviction (cap)', () => {
   const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
 
   function freshCapped(cap: number) {
-    localStorage.clear()
-    return createTabStore({ storageKey: 'test:cap', cap, initialTabs: [dash2] })
+    return createTabStore({ cap, initialTabs: [dash2] })
   }
 
   it('evicts the least-recently-used non-pinned tab when over cap', () => {
@@ -131,65 +129,50 @@ describe('tab store — eviction (cap)', () => {
   })
 })
 
-describe('tab store — persistence', () => {
+describe('tab store — no persistence', () => {
   const dash3: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
   const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
 
-  it('persists open tabs + activeKey to localStorage', () => {
-    localStorage.clear()
-    const a = createTabStore({ storageKey: 'persist:tabs', initialTabs: [dash3] })
+  beforeEach(() => localStorage.clear())
+
+  it('writes nothing to localStorage when tabs are opened', () => {
+    const a = createTabStore({ initialTabs: [dash3] })
     a.getState().openTab(pg('/all'))
-    a.getState().openTab(pg('/active'))
     a.getState().setActive('/all')
-
-    // New store instance with the same storageKey rehydrates prior tabs.
-    const b = createTabStore({ storageKey: 'persist:tabs', initialTabs: [dash3] })
-    const s = b.getState()
-    expect(s.tabs.map(t => t.key)).toEqual(['/dashboard', '/all', '/active'])
-    expect(s.activeKey).toBe('/all')
+    expect(localStorage.length).toBe(0)
   })
 
-  it('on restore, only the active tab is alive (others lazy-mount)', () => {
-    localStorage.clear()
-    const a = createTabStore({ storageKey: 'persist:alive', initialTabs: [dash3] })
+  it('starts from the initial tabs only — a new store never inherits open tabs', () => {
+    const a = createTabStore({ initialTabs: [dash3] })
     a.getState().openTab(pg('/all'))
     a.getState().openTab(pg('/active'))
-    a.getState().setActive('/active')
 
-    const b = createTabStore({ storageKey: 'persist:alive', initialTabs: [dash3] })
-    expect(b.getState().alive).toEqual(['/active'])
+    // Simulates leaving the module and coming back: the SPA (and this store) is
+    // rebuilt from scratch and must NOT resurrect the previous workspace.
+    const b = createTabStore({ initialTabs: [dash3] })
+    const s = b.getState()
+    expect(s.tabs.map(t => t.key)).toEqual(['/dashboard'])
+    expect(s.activeKey).toBe('/dashboard')
+    expect(s.alive).toEqual(['/dashboard'])
   })
 
-  it('re-injects the pinned tab if storage somehow lacks it', () => {
-    localStorage.setItem('persist:nopin', JSON.stringify({
-      state: { tabs: [{ key: '/all', title: 'All', kind: 'page', path: '/all', closable: true }], activeKey: '/all' },
-      version: 0,
-    }))
-    const b = createTabStore({ storageKey: 'persist:nopin', initialTabs: [dash3] })
-    expect(b.getState().tabs.some(t => t.key === '/dashboard')).toBe(true)
-  })
-
-  it('repairs stale pinned-tab flags on restore (pinned cannot be closed)', () => {
-    // Persisted storage has a /dashboard entry with stale, non-pinned flags —
-    // simulating data persisted before it was configured as a pinned initial tab.
-    localStorage.setItem('persist:stalepin', JSON.stringify({
+  it('ignores tab state left in localStorage by an older build', () => {
+    localStorage.setItem('uniops:epms:tabs', JSON.stringify({
       state: {
-        tabs: [{ key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: false, closable: true }],
-        activeKey: '/dashboard',
+        tabs: [dash3, { key: '/po/abc', title: 'PO abc', kind: 'page', path: '/po/abc', closable: true }],
+        activeKey: '/po/abc',
       },
-      version: 0,
+      version: 1,
     }))
-    const b = createTabStore({ storageKey: 'persist:stalepin', initialTabs: [dash3] })
-    const restored = b.getState().tabs.find(t => t.key === '/dashboard')
-    expect(restored?.pinned).toBe(true)
-    expect(restored?.closable).toBe(false)
+    const b = createTabStore({ initialTabs: [dash3] })
+    expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard'])
   })
 })
 
 describe('tab store — replaceTab', () => {
   const dashR: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
   const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
-  function freshR() { localStorage.clear(); return createTabStore({ storageKey: 'test:replace', initialTabs: [dashR] }) }
+  function freshR() { return createTabStore({ initialTabs: [dashR] }) }
 
   it('replaces a tab in place, keeping position and activating the target', () => {
     const s = freshR()
@@ -227,44 +210,12 @@ describe('tab store — replaceTab', () => {
   })
 })
 
-describe('tab store — user switch', () => {
-  const dashU: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
-  const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
-
-  it('discards the previous user\'s tabs on a user switch (userId mismatch)', () => {
-    localStorage.clear()
-    const a = createTabStore({ storageKey: 'u:switch', initialTabs: [dashU], userId: 'user-1' })
-    a.getState().openTab(pg('/all'))
-    a.getState().openTab(pg('/active'))
-    // user-2 logs in against the same storageKey
-    const b = createTabStore({ storageKey: 'u:switch', initialTabs: [dashU], userId: 'user-2' })
-    expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard'])
-    expect(b.getState().activeKey).toBe('/dashboard')
-  })
-
-  it('restores tabs for the same user', () => {
-    localStorage.clear()
-    const a = createTabStore({ storageKey: 'u:same', initialTabs: [dashU], userId: 'user-1' })
-    a.getState().openTab(pg('/all'))
-    const b = createTabStore({ storageKey: 'u:same', initialTabs: [dashU], userId: 'user-1' })
-    expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/all'])
-  })
-
-  it('keeps restoring when userId is not provided (check disabled)', () => {
-    localStorage.clear()
-    const a = createTabStore({ storageKey: 'u:none', initialTabs: [dashU] })
-    a.getState().openTab(pg('/all'))
-    const b = createTabStore({ storageKey: 'u:none', initialTabs: [dashU] })
-    expect(b.getState().tabs.map(t => t.key)).toEqual(['/dashboard', '/all'])
-  })
-})
-
 describe('tab store — setTabPath', () => {
   const dashP: TabMeta = { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', pinned: true, closable: false }
   const pg = (k: string): TabMeta => ({ key: k, title: k, kind: 'page', path: k, closable: true })
   it('updates a tab path in place (e.g. query change)', () => {
     localStorage.clear()
-    const s = createTabStore({ storageKey: 'tp:test', initialTabs: [dashP] })
+    const s = createTabStore({ initialTabs: [dashP] })
     s.getState().openTab(pg('/admin'))
     s.getState().setTabPath('/admin', '/admin?section=role')
     expect(s.getState().tabs.find(t => t.key === '/admin')?.path).toBe('/admin?section=role')

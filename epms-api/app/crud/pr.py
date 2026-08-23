@@ -238,6 +238,7 @@ async def create(
         factor_combo=payload.factor_combo,
         project_code=payload.project_code,
         required_by=payload.required_by,
+        service_completion_date=payload.service_completion_date,
         delivery_address=payload.delivery_address,
         notes=payload.notes,
         over_budget=over_budget,
@@ -268,7 +269,7 @@ async def update(
 ) -> PurchaseRequest:
     needs_name_refresh = False
     for field in ("title", "type", "currency", "vendor_id", "cost_center_id", "department_id",
-                  "budget_code", "factor_combo", "project_code", "required_by", "delivery_address", "notes", "is_prepaid"):
+                  "budget_code", "factor_combo", "project_code", "required_by", "service_completion_date", "delivery_address", "notes", "is_prepaid"):
         val = getattr(payload, field)
         if val is not None:
             setattr(pr, field, val)

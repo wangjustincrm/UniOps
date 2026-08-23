@@ -40,6 +40,23 @@ def _po_line(po_id, desc, unit_price, line_total):
     )
 
 
+async def _fixture_user_vendor_po(db, *, subtotal="0"):
+    user = await user_crud.create(db, RegisterRequest(
+        email=f"gr-{uuid.uuid4().hex[:8]}@example.com", password="TestPass1!",
+        full_name="GR Tester", role="warehouse_staff",
+    ))
+    vendor = Vendor(code=f"V-{uuid.uuid4().hex[:8]}", name="Acme",
+                    category="supplier", contact_name="C", contact_email="c@x.com")
+    db.add(vendor)
+    await db.flush()
+    po = PurchaseOrder(number=f"PO-{uuid.uuid4().hex[:8]}", title="T", type=2,
+                       vendor_id=vendor.id, vendor_name="Acme", status="issued",
+                       subtotal=Decimal(subtotal), created_by=user.id)
+    db.add(po)
+    await db.flush()
+    return user, vendor, po
+
+
 def _alloc(invoice_id, po_id, po_line_id, amount):
     return InvoicePoAllocation(
         invoice_id=invoice_id, invoice_line_id=uuid.uuid4(), po_id=po_id,
@@ -196,3 +213,104 @@ async def test_partial_overlap_fans_gr_out_to_every_shared_invoice():
         # match()'s existing decorative semantics (not scoped to the billed lines).
         assert inv1.gr_value == Decimal("180.00")
         assert inv2.gr_value == Decimal("180.00")
+
+
+@pytest.mark.asyncio
+async def test_header_level_allocations_fall_back_to_po_level_link():
+    """An invoice matched by TOTAL amount (or via the legacy single-PO shim) has
+    allocations with po_line_id NULL — there is no line to route by. Those
+    invoices fall back to PO-level linking, while invoices that DO allocate by
+    line on the same PO keep the precise line routing.
+    """
+    async with sm.AsyncSessionLocal() as db:
+        user, vendor, po = await _fixture_user_vendor_po(db, subtotal="130")
+
+        line1 = _po_line(po.id, "A", "5", "50")
+        line2 = _po_line(po.id, "B", "8", "80")
+        db.add_all([line1, line2])
+        await db.flush()
+
+        # Total-value match: one header-level allocation, no po_line_id.
+        inv_total = _invoice(po.id, vendor.id, user.id, ref=f"INVT-{uuid.uuid4().hex[:6]}", status="matched")
+        # Line-level match on line2 only — must NOT pick up a GR for line1.
+        inv_line = _invoice(po.id, vendor.id, user.id, ref=f"INVL-{uuid.uuid4().hex[:6]}", status="matched")
+        db.add_all([inv_total, inv_line])
+        await db.flush()
+        db.add_all([_alloc(inv_total.id, po.id, None, "130"),
+                    _alloc(inv_line.id, po.id, line2.id, "80")])
+        await db.flush()
+
+        gr = _gr(po, vendor.id, user.id)
+        db.add(gr)
+        await db.flush()
+        gr_lines = [_gr_line(gr.id, line1.id, "50")]
+        db.add_all(gr_lines)
+        await db.flush()
+        await gr_crud._autofill_gr_to_matched_invoices(db, gr, gr_lines)
+        await db.flush()
+        await db.refresh(inv_total)
+        await db.refresh(inv_line)
+
+        assert inv_total.gr_ids == [str(gr.id)]      # header-level → PO-level fallback
+        assert inv_total.gr_value == Decimal("50.00")
+        assert inv_line.gr_ids is None               # bills line2; GR received line1
+
+
+@pytest.mark.asyncio
+async def test_match_review_invoice_is_linked_too():
+    """A matched-but-pending-review invoice is still a matched invoice — it must
+    receive the GR, otherwise the 3-Way Match view and the PA receipt gate stay
+    empty until someone edits the invoice by hand."""
+    async with sm.AsyncSessionLocal() as db:
+        user, vendor, po = await _fixture_user_vendor_po(db)
+
+        line = _po_line(po.id, "A", "5", "50")
+        db.add(line)
+        await db.flush()
+
+        inv = _invoice(po.id, vendor.id, user.id, ref=f"INVR-{uuid.uuid4().hex[:6]}", status="match_review")
+        db.add(inv)
+        await db.flush()
+        db.add(_alloc(inv.id, po.id, line.id, "50"))
+        await db.flush()
+
+        gr = _gr(po, vendor.id, user.id)
+        db.add(gr)
+        await db.flush()
+        gr_lines = [_gr_line(gr.id, line.id, "50")]
+        db.add_all(gr_lines)
+        await db.flush()
+        await gr_crud._autofill_gr_to_matched_invoices(db, gr, gr_lines)
+        await db.flush()
+        await db.refresh(inv)
+
+        assert inv.gr_ids == [str(gr.id)]
+        assert inv.gr_value == Decimal("50.00")
+
+
+@pytest.mark.asyncio
+async def test_unmatched_invoice_on_the_po_is_still_left_alone():
+    """The PO-level fallback must not sweep in invoices that were never matched
+    (no allocations at all) — they pick the GR up when they are matched."""
+    async with sm.AsyncSessionLocal() as db:
+        user, vendor, po = await _fixture_user_vendor_po(db, subtotal="50")
+
+        line = _po_line(po.id, "A", "5", "50")
+        db.add(line)
+        await db.flush()
+
+        inv = _invoice(po.id, vendor.id, user.id, ref=f"INVU-{uuid.uuid4().hex[:6]}", status="unmatched")
+        db.add(inv)
+        await db.flush()
+
+        gr = _gr(po, vendor.id, user.id)
+        db.add(gr)
+        await db.flush()
+        gr_lines = [_gr_line(gr.id, line.id, "50")]
+        db.add_all(gr_lines)
+        await db.flush()
+        await gr_crud._autofill_gr_to_matched_invoices(db, gr, gr_lines)
+        await db.flush()
+        await db.refresh(inv)
+
+        assert inv.gr_ids is None

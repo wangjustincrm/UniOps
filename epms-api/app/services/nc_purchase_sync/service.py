@@ -175,6 +175,18 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
 
         full_skipped = _full_reload_delete(cur) if mode == "full" else 0
 
+        # Withdraw first, upsert second: an order NC approved between runs is
+        # still in scope, so it survives this pass and the upsert below gives it
+        # its real status. Skipped entirely when the reader did not report a
+        # scope set (a stubbed fetch in tests), because an empty set means
+        # "NC lists nothing" and would cancel every mirrored pending PO.
+        in_scope_pks = raw.get("in_scope_pks")
+        if in_scope_pks is not None:
+            withdrawn = writer.reconcile_pending(cur, in_scope_pks)
+            if withdrawn:
+                logger.info("nc purchase sync %s: cancelled %d pending PO(s) NC "
+                            "no longer lists", run_id, withdrawn)
+
         # Heartbeat the run row every ~500 rows so the initial full load (~1680
         # orders / 6011 arrival lines, row-by-row) refreshes updated_at and isn't
         # swept as stale (STALE_AFTER) mid-run.
@@ -202,6 +214,8 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                        gr_lines_upserted=counts["gr_lines_upserted"],
                        skipped_no_vendor=len(payload.get("skipped_no_vendor", [])),
                        skipped_consumed=skipped_consumed,
+                       renamed_number_collision=counts["renamed_number_collision"],
+                       skipped_number_collision=counts["skipped_number_collision"],
                        watermark_from=prev_wm, watermark_to=wm_to)
     except Exception as e:  # noqa: BLE001 — terminal state must always be written
         try:

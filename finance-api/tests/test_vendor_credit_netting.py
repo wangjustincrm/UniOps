@@ -1143,13 +1143,16 @@ async def test_execute_batch_route_coerces_credit_ids_by_doc_keys(client, db_ses
     db_session.add(_credit(vendor_id=pa.vendor_id))
     await db_session.flush()
 
-    r = await client.post("/finance/v1/payments/batches", headers=_h(),
+    # payment_officer, not the _h() default: main moved payment authority off
+    # ap_clerk onto a dedicated payment_officer role, so the default role can no
+    # longer create or execute a batch.
+    r = await client.post("/finance/v1/payments/batches", headers=_h("payment_officer"),
                           json={"docs": [{"doc_kind": "pa_dir", "doc_id": str(pa.id)}]})
     assert r.status_code == 201, r.text
     batch_id = r.json()["id"]
 
     r2 = await client.post(f"/finance/v1/payments/batches/{batch_id}/execute",
-                           headers=_h(),
+                           headers=_h("payment_officer"),
                            json={"credit_ids_by_doc": {str(pa.id): []}})
     assert r2.status_code == 200, r2.text
     assert r2.json()["paid"] == 1 and r2.json()["failed"] == 0

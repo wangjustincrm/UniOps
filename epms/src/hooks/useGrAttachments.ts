@@ -25,3 +25,11 @@ export function useDeleteGrAttachment(grId: string) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gr-attachments', grId] }),
   })
 }
+
+export function useRegenerateGrPdf(grId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => grAttachmentService.regeneratePdf(grId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['gr-attachments', grId] }),
+  })
+}

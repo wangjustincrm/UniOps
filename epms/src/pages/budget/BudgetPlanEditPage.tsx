@@ -8,6 +8,7 @@
  */
 import { useState, useMemo, useRef, memo } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, Layers, Lock, Send, RotateCcw, CheckCircle2, XCircle, Copy,
   GitBranch, History, X, Download, Upload,
@@ -84,6 +85,12 @@ export default function BudgetPlanEditPage() {
     return cc ? `${cc.code} — ${cc.name}` : planGrid.plan.cost_center_id
   }, [planGrid, ccData])
 
+  // Tab title: `Plan CC001 FY2026` beats `Plan 3f9a20b1`. The cost-centre code
+  // may resolve later than the plan (two independent queries), so this settles
+  // in two steps rather than waiting for both.
+  const ccCode = (ccData ?? []).find((c) => c.id === planGrid?.plan.cost_center_id)?.code
+  useDocTabTitle(planGrid ? `Plan ${ccCode ? `${ccCode} ` : ''}FY${planGrid.plan.fiscal_year}` : undefined)
+
   // Build a flat row array — alternating L1 headers + account rows
   const flatRows: FlatRow[] = useMemo(() => {
     if (!planGrid) return []
@@ -137,7 +144,7 @@ export default function BudgetPlanEditPage() {
   if (!planGrid) {
     return (
       <div className="p-6 text-sm text-neutral-400">
-        Plan not found. <Link to="/budget/plans" className="text-primary-600">← Back to list</Link>
+        Plan not found. <BackLink to="/budget/plans" className="text-primary-600">← Back to list</BackLink>
       </div>
     )
   }
@@ -210,11 +217,11 @@ export default function BudgetPlanEditPage() {
     <div className="flex flex-col gap-4 p-6">
       {/* Top nav */}
       <div className="flex items-center gap-3">
-        <Link to="/budget/plans">
+        <BackLink to="/budget/plans">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
-        </Link>
+        </BackLink>
       </div>
 
       {/* Plan header card */}

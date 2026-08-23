@@ -69,6 +69,12 @@ export default function ExpenseListPage() {
       const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
       if (activeStatus !== 'all') qs.set('status', activeStatus)
       if (activeType) qs.set('type', activeType)
+      // TRA (Travel Application) shares the expense_claims table but is not a
+      // reimbursement — it has its own list at /travel and detail route
+      // /travel/:id, and the New Claim menu above deliberately omits it. Without
+      // this exclusion every TRA (including unsubmitted drafts) also showed up
+      // here, and clicking one landed on the wrong detail page.
+      qs.set('exclude_type', 'TRA')
       return api.get<ExpenseList>(`/api/v1/expenses?${qs}`)
     },
   })

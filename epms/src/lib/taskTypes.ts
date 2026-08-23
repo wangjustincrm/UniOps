@@ -1,4 +1,4 @@
-import { financeHandoffHref } from './api'
+import { financeHandoffHref, vmsHandoffHref } from './api'
 
 // ─── Task types ────────────────────────────────────────────────────────────────
 //
@@ -26,6 +26,7 @@ export const ALL_TASK_TYPES = [
   'confirm_settlement',
   'review_match',
   'match_invoice',
+  'resolve_exception',
 ] as const
 
 export type TaskType = (typeof ALL_TASK_TYPES)[number]
@@ -40,9 +41,21 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   approve_pa: 'Approve Payment Application',
   place_order: 'Place Order',
   confirm_settlement: 'Confirm Settlement',
-  review_match: 'Review Invoice Match',
+  review_match: 'Confirm Invoice Match',
   match_invoice: 'Match Invoice to PO',
+  resolve_exception: 'Resolve Match Exception',
   process_pa: 'Process Payment Application',
+  approve_agr: 'Approve Agreement',
+  revise_agr: 'Revise Agreement',
+  confirm_period: 'Confirm Service Period',
+  // 缺票逾期扫描签出的催票任务(app/tasks/agreement_overdue.py)
+  chase_agreement_invoice: 'Chase Missing Invoice',
+  // 发票驱动 / 完成日驱动的收货确认(api/v1/invoices.py、tasks/service_gr_due.py)
+  // —— 一直是后端会发、这里却没有标签的类型,补上。
+  confirm_receipt: 'Confirm Goods Receipt',
+  // VMS 派发的任务(vms-api/app/services/visit_tasks.py)
+  check_out_visitor: 'Check Out Visitor',
+  prepare_ppe: 'Prepare PPE',
   revise_pr: 'Revise Purchase Request',
   revise_po: 'Revise Purchase Order',
   revise_pa: 'Revise Payment Application',
@@ -63,6 +76,7 @@ const HREF_MAP: Record<string, string> = {
   gr: '/gr',
   invoice: '/invoices',
   pa: '/pa',
+  agr: '/agreements',
 }
 
 // A task carries a type plus the document it anchors on. Accept the minimal shape
@@ -84,6 +98,21 @@ export function taskHref(task: TaskHrefInput): string {
   // handoff (absolute URL), not an in-app EPMS route.
   if (docType === 'budget_plan') {
     return financeHandoffHref(`/budget/plans/${task.document_id}`)
+  }
+
+  // VMS-owned docs. vms-api writes into the shared `tasks` table (visit
+  // check-out / PPE prep from services/visit_tasks.py, training + PPE
+  // compliance from services/compliance.py), so they reach this inbox — but
+  // EPMS has no page for any of them. Without this branch HREF_MAP missed
+  // every vms_* type and the fallback produced a bare "/<uuid>", i.e. a dead
+  // link on the card. document_id is the VISITOR id for the two compliance
+  // types (→ their compliance page) and the VISIT id for everything else,
+  // matching Portal's vmsDeeplinkPath and VMS's own TaskInboxPage.
+  if (docType === 'vms_train' || docType === 'vms_ppe') {
+    return vmsHandoffHref(`/visitor/${task.document_id}/compliance`)
+  }
+  if (docType.startsWith('vms_')) {
+    return vmsHandoffHref(`/${task.document_id}`)
   }
 
   // Both create_pa and create_prepayment_pa anchor on the PO and open the PA

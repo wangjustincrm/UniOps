@@ -1,14 +1,23 @@
 /**
- * useChainAttachments — resolve a PA's DIRECT document lineage (PR, PO, GR, INV,
- * PA) and aggregate every document's attachments into one grouped model.
+ * useChainAttachments — resolve a PA's DIRECT document lineage (PR, PO, GR,
+ * RECEIPT, INV, PA) and aggregate every document's attachments into one grouped
+ * model.
  *
  * Lineage (see spec §2): PA → its invoices (pa.invoice_ids) → those invoices'
- * GRs (invoice.gr_ids, de-duplicated) → PA's PO (pa.po_id) → PO's PR (po.pr_id).
- * A prepayment PA with no invoices collapses to PA + PO + PR.
+ * GRs (invoice.gr_ids, de-duplicated) → PA's PO (pa.po_id) → PO's PR
+ * (po.pr_id). A prepayment PA with no invoices collapses to PA + PO + PR.
+ *
+ * Task 11 adds a sibling branch off the same invoices: house_account matches
+ * carry pickup-receipt evidence instead of a GR — invoice.receipt_ids (JSONB array,
+ * de-duplicated across invoices, same shape as gr_ids). Unlike GRs, receipts have
+ * no "get by id" endpoint — only GET /agreements/{agreementId}/receipts (list).
+ * So resolving receipt_ids → receipt detail (receipt_ref/date/amount for the group
+ * label) goes through each claiming invoice's agreement_id first.
  *
  * Attachment sources differ by service:
- *   PR/PO/GR/PA → epms-api  /{type}/{id}/attachments        (+ /{attId}/download)
- *   INV         → expense-api /invoice-attachments?...       (+ /{attId}/file)
+ *   PR/PO/GR/PA → epms-api  /{type}/{id}/attachments               (+ /{attId}/download)
+ *   RECEIPT     → epms-api  /agreements/{agrId}/receipts/{id}/attachments (+ /{attId}/download)
+ *   INV         → expense-api /invoice-attachments?...              (+ /{attId}/file)
  */
 import { useMemo } from 'react'
 import { useQueries } from '@tanstack/react-query'
@@ -23,6 +32,8 @@ import { grAttachmentService } from '@/services/grAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
 import { invoiceService } from '@/services/invoices'
 import { grService } from '@/services/gr'
+import { agreementReceiptService, type ApiReceipt } from '@/services/agreementReceipts'
+import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 
@@ -35,7 +46,7 @@ export interface ChainAttachment {
   printable: boolean
 }
 export interface ChainDocGroup {
-  docType: 'PR' | 'PO' | 'GR' | 'INV' | 'PA'
+  docType: 'PR' | 'PO' | 'GR' | 'RECEIPT' | 'INV' | 'PA'
   docNumber: string
   docId: string
   attachments: ChainAttachment[]
@@ -59,6 +70,43 @@ function mapEpmsAtt(
     fetchUrl: `${API_BASE}/${seg}/${docId}/attachments/${a.id}/download`,
     printable: isPrintable(a.content_type),
   }
+}
+
+/** Receipt attachments are scoped by BOTH agreement_id and receipt_id in the URL
+ * (see services/agreementReceiptAttachments.ts) — a 2-segment path, unlike the
+ * single-id `mapEpmsAtt` above, so it gets its own tiny mapper. */
+function mapReceiptAtt(
+  agreementId: string,
+  receiptId: string,
+  a: { id: string; filename: string; content_type: string; file_size: number },
+): ChainAttachment {
+  return {
+    id: a.id,
+    filename: a.filename,
+    contentType: a.content_type,
+    sizeBytes: a.file_size,
+    fetchUrl: `${API_BASE}/agreements/${agreementId}/receipts/${receiptId}/attachments/${a.id}/download`,
+    printable: isPrintable(a.content_type),
+  }
+}
+
+// Group label per the branch owner's ruling: never a bare UUID. receipt_ref when
+// present, else date + amount (amount arrives as a Decimal-string on ApiReceipt —
+// Number() before formatting, same convention as agreementReceipts.ts callers).
+// No currency symbol: ApiReceipt carries no currency field (unlike the
+// agreement), so hardcoding "$" would mislabel non-USD agreements.
+// Fix-round 1 (Minor): receipt_ref is free text entered off a paper receipt and
+// commonly contains "/" (e.g. "A/1234") — toBundle() in
+// ChainAttachmentsPanel.tsx folds this label straight into a ZIP folder
+// name, and JSZip treats "/" as a path separator, so an unescaped slash
+// would silently nest an extra directory level. Replace path separators
+// with a safe stand-in before the label is ever used.
+function receiptLabel(s: ApiReceipt): string {
+  // Same fallback as DocumentChainTree's receiptLabel — amount-less receipts
+  // (ag09) are identified by date alone rather than by a fictional 0.00.
+  const raw = s.receipt_ref
+    || (s.total_amount === null ? s.receipt_date : `${s.receipt_date} · ${Number(s.total_amount).toFixed(2)}`)
+  return raw.replace(/[/\\]/g, '-')
 }
 
 export function useChainAttachments(paId: string) {
@@ -104,6 +152,52 @@ export function useChainAttachments(paId: string) {
     (typeof grQueries)[number]['data']
   >[]
 
+  // Receipt ids: union of receipt_ids across the resolved invoices, de-duplicated —
+  // same shape as grIds above (house_account's evidence array vs. PO route's).
+  const receiptIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const inv of invoices) for (const sid of inv.receipt_ids ?? []) s.add(sid)
+    return [...s]
+  }, [invoices])
+
+  // No "get receipt by id" endpoint exists — only GET /agreements/{id}/receipts
+  // (list). Resolve via each claiming invoice's agreement_id, one list query
+  // per distinct agreement (de-duplicated, so a PA whose invoices all claim
+  // receipts off the same agreement issues exactly one query, not one per receipt).
+  const receiptAgreementIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const inv of invoices) {
+      if ((inv.receipt_ids ?? []).length > 0 && inv.agreement_id) s.add(inv.agreement_id)
+    }
+    return [...s]
+  }, [invoices])
+
+  const agreementReceiptListQueries = useQueries({
+    queries: receiptAgreementIds.map((agrId) => ({
+      queryKey: ['agreement-receipts', agrId],
+      queryFn: () => agreementReceiptService.list(agrId),
+      enabled: !!agrId,
+      staleTime: 30_000,
+    })),
+  })
+
+  // Resolved receipt details, in receiptIds order — filters the fetched agreement
+  // receipt lists down to only the ids this PA's invoices actually claim.
+  // Dependency is an identity key of fetched receipt ids (same technique as
+  // `groupsKey` below) rather than the raw query `.data` objects, since a new
+  // array/object reference on every render would otherwise defeat memoization.
+  const receiptListsKey = agreementReceiptListQueries
+    .map((q) => (q.data?.items ?? []).map((s) => s.id).join(','))
+    .join(';')
+  const receipts = useMemo(() => {
+    const byId = new Map<string, ApiReceipt>()
+    for (const q of agreementReceiptListQueries) {
+      for (const s of q.data?.items ?? []) byId.set(s.id, s)
+    }
+    return receiptIds.map((id) => byId.get(id)).filter((s): s is ApiReceipt => !!s)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [receiptIds, receiptListsKey])
+
   // ── Attachment-list queries, one per resolved doc ──────────────────────────
   // (Built via .map() over a 0-or-1-element array — not a ternary tuple literal —
   // so useQueries' overload resolution sees a uniform array type instead of a
@@ -119,6 +213,21 @@ export function useChainAttachments(paId: string) {
   })
   const grAtt = useQueries({
     queries: grs.map((g) => ({ queryKey: ['gr-att', g.id], queryFn: () => grAttachmentService.list(g.id), staleTime: 30_000 })),
+  })
+  const receiptAtt = useQueries({
+    queries: receipts.map((s) => ({
+      // receiptAttachmentsQueryKey, not a third hand-rolled key (fix round 1,
+      // Minor): the upload/delete mutations in hooks/useAgreementReceipts.ts
+      // invalidate that shared key, and a private ['receipt-att', id] here
+      // would sit outside it — this panel would keep listing a deleted photo
+      // for its whole 30s staleTime, and clicking Download on it now surfaces
+      // a "Download failed: 404" (the service reports failures instead of
+      // silently doing nothing as of Task 12). Same single-source rule as the
+      // other readers of this list.
+      queryKey: receiptAttachmentsQueryKey(s.agreement_id, s.id),
+      queryFn: () => agreementReceiptAttachmentService.list(s.agreement_id, s.id),
+      staleTime: 30_000,
+    })),
   })
   const invAtt = useQueries({
     queries: invoices.map((inv) => ({
@@ -145,19 +254,21 @@ export function useChainAttachments(paId: string) {
     })),
   })
 
-  // ── Assemble grouped model in paper-trail order: PR, PO, GR(s), INV(s), PA ──
-  // Single identity key built from actual doc/attachment ids — reflects add/
-  // delete/reassign correctly (unlike stringifying data objects, which only
-  // detects count changes), and satisfies the react-hooks/use-memo "simple
-  // expression" rule with one dependency.
+  // ── Assemble grouped model in paper-trail order: PR, PO, GR(s), RECEIPT(s), ──
+  // ── INV(s), PA. Single identity key built from actual doc/attachment ids —
+  // reflects add/delete/reassign correctly (unlike stringifying data objects,
+  // which only detects count changes), and satisfies the react-hooks/use-memo
+  // "simple expression" rule with one dependency.
   const groupsKey = [
     pr?.id, po?.id, pa?.id,
     grs.map((g) => g.id).join(','),
+    receipts.map((s) => s.id).join(','),
     invoices.map((i) => i.id).join(','),
     (prAtt[0]?.data ?? []).map((a) => a.id).join(','),
     (poAtt[0]?.data ?? []).map((a) => a.id).join(','),
     (paAtt[0]?.data ?? []).map((a) => a.id).join(','),
     grAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
+    receiptAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
     invAtt.map((q) => (q.data ?? []).map((a) => a.id).join('|')).join(','),
   ].join(';')
 
@@ -166,6 +277,7 @@ export function useChainAttachments(paId: string) {
     if (pr) out.push({ docType: 'PR', docNumber: pr.number, docId: pr.id, attachments: (prAtt[0]?.data ?? []).map((a) => mapEpmsAtt('pr', pr.id, a)) })
     if (po) out.push({ docType: 'PO', docNumber: po.number, docId: po.id, attachments: (poAtt[0]?.data ?? []).map((a) => mapEpmsAtt('po', po.id, a)) })
     grs.forEach((g, i) => out.push({ docType: 'GR', docNumber: g.number, docId: g.id, attachments: (grAtt[i]?.data ?? []).map((a) => mapEpmsAtt('gr', g.id, a)) }))
+    receipts.forEach((s, i) => out.push({ docType: 'RECEIPT', docNumber: receiptLabel(s), docId: s.id, attachments: (receiptAtt[i]?.data ?? []).map((a) => mapReceiptAtt(s.agreement_id, s.id, a)) }))
     invoices.forEach((inv, i) => out.push({ docType: 'INV', docNumber: inv.internal_ref, docId: inv.id, attachments: invAtt[i]?.data ?? [] }))
     if (pa) out.push({ docType: 'PA', docNumber: pa.pa_number, docId: pa.id, attachments: (paAtt[0]?.data ?? []).map((a) => mapEpmsAtt('pa', pa.id, a)) })
     return out
@@ -180,15 +292,25 @@ export function useChainAttachments(paId: string) {
   const isLoading =
     paLoading || poLoading || prLoading ||
     invoiceQueries.some((q) => q.isLoading) || grQueries.some((q) => q.isLoading) ||
+    agreementReceiptListQueries.some((q) => q.isLoading) ||
     prAtt.some((q) => q.isLoading) || poAtt.some((q) => q.isLoading) ||
     paAtt.some((q) => q.isLoading) || grAtt.some((q) => q.isLoading) ||
+    receiptAtt.some((q) => q.isLoading) ||
     invAtt.some((q) => q.isLoading)
 
+  // Mirrors every other branch's error handling exactly: a failed query (e.g.
+  // agreementReceiptListQueries 403ing because some other agreement isn't in the
+  // caller's scope) flips this flag, which only drives a non-blocking warning
+  // banner in ChainAttachmentsPanel — `groups` above still renders whatever
+  // resolved successfully. It never crashes the aggregation or silently
+  // empties it; per-doc failures just don't contribute their own attachments.
   const error =
     paError || poError || prError ||
     invoiceQueries.some((q) => q.isError) || grQueries.some((q) => q.isError) ||
+    agreementReceiptListQueries.some((q) => q.isError) ||
     prAtt.some((q) => q.isError) || poAtt.some((q) => q.isError) ||
     paAtt.some((q) => q.isError) || grAtt.some((q) => q.isError) ||
+    receiptAtt.some((q) => q.isError) ||
     invAtt.some((q) => q.isError)
 
   return { groups, total, isLoading, error }

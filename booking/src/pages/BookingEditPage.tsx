@@ -22,6 +22,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
@@ -141,6 +142,7 @@ export default function BookingEditPage() {
   const [notFound, setNotFound] = useState(false)
 
   const { data: mineList } = useMyBookings()
+  useDocTabTitle(booking?.title && `Edit ${booking.title}`)
 
   useEffect(() => {
     if (booking) return   // already have it from location.state
@@ -386,14 +388,12 @@ export default function BookingEditPage() {
             <AlertCircle className="h-4 w-4" />
             Booking not found.
           </div>
-          <button
-            type="button"
-            onClick={() => navigate('/my')}
+          <BackLink to="/my"
             className="mt-4 flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700"
           >
             <ArrowLeft className="h-4 w-4" />
             Back to My Bookings
-          </button>
+          </BackLink>
         </div>
       </div>
     )
@@ -415,14 +415,12 @@ export default function BookingEditPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 space-y-6">
         {/* Back nav */}
-        <button
-          type="button"
-          onClick={() => navigate('/my')}
+        <BackLink to="/my"
           className="flex items-center gap-1.5 text-sm text-neutral-500 hover:text-neutral-700 transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           Back to My Bookings
-        </button>
+        </BackLink>
 
         {/* Page title */}
         <div>

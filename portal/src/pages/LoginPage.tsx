@@ -10,7 +10,8 @@ import { useBranding } from '@/hooks/useBranding'
 
 interface LoginResp  { access_token: string; refresh_token: string }
 interface MfaResp    { mfa_required: true; mfa_token: string }
-interface UserResp   { id: string; email: string; full_name: string; role: string; department_id: string | null }
+// must_change_password rides along from /auth/me — ProtectedRoute gates on it.
+interface UserResp   { id: string; email: string; full_name: string; role: string; department_id: string | null; must_change_password?: boolean }
 
 const EPMS_API_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
 

@@ -13,6 +13,7 @@ export type UserRole =
   | 'auditor'
   | 'vendor_manager'
   | 'erp_pa_officer'
+  | 'payment_officer'
   | 'system_admin'
 
 export type DocumentStatus =
@@ -32,6 +33,29 @@ export type DocumentStatus =
   | 'paid'
   | 'closed'
   | 'nc_milk'
+  // NC order still working through the ERP's approval chain: mirrored so its
+  // PO PDF can be printed for off-line signature, read-only everywhere else.
+  | 'nc_pending'
+  // Purchase Agreement statuses (approval terminal state is 'active', not 'approved')
+  | 'active'
+  | 'expired'
+  // Agreement payment-schedule row statuses (agreement_payment_schedule.status) —
+  // distinct from the agreement's own DocumentStatus above. 'received' means an
+  // invoice has been matched to the row, NOT that it's been human-confirmed —
+  // confirmation is tracked separately via accepted_by/accepted_at and never
+  // changes this status. 'waived' = excused from the schedule, no payment expected.
+  | 'pending'
+  | 'received'
+  | 'overdue'
+  | 'waived'
+  // House-account pickup receipt statuses (agreement_receipts.status) —
+  // 'rejected' above is shared (AP review can reject a receipt the same way a
+  // PR/PO can be rejected). 'open' = posted, awaiting invoice match.
+  // 'reconciled' = matched to an invoice. 'voided' = soft-cancelled.
+  | 'pending_ap_review'
+  | 'open'
+  | 'reconciled'
+  | 'voided'
 
 export type ProcurementType = 1 | 2 | 3 | 4 | 5 | 6
 

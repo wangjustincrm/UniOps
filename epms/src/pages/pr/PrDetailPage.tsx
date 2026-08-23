@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Paperclip, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
+import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
 import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
@@ -13,8 +14,9 @@ import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/use
 import type { ApiEvent } from '@/services/pr'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
-import { usePrAttachments, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
+import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
 import { prAttachmentService } from '@/services/prAttachments'
+import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { generatePrHtml } from '@/lib/pr-document'
 import { downloadPdf } from '@/lib/pdf-utils'
@@ -85,9 +87,15 @@ interface ApprovalModalProps {
   prNumber: string
   onConfirm: (comment: string) => void
   onClose: () => void
+  // The modal stays mounted until the action resolves, so without this the
+  // confirm button is live for the whole request. A second click re-posts the
+  // same action: usually a 409 the user reads as a failure, but for 'approve'
+  // it can silently consume the NEXT step's task when the same person approves
+  // two consecutive steps — two levels passed on one intended click.
+  isPending: boolean
 }
 
-function ApprovalModal({ action, prNumber, onConfirm, onClose }: ApprovalModalProps) {
+function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
@@ -161,7 +169,7 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose }: ApprovalModalPr
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
-              disabled={!canSubmit}
+              disabled={!canSubmit || isPending}
               onClick={() => onConfirm(comment)}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
@@ -169,7 +177,7 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose }: ApprovalModalPr
               )}
             >
               {config.icon}
-              {config.label}
+              {isPending ? 'Working…' : config.label}
             </button>
           </div>
         </div>
@@ -196,10 +204,13 @@ export default function PrDetailPage() {
   const moreRef = useRef<HTMLDivElement>(null)
 
   const { data: pr, isLoading } = usePr(id ?? '')
+  useDocTabTitle(pr?.number)
   const { data: events } = usePrEvents(id ?? '')
   const prAction = usePrAction(id ?? '')
   const { data: attachments = [] } = usePrAttachments(id ?? '')
+  const uploadAttachment = useUploadAttachment(id ?? '')
   const deleteAttachment = useDeleteAttachment(id ?? '')
+  const [downloadError, setDownloadError] = useState<string | null>(null)
   const regeneratePdf = useRegeneratePrPdf(id ?? '')
   const { data: budgetData } = useBudgetOverview()
   const budgetAccount = pr?.budget_code
@@ -260,9 +271,9 @@ export default function PrDetailPage() {
         <p className="mt-2 text-sm text-neutral-400">
           The purchase requisition you're looking for doesn't exist.
         </p>
-        <Link to="/pr" className="mt-4">
+        <BackLink to="/pr" className="mt-4">
           <Button variant="secondary">Back to PR List</Button>
-        </Link>
+        </BackLink>
       </div>
     )
   }
@@ -281,12 +292,12 @@ export default function PrDetailPage() {
       {/* Page header */}
       <div className="rounded-lg border border-neutral-200 bg-white px-6 py-4">
         <div className="flex items-center gap-3 mb-3">
-          <Link to="/pr">
+          <BackLink to="/pr">
             <Button variant="ghost" size="sm">
               <ArrowLeft className="h-4 w-4" />
               Back to PR List
             </Button>
-          </Link>
+          </BackLink>
         </div>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
@@ -333,6 +344,7 @@ export default function PrDetailPage() {
                       prAction.mutate({ action: 'cancel' })
                     }
                   }}
+                  disabled={prAction.isPending}
                 >
                   Withdraw
                 </Button>
@@ -392,6 +404,10 @@ export default function PrDetailPage() {
                     ['Currency', pr.currency ?? 'CAD'],
                     [`Total Amount (${pr.currency ?? 'CAD'})`, formatAmount(pr.amount, pr.currency ?? 'CAD')],
                     ['Required By Date', formatDate(pr.required_by ?? '')],
+                    ...(pr.type === 4 || pr.type === 6
+                      ? [['Service/Project Expected Completion Date',
+                          formatDate(pr.service_completion_date ?? '')] as [string, string]]
+                      : []),
                     ['Delivery Address', pr.delivery_address || '—'],
                     ['Notes', pr.notes || '—'],
                   ] as [string, string][]).map(([label, value]) => (
@@ -522,36 +538,25 @@ export default function PrDetailPage() {
                   </button>
                 )}
               </div>
-              {attachments.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Paperclip className="h-8 w-8 text-neutral-300 mb-3" />
-                  <p className="text-sm text-neutral-400">No attachments uploaded</p>
-                </div>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {attachments.map((att) => (
-                    <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
-                      <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
-                      <span className="flex-1 truncate text-sm text-neutral-700">{att.filename}</span>
-                      <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
-                      <button
-                        type="button"
-                        onClick={() => prAttachmentService.download(id!, att.id, att.filename)}
-                        className="text-xs text-primary-600 hover:underline"
-                      >
-                        Download
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => deleteAttachment.mutate(att.id)}
-                        className="text-neutral-300 hover:text-danger-500"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ))}
+              {downloadError && (
+                <div className="mb-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">
+                  {downloadError}
                 </div>
               )}
+              <AttachmentsEditor
+                inputId="pr-detail-file-upload"
+                attachments={attachments}
+                isUploading={uploadAttachment.isPending}
+                isDeleting={deleteAttachment.isPending}
+                onUpload={(file) => uploadAttachment.mutateAsync(file)}
+                onDelete={(attId) => deleteAttachment.mutate(attId)}
+                onDownload={(att) => {
+                  setDownloadError(null)
+                  prAttachmentService.download(id!, att.id, att.filename).catch(() => {
+                    setDownloadError(`Could not download "${att.filename}". Please try again or contact IT if it persists.`)
+                  })
+                }}
+              />
             </div>
           )}
 
@@ -651,6 +656,7 @@ export default function PrDetailPage() {
           prNumber={pr.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
           onClose={() => setPendingAction(null)}
+          isPending={prAction.isPending}
         />
       )}
     </div>

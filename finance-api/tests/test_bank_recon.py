@@ -213,7 +213,7 @@ async def test_payment_locks_fx_rate_on_posting(client, db_session):
     db_session.add(pa)
     await db_session.flush()
 
-    r = await client.post("/finance/v1/payments/execute", headers=_h("ap_clerk"),
+    r = await client.post("/finance/v1/payments/execute", headers=_h("payment_officer"),
                           json={"doc_kind": "pa_dir", "doc_id": str(pa.id),
                                 "payment_date": "2026-06-05"})
     assert r.status_code == 200, r.text

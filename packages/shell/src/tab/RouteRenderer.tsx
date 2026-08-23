@@ -17,6 +17,20 @@ class TabErrorBoundary extends Component<{ children: ReactNode }, { error: Error
   }
 }
 
+// Rendered when `path` matches none of `routes`. This used to be a silent
+// `element={null}` — a route-table bug (or a path/tab-key convention
+// mismatch between this table and the caller) then presented as a mystery
+// blank tab with zero console output and no error-boundary trigger. Render
+// something visible instead so a routing failure is never indistinguishable
+// from "still loading" or "nothing to show here".
+function NoRouteMatched({ path }: { path: string }) {
+  return (
+    <div className="p-6 text-sm text-danger-600">
+      No route matched: {path}
+    </div>
+  )
+}
+
 export function RouteRenderer({ routes, path }: { routes: RouteDef[]; path: string }) {
   return (
     <TabErrorBoundary>
@@ -25,7 +39,7 @@ export function RouteRenderer({ routes, path }: { routes: RouteDef[]; path: stri
           {routes.map((r) => (
             <Route key={r.path} path={r.path} element={r.element} />
           ))}
-          <Route path="*" element={null} />
+          <Route path="*" element={<NoRouteMatched path={path} />} />
         </Routes>
       </Suspense>
     </TabErrorBoundary>

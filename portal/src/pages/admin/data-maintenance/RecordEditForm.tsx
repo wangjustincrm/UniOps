@@ -113,7 +113,8 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
           </section>
         )}
 
-        {['pr', 'po', 'pa'].includes(schema.key) && (
+        {/* Keep in sync with service.APPROVAL_STATE_ENTITIES on the backend. */}
+        {['pr', 'po', 'pa', 'agreement'].includes(schema.key) && (
           <section className="mb-5">
             <ApprovalStatePanel system={schema.system} entity={schema.key} recordId={id}
               currentStep={full?.approval_step_idx == null ? null : Number(full.approval_step_idx)} />
