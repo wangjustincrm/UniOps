@@ -38,6 +38,14 @@ async def lifespan(app: FastAPI):
     overdue_task.cancel()
     nc_sync_task.cancel()
     service_gr_task.cancel()
+    # Settle fire-and-forget work (notification emails, PDF generation, PMS
+    # import) BEFORE disposing the engine. Each of those owns its own session;
+    # tearing the pool down underneath one leaves it mid-transaction. Brief
+    # grace period, then cancel so shutdown can't hang on a slow SMTP server.
+    from app.core.background import drain
+    drained = await drain(timeout=10.0)
+    if drained:
+        logger.info("Settled %d background task(s) before shutdown", drained)
     await engine.dispose()
     await close_redis()
 
