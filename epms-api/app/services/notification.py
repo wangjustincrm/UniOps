@@ -46,6 +46,11 @@ def _task_link(document_type: str, document_id: Any, task_type: str | None = Non
         "pa":          (settings.EPMS_URL,    "/pa/{id}"),
         "gr":          (settings.EPMS_URL,    "/gr/{id}"),
         "invoice":     (settings.EPMS_URL,    "/invoices/{id}"),
+        # Purchase Agreement. Missing here since agr tasks were introduced, so
+        # confirm_period / chase_agreement_invoice emails fell through to the
+        # OA expense-claim default below and deep-linked to /expenses/<agr id>,
+        # which 404s.
+        "agr":         (settings.EPMS_URL,    "/agreements/{id}"),
         "pa_dir":      (settings.OA_URL,      "/pa/{id}"),          # OA Direct PA detail
         "budget_plan": (settings.FINANCE_URL, "/budget/plans/{id}"),
         "vms_visit":   (settings.VMS_URL,     ""),                  # VMS routes by role from its root
@@ -477,7 +482,8 @@ async def send_admin_alert(subject: str, body_html: str, db: AsyncSession | None
 
 def fire_and_forget_admin_alert(subject: str, body_html: str) -> None:
     """Schedule an admin alert email in the background (own DB session)."""
-    asyncio.create_task(send_admin_alert(subject, body_html))
+    from app.core.background import spawn
+    spawn(send_admin_alert(subject, body_html), name=f"admin_alert:{subject[:40]}")
 
 
 # ── Convenience fire-and-forget helper ───────────────────────────────────────
@@ -490,7 +496,8 @@ def fire_and_forget_notify(task: Task, db: AsyncSession, **kwargs) -> None:
     The background coroutine creates its own DB session to avoid
     sharing the request session after it closes.
     """
-    asyncio.create_task(_notify_in_background(task.id, **kwargs))
+    from app.core.background import spawn
+    spawn(_notify_in_background(task.id, **kwargs), name=f"notify:{task.id}")
 
 
 async def _notify_in_background(task_id, **kwargs) -> None:

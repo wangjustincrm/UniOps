@@ -377,6 +377,9 @@ services:
         VITE_EXPENSE_API_URL: ${OA_API_URL}
         VITE_FINANCE_API_URL: ${FINANCE_API_URL}
         VITE_FINANCE_URL: ${FINANCE_URL}
+        # VMS 深链:Task Inbox 里的 vms_* 任务(访客签出 / PPE 备货 / 培训与
+        # PPE 合规确认)锚在 VMS 单据上,EPMS 里没有对应页面,必须整页跳 VMS。
+        VITE_VMS_URL: ${VMS_URL}
     ports: ["5173:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]

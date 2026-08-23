@@ -298,8 +298,8 @@ async def po_action(
 
     await db.refresh(po)
     if po.status == "approved":
-        import asyncio
-        asyncio.create_task(_generate_po_pdf_background(po_id, po.number, token))
+        from app.core.background import spawn
+        spawn(_generate_po_pdf_background(po_id, po.number, token), name=f"po_pdf:{po.number}")
 
     new_tasks_result = await db.execute(
         select(Task).where(

@@ -367,6 +367,37 @@ async def _restore_default_matrix(test_engine):
     yield
 
 
+@pytest.fixture(autouse=True)
+async def _drain_background_tasks():
+    """Cancel any fire-and-forget task the test left in flight, and WAIT for the
+    cancellation to unwind it.
+
+    Endpoints spawn background coroutines (notification emails, PDF generation)
+    that each open their own `async with AsyncSessionLocal() as db`. A test that
+    triggers one and then returns leaves it suspended there forever: the session
+    is never closed, so its connection goes back to the pool still inside a
+    transaction. That is not merely untidy — a leaked `idle in transaction`
+    backend holds row/table locks, and the next module's `drop_all` teardown
+    blocks on them. It wedged a full-suite run for four minutes on a
+    `DROP TABLE invoices` before the blocker was killed by hand.
+
+    tests/test_gr.py's `_quiet_notification_email` fixture already documents
+    this exact deadlock ("a reliable deadlock recipe on the shared test DB") and
+    works around it for that one module by stubbing SMTP. This is the general
+    fix; that local stub stays valid (it also keeps the tests fast).
+
+    Cancel rather than await-to-completion: the emails cannot succeed in tests
+    anyway (no SMTP), and awaiting them would let previously-dead notifications
+    start writing notification_logs rows, changing assertions in tests that
+    count them. Cancelling only reclaims the connection. `CancelledError` is a
+    BaseException, so the `except Exception` guards inside those coroutines do
+    not swallow it and the `async with` unwinds properly.
+    """
+    yield
+    from app.core.background import drain
+    await drain(timeout=0)
+
+
 @pytest.fixture(scope="session", autouse=True)
 async def _patch_session_factory(test_engine):
     """

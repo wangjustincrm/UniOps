@@ -305,6 +305,16 @@ async def notify_janitor_ppe_request(
         )
         return False
 
+    # Inbox 落点先于邮件建立,且不受 SMTP 成败影响 —— 这封信是要求 Janitor 去
+    # 备货的,光有邮件时 Task Inbox 里没有任何对应条目。
+    from app.services.compliance import _user_id_for_email
+    from app.services.visit_tasks import open_ppe_prep_task
+
+    await open_ppe_prep_task(
+        db, visit=visit, visitor=visitor,
+        janitor_id=await _user_id_for_email(db, ppe_email),
+    )
+
     smtp_cfg = await _load_smtp_config(db)
     subj, body = await _format_ppe_request_email(db, visit, visitor, host)
     return await _send_email(cfg=smtp_cfg, to=ppe_email, subject=subj, body=body)
@@ -404,6 +414,15 @@ async def notify_host_overdue(
     The visitor is still checked in past their planned departure. Returns True
     if delivery was attempted (caller persists `visit.overdue_reminder_sent_at`).
     """
+    # 与 PPE 备货同理:这封信要求 Host 去 VMS 里签出访客,必须在收件箱里留痕。
+    # 放在 host 判空之前 —— 任务的受理人就是 host,host 为空时 _ensure 自己会
+    # 跳过,不需要在这里重复判断;而 host 有邮箱与否不该影响任务。
+    from app.services.visit_tasks import open_check_out_task
+
+    await open_check_out_task(
+        db, visit=visit, visitor=visitor, host_id=host.id if host else None,
+    )
+
     if not host or not host.email:
         return False
     name = f"{visitor.first_name} {visitor.last_name}"

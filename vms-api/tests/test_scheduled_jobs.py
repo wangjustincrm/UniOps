@@ -346,4 +346,6 @@ async def test_run_all_returns_summary(test_engine, captured_emails):
         summary = await jobs.run_all(db, now=now)
         await db.commit()
     assert summary["no_shows"] >= 1
-    assert set(summary) == {"no_shows", "reminders", "overdue_reminders", "escalations"}
+    # settled_tasks:每趟顺带收口 check_out_visitor / prepare_ppe 任务
+    assert set(summary) == {"no_shows", "reminders", "overdue_reminders",
+                            "escalations", "settled_tasks"}

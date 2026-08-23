@@ -121,7 +121,8 @@ def start_run(phase: str, dry_run: bool, triggered_by: str) -> dict:
     runs.insert(0, run)
     del runs[_MAX_HISTORY:]
     _persist()
-    asyncio.create_task(_execute(run))
+    from app.core.background import spawn
+    spawn(_execute(run), name=f"pms_import:{run.id}")
     return run.summary()
 
 

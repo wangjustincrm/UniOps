@@ -374,7 +374,18 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
     )
     pos_with_gr = select(GoodsReceipt.po_id)
     candidates_q = select(PurchaseOrder).where(
-        PurchaseOrder.status.in_(("issued", "partially_received", "fully_received")),
+        or_(
+            PurchaseOrder.status.in_(("issued", "partially_received", "fully_received")),
+            # A Service/Project PO can be received while still 'approved' — the
+            # service GR branch in api/v1/gr.py allows a GR from 'approved'
+            # onward, and place_order is never run for a service engagement that
+            # was simply performed. Prod PO-192-2608-01 sat exactly there: GR
+            # created, invoice matched, no PA, and the status filter kept this
+            # self-heal from ever rescuing it. Admitted only WITH a GR, so an
+            # approved-but-unreceived PO still cannot be prompted to pay.
+            and_(PurchaseOrder.status == "approved",
+                 PurchaseOrder.id.in_(pos_with_gr)),
+        ),
         or_(
             PurchaseOrder.id.in_(recent_matched_pos),
             and_(PurchaseOrder.id.in_(recent_matched_alloc_pos),

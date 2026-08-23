@@ -556,6 +556,8 @@ services:
       # localhost:8006 fallback — declared explicitly now, matching
       # docker-compose.prod.yml's epms-web (VITE_EXPENSE_API_URL: ${OA_API_URL}).
       VITE_EXPENSE_API_URL: http://localhost:8006
+      # Task Inbox 里的 vms_* 任务整页跳 VMS(lib/api.ts VMS_URL)。
+      VITE_VMS_URL: http://localhost:5176
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5173"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5173"]

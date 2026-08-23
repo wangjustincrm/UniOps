@@ -258,7 +258,10 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
 }
 
 const VMS_DOC_LABELS: Record<string, string> = {
-  vms_visit: 'Visit Approvals',
+  // 这一桶按 document_type 分组,除了审批还装着 check_out_visitor /
+  // prepare_ppe(vms-api/app/services/visit_tasks.py),所以标签不能再叫
+  // "Visit Approvals"。
+  vms_visit: 'Visits',
   vms_train: 'Training Confirmations',
   vms_ppe:   'PPE Confirmations',
 }

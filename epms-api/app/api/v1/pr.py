@@ -247,8 +247,8 @@ async def pr_action(
     # Re-read updated PR for response + PDF side-effects
     await db.refresh(pr)
     if pr.status == "approved":
-        import asyncio
-        asyncio.create_task(_generate_pr_pdf_background(pr_id, pr.number, token))
+        from app.core.background import spawn
+        spawn(_generate_pr_pdf_background(pr_id, pr.number, token), name=f"pr_pdf:{pr.number}")
 
     # Fire notifications for newly opened tasks
     new_tasks_result = await db.execute(
