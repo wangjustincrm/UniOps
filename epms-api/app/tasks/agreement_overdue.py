@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -18,12 +18,17 @@ from app.crud.config import get_or_create as get_config
 from app.db import session as session_module
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_schedule import AgreementPaymentSchedule
+from app.models.task import Task
 from app.models.user import User
 from app.services.email import send_email
 from app.services.notification import _build_email_html, _smtp_kwargs, send_admin_alert
 from app.tasks.daily_followup import _load_schedule, _RECHECK_SECONDS, _seconds_until_next_run
 
 logger = logging.getLogger(__name__)
+
+# 催票任务类型。与 confirm_period 一样挂在 document_type="agr" 上,
+# notification._task_link 已把 agr 深链到 EPMS 的 /agreements/{id}。
+CHASE_TASK_TYPE = "chase_agreement_invoice"
 
 
 async def sweep_overdue_periods(db) -> list[AgreementPaymentSchedule]:
@@ -61,6 +66,66 @@ async def sweep_overdue_periods(db) -> list[AgreementPaymentSchedule]:
             flipped.append(row)
     await db.flush()
     return flipped
+
+
+async def _close_settled_chase_tasks(db) -> None:
+    """关掉那些协议已经没有任何 overdue 期次的催票任务。
+
+    任务的存续条件就是「这份协议还有缺票的期次」——期次被认领(claim 后转
+    received)、或协议被取消/关闭后 sweep_overdue_periods 不再产出它,任务就该
+    自动收口,否则会永远挂在 owner 的收件箱里。这里不看 completed_by:催票任务
+    没有「用户驳回」语义,状态完全由单据决定。
+    """
+    still_overdue = (
+        select(AgreementPaymentSchedule.agreement_id)
+        .where(AgreementPaymentSchedule.status == "overdue")
+        .distinct()
+    )
+    rows = (await db.execute(select(Task).where(
+        Task.type == CHASE_TASK_TYPE,
+        Task.document_type == "agr",
+        Task.is_completed.is_(False),
+        Task.document_id.not_in(still_overdue),
+    ))).scalars().all()
+    now = datetime.now(timezone.utc)
+    for task in rows:
+        task.is_completed = True
+        task.completed_at = now
+    await db.flush()
+
+
+async def _ensure_chase_task(db, agr: PurchaseAgreement, owner: User, count: int) -> None:
+    """给协议 owner 派一条催票任务。每份协议同时只保留一条开放任务。
+
+    邮件本身只在期次**刚翻成 overdue** 的那一趟发出,所以光有邮件时,这件事在
+    收件人当天读完邮件之后就再无落点——Task Inbox 里没有任何东西提示还欠着票。
+    任务是这条通知的常驻落点,由 _close_settled_chase_tasks 在票到齐后收口。
+    """
+    existing = (await db.execute(select(Task).where(
+        Task.type == CHASE_TASK_TYPE,
+        Task.document_type == "agr",
+        Task.document_id == agr.id,
+        Task.is_completed.is_(False),
+    ).limit(1))).scalar_one_or_none()
+    if existing is not None:
+        return
+    db.add(Task(
+        type=CHASE_TASK_TYPE,
+        priority="normal",
+        document_type="agr",
+        document_id=agr.id,
+        document_number=agr.number,
+        assigned_role=owner.role or "dept_manager",
+        assigned_user_id=owner.id,
+        title=f"Chase missing invoice: {agr.number}",
+        description=(
+            f"{count} billing period(s) on agreement {agr.number} are past their "
+            f"expected invoice date. Please chase the vendor for the invoice(s), "
+            f"then match them to this agreement."
+        ),
+        vendor=agr.vendor_name,
+    ))
+    await db.flush()
 
 
 async def _notify_owners(db, cfg, flipped: list[AgreementPaymentSchedule]) -> None:
@@ -103,6 +168,9 @@ async def _notify_owners(db, cfg, flipped: list[AgreementPaymentSchedule]) -> No
         )
         subject = f"Invoice overdue — {agr.number} ({len(rows)} period(s))"
         html = _build_email_html(f"<p>No invoice has arrived for:</p><ul>{lines}</ul>")
+        # 任务先于邮件建立,而且不受 SMTP 成败影响:邮件发不出去时,收件箱里的
+        # 这条任务是唯一还能让人知道欠票的东西。
+        await _ensure_chase_task(db, agr, owner, len(rows))
         try:
             await send_email(owner.email, subject, html, **_smtp_kwargs(cfg))
         except Exception as exc:  # noqa: BLE001 — one owner's failure can't sink the run
@@ -122,6 +190,10 @@ async def run_agreement_overdue() -> None:
     try:
         async with session_module.AsyncSessionLocal() as db:
             flipped = await sweep_overdue_periods(db)
+            # 票到齐 / 协议关闭后收口催票任务。与 sweep 一样无条件跑:
+            # agreement_overdue_enabled 只管发不发通知,收件箱里的任务状态
+            # 属于数据正确性,不能被一个通知开关左右。
+            await _close_settled_chase_tasks(db)
             cfg = await get_config(db)
             notify = (cfg.notification_settings or {}).get("agreement_overdue_enabled", True)
             # Whole-branch review finding: the status flips are data
@@ -134,6 +206,9 @@ async def run_agreement_overdue() -> None:
             await db.commit()
             if flipped and notify:
                 await _notify_owners(db, cfg, flipped)
+                # _notify_owners 建的催票任务落在上面那次 commit 之后,不再提交
+                # 一次就会随 session 关闭被丢掉(邮件已经发出去了,收件箱却空)。
+                await db.commit()
         logger.info("Agreement overdue: %d row(s) flipped", len(flipped))
     except Exception as exc:  # noqa: BLE001 — 一次失败不能杀掉循环
         logger.error("Agreement overdue: sweep failed: %s", exc)
