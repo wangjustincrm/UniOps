@@ -139,6 +139,43 @@ def _free_number(cur, number, nc_source_pk, reserved=frozenset()) -> str | None:
     return None
 
 
+#: Appended to the notes of a mirrored pending PO that NC stopped listing, so
+#: the cancellation carries its own reason on the document.
+_WITHDRAWN_TAG = "[NC Pending Withdrawn]"
+
+
+def reconcile_pending(cur, in_scope_pks) -> int:
+    """Cancel mirrored in-approval POs that NC no longer lists. Returns the count.
+
+    An order REJECTED in NC drops back to forderstatus=0, or is soft-deleted —
+    either way it stops matching the sync's scope, so no incremental payload
+    ever mentions it again and its ``nc_pending`` mirror row would sit there
+    forever looking like live work. Absence from an incremental payload proves
+    nothing (that is just "unchanged"), which is why the reader hands over the
+    FULL in-scope pk set rather than the batch.
+
+    An order that got APPROVED keeps its pk in that set, so it is deliberately
+    NOT cancelled here: the upsert in the same transaction moves it to its real
+    status, and on the run where the watermark misses it the row stays a
+    harmless ``nc_pending`` instead of a wrongly-cancelled live order.
+
+    POs any invoice points at are excluded belt-and-braces. Nothing should ever
+    reach one — ``nc_pending`` is in no matchable allow-list — and if something
+    did, that is a human's work and not the sync's to undo.
+    """
+    cur.execute(
+        "update purchase_orders set status='cancelled', "
+        "notes = case when notes is null or notes = '' then %s "
+        "             when position(%s in notes) > 0 then notes "
+        "             else notes || ' ' || %s end, "
+        "updated_at = now() "
+        "where source='nc' and status='nc_pending' "
+        "and not (nc_source_pk = any(%s)) "
+        "and not exists (select 1 from invoices i where i.po_id = purchase_orders.id)",
+        (_WITHDRAWN_TAG, _WITHDRAWN_TAG, _WITHDRAWN_TAG, list(in_scope_pks)))
+    return cur.rowcount
+
+
 def upsert(cur, payload: dict, system_user_id, heartbeat=None) -> dict:
     """Idempotent mirror write. ``heartbeat`` (optional) is a zero-arg callable
     invoked every ~500 processed rows so a long-running full load can refresh its

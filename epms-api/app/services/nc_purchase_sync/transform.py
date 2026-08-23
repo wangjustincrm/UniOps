@@ -16,6 +16,18 @@ _SUPPLIER_CODE_ALIASES = {
 # UniOps payment flow). Every other NC PO type is raw-milk procurement.
 _RAW_MATERIAL_TRANTYPE = "21-Cxx-CRM01"
 
+# NC forderstatus=2: submitted, still working through NC's approval chain.
+# Mirrored so the buyer can print the UniOps PO PDF and collect the off-line
+# signatures that feed that approval — see reader._IN_SCOPE for the scope rules.
+_NC_STATUS_PENDING = 2
+
+# The mirrored status for those orders. Read-only by construction: it appears in
+# no payment, receiving or invoice-matching allow-list, so it takes no gate of
+# its own to keep an unapproved order out of the money flow. The two places that
+# DO name it are the PDF gate and the buyer-details editor.
+PENDING_STATUS = "nc_pending"
+_PENDING_TAG = "[NC Pending Approval]"
+
 
 def _num(v):
     return Decimal(str(v)) if v is not None else Decimal("0")
@@ -61,6 +73,19 @@ def _planned_arrival(raw: str | None) -> date | None:
         return date.fromisoformat(str(raw).strip()[:10])
     except ValueError:
         return None
+
+
+def _is_pending(order: dict) -> bool:
+    """True when NC still has this order in approval.
+
+    ``oracledb.defaults.fetch_decimals`` is on, so NUMBER columns arrive as
+    ``Decimal`` — an identity or string comparison would quietly answer False
+    for every order and mirror the whole pending set as payable.
+    """
+    try:
+        return int(order.get("forderstatus")) == _NC_STATUS_PENDING
+    except (TypeError, ValueError):
+        return False
 
 
 def _derive_status_and_note(order: dict, pay: dict) -> tuple:
@@ -150,6 +175,14 @@ def transform(raw: dict, vendor_by_erp: dict) -> dict:
             status = "nc_milk"
             tag = f"[Milk / {o.get('vtrantypecode') or '?'}]"
             notes = f"{notes} {tag}".strip() if notes else tag
+        # Last, so it overrides everything above: "NC has not approved this yet"
+        # is the most restrictive fact about an order and outranks both the
+        # closure flags and the milk classification. When NC approves it, the
+        # next sync re-derives the status from those same flags and the order
+        # lands wherever it belongs — no separate transition to write.
+        if _is_pending(o):
+            status = PENDING_STATUS
+            notes = f"{notes} {_PENDING_TAG}".strip() if notes else _PENDING_TAG
         _m = money_by_order.get(o["pk_order"], {"subtotal": Decimal("0"), "tax": Decimal("0")})
         _sub, _tax = _m["subtotal"], _m["tax"]
         _rate = (_tax / _sub).quantize(Decimal("0.0001")) if _sub else Decimal("0")

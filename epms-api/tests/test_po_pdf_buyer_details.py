@@ -475,3 +475,35 @@ def test_pdf_header_expected_delivery_wins_over_line_dates():
     assert "from ERP" not in text, "a header value is not ERP-derived, so no marker"
     # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
     assert "Widget" in text
+
+
+def test_a_pending_nc_po_prints_the_same_signable_document():
+    """The whole point of mirroring an in-approval NC order: the buyer prints
+    this PDF and collects the off-line signatures that feed NC's approval. So it
+    has to render the full signature block — status is not an input to the
+    generator, and this pins that it stays that way.
+
+    Note what is deliberately absent: no draft watermark, no "pending" stamp.
+    The document a signatory signs is the document, and per the product decision
+    it is byte-identical to the approved one.
+    """
+    pending = _po(status="nc_pending", type=1, vendor_name="Acme Vendor Co",
+                  source="nc", notes="nc memo [NC Pending Approval]")
+    issued = _po(status="issued", type=1, vendor_name="Acme Vendor Co",
+                 source="nc", notes="nc memo")
+
+    pending_text = _text_of(generate_po_pdf(
+        pending, company_name="Canada Royal Milk", signatory_name="Laura Sivers"))
+    issued_text = _text_of(generate_po_pdf(
+        issued, company_name="Canada Royal Milk", signatory_name="Laura Sivers"))
+
+    assert "Canada Royal Milk" in pending_text
+    assert "Acme Vendor Co" in pending_text
+    assert "Laura Sivers" in pending_text
+    assert "Operation Manager" in pending_text
+    # The internal NC marker must not reach a vendor-facing page (the same rule
+    # that keeps [NC Paid] out of it).
+    assert "Pending Approval" not in pending_text
+    assert "nc_pending" not in pending_text
+    # Same document, whatever NC thinks of its approval state.
+    assert pending_text == issued_text
