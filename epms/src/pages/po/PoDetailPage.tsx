@@ -95,7 +95,11 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
       s = 'completed'
     } else if (status === 'cancelled') {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else if (status === 'submitted') {
+    } else if (status === 'submitted' || status === 'nc_pending') {
+      // 'nc_pending' = awaiting approval in NC, where the real signatories are.
+      // Every UniOps step renders as pending rather than 'current': no task was
+      // ever raised here, and showing one as current invites somebody to wait
+      // for an approval that will never arrive in this system.
       s = i < stepIdx ? 'completed' : 'pending'
     } else {
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
@@ -571,10 +575,14 @@ export default function PoDetailPage() {
   // gated by the Access Control Matrix, not a hardcoded role list, so the
   // button and PATCH /po/{id}/imported-details cannot disagree.
   const perms = useRolePermissions().data?.permissions
+  // 'nc_pending' — still in NC's approval chain — is editable for the same
+  // reason it is mirrored at all: the buyer prints this PO PDF for off-line
+  // signature, and these are the fields that make it presentable. Kept in step
+  // with _EDITABLE_IMPORTED_STATUSES in epms-api/app/api/v1/po.py.
   const canEditImported =
     !!po &&
     po.source === 'nc' &&
-    po.status === 'issued' &&
+    ['issued', 'nc_pending'].includes(po.status) &&
     (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
   const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
   // PA creation is permission-driven, exactly like the PA list's Create button
@@ -1009,7 +1017,7 @@ export default function PoDetailPage() {
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Attachments</h2>
-                {['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(po.status) && (
+                {['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_pending'].includes(po.status) && (
                   <button
                     type="button"
                     onClick={() => regeneratePdf.mutate()}

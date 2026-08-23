@@ -168,6 +168,30 @@ async def test_system_admin_is_allowed(test_engine):
 
 
 @pytest.mark.asyncio
+async def test_a_pending_nc_po_is_editable(test_engine):
+    """An order still in NC's approval chain is mirrored precisely so its PO PDF
+    can be printed and signed off-line — and this detail (Incoterms, sample,
+    supplier item id) is what makes that PDF usable. Editing it must therefore
+    be open BEFORE approval, not after."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_edit_imported(db)
+        officer = await _user(db, "erp_pa_officer")
+        po, line = await _nc_po(db, status="nc_pending", creator_id=officer.id)
+        po_id, line_id = po.id, line.id
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        r = await c.patch(_url(po_id), json={
+            "incoterms": "FOB Shanghai",
+            "lines": [{"id": str(line_id), "sample": "500 g"}],
+        })
+    assert r.status_code == 200, r.text
+    assert r.json()["incoterms"] == "FOB Shanghai"
+    assert r.json()["line_items"][0]["sample"] == "500 g"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["closed", "nc_milk", "draft"])
 async def test_only_issued_nc_pos_are_editable(test_engine, status):
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)

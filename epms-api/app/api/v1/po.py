@@ -153,6 +153,14 @@ async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWr
     return await po_crud.update(db, po, body, vendor_code=vendor_code, vendor_name=vendor_name)
 
 
+#: NC-imported POs whose buyer-supplied detail can still be filled in.
+#: ``nc_pending`` is here because the whole reason an in-approval order is
+#: mirrored is to print a PO PDF for signature, and the detail this endpoint
+#: writes (material/sample/Incoterms/notes) is what makes that PDF usable.
+#: ``closed`` and ``nc_milk`` stay out: those are archives, not live documents.
+_EDITABLE_IMPORTED_STATUSES = ("issued", "nc_pending")
+
+
 @router.patch("/{po_id}/imported-details", response_model=PoResponse)
 async def update_imported_details(
     po_id: uuid.UUID, body: PoImportedDetailsUpdate, db: SessionDep, user: PoEditImportedDep,
@@ -172,10 +180,11 @@ async def update_imported_details(
     if po.source != "nc":
         raise HTTPException(
             status_code=409, detail="Only NC-imported POs can be edited here")
-    if po.status != "issued":
+    if po.status not in _EDITABLE_IMPORTED_STATUSES:
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot edit an NC PO in status '{po.status}' — only 'issued' is editable",
+            detail=f"Cannot edit an NC PO in status '{po.status}' — only "
+                   f"{' / '.join(sorted(_EDITABLE_IMPORTED_STATUSES))} are editable",
         )
 
     try:

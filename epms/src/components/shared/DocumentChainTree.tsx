@@ -91,6 +91,7 @@ const PO_STATUS_LABELS: Record<string, string> = {
   cancelled:         'Cancelled',
   closed:            'Closed',
   nc_milk:           'Milk / NC',
+  nc_pending:        'NC Pending Approval',
 }
 
 function grStatusToDoc(s: GrStatus): DocumentStatus {

@@ -33,6 +33,9 @@ export type DocumentStatus =
   | 'paid'
   | 'closed'
   | 'nc_milk'
+  // NC order still working through the ERP's approval chain: mirrored so its
+  // PO PDF can be printed for off-line signature, read-only everywhere else.
+  | 'nc_pending'
   // Purchase Agreement statuses (approval terminal state is 'active', not 'approved')
   | 'active'
   | 'expired'

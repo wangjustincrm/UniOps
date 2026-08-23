@@ -21,8 +21,16 @@ router = APIRouter(prefix="/po/{po_id}/attachments", tags=["po-attachments"])
 
 MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
 
-# Statuses at/after which an approved-document PDF is meaningful (regenerate-able).
-_PDF_STATUSES = {"approved", "issued", "partially_received", "fully_received", "closed"}
+# Statuses at/after which the PO PDF is meaningful (regenerate-able).
+#
+# ``nc_pending`` — an NC order still working through the ERP's approval chain —
+# is included deliberately, and is the one entry that is not "at/after approval":
+# the printed PDF is what gets signed off-line, and those signatures are what
+# feed NC's approval. Requiring approval first would make the document
+# unobtainable exactly when it is needed. The PO stays read-only in every other
+# respect; nothing about holding a PDF makes it payable or receivable.
+_PDF_STATUSES = {"approved", "issued", "partially_received", "fully_received",
+                 "closed", "nc_pending"}
 
 
 class AttachmentMeta(BaseModel):
@@ -98,7 +106,9 @@ async def regenerate_pdf(
     if po is None:
         raise HTTPException(status_code=404, detail="PO not found")
     if po.status not in _PDF_STATUSES:
-        raise HTTPException(status_code=409, detail="PDF is only available once the PO is approved")
+        raise HTTPException(
+            status_code=409,
+            detail=f"PDF is not available for a PO in status '{po.status}'")
 
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
     company_name = cfg.name if cfg else "EPMS"
