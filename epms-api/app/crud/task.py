@@ -362,8 +362,12 @@ async def _backfill_create_pa_tasks(db: AsyncSession) -> None:
     )
     # 一票多 PO:表头之外的 PO 只在 invoice_po_allocations 里出现,header-only 的
     # 查询看不见它们(生产 PO-400-2607-12 就这么漏掉的)。发票的 gr_id 可能是
-    # 别的 PO 的 GR,所以这里的收货证据取「本 PO 自己有 GR」——与
-    # crud.po.po_has_three_way_matched_invoice 同口径。
+    # 别的 PO 的 GR,所以这里的收货证据取「本 PO 自己有 GR」。
+    #
+    # ★ 这个自愈扫描器**故意比 crud.po.po_has_receipt_evidence 窄**:后者还认
+    # po_line_items.received_qty(PMS 迁移来的历史单收货量在那里、库里没有 GR
+    # 行),照搬过来会让这个扫描器一次性给上百张历史 PO 补发 create_pa。补发
+    # 由真实事件驱动(match / GR 创建)就够了,扫描器只兜有 GR 单据的那部分。
     recent_matched_alloc_pos = (
         select(InvoicePoAllocation.po_id)
         .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)

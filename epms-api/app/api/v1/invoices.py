@@ -218,6 +218,26 @@ async def _on_invoice_matched(db, invoice) -> None:
             await _create_or_renotify_confirm_receipt(db, po, pr, invoice, is_physical(po.type))
 
 
+async def _close_open_confirm_receipt(db, po_id) -> None:
+    """收货已经有证据了 —— 关掉这个 PO 上还开着的催收货任务。
+
+    在这个改动之前,全仓只有 crud.gr._on_three_way_reached 会关 confirm_receipt,
+    而它只在 **GR 创建时**被调用。三方从别的路径达成时(生产 PO-089-2607-14:
+    AP 手工重新 match,同一次请求里 gr_id 落库、create_pa 建了出来)那条催办
+    没有任何代码碰它,于是永久挂在仓管的 Task Inbox 里,指向一张一天前就已经
+    收完货、付完款的 PO。另一个关闭点 _withdraw_orphaned_po_tasks 只在**解绑
+    发票**时跑,条件还是「PO 上再没有任何 matched 发票」—— 正好相反。
+    """
+    now = datetime.now(timezone.utc)
+    rows = (await db.execute(select(Task).where(
+        Task.type == "confirm_receipt", Task.document_type == "po",
+        Task.document_id == po_id, Task.is_completed.is_(False),
+    ))).scalars().all()
+    for t in rows:
+        t.is_completed = True
+        t.completed_at = now
+
+
 async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
     """
     After an invoice is 3-way matched (has a GR), raise a create_pa task.
@@ -227,6 +247,9 @@ async def _create_or_renotify_create_pa(db, po, pr, invoice) -> None:
     (assigned_role + NULL assignee → broadcast to every holder of that role).
     A non-NC PO without a PR still gets no task (unchanged legacy behaviour).
     """
+    # 先关催办,再决定建不建 create_pa:三方已经达成,货到底收没收这个问题已经
+    # 有答案了,不该再挂着一条问它的任务 —— 哪怕下面因为没有 PR 而不建 create_pa。
+    await _close_open_confirm_receipt(db, po.id)
     is_nc_orphan = pr is None and po.source == "nc"
     if pr is None and not is_nc_orphan:   # non-NC PO with no PR → don't build create_pa
         return
@@ -260,7 +283,18 @@ async def _create_or_renotify_confirm_receipt(db, po, pr, invoice, physical: boo
     """
     After an invoice is matched to a PO without a GR yet, nudge someone to
     confirm receipt (physical → warehouse_staff pool; service → requester).
+
+    Never nudge a PO that already shows receipt evidence. The 3-way test above
+    should have routed those to create_pa, so reaching here with goods already
+    in the building means some other condition failed — and a nudge nobody can
+    satisfy is worse than no nudge: these are exactly the POs (no GR document,
+    only received_qty) where "go create a GR" will never happen.
     """
+    from app.crud.po import po_has_receipt_evidence
+
+    if await po_has_receipt_evidence(db, po.id):
+        await _close_open_confirm_receipt(db, po.id)
+        return
     existing = (await db.execute(select(Task).where(
         Task.type == "confirm_receipt",
         Task.document_type == "po",

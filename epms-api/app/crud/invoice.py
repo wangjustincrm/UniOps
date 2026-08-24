@@ -25,6 +25,7 @@ from app.models.po import PoLineItem, PurchaseOrder
 from app.models.task import Task
 from app.models.user import User
 from app.models.vendor import Vendor
+from app.schemas.gr import DEAD_GR_STATUSES
 from app.schemas.invoice import (
     AllocationInput,
     ClaimedReceipt,
@@ -452,8 +453,10 @@ async def _apply_gr_selection(
 
 
 # GRs in these states never represent received goods, so they must never be
-# auto-attached to an invoice (a user can still pick one by hand).
-_DEAD_GR_STATUSES = ("cancelled", "rejected")
+# auto-attached to an invoice (a user can still pick one by hand). Defined in
+# schemas.gr so crud.po.po_has_receipt_evidence reads the same set — one
+# definition, not two that can drift.
+_DEAD_GR_STATUSES = DEAD_GR_STATUSES
 
 
 async def _discover_grs_for_allocations(
@@ -1382,6 +1385,17 @@ async def review_match(
                 f"Reviewed and approved (variance: {invoice.variance:+.2f})"
                 if invoice.variance else None
             )
+        # 复核期间货可能才到。match() 只在**提交那一刻**跑过一次 GR 自动发现,
+        # 那时可能一件都还没收(生产 INV-2026-0108:07-30 提交复核,
+        # GR-20260805-0042 是 08-05 才收的),而 approve 原本只翻状态、不重跑
+        # 发现 —— gr_id 就一直是空的,下游三方判定读不到早就进了库的货,于是
+        # 08-06 复核通过时给一张已经收完货的 PO 建了条催收货任务。
+        # 只在调用方从没选过 GR 时补挂:手工清空过的选择不能被自动长回来
+        # (与 match() 的 auto_link_grs 同一约定)。
+        if not invoice.gr_ids and rows:
+            discovered = await _discover_grs_for_allocations(db, rows)
+            if discovered:
+                await _apply_gr_selection(db, invoice, discovered)
     else:  # reject
         invoice.status = "unmatched"
         invoice.matched_at = None

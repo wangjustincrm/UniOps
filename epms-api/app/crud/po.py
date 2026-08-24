@@ -17,6 +17,7 @@ from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
 from app.models.user import User
+from app.schemas.gr import DEAD_GR_STATUSES
 from app.schemas.po import PO_WORKFLOW, PlaceOrderRequest, PoActionRequest, PoCreate, PoImportedDetailsUpdate, PoUpdate
 from app.schemas.pr import ApprovalEventResponse
 
@@ -624,6 +625,38 @@ async def get_approval_events(
     ]
 
 
+async def po_has_receipt_evidence(db: AsyncSession, po_id: uuid.UUID) -> bool:
+    """Has anything actually been received against this PO? Two forms count:
+
+      1. A live GR document on the PO (cancelled/rejected ones never count).
+      2. ``po_line_items.received_qty`` > 0 — the only form a PMS-migrated PO
+         carries. Those goods arrived before EPMS existed, so no GR document was
+         ever written for them: 97 of production's 247 fully_received POs have
+         zero rows in ``goods_receipts``. It is also the same signal
+         ``sync_po_receipt_status`` derives ``po.status`` from, so this agrees
+         with the receipt status the UI already shows.
+
+    Reading receipt evidence as "a GR row exists" alone is what stranded eleven
+    Confirm-goods-receipt tasks in production (PO-087-2602-01, PO-415-2603-04,
+    …): the PO can never get a GR, so the nudge could never be satisfied and
+    the invoice on it could never reach 3-way — no create_pa either, the goods
+    silently going unpaid until someone raised the PA by hand.
+    """
+    gr = (await db.execute(
+        select(GoodsReceipt.id).where(
+            GoodsReceipt.po_id == po_id,
+            GoodsReceipt.status.not_in(DEAD_GR_STATUSES),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if gr is not None:
+        return True
+    return (await db.execute(
+        select(PoLineItem.id).where(
+            PoLineItem.po_id == po_id, PoLineItem.received_qty > 0
+        ).limit(1)
+    )).scalar_one_or_none() is not None
+
+
 async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -> bool:
     """True 当 PO 有任一张 3-way matched 发票:status=='matched' 且已收货。
 
@@ -639,6 +672,13 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
          所以要求本 PO 自己有 GR。
     只认表头会让分摊 PO 永远拿不到 create_pa 且被闸门 422 挡住(生产
     PO-400-2607-12:发票表头是 PO-400-2607-11,242 元静默漏付)。
+
+    两条路径的「已收货」都走 po_has_receipt_evidence —— GR 单据**或**
+    po_line_items.received_qty。表头路径原本只认 invoice.gr_id,而 gr_id 只有
+    GR 单据才填得出来:PMS 迁移来的历史单收货量在 received_qty 里、库里没有
+    GR 行(生产 247 条 fully_received 里 97 条如此),于是它们的发票即使
+    matched 也永远判「未收货」,拿不到 create_pa,只会反复收到一条谁也满足不了
+    的催收货任务(生产 11 条僵尸任务)。
     """
     header = (await db.execute(
         select(Invoice.id).where(
@@ -648,6 +688,18 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
         ).limit(1)
     )).scalar_one_or_none()
     if header is not None:
+        return True
+
+    # 表头 matched 但 gr_id 为空 —— 回落到本 PO 自己的收货证据。gr_id 为空既可能
+    # 是历史单从来没有 GR,也可能是自动挂接漏了(生产 22 张 matched 发票 gr_id
+    # 为空而其 PO 有 GR);两种都不该被读成「货没到」。
+    header_no_gr = (await db.execute(
+        select(Invoice.id).where(
+            Invoice.po_id == po_id,
+            Invoice.status == "matched",
+        ).limit(1)
+    )).scalar_one_or_none()
+    if header_no_gr is not None and await po_has_receipt_evidence(db, po_id):
         return True
 
     allocated = (await db.execute(
@@ -660,7 +712,4 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
     )).scalar_one_or_none()
     if allocated is None:
         return False
-    own_gr = (await db.execute(
-        select(GoodsReceipt.id).where(GoodsReceipt.po_id == po_id).limit(1)
-    )).scalar_one_or_none()
-    return own_gr is not None
+    return await po_has_receipt_evidence(db, po_id)
