@@ -62,6 +62,9 @@ export interface ApiPo {
   vendor_name: string
   is_prepaid: boolean
   has_unpaid_invoice: boolean
+  // ANY invoice points at this PO — detail endpoint only. Not the same as
+  // has_unpaid_invoice, which the LIST endpoint alone computes.
+  has_invoice?: boolean
   budget_code?: string
   expected_delivery?: string
   delivery_address?: string

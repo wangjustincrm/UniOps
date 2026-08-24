@@ -182,6 +182,12 @@ class PoResponse(BaseModel):
     # Computed (detail view): created_by of the linked PR — the requester who may
     # confirm delivery (create GR) on a service/project PO. None for direct POs.
     pr_requester_id: uuid.UUID | None = None
+    # Computed (detail view): ANY invoice points at this PO — not just an unpaid
+    # one. Distinct from has_unpaid_invoice above, which the LIST endpoint alone
+    # fills in and which is therefore always False here. Drives the imported-PO
+    # editor's tax control: once accounts payable is measuring against this
+    # header, its money must stop moving.
+    has_invoice: bool = False
     # 该 PO 被【其他发票】累计分摊的总额(所有 po_line_id 之和,仅 match-candidates 端点填充)
     already_allocated_total: Decimal | None = None
     current_step: CurrentStep | None = None

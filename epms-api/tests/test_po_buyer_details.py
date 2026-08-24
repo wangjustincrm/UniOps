@@ -25,6 +25,7 @@ from app.crud import user as user_crud
 from app.db.base import Base
 from app.main import create_app
 from app.models.admin_audit_log import AdminAuditLog
+from app.models.invoice import Invoice
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.vendor import Vendor
 from app.schemas.auth import RegisterRequest
@@ -192,8 +193,21 @@ async def test_a_pending_nc_po_is_editable(test_engine):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["closed", "nc_milk", "draft"])
-async def test_only_issued_nc_pos_are_editable(test_engine, status):
+@pytest.mark.parametrize("status", ["closed", "nc_milk", "nc_pending", "draft",
+                                    "partially_received", "cancelled"])
+async def test_every_nc_po_is_editable_whatever_its_status(test_engine, status):
+    """The status gate is gone on purpose.
+
+    Everything this endpoint writes is buyer-supplied detail the ERP has no
+    column for, and the sync already refuses to overwrite it (writer.upsert
+    omits those columns once buyer_edited_at is set). So a later NC change
+    cannot collide with it, and there is no status at which the buyer stops
+    needing to record what NC never held — a closed order still gets asked
+    about its Incoterms.
+
+    The one field that IS money — tax_rate — is guarded separately, by whether
+    an invoice exists rather than by status. See the tests below.
+    """
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
         await _grant_edit_imported(db)
@@ -204,8 +218,115 @@ async def test_only_issued_nc_pos_are_editable(test_engine, status):
 
     async with _client_for(officer) as c:
         r = await c.patch(_url(po_id), json={"incoterms": "EXW"})
+    assert r.status_code == 200, r.text
+    assert r.json()["incoterms"] == "EXW"
+
+
+async def _invoice_for(db, po, uploader_id):
+    """An invoice pointing at this PO — what makes it "consumed" downstream."""
+    inv = Invoice(
+        internal_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number="V-1",
+        vendor_id=po.vendor_id, vendor_name=po.vendor_name,
+        amount=Decimal("100.00"), tax_amount=Decimal("0"),
+        total_amount=Decimal("100.00"), currency="CAD",
+        invoice_date=date(2026, 8, 1), due_date=date(2026, 9, 1),
+        status="matched", line_items=[], uploaded_by=uploader_id,
+        po_id=po.id, po_number=po.number,
+    )
+    db.add(inv)
+    await db.flush()
+    return inv
+
+
+@pytest.mark.asyncio
+async def test_tax_rate_cannot_be_changed_once_an_invoice_exists(test_engine):
+    """Changing the rate re-derives tax_amount and total off the same subtotal.
+    On a PO an invoice already points at, that silently moves the figure every
+    3-way variance was measured against."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_edit_imported(db)
+        officer = await _user(db, "erp_pa_officer")
+        po, line = await _nc_po(db, creator_id=officer.id)
+        await _invoice_for(db, po, officer.id)
+        po_id = po.id
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        r = await c.patch(_url(po_id), json={"tax_code": "HST13", "tax_rate": "0.13"})
     assert r.status_code == 409, r.text
-    assert status in r.text
+    assert "invoice" in r.text.lower()
+
+    async with factory() as db:
+        fresh = (await db.execute(
+            select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one()
+        assert fresh.tax_rate == Decimal("0")
+        assert fresh.total == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_an_invoiced_po_still_takes_every_other_edit(test_engine):
+    """The guard is on the money, not on the document."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_edit_imported(db)
+        officer = await _user(db, "erp_pa_officer")
+        po, line = await _nc_po(db, creator_id=officer.id)
+        await _invoice_for(db, po, officer.id)
+        po_id, line_id = po.id, line.id
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        r = await c.patch(_url(po_id), json={
+            "incoterms": "DDP Toronto",
+            "buyer_notes": "Call before delivery.",
+            "lines": [{"id": str(line_id), "sample": "500 g"}],
+        })
+    assert r.status_code == 200, r.text
+    assert r.json()["incoterms"] == "DDP Toronto"
+    assert r.json()["line_items"][0]["sample"] == "500 g"
+
+
+@pytest.mark.asyncio
+async def test_an_invoiced_po_accepts_a_save_that_leaves_the_rate_alone(test_engine):
+    """The edit form re-sends tax_rate on every CAD save, even one that only
+    touched Incoterms. Rejecting on the key's PRESENCE would make an invoiced
+    CAD order completely unsavable; the guard is on the VALUE changing."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_edit_imported(db)
+        officer = await _user(db, "erp_pa_officer")
+        po, line = await _nc_po(db, creator_id=officer.id)
+        await _invoice_for(db, po, officer.id)
+        po_id = po.id
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        r = await c.patch(_url(po_id), json={
+            "incoterms": "EXW", "tax_code": None, "tax_rate": "0",
+        })
+    assert r.status_code == 200, r.text
+    assert r.json()["incoterms"] == "EXW"
+
+
+@pytest.mark.asyncio
+async def test_po_detail_reports_whether_an_invoice_exists(test_engine):
+    """The edit form disables the tax control off this flag. has_unpaid_invoice
+    cannot be used for it: that one is computed by the LIST endpoint only and is
+    always False on the detail response."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        await _grant_edit_imported(db)
+        officer = await _user(db, "system_admin")
+        plain, _ = await _nc_po(db, creator_id=officer.id)
+        invoiced, _ = await _nc_po(db, creator_id=officer.id)
+        await _invoice_for(db, invoiced, officer.id)
+        plain_id, invoiced_id = plain.id, invoiced.id
+        await db.commit()
+
+    async with _client_for(officer) as c:
+        assert (await c.get(f"/api/v1/po/{plain_id}")).json()["has_invoice"] is False
+        assert (await c.get(f"/api/v1/po/{invoiced_id}")).json()["has_invoice"] is True
 
 
 @pytest.mark.asyncio

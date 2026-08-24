@@ -12,6 +12,7 @@ import { usePo, useUpdatePoImportedDetails, useRegeneratePoPdf } from '@/hooks/u
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, formatDate } from '@/lib/utils'
+import { isImportedEditablePo, isImportedTaxLocked } from '@/lib/importedPoEdit'
 import type { ImportedDetailsBody } from '@/services/po'
 
 // Same mapping as PoDetailPage.tsx / PoListPage.tsx.
@@ -26,9 +27,13 @@ const TYPE_LABELS: Record<number, string> = {
 
 /** Buyer-detail form for an NC-imported PO.
  *
- *  Only reachable for source='nc' + status='issued'. Vendor, currency, title,
- *  and budget code and every line quantity/price are display-only: NC owns
+ *  Reachable for any source='nc' PO, whatever its status. Vendor, currency,
+ *  title, budget code and every line quantity/price are display-only: NC owns
  *  them, and the backend endpoint has no field for them at all.
+ *
+ *  Tax is the one field here that moves money (the rate re-derives tax_amount
+ *  and total). Once an invoice points at this PO the control is locked — see
+ *  taxLocked below and the matching 409 in the endpoint.
  */
 export default function PoImportedEditPage() {
   const { id } = useParams<{ id: string }>()
@@ -145,7 +150,10 @@ export default function PoImportedEditPage() {
     setDeliveryAddress(config.delivery_address)
   }, [po?.id, po?.delivery_address, config?.delivery_address])
 
-  const editable = po?.source === 'nc' && po?.status === 'issued'
+  const editable = isImportedEditablePo(po)
+  // Locked, not hidden: the buyer should see the rate that is in force and
+  // why it cannot move, rather than find the field missing.
+  const taxLocked = isImportedTaxLocked(po)
   const isCadOrder = po?.currency === 'CAD'
   // Same rule as PoCreatePage / PoEditPage — tax only applies to CAD orders.
   // On a non-CAD NC PO this page never touches tax (see handleSave), so the
@@ -243,7 +251,7 @@ export default function PoImportedEditPage() {
     return (
       <div className="p-6">
         <p className="text-sm text-neutral-700">
-          Only imported POs in status "issued" can be edited here.
+          Only POs imported from NC can be edited here.
         </p>
         <BackLink to={`/po/${po.id}`} className="mt-3 inline-flex items-center gap-1 text-sm text-primary-600">
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -307,11 +315,17 @@ export default function PoImportedEditPage() {
         </FormField>
 
         <div className="grid gap-4 md:grid-cols-2">
-          <FormField label="Tax Code" htmlFor="taxCode">
+          <FormField
+            label="Tax Code"
+            htmlFor="taxCode"
+            hint={taxLocked
+              ? 'Locked — an invoice has been raised against this PO.'
+              : undefined}
+          >
             <select
               id="taxCode"
               value={taxCode ?? ''}
-              disabled={po.currency !== 'CAD'}
+              disabled={po.currency !== 'CAD' || taxLocked}
               onChange={(e) => {
                 const chosen = taxCodes.find((t) => t.code === e.target.value)
                 setTaxCode(chosen?.code ?? null)

@@ -28,6 +28,7 @@ import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import type { ApiEvent } from '@/services/pr'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
+import { isImportedEditablePo } from '@/lib/importedPoEdit'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -575,14 +576,8 @@ export default function PoDetailPage() {
   // gated by the Access Control Matrix, not a hardcoded role list, so the
   // button and PATCH /po/{id}/imported-details cannot disagree.
   const perms = useRolePermissions().data?.permissions
-  // 'nc_pending' — still in NC's approval chain — is editable for the same
-  // reason it is mirrored at all: the buyer prints this PO PDF for off-line
-  // signature, and these are the fields that make it presentable. Kept in step
-  // with _EDITABLE_IMPORTED_STATUSES in epms-api/app/api/v1/po.py.
   const canEditImported =
-    !!po &&
-    po.source === 'nc' &&
-    ['issued', 'nc_pending'].includes(po.status) &&
+    isImportedEditablePo(po) &&
     (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
   const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
   // PA creation is permission-driven, exactly like the PA list's Create button
