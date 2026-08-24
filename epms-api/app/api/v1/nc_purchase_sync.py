@@ -20,6 +20,7 @@ from sqlalchemy import select, text
 import re
 
 from app.core.config import settings
+from app.core.access_scope import _effective_role_codes
 from app.core.deps import CurrentUserPayload, SessionDep, require_roles
 from app.models.config import CompanyConfig
 from app.models.nc_purchase_sync import RUNNING, NcPurchaseSyncRun
@@ -42,12 +43,36 @@ async def _effective_cutover(db) -> str:
         select(CompanyConfig.nc_purchase_cutover).limit(1))).scalar_one_or_none()
     return row or getattr(settings, "nc_purchase_cutover", None) or svc._DEFAULT_CUTOVER
 
-# Incremental sync may be triggered by a Procurement Officer (day-to-day) or a
-# system_admin. Full reload stays system_admin-only (enforced in trigger()).
-# GET /status stays open to any authenticated user; it computes can_sync from
-# the caller's own role.
-_SYNC_ROLES = ("system_admin", "procurement_officer")
-SyncDep = Annotated[dict, Depends(require_roles(*_SYNC_ROLES))]
+# Incremental sync may be triggered by a Procurement Officer (day-to-day), an
+# ERP PA Officer (they live off the NC mirror — the PA queue for imported POs
+# is only as fresh as the last sync, so making them wait for someone else to
+# press the button is what made this a role question at all), or a system_admin.
+# Full reload stays system_admin-only (enforced in trigger()).
+# GET /status stays open to any authenticated user; it computes can_sync the
+# same way this dependency does, so the button and the endpoint cannot disagree.
+_SYNC_ROLES = frozenset(("system_admin", "procurement_officer", "erp_pa_officer"))
+
+
+async def _may_sync(db, user: dict) -> bool:
+    """Does this caller hold ANY sync-capable role — base OR granted?
+
+    Must be the role UNION, not `payload["role"]`. `erp_pa_officer` is an
+    ADDITIONAL role by design (see identity's user_roles): all three holders in
+    production carry `requester` as their base role, so a `require_roles`-style
+    check on the JWT claim alone would admit exactly nobody while the button
+    happily rendered — the button appears, the click 403s.
+    """
+    return bool(_SYNC_ROLES & await _effective_role_codes(
+        db, user.get("role") or "", uuid.UUID(user["sub"])))
+
+
+async def _require_sync_role(user: CurrentUserPayload, db: SessionDep) -> dict:
+    if not await _may_sync(db, user):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    return user
+
+
+SyncDep = Annotated[dict, Depends(_require_sync_role)]
 
 
 class SyncIn(BaseModel):
@@ -104,7 +129,7 @@ async def status(user: CurrentUserPayload, db: SessionDep):
         next_due_at = (started + timedelta(minutes=interval)).isoformat()
     return {
         "configured": svc.nc_configured(),
-        "can_sync": user.get("role") in _SYNC_ROLES,
+        "can_sync": await _may_sync(db, user),
         "can_set_cutover": user.get("role") == "system_admin",
         "cutover": await _effective_cutover(db),
         "interval_minutes": interval,
