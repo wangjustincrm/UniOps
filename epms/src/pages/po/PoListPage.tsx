@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Search, Plus, ChevronUp, ChevronDown, ExternalLink, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -72,7 +73,21 @@ export default function PoListPage() {
   const total = data?.total ?? 0
 
   const canCreate = user?.role === 'procurement_officer' || user?.role === 'procurement_manager' || user?.role === 'system_admin'
-  const canSyncNc = user?.role === 'procurement_officer' || user?.role === 'system_admin'
+  // Whether this user may trigger an NC sync is decided by the ENDPOINT and read
+  // back from it — never re-derived here. The gate is a role UNION (base role
+  // plus identity's user_roles grants), and `user.role` carries only the base
+  // one: every erp_pa_officer in production holds `requester` as their base
+  // role, so a hand-written check here would hide the button from exactly the
+  // people who need it while a second copy of the list quietly drifted from the
+  // server's. `can_sync` comes from GET /admin/nc-purchase-sync/status, which is
+  // open to any authenticated user and computes it with the same helper the
+  // POST gate uses.
+  const { data: ncStatus } = useQuery({
+    queryKey: ['nc-purchase-sync-can-sync'],
+    queryFn: () => api.get<{ can_sync: boolean }>('/admin/nc-purchase-sync/status'),
+    staleTime: 5 * 60 * 1000,
+  })
+  const canSyncNc = ncStatus?.can_sync === true
 
   const [ncSyncing, setNcSyncing] = useState(false)
   const [ncMsg, setNcMsg] = useState<string | null>(null)
