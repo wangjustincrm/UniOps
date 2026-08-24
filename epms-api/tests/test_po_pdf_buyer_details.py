@@ -190,14 +190,14 @@ def test_material_id_blank_not_none_when_absent():
 def test_type1_po_signature_block_renders_company_vendor_and_signatory():
     """Type 1 POs get a countersigned-document signature block: our company's
     name, the vendor's name, the resolved OPM name, and the fixed literal
-    'Operation Manager' title — never derived from the user's actual role."""
+    'Operations Manager' title — never derived from the user's actual role."""
     po = _po(type=1, vendor_name="Acme Vendor Co")
     text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
                                      signatory_name="Laura Sivers"))
     assert "Canada Royal Milk" in text
     assert "Acme Vendor Co" in text
     assert "Laura Sivers" in text
-    assert "Operation Manager" in text
+    assert "Operations Manager" in text
 
 
 def test_type2_po_has_no_signature_block():
@@ -205,7 +205,7 @@ def test_type2_po_has_no_signature_block():
     po = _po(type=2, vendor_name="Acme Vendor Co")
     text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
                                      signatory_name="Laura Sivers"))
-    assert "Operation Manager" not in text
+    assert "Operations Manager" not in text
     # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
     assert "Widget" in text
 
@@ -217,7 +217,7 @@ def test_type1_po_signature_block_blank_name_when_signatory_missing():
     po = _po(type=1, vendor_name="Acme Vendor Co")
     text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
                                      signatory_name=None))
-    assert "Operation Manager" in text
+    assert "Operations Manager" in text
     assert "Acme Vendor Co" in text
     assert "None" not in text
 
@@ -229,7 +229,7 @@ def test_signature_block_introduces_no_date_row():
     po = _po(type=1, vendor_name="Acme Vendor Co")
     text = _text_of(generate_po_pdf(po, company_name="Canada Royal Milk",
                                      signatory_name="Laura Sivers"))
-    assert "Operation Manager" in text  # positive control: block did render
+    assert "Operations Manager" in text  # positive control: block did render
     assert "Signature Date" not in text
     assert "Date:" not in text
 
@@ -461,7 +461,7 @@ def test_signature_block_survives_a_wrapping_entity_name():
     # ReportLab wraps the long name across multiple Tj runs, so check a
     # distinctive fragment rather than the full contiguous string.
     assert "Zhongbai Pioneer" in text
-    assert "Operation Manager" in text
+    assert "Operations Manager" in text
 
 
 def test_pdf_header_expected_delivery_wins_over_line_dates():
@@ -500,7 +500,7 @@ def test_a_pending_nc_po_prints_the_same_signable_document():
     assert "Canada Royal Milk" in pending_text
     assert "Acme Vendor Co" in pending_text
     assert "Laura Sivers" in pending_text
-    assert "Operation Manager" in pending_text
+    assert "Operations Manager" in pending_text
     # The internal NC marker must not reach a vendor-facing page (the same rule
     # that keeps [NC Paid] out of it).
     assert "Pending Approval" not in pending_text

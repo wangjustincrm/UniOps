@@ -290,7 +290,11 @@ def generate_po_pdf(
                 ["", "", ""],                                   # clear signing space
                 [_rule(), "", _rule()],
                 [_field("Name", signatory_name), "", _field("Name", None)],
-                [_field("Title", "Operation Manager"), "", _field("Title", None)],
+                # "Operations Manager" — the same spelling the opm role label
+                # carries everywhere else (identity's seed_authz, epms config,
+                # all three frontends). This block was the one place that said
+                # "Operation Manager", on the one document that goes to a vendor.
+                [_field("Title", "Operations Manager"), "", _field("Title", None)],
             ],
             colWidths=[col_w, gap_w, col_w],
             rowHeights=[None, 13 * mm, None, None, None],
