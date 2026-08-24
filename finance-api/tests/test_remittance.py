@@ -253,6 +253,16 @@ def _record(pa, batch_id=None, status="completed", doc_number=None):
         vendor_name=pa.vendor_name, payment_date=date(2026, 7, 22),
         payment_method="bank_transfer", amount=pa.payment_amount, currency="CAD",
         recorded_by=uuid.uuid4(), status=status, batch_id=batch_id,
+        # Explicit, matching what app/crud/payment_execute.py's execute()
+        # always sets on a real PaymentRecord (a sum() with a Decimal("0.00")
+        # start, never left to the column's own Python-side default of a
+        # bare Decimal("0")). This helper bypasses execute(), so without this
+        # a record built here carries a client-side-only Decimal("0") that
+        # was never round-tripped through the numeric(15,2) column — it
+        # still serializes as "0", not "0.00", even after flush, because
+        # nothing re-reads it from Postgres. Real production rows never
+        # exhibit that mismatch; only this shortcut construction can.
+        credit_applied=Decimal("0.00"),
     )
 
 
@@ -913,6 +923,56 @@ async def test_preview_lists_group_with_block_reasons(client, db_session):
     assert body["groups"][0]["total"] == "42.00"      # Decimal serialized as string
 
 
+async def test_preview_line_exposes_gross_and_credit_notes_for_a_netted_payment(client, db_session):
+    """`_serialize_groups` widened for Task 8 (brief:
+    remittance-preview-brief.md) — a netted payment's preview line must carry
+    `gross`, `credit_applied`, and the applied credit notes named by the
+    VENDOR's own number, not just the net `amount` it always carried. This is
+    what lets AP see, before clicking Send, the same three-tier breakdown
+    (gross / less credit X / net) the outbound email itself renders (see
+    remittance_template.py's `_amount_cell`)."""
+    from app.models.vendor_credit import VendorCredit, VendorCreditApplication
+
+    await _configured(db_session)
+    bp = await _vendor(db_session, remit="remit@acme.test")
+    inv = await _invoice(db_session, "VINV-30")
+    pa = _pa(bp.id, "70.00", [str(inv.id)])
+    db_session.add(pa)
+    await db_session.flush()
+    rec = _record(pa)
+    rec.credit_applied = Decimal("30.00")   # net 70.00 + credit 30.00 = gross 100.00
+    db_session.add(rec)
+    await db_session.flush()
+
+    vc = VendorCredit(
+        credit_number="VC-TEST-30", vendor_id=bp.id, vendor_name="ACME",
+        vendor_credit_number="11DJ-MFHX-N4JG", credit_date=date(2026, 7, 1),
+        currency="CAD", amount=Decimal("30.00"), tax_amount=Decimal("0"),
+        total_amount=Decimal("30.00"), applied_amount=Decimal("30.00"),
+        remaining_amount=Decimal("0.00"), status="applied", line_items=[],
+        uploaded_by=uuid.uuid4(), uploaded_at=datetime.now(timezone.utc),
+    )
+    db_session.add(vc)
+    await db_session.flush()
+    db_session.add(VendorCreditApplication(
+        credit_id=vc.id, payment_record_id=rec.id, doc_kind="pa_dir", doc_id=pa.id,
+        doc_number=pa.pa_number, applied_amount=Decimal("30.00"),
+        applied_at=datetime.now(timezone.utc), applied_by=uuid.uuid4(),
+    ))
+    await db_session.flush()
+
+    body = (await client.get(
+        f"/finance/v1/payments/{rec.id}/remittance/preview", headers=_h())).json()
+    assert len(body["groups"]) == 1
+    line = body["groups"][0]["lines"][0]
+    assert line["reference"] == "VINV-30"
+    assert line["amount"] == "70.00"       # net cash paid — unchanged meaning
+    assert line["gross"] == "100.00"
+    assert line["credit_applied"] == "30.00"
+    assert line["credit_notes"] == [
+        {"vendor_credit_number": "11DJ-MFHX-N4JG", "applied_amount": "30.00"}]
+
+
 async def test_send_endpoint_sends_and_reports(client, db_session):
     await _configured(db_session)
     bp = await _vendor(db_session, remit="remit@acme.test")
@@ -1349,6 +1409,14 @@ async def test_selection_preview_two_payments_one_vendor_single_group(client, db
     g = body["groups"][0]
     assert g["total"] == "100.00"
     assert sorted(l["reference"] for l in g["lines"]) == ["VINV-100", "VINV-101"]
+    # Neither payment netted a vendor credit — the preview shape is uniform,
+    # not conditional: every line carries gross/credit_applied/credit_notes,
+    # with an un-netted line showing the "nothing happened" values rather
+    # than omitting the fields.
+    for l in g["lines"]:
+        assert l["credit_applied"] == "0.00"
+        assert l["credit_notes"] == []
+        assert l["gross"] == l["amount"]
     # Reference is a plain ad-hoc label, never a PA/document number (spec §3).
     assert "PA-" not in body["reference"]
     assert pa1.pa_number not in body["reference"]

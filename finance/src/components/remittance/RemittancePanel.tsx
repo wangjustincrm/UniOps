@@ -13,9 +13,9 @@
  * a plain re-fetch, not a cache bust. Blocked payees cannot be selected; the
  * disabled checkbox is a convenience only, the server refuses them anyway.
  */
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, RefreshCw, Send } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Send } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   fetchPreview, scopeKey, sendRemittance,
@@ -86,6 +86,10 @@ export function RemittancePanel({ scope, onSent }: {
 }) {
   const qc = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Which payee rows are expanded to show their line detail — the lines
+  // that will appear in that payee's advice. Default collapsed (empty set)
+  // so the panel stays as compact as it was before this existed.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
   const [lastResult, setLastResult] = useState<SendResult | null>(null)
@@ -117,6 +121,7 @@ export function RemittancePanel({ scope, onSent }: {
     setSendError(null)
     setLastResult(null)
     setSelected(new Set())
+    setExpanded(new Set())
     prevGroupsRef.current = null
   }, [key])
 
@@ -184,6 +189,15 @@ export function RemittancePanel({ scope, onSent }: {
     } finally {
       setSending(false)
     }
+  }
+
+  function toggleExpanded(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   }
 
   if (isLoading) {
@@ -256,48 +270,99 @@ export function RemittancePanel({ scope, onSent }: {
                 const key = payeeKey(g.recipient_kind, g.party_id)
                 const blocked = g.block_reasons.length > 0
                 const status = readinessOf(g)
+                const isExpanded = expanded.has(key)
                 return (
-                  <tr key={key} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40', blocked && 'text-neutral-400')}>
-                    <td className="px-3 py-2">
-                      <input type="checkbox" disabled={blocked} checked={selected.has(key)}
-                        title={status === 'sent' ? 'Already sent — check to resend' : undefined}
-                        onChange={(e) => setSelected((prev) => {
-                          const next = new Set(prev)
-                          if (e.target.checked) next.add(key)
-                          else next.delete(key)
-                          return next
-                        })} />
-                    </td>
-                    <td className="px-3 py-2">
-                      {g.party_name}
-                      <span className="ml-1 text-xs text-neutral-400">
-                        ({g.recipient_kind === 'vendor' ? 'Vendor' : 'Employee'})
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-neutral-600">
-                      {g.email || <span className="text-neutral-300">—</span>}
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono">{fmtMoney(g.total, g.currency)}</td>
-                    <td className="px-3 py-2">
-                      <RemittanceStatusBadge status={status} />
-                      {blocked && <div className="mt-1 text-xs text-amber-700">{blockReasonText(g.block_reasons)}</div>}
-                      {/* Fix 6 (Round 2): show whenever an error is persisted, not only
-                          when status === 'failed'. The backend's CASE refuses to downgrade
-                          a row from `sent` back to `failed` (a failed RESEND must not undo
-                          an already-delivered advice) but it still overwrites `error` — so a
-                          failed resend leaves status: 'sent' with an error message attached.
-                          Gating on status alone hid that message entirely, and the panel
-                          read as a clean "Sent" with nothing wrong. Wording says the advice
-                          already went out — this is not a "your payee never got it" alarm. */}
-                      {!blocked && g.last_send?.error && (
-                        <div className="mt-1 text-xs text-red-600">
-                          {status === 'sent'
-                            ? `Advice was delivered earlier, but the latest resend attempt failed: ${g.last_send.error}`
-                            : g.last_send.error}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
+                  <Fragment key={key}>
+                    <tr className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40', blocked && 'text-neutral-400')}>
+                      <td className="px-3 py-2">
+                        <input type="checkbox" disabled={blocked} checked={selected.has(key)}
+                          title={status === 'sent' ? 'Already sent — check to resend' : undefined}
+                          onChange={(e) => setSelected((prev) => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(key)
+                            else next.delete(key)
+                            return next
+                          })} />
+                      </td>
+                      <td className="px-3 py-2">
+                        <button type="button" onClick={() => toggleExpanded(key)}
+                          className="mr-1 inline-flex align-middle text-neutral-400 hover:text-neutral-600"
+                          aria-label={isExpanded ? 'Collapse lines' : 'Expand lines'}>
+                          {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                        </button>
+                        {g.party_name}
+                        <span className="ml-1 text-xs text-neutral-400">
+                          ({g.recipient_kind === 'vendor' ? 'Vendor' : 'Employee'})
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-neutral-600">
+                        {g.email || <span className="text-neutral-300">—</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">{fmtMoney(g.total, g.currency)}</td>
+                      <td className="px-3 py-2">
+                        <RemittanceStatusBadge status={status} />
+                        {blocked && <div className="mt-1 text-xs text-amber-700">{blockReasonText(g.block_reasons)}</div>}
+                        {/* Fix 6 (Round 2): show whenever an error is persisted, not only
+                            when status === 'failed'. The backend's CASE refuses to downgrade
+                            a row from `sent` back to `failed` (a failed RESEND must not undo
+                            an already-delivered advice) but it still overwrites `error` — so a
+                            failed resend leaves status: 'sent' with an error message attached.
+                            Gating on status alone hid that message entirely, and the panel
+                            read as a clean "Sent" with nothing wrong. Wording says the advice
+                            already went out — this is not a "your payee never got it" alarm. */}
+                        {!blocked && g.last_send?.error && (
+                          <div className="mt-1 text-xs text-red-600">
+                            {status === 'sent'
+                              ? `Advice was delivered earlier, but the latest resend attempt failed: ${g.last_send.error}`
+                              : g.last_send.error}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                    {/* Line detail — what this payee's advice will actually say. Collapsed by
+                        default (see `expanded` state above); a line with credit netted off it
+                        shows the same three-tier breakdown as the email (gross, one row per
+                        credit note naming the vendor's own number, then net) so AP is checking
+                        the same thing the vendor will read — see remittance_template.py's
+                        `_amount_cell`, whose "less credit {number} {amount}" wording this
+                        mirrors. A line with no credit renders as a single amount, same as
+                        today. */}
+                    {isExpanded && (
+                      <tr className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+                        <td className="px-3 py-2" />
+                        <td colSpan={4} className="px-3 py-2">
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {g.lines.map((l, li) => {
+                                const hasCredit = Number(l.credit_applied) > 0
+                                return (
+                                  <tr key={li} className={cn(li > 0 && 'border-t border-neutral-100')}>
+                                    <td className="py-1 pr-3 align-top text-neutral-600">{l.reference}</td>
+                                    <td className="py-1 pr-3 align-top text-neutral-500">{l.payment_date}</td>
+                                    <td className="py-1 text-right align-top font-mono">
+                                      {hasCredit ? (
+                                        <div className="space-y-0.5">
+                                          <div>{fmtMoney(l.gross, g.currency)}</div>
+                                          {l.credit_notes.map((note, ci) => (
+                                            <div key={ci} className="text-neutral-500">
+                                              less credit {note.vendor_credit_number} {fmtMoney(note.applied_amount, g.currency)}
+                                            </div>
+                                          ))}
+                                          <div className="font-semibold">{fmtMoney(l.amount, g.currency)}</div>
+                                        </div>
+                                      ) : (
+                                        fmtMoney(l.amount, g.currency)
+                                      )}
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 )
               })}
             </tbody>
